@@ -610,6 +610,16 @@ class _MobileMigrationRedesignedStatusState
       );
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    // A Tor route constrains both native background lanes — the preparation
+    // tracking task and the outbox wake: they run only on external power over
+    // an unmetered link, because a cold bootstrap costs 8.45 MB and 23.7 s and
+    // an idle client keeps padding its guard connection. Nothing here can read
+    // power or metering, so every promise of progress without the app has to
+    // state the condition rather than a verdict. The published route tracks the
+    // same preference the native gates read.
+    final routeConstrainsBackgroundWork = ref
+        .watch(networkPrivacyProvider)
+        .torEnabled;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final coordinatorError = accountUuid == null
         ? null
@@ -847,28 +857,45 @@ class _MobileMigrationRedesignedStatusState
           _preparationRuntimeState !=
               IronwoodMigrationPreparationRuntimeState
                   .foregroundContinuationPending;
-      // This device has no background preparation lane at all, so neither the
-      // notification prompt nor the "you left" copy names the real cause.
+      // A device with no continued-processing task can never track preparation
+      // while Vizor is closed. This stays separate from the route constraint
+      // below: turning Tor off cannot give this device a capability it never
+      // had, and the two need different copy and different fixes.
       final backgroundTrackingUnsupported =
           _supportsBackgroundPreparationTracking == false;
+      // The route limits a lane that does exist, and only conditionally.
+      final backgroundTrackingConstrained =
+          !backgroundTrackingUnsupported && routeConstrainsBackgroundWork;
+      // The device limit outranks the route: naming a condition the user could
+      // meet would promise a lane this OS build does not have.
+      final backgroundLaneLimitMessage = backgroundTrackingUnsupported
+          ? _migrationPreparationBackgroundUnsupportedMessage
+          : backgroundTrackingConstrained
+          ? _migrationPreparationTorRouteMessage
+          : null;
       // Whether leaving now stalls the run. An advance holds the foreground
       // permit, so backgrounding drops it and nothing moves until the next
       // reentry. An armed background task keeps observing without the app.
       // Requiring the capability here is a structural guard, not the live
       // signal: iOS before 26 can never report scheduled/running because it has
       // no continued-processing task, so the "you can close Vizor" promise
-      // becomes unreachable on a device that cannot keep it.
+      // becomes unreachable on a device that cannot keep it. A constrained
+      // route is excluded for a different reason: an armed task proves only
+      // that the gate passed for this pass, and "you can close Vizor" would
+      // outlive unplugging the charger or moving onto a metered link.
       final backgroundTrackingArmed =
           !backgroundTrackingUnsupported &&
+          !backgroundTrackingConstrained &&
           (_preparationRuntimeState ==
                   IronwoodMigrationPreparationRuntimeState.scheduled ||
               _preparationRuntimeState ==
                   IronwoodMigrationPreparationRuntimeState.running);
-      // Notifications are only the blocker where the lane exists. Without one,
-      // asking the user to allow notifications promises something granting them
-      // cannot deliver.
+      // Notifications are only the blocker where the lane exists and nothing
+      // else limits it. Elsewhere, asking the user to allow notifications
+      // promises something granting them cannot deliver.
       final notificationsDisabled =
           !backgroundTrackingUnsupported &&
+          !backgroundTrackingConstrained &&
           _preparationRuntimeState ==
               IronwoodMigrationPreparationRuntimeState.disabled;
       // Display-only debounce: a user-triggered action shows its progress at
@@ -892,9 +919,7 @@ class _MobileMigrationRedesignedStatusState
                 preparationState == _MigrationPreparationState.paused
             ? _migrationPreparationNotificationsDisabledMessage
             : null,
-        deviceLimitMessage: backgroundTrackingUnsupported
-            ? _migrationPreparationBackgroundUnsupportedMessage
-            : null,
+        backgroundLaneLimitMessage: backgroundLaneLimitMessage,
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
         onContinue: !needsManualResume || accountUuid == null
@@ -915,7 +940,11 @@ class _MobileMigrationRedesignedStatusState
       widget.status,
       hasChildProofBatchPermit: hasChildProofBatchPermit,
     );
-    final nextActionText = _nextActionText(widget.status, state: state);
+    final nextActionText = _nextActionText(
+      widget.status,
+      state: state,
+      routeConstrainsBackgroundWork: routeConstrainsBackgroundWork,
+    );
     final actionPart = _actionPart(widget.status);
     final batchProgress = _batchProgress(widget.status, actionPart: actionPart);
     final hasDueProofBatch = _hasDueProofBatch(widget.status);
@@ -1073,6 +1102,7 @@ class _MobileMigrationRedesignedStatusState
   String _nextActionText(
     rust_sync.MigrationStatus status, {
     required _MigrationProgressState state,
+    required bool routeConstrainsBackgroundWork,
   }) {
     final currentHeight = _currentHeight();
     final nextHeight = status.nextActionHeight;
@@ -1097,6 +1127,12 @@ class _MobileMigrationRedesignedStatusState
           timing == 'Timing is updating' || timing == 'ready now'
           ? 'Next migration step is on the way.'
           : 'Next migration step expected in\n$timing.';
+      // The background wake that would deliver this step runs on a Tor route
+      // only on external power over an unmetered link, so an authorized
+      // notification is not on its own enough to carry it.
+      if (routeConstrainsBackgroundWork) {
+        return '$expectation\n$_migrationTorRouteExpectation';
+      }
       return switch (_notificationsAuthorized) {
         true =>
           '$expectation\nNotifications are on. You can leave Vizor and check '
@@ -1112,11 +1148,19 @@ class _MobileMigrationRedesignedStatusState
           'Keep Vizor open.';
     }
     if (state == _MigrationProgressState.confirming) {
+      if (routeConstrainsBackgroundWork) {
+        return 'Confirmations are still arriving. '
+            '$_migrationTorRouteExpectation';
+      }
       return 'Confirmations are still arriving.\nYou can leave Vizor and '
           'check again later.';
     }
     if (timing == 'ready now') {
       return 'The next migration step is ready. Keep Vizor open to continue.';
+    }
+    if (routeConstrainsBackgroundWork) {
+      return '$timing until the next migration step.\n'
+          '$_migrationTorRouteExpectation';
     }
     return '$timing until the next migration step.\n'
         'Notifications are on; you can leave Vizor and check back later.';

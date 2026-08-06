@@ -525,7 +525,13 @@ final class BackgroundMigrationManager {
       )
       let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
       request.requiresNetworkConnectivity = true
-      request.requiresExternalPower = false
+      // On a Tor route this wake has to bring Tor up before it can reach
+      // lightwalletd, and a cold bootstrap is 8.45 MB and 23.7 s. Ask the
+      // scheduler for a charger so it stops waking us for a pass that would
+      // only decline; on a direct route the wake is cheap and stays
+      // unconstrained. The other half of the gate — an unmetered link — has no
+      // equivalent on any request type, so it is checked at run time.
+      request.requiresExternalPower = BackgroundNetworkRoute.persistedRouteIsTor
       request.earliestBeginDate = earliestBeginDate
       do {
         try BGTaskScheduler.shared.submit(request)
@@ -696,6 +702,19 @@ final class BackgroundMigrationManager {
   }
 
   private func handleAuthorized(_ task: BGProcessingTask) {
+    // This wake may be a cold launch where Dart never applied the saved route,
+    // and it broadcasts signed transactions. Declare the route before any
+    // other native call so a path that still reaches lightwalletd fails closed
+    // rather than putting a transaction on clearnet.
+    //
+    // On a Tor route the declaration is only half the answer: the wake also has
+    // to have established that this device can afford Tor right now. Asking
+    // here keeps an unaffordable wake from touching the outbox at all, and
+    // costs nothing — this gate never bootstraps.
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+      finishTorDeferredWake(task)
+      return
+    }
     guard prepareForBackgroundWake() else {
       task.setTaskCompleted(success: true)
       return
@@ -707,6 +726,16 @@ final class BackgroundMigrationManager {
     queue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
+        return
+      }
+      // Tor before the first query or broadcast. A cold bootstrap blocks for
+      // tens of seconds, so it runs here on this manager's own queue rather
+      // than on the notification-gate callback. A client that does not come up
+      // ready ends the wake the same way an unaffordable one does: fail-closed,
+      // no network work, the run left to the foreground.
+      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+        self.stopAuthorizationMonitoring()
+        self.finishTorDeferredWake(task)
         return
       }
       let cancellation = BackgroundMigrationCancellation()
@@ -813,6 +842,32 @@ final class BackgroundMigrationManager {
           && rescheduled
       )
     }
+  }
+
+  /// Completes a silent wake that must not reach the network: the saved route
+  /// is Tor and this device cannot carry it right now — on battery, on a
+  /// metered or constrained link, or with a Tor client that did not come up.
+  ///
+  /// It queries no chain tip and broadcasts nothing, and it does not
+  /// reschedule. The foreground is the continuation for a declined wake, as it
+  /// has been for every Tor route: armed items keep their signed bytes and
+  /// their schedule, and the foreground outbox run transports them at the next
+  /// launch — before the item's expiry boundary, or it has to be signed again.
+  /// The task reports success because declining is the policy working, not a
+  /// wake that failed.
+  private func finishTorDeferredWake(_ task: BGProcessingTask) {
+    // Free of network work, and the one thing this wake can still report: a
+    // preparation run that needs the foreground for reasons of its own. The
+    // quiescence and notification fences that gate every other wake apply
+    // here unchanged.
+    if #available(iOS 26.0, *),
+      !isMutationQuiesced,
+      wakeDisposition.shouldDeliverNotifications
+    {
+      BackgroundMigrationPreparationManager.shared
+        .notifyPreparationNeedsForeground()
+    }
+    task.setTaskCompleted(success: true)
   }
 
   private func clearActiveCancellation() {

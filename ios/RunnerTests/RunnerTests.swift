@@ -2858,6 +2858,89 @@ final class NativeLightwalletdClientTests: XCTestCase {
       return
     }
   }
+
+  func testTorBackgroundPassRunsOnlyOnExternalPowerOverAnUnmeteredLink() {
+    let everyPower: [BackgroundPowerSupply] = [.external, .battery, .unknown]
+    let everyMetering: [BackgroundNetworkMetering] = [
+      .unmetered, .metered, .unknown,
+    ]
+
+    for power in everyPower {
+      for metering in everyMetering {
+        XCTAssertEqual(
+          BackgroundNetworkRoute.torBackgroundWorkIsAffordable(
+            power: power,
+            metering: metering
+          ),
+          power == .external && metering == .unmetered,
+          "power=\(power) metering=\(metering)"
+        )
+      }
+    }
+  }
+
+  func testTorBackgroundPassProceedsWhenTorComesUpOnACharger() {
+    var bootstrapped = false
+    XCTAssertTrue(
+      BackgroundNetworkRoute.torBackgroundPassMayProceed(
+        power: .external,
+        metering: .unmetered,
+        bringTorUp: {
+          bootstrapped = true
+          return true
+        }
+      )
+    )
+    XCTAssertTrue(bootstrapped)
+  }
+
+  func testTorBackgroundPassDefersWhenTorDoesNotComeUp() {
+    // Never a fall back to clearnet: a client that is not ready leaves the
+    // process with no transport, so the pass defers like any other.
+    XCTAssertFalse(
+      BackgroundNetworkRoute.torBackgroundPassMayProceed(
+        power: .external,
+        metering: .unmetered,
+        bringTorUp: { false }
+      )
+    )
+  }
+
+  func testTorBackgroundPassNeverBootstrapsWhenItCannotAffordTo() {
+    // A cold bootstrap is 8.45 MB and 23.7 s. Every combination that is not a
+    // charger over an unmetered link has to defer without paying that.
+    let unaffordable:
+      [(power: BackgroundPowerSupply, metering: BackgroundNetworkMetering)] = [
+        (.external, .metered),
+        (.external, .unknown),
+        (.battery, .unmetered),
+        (.battery, .metered),
+        (.battery, .unknown),
+        (.unknown, .unmetered),
+        (.unknown, .metered),
+        (.unknown, .unknown),
+      ]
+
+    for combination in unaffordable {
+      var bootstrapped = false
+      let proceeded = BackgroundNetworkRoute.torBackgroundPassMayProceed(
+        power: combination.power,
+        metering: combination.metering,
+        bringTorUp: {
+          bootstrapped = true
+          return true
+        }
+      )
+      XCTAssertFalse(
+        proceeded,
+        "power=\(combination.power) metering=\(combination.metering)"
+      )
+      XCTAssertFalse(
+        bootstrapped,
+        "power=\(combination.power) metering=\(combination.metering)"
+      )
+    }
+  }
 }
 
 /// A lock-guarded counter for asserting on concurrent callers.

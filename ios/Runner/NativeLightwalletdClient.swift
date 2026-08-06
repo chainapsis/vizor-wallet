@@ -1,4 +1,278 @@
 import Foundation
+import Network
+import UIKit
+
+/// Where the device's power comes from, as far as a background pass can tell.
+enum BackgroundPowerSupply {
+  case external
+  case battery
+  /// The device has not reported a battery state yet. Read as "not on a
+  /// charger": a pass that cannot tell has not established anything.
+  case unknown
+}
+
+/// Whether the current network path charges for its bytes, as far as a
+/// background pass can tell.
+enum BackgroundNetworkMetering {
+  case unmetered
+  case metered
+  /// No path has been reported yet, or there is no usable path at all. Read as
+  /// "not known to be free": a pass that cannot tell has not established
+  /// anything.
+  case unknown
+}
+
+/// The route the user saved for wallet traffic, readable from a process that
+/// never ran Dart, plus the conditions under which a background pass may carry
+/// that route.
+///
+/// The route Rust honours is process-local and starts at direct, so a
+/// background launch into a cold process would reach lightwalletd over
+/// clearnet whatever the user chose. Every background pass therefore declares
+/// the saved route before its first native call.
+///
+/// A declared Tor route is not free to run, so declaring it is not enough.
+/// Measured on this stack: a cold bootstrap moves 8.45 MB down and 744 KB up
+/// over 23.7 s and leaves a 46.3 MB cache; a warm one costs 0.64 s and no
+/// bytes; and a bootstrapped client keeps padding its guard connection at
+/// roughly 500 B/s while awake and 27 B/s while dormant. On external power over
+/// an unmetered link those costs are acceptable. On battery, or over a metered
+/// or constrained link, they are not — that pass does no network work and
+/// defers to the foreground, which is what every pass used to do.
+enum BackgroundNetworkRoute {
+  /// `shared_preferences` stores Dart values in `UserDefaults.standard` behind
+  /// a `flutter.` prefix; the suffix is `kTorEnabledPreferenceKey` in
+  /// `lib/src/providers/network_privacy_provider.dart`.
+  private static let torEnabledKey = "flutter.zcash_tor_enabled"
+
+  /// Same directory Dart passes to the foreground toggle: the app's
+  /// Application Support directory plus `tor`. Arti keeps its guard state and
+  /// directory cache there, so a background bootstrap that used a different
+  /// path would pick fresh guards and re-download the 46.3 MB cache instead of
+  /// warming the one the foreground already paid for.
+  private static let torDirectoryName = "tor"
+
+  /// `UIDevice` answers `.unknown` for a moment after battery monitoring is
+  /// switched on. Bounded so a gate never stalls on a device that simply has
+  /// nothing to report.
+  private static let batteryStateReadAttempts = 10
+  private static let batteryStateReadRetryInterval: TimeInterval = 0.05
+
+  /// `NWPathMonitor` reports the current path almost immediately; this only
+  /// bounds the wait for a first report that never arrives.
+  private static let meteringSampleTimeout: TimeInterval = 1
+
+  private static let torStateLock = NSLock()
+  private static var torIsUpForBackgroundWork = false
+
+  /// Whether the saved route is Tor. A missing value — never chosen, or
+  /// cleared by a wallet reset — reads as direct, matching the Dart default.
+  static var persistedRouteIsTor: Bool {
+    UserDefaults.standard.bool(forKey: torEnabledKey)
+  }
+
+  /// Whether a background pass on a Tor route can afford to run right now.
+  ///
+  /// Both inputs fail closed while unknown. A wake that cannot yet tell where
+  /// its power or its bytes come from has not established that it may spend
+  /// either, and the cost of guessing wrong is a bootstrap on cellular or on
+  /// battery.
+  static func torBackgroundWorkIsAffordable(
+    power: BackgroundPowerSupply,
+    metering: BackgroundNetworkMetering
+  ) -> Bool {
+    power == .external && metering == .unmetered
+  }
+
+  /// The Tor half of the gate, written once so both entry points and the tests
+  /// agree on what the policy is.
+  ///
+  /// `bringTorUp` is evaluated only after affordability holds: a pass that
+  /// cannot afford Tor must not spend 8.45 MB and 23.7 s discovering that it
+  /// could not. A bring-up that does not report ready is a deferral like any
+  /// other, never a reason to reach lightwalletd some other way.
+  static func torBackgroundPassMayProceed(
+    power: BackgroundPowerSupply,
+    metering: BackgroundNetworkMetering,
+    bringTorUp: () -> Bool
+  ) -> Bool {
+    guard torBackgroundWorkIsAffordable(power: power, metering: metering) else {
+      return false
+    }
+    return bringTorUp()
+  }
+
+  /// `batteryState` is `.unknown` until battery monitoring is enabled, so
+  /// `AppDelegate` turns it on at launch — including the launch a background
+  /// task causes. Enabling here as well keeps the gate honest if it is ever
+  /// reached first, and the retry covers the moment before the first report
+  /// lands rather than letting a startable pass read `.unknown` and defer.
+  static func currentPowerSupply() -> BackgroundPowerSupply {
+    let device = UIDevice.current
+    if !device.isBatteryMonitoringEnabled {
+      device.isBatteryMonitoringEnabled = true
+    }
+    for attempt in 0..<batteryStateReadAttempts {
+      switch device.batteryState {
+      case .charging, .full:
+        return .external
+      case .unplugged:
+        return .battery
+      default:
+        break
+      }
+      if attempt < batteryStateReadAttempts - 1 {
+        Thread.sleep(forTimeInterval: batteryStateReadRetryInterval)
+      }
+    }
+    return .unknown
+  }
+
+  /// `isExpensive` covers cellular and personal hotspots, `isConstrained`
+  /// covers Low Data Mode. Either one means the user is paying for these bytes
+  /// in money or in an allowance they asked us to respect, and a Tor bootstrap
+  /// is megabytes.
+  ///
+  /// A path that is not satisfied reports `unknown` rather than `unmetered`:
+  /// there is nothing to measure, and no pass should proceed on it.
+  static func currentNetworkMetering() -> BackgroundNetworkMetering {
+    let monitor = NWPathMonitor()
+    let sample = BackgroundNetworkPathSample()
+    let reported = DispatchSemaphore(value: 0)
+    monitor.pathUpdateHandler = { path in
+      sample.store(
+        satisfied: path.status == .satisfied,
+        metered: path.isExpensive || path.isConstrained
+      )
+      reported.signal()
+    }
+    monitor.start(
+      queue: DispatchQueue(
+        label: "com.keplr.vizor.background-network-metering"
+      )
+    )
+    defer { monitor.cancel() }
+    guard reported.wait(timeout: .now() + meteringSampleTimeout) == .success,
+      let observation = sample.observation
+    else {
+      return .unknown
+    }
+    guard observation.satisfied else { return .unknown }
+    return observation.metered ? .metered : .unmetered
+  }
+
+  /// Declares a persisted Tor route to Rust and reports whether this pass has
+  /// established that it may carry that route.
+  ///
+  /// Call it before the first native call of a background pass. Declaring
+  /// first means a path that still tries to reach lightwalletd fails closed
+  /// instead of leaking; a declaration that itself fails changes nothing,
+  /// because a refused pass reaches nothing either way.
+  ///
+  /// This never bootstraps Tor, so it is also the right question for a pass
+  /// that has not decided whether it will do network work at all — scheduling
+  /// a task, or inspecting local state first.
+  static func allowsBackgroundNetworkPass() -> Bool {
+    guard persistedRouteIsTor else { return true }
+    _ = zcash_network_privacy_mark_tor_desired()
+    return torBackgroundWorkIsAffordable(
+      power: currentPowerSupply(),
+      metering: currentNetworkMetering()
+    )
+  }
+
+  /// Brings Tor up for this process and reports whether it came up ready.
+  ///
+  /// Blocks: a cold bootstrap is tens of seconds, so callers run it on their
+  /// own queue rather than on a system callback. Success is remembered for the
+  /// process because the loop-style passes ask before every round of queries;
+  /// failure is not, so a later pass in the same process may try again after
+  /// conditions change. A route flip only happens in the foreground, which
+  /// re-decides the process route itself.
+  ///
+  /// A client that does not come up ready leaves the process fail-closed with
+  /// no transport. The caller defers; it must never fall back to clearnet.
+  @discardableResult
+  static func bringUpTorForBackgroundWork() -> Bool {
+    torStateLock.lock()
+    let alreadyUp = torIsUpForBackgroundWork
+    torStateLock.unlock()
+    if alreadyUp { return true }
+
+    guard let directory = torDataDirectoryPath() else { return false }
+    let code = directory.withCString {
+      zcash_network_privacy_enable_tor_for_background_work($0)
+    }
+    // Every non-ready code — not ready, or a panic caught at the boundary —
+    // leaves the process Tor-desired and fail-closed, so a false here is a
+    // deferral, not a reason to look for another way out.
+    guard code == ZCASH_NETWORK_PRIVACY_TOR_READY else { return false }
+    torStateLock.lock()
+    torIsUpForBackgroundWork = true
+    torStateLock.unlock()
+    return true
+  }
+
+  /// Declares the saved route and reports whether this pass may reach the
+  /// network now — including bringing Tor up when the route is Tor.
+  ///
+  /// Call it immediately before network work. A pass that only wants to know
+  /// whether it should exist at all wants `allowsBackgroundNetworkPass`.
+  static func allowsBackgroundNetworkWork() -> Bool {
+    guard persistedRouteIsTor else { return true }
+    _ = zcash_network_privacy_mark_tor_desired()
+    return torBackgroundPassMayProceed(
+      power: currentPowerSupply(),
+      metering: currentNetworkMetering(),
+      bringTorUp: bringUpTorForBackgroundWork
+    )
+  }
+
+  /// Whether a pass that is already running may keep reaching the network.
+  ///
+  /// Side-effect free and cheap on purpose: it is polled on a heartbeat, so it
+  /// answers only the question that can change between gate evaluations —
+  /// whether the saved route turned to Tor inside a process that never brought
+  /// Tor up, which is a route this pass cannot carry. Power and metering are
+  /// re-sampled by the gate itself before each round of queries.
+  static var backgroundNetworkWorkRemainsAllowed: Bool {
+    guard persistedRouteIsTor else { return true }
+    torStateLock.lock()
+    defer { torStateLock.unlock() }
+    return torIsUpForBackgroundWork
+  }
+
+  private static func torDataDirectoryPath() -> String? {
+    guard let supportDirectory = try? resolveWalletSupportDirectory() else {
+      return nil
+    }
+    return supportDirectory
+      .appendingPathComponent(torDirectoryName)
+      .path
+  }
+}
+
+private final class BackgroundNetworkPathSample: @unchecked Sendable {
+  struct Observation {
+    let satisfied: Bool
+    let metered: Bool
+  }
+
+  private let lock = NSLock()
+  private var storedObservation: Observation?
+
+  func store(satisfied: Bool, metered: Bool) {
+    lock.lock()
+    storedObservation = Observation(satisfied: satisfied, metered: metered)
+    lock.unlock()
+  }
+
+  var observation: Observation? {
+    lock.lock()
+    defer { lock.unlock() }
+    return storedObservation
+  }
+}
 
 final class BackgroundMigrationCancellation: @unchecked Sendable {
   private let condition = NSCondition()

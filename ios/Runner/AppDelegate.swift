@@ -12,6 +12,12 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     FreshInstallKeychainCleaner.runIfNeeded()
+    // `batteryState` reports `.unknown` until monitoring is on, and the
+    // background Tor gate reads that state to decide whether this device can
+    // afford a Tor pass. Enable it here, on the main thread, before any task
+    // handler can run — a background task launch reaches this method first, so
+    // the gate finds a real state instead of deferring on `.unknown`.
+    UIDevice.current.isBatteryMonitoringEnabled = true
     BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {

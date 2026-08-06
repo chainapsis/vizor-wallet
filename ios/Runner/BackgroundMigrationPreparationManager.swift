@@ -1246,6 +1246,28 @@ final class BackgroundMigrationPreparationManager {
     authorizationEpoch: UInt64,
     completion: @escaping (Bool) -> Void
   ) {
+    // On a Tor route this task can only run when the device is on external
+    // power over an unmetered link. Arming it otherwise produces a task that
+    // wakes, declines every query, and leaves a live activity claiming it is
+    // checking confirmations. Declare the route so this process is fail-closed
+    // and let the foreground carry the run, the same way an otherwise
+    // foreground-only resume target is handled below.
+    //
+    // Only the affordability question is asked here. Submission does no network
+    // work, so nothing should pay for a bootstrap before the task that needs
+    // one has actually started. `BGContinuedProcessingTaskRequest` carries no
+    // power or network constraint of its own, so this check is what stands in
+    // for one — the system starts these requests promptly after submission, so
+    // the conditions measured here are the conditions the task runs under.
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("foreground_only_tor_route")
+      cancelWatchdog()
+      completion(false)
+      return
+    }
     pruneForegroundContinuationScopes()
     switch migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
@@ -1533,6 +1555,27 @@ final class BackgroundMigrationPreparationManager {
     stateLock.withPreparationLock {
       submissionInFlight = false
     }
+    // A request armed before the user chose Tor, or before they unplugged the
+    // device, can still be started, and this process may be a cold background
+    // launch where Dart never applied the route. Declare it before the first
+    // inspection so any path that still reaches for lightwalletd fails closed,
+    // and stand down unless this device can afford Tor right now.
+    //
+    // The bootstrap itself is deliberately not here: the inspections below can
+    // still find that no run needs tracking, and nothing should spend 8.45 MB
+    // and 23.7 s to discover that. Tor comes up once this task is known to be
+    // one that queries.
+    //
+    // Record only the runs that need the foreground for their own reasons. The
+    // recorded set is durable and outlives the deferral: parking a
+    // confirmation-trackable run here keeps `pendingTrackableScopes` empty long
+    // after the device is plugged back in, so no launch re-arms it and it stays
+    // parked until the user opens its migration screen.
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+      markForegroundContinuationsReadyForHandoff()
+      finishTorDeferredTask(task)
+      return
+    }
     let disposition = migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
     )
@@ -1613,6 +1656,17 @@ final class BackgroundMigrationPreparationManager {
         task.setTaskCompleted(success: false)
         return
       }
+      // Tor before the first query. A cold bootstrap blocks for tens of
+      // seconds, so it runs here on this manager's own queue rather than on the
+      // notification-gate callback that delivered this task. A direct route
+      // passes straight through and bootstraps nothing. A client that does not
+      // come up ready — or a device unplugged since the gate above — ends the
+      // task exactly the way that gate does: fail-closed, no network work, and
+      // the run left to the foreground.
+      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+        self.standDownForUnavailableTorRoute(task)
+        return
+      }
       var pass = self.runConfirmationTrackingPass(
         cancellation: cancellation
       )
@@ -1685,6 +1739,69 @@ final class BackgroundMigrationPreparationManager {
     }
   }
 
+  /// Completes a launched task whose runs must wait for the foreground because
+  /// the saved route is Tor and this pass cannot carry it — the device is on
+  /// battery, the link is metered or constrained, or Tor did not come up.
+  ///
+  /// The deferral is policy rather than failure, so the task reports success
+  /// and posts no alert for it. An alert would say "open Vizor" about a run
+  /// that is fine and will resume by itself the next time the device is on a
+  /// charger over an unmetered link, and it would say it again on every wake
+  /// until then. Runs that need foreground recovery for their own reasons still
+  /// send their existing alerts.
+  private func finishTorDeferredTask(_ task: BGContinuedProcessingTask) {
+    queue.async { [weak self] in
+      guard let self else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      let notificationsDisabled = self.stateLock.withPreparationLock {
+        self.notificationAuthorization.isDisabled
+      }
+      let recoveryEvents: [MigrationPreparationNotificationEvent] =
+        notificationsDisabled
+        ? []
+        : self.foregroundRecoveryNotificationEvents()
+      let recoveryAlertSubmitted =
+        !recoveryEvents.isEmpty
+        && self.submitNotificationEvents(recoveryEvents)
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      self.recordSchedulingState("waiting_for_foreground_tor_route")
+      // With no recovery alert delivered, the watchdog registered for this
+      // request is the only remaining prompt to reopen Vizor, so it stays.
+      if recoveryAlertSubmitted {
+        self.cancelWatchdog()
+      }
+      task.setTaskCompleted(success: true)
+    }
+  }
+
+  /// Stands a task down that had already claimed the tracking slot before Tor
+  /// turned out not to be available to it.
+  ///
+  /// Ends exactly where the gate that refuses a pass outright ends. Only the
+  /// bookkeeping this task itself claimed is released. The runs it was about to
+  /// track are handed off through the narrow path, which records just the ones
+  /// that need the foreground for reasons of their own: a run that is merely
+  /// mid-wave must stay re-armable, or nothing re-arms it until the user opens
+  /// its migration screen.
+  private func standDownForUnavailableTorRoute(
+    _ task: BGContinuedProcessingTask
+  ) {
+    stopAuthorizationMonitoring()
+    stateLock.withPreparationLock {
+      taskRunning = false
+      taskProgress = nil
+      trackingCancellation = nil
+      latestTrackingProgress = nil
+      foregroundHandoffRequested = false
+    }
+    markForegroundContinuationsReadyForHandoff()
+    finishTorDeferredTask(task)
+  }
+
   private func finishForegroundOnlyTask(
     _ task: BGContinuedProcessingTask
   ) {
@@ -1724,6 +1841,17 @@ final class BackgroundMigrationPreparationManager {
     cancellation: BackgroundMigrationCancellation
   ) -> BackgroundMigrationPreparationTrackingPass {
     if cancellation.isCancelled { return .cancelled }
+    // The last gate in front of the lightwalletd queries below, re-evaluated
+    // before every round rather than once at launch. The route can become Tor
+    // after this task started, and the conditions that made a Tor route
+    // affordable can end at any point: a charger comes out, or Wi-Fi drops to
+    // cellular. A bootstrapped client keeps padding its guard connection at
+    // roughly 500 B/s while awake, so a task that keeps querying past that
+    // moment is spending exactly what this policy exists to avoid. Tor itself
+    // is already up by now, so a passing check costs a power and path sample.
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+      return .cancelled
+    }
     guard UIApplication.shared.isProtectedDataAvailable else {
       return .batch(
         migrationPreparationTrackingBatch(
@@ -2335,7 +2463,19 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private var isTrackingStopRequested: Bool {
-    stateLock.withPreparationLock {
+    // Only the foreground app writes the route preference, so finding Tor set
+    // in a process that never brought Tor up means the user flipped it while
+    // this task was running: the foreground status poll and sync already own
+    // the run, this process has no Tor transport, and its remaining queries
+    // must not go out. A task that came up on Tor legitimately keeps running
+    // and is stopped instead by the affordability check in front of each round
+    // of queries. Reading without declaring keeps this side-effect free — and
+    // cheap enough for the heartbeat that polls it — while the pass itself
+    // declares the route before it would query.
+    if !BackgroundNetworkRoute.backgroundNetworkWorkRemainsAllowed {
+      return true
+    }
+    return stateLock.withPreparationLock {
       expired || foregroundHandoffRequested || mutationQuiesced
         || notificationAuthorization.isDisabled
     }
