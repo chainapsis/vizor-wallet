@@ -40,6 +40,7 @@ enum PaymentLinkPreviewState {
   redeemLoading,
   redeemInvalid,
   received,
+  receivedMessage,
 }
 
 Widget buildPaymentLinkEmptyUseCase(BuildContext context) =>
@@ -112,6 +113,11 @@ Widget buildPaymentLinkRedeemInvalidUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.received);
+
+Widget buildPaymentLinkReceivedMessageUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.receivedMessage,
+    );
 
 /// A deterministic desktop-only surface for Widgetbook and Figma capture.
 ///
@@ -324,6 +330,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         clearLabel: 'Clear clipboard',
       ),
       PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(),
+      PaymentLinkPreviewState.receivedMessage =>
+        const _PaymentLinkReceivedPreview(initialShowBack: true),
     };
   }
 
@@ -530,7 +538,9 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
 }
 
 class _PaymentLinkReceivedPreview extends StatefulWidget {
-  const _PaymentLinkReceivedPreview();
+  const _PaymentLinkReceivedPreview({this.initialShowBack = false});
+
+  final bool initialShowBack;
 
   @override
   State<_PaymentLinkReceivedPreview> createState() =>
@@ -539,7 +549,13 @@ class _PaymentLinkReceivedPreview extends StatefulWidget {
 
 class _PaymentLinkReceivedPreviewState
     extends State<_PaymentLinkReceivedPreview> {
-  bool _showBack = false;
+  late bool _showBack;
+
+  @override
+  void initState() {
+    super.initState();
+    _showBack = widget.initialShowBack;
+  }
 
   void _toggleCardSide() => setState(() => _showBack = !_showBack);
 

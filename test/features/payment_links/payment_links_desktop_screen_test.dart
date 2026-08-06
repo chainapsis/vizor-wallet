@@ -323,7 +323,12 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Create card'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Skip message'));
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_message_editor')),
+        'For Keystone',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm & create'));
 
@@ -334,6 +339,7 @@ void main() {
       expect(hardwareSigning.createdAmounts, [BigInt.from(10000000)]);
       expect(hardwareSigning.createdFromAccounts, ['hardware-account']);
       expect(hardwareSigning.createdArtworkIds, ['ruby']);
+      expect(hardwareSigning.createdMessages, ['For Keystone']);
       expect(find.byType(KeystoneSigningModal), findsOneWidget);
       expect(find.text('Sign Gift Card on Keystone'), findsOneWidget);
 
@@ -347,7 +353,9 @@ void main() {
     },
   );
 
-  testWidgets('sends the selected artwork through creation', (tester) async {
+  testWidgets('sends the selected artwork and message through creation', (
+    tester,
+  ) async {
     final operations = _FakePaymentLinkOperations();
     await _pumpPaymentLinksScreen(tester, operations: operations);
 
@@ -364,12 +372,18 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip message'));
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_message_editor')),
+      'Congratulations!',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm & create'));
     await tester.pumpAndSettle();
 
     expect(operations.createdArtworkIds, ['ruby']);
+    expect(operations.createdMessages, ['Congratulations!']);
   });
 
   testWidgets('hardware cancel releases a draft that finishes preparing late', (
@@ -438,6 +452,13 @@ void main() {
 
     expect(find.text('You’ve received a gift!'), findsOneWidget);
     expect(find.text('4.45'), findsOneWidget);
+    expect(find.text('Message attached.'), findsOneWidget);
+    expect(find.text('Congratulations!'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Congratulations!'), findsOneWidget);
   });
 
   testWidgets('routes an accepted incoming payment link and claims it', (
@@ -751,7 +772,10 @@ final _incomingLink = VizorPaymentLink(
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 6),
-  artworkId: 'ruby',
+  presentation: const PaymentLinkPresentation(
+    artworkId: 'ruby',
+    message: 'Congratulations!',
+  ),
 );
 
 final _sharedRecovery = PaymentLinkRecoveryRecord(
@@ -780,6 +804,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<BigInt> createdAmounts = [];
   final List<String> createdFromAccounts = [];
   final List<String?> createdArtworkIds = [];
+  final List<String?> createdMessages = [];
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
 
@@ -787,11 +812,12 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
-    String? artworkId,
+    PaymentLinkPresentation? presentation,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
-    createdArtworkIds.add(artworkId);
+    createdArtworkIds.add(presentation?.artworkId);
+    createdMessages.add(presentation?.message);
     final link = VizorPaymentLink(
       network: 'main',
       address: 'u1createdpaymentlinkaddress',
@@ -800,7 +826,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
       birthdayHeight: 3000000,
       label: 'Payment link',
       createdAt: DateTime.utc(2026, 8, 6),
-      artworkId: artworkId,
+      presentation: presentation,
     );
     records.add(
       PaymentLinkRecoveryRecord(
@@ -878,6 +904,7 @@ class _FakePaymentLinkHardwareSigningService
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
   final createdArtworkIds = <String?>[];
+  final createdMessages = <String?>[];
   final discardedDrafts = <BigInt>[];
 
   PaymentLinkHardwarePcztDraft get draft => PaymentLinkHardwarePcztDraft(
@@ -893,11 +920,12 @@ class _FakePaymentLinkHardwareSigningService
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
-    String? artworkId,
+    PaymentLinkPresentation? presentation,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
-    createdArtworkIds.add(artworkId);
+    createdArtworkIds.add(presentation?.artworkId);
+    createdMessages.add(presentation?.message);
     return createCompleter?.future ?? draft;
   }
 

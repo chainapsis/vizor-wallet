@@ -221,6 +221,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkReceivedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-received-message',
+    description: 'Desktop received Gift Card message preview',
+    builder: buildPaymentLinkReceivedMessageUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'customise-account',
     description: 'Desktop account personalisation onboarding screen',
     builder: buildCustomiseAccountUseCase,
