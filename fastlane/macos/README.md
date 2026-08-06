@@ -75,6 +75,8 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - `VIZOR_MACOS_FLAVOR`
 - `VIZOR_MACOS_FLAVORS`
 - `GITHUB_RELEASE_PRERELEASE`
+- `VIZOR_UPDATE_TEST_TARGET_TAG`
+- `VIZOR_SPARKLE_TEST_DELTA_SOURCE_TAG`
 
 ## Notes
 
@@ -87,6 +89,7 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - GitHub Release asset 파일명에는 버전을 넣지 않습니다. mainnet은 `Vizor-macos.dmg`, testnet은 `Vizor-Testnet-macos.dmg`를 사용합니다. 이 lane은 asset을 업로드하지 않고 deployment workflow가 draft release에 업로드합니다.
 - 랜딩 페이지의 최신 macOS 다운로드 링크는 `https://github.com/chainapsis/vizor-wallet/releases/latest/download/Vizor-macos.dmg`처럼 고정 asset 이름을 가리킵니다.
 - `release/v1.2.3-rc.0` 또는 `release/v1.2.3-internal.0` 같은 prerelease 태그는 release DMG를 만들지만 Sparkle appcast/delta 업로드는 건너뜁니다.
+- `VIZOR_UPDATE_TEST_TARGET_TAG`를 명시한 RC는 예외적으로 Sparkle을 켜고 target RC의 태그 고정 `appcast-rc.xml` 또는 `appcast-testnet-rc.xml`을 사용합니다. `VIZOR_SPARKLE_TEST_DELTA_SOURCE_TAG`가 있으면 그 published RC 하나만 delta source로 허용합니다. 키는 flavor별 production Sparkle key를 그대로 사용합니다.
 - `release/v1.2.3-internal.0`은 내부 테스트용 public GitHub prerelease입니다. DMG asset은 업로드되지만 `appcast.xml`, `appcast-testnet.xml`, `.delta` asset은 업로드되지 않아 기존 앱의 Sparkle 자동 업데이트 대상이 되지 않습니다.
 - `GITHUB_RELEASE_PRERELEASE`가 설정된 경우 태그에서 계산한 prerelease 여부와 일치해야 합니다.
 - `SPARKLE_PUBLIC_ED_KEY_MAINNET` / `SPARKLE_PUBLIC_ED_KEY_TESTNET`은 stable release에서 flavor별 앱 `Info.plist`에 주입되는 공개 Ed25519 키입니다. stable 앱은 `SUVerifyUpdateBeforeExtraction`과 `SURequireSignedFeed`도 켜서 update archive를 extraction 전에 검증하고 appcast/release notes signing을 요구합니다.
@@ -94,6 +97,7 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - mainnet Sparkle feed asset은 `appcast.xml`, testnet Sparkle feed asset은 `appcast-testnet.xml`입니다.
 - `release_notes/v1.2.3.md`가 있으면 stable `release/v1.2.3`의 Sparkle release notes로 사용합니다. 없으면 GitHub Release 링크만 포함한 기본 notes를 생성합니다.
 - Sparkle delta 입력으로 쓰는 이전 release는 같은 flavor의 고정 DMG(`Vizor-macos.dmg` 또는 `Vizor-Testnet-macos.dmg`)와 같은 flavor의 appcast asset을 둘 다 가진 stable release여야 합니다. fastlane은 이전 appcast XML이 그 release의 고정 DMG enclosure를 가리키는지도 확인하고, 유효한 후보를 `sparkle:version` 내림차순으로 선택합니다. 이전 stable appcast의 `sparkle:version`이 현재 build number보다 크거나 같으면 release를 중단합니다.
+- Stable delta selector는 update-test RC asset을 절대 후보에 넣지 않습니다. RC selector는 별도 함수이며 workflow가 지정한 같은 base-version의 더 낮은 RC 하나만 허용합니다.
 - 현재 stable release의 appcast는 업로드 전에 현재 태그의 고정 DMG URL과 같은 basename의 release notes markdown(`Vizor-macos.md` 또는 `Vizor-Testnet-macos.md`) URL을 가리키고, appcast와 release notes가 Sparkle EdDSA로 검증되는지 확인합니다.
 - Sparkle이 앱 이름에서 생성하는 delta 파일명은 GitHub Release asset 규칙에 맞게 정규화합니다. 예를 들어 testnet 앱 이름 `Vizor Testnet`에서 나온 `Vizor Testnet46-45.delta`는 업로드 전에 `Vizor.Testnet46-45.delta`로 바꾸고 appcast URL도 같이 갱신합니다. 이 후 appcast XML을 다시 서명하므로 서명 이후에는 appcast나 release notes를 수정하지 않아야 합니다.
 - 산출물은 repo root의 `dist/macos` 아래에 생성됩니다.

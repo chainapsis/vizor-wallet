@@ -60,6 +60,7 @@ def windows_release_metadata(flavor: "mainnet")
   tag = VizorRelease.release_tag
   tag_info = VizorRelease.release_tag_info(tag)
   VizorRelease.assert_prerelease_env_matches!(tag_info, tag)
+  VizorRelease.validate_update_test_tags!(tag)
 
   version = tag_info.fetch(:base_version)
   asset_version = tag_info.fetch(:asset_version)
@@ -80,7 +81,8 @@ def windows_release_metadata(flavor: "mainnet")
     version: version,
     asset_version: asset_version,
     is_prerelease: tag_info.fetch(:is_prerelease),
-    update_enabled: !tag_info.fetch(:is_prerelease),
+    update_enabled: !tag_info.fetch(:is_prerelease) || VizorRelease.update_test_enabled?,
+    update_release_base_url: VizorRelease.update_test_release_base_url(repository: release_repository),
     build_number: VizorRelease.release_build_number,
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
@@ -150,12 +152,12 @@ def windows_validate_code_signing_environment!(metadata_items)
   end
 end
 
-def with_windows_update_environment(update_enabled:)
+def with_windows_update_environment(update_enabled:, release_base_url:)
   previous_signing_key = ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"]
   previous_public_key = ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"]
   previous_release_base_url = ENV["VIZOR_UPDATE_RELEASE_BASE_URL"]
 
-  ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = ""
+  ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = release_base_url
   unless update_enabled
     ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"] = ""
     ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"] = ""
@@ -228,7 +230,10 @@ platform :windows do
       ]
     end
 
-    with_windows_update_environment(update_enabled: metadata.fetch(:update_enabled)) do
+    with_windows_update_environment(
+      update_enabled: metadata.fetch(:update_enabled),
+      release_base_url: metadata.fetch(:update_release_base_url)
+    ) do
       sh(command.join(" "))
     end
     windows_verify_velopack_outputs!(metadata)
