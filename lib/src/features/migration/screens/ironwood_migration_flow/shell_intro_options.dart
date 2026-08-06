@@ -173,7 +173,7 @@ class _IronwoodMigrationFrame extends StatelessWidget {
       background: ColoredBox(color: context.colors.background.window),
       sidebar: AppMainSidebar(
         disabledRoutePaths: disableSidebarActions
-            ? const {'/swap', '/voting'}
+            ? const {'/swap', '/pay', '/voting'}
             : const {},
       ),
       pane: Stack(
