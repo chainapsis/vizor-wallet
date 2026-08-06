@@ -443,11 +443,24 @@ void main() {
     await tester.enterText(_wordField(0), 'abandon');
     await tester.pump();
 
-    await tester.tapAt(
-      tester.getCenter(
-        find.byKey(const ValueKey('import_mnemonic_clear_button')),
-      ),
+    final buttonFinder = find.byKey(
+      const ValueKey('import_mnemonic_clear_button'),
     );
+    final button = tester.widget<AppButton>(buttonFinder);
+
+    expect(button.variant, AppButtonVariant.secondary);
+    expect(button.size, AppButtonSize.mediumLarge);
+    expect(button.height, 24);
+    expect(button.leading, isNull);
+    expect(
+      find.descendant(of: buttonFinder, matching: find.byType(AppIcon)),
+      findsNothing,
+    );
+    final pillSize = tester.getSize(buttonFinder);
+    expect(pillSize.width, closeTo(52, 0.5));
+    expect(pillSize.height, 24);
+
+    await tester.tapAt(tester.getCenter(buttonFinder));
     await tester.pump();
 
     expect(_textField(tester, 0).controller!.text, isEmpty);

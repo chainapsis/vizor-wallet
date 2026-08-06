@@ -979,22 +979,20 @@ class _ClearMnemonicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppButton(
-      key: const ValueKey('import_mnemonic_clear_button'),
-      onPressed: onPressed,
-      variant: AppButtonVariant.ghost,
-      size: AppButtonSize.small,
+    return SizedBox(
+      width: 52,
       height: 24,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      iconGap: 4,
-      enabledBackgroundColor: colors.text.homeCard.withValues(alpha: 0.12),
-      pressedBackgroundColor: colors.text.homeCard.withValues(alpha: 0.18),
-      enabledLabelColor: colors.text.homeCard,
-      pressedLabelColor: colors.text.homeCard,
-      focusRingColor: colors.text.homeCard,
-      leading: AppIcon(AppIcons.trash, size: 14, color: colors.text.homeCard),
-      child: const Text('Clear'),
+      child: AppButton(
+        key: const ValueKey('import_mnemonic_clear_button'),
+        onPressed: onPressed,
+        variant: AppButtonVariant.secondary,
+        size: AppButtonSize.mediumLarge,
+        height: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        expand: true,
+        constrainContent: true,
+        child: const Text('Clear'),
+      ),
     );
   }
 }
