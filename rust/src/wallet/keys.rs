@@ -1241,6 +1241,14 @@ pub fn derive_next_software_account(
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
             .ok_or("Invalid seed length for fingerprint")?;
+        verify_software_derivation_source_provenance(
+            db_path,
+            &db,
+            network,
+            seed,
+            &seed_fp,
+            operation_token,
+        )?;
         let existing = software_seed_account_state_from_db(&db, &seed_fp)?;
         if existing.is_empty() {
             return Err("This recovery phrase has no accounts in this wallet.".to_string());
@@ -1288,6 +1296,53 @@ pub fn derive_next_software_account(
 
         Ok((account_uuid, unified_address, account_index, is_seed_anchor))
     })
+}
+
+/// Bind a derivation lease to the exact software account that started it.
+///
+/// A lease token proves ownership of the operation, not which recovery secret
+/// a caller supplies later. The SQLite record names the source UUID; verify
+/// that source's persisted ZIP 32 derivation and viewing key before selecting
+/// an index so a token issued for one family cannot derive another family.
+fn verify_software_derivation_source_provenance(
+    db_path: &str,
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    seed_fp: &SeedFingerprint,
+    operation_token: &str,
+) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    let record = read_persistent_derivation(&conn)?
+        .filter(|record| record.is_pending && record.operation_token == operation_token)
+        .ok_or_else(|| {
+            "The native derivation recovery record cannot authenticate this lease.".to_string()
+        })?;
+    let source_id = parse_account_uuid(&record.source_account_uuid)?;
+    let source = db
+        .get_account(source_id)
+        .map_err(|error| format!("Failed to read derivation source account: {error}"))?
+        .ok_or_else(|| "The native derivation source account no longer exists.".to_string())?;
+    let derivation = source.source().key_derivation().ok_or_else(|| {
+        "The native derivation source account has no software ZIP 32 provenance.".to_string()
+    })?;
+    if derivation.seed_fingerprint() != seed_fp {
+        return Err(
+            "The supplied recovery phrase does not belong to this derivation source account."
+                .to_string(),
+        );
+    }
+
+    let source_index = u32::from(derivation.account_index());
+    let expected_ufvk = software_account_ufvk(network, seed, source_index)?;
+    if source.ufvk().map(|ufvk| ufvk.encode(&network)) != Some(expected_ufvk.encode(&network)) {
+        return Err(
+            "The supplied recovery phrase does not match this derivation source account provenance."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// List all accounts in the wallet database.
@@ -3686,6 +3741,49 @@ mod tests {
             None,
         )
         .expect("a recovered record must no longer block a new operation");
+        resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
+        finish_software_account_derivation_lease(&next.operation_token).unwrap();
+    }
+
+    #[test]
+    fn resolved_no_delta_derivation_record_remains_resumable_for_fence_cleanup() {
+        // Model a crash after native abort resolution has proven the baseline
+        // unchanged, but before Dart removes its matching recovery fence. A
+        // restart must observe the resolved status (not manufacture a pending
+        // operation) so Dart can safely clear that stale fence and allow a
+        // subsequent derivation.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+        let token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "No delta",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
+        resolve_software_account_derivation_lease(&token, None).unwrap();
+        finish_software_account_derivation_lease(&token).unwrap();
+
+        let restarted = resume_software_account_derivation_lease(db_path, &token).unwrap();
+        assert!(!restarted.is_pending);
+        assert_eq!(restarted.baseline_account_uuids, vec![source_uuid.clone()]);
+        finish_software_account_derivation_lease(&restarted.operation_token).unwrap();
+
+        let next = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Next operation",
+            "pfp-01",
+            None,
+        )
+        .expect("a resolved no-delta record must not block later derivation");
         resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
         finish_software_account_derivation_lease(&next.operation_token).unwrap();
     }

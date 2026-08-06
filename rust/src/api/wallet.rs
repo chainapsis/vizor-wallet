@@ -1300,6 +1300,10 @@ mod tests {
             .next()
             .expect("test wallet has a source account")
             .uuid;
+        test_derivation_lease_for(db_path, source_account_uuid)
+    }
+
+    fn test_derivation_lease_for(db_path: &str, source_account_uuid: String) -> String {
         begin_software_account_derivation_lease(
             db_path.to_string(),
             source_account_uuid,
@@ -1656,7 +1660,10 @@ mod tests {
         };
         resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
-        assert!(error.contains("no accounts in this wallet"), "got: {error}");
+        assert!(
+            error.contains("does not belong to this derivation source"),
+            "got: {error}"
+        );
     }
 
     #[test]
@@ -1667,7 +1674,7 @@ mod tests {
         let anchor_mnemonic = keys::generate_mnemonic();
         let anchor_seed = keys::mnemonic_to_seed(&anchor_mnemonic).unwrap();
 
-        keys::init_db_and_create_account(
+        let (anchor_account_uuid, _) = keys::init_db_and_create_account(
             db_path_str,
             WalletNetwork::Main,
             &anchor_seed,
@@ -1677,7 +1684,7 @@ mod tests {
         .unwrap();
 
         let other_mnemonic = keys::generate_mnemonic();
-        add_account(
+        let other = add_account(
             db_path_str.to_string(),
             "main".to_string(),
             "Account 2".to_string(),
@@ -1687,7 +1694,30 @@ mod tests {
         )
         .unwrap();
 
-        let lease = test_derivation_lease(db_path_str);
+        // A token issued for Account 1 must not authorize derivation from
+        // Account 2's secret merely because both families happen to exist in
+        // the same database.
+        let wrong_source_lease = test_derivation_lease_for(db_path_str, anchor_account_uuid);
+        let wrong_source_error = match derive_next_software_account(
+            other_mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Must not derive".to_string(),
+            wrong_source_lease.clone(),
+        ) {
+            Ok(_) => panic!("a lease must be bound to its persisted source account"),
+            Err(error) => error,
+        };
+        assert!(
+            wrong_source_error.contains("does not belong to this derivation source"),
+            "got: {wrong_source_error}"
+        );
+        resolve_software_account_derivation_lease(wrong_source_lease.clone(), None).unwrap();
+        finish_software_account_derivation_lease(wrong_source_lease).unwrap();
+
+        let lease = test_derivation_lease_for(db_path_str, other.account_uuid);
         let derived = derive_next_software_account(
             other_mnemonic,
             String::new(),
@@ -1706,6 +1736,50 @@ mod tests {
         finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
         assert!(!derived.is_seed_anchor);
+    }
+
+    #[test]
+    fn test_derive_next_software_account_rejects_wrong_bip39_passphrase_for_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let lease = test_derivation_lease(db_path_str);
+        let error = match derive_next_software_account(
+            mnemonic,
+            "not the source passphrase".to_string(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Must not derive".to_string(),
+            lease.clone(),
+        ) {
+            Ok(_) => panic!("the exact source secret must be required"),
+            Err(error) => error,
+        };
+        assert!(
+            error.contains("does not belong to this derivation source"),
+            "got: {error}"
+        );
+        assert_eq!(
+            list_accounts(db_path_str.to_string(), "main".to_string())
+                .unwrap()
+                .len(),
+            1,
+            "source-provenance failures must happen before account mutation"
+        );
+        resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
     }
 
     #[test]

@@ -128,6 +128,7 @@ class _DerivedAccountRecoveryFence {
     required this.profilePictureId,
     required this.accountGroupName,
     required this.baselineAccountUuids,
+    required this.hasExactPresentationIntent,
     this.operationToken,
     this.legacyAccountUuid,
   });
@@ -137,6 +138,10 @@ class _DerivedAccountRecoveryFence {
   final String profilePictureId;
   final String? accountGroupName;
   final Set<String> baselineAccountUuids;
+
+  /// Version-three fences record every presentation field, including an
+  /// intentional `null` group name. Earlier fences predate that contract.
+  final bool hasExactPresentationIntent;
 
   /// Opaque Rust lease token for diagnostics. It is never trusted as durable
   /// ownership after a restart; only a currently held native lease authorizes
@@ -150,7 +155,7 @@ class _DerivedAccountRecoveryFence {
   bool get isLegacy => legacyAccountUuid != null;
 
   String encode() => jsonEncode({
-    'version': 2,
+    'version': 3,
     'sourceAccountUuid': sourceAccountUuid,
     'name': name,
     'profilePictureId': profilePictureId,
@@ -163,7 +168,9 @@ class _DerivedAccountRecoveryFence {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic> &&
-          (decoded['version'] == 1 || decoded['version'] == 2)) {
+          (decoded['version'] == 1 ||
+              decoded['version'] == 2 ||
+              decoded['version'] == 3)) {
         final sourceAccountUuid = decoded['sourceAccountUuid'];
         final name = decoded['name'];
         final profilePictureId = decoded['profilePictureId'];
@@ -184,6 +191,7 @@ class _DerivedAccountRecoveryFence {
               profilePictureId: profilePictureId,
               accountGroupName: decoded['accountGroupName'] as String?,
               baselineAccountUuids: baselineAccountUuids,
+              hasExactPresentationIntent: decoded['version'] == 3,
               operationToken: decoded['operationToken'] as String?,
             );
           }
@@ -200,6 +208,7 @@ class _DerivedAccountRecoveryFence {
         profilePictureId: kDefaultProfilePictureId,
         accountGroupName: null,
         baselineAccountUuids: const {},
+        hasExactPresentationIntent: false,
         legacyAccountUuid: raw,
       );
     }
@@ -232,6 +241,7 @@ _DerivedAccountRecoveryFence _recoveryFenceFromNativeLease(
     profilePictureId: profilePictureId,
     accountGroupName: lease.recoveryAccountGroupName,
     baselineAccountUuids: {...lease.baselineAccountUuids},
+    hasExactPresentationIntent: true,
     operationToken: lease.operationToken,
   );
 }
@@ -248,14 +258,18 @@ void _assertRecoveryFenceMatchesNative(
       'The Dart derivation recovery fence does not match native durable intent.',
     );
   }
-  // Nullable fields are only absent on pre-protocol records. Those can be
-  // recovered using their existing authenticated fence but never via no-fence
-  // claim. New records must match every presentation field exactly.
-  if ((lease.recoveryName != null && lease.recoveryName != fence.name) ||
-      (lease.recoveryProfilePictureId != null &&
-          lease.recoveryProfilePictureId != fence.profilePictureId) ||
-      (lease.recoveryAccountGroupName != null &&
-          lease.recoveryAccountGroupName != fence.accountGroupName)) {
+  // Version-three fences have exact nullable intent: null is a value, never
+  // a wildcard. Versions one/two retain their deliberate compatibility rule.
+  final presentationMatches = fence.hasExactPresentationIntent
+      ? lease.recoveryName == fence.name &&
+          lease.recoveryProfilePictureId == fence.profilePictureId &&
+          lease.recoveryAccountGroupName == fence.accountGroupName
+      : (lease.recoveryName == null || lease.recoveryName == fence.name) &&
+          (lease.recoveryProfilePictureId == null ||
+              lease.recoveryProfilePictureId == fence.profilePictureId) &&
+          (lease.recoveryAccountGroupName == null ||
+              lease.recoveryAccountGroupName == fence.accountGroupName);
+  if (!presentationMatches) {
     throw StateError(
       'The Dart derivation recovery fence presentation does not match native durable intent.',
     );
@@ -572,7 +586,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           dbPath: dbPath,
           previousOperationToken: existingFence.operationToken!,
         );
-        _assertRecoveryFenceMatchesNative(existingFence, nativeLease);
         recoveryFence = existingFence;
       } else {
         final claimed = await rust_wallet
@@ -636,8 +649,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         if (await _recoverPendingDerivedAccount(
           dbPath: dbPath,
           network: network,
-          operationToken: operationToken,
-          nativeRecordIsPending: nativeLease.isPending,
+          nativeLease: nativeLease,
         )) {
           return;
         }
@@ -908,8 +920,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _recoverPendingDerivedAccount(
         dbPath: dbPath,
         network: network,
-        operationToken: nativeLease.operationToken,
-        nativeRecordIsPending: nativeLease.isPending,
+        nativeLease: nativeLease,
       );
     } finally {
       await rust_wallet.finishSoftwareAccountDerivationLease(
@@ -925,8 +936,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<bool> _recoverPendingDerivedAccount({
     required String dbPath,
     required String network,
-    required String operationToken,
-    required bool nativeRecordIsPending,
+    required rust_wallet.SoftwareAccountDerivationLease nativeLease,
   }) async {
     final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
     if (rawFence == null || rawFence.isEmpty) return false;
@@ -938,6 +948,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'operation created its UUID. Recovery is required before proceeding.',
       );
     }
+    _assertRecoveryFenceMatchesNative(fence, nativeLease);
 
     final recoveredAccountUuid = await _reconcileDerivedAccountFence(
       fence,
@@ -948,8 +959,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // The fence persisted before a Rust call that never committed. Retain
       // it while the same native pending lease proceeds: deleting it first
       // recreates the crash window where SQLite is pending but Dart has no
-      // authenticated fence. The current caller derives only with this exact
-      // durable intent, so there is no fence replacement gap.
+      // authenticated fence. Once native has already resolved the exact
+      // no-delta operation, retaining it would create a permanent barrier
+      // after a crash between native resolution and Dart deletion.
+      if (!nativeLease.isPending) {
+        await _clearRecoveryFence(expectedRawFence: rawFence);
+        return true;
+      }
       return false;
     }
 
@@ -958,8 +974,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       dbPath: dbPath,
       network: network,
       expectedRawFence: rawFence,
-      operationToken: operationToken,
-      nativeRecordIsPending: nativeRecordIsPending,
+      operationToken: nativeLease.operationToken,
+      nativeRecordIsPending: nativeLease.isPending,
     );
     return true;
   }
