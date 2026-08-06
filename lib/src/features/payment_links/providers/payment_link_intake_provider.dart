@@ -5,10 +5,16 @@ import '../models/vizor_payment_link.dart';
 enum PaymentLinkIntakeResult { accepted, ignored, rejected }
 
 class PaymentLinkIntakeState {
-  const PaymentLinkIntakeState({this.pendingLink, this.errorMessage});
+  const PaymentLinkIntakeState({
+    this.pendingLinks = const [],
+    this.errorMessage,
+  });
 
-  final VizorPaymentLink? pendingLink;
+  final List<VizorPaymentLink> pendingLinks;
   final String? errorMessage;
+
+  VizorPaymentLink? get pendingLink =>
+      pendingLinks.isEmpty ? null : pendingLinks.first;
 }
 
 class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
@@ -23,11 +29,13 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
 
     try {
       final link = VizorPaymentLink.decode(rawUri);
-      state = PaymentLinkIntakeState(pendingLink: link);
+      state = PaymentLinkIntakeState(
+        pendingLinks: [...state.pendingLinks, link],
+      );
       return PaymentLinkIntakeResult.accepted;
     } on FormatException {
       state = PaymentLinkIntakeState(
-        pendingLink: state.pendingLink,
+        pendingLinks: state.pendingLinks,
         errorMessage: 'Payment link could not be opened.',
       );
       return PaymentLinkIntakeResult.rejected;
@@ -36,12 +44,16 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
 
   VizorPaymentLink? takePending() {
     final link = state.pendingLink;
-    state = PaymentLinkIntakeState(errorMessage: state.errorMessage);
+    if (link == null) return null;
+    state = PaymentLinkIntakeState(
+      pendingLinks: state.pendingLinks.sublist(1),
+      errorMessage: state.errorMessage,
+    );
     return link;
   }
 
   void clearError() {
-    state = PaymentLinkIntakeState(pendingLink: state.pendingLink);
+    state = PaymentLinkIntakeState(pendingLinks: state.pendingLinks);
   }
 }
 
