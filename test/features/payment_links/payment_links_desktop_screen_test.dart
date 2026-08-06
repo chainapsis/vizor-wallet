@@ -13,6 +13,11 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -96,11 +101,17 @@ void main() {
     expect(tester.widget<AnimatedOpacity>(hoverFeedback).opacity, lessThan(1));
   });
 
-  testWidgets('keeps the local wizard interactive but creation disabled', (
+  testWidgets('enables creation after the local review is complete', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    await _pumpPaymentLinksScreen(tester);
+    final operations = _FakePaymentLinkOperations();
+    final clipboard = _FakePaymentLinkClipboard();
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
 
     await tester.tap(find.text('Create new card'));
     await tester.pumpAndSettle();
@@ -194,6 +205,8 @@ void main() {
     await tester.tap(find.text('Use max: 142.23'));
     await tester.pump();
     expect(tester.widget<TextField>(amountEditor).controller?.text, '142.23');
+    await tester.enterText(amountEditor, '1.25');
+    await tester.pump();
 
     await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
@@ -267,12 +280,29 @@ void main() {
           )
           .first,
     );
-    expect(confirmButton.onPressed, isNull);
+    expect(confirmButton.onPressed, isNotNull);
+    await tester.tap(find.text('Confirm & create'));
+    await tester.pumpAndSettle();
+
+    expect(operations.createdAmounts, [BigInt.from(125000000)]);
+    expect(operations.createdFromAccounts, ['account-1']);
+    expect(find.textContaining('is ready!'), findsOneWidget);
+
+    await tester.tap(find.text('Copy the gift link'));
+    await tester.pumpAndSettle();
+    expect(operations.sharedLinks, hasLength(1));
+    expect(clipboard.copiedSecrets, hasLength(1));
     semantics.dispose();
   });
 
-  testWidgets('keeps manual redeem intake disabled', (tester) async {
-    await _pumpPaymentLinksScreen(tester);
+  testWidgets('enables manual redeem intake', (tester) async {
+    final operations = _FakePaymentLinkOperations();
+    final clipboard = _FakePaymentLinkClipboard(text: _incomingLink.encode());
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
 
     await tester.tap(find.text('Redeem a card'));
     await tester.pumpAndSettle();
@@ -285,18 +315,99 @@ void main() {
           )
           .first,
     );
-    expect(pasteButton.onPressed, isNull);
+    expect(pasteButton.onPressed, isNotNull);
+
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’ve received a gift!'), findsOneWidget);
+    expect(find.text('4.45'), findsOneWidget);
+  });
+
+  testWidgets('routes an accepted incoming payment link and claims it', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .ingest(_incomingLink.encode());
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’ve received a gift!'), findsOneWidget);
+    expect(find.text('4.45'), findsOneWidget);
+
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pumpAndSettle();
+
+    expect(operations.claimedLinks.map((link) => link.encode()), [
+      _incomingLink.encode(),
+    ]);
+    expect(find.text('Gift claimed'), findsOneWidget);
+  });
+
+  testWidgets('copies and reclaims a persisted created link', (tester) async {
+    final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('4.45 ZEC'), findsOneWidget);
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Reclaim'), findsOneWidget);
+
+    await tester.tap(find.text('Copy link'));
+    await tester.pumpAndSettle();
+    expect(operations.sharedLinks, [_incomingLink]);
+
+    await tester.tap(find.text('Reclaim'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reclaim gift card?'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_reclaim_confirm_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(operations.reclaimedRecords, hasLength(1));
+    expect(find.text('Reclaiming'), findsOneWidget);
+  });
+
+  testWidgets('keeps reclaim available for an interrupted funding draft', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(records: [_draftRecovery]);
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('Funding incomplete'), findsOneWidget);
+    expect(find.text('Copy link'), findsNothing);
+    expect(find.text('Reclaim'), findsOneWidget);
   });
 }
 
-Future<void> _pumpPaymentLinksScreen(WidgetTester tester) async {
+Future<void> _pumpPaymentLinksScreen(
+  WidgetTester tester, {
+  _FakePaymentLinkOperations? operations,
+  _FakePaymentLinkClipboard? clipboard,
+  AppBootstrapState? bootstrap,
+}) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
+  final paymentLinkOperations = operations ?? _FakePaymentLinkOperations();
+  final paymentLinkClipboard = clipboard ?? _FakePaymentLinkClipboard();
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap),
+        appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+        paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
+        paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
@@ -357,6 +468,149 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+final _homeBootstrap = AppBootstrapState(
+  initialLocation: '/home',
+  initialAccountState: _accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _incomingLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1paymentlinkaddress',
+  amountZatoshi: BigInt.from(445000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Payment link',
+  createdAt: DateTime.utc(2026, 8, 6),
+);
+
+final _sharedRecovery = PaymentLinkRecoveryRecord(
+  link: _incomingLink,
+  sourceAccountUuid: 'account-1',
+  state: PaymentLinkRecoveryState.shared,
+  updatedAt: DateTime.utc(2026, 8, 6),
+  fundingTxids: 'funding-txid',
+);
+
+final _draftRecovery = PaymentLinkRecoveryRecord(
+  link: _incomingLink,
+  sourceAccountUuid: 'account-1',
+  state: PaymentLinkRecoveryState.draft,
+  updatedAt: DateTime.utc(2026, 8, 6),
+);
+
+class _FakePaymentLinkOperations implements PaymentLinkOperations {
+  _FakePaymentLinkOperations({
+    List<PaymentLinkRecoveryRecord> records = const [],
+  }) : records = List.of(records);
+
+  final List<PaymentLinkRecoveryRecord> records;
+  final List<BigInt> createdAmounts = [];
+  final List<String> createdFromAccounts = [];
+  final List<VizorPaymentLink> sharedLinks = [];
+  final List<VizorPaymentLink> claimedLinks = [];
+  final List<PaymentLinkRecoveryRecord> reclaimedRecords = [];
+
+  @override
+  Future<VizorPaymentLink> createFundedLink({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    createdAmounts.add(amountZatoshi);
+    createdFromAccounts.add(sourceAccountUuid);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1createdpaymentlinkaddress',
+      amountZatoshi: amountZatoshi,
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3000000,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 8, 6),
+    );
+    records.add(
+      PaymentLinkRecoveryRecord(
+        link: link,
+        sourceAccountUuid: sourceAccountUuid,
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: DateTime.utc(2026, 8, 6),
+        fundingTxids: 'funding-txid',
+      ),
+    );
+    return link;
+  }
+
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async {
+    return List.unmodifiable(records);
+  }
+
+  @override
+  Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
+    VizorPaymentLink link,
+  ) async {
+    sharedLinks.add(link);
+    final index = records.indexWhere(
+      (record) => record.link.address == link.address,
+    );
+    final updated = records[index].copyWith(
+      state: PaymentLinkRecoveryState.shared,
+      updatedAt: DateTime.utc(2026, 8, 6, 1),
+    );
+    records[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<String> claimLink(VizorPaymentLink link) async {
+    claimedLinks.add(link);
+    return 'claim-txid';
+  }
+
+  @override
+  Future<String> reclaimCreatedLink(PaymentLinkRecoveryRecord record) async {
+    reclaimedRecords.add(record);
+    final index = records.indexWhere(
+      (candidate) => candidate.link.address == record.link.address,
+    );
+    records[index] = records[index].copyWith(
+      state: PaymentLinkRecoveryState.reclaiming,
+      updatedAt: DateTime.utc(2026, 8, 6, 2),
+      reclaimTxids: 'reclaim-txid',
+    );
+    return 'reclaim-txid';
+  }
+}
+
+class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
+  _FakePaymentLinkClipboard({this.text});
+
+  String? text;
+  final List<String> copiedSecrets = [];
+  int clearCalls = 0;
+
+  @override
+  Future<void> clear() async {
+    clearCalls += 1;
+    text = '';
+  }
+
+  @override
+  Future<void> copySecret(String text) async {
+    copiedSecrets.add(text);
+    this.text = text;
+  }
+
+  @override
+  Future<String?> readText() async => text;
+}
 
 class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
   @override
