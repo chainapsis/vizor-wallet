@@ -258,18 +258,19 @@ void _assertRecoveryFenceMatchesNative(
       'The Dart derivation recovery fence does not match native durable intent.',
     );
   }
-  // Version-three fences have exact nullable intent: null is a value, never
-  // a wildcard. Versions one/two retain their deliberate compatibility rule.
-  final presentationMatches = fence.hasExactPresentationIntent
-      ? lease.recoveryName == fence.name &&
-          lease.recoveryProfilePictureId == fence.profilePictureId &&
-          lease.recoveryAccountGroupName == fence.accountGroupName
-      : (lease.recoveryName == null || lease.recoveryName == fence.name) &&
-          (lease.recoveryProfilePictureId == null ||
-              lease.recoveryProfilePictureId == fence.profilePictureId) &&
-          (lease.recoveryAccountGroupName == null ||
-              lease.recoveryAccountGroupName == fence.accountGroupName);
-  if (!presentationMatches) {
+  // Versions one and two predate exact nullable presentation intent. In
+  // particular, a native null group cannot authenticate a group supplied in
+  // a modified older fence. Keep the journal as a recovery barrier instead
+  // of inventing display metadata for a recovered account.
+  if (!fence.hasExactPresentationIntent) {
+    throw StateError(
+      'This legacy derived-account recovery marker cannot prove its exact '
+      'presentation intent. Recovery is required before proceeding.',
+    );
+  }
+  if (lease.recoveryName != fence.name ||
+      lease.recoveryProfilePictureId != fence.profilePictureId ||
+      lease.recoveryAccountGroupName != fence.accountGroupName) {
     throw StateError(
       'The Dart derivation recovery fence presentation does not match native durable intent.',
     );
@@ -550,6 +551,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           'Unknown account UUID',
         ),
       );
+      if (requestedSourceAccount.isHardware) {
+        throw ArgumentError.value(
+          sourceAccountUuid,
+          'sourceAccountUuid',
+          'A hardware account cannot derive a software account.',
+        );
+      }
       final requestedAccountName = normalizeAccountName(
         name ?? 'Account ${requestedAccounts.length + 1}',
       );
@@ -607,8 +615,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             rethrow;
           }
         } else {
+          // Do not create a durable native operation until this source is
+          // proven to have a local software secret. In particular, a
+          // hardware account cannot leave a fence that no process can use.
+          final sourceSecret = await getSoftwareWalletSecretForAccount(
+            sourceAccountUuid,
+          );
+          if (sourceSecret == null) {
+            throw StateError(
+              'No recovery phrase available for account $sourceAccountUuid',
+            );
+          }
           nativeLease = await rust_wallet.beginSoftwareAccountDerivationLease(
             dbPath: dbPath,
+            network: network,
             sourceAccountUuid: sourceAccountUuid,
             recoveryName: requestedAccountName,
             recoveryProfilePictureId: requestedProfilePictureId,

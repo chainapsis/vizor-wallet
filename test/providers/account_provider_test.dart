@@ -470,7 +470,13 @@ void main() {
       () async {
         await AppSecureStore.instance.writeString(
           'zcash_derived_account_recovery',
-          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: 'recovery-token',
+            name: 'Recovered',
+            profilePictureId: 'pfp-01',
+            accountGroupName: null,
+          ),
         );
         final container = _deriveAccountContainer(source);
         addTearDown(container.dispose);
@@ -496,7 +502,7 @@ void main() {
     );
 
     test(
-      'restart-shaped recovery keeps the durable v2 fence token after native resume',
+      'legacy v2 recovery fence remains a barrier after native resume',
       () async {
         final rawFence = _recoveryFenceJson(sourceAccountUuid: source.uuid);
         await AppSecureStore.instance.writeString(
@@ -528,12 +534,20 @@ void main() {
         addTearDown(container.dispose);
         await container.read(accountProvider.future);
 
-        await container
-            .read(accountProvider.notifier)
-            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('cannot prove its exact'),
+              'older fences do not authenticate nullable presentation intent',
+            ),
+          ),
+        );
 
-        expect(rust.allocatedIndices, [1]);
-        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        expect(rust.allocatedIndices, isEmpty);
+        expect(storage.values['zcash_derived_account_recovery'], rawFence);
       },
     );
 
@@ -543,6 +557,7 @@ void main() {
         final lease = await rust
             .crateApiWalletBeginSoftwareAccountDerivationLease(
               dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
               sourceAccountUuid: source.uuid,
               recoveryName: 'Exact crash intent',
               recoveryProfilePictureId: 'pfp-02',
@@ -588,7 +603,13 @@ void main() {
         );
         await AppSecureStore.instance.writeString(
           'zcash_derived_account_recovery',
-          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: 'recovery-token',
+            name: 'Recovered',
+            profilePictureId: 'pfp-01',
+            accountGroupName: null,
+          ),
         );
         rust.addListedAccount(foreign);
         final container = _deriveAccountContainer(source);
@@ -625,7 +646,13 @@ void main() {
         );
         await AppSecureStore.instance.writeString(
           'zcash_derived_account_recovery',
-          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: 'recovery-token',
+            name: 'Recovered',
+            profilePictureId: 'pfp-01',
+            accountGroupName: null,
+          ),
         );
         rust
           ..addListedAccount(first)
@@ -683,13 +710,15 @@ void main() {
     test(
       'acknowledgement rejects a tampered v3 presentation fence before reconciliation',
       () async {
-        final lease = await rust.crateApiWalletBeginSoftwareAccountDerivationLease(
-          dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
-          sourceAccountUuid: source.uuid,
-          recoveryName: 'Native name',
-          recoveryProfilePictureId: 'pfp-02',
-          recoveryAccountGroupName: 'Native group',
-        );
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'Native name',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: 'Native group',
+            );
         await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
           operationToken: lease.operationToken,
         );
@@ -714,7 +743,8 @@ void main() {
               .acknowledgeDerivedAccountRecovery(),
           throwsA(
             predicate<Object>(
-              (error) => error.toString().contains('presentation does not match'),
+              (error) =>
+                  error.toString().contains('presentation does not match'),
               'the exact native-vs-Dart intent assertion',
             ),
           ),
@@ -724,51 +754,131 @@ void main() {
       },
     );
 
-    test('v3 null account group cannot be forged as a non-null wildcard', () async {
-      final lease = await rust.crateApiWalletBeginSoftwareAccountDerivationLease(
-        dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
-        sourceAccountUuid: source.uuid,
-        recoveryName: 'Native name',
-        recoveryProfilePictureId: 'pfp-02',
-        recoveryAccountGroupName: null,
-      );
-      await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
-        operationToken: lease.operationToken,
-      );
-      final rawFence = _v3RecoveryFenceJson(
-        sourceAccountUuid: source.uuid,
-        operationToken: lease.operationToken,
-        name: 'Native name',
-        profilePictureId: 'pfp-02',
-        accountGroupName: 'Forged group',
-      );
-      await AppSecureStore.instance.writeString(
-        'zcash_derived_account_recovery',
-        rawFence,
-      );
-      final container = _deriveAccountContainer(source);
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
+    test(
+      'v3 null account group cannot be forged as a non-null wildcard',
+      () async {
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'Native name',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: null,
+            );
+        await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+        final rawFence = _v3RecoveryFenceJson(
+          sourceAccountUuid: source.uuid,
+          operationToken: lease.operationToken,
+          name: 'Native name',
+          profilePictureId: 'pfp-02',
+          accountGroupName: 'Forged group',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          rawFence,
+        );
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
 
-      await expectLater(
-        container
-            .read(accountProvider.notifier)
-            .acknowledgeDerivedAccountRecovery(),
-        throwsA(isA<StateError>()),
-      );
-      expect(storage.values['zcash_derived_account_recovery'], rawFence);
-    });
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .acknowledgeDerivedAccountRecovery(),
+          throwsA(isA<StateError>()),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], rawFence);
+      },
+    );
+
+    test(
+      'v2 native-null group cannot be forged as a non-null wildcard',
+      () async {
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'Native name',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: null,
+            );
+        await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+        final rawFence = jsonEncode({
+          'version': 2,
+          'sourceAccountUuid': source.uuid,
+          'name': 'Native name',
+          'profilePictureId': 'pfp-02',
+          'accountGroupName': 'Forged group',
+          'baselineAccountUuids': [source.uuid],
+          'operationToken': lease.operationToken,
+        });
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          rawFence,
+        );
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .acknowledgeDerivedAccountRecovery(),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('cannot prove its exact'),
+              'a v2 fence cannot authenticate a nullable group name',
+            ),
+          ),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], rawFence);
+        expect(rust.allocatedIndices, isEmpty);
+      },
+    );
+
+    test(
+      'hardware derive source never begins a native lease or writes a fence',
+      () async {
+        const hardware = AccountInfo(
+          uuid: 'hardware-source',
+          name: 'Keystone',
+          order: 0,
+          isHardware: true,
+        );
+        final container = _deriveAccountContainer(hardware);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: hardware.uuid),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(rust.beginCalls, 0);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        expect(rust.allocatedIndices, isEmpty);
+      },
+    );
 
     test(
       'restart acknowledgement clears a resolved no-delta v3 fence and later derive progresses',
       () async {
-        final lease = await rust.crateApiWalletBeginSoftwareAccountDerivationLease(
-          dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
-          sourceAccountUuid: source.uuid,
-          recoveryName: 'No delta',
-          recoveryProfilePictureId: 'pfp-02',
-          recoveryAccountGroupName: null,
-        );
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'No delta',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: null,
+            );
         final rawFence = _v3RecoveryFenceJson(
           sourceAccountUuid: source.uuid,
           operationToken: lease.operationToken,
@@ -878,7 +988,13 @@ void main() {
         );
         await AppSecureStore.instance.writeString(
           'zcash_derived_account_recovery',
-          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: 'recovery-token',
+            name: 'Recovered',
+            profilePictureId: 'pfp-01',
+            accountGroupName: null,
+          ),
         );
         rust.addListedAccount(derived);
         final container = _deriveAccountContainer(source);
@@ -1433,6 +1549,8 @@ class _DerivationRustApiFake implements RustLibApi {
   String? _persistentRecoveryAccountGroupName;
   int _nextLease = 0;
 
+  int get beginCalls => _nextLease;
+
   Set<int> get liveAccountIndices => {
     for (final index in _occupiedIndices)
       if (index != 0) index,
@@ -1469,6 +1587,7 @@ class _DerivationRustApiFake implements RustLibApi {
   Future<rust_wallet.SoftwareAccountDerivationLease>
   crateApiWalletBeginSoftwareAccountDerivationLease({
     required String dbPath,
+    required String network,
     required String sourceAccountUuid,
     required String recoveryName,
     required String recoveryProfilePictureId,
@@ -1513,6 +1632,9 @@ class _DerivationRustApiFake implements RustLibApi {
     if (_persistentLeaseToken == null) {
       _persistentLeaseToken = previousOperationToken;
       _persistentLeaseIsPending = true;
+      _persistentRecoveryName = 'Recovered';
+      _persistentRecoveryProfilePictureId = 'pfp-01';
+      _persistentRecoveryAccountGroupName = null;
     }
     if (_persistentLeaseToken != previousOperationToken) {
       throw StateError('native derivation recovery record cannot authenticate');

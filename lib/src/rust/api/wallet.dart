@@ -215,12 +215,14 @@ Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
 /// writes its recovery journal. The lease remains held across FFI calls.
 Future<SoftwareAccountDerivationLease> beginSoftwareAccountDerivationLease({
   required String dbPath,
+  required String network,
   required String sourceAccountUuid,
   required String recoveryName,
   required String recoveryProfilePictureId,
   String? recoveryAccountGroupName,
 }) => RustLib.instance.api.crateApiWalletBeginSoftwareAccountDerivationLease(
   dbPath: dbPath,
+  network: network,
   sourceAccountUuid: sourceAccountUuid,
   recoveryName: recoveryName,
   recoveryProfilePictureId: recoveryProfilePictureId,

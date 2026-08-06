@@ -420,7 +420,11 @@ fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
     let birthday = current_tip_height();
     let derivation_lease = wallet_api::begin_software_account_derivation_lease(
         path_str(&main_db),
+        REGTEST_NETWORK.into(),
         first_wallet.account_uuid.clone(),
+        "Secondary".into(),
+        "pfp-01".into(),
+        None,
     )
     .expect("begin derivation lease");
 

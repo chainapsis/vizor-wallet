@@ -127,6 +127,7 @@ abstract class RustLibApi extends BaseApi {
   Future<SoftwareAccountDerivationLease>
   crateApiWalletBeginSoftwareAccountDerivationLease({
     required String dbPath,
+    required String network,
     required String sourceAccountUuid,
     required String recoveryName,
     required String recoveryProfilePictureId,
@@ -1411,6 +1412,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<SoftwareAccountDerivationLease>
   crateApiWalletBeginSoftwareAccountDerivationLease({
     required String dbPath,
+    required String network,
     required String sourceAccountUuid,
     required String recoveryName,
     required String recoveryProfilePictureId,
@@ -1421,6 +1423,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
           sse_encode_String(sourceAccountUuid, serializer);
           sse_encode_String(recoveryName, serializer);
           sse_encode_String(recoveryProfilePictureId, serializer);
@@ -1439,6 +1442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiWalletBeginSoftwareAccountDerivationLeaseConstMeta,
         argValues: [
           dbPath,
+          network,
           sourceAccountUuid,
           recoveryName,
           recoveryProfilePictureId,
@@ -1455,6 +1459,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "begin_software_account_derivation_lease",
         argNames: [
           "dbPath",
+          "network",
           "sourceAccountUuid",
           "recoveryName",
           "recoveryProfilePictureId",

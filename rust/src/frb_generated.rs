@@ -244,6 +244,7 @@ fn wire__crate__api__wallet__begin_software_account_derivation_lease_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             let api_source_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_recovery_name = <String>::sse_decode(&mut deserializer);
             let api_recovery_profile_picture_id = <String>::sse_decode(&mut deserializer);
@@ -253,6 +254,7 @@ fn wire__crate__api__wallet__begin_software_account_derivation_lease_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::begin_software_account_derivation_lease(
                         api_db_path,
+                        api_network,
                         api_source_account_uuid,
                         api_recovery_name,
                         api_recovery_profile_picture_id,

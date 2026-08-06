@@ -618,12 +618,15 @@ pub fn derive_next_software_account(
 /// writes its recovery journal. The lease remains held across FFI calls.
 pub fn begin_software_account_derivation_lease(
     db_path: String,
+    network: String,
     source_account_uuid: String,
     recovery_name: String,
     recovery_profile_picture_id: String,
     recovery_account_group_name: Option<String>,
 ) -> Result<SoftwareAccountDerivationLease, String> {
     catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::require_software_derivation_source(&db_path, network, &source_account_uuid)?;
         let lease = keys::begin_software_account_derivation_lease(
             &db_path,
             &source_account_uuid,
@@ -1306,6 +1309,7 @@ mod tests {
     fn test_derivation_lease_for(db_path: &str, source_account_uuid: String) -> String {
         begin_software_account_derivation_lease(
             db_path.to_string(),
+            "main".to_string(),
             source_account_uuid,
             "Recovered".to_string(),
             "pfp-01".to_string(),
@@ -1521,6 +1525,7 @@ mod tests {
         .unwrap();
         let lease = begin_software_account_derivation_lease(
             db_path.clone(),
+            "main".to_string(),
             source.account_uuid,
             "Recovered".to_string(),
             "pfp-01".to_string(),

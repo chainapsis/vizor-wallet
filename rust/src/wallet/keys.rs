@@ -1384,6 +1384,28 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
     Ok(accounts)
 }
 
+/// Reject derivation sources that cannot be backed by a locally held software
+/// recovery secret before a durable derivation operation is written.
+pub fn require_software_derivation_source(
+    db_path: &str,
+    network: WalletNetwork,
+    source_account_uuid: &str,
+) -> Result<(), String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let source_id = parse_account_uuid(source_account_uuid)?;
+    let source = db
+        .get_account(source_id)
+        .map_err(|error| format!("Failed to read derivation source account: {error}"))?
+        .ok_or_else(|| "Cannot begin a derivation for an unknown source account.".to_string())?;
+    if source.ufvk().is_some_and(is_keystone_style_ufvk) {
+        return Err("A hardware account cannot derive a software account.".to_string());
+    }
+    if source.source().key_derivation().is_none() {
+        return Err("The derivation source account has no software ZIP 32 provenance.".to_string());
+    }
+    Ok(())
+}
+
 /// Return whether the wallet database still contains the requested account.
 ///
 /// Background migration uses this immediately before advancing an authorized
