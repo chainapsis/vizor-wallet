@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -16,11 +18,14 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -295,6 +300,87 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets(
+    'hardware creation opens Keystone signing and releases on cancel',
+    (tester) async {
+      final hardwareSigning = _FakePaymentLinkHardwareSigningService();
+      await _pumpPaymentLinksScreen(
+        tester,
+        bootstrap: _hardwareBootstrap,
+        hardwareSigning: hardwareSigning,
+      );
+
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_amount_editor')),
+        '0.1',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Create card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip message'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm & create'));
+
+      for (var i = 0; i < 20 && hardwareSigning.createdAmounts.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(hardwareSigning.createdAmounts, [BigInt.from(10000000)]);
+      expect(hardwareSigning.createdFromAccounts, ['hardware-account']);
+      expect(find.byType(KeystoneSigningModal), findsOneWidget);
+      expect(find.text('Sign Gift Card on Keystone'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+      expect(find.byType(KeystoneSigningModal), findsNothing);
+      expect(find.text('Review your Gift Card'), findsOneWidget);
+    },
+  );
+
+  testWidgets('hardware cancel releases a draft that finishes preparing late', (
+    tester,
+  ) async {
+    final createCompleter = Completer<PaymentLinkHardwarePcztDraft>();
+    final hardwareSigning = _FakePaymentLinkHardwareSigningService(
+      createCompleter: createCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      bootstrap: _hardwareBootstrap,
+      hardwareSigning: hardwareSigning,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm & create'));
+    await tester.pump();
+
+    expect(find.byType(KeystoneSigningModal), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+
+    createCompleter.complete(hardwareSigning.draft);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+  });
+
   testWidgets('enables manual redeem intake', (tester) async {
     final operations = _FakePaymentLinkOperations();
     final clipboard = _FakePaymentLinkClipboard(text: _incomingLink.encode());
@@ -395,6 +481,7 @@ Future<void> _pumpPaymentLinksScreen(
   WidgetTester tester, {
   _FakePaymentLinkOperations? operations,
   _FakePaymentLinkClipboard? clipboard,
+  PaymentLinkHardwareSigningService? hardwareSigning,
   AppBootstrapState? bootstrap,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -408,6 +495,10 @@ Future<void> _pumpPaymentLinksScreen(
         appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
+        if (hardwareSigning != null)
+          paymentLinkHardwareSigningServiceProvider.overrideWithValue(
+            hardwareSigning,
+          ),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
@@ -472,6 +563,33 @@ final _bootstrap = AppBootstrapState(
 final _homeBootstrap = AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: _accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+const _hardwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'hardware-account',
+      name: 'Keystone',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+    ),
+  ],
+  activeAccountUuid: 'hardware-account',
+  activeAddress: 'u1hardwareaddress',
+);
+
+final _hardwareBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: _hardwareAccountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
@@ -610,6 +728,68 @@ class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
 
   @override
   Future<String?> readText() async => text;
+}
+
+class _FakePaymentLinkHardwareSigningService
+    implements PaymentLinkHardwareSigningService {
+  _FakePaymentLinkHardwareSigningService({this.createCompleter});
+
+  final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;
+  final createdAmounts = <BigInt>[];
+  final createdFromAccounts = <String>[];
+  final discardedDrafts = <BigInt>[];
+
+  PaymentLinkHardwarePcztDraft get draft => PaymentLinkHardwarePcztDraft(
+    link: _incomingLink,
+    pcztBytes: const [1, 2, 3],
+    needsSaplingParams: false,
+    feeZatoshi: BigInt.from(10000),
+    proposalId: BigInt.one,
+    sendFlowId: 'test-payment-link-hardware',
+  );
+
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    createdAmounts.add(amountZatoshi);
+    createdFromAccounts.add(sourceAccountUuid);
+    return createCompleter?.future ?? draft;
+  }
+
+  @override
+  Future<List<String>> encodeSigningUrParts({
+    required PaymentLinkHardwarePcztDraft draft,
+  }) async => const ['ur:zcash-pczt/test'];
+
+  @override
+  Future<List<int>> addProofsForSigning({
+    required PaymentLinkHardwarePcztDraft draft,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async => const [7, 8, 9];
+
+  @override
+  Future<void> discardPcztDraft({
+    required PaymentLinkHardwarePcztDraft draft,
+  }) async {
+    discardedDrafts.add(draft.proposalId);
+  }
+
+  @override
+  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required PaymentLinkHardwarePcztDraft draft,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    return const rust_sync.ExtractAndBroadcastPcztResult(
+      txid: 'hardware-funding-txid',
+      status: 'broadcasted',
+    );
+  }
 }
 
 class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {

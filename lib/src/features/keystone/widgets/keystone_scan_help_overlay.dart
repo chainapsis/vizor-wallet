@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -84,7 +85,17 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
   }
 
   void _hide() {
-    if (_overlayController.isShowing) _overlayController.hide();
+    if (!_overlayController.isShowing) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _overlayController.isShowing) {
+          _overlayController.hide();
+        }
+      });
+      return;
+    }
+    _overlayController.hide();
   }
 
   @override

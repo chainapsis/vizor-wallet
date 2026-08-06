@@ -27,6 +27,7 @@ import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
+import '../widgets/payment_link_keystone_signing_overlay.dart';
 
 enum _PaymentLinksLocalPage {
   home,
@@ -93,6 +94,7 @@ class _PaymentLinksDesktopScreenState
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
   PaymentLinkRecoveryRecord? _reclaimCandidate;
+  _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
   bool _readyShowsBack = false;
@@ -271,7 +273,13 @@ class _PaymentLinksDesktopScreenState
       return;
     }
     if (ref.read(accountProvider.notifier).isActiveAccountHardware) {
-      _showError('Gift Cards from Keystone accounts are not supported yet.');
+      setState(() {
+        _operationInProgress = true;
+        _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(
+          amountZatoshi: amount,
+          sourceAccountUuid: sourceAccountUuid,
+        );
+      });
       return;
     }
 
@@ -294,6 +302,38 @@ class _PaymentLinksDesktopScreenState
       if (mounted) _showError('Gift Card creation failed. Try again.');
     } finally {
       if (mounted) setState(() => _operationInProgress = false);
+    }
+  }
+
+  void _cancelKeystoneFunding() {
+    setState(() {
+      _keystoneFundingRequest = null;
+      _operationInProgress = false;
+    });
+    unawaited(_loadRecoveries(showError: false));
+  }
+
+  Future<void> _completeKeystoneFunding(
+    VizorPaymentLink link,
+    String status,
+    String? message,
+  ) async {
+    await _loadRecoveries(showError: false);
+    if (!mounted) return;
+    setState(() {
+      _keystoneFundingRequest = null;
+      _operationInProgress = false;
+      _readyLink = link;
+      _readyShowsBack = false;
+      _page = _PaymentLinksLocalPage.ready;
+    });
+    if (status == 'broadcasted_storage_failed') {
+      showAppToast(
+        context,
+        message ??
+            'Funding was sent, but local transaction storage needs to sync.',
+        iconName: AppIcons.warning,
+      );
     }
   }
 
@@ -439,7 +479,23 @@ class _PaymentLinksDesktopScreenState
     if (pendingLink != null) _schedulePendingPaymentLink();
 
     final currentPage = _buildCurrentPage();
-    final pane = _reclaimCandidate != null
+    final keystoneRequest = _keystoneFundingRequest;
+    final pane = keystoneRequest != null
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              currentPage,
+              Positioned.fill(
+                child: PaymentLinkKeystoneSigningOverlay(
+                  amountZatoshi: keystoneRequest.amountZatoshi,
+                  sourceAccountUuid: keystoneRequest.sourceAccountUuid,
+                  onCancel: _cancelKeystoneFunding,
+                  onFundingBroadcast: _completeKeystoneFunding,
+                ),
+              ),
+            ],
+          )
+        : _reclaimCandidate != null
         ? _buildReclaimOverlay(currentPage)
         : _showHelp
         ? PaymentLinkHowItWorksDesktopView(
@@ -742,4 +798,14 @@ class _PaymentLinksDesktopScreenState
     final local = date.toLocal();
     return '${_monthNames[local.month - 1]} ${local.day}';
   }
+}
+
+class _PaymentLinkKeystoneFundingRequest {
+  const _PaymentLinkKeystoneFundingRequest({
+    required this.amountZatoshi,
+    required this.sourceAccountUuid,
+  });
+
+  final BigInt amountZatoshi;
+  final String sourceAccountUuid;
 }
