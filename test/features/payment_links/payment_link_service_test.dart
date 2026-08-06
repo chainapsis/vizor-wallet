@@ -62,6 +62,33 @@ void main() {
     );
   });
 
+  test('bounds claim birthdays to a recent chain-tip window', () {
+    const currentTip = 3500000;
+    expect(
+      validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight:
+            currentTip - kPaymentLinkMaxClaimLookbackBlocks,
+        currentTipHeight: currentTip,
+      ),
+      currentTip - kPaymentLinkMaxClaimLookbackBlocks,
+    );
+    expect(
+      () => validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight:
+            currentTip - kPaymentLinkMaxClaimLookbackBlocks - 1,
+        currentTipHeight: currentTip,
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight: currentTip + 1,
+        currentTipHeight: currentTip,
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('claim wallet directory is deterministic without exposing its secret', () {
     final link = _link();
     final sameLinkName = paymentLinkClaimWalletDirectoryName(link);
