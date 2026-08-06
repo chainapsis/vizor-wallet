@@ -29,9 +29,4 @@ const kVizorUpdateCheckEnabled = bool.fromEnvironment(
   kVizorUpdateCheckEnabledEnvKey,
 );
 
-const kVizorUpdateFeedBaseUrlEnvKey = 'VIZOR_UPDATE_FEED_BASE_URL';
-const kVizorUpdateFeedBaseUrl = String.fromEnvironment(
-  kVizorUpdateFeedBaseUrlEnvKey,
-);
-
 const kVizorAboutVersionLabel = 'Version: $kVizorReleaseVersion Public Beta';

@@ -118,7 +118,6 @@ def release_metadata(flavor: "mainnet")
   end
 
   tag_info = release_tag_info(tag)
-  VizorRelease.validate_update_test_tags!(tag)
   version = tag_info.fetch(:base_version)
   asset_version = tag_info.fetch(:asset_version)
   build_number = release_build_number
@@ -134,17 +133,6 @@ def release_metadata(flavor: "mainnet")
   sparkle_dir = File.join(dist_dir, "sparkle", flavor)
   app_path = File.join(workspace_root, "build", "macos", "Build", "Products", "Release", "#{app_name}.app")
   dmg_asset_name = "#{artifact_name}-macos.dmg"
-  stable_feed_asset_name = flavor_config.fetch(:sparkle_feed_asset_name)
-  feed_asset_name = if VizorRelease.update_test_enabled?
-                      stable_feed_asset_name.sub(/\.xml\z/, "-rc.xml")
-                    else
-                      stable_feed_asset_name
-                    end
-  feed_base_url = if VizorRelease.update_test_enabled?
-                    VizorRelease.update_test_release_base_url
-                  else
-                    "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/latest/download"
-                  end
 
   {
     flavor: flavor,
@@ -160,8 +148,6 @@ def release_metadata(flavor: "mainnet")
     version: version,
     asset_version: asset_version,
     is_prerelease: tag_info.fetch(:is_prerelease),
-    update_test_enabled: VizorRelease.update_test_enabled?,
-    sparkle_test_delta_source_tag: VizorRelease.sparkle_test_delta_source_tag,
     build_number: build_number,
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
@@ -169,8 +155,8 @@ def release_metadata(flavor: "mainnet")
     sparkle_dir: sparkle_dir,
     app_path: app_path,
     dmg_path: File.join(dist_dir, dmg_asset_name),
-    appcast_path: File.join(sparkle_dir, feed_asset_name),
-    sparkle_feed_url: "#{feed_base_url}/#{feed_asset_name}",
+    appcast_path: File.join(sparkle_dir, flavor_config.fetch(:sparkle_feed_asset_name)),
+    sparkle_feed_url: "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/latest/download/#{flavor_config.fetch(:sparkle_feed_asset_name)}",
     sparkle_release_notes_path: File.join(sparkle_dir, "#{artifact_name}-macos.md"),
     sparkle_public_key_env: flavor_config.fetch(:sparkle_public_key_env),
     sparkle_private_key_env: flavor_config.fetch(:sparkle_private_key_env)
@@ -205,7 +191,7 @@ def match_certificate_password
 end
 
 def sparkle_enabled_for_release?(metadata)
-  !metadata.fetch(:is_prerelease) || metadata.fetch(:update_test_enabled)
+  !metadata.fetch(:is_prerelease)
 end
 
 def sparkle_public_ed_key(metadata)
@@ -309,8 +295,7 @@ def sparkle_appcast_xml_enclosures(appcast_xml)
 
       enclosures << {
         url: url,
-        sparkle_version: sparkle_version,
-        delta_from: (element.attributes["sparkle:deltaFrom"] || element.attributes["deltaFrom"]).to_s.strip
+        sparkle_version: sparkle_version
       }
     end
   end
@@ -483,71 +468,13 @@ def previous_sparkle_release_archive_assets(metadata, limit: 2)
   previous_assets.sort_by { |asset| -asset.fetch(:sparkle_version) }.first(limit)
 end
 
-def previous_sparkle_test_release_archive_assets(metadata)
-  source_tag = metadata.fetch(:sparkle_test_delta_source_tag)
-  return [] if source_tag.empty?
-
-  encoded_tag = URI.encode_www_form_component(source_tag)
-  release = github_api_json(
-    "https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/tags/#{encoded_tag}"
-  )
-  unless release["tag_name"].to_s == source_tag && release["prerelease"] == true && release["draft"] != true
-    UI.user_error!("Sparkle RC delta source #{source_tag} must be a published prerelease")
-  end
-
-  source_info = release_tag_info(source_tag)
-  current_info = release_tag_info(metadata.fetch(:tag))
-  unless source_info.fetch(:prerelease_channel) == "rc" &&
-         source_info.fetch(:base_version) == current_info.fetch(:base_version) &&
-         source_info.fetch(:prerelease_number) < current_info.fetch(:prerelease_number)
-    UI.user_error!("Sparkle RC delta source #{source_tag} must be an earlier RC of #{current_info.fetch(:base_version)}")
-  end
-
-  archive_asset_name = sparkle_update_archive_asset_name(metadata)
-  appcast_asset_name = sparkle_appcast_asset_name(metadata)
-  assets = Array(release["assets"])
-  archive_asset = assets.find { |candidate| candidate["name"].to_s == archive_asset_name }
-  appcast_asset = assets.find { |candidate| candidate["name"].to_s == appcast_asset_name }
-  if archive_asset.nil? || appcast_asset.nil?
-    UI.user_error!("Sparkle RC delta source #{source_tag} must contain #{archive_asset_name} and #{appcast_asset_name}")
-  end
-
-  expected_archive_url = github_release_download_url(metadata, source_tag, archive_asset_name)
-  appcast_enclosure = remote_sparkle_appcast_enclosure(appcast_asset, expected_archive_url)
-  unless appcast_enclosure
-    UI.user_error!("Sparkle RC delta source #{source_tag} does not advertise #{expected_archive_url}")
-  end
-  sparkle_version = appcast_enclosure.fetch(:sparkle_version).to_s
-  unless sparkle_version.match?(/\A[1-9]\d*\z/)
-    UI.user_error!("Sparkle RC delta source #{source_tag} has invalid sparkle:version #{sparkle_version.inspect}")
-  end
-  sparkle_build_number = Integer(sparkle_version, 10)
-  current_build_number = Integer(metadata.fetch(:build_number), 10)
-  unless sparkle_build_number < current_build_number
-    UI.user_error!("Sparkle RC delta source #{source_tag} build #{sparkle_build_number} must precede current build #{current_build_number}")
-  end
-
-  [{
-    tag: source_tag,
-    name: archive_asset.fetch("name"),
-    download_url: archive_asset.fetch("browser_download_url"),
-    sparkle_version: sparkle_build_number
-  }]
-end
-
 def previous_release_archive_filename(metadata, tag_name)
   tag_info = release_tag_info(tag_name)
   "#{metadata.fetch(:artifact_name)}-#{tag_info.fetch(:asset_version)}-macos.dmg"
 end
 
 def download_previous_release_archives!(archives_dir, metadata)
-  previous_assets = if metadata.fetch(:update_test_enabled)
-                      previous_sparkle_test_release_archive_assets(metadata)
-                    else
-                      previous_sparkle_release_archive_assets(metadata)
-                    end
-  metadata[:sparkle_delta_source_builds] = previous_assets.map { |asset| asset.fetch(:sparkle_version).to_s }
-  previous_assets.each do |asset|
+  previous_sparkle_release_archive_assets(metadata).each do |asset|
     destination_path = File.join(archives_dir, previous_release_archive_filename(metadata, asset.fetch(:tag)))
     next if File.exist?(destination_path)
 
@@ -648,20 +575,6 @@ def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metada
     safe_asset_name = github_release_asset_safe_name(asset_name)
     UI.user_error!("Generated Sparkle appcast references GitHub-unsafe delta asset #{asset_name}") unless safe_asset_name == asset_name
     UI.user_error!("Generated Sparkle appcast references missing delta asset #{asset_name}") unless delta_asset_names.include?(asset_name)
-  end
-
-  if metadata.fetch(:update_test_enabled)
-    expected_delta_sources = metadata.fetch(:sparkle_delta_source_builds, []).sort
-    actual_delta_sources = sparkle_appcast_xml_enclosures(appcast_xml)
-      .filter_map { |enclosure| enclosure.fetch(:delta_from).empty? ? nil : enclosure.fetch(:delta_from) }
-      .uniq
-      .sort
-    unless actual_delta_sources == expected_delta_sources
-      UI.user_error!("Generated Sparkle RC appcast delta sources #{actual_delta_sources.inspect} do not match #{expected_delta_sources.inspect}")
-    end
-    if appcast_xml.include?("/releases/latest/download/")
-      UI.user_error!("Generated Sparkle RC appcast must not reference the stable latest channel")
-    end
   end
 
   verify_sparkle_signature!(appcast_path, metadata)

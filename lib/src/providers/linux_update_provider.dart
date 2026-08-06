@@ -47,15 +47,13 @@ final linuxUpdateRouteReadyProvider = Provider<bool>((ref) {
 /// Seam for the feed request so the route gating can be exercised without a
 /// network stack.
 final linuxUpdateCheckProvider = Provider<LinuxUpdateCheck>(
-  (ref) =>
-      () => fetchLinuxUpdate(
-        clientFactory: NetworkHttpClient.new,
-        repository: kVizorReleaseRepository,
-        flavor: kVizorReleaseFlavor,
-        arch: _linuxReleaseArch(),
-        currentBuildNumber: kVizorReleaseBuildNumber,
-        feedBaseUrl: kVizorUpdateFeedBaseUrl,
-      ),
+  (ref) => () => fetchLinuxUpdate(
+    clientFactory: NetworkHttpClient.new,
+    repository: kVizorReleaseRepository,
+    flavor: kVizorReleaseFlavor,
+    arch: _linuxReleaseArch(),
+    currentBuildNumber: kVizorReleaseBuildNumber,
+  ),
 );
 
 final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
@@ -77,24 +75,16 @@ Future<LinuxUpdateInfo?> fetchLinuxUpdate({
   required String flavor,
   required String arch,
   required int currentBuildNumber,
-  String feedBaseUrl = '',
   Duration timeout = kLinuxUpdateFeedTimeout,
 }) async {
   final normalizedRepository = _normalizedRepository(repository);
   if (normalizedRepository == null) return null;
 
   final normalizedFlavor = _normalizedFlavor(flavor);
-  final normalizedFeedBase = _normalizedFeedBaseUrl(
-    feedBaseUrl,
-    repository: normalizedRepository,
+  final feedUri = Uri.parse(
+    'https://github.com/$normalizedRepository/releases/latest/download/'
+    '${_feedAssetName(normalizedFlavor)}',
   );
-  if (feedBaseUrl.trim().isNotEmpty && normalizedFeedBase == null) return null;
-  final feedUri =
-      (normalizedFeedBase ??
-              Uri.parse(
-                'https://github.com/$normalizedRepository/releases/latest/download/',
-              ))
-          .resolve(_feedAssetName(normalizedFlavor));
 
   final client = clientFactory();
   try {
@@ -220,31 +210,6 @@ String? _normalizedRepository(String repository) {
     return null;
   }
   return trimmed;
-}
-
-Uri? _normalizedFeedBaseUrl(String raw, {required String repository}) {
-  final trimmed = raw.trim();
-  if (trimmed.isEmpty) return null;
-  final uri = Uri.tryParse(trimmed);
-  if (uri == null ||
-      uri.scheme != 'https' ||
-      uri.host != 'github.com' ||
-      uri.query.isNotEmpty ||
-      uri.fragment.isNotEmpty) {
-    return null;
-  }
-  final segments = uri.pathSegments
-      .where((segment) => segment.isNotEmpty)
-      .toList();
-  if (segments.length != 6 ||
-      '${segments[0]}/${segments[1]}' != repository ||
-      segments[2] != 'releases' ||
-      segments[3] != 'download' ||
-      segments[4] != 'release' ||
-      !RegExp(r'^v\d+\.\d+\.\d+-rc\.\d+$').hasMatch(segments[5])) {
-    return null;
-  }
-  return uri.replace(path: uri.path.endsWith('/') ? uri.path : '${uri.path}/');
 }
 
 String _linuxReleaseArch() {

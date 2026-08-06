@@ -51,7 +51,6 @@ VIZOR_LINUX_FLAVORS=mainnet,testnet bundle exec fastlane linux release
 - `LINUXDEPLOY_BIN`
 - `APPIMAGETOOL_BIN`
 - `LINUX_APPIMAGE_GPG_PASSPHRASE`
-- `VIZOR_UPDATE_TEST_TARGET_TAG`
 
 ## Asset names
 

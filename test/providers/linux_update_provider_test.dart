@@ -147,56 +147,6 @@ void main() {
     },
   );
 
-  test(
-    'uses an exact RC release feed without changing the stable default',
-    () async {
-      final bridge = _LinuxUpdateTorBridge(
-        response: NetworkHttpResponse(
-          statusCode: HttpStatus.notFound,
-          bodyBytes: Uint8List(0),
-        ),
-      );
-
-      await fetchLinuxUpdate(
-        clientFactory: () =>
-            NetworkHttpClient(torDesired: () => true, torBridge: bridge),
-        repository: 'chainapsis/vizor-wallet',
-        flavor: 'mainnet',
-        arch: 'x86_64',
-        currentBuildNumber: 41,
-        feedBaseUrl:
-            'https://github.com/chainapsis/vizor-wallet/releases/download/'
-            'release/v0.0.47-rc.1',
-      );
-
-      expect(bridge.requests, [
-        Uri.parse(
-          'https://github.com/chainapsis/vizor-wallet/releases/download/'
-          'release/v0.0.47-rc.1/linux-update.json',
-        ),
-      ]);
-    },
-  );
-
-  test('rejects a non-GitHub update-test feed base', () async {
-    var createdClient = false;
-
-    final update = await fetchLinuxUpdate(
-      clientFactory: () {
-        createdClient = true;
-        return NetworkHttpClient();
-      },
-      repository: 'chainapsis/vizor-wallet',
-      flavor: 'mainnet',
-      arch: 'x86_64',
-      currentBuildNumber: 41,
-      feedBaseUrl: 'https://example.com/release/v0.0.47-rc.1',
-    );
-
-    expect(update, isNull);
-    expect(createdClient, isFalse);
-  });
-
   test('parses newer matching Linux update feed', () {
     final update = LinuxUpdateInfo.fromJson(
       {

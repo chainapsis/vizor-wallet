@@ -31,63 +31,9 @@ module VizorRelease
       base_version: match[:base_version],
       asset_version: "#{match[:base_version]}#{prerelease_suffix}",
       prerelease_channel: prerelease_channel,
-      prerelease_number: prerelease_suffix[/\.(\d+)\z/, 1]&.to_i,
       is_prerelease: !prerelease_suffix.empty?,
       is_internal: prerelease_channel == "internal"
     }
-  end
-
-  def update_test_target_tag
-    ENV["VIZOR_UPDATE_TEST_TARGET_TAG"].to_s.strip
-  end
-
-  def update_test_enabled?
-    !update_test_target_tag.empty?
-  end
-
-  def sparkle_test_delta_source_tag
-    ENV["VIZOR_SPARKLE_TEST_DELTA_SOURCE_TAG"].to_s.strip
-  end
-
-  def validate_update_test_tags!(current_tag)
-    target_tag = update_test_target_tag
-    source_tag = sparkle_test_delta_source_tag
-    return if target_tag.empty? && source_tag.empty?
-
-    if target_tag.empty?
-      UI.user_error!("VIZOR_UPDATE_TEST_TARGET_TAG is required when VIZOR_SPARKLE_TEST_DELTA_SOURCE_TAG is set")
-    end
-
-    current = release_tag_info(current_tag)
-    target = release_tag_info(target_tag)
-    unless current.fetch(:prerelease_channel) == "rc" && target.fetch(:prerelease_channel) == "rc"
-      UI.user_error!("Update-test releases must use release/vX.Y.Z-rc.N tags")
-    end
-    unless current.fetch(:base_version) == target.fetch(:base_version)
-      UI.user_error!("Update-test target #{target_tag} must use the same base version as #{current_tag}")
-    end
-    if target.fetch(:prerelease_number) < current.fetch(:prerelease_number)
-      UI.user_error!("Update-test target #{target_tag} must not precede #{current_tag}")
-    end
-
-    return if source_tag.empty?
-
-    unless current_tag == target_tag
-      UI.user_error!("Sparkle RC delta sources are accepted only while building the update-test target #{target_tag}")
-    end
-    source = release_tag_info(source_tag)
-    unless source.fetch(:prerelease_channel) == "rc" && source.fetch(:base_version) == current.fetch(:base_version)
-      UI.user_error!("Sparkle RC delta source #{source_tag} must be an RC of #{current.fetch(:base_version)}")
-    end
-    unless source.fetch(:prerelease_number) < current.fetch(:prerelease_number)
-      UI.user_error!("Sparkle RC delta source #{source_tag} must precede #{current_tag}")
-    end
-  end
-
-  def update_test_release_base_url(repository: ENV.fetch("RELEASE_REPOSITORY"))
-    return "" unless update_test_enabled?
-
-    "https://github.com/#{repository}/releases/download/#{update_test_target_tag}"
   end
 
   def release_build_number

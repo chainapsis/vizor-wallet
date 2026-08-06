@@ -66,13 +66,12 @@ def linux_release_metadata(flavor: "mainnet")
   tag = VizorRelease.release_tag
   tag_info = VizorRelease.release_tag_info(tag)
   VizorRelease.assert_prerelease_env_matches!(tag_info, tag)
-  VizorRelease.validate_update_test_tags!(tag)
 
   version = tag_info.fetch(:base_version)
   asset_version = tag_info.fetch(:asset_version)
   build_number = VizorRelease.release_build_number
   arch = linux_release_arch
-  update_enabled = !tag_info.fetch(:is_prerelease) || VizorRelease.update_test_enabled?
+  update_enabled = !tag_info.fetch(:is_prerelease)
   dist_dir = File.join(VizorRelease.workspace_root, "dist", "linux")
   appimage_dir = File.join(dist_dir, "appimage")
   appimage_asset_name = "#{flavor_config.fetch(:artifact_name)}-#{arch}.AppImage"
@@ -106,8 +105,7 @@ def linux_release_metadata(flavor: "mainnet")
     zsync_path: "#{appimage_path}.zsync",
     sha256_path: "#{appimage_path}.sha256",
     asc_path: "#{appimage_path}.asc",
-    update_feed_base_url: VizorRelease.update_test_release_base_url(repository: release_repository),
-    update_info: update_enabled ? "gh-releases-zsync|#{repository_owner}|#{repository_name}|#{VizorRelease.update_test_enabled? ? VizorRelease.update_test_target_tag : "latest"}|#{zsync_asset_name}" : nil
+    update_info: update_enabled ? "gh-releases-zsync|#{repository_owner}|#{repository_name}|latest|#{zsync_asset_name}" : nil
   }
 end
 
@@ -249,7 +247,6 @@ platform :linux do
       "VIZOR_RELEASE_ARCH=#{VizorRelease.shell_escape(metadata[:arch])}",
       "VIZOR_RELEASE_REPOSITORY=#{VizorRelease.shell_escape(ENV.fetch("RELEASE_REPOSITORY"))}",
       "VIZOR_UPDATE_CHECK_ENABLED=#{linux_update_enabled_for_release?(metadata) ? "true" : "false"}",
-      "VIZOR_UPDATE_FEED_BASE_URL=#{VizorRelease.shell_escape(metadata.fetch(:update_feed_base_url))}",
       "#{VizorRelease.shell_escape(build_script_path)}",
       "--flavor", VizorRelease.shell_escape(metadata[:flavor]),
       "--build-mode", "release",
