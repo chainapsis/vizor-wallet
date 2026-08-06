@@ -120,6 +120,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'accounts-grouped',
+    description: 'Desktop accounts grouped by software seed family',
+    builder: buildAccountsGroupedUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'import-customise-account',
     description: 'Desktop imported-account personalisation screen',
     builder: buildImportCustomiseAccountUseCase,
@@ -178,6 +183,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-accounts-grouped',
+    description: 'Mobile accounts grouped by software seed family',
+    builder: buildMobileAccountsGroupedUseCase,
     desktop: false,
     mobile: true,
   ),

@@ -98,7 +98,9 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Accounts'), findsOneWidget);
     expect(find.text('Current'), findsOneWidget);
-    expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Wallet 1'), findsOneWidget);
+    expect(find.text('Wallet 2'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
     expect(find.text('Add account'), findsOneWidget);
 
     await tester.tap(
@@ -142,7 +144,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(
+      find.textContaining('Removing this account deletes its local data'),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
       findsOneWidget,
@@ -168,7 +173,10 @@ void main() {
       buildMobileAccountsRemoveAccountUseCase,
     );
     expect(tester.takeException(), isNull);
-    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(
+      find.textContaining('Removing this account deletes its local data'),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
       findsOneWidget,

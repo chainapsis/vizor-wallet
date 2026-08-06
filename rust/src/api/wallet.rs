@@ -16,18 +16,21 @@ pub struct WalletCreationResult {
     pub mnemonic: String,
     pub unified_address: String,
     pub account_uuid: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of wallet import, containing the unified address and account UUID.
 pub struct WalletImportResult {
     pub unified_address: String,
     pub account_uuid: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of adding an account to an existing wallet.
 pub struct AccountCreationResult {
     pub account_uuid: String,
     pub unified_address: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of software mnemonic import with ZIP32 account discovery.
@@ -55,6 +58,20 @@ pub struct SoftwareWalletImportAccount {
     pub zip32_account_index: u32,
     pub name: String,
     pub is_seed_anchor: bool,
+    pub seed_family_id: Option<String>,
+}
+
+/// Native durable ownership and baseline for a software-account derivation.
+/// Dart stores the token in its fence but Rust's DB record remains authoritative
+/// after a process crash.
+pub struct SoftwareAccountDerivationLease {
+    pub operation_token: String,
+    pub source_account_uuid: String,
+    pub baseline_account_uuids: Vec<String>,
+    pub recovery_name: Option<String>,
+    pub recovery_profile_picture_id: Option<String>,
+    pub recovery_account_group_name: Option<String>,
+    pub is_pending: bool,
 }
 
 /// Account info returned by list_accounts.
@@ -64,6 +81,8 @@ pub struct AccountInfo {
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    /// Opaque ZIP-32 seed fingerprint used only to group related accounts.
+    pub seed_family_id: Option<String>,
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -265,6 +284,7 @@ pub fn create_wallet(
             mnemonic,
             unified_address,
             account_uuid,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -289,6 +309,7 @@ pub fn import_wallet(
         Ok(WalletImportResult {
             unified_address,
             account_uuid,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -314,6 +335,7 @@ pub fn add_account(
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -443,6 +465,41 @@ pub fn import_software_wallet_with_account_discovery(
     })
 }
 
+fn import_software_account_for_existing_wallet(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &secrecy::SecretVec<u8>,
+    birthday_height: Option<u64>,
+    name: &str,
+    zip32_account_index: u32,
+) -> Result<(String, String, bool), String> {
+    let existing = keys::existing_software_seed_account_state(db_path, network, seed)?;
+    if existing.contains(zip32_account_index) {
+        return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
+    }
+    if existing.has_derived_account {
+        let (account_uuid, unified_address) = keys::import_derived_account_at_index(
+            db_path,
+            network,
+            seed,
+            birthday_height,
+            name,
+            zip32_account_index,
+        )?;
+        Ok((account_uuid, unified_address, true))
+    } else {
+        let (account_uuid, unified_address) = keys::add_account_at_index(
+            db_path,
+            network,
+            name,
+            seed,
+            birthday_height,
+            zip32_account_index,
+        )?;
+        Ok((account_uuid, unified_address, false))
+    }
+}
+
 /// Import exactly one software ZIP32 account for encrypted wallet-link imports.
 ///
 /// Account 0 remains a Derived seed-anchor when it is the first wallet account.
@@ -490,32 +547,14 @@ pub fn import_software_account_at_index(
                 (account_uuid, unified_address, false)
             }
         } else {
-            let existing_seed_accounts =
-                keys::existing_software_seed_account_state(&db_path, network, &seed)?;
-            if existing_seed_accounts.contains(zip32_account_index) {
-                return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
-            }
-            if existing_seed_accounts.has_derived_account {
-                let (account_uuid, unified_address) = keys::import_derived_account_at_index(
-                    &db_path,
-                    network,
-                    &seed,
-                    birthday_height,
-                    &name,
-                    zip32_account_index,
-                )?;
-                (account_uuid, unified_address, true)
-            } else {
-                let (account_uuid, unified_address) = keys::add_account_at_index(
-                    &db_path,
-                    network,
-                    &name,
-                    &seed,
-                    birthday_height,
-                    zip32_account_index,
-                )?;
-                (account_uuid, unified_address, false)
-            }
+            import_software_account_for_existing_wallet(
+                &db_path,
+                network,
+                &seed,
+                birthday_height,
+                &name,
+                zip32_account_index,
+            )?
         };
 
         Ok(SoftwareWalletImportAccount {
@@ -524,7 +563,192 @@ pub fn import_software_account_at_index(
             zip32_account_index,
             name,
             is_seed_anchor,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
+    })
+}
+
+/// Derive the next account from a recovery phrase that already has at least
+/// one account in this wallet (ZIP 32 HD derivation — issue #266).
+///
+/// Atomically picks the lowest unused ZIP 32 account index for the seed's
+/// fingerprint. Deleted indices are re-derived before new indices are
+/// allocated, keeping the index space compact for import-time discovery.
+/// Routing matches `import_software_account_at_index`: `Derived` via
+/// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
+/// with derivation metadata.
+///
+/// `operation_token` is issued by `begin_software_account_derivation_lease`.
+/// Rust keeps the OS-level lease until Dart durably commits or aborts the
+/// matching recovery journal, so another process cannot allocate around it.
+pub fn derive_next_software_account(
+    mnemonic: String,
+    bip39_passphrase: String,
+    birthday_height: Option<u64>,
+    network: String,
+    db_path: String,
+    name: String,
+    operation_token: String,
+) -> Result<SoftwareWalletImportAccount, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
+        let (account_uuid, unified_address, zip32_account_index, is_seed_anchor) =
+            keys::derive_next_software_account(
+                &db_path,
+                network,
+                &seed,
+                birthday_height,
+                &name,
+                &operation_token,
+            )?;
+
+        Ok(SoftwareWalletImportAccount {
+            account_uuid,
+            unified_address,
+            zip32_account_index,
+            name,
+            is_seed_anchor,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
+        })
+    })
+}
+
+/// Acquire the native lease for a software-account derivation before Dart
+/// writes its recovery journal. The lease remains held across FFI calls.
+pub fn begin_software_account_derivation_lease(
+    db_path: String,
+    network: String,
+    source_account_uuid: String,
+    recovery_name: String,
+    recovery_profile_picture_id: String,
+    recovery_account_group_name: Option<String>,
+) -> Result<SoftwareAccountDerivationLease, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::require_software_derivation_source(&db_path, network, &source_account_uuid)?;
+        let lease = keys::begin_software_account_derivation_lease(
+            &db_path,
+            &source_account_uuid,
+            &recovery_name,
+            &recovery_profile_picture_id,
+            recovery_account_group_name.as_deref(),
+        )?;
+        Ok(SoftwareAccountDerivationLease {
+            operation_token: lease.operation_token,
+            source_account_uuid: lease.source_account_uuid,
+            baseline_account_uuids: lease.baseline_account_uuids,
+            recovery_name: lease.recovery_name,
+            recovery_profile_picture_id: lease.recovery_profile_picture_id,
+            recovery_account_group_name: lease.recovery_account_group_name,
+            is_pending: lease.is_pending,
+        })
+    })
+}
+
+/// Reclaim a crash-left pending record only with the stable opaque operation
+/// token from its matching versioned Dart fence. The held OS lock, not this
+/// durable identifier, establishes process ownership.
+pub fn resume_software_account_derivation_lease(
+    db_path: String,
+    previous_operation_token: String,
+) -> Result<SoftwareAccountDerivationLease, String> {
+    catch(|| {
+        let lease =
+            keys::resume_software_account_derivation_lease(&db_path, &previous_operation_token)?;
+        Ok(SoftwareAccountDerivationLease {
+            operation_token: lease.operation_token,
+            source_account_uuid: lease.source_account_uuid,
+            baseline_account_uuids: lease.baseline_account_uuids,
+            recovery_name: lease.recovery_name,
+            recovery_profile_picture_id: lease.recovery_profile_picture_id,
+            recovery_account_group_name: lease.recovery_account_group_name,
+            is_pending: lease.is_pending,
+        })
+    })
+}
+
+/// Claim a native pending record when the Dart fence was never written (or was
+/// lost). The returned immutable intent lets Dart rebuild the exact fence
+/// before it reconciles any account delta.
+pub fn claim_pending_software_account_derivation_lease(
+    db_path: String,
+) -> Result<Option<SoftwareAccountDerivationLease>, String> {
+    catch(|| {
+        keys::claim_pending_software_account_derivation_lease(&db_path).map(|lease| {
+            lease.map(|lease| SoftwareAccountDerivationLease {
+                operation_token: lease.operation_token,
+                source_account_uuid: lease.source_account_uuid,
+                baseline_account_uuids: lease.baseline_account_uuids,
+                recovery_name: lease.recovery_name,
+                recovery_profile_picture_id: lease.recovery_profile_picture_id,
+                recovery_account_group_name: lease.recovery_account_group_name,
+                is_pending: lease.is_pending,
+            })
+        })
+    })
+}
+
+/// Mark the authenticated persistent record resolved only when Rust proves the
+/// current DB delta is either empty (abort) or exactly `account_uuid` (commit).
+pub fn resolve_software_account_derivation_lease(
+    operation_token: String,
+    account_uuid: Option<String>,
+) -> Result<(), String> {
+    catch(|| {
+        keys::resolve_software_account_derivation_lease(&operation_token, account_uuid.as_deref())
+    })
+}
+
+/// Release a derivation lease after the matching durable journal has been
+/// committed or safely retained for recovery.
+pub fn finish_software_account_derivation_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finish_software_account_derivation_lease(&operation_token))
+}
+
+/// Acquire the derivation gate for a full wallet reset. The returned token
+/// must remain held until both the wallet DB and secure storage have finished
+/// their coordinated cleanup.
+pub fn begin_wallet_reset_lease(db_path: String) -> Result<String, String> {
+    catch(|| keys::begin_wallet_reset_lease(&db_path))
+}
+
+/// Release the full-reset lease acquired by [begin_wallet_reset_lease].
+pub fn finish_wallet_reset_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finish_wallet_reset_lease(&operation_token))
+}
+
+/// Fail closed for destructive account operations while a live process owns a
+/// derivation lease. A stale sidecar without a held OS lock is not considered
+/// live after a crash.
+pub fn is_software_account_derivation_locked(db_path: String) -> Result<bool, String> {
+    catch(|| keys::is_software_account_derivation_locked(&db_path))
+}
+
+/// Compensate a just-derived account before Dart metadata commits. The caller
+/// must prove ownership of the same native derivation lease.
+pub fn delete_account_under_software_account_derivation_lease(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    operation_token: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::delete_account_under_software_account_derivation_lease(
+            &db_path,
+            network,
+            &account_uuid,
+            &operation_token,
+        )?;
+        if let Err(error) = transparent_receive_cache::delete_account(&db_path, &account_uuid) {
+            log::warn!(
+                "transparent receive cache: failed to delete account {}: {}",
+                account_uuid,
+                error
+            );
+        }
+        Ok(())
     })
 }
 
@@ -557,6 +781,7 @@ fn import_discovered_software_wallet_accounts(
     first_account_number: u32,
     discovered_indices: Vec<u32>,
 ) -> Result<SoftwareWalletImportWithDiscoveryResult, String> {
+    let seed_family_id = keys::seed_family_id(seed)?;
     let existing_seed_accounts = if is_first_wallet_account {
         None
     } else {
@@ -602,6 +827,7 @@ fn import_discovered_software_wallet_accounts(
             zip32_account_index: 0,
             name: first_name.clone(),
             is_seed_anchor: import_as_derived,
+            seed_family_id: Some(seed_family_id.clone()),
         });
         did_import_primary_account = true;
     }
@@ -653,6 +879,7 @@ fn import_discovered_software_wallet_accounts(
                     zip32_account_index: account_index,
                     name,
                     is_seed_anchor: import_as_derived,
+                    seed_family_id: Some(seed_family_id.clone()),
                 });
                 next_name_number += 1;
             }
@@ -875,6 +1102,7 @@ pub fn import_hardware_account(
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
+            seed_family_id: Some(hex::encode(seed_fingerprint)),
         })
     })
 }
@@ -892,6 +1120,7 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 unified_address: a.unified_address,
                 is_seed_anchor: a.is_seed_anchor,
                 is_hardware: a.is_hardware,
+                seed_family_id: a.seed_family_id,
             })
             .collect())
     })
@@ -1083,6 +1312,29 @@ mod tests {
         "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
+    fn test_derivation_lease(db_path: &str) -> String {
+        let source_account_uuid = keys::list_accounts(db_path, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("test wallet has a source account")
+            .uuid;
+        test_derivation_lease_for(db_path, source_account_uuid)
+    }
+
+    fn test_derivation_lease_for(db_path: &str, source_account_uuid: String) -> String {
+        begin_software_account_derivation_lease(
+            db_path.to_string(),
+            "main".to_string(),
+            source_account_uuid,
+            "Recovered".to_string(),
+            "pfp-01".to_string(),
+            None,
+        )
+        .unwrap()
+        .operation_token
+    }
+
     #[test]
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {
         // These expected addresses were generated outside this crate from the
@@ -1178,6 +1430,421 @@ mod tests {
         );
         assert!(!is_ironwood_active_at_height(WalletNetwork::Regtest, activation - 1).unwrap());
         assert!(is_ironwood_active_at_height(WalletNetwork::Regtest, activation).unwrap());
+    }
+
+    #[test]
+    fn test_derive_next_software_account_appends_next_index() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let second_lease = test_derivation_lease(db_path_str);
+        let second = derive_next_software_account(
+            mnemonic.clone(),
+            String::new(),
+            Some(900_000),
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+            second_lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            second_lease.clone(),
+            Some(second.account_uuid.clone()),
+        )
+        .unwrap();
+        finish_software_account_derivation_lease(second_lease).unwrap();
+        assert_eq!(second.zip32_account_index, 1);
+        assert!(second.is_seed_anchor);
+
+        let third_lease = test_derivation_lease(db_path_str);
+        let third = derive_next_software_account(
+            mnemonic,
+            String::new(),
+            Some(1_000_000),
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+            third_lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            third_lease.clone(),
+            Some(third.account_uuid.clone()),
+        )
+        .unwrap();
+        finish_software_account_derivation_lease(third_lease).unwrap();
+        assert_eq!(third.zip32_account_index, 2);
+        assert_ne!(second.unified_address, third.unified_address);
+        assert_ne!(second.account_uuid, third.account_uuid);
+        assert_eq!(
+            second.seed_family_id.as_deref(),
+            third.seed_family_id.as_deref()
+        );
+
+        let accounts = list_accounts(db_path_str.to_string(), "main".to_string()).unwrap();
+        let seed_family_ids: Vec<_> = accounts
+            .iter()
+            .map(|account| account.seed_family_id.as_deref())
+            .collect();
+        assert_eq!(seed_family_ids.len(), 3);
+        assert!(seed_family_ids[0].is_some());
+        assert!(seed_family_ids.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(seed_family_ids[0], second.seed_family_id.as_deref());
+
+        let birthdays: Vec<u32> = {
+            let connection = rusqlite::Connection::open(db_path_str).unwrap();
+            let mut statement = connection
+                .prepare(
+                    "SELECT birthday_height FROM accounts WHERE name IN ('Account 2', 'Account 3') ORDER BY name",
+                )
+                .unwrap();
+            statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(birthdays, vec![900_000, 1_000_000]);
+    }
+
+    #[test]
+    fn pending_derivation_blocks_linked_same_family_import_until_authenticated_recovery() {
+        // This exercises the public linked-wallet import constructor, rather
+        // than only the lower-level key helper. A crash can release the OS
+        // lease, but it must not let another same-seed import become an
+        // ambiguous recovery delta before the original fence is authenticated.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap().to_string();
+        let mnemonic = keys::generate_mnemonic();
+        let source = import_wallet(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            Some("Source".to_string()),
+        )
+        .unwrap();
+        let lease = begin_software_account_derivation_lease(
+            db_path.clone(),
+            "main".to_string(),
+            source.account_uuid,
+            "Recovered".to_string(),
+            "pfp-01".to_string(),
+            None,
+        )
+        .unwrap();
+        let operation_token = lease.operation_token;
+        finish_software_account_derivation_lease(operation_token.clone()).unwrap();
+
+        let error = match import_software_account_at_index(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            "Foreign linked account".to_string(),
+            1,
+            false,
+        ) {
+            Ok(_) => panic!("pending derivation must block a same-family linked import"),
+            Err(error) => error,
+        };
+        assert!(error.contains("needs recovery"), "got: {error}");
+
+        let resumed =
+            resume_software_account_derivation_lease(db_path.clone(), operation_token).unwrap();
+        resolve_software_account_derivation_lease(resumed.operation_token.clone(), None).unwrap();
+        finish_software_account_derivation_lease(resumed.operation_token).unwrap();
+        import_software_account_at_index(
+            mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path,
+            "Allowed after recovery".to_string(),
+            1,
+            false,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_derive_next_software_account_fills_deleted_gap() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+        import_software_account_at_index(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+            2,
+            false,
+        )
+        .unwrap();
+
+        let lease = test_derivation_lease(db_path_str);
+        let derived = derive_next_software_account(
+            mnemonic,
+            String::new(),
+            Some(1_000_000),
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+            lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            lease.clone(),
+            Some(derived.account_uuid.clone()),
+        )
+        .unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
+        assert_eq!(derived.zip32_account_index, 1);
+
+        let birthday: u32 = rusqlite::Connection::open(db_path_str)
+            .unwrap()
+            .query_row(
+                "SELECT birthday_height FROM accounts WHERE name = 'Account 2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            birthday,
+            u32::from(
+                WalletNetwork::Main
+                    .activation_height(NetworkUpgrade::Sapling)
+                    .unwrap(),
+            ),
+            "filling a gap must rescan from Sapling activation so a deleted account's old funds resurface",
+        );
+    }
+
+    #[test]
+    fn test_derive_next_software_account_rejects_unknown_seed() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let lease = test_derivation_lease(db_path_str);
+        let error = match derive_next_software_account(
+            keys::generate_mnemonic(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+            lease.clone(),
+        ) {
+            Ok(_) => panic!("unknown seed should be rejected"),
+            Err(error) => error,
+        };
+        resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
+        assert!(
+            error.contains("does not belong to this derivation source"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn test_derive_next_software_account_from_imported_seed_family() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let anchor_mnemonic = keys::generate_mnemonic();
+        let anchor_seed = keys::mnemonic_to_seed(&anchor_mnemonic).unwrap();
+
+        let (anchor_account_uuid, _) = keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &anchor_seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let other_mnemonic = keys::generate_mnemonic();
+        let other = add_account(
+            db_path_str.to_string(),
+            "main".to_string(),
+            "Account 2".to_string(),
+            other_mnemonic.clone(),
+            String::new(),
+            None,
+        )
+        .unwrap();
+
+        // A token issued for Account 1 must not authorize derivation from
+        // Account 2's secret merely because both families happen to exist in
+        // the same database.
+        let wrong_source_lease = test_derivation_lease_for(db_path_str, anchor_account_uuid);
+        let wrong_source_error = match derive_next_software_account(
+            other_mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Must not derive".to_string(),
+            wrong_source_lease.clone(),
+        ) {
+            Ok(_) => panic!("a lease must be bound to its persisted source account"),
+            Err(error) => error,
+        };
+        assert!(
+            wrong_source_error.contains("does not belong to this derivation source"),
+            "got: {wrong_source_error}"
+        );
+        resolve_software_account_derivation_lease(wrong_source_lease.clone(), None).unwrap();
+        finish_software_account_derivation_lease(wrong_source_lease).unwrap();
+
+        let lease = test_derivation_lease_for(db_path_str, other.account_uuid);
+        let derived = derive_next_software_account(
+            other_mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+            lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            lease.clone(),
+            Some(derived.account_uuid.clone()),
+        )
+        .unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
+        assert_eq!(derived.zip32_account_index, 1);
+        assert!(!derived.is_seed_anchor);
+    }
+
+    #[test]
+    fn test_derive_next_software_account_rejects_wrong_bip39_passphrase_for_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let lease = test_derivation_lease(db_path_str);
+        let error = match derive_next_software_account(
+            mnemonic,
+            "not the source passphrase".to_string(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Must not derive".to_string(),
+            lease.clone(),
+        ) {
+            Ok(_) => panic!("the exact source secret must be required"),
+            Err(error) => error,
+        };
+        assert!(
+            error.contains("does not belong to this derivation source"),
+            "got: {error}"
+        );
+        assert_eq!(
+            list_accounts(db_path_str.to_string(), "main".to_string())
+                .unwrap()
+                .len(),
+            1,
+            "source-provenance failures must happen before account mutation"
+        );
+        resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
+    }
+
+    #[test]
+    fn test_derive_next_software_account_allocates_across_successive_leases() {
+        const DERIVATIONS: u32 = 8;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let mut indices = Vec::new();
+        for offset in 0..DERIVATIONS {
+            let lease = test_derivation_lease(db_path_str);
+            let derived = derive_next_software_account(
+                mnemonic.clone(),
+                String::new(),
+                None,
+                "main".to_string(),
+                db_path_str.to_string(),
+                format!("Account {}", offset + 2),
+                lease.clone(),
+            )
+            .unwrap();
+            resolve_software_account_derivation_lease(
+                lease.clone(),
+                Some(derived.account_uuid.clone()),
+            )
+            .unwrap();
+            finish_software_account_derivation_lease(lease).unwrap();
+            indices.push(derived.zip32_account_index);
+        }
+
+        assert_eq!(indices, (1..=DERIVATIONS).collect::<Vec<_>>());
     }
 
     #[test]

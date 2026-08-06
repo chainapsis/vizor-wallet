@@ -417,6 +417,32 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
+  Future<void> _showGroupEditSheet(AccountFamily family) async {
+    final name = await showAccountGroupEditSheet(
+      context,
+      initialName: family.name,
+    );
+    if (name == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .renameAccountGroup(family.anchorAccountUuid, name);
+    } catch (e, st) {
+      log('MobileAccounts: group rename failed: $e\n$st');
+      if (mounted) {
+        showAppToast(
+          context,
+          "Couldn't update the group",
+          iconName: AppIcons.cross,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _showRemoveSheet(AccountInfo account) async {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final isLastAccount = accounts.length == 1;
@@ -499,11 +525,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final colors = context.colors;
     final state = ref.watch(accountProvider).value;
     final accounts = state?.accounts ?? const <AccountInfo>[];
-    final active = state?.activeAccount;
-    final others = [
-      for (final account in accounts)
-        if (account.uuid != active?.uuid) account,
-    ];
+    final activeAccount = resolveActiveAccountForDisplay(
+      accounts,
+      state?.activeAccountUuid,
+    );
+    final accountFamilies = groupAccountsBySeedFamily(
+      accounts,
+      activeAccount?.uuid,
+    );
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -526,19 +555,29 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                     kMobileTabBarHeight + AppSpacing.lg,
                   ),
                   children: [
-                    if (active != null)
+                    for (
+                      var index = 0;
+                      index < accountFamilies.length;
+                      index++
+                    ) ...[
+                      if (index > 0) const SizedBox(height: AppSpacing.sm),
                       _AccountsGroupCard(
-                        title: 'Current',
-                        titleGap: AppSpacing.s,
-                        children: [_accountRow(active, enabled: !_busy)],
-                      ),
-                    if (others.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      _AccountsGroupCard(
-                        title: 'Other',
-                        titleGap: AppSpacing.xs,
+                        key: ValueKey(
+                          'mobile_accounts_family_'
+                          '${accountFamilies[index].anchorAccountUuid}',
+                        ),
+                        anchorAccountUuid:
+                            accountFamilies[index].anchorAccountUuid,
+                        title: accountFamilies[index].name,
+                        isCurrent: accountFamilies[index].containsActiveAccount,
+                        onEdit: _busy
+                            ? null
+                            : () => _showGroupEditSheet(accountFamilies[index]),
+                        titleGap: accountFamilies[index].containsActiveAccount
+                            ? AppSpacing.s
+                            : AppSpacing.xs,
                         children: [
-                          for (final account in others)
+                          for (final account in accountFamilies[index].accounts)
                             _accountRow(account, enabled: !_busy),
                         ],
                       ),
@@ -637,12 +676,19 @@ enum _AccountAction { viewSecretPassphrase, copy, send, edit, remove }
 
 class _AccountsGroupCard extends StatelessWidget {
   const _AccountsGroupCard({
+    required this.anchorAccountUuid,
     required this.title,
+    required this.isCurrent,
+    required this.onEdit,
     required this.titleGap,
     required this.children,
+    super.key,
   });
 
+  final String anchorAccountUuid;
   final String title;
+  final bool isCurrent;
+  final VoidCallback? onEdit;
   final double titleGap;
   final List<Widget> children;
 
@@ -659,11 +705,55 @@ class _AccountsGroupCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              title,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.secondary,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  ),
+                ),
+                if (isCurrent) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'Current',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(width: AppSpacing.xxs),
+                Semantics(
+                  button: true,
+                  enabled: onEdit != null,
+                  label: 'Edit group name for $title',
+                  onTap: onEdit,
+                  child: ExcludeSemantics(
+                    child: GestureDetector(
+                      key: ValueKey(
+                        'mobile_accounts_edit_group_$anchorAccountUuid',
+                      ),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onEdit,
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.edit,
+                            size: AppIconSize.medium,
+                            color: context.colors.icon.muted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           SizedBox(height: titleGap),

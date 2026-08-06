@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_software_account_for_existing_wallet`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -180,6 +180,128 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
   isFirstWalletAccount: isFirstWalletAccount,
 );
 
+/// Derive the next account from a recovery phrase that already has at least
+/// one account in this wallet (ZIP 32 HD derivation — issue #266).
+///
+/// Atomically picks the lowest unused ZIP 32 account index for the seed's
+/// fingerprint. Deleted indices are re-derived before new indices are
+/// allocated, keeping the index space compact for import-time discovery.
+/// Routing matches `import_software_account_at_index`: `Derived` via
+/// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
+/// with derivation metadata.
+///
+/// `operation_token` is issued by `begin_software_account_derivation_lease`.
+/// Rust keeps the OS-level lease until Dart durably commits or aborts the
+/// matching recovery journal, so another process cannot allocate around it.
+Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
+  required String mnemonic,
+  required String bip39Passphrase,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  required String name,
+  required String operationToken,
+}) => RustLib.instance.api.crateApiWalletDeriveNextSoftwareAccount(
+  mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
+  birthdayHeight: birthdayHeight,
+  network: network,
+  dbPath: dbPath,
+  name: name,
+  operationToken: operationToken,
+);
+
+/// Acquire the native lease for a software-account derivation before Dart
+/// writes its recovery journal. The lease remains held across FFI calls.
+Future<SoftwareAccountDerivationLease> beginSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String network,
+  required String sourceAccountUuid,
+  required String recoveryName,
+  required String recoveryProfilePictureId,
+  String? recoveryAccountGroupName,
+}) => RustLib.instance.api.crateApiWalletBeginSoftwareAccountDerivationLease(
+  dbPath: dbPath,
+  network: network,
+  sourceAccountUuid: sourceAccountUuid,
+  recoveryName: recoveryName,
+  recoveryProfilePictureId: recoveryProfilePictureId,
+  recoveryAccountGroupName: recoveryAccountGroupName,
+);
+
+/// Reclaim a crash-left pending record only with the stable opaque operation
+/// token from its matching versioned Dart fence. The held OS lock, not this
+/// durable identifier, establishes process ownership.
+Future<SoftwareAccountDerivationLease> resumeSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String previousOperationToken,
+}) => RustLib.instance.api.crateApiWalletResumeSoftwareAccountDerivationLease(
+  dbPath: dbPath,
+  previousOperationToken: previousOperationToken,
+);
+
+/// Claim a native pending record when the Dart fence was never written (or was
+/// lost). The returned immutable intent lets Dart rebuild the exact fence
+/// before it reconciles any account delta.
+Future<SoftwareAccountDerivationLease?>
+claimPendingSoftwareAccountDerivationLease({required String dbPath}) => RustLib
+    .instance
+    .api
+    .crateApiWalletClaimPendingSoftwareAccountDerivationLease(dbPath: dbPath);
+
+/// Mark the authenticated persistent record resolved only when Rust proves the
+/// current DB delta is either empty (abort) or exactly `account_uuid` (commit).
+Future<void> resolveSoftwareAccountDerivationLease({
+  required String operationToken,
+  String? accountUuid,
+}) => RustLib.instance.api.crateApiWalletResolveSoftwareAccountDerivationLease(
+  operationToken: operationToken,
+  accountUuid: accountUuid,
+);
+
+/// Release a derivation lease after the matching durable journal has been
+/// committed or safely retained for recovery.
+Future<void> finishSoftwareAccountDerivationLease({
+  required String operationToken,
+}) => RustLib.instance.api.crateApiWalletFinishSoftwareAccountDerivationLease(
+  operationToken: operationToken,
+);
+
+/// Acquire the derivation gate for a full wallet reset. The returned token
+/// must remain held until both the wallet DB and secure storage have finished
+/// their coordinated cleanup.
+Future<String> beginWalletResetLease({required String dbPath}) =>
+    RustLib.instance.api.crateApiWalletBeginWalletResetLease(dbPath: dbPath);
+
+/// Release the full-reset lease acquired by [begin_wallet_reset_lease].
+Future<void> finishWalletResetLease({required String operationToken}) => RustLib
+    .instance
+    .api
+    .crateApiWalletFinishWalletResetLease(operationToken: operationToken);
+
+/// Fail closed for destructive account operations while a live process owns a
+/// derivation lease. A stale sidecar without a held OS lock is not considered
+/// live after a crash.
+Future<bool> isSoftwareAccountDerivationLocked({required String dbPath}) =>
+    RustLib.instance.api.crateApiWalletIsSoftwareAccountDerivationLocked(
+      dbPath: dbPath,
+    );
+
+/// Compensate a just-derived account before Dart metadata commits. The caller
+/// must prove ownership of the same native derivation lease.
+Future<void> deleteAccountUnderSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String operationToken,
+}) => RustLib.instance.api
+    .crateApiWalletDeleteAccountUnderSoftwareAccountDerivationLease(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      operationToken: operationToken,
+    );
+
 Future<bool> isSoftwareWalletLinkAccountImported({
   required String mnemonic,
   required String bip39Passphrase,
@@ -313,14 +435,17 @@ Future<List<String>> getRecentTransparentReceiveAddresses({
 class AccountCreationResult {
   final String accountUuid;
   final String unifiedAddress;
+  final String? seedFamilyId;
 
   const AccountCreationResult({
     required this.accountUuid,
     required this.unifiedAddress,
+    this.seedFamilyId,
   });
 
   @override
-  int get hashCode => accountUuid.hashCode ^ unifiedAddress.hashCode;
+  int get hashCode =>
+      accountUuid.hashCode ^ unifiedAddress.hashCode ^ seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -328,7 +453,8 @@ class AccountCreationResult {
       other is AccountCreationResult &&
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
-          unifiedAddress == other.unifiedAddress;
+          unifiedAddress == other.unifiedAddress &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -367,12 +493,16 @@ class AccountInfo {
   final bool isSeedAnchor;
   final bool isHardware;
 
+  /// Opaque ZIP-32 seed fingerprint used only to group related accounts.
+  final String? seedFamilyId;
+
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
     required this.isSeedAnchor,
     required this.isHardware,
+    this.seedFamilyId,
   });
 
   @override
@@ -381,7 +511,8 @@ class AccountInfo {
       name.hashCode ^
       unifiedAddress.hashCode ^
       isSeedAnchor.hashCode ^
-      isHardware.hashCode;
+      isHardware.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -392,7 +523,8 @@ class AccountInfo {
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
-          isHardware == other.isHardware;
+          isHardware == other.isHardware &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -488,6 +620,52 @@ class ChainUpgradeStatus {
           endpointMatchesNetwork == other.endpointMatchesNetwork;
 }
 
+/// Native durable ownership and baseline for a software-account derivation.
+/// Dart stores the token in its fence but Rust's DB record remains authoritative
+/// after a process crash.
+class SoftwareAccountDerivationLease {
+  final String operationToken;
+  final String sourceAccountUuid;
+  final List<String> baselineAccountUuids;
+  final String? recoveryName;
+  final String? recoveryProfilePictureId;
+  final String? recoveryAccountGroupName;
+  final bool isPending;
+
+  const SoftwareAccountDerivationLease({
+    required this.operationToken,
+    required this.sourceAccountUuid,
+    required this.baselineAccountUuids,
+    this.recoveryName,
+    this.recoveryProfilePictureId,
+    this.recoveryAccountGroupName,
+    required this.isPending,
+  });
+
+  @override
+  int get hashCode =>
+      operationToken.hashCode ^
+      sourceAccountUuid.hashCode ^
+      baselineAccountUuids.hashCode ^
+      recoveryName.hashCode ^
+      recoveryProfilePictureId.hashCode ^
+      recoveryAccountGroupName.hashCode ^
+      isPending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareAccountDerivationLease &&
+          runtimeType == other.runtimeType &&
+          operationToken == other.operationToken &&
+          sourceAccountUuid == other.sourceAccountUuid &&
+          baselineAccountUuids == other.baselineAccountUuids &&
+          recoveryName == other.recoveryName &&
+          recoveryProfilePictureId == other.recoveryProfilePictureId &&
+          recoveryAccountGroupName == other.recoveryAccountGroupName &&
+          isPending == other.isPending;
+}
+
 /// A higher ZIP32 software account that can be imported by user choice.
 class SoftwareWalletDiscoveredAccount {
   final int zip32AccountIndex;
@@ -518,6 +696,7 @@ class SoftwareWalletImportAccount {
   final int zip32AccountIndex;
   final String name;
   final bool isSeedAnchor;
+  final String? seedFamilyId;
 
   const SoftwareWalletImportAccount({
     required this.accountUuid,
@@ -525,6 +704,7 @@ class SoftwareWalletImportAccount {
     required this.zip32AccountIndex,
     required this.name,
     required this.isSeedAnchor,
+    this.seedFamilyId,
   });
 
   @override
@@ -533,7 +713,8 @@ class SoftwareWalletImportAccount {
       unifiedAddress.hashCode ^
       zip32AccountIndex.hashCode ^
       name.hashCode ^
-      isSeedAnchor.hashCode;
+      isSeedAnchor.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -544,7 +725,8 @@ class SoftwareWalletImportAccount {
           unifiedAddress == other.unifiedAddress &&
           zip32AccountIndex == other.zip32AccountIndex &&
           name == other.name &&
-          isSeedAnchor == other.isSeedAnchor;
+          isSeedAnchor == other.isSeedAnchor &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Software account discovery result for an import attempt.
@@ -596,16 +778,21 @@ class WalletCreationResult {
   final String mnemonic;
   final String unifiedAddress;
   final String accountUuid;
+  final String? seedFamilyId;
 
   const WalletCreationResult({
     required this.mnemonic,
     required this.unifiedAddress,
     required this.accountUuid,
+    this.seedFamilyId,
   });
 
   @override
   int get hashCode =>
-      mnemonic.hashCode ^ unifiedAddress.hashCode ^ accountUuid.hashCode;
+      mnemonic.hashCode ^
+      unifiedAddress.hashCode ^
+      accountUuid.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -614,21 +801,25 @@ class WalletCreationResult {
           runtimeType == other.runtimeType &&
           mnemonic == other.mnemonic &&
           unifiedAddress == other.unifiedAddress &&
-          accountUuid == other.accountUuid;
+          accountUuid == other.accountUuid &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Result of wallet import, containing the unified address and account UUID.
 class WalletImportResult {
   final String unifiedAddress;
   final String accountUuid;
+  final String? seedFamilyId;
 
   const WalletImportResult({
     required this.unifiedAddress,
     required this.accountUuid,
+    this.seedFamilyId,
   });
 
   @override
-  int get hashCode => unifiedAddress.hashCode ^ accountUuid.hashCode;
+  int get hashCode =>
+      unifiedAddress.hashCode ^ accountUuid.hashCode ^ seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -636,5 +827,6 @@ class WalletImportResult {
       other is WalletImportResult &&
           runtimeType == other.runtimeType &&
           unifiedAddress == other.unifiedAddress &&
-          accountUuid == other.accountUuid;
+          accountUuid == other.accountUuid &&
+          seedFamilyId == other.seedFamilyId;
 }

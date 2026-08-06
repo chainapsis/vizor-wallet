@@ -597,6 +597,10 @@ Widget buildAccountsManyUseCase(BuildContext context) {
   return _buildAccountsUseCase(_accountsManyState);
 }
 
+Widget buildAccountsGroupedUseCase(BuildContext context) {
+  return _buildAccountsUseCase(_accountsGroupedState);
+}
+
 Widget buildAccountsOtherMenuUseCase(BuildContext context) {
   return _buildAccountsUseCase(
     _accountsDesignState,
@@ -848,6 +852,10 @@ Widget buildPrivacyUtilityUseCase(BuildContext context) {
 
 Widget buildMobileAccountsUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsDesignState);
+}
+
+Widget buildMobileAccountsGroupedUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsGroupedState);
 }
 
 Widget buildMobileAccountsSoftwareMenuUseCase(BuildContext context) {
@@ -3360,6 +3368,44 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
+final _accountsGroupedState = AccountState(
+  accounts: const [
+    AccountInfo(
+      uuid: 'grouped-account-1',
+      name: 'Dawnlit Pioneer',
+      order: 0,
+      isSeedAnchor: true,
+      profilePictureId: kDefaultProfilePictureId,
+      seedFamilyId: 'software-family',
+      accountGroupName: 'Everyday wallet',
+    ),
+    AccountInfo(
+      uuid: 'grouped-account-2',
+      name: 'Moonlit Castellan',
+      order: 1,
+      profilePictureId: 'pfp-02',
+      seedFamilyId: 'software-family',
+      accountGroupName: 'Everyday wallet',
+    ),
+    AccountInfo(
+      uuid: 'grouped-account-3',
+      name: 'Keystone vault',
+      order: 2,
+      isHardware: true,
+      profilePictureId: 'pfp-01',
+      seedFamilyId: 'software-family',
+    ),
+    AccountInfo(
+      uuid: 'grouped-account-4',
+      name: 'Legacy account',
+      order: 3,
+      profilePictureId: 'pfp-01',
+    ),
+  ],
+  activeAccountUuid: 'grouped-account-1',
+  activeAddress: 'u1widgetbookgroupedaccountsaddress',
+);
+
 AccountState _ironwoodMigrationAccountState({bool isHardware = false}) {
   return AccountState(
     accounts: [
@@ -4347,6 +4393,30 @@ class _PreviewAccountNotifier extends AccountNotifier {
           for (final account in prev.accounts)
             if (account.uuid == uuid)
               account.copyWith(name: newName)
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    final prev = state.value ?? initialState;
+    final anchor = prev.accounts.firstWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    state = AsyncData(
+      prev.copyWith(
+        accounts: [
+          for (final account in prev.accounts)
+            if (anchor.seedFamilyId == null
+                ? account.uuid == anchor.uuid
+                : account.seedFamilyId == anchor.seedFamilyId)
+              account.copyWith(accountGroupName: newName)
             else
               account,
         ],

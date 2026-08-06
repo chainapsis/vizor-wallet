@@ -90,6 +90,7 @@ class _MobileCustomiseAccountScreenState
   Future<void> _goBack() async {
     if (_isSubmitting) return;
     final args = widget.args;
+    if (args.isDeriveFlow) return;
     final router = GoRouter.maybeOf(context);
     if (router != null) {
       if (args.configuresPassword) {
@@ -155,6 +156,7 @@ class _MobileCustomiseAccountScreenState
       setupArgs: args.setupArgs,
       accountName: _normalizedName,
       profilePictureId: _profilePictureId,
+      deriveFromAccountUuid: args.deriveFromAccountUuid,
       onStoppingSync: () {
         if (mounted) {
           setState(() => _submitPhase = _SubmitPhase.stoppingSync);
@@ -168,15 +170,23 @@ class _MobileCustomiseAccountScreenState
     );
 
     final pendingPassword = args.pendingPassword;
+    final routerRefresh = ref.read(routerRefreshProvider);
     if (pendingPassword == null) {
-      await createAccount();
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
+      // A derived account publishes account state before this method can
+      // navigate home. Keep the route refresh suspended across that mutation:
+      // otherwise GoRouter can rebuild this transient, extra-backed route
+      // after the payload has been discarded and crash on a null args cast.
+      await routerRefresh.pauseWhile(() async {
+        await createAccount();
+        if (!args.isDeriveFlow) {
+          clearCustomisedAccountDraft(ref, args.flow);
+        }
+        router.go('/home');
+      });
       return;
     }
 
     final securityNotifier = ref.read(appSecurityProvider.notifier);
-    final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
     try {
@@ -215,7 +225,7 @@ class _MobileCustomiseAccountScreenState
           'Wallet Link does not use account customisation.',
         ),
       },
-      onBack: _isSubmitting ? null : _goBack,
+      onBack: _isSubmitting || widget.args.isDeriveFlow ? null : _goBack,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '

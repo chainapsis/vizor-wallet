@@ -582,15 +582,18 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                     SetPasswordFlow.create
             ? null
             : OnboardingStep.secretPassphrase.routePath,
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: CustomiseAccountScreen(
-            args: state.extra as CustomiseAccountArgs,
-          ),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
+        pageBuilder: (context, state) {
+          final args = state.extra;
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: kOnboardingForwardDuration,
+            reverseTransitionDuration: kOnboardingReverseDuration,
+            child: args is CustomiseAccountArgs
+                ? CustomiseAccountScreen(args: args)
+                : const WelcomeScreen(showBackButton: true),
+            transitionsBuilder: _onboardingFadeTransition,
+          );
+        },
       ),
     ],
   ),

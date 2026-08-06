@@ -13,6 +13,8 @@ import 'package:zcash_wallet/src/features/onboarding/create/customise_account_sc
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/set_password_screen.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -27,6 +29,84 @@ void main() {
       onboardingStepFromLocation('/onboarding/customise-account'),
       OnboardingStep.customiseAccount,
     );
+  });
+
+  testWidgets('renders account customisation for derive flow', (tester) async {
+    await _setDesktopViewport(tester);
+    const args = CustomiseAccountArgs.derive(
+      deriveFromAccountUuid: 'software-account',
+    );
+
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen(args: args, onFinish: (_, _) async {}),
+      ),
+    );
+
+    expect(args.isDeriveFlow, isTrue);
+    expect(args.configuresPassword, isFalse);
+    expect(args.deriveFromAccountUuid, 'software-account');
+    expect(
+      find.byKey(const ValueKey('customise_account_name_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customise_account_avatar_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('derive flow submits only the source account uuid', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final accountNotifier = _RecordingAccountNotifier();
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => CustomiseAccountScreen(
+            args: const CustomiseAccountArgs.derive(
+              deriveFromAccountUuid: 'software-account',
+            ),
+            random: _SequenceRandom([0, 1, 2]),
+          ),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(() => accountNotifier),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: Material(color: Colors.transparent, child: child!),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.derivedSourceAccountUuid, 'software-account');
+    expect(accountNotifier.createdMnemonic, isNull);
+    expect(accountNotifier.createdName, 'Windborne Wardbearer');
+    expect(accountNotifier.createdProfilePictureId, 'pfp-03');
+    expect(find.text('home route'), findsOneWidget);
   });
 
   testWidgets('set password continues to customise without creating a wallet', (
@@ -326,6 +406,46 @@ class _SequenceRandom implements Random {
     final value = _values[_index++ % _values.length];
     return value % max;
   }
+}
+
+class _RecordingAccountNotifier extends AccountNotifier {
+  String? createdMnemonic;
+  String? derivedSourceAccountUuid;
+  String? createdName;
+  String? createdProfilePictureId;
+
+  @override
+  FutureOr<AccountState> build() => const AccountState();
+
+  @override
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    createdMnemonic = mnemonic;
+    createdName = name;
+    createdProfilePictureId = profilePictureId;
+  }
+
+  @override
+  Future<void> deriveAccountFromExistingSeed({
+    required String sourceAccountUuid,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    derivedSourceAccountUuid = sourceAccountUuid;
+    createdName = name;
+    createdProfilePictureId = profilePictureId;
+  }
+}
+
+class _NoopSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  bool needsPauseForWalletMutation() => false;
 }
 
 AppButton _finishButton(WidgetTester tester) => tester.widget<AppButton>(

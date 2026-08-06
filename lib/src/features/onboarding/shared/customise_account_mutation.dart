@@ -13,6 +13,7 @@ Future<void> runCustomisedAccountMutation(
   required SetPasswordScreenArgs setupArgs,
   required String accountName,
   required String profilePictureId,
+  String? deriveFromAccountUuid,
   VoidCallback? onStoppingSync,
   VoidCallback? onSyncPaused,
 }) async {
@@ -20,6 +21,14 @@ Future<void> runCustomisedAccountMutation(
   await runWithSyncPausedForAccountMutation(
     ref,
     () async {
+      if (deriveFromAccountUuid != null) {
+        await accountNotifier.deriveAccountFromExistingSeed(
+          sourceAccountUuid: deriveFromAccountUuid,
+          name: accountName,
+          profilePictureId: profilePictureId,
+        );
+        return;
+      }
       switch (setupArgs.flow) {
         case SetPasswordFlow.create:
           await accountNotifier.createAccountFromMnemonic(

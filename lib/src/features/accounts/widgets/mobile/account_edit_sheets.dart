@@ -36,6 +36,16 @@ Future<AccountEdits?> showAccountEditSheet(
   );
 }
 
+Future<String?> showAccountGroupEditSheet(
+  BuildContext context, {
+  required String initialName,
+}) {
+  return showAppMobileSheet<String>(
+    context: context,
+    builder: (_) => _EditAccountGroupSheet(initialName: initialName),
+  );
+}
+
 /// Opens the picture picker — Figma `PFP Modal` (4514:85279 /
 /// 4503:72528). Pops the chosen picture id.
 Future<String?> showProfilePictureSheet(
@@ -80,6 +90,124 @@ class _EditAccountSheet extends StatefulWidget {
 
   @override
   State<_EditAccountSheet> createState() => _EditAccountSheetState();
+}
+
+class _EditAccountGroupSheet extends StatefulWidget {
+  const _EditAccountGroupSheet({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_EditAccountGroupSheet> createState() => _EditAccountGroupSheetState();
+}
+
+class _EditAccountGroupSheetState extends State<_EditAccountGroupSheet> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+  final _focusNode = FocusNode();
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = normalizeAccountName(_controller.text);
+    try {
+      validateAccountName(name);
+    } catch (error) {
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+      return;
+    }
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.base,
+            AppSpacing.sm,
+            AppSpacing.base,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Edit group name',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Group name',
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              MobileTextField(
+                fieldKey: const ValueKey('mobile_account_group_edit_name'),
+                controller: _controller,
+                focusNode: _focusNode,
+                textInputAction: TextInputAction.done,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+                onSubmitted: (_) => _save(),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              SizedBox(
+                height: 16,
+                child: _error == null
+                    ? null
+                    : Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _error!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.text.destructive,
+                          ),
+                        ),
+                      ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                key: const ValueKey('mobile_account_group_edit_save'),
+                expand: true,
+                onPressed: _save,
+                child: const Text('Update'),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+            ],
+          ),
+        ),
+        Positioned(
+          top: AppSpacing.sm,
+          right: AppSpacing.sm,
+          child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
+        ),
+      ],
+    );
+  }
 }
 
 class _EditAccountSheetState extends State<_EditAccountSheet> {

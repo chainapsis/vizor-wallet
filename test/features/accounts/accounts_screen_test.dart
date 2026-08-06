@@ -92,7 +92,12 @@ void main() {
       ),
     );
     expect(find.text('Current'), findsOneWidget);
-    expect(find.text('Other'), findsOneWidget);
+    // Accounts without seed metadata stay isolated rather than being merged
+    // into a misleading family.
+    expect(find.text('Wallet 1'), findsOneWidget);
+    expect(find.text('Wallet 2'), findsOneWidget);
+    expect(find.text('Wallet 3'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
     expect(find.text('Keystone'), findsNothing);
     final keystoneIcon = tester
         .widgetList<AppIcon>(find.byType(AppIcon))
@@ -104,6 +109,164 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('add account route'), findsOneWidget);
+  });
+
+  testWidgets('accounts from the same seed render in one family surface', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Silver Scholar',
+          order: 0,
+          isSeedAnchor: true,
+          seedFamilyId: 'shared-seed',
+        ),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Dawnlit Smith',
+          order: 1,
+          seedFamilyId: 'shared-seed',
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    final currentSurface = find.byKey(
+      const ValueKey('accounts_family_surface_account-1'),
+    );
+    expect(currentSurface, findsOneWidget);
+    expect(
+      find.descendant(
+        of: currentSurface,
+        matching: find.byKey(const ValueKey('accounts_active_row_account-1')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: currentSurface,
+        matching: find.byKey(const ValueKey('accounts_other_row_account-2')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Wallet 1'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
+  });
+
+  testWidgets('stale active account falls back to the first family', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'first',
+          name: 'First',
+          order: 0,
+          seedFamilyId: 'first-seed',
+        ),
+        AccountInfo(
+          uuid: 'second',
+          name: 'Second',
+          order: 1,
+          seedFamilyId: 'second-seed',
+        ),
+      ],
+      activeAccountUuid: 'removed-account',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('accounts_family_surface_first')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('accounts_active_row_first')),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+  });
+
+  testWidgets('group header edits and applies the family display name', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary',
+          order: 0,
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Savings',
+          order: 1,
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    await tester.pumpWidget(
+      _accountsHarness(accountNotifier: () => accountNotifier),
+    );
+    await tester.pump();
+
+    expect(find.text('Everyday wallet'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    final editGroupButton = find.byKey(
+      const ValueKey('accounts_edit_group_account-1'),
+    );
+    Focus.of(tester.element(editGroupButton)).requestFocus();
+    await tester.pumpAndSettle();
+
+    final focusRing = tester.widget<AnimatedOpacity>(
+      find.byKey(const ValueKey('accounts_edit_group_focus_ring_account-1')),
+    );
+    expect(focusRing.opacity, 1);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Group name'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Daily wallet');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.renamedGroupAnchorUuid, 'account-1');
+    expect(accountNotifier.renamedGroupName, 'Daily wallet');
+    expect(find.text('Daily wallet'), findsOneWidget);
   });
 
   testWidgets(
@@ -138,6 +301,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Current'), findsOneWidget);
+      expect(find.text('Wallet 1'), findsOneWidget);
       expect(find.text('Other'), findsNothing);
       expect(find.text('Add account'), findsOneWidget);
     },
@@ -202,7 +366,9 @@ void main() {
     final addAccountButton = find.byKey(
       const ValueKey('accounts_add_account_button'),
     );
-    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
+    final otherSurface = find.byKey(
+      const ValueKey('accounts_family_surface_account-20'),
+    );
     expect(
       tester.getRect(otherSurface).bottom,
       lessThanOrEqualTo(tester.getRect(addAccountButton).top + 0.5),
@@ -1457,6 +1623,8 @@ class _FakeAccountNotifier extends AccountNotifier {
   final Object? resetError;
   String? renamedUuid;
   String? renamedName;
+  String? renamedGroupAnchorUuid;
+  String? renamedGroupName;
   String? updatedProfilePictureUuid;
   String? updatedProfilePictureId;
   String? removedUuid;
@@ -1481,6 +1649,29 @@ class _FakeAccountNotifier extends AccountNotifier {
     final updated = [
       for (final account in prev.accounts)
         if (account.uuid == uuid) account.copyWith(name: newName) else account,
+    ];
+    state = AsyncData(prev.copyWith(accounts: updated));
+  }
+
+  @override
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    renamedGroupAnchorUuid = anchorAccountUuid;
+    renamedGroupName = newName;
+    final prev = state.value ?? initialState;
+    final anchor = prev.accounts.firstWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    final updated = [
+      for (final account in prev.accounts)
+        if (anchor.seedFamilyId == null
+            ? account.uuid == anchor.uuid
+            : account.seedFamilyId == anchor.seedFamilyId)
+          account.copyWith(accountGroupName: newName)
+        else
+          account,
     ];
     state = AsyncData(prev.copyWith(accounts: updated));
   }
