@@ -525,8 +525,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final colors = context.colors;
     final state = ref.watch(accountProvider).value;
     final accounts = state?.accounts ?? const <AccountInfo>[];
-    final active = state?.activeAccount;
-    final accountFamilies = groupAccountsBySeedFamily(accounts, active?.uuid);
+    final activeAccount = resolveActiveAccountForDisplay(
+      accounts,
+      state?.activeAccountUuid,
+    );
+    final accountFamilies = groupAccountsBySeedFamily(
+      accounts,
+      activeAccount?.uuid,
+    );
 
     return Scaffold(
       backgroundColor: colors.background.window,

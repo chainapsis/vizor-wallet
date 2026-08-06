@@ -168,6 +168,48 @@ void main() {
     expect(find.text('Other'), findsNothing);
   });
 
+  testWidgets('stale active account falls back to the first family', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'first',
+          name: 'First',
+          order: 0,
+          seedFamilyId: 'first-seed',
+        ),
+        AccountInfo(
+          uuid: 'second',
+          name: 'Second',
+          order: 1,
+          seedFamilyId: 'second-seed',
+        ),
+      ],
+      activeAccountUuid: 'removed-account',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('accounts_family_surface_first')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('accounts_active_row_first')),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+  });
+
   testWidgets('group header edits and applies the family display name', (
     tester,
   ) async {

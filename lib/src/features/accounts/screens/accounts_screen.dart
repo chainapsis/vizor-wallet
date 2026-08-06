@@ -268,7 +268,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         ref.watch(accountProvider).value ?? const AccountState();
     final accounts = [...accountState.accounts]
       ..sort((a, b) => a.order.compareTo(b.order));
-    final activeAccount = _activeAccountFor(
+    final activeAccount = resolveActiveAccountForDisplay(
       accounts,
       accountState.activeAccountUuid,
     );
@@ -521,17 +521,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     if (guards.isEmpty) return false;
     showAppToast(context, guards.first.message);
     return true;
-  }
-
-  static AccountInfo? _activeAccountFor(
-    List<AccountInfo> accounts,
-    String? activeAccountUuid,
-  ) {
-    if (accounts.isEmpty) return null;
-    for (final account in accounts) {
-      if (account.uuid == activeAccountUuid) return account;
-    }
-    return accounts.first;
   }
 
   static AccountInfo? _accountForUuid(

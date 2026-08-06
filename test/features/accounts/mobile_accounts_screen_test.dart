@@ -393,6 +393,33 @@ void main() {
     expect(find.text('Other'), findsNothing);
   });
 
+  testWidgets('stale active account falls back to the first family', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('first', 'First', seedFamilyId: 'first-seed'),
+            _account('second', 'Second', seedFamilyId: 'second-seed'),
+          ],
+          activeAccountUuid: 'removed-account',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_accounts_family_first')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_accounts_row_first')),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+  });
+
   testWidgets('mobile group header edits and applies the family display name', (
     tester,
   ) async {

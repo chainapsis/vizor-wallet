@@ -97,6 +97,26 @@ class AccountFamily {
   final bool containsActiveAccount;
 }
 
+/// Resolves the current account for account-management presentation.
+///
+/// Persisted active-account metadata can briefly outlive a removed account.
+/// In that case, both form factors present the first account in creation order
+/// as current until the provider reconciles the stored value.
+AccountInfo? resolveActiveAccountForDisplay(
+  List<AccountInfo> accounts,
+  String? activeAccountUuid,
+) {
+  if (accounts.isEmpty) return null;
+  for (final account in accounts) {
+    if (account.uuid == activeAccountUuid) return account;
+  }
+
+  return accounts.indexed.reduce((first, second) {
+    final order = first.$2.order.compareTo(second.$2.order);
+    return order < 0 || (order == 0 && first.$1 < second.$1) ? first : second;
+  }).$2;
+}
+
 List<AccountFamily> groupAccountsBySeedFamily(
   List<AccountInfo> accounts,
   String? activeAccountUuid,

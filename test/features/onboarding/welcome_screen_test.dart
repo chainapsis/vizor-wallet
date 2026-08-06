@@ -149,7 +149,81 @@ void main() {
     expect(find.text('Customise destination'), findsOneWidget);
     expect(routedArgs?.isDeriveFlow, isTrue);
     expect(routedArgs?.deriveFromAccountUuid, 'software-account');
+    expect(routedArgs?.mnemonic, isEmpty);
   });
+
+  testWidgets('hides derive option for a hardware-only wallet', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _welcomeScreen(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'derives from the first software account when hardware is active',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      CustomiseAccountArgs? routedArgs;
+      final router = GoRouter(
+        initialLocation: '/add-account',
+        routes: [
+          GoRoute(
+            path: '/add-account',
+            builder: (_, _) => const WelcomeScreen(showBackButton: true),
+          ),
+          GoRoute(
+            path: '/onboarding/customise-account',
+            builder: (_, state) {
+              routedArgs = state.extra! as CustomiseAccountArgs;
+              return const Text('Customise destination');
+            },
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _welcomeRouter(
+          router,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(uuid: 'software', name: 'Software', order: 0),
+              AccountInfo(
+                uuid: 'keystone',
+                name: 'Keystone',
+                order: 1,
+                isHardware: true,
+              ),
+            ],
+            activeAccountUuid: 'keystone',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('welcome_derive_account_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(routedArgs?.deriveFromAccountUuid, 'software');
+      expect(routedArgs?.mnemonic, isEmpty);
+    },
+  );
 
   testWidgets('shows Back when adding an account to an existing wallet', (
     tester,

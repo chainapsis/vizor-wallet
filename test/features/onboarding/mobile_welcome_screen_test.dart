@@ -196,7 +196,69 @@ void main() {
     );
     expect(screen.args.isDeriveFlow, isTrue);
     expect(screen.args.deriveFromAccountUuid, 'software-account');
+    expect(screen.args.mnemonic, isEmpty);
   });
+
+  testWidgets('method selection hides derive for a hardware-only wallet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/onboarding/method',
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'derive uses the first software account when hardware is active',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          initialLocation: '/onboarding/method',
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(uuid: 'software', name: 'Software', order: 0),
+              AccountInfo(
+                uuid: 'keystone',
+                name: 'Keystone',
+                order: 1,
+                isHardware: true,
+              ),
+            ],
+            activeAccountUuid: 'keystone',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<MobileCustomiseAccountScreen>(
+        find.byType(MobileCustomiseAccountScreen),
+      );
+      expect(screen.args.deriveFromAccountUuid, 'software');
+      expect(screen.args.mnemonic, isEmpty);
+    },
+  );
 
   testWidgets('method selection content scrolls on short screens', (
     tester,

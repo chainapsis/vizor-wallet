@@ -88,6 +88,21 @@ void main() {
   );
 
   test(
+    'resolveActiveAccountForDisplay falls back to the first ordered account',
+    () {
+      const accounts = [
+        AccountInfo(uuid: 'later', name: 'Later', order: 2),
+        AccountInfo(uuid: 'first', name: 'First', order: 0),
+      ];
+
+      expect(
+        resolveActiveAccountForDisplay(accounts, 'removed-account')?.uuid,
+        'first',
+      );
+    },
+  );
+
+  test(
     'groupAccountsBySeedFamily isolates hardware accounts with matching seed metadata',
     () {
       const accounts = [
