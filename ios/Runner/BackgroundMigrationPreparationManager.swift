@@ -786,6 +786,37 @@ func migrationPreparationRouteDeferralAction(
     : .none
 }
 
+/// What a task whose own re-arm did not take must leave behind instead.
+///
+/// The re-arm submits another continued-processing request, and that request
+/// type declines for reasons it cannot itself wait out: the run moved to a
+/// state only the foreground app can advance, another submission is already in
+/// flight, the scheduler refused. Only one of those declines — the saved route
+/// having become uncarriable — places its own wait, and it places it on the
+/// silent processing request. Every other decline used to leave the task
+/// completing with no request queued, no watchdog (the re-arm retires it first)
+/// and no alert, which strands the run until the user reopens the app.
+///
+/// So the fallback is the same wait, decided from the same inputs. A run with
+/// nothing resumable left needs no replacement, and a run that already has an
+/// owner — the foreground app, a wallet mutation, a revoked notification
+/// permission — must not be given one.
+func migrationPreparationRearmFallbackAction(
+  rearmSubmitted: Bool,
+  hasResumableWork: Bool,
+  quiesced: Bool,
+  handedOff: Bool,
+  notificationsDisabled: Bool
+) -> MigrationPreparationRouteDeferralAction {
+  guard !rearmSubmitted, hasResumableWork else { return .none }
+  return migrationPreparationRouteDeferralAction(
+    quiesced: quiesced,
+    expired: false,
+    handedOff: handedOff,
+    notificationsDisabled: notificationsDisabled
+  )
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
@@ -1661,8 +1692,27 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func handleAuthorized(_ task: BGContinuedProcessingTask) {
+    // Every wake-scoped flag is cleared here, at the top, before anything reads
+    // a disposition out of one. `expired` and `foregroundHandoffRequested`
+    // describe the task that set them; read before this clearing they answer
+    // for a previous task, and the exits below act on both.
     stateLock.withPreparationLock {
       submissionInFlight = false
+      expired = false
+      foregroundHandoffRequested = false
+    }
+    // Installed immediately after that clearing and before the first step that
+    // can hold the task. The route gate below samples power and the current
+    // path, the inspections after it are blocking FFI reads, and the
+    // route-declined exit holds the task open across an asynchronous
+    // submission. An expiry landing in any of those windows reaches nothing
+    // without this, and the OS reclaims the slot with no replacement filed.
+    task.expirationHandler = { [weak self] in
+      guard let self else { return }
+      self.stateLock.withPreparationLock {
+        self.expired = true
+        self.trackingCancellation?.cancel()
+      }
     }
     // A request armed before the user chose Tor, or before they unplugged the
     // device, can still be started, and this process may be a cold background
@@ -1732,12 +1782,10 @@ final class BackgroundMigrationPreparationManager {
         return false
       }
       taskRunning = true
-      expired = false
       emptyObservationPassesByScope.removeAll()
       trackingProgressByScope.removeAll()
       latestTrackingProgress = nil
       displayedProgressUnits = 0
-      foregroundHandoffRequested = false
       taskProgress = task.progress
       taskProgress?.totalUnitCount = Self.progressDisplayUnitCount
       taskProgress?.completedUnitCount = 0
@@ -1752,13 +1800,6 @@ final class BackgroundMigrationPreparationManager {
     cancelWatchdog()
     startAuthorizationMonitoring()
     recordSchedulingState("tracking_confirmations")
-    task.expirationHandler = { [weak self] in
-      guard let self else { return }
-      self.stateLock.withPreparationLock {
-        self.expired = true
-        self.trackingCancellation?.cancel()
-      }
-    }
 
     queue.async { [weak self] in
       guard let self else {
@@ -1998,7 +2039,14 @@ final class BackgroundMigrationPreparationManager {
   private func runConfirmationTrackingPass(
     cancellation: BackgroundMigrationCancellation
   ) -> BackgroundMigrationPreparationTrackingPass {
-    if cancellation.isCancelled { return .cancelled }
+    // Both halves, because they cover different moments. The token is what an
+    // owner cancels once this task published it; the flags are what an owner
+    // sets, and one of them can already be set before the token exists — the
+    // system can reclaim the slot between the expiration handler being
+    // installed and the tracking slot being claimed. Asking here rather than
+    // at the loop's call sites is what keeps a stopped task from starting one
+    // more round of queries: every round enters through this function.
+    if isTrackingStopRequested || cancellation.isCancelled { return .cancelled }
     // The last gate in front of the lightwalletd queries below, re-evaluated
     // before every round rather than once at launch. The route can become Tor
     // after this task started, and the conditions that made a Tor route
@@ -2391,6 +2439,13 @@ final class BackgroundMigrationPreparationManager {
       || submitNotificationEvents(batch.notificationEvents)
     if !batch.continuationReadyScopes.isEmpty {
       stateLock.withPreparationLock {
+        // Re-read under the lock that publishes the write, not before the
+        // submission above. That submission blocks for seconds, and a wallet
+        // mutation landing inside it clears these scopes deliberately —
+        // writing the pre-submission set back afterwards resurrects state the
+        // mutation retired, and the resurrected scopes then survive
+        // `resumeAfterMutation`'s prune.
+        guard !mutationQuiesced else { return }
         foregroundContinuationScopes =
           migrationPreparationContinuationScopesAfterNotificationSubmission(
             existingScopes: foregroundContinuationScopes,
@@ -2609,11 +2664,40 @@ final class BackgroundMigrationPreparationManager {
     queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
       complete()
     }
-    start { scheduled in
+    start { [weak self] scheduled in
+      guard let self else {
+        complete()
+        return
+      }
       if !scheduled {
         print("[BGPreparation] failed task could not re-arm tracking")
       }
-      complete()
+      // Re-read rather than reusing the snapshot above: `start` is
+      // asynchronous, so an owner can appear between the two.
+      let current = self.stateLock.withPreparationLock {
+        (
+          handedOff: self.foregroundHandoffRequested,
+          quiesced: self.mutationQuiesced,
+          disabled: self.notificationAuthorization.isDisabled
+        )
+      }
+      switch migrationPreparationRearmFallbackAction(
+        rearmSubmitted: scheduled,
+        hasResumableWork: self.hasResumablePreparation(),
+        quiesced: current.quiesced,
+        handedOff: current.handedOff,
+        notificationsDisabled: current.disabled
+      ) {
+      case .none:
+        complete()
+      case .waitOnProcessingWake:
+        self.deferRouteWaitToProcessingWake { placed in
+          if !placed {
+            print("[BGPreparation] re-arm fallback could not place its wait")
+          }
+          complete()
+        }
+      }
     }
   }
 

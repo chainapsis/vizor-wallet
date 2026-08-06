@@ -678,6 +678,100 @@ class RunnerTests: XCTestCase {
     }
   }
 
+  func testRearmThatItsOwnRequestCouldNotTakeFallsBackToTheProcessingWake() {
+    // The re-arm submits another continued-processing request, and that
+    // request type declines for reasons it cannot wait out — the run moved to
+    // a state only the foreground can advance, the scheduler refused. The
+    // task has already retired its watchdog by this point and posts no alert
+    // of its own, so without a fallback the run is stranded until the user
+    // reopens the app.
+    XCTAssertEqual(
+      migrationPreparationRearmFallbackAction(
+        rearmSubmitted: false,
+        hasResumableWork: true,
+        quiesced: false,
+        handedOff: false,
+        notificationsDisabled: false
+      ),
+      .waitOnProcessingWake
+    )
+  }
+
+  func testSuccessfulRearmNeedsNoFallback() {
+    XCTAssertEqual(
+      migrationPreparationRearmFallbackAction(
+        rearmSubmitted: true,
+        hasResumableWork: true,
+        quiesced: false,
+        handedOff: false,
+        notificationsDisabled: false
+      ),
+      .none
+    )
+  }
+
+  func testRearmFallbackStopsWhenNothingResumableIsLeft() {
+    // The same permanent reason the other chains end on: a run with no
+    // resumable preparation left needs no replacement at all.
+    XCTAssertEqual(
+      migrationPreparationRearmFallbackAction(
+        rearmSubmitted: false,
+        hasResumableWork: false,
+        quiesced: false,
+        handedOff: false,
+        notificationsDisabled: false
+      ),
+      .none
+    )
+  }
+
+  func testRearmFallbackLeavesNothingBehindForWorkThatHasAnOwner() {
+    for (quiesced, handedOff, disabled) in [
+      (true, false, false),
+      (false, true, false),
+      (false, false, true),
+    ] {
+      XCTAssertEqual(
+        migrationPreparationRearmFallbackAction(
+          rearmSubmitted: false,
+          hasResumableWork: true,
+          quiesced: quiesced,
+          handedOff: handedOff,
+          notificationsDisabled: disabled
+        ),
+        .none
+      )
+    }
+  }
+
+  func testRearmFallbackAndRouteStandDownAgreeOnWhoWaits() {
+    // Both leave the same kind of wait behind, decided from the same owner
+    // inputs, so a run interrupted either way resumes through one path rather
+    // than two that can drift apart.
+    for (quiesced, handedOff, disabled) in [
+      (false, false, false),
+      (true, false, false),
+      (false, true, false),
+      (false, false, true),
+    ] {
+      XCTAssertEqual(
+        migrationPreparationRearmFallbackAction(
+          rearmSubmitted: false,
+          hasResumableWork: true,
+          quiesced: quiesced,
+          handedOff: handedOff,
+          notificationsDisabled: disabled
+        ),
+        migrationPreparationRouteDeferralAction(
+          quiesced: quiesced,
+          expired: false,
+          handedOff: handedOff,
+          notificationsDisabled: disabled
+        )
+      )
+    }
+  }
+
   func testConfirmedWaveSuccessDoesNotRearmTracking() {
     // Nothing is left for a read-only task to watch. The foreground app arms
     // the next wave's task after it syncs and advances the run.

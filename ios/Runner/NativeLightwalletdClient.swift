@@ -255,9 +255,15 @@ enum BackgroundNetworkRoute {
   @discardableResult
   static func bringUpTorForBackgroundWork() -> Bool {
     guard let directory = torDataDirectoryPath() else { return false }
+    markTorDataDirectory(directory)
     let code = directory.withCString {
       zcash_network_privacy_enable_tor_for_background_work($0)
     }
+    // Marked again on the far side. The mark is best-effort, and the attempt
+    // that matters is the one that leaves guard state in the directory: a
+    // first mark that failed for a transient reason would otherwise not be
+    // retried until the foreground app next brings Tor up.
+    markTorDataDirectory(directory)
     // Every non-ready code — not ready, or a panic caught at the boundary —
     // leaves the process Tor-desired and fail-closed, so a false here is a
     // deferral, not a reason to look for another way out.
@@ -301,7 +307,16 @@ enum BackgroundNetworkRoute {
     return torIsUpForBackgroundWork
   }
 
-  /// The arti directory, created and marked before anything writes to it.
+  /// Where arti keeps its data. Produces the path and nothing else, so no
+  /// caller can obtain it without going through the mark below.
+  private static func torDataDirectoryPath() -> String? {
+    guard let supportDirectory = try? resolveWalletSupportDirectory() else {
+      return nil
+    }
+    return supportDirectory.appendingPathComponent(torDirectoryName).path
+  }
+
+  /// Creates the arti directory and keeps it out of device backups.
   ///
   /// Arti's directory records which guards this wallet chose, and Application
   /// Support is backed up, so a restore would carry that choice to a second
@@ -309,14 +324,15 @@ enum BackgroundNetworkRoute {
   /// background launch has no Dart: whatever this pass bootstraps would be the
   /// first thing in the directory and would go into the backup unmarked.
   ///
+  /// Creating it here rather than leaving that to the bootstrap is what lets
+  /// the mark exist from the directory's first moment, when the process can
+  /// still be killed while guard state is being written.
+  ///
   /// Marking is best-effort. Failing to set the attribute is a weaker backup
   /// posture, not a reason to leave a migration unbroadcast, so the bootstrap
   /// proceeds either way.
-  private static func torDataDirectoryPath() -> String? {
-    guard let supportDirectory = try? resolveWalletSupportDirectory() else {
-      return nil
-    }
-    var directory = supportDirectory.appendingPathComponent(torDirectoryName)
+  private static func markTorDataDirectory(_ path: String) {
+    var directory = URL(fileURLWithPath: path)
     do {
       try FileManager.default.createDirectory(
         at: directory,
@@ -328,7 +344,6 @@ enum BackgroundNetworkRoute {
     } catch {
       print("[BGMigration] tor directory exclude failed: \(error)")
     }
-    return directory.path
   }
 }
 

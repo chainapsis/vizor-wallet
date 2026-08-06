@@ -804,6 +804,16 @@ final class BackgroundMigrationManager {
       task.setTaskCompleted(success: true)
       return
     }
+    // Installed as soon as the wake owns its own flags, and before the first
+    // step that can hold it. Sampling power and the current path takes up to a
+    // second, and the route-declined exit below holds the wake open across an
+    // asynchronous submission; an expiry landing in either window reaches
+    // nothing without this, and the process is killed with no replacement
+    // filed. Setting `expired` costs a declined wake nothing: the exits that
+    // arm a replacement deliberately do not consult it.
+    task.expirationHandler = { [weak self] in
+      self?.expire()
+    }
     // On a Tor route the declaration is only half the answer: the wake also has
     // to have established that this device can afford Tor right now. Asking
     // here keeps an unaffordable wake from touching the outbox at all, and
@@ -816,9 +826,6 @@ final class BackgroundMigrationManager {
       return
     }
     startAuthorizationMonitoring()
-    task.expirationHandler = { [weak self] in
-      self?.expire()
-    }
     queue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
