@@ -287,13 +287,34 @@ enum BackgroundNetworkRoute {
     return torIsUpForBackgroundWork
   }
 
+  /// The arti directory, created and marked before anything writes to it.
+  ///
+  /// Arti's directory records which guards this wallet chose, and Application
+  /// Support is backed up, so a restore would carry that choice to a second
+  /// device. Dart marks it when the foreground brings Tor up, but a cold
+  /// background launch has no Dart: whatever this pass bootstraps would be the
+  /// first thing in the directory and would go into the backup unmarked.
+  ///
+  /// Marking is best-effort. Failing to set the attribute is a weaker backup
+  /// posture, not a reason to leave a migration unbroadcast, so the bootstrap
+  /// proceeds either way.
   private static func torDataDirectoryPath() -> String? {
     guard let supportDirectory = try? resolveWalletSupportDirectory() else {
       return nil
     }
-    return supportDirectory
-      .appendingPathComponent(torDirectoryName)
-      .path
+    var directory = supportDirectory.appendingPathComponent(torDirectoryName)
+    do {
+      try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+      )
+      var values = URLResourceValues()
+      values.isExcludedFromBackup = true
+      try directory.setResourceValues(values)
+    } catch {
+      print("[BGMigration] tor directory exclude failed: \(error)")
+    }
+    return directory.path
   }
 }
 
