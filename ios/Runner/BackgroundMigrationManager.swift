@@ -525,13 +525,12 @@ final class BackgroundMigrationManager {
       )
       let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
       request.requiresNetworkConnectivity = true
-      // On a Tor route this wake has to bring Tor up before it can reach
-      // lightwalletd, and a cold bootstrap is 8.45 MB and 23.7 s. Ask the
-      // scheduler for a charger so it stops waking us for a pass that would
-      // only decline; on a direct route the wake is cheap and stays
-      // unconstrained. The other half of the gate — an unmetered link — has no
-      // equivalent on any request type, so it is checked at run time.
-      request.requiresExternalPower = BackgroundNetworkRoute.persistedRouteIsTor
+      // Deliberately not `requiresExternalPower`, even though a Tor pass wants
+      // a charger. The route is a setting the user can change after this
+      // request is submitted, and the request keeps whatever it was built with:
+      // a wake that turned direct would then wait for a charger it no longer
+      // needs, holding signed work past the height it was scheduled for.
+      // Both halves of the gate are checked when the pass runs instead.
       request.earliestBeginDate = earliestBeginDate
       do {
         try BGTaskScheduler.shared.submit(request)

@@ -9,6 +9,7 @@ use std::ffi::CStr;
 use std::future::Future;
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
@@ -98,11 +99,25 @@ fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
     log::error!("ffi: panic during {context}: {message}");
 }
 
-fn ffi_runtime() -> Result<tokio::runtime::Runtime, String> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| format!("Create FFI runtime: {error}"))
+static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+
+/// The runtime every C entry point runs its async work on.
+///
+/// It has to outlive the calls: a Tor client is created here and kept in a
+/// process-wide slot, but arti's directory, guard and circuit tasks run on
+/// whatever runtime created it. A per-call runtime would take them down as it
+/// dropped, leaving a client that looks installed and cannot carry traffic.
+/// Multi-threaded because separate native threads block on it concurrently.
+fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    FFI_RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| format!("Create FFI runtime: {error}"))
+        })
+        .as_ref()
+        .map_err(|error| error.clone())
 }
 
 const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
