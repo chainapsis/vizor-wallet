@@ -54,7 +54,10 @@ void main() {
 
     await runtime.configure(enabled: true);
 
-    expect(excluded, ['/tmp/vizor-tor']);
+    // Once before the bootstrap, because the directory holds guard state from
+    // its first moment and the process can be killed during it, and once after,
+    // because the mark is best-effort.
+    expect(excluded, ['/tmp/vizor-tor', '/tmp/vizor-tor']);
   });
 
   test('a failed bootstrap still excludes the Tor directory', () async {
@@ -75,7 +78,7 @@ void main() {
       throwsA(isA<StateError>()),
     );
 
-    expect(excluded, ['/tmp/vizor-tor']);
+    expect(excluded, ['/tmp/vizor-tor', '/tmp/vizor-tor']);
   });
 
   test('a backup exclusion failure is reported', () async {
@@ -93,8 +96,8 @@ void main() {
 
     await runtime.configure(enabled: true);
 
-    expect(logs, hasLength(1));
-    expect(logs.single, contains('attribute write refused'));
+    expect(logs, hasLength(2));
+    expect(logs.first, contains('attribute write refused'));
   });
 
   test('a backup exclusion failure does not fail the route', () async {

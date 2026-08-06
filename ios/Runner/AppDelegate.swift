@@ -382,12 +382,15 @@ import UIKit
           return
         }
         var url = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: path) else {
-          // Tor was never enabled far enough to create it; nothing to mark.
-          result(false)
-          return
-        }
         do {
+          // Created here when it does not exist yet, so the mark can be set
+          // before the bootstrap rather than only after it: from the directory's
+          // first moment it holds guard state, and the process can be killed
+          // while that is being written.
+          try FileManager.default.createDirectory(
+            at: url,
+            withIntermediateDirectories: true
+          )
           var values = URLResourceValues()
           values.isExcludedFromBackup = true
           try url.setResourceValues(values)

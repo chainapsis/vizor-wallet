@@ -123,6 +123,15 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
     required bool enabled,
   }) async {
     final torDirectory = enabled ? await resolveTorDirectory() : '';
+    // Arti's directory records which guards this wallet chose. Restoring it
+    // onto a second device would carry that choice across, so keep it out of
+    // device backups and let a restored install pick fresh guards.
+    //
+    // Marked before the bootstrap, because from its first moment the directory
+    // holds guard state and the process can be killed at any point during it —
+    // and again afterwards, because the mark is best-effort and the run that
+    // matters is the one that succeeds.
+    await _markTorDirectory(enabled, torDirectory);
     try {
       final status = await configureRuntime(
         enabled: enabled,
@@ -130,22 +139,20 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
       );
       return _connectionStatus(status);
     } finally {
-      // Arti's directory records which guards this wallet chose. Restoring it
-      // onto a second device would carry that choice across, so keep it out of
-      // device backups and let a restored install pick fresh guards. A
-      // bootstrap that errors or times out has already created the directory
-      // and written guard state into it, so the mark has to run on that path
-      // too; failing to mark it must not fail the route.
-      if (enabled) {
-        try {
-          await excludeTorDirectoryFromBackup(torDirectory);
-        } catch (error, stackTrace) {
-          debugPrint(
-            'RustNetworkPrivacyRuntime: failed to keep the Tor directory out '
-            'of device backups: $error\n$stackTrace',
-          );
-        }
-      }
+      await _markTorDirectory(enabled, torDirectory);
+    }
+  }
+
+  Future<void> _markTorDirectory(bool enabled, String torDirectory) async {
+    if (!enabled) return;
+    try {
+      await excludeTorDirectoryFromBackup(torDirectory);
+    } catch (error, stackTrace) {
+      // A weaker backup posture is not a reason to fail the route.
+      debugPrint(
+        'RustNetworkPrivacyRuntime: failed to keep the Tor directory out '
+        'of device backups: $error\n$stackTrace',
+      );
     }
   }
 }
