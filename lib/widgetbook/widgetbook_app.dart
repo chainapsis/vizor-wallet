@@ -918,6 +918,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkCreateAmountUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Insufficient balance',
+                      builder: buildPaymentLinkCreateInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Fiat loading',
                       builder: buildPaymentLinkCreateFiatLoadingUseCase,
                     ),
@@ -956,8 +960,12 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Ready and received',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'Ready flip hint',
-                      builder: buildPaymentLinkReadyFlipUseCase,
+                      name: 'Waiting for confirmations',
+                      builder: buildPaymentLinkReadyWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link available soon',
+                      builder: buildPaymentLinkReadySoonUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Ready',
@@ -966,6 +974,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Received gift',
                       builder: buildPaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift with message',
+                      builder: buildPaymentLinkReceivedMessageUseCase,
                     ),
                   ],
                 ),
@@ -983,6 +995,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Invalid link',
                       builder: buildPaymentLinkRedeemInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No available balance',
+                      builder: buildPaymentLinkRedeemUnavailableUseCase,
                     ),
                   ],
                 ),

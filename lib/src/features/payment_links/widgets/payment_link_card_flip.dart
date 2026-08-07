@@ -17,7 +17,9 @@ class PaymentLinkCardFlip extends StatelessWidget {
     super.key,
   });
 
-  static const Duration duration = Duration(milliseconds: 250);
+  /// Matches the designer-provided `vizor-card` flip handoff.
+  static const Duration duration = Duration(milliseconds: 500);
+  static const double edgeBand = 0.13;
 
   final bool showBack;
   final Widget front;
@@ -39,14 +41,19 @@ class PaymentLinkCardFlip extends StatelessWidget {
       curve: Curves.easeInOutCubic,
       builder: (context, value, _) {
         final showingBack = value >= 0.5;
-        final angle = showingBack
+        final rawAngle = showingBack
             ? (value * math.pi) - math.pi
             : value * math.pi;
+        // Keep a narrow projected width around the face swap instead of
+        // rendering a fully edge-on (and therefore invisible) card frame.
+        final angle = showingBack
+            ? math.max(rawAngle, (-math.pi / 2) + edgeBand)
+            : math.min(rawAngle, (math.pi / 2) - edgeBand);
         return Transform(
           key: const ValueKey('payment_link_flip_transform'),
           alignment: Alignment.center,
           transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.0012)
+            ..setEntry(3, 2, 0.001)
             ..rotateY(angle),
           child: _side(showBack: showingBack, front: front, back: back),
         );

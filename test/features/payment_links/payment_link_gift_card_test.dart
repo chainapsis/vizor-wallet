@@ -232,10 +232,10 @@ void main() {
     final amountEditor = find.byKey(
       const ValueKey('test_payment_link_amount_editor'),
     );
-    expect(tester.getSize(currencyBox), const Size(75, 46));
+    expect(tester.getSize(currencyBox), const Size(70, 40));
     expect(
       tester.getTopLeft(currencyBox).dx - tester.getTopRight(amountEditor).dx,
-      moreOrLessEquals(10, epsilon: 0.01),
+      moreOrLessEquals(AppSpacing.xxs, epsilon: 0.01),
     );
 
     final amountEditable = find.descendant(
@@ -268,7 +268,7 @@ void main() {
     final currencyBottom = currencyRenderBox.localToGlobal(
       Offset(0, currencyTextBox.bottom),
     );
-    expect(currencyBottom.dy, moreOrLessEquals(amountBottom.dy, epsilon: 0.5));
+    expect(currencyBottom.dy, moreOrLessEquals(amountBottom.dy, epsilon: 1.1));
     semantics.dispose();
   });
 

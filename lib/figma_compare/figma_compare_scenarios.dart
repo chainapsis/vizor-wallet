@@ -141,6 +141,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkCreateAmountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-create-insufficient',
+    description: 'Desktop Gift Card amount step with insufficient balance',
+    builder: buildPaymentLinkCreateInsufficientUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-create-fiat-loading',
     description: 'Desktop Gift Card amount step while fiat price loads',
     builder: buildPaymentLinkCreateFiatLoadingUseCase,
@@ -166,9 +171,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkReviewUseCase,
   ),
   FigmaCompareScenario(
-    id: 'payment-link-ready-flip',
-    description: 'Desktop Gift Card ready state with flip hint',
-    builder: buildPaymentLinkReadyFlipUseCase,
+    id: 'payment-link-ready-waiting',
+    description: 'Desktop Gift Card waiting for confirmations',
+    builder: buildPaymentLinkReadyWaitingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ready-soon',
+    description: 'Desktop Gift Card approaching its confirmation target',
+    builder: buildPaymentLinkReadySoonUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-ready',
@@ -194,6 +204,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-link-redeem-invalid',
     description: 'Desktop Gift Card redeem invalid-link state',
     builder: buildPaymentLinkRedeemInvalidUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-unavailable',
+    description: 'Desktop Gift Card redeem no-balance state',
+    builder: buildPaymentLinkRedeemUnavailableUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-received',

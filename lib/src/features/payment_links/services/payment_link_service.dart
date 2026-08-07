@@ -24,6 +24,7 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 });
 
 const kPaymentLinkMaxClaimLookbackBlocks = 100000;
+const kPaymentLinkShareConfirmationTarget = 10;
 
 /// The ZIP-317 fee for the payment link's expected one-input, one-output
 /// shielded claim transaction.
@@ -42,6 +43,59 @@ BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
 }
 
 @visibleForTesting
+int paymentLinkConfirmationCount({
+  required BigInt minedHeight,
+  required BigInt chainTipHeight,
+}) {
+  if (minedHeight <= BigInt.zero || chainTipHeight < minedHeight) return 0;
+  return (chainTipHeight - minedHeight + BigInt.one).toInt();
+}
+
+/// Rust's broadcast result formats a transaction ID for display, while the
+/// transaction-history API currently exposes the same SQLite txid bytes in
+/// storage order. Accept both byte orders at this boundary so a mined funding
+/// transaction can advance its persisted payment link.
+@visibleForTesting
+bool paymentLinkTxidsMatch(String first, String second) {
+  final normalizedFirst = _normalizeTxid(first);
+  final normalizedSecond = _normalizeTxid(second);
+  if (normalizedFirst == normalizedSecond) return true;
+  if (!_isTransactionIdHex(normalizedFirst) ||
+      !_isTransactionIdHex(normalizedSecond)) {
+    return false;
+  }
+  return _reverseHexBytes(normalizedFirst) == normalizedSecond;
+}
+
+class PaymentLinkFundingQuote {
+  const PaymentLinkFundingQuote({
+    required this.recipientAmountZatoshi,
+    required this.fundingFeeZatoshi,
+    required this.claimFeeReserveZatoshi,
+  });
+
+  final BigInt recipientAmountZatoshi;
+  final BigInt fundingFeeZatoshi;
+  final BigInt claimFeeReserveZatoshi;
+
+  BigInt get cardFeeZatoshi => fundingFeeZatoshi + claimFeeReserveZatoshi;
+
+  BigInt get totalDeductedZatoshi => recipientAmountZatoshi + cardFeeZatoshi;
+}
+
+class PaymentLinkFundingProgress {
+  const PaymentLinkFundingProgress({
+    required this.confirmationCount,
+    this.confirmationTarget = kPaymentLinkShareConfirmationTarget,
+  });
+
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  bool get isReady => confirmationCount >= confirmationTarget;
+}
+
+@visibleForTesting
 BigInt paymentLinkClaimableAmountZatoshi({
   required BigInt recipientAmountZatoshi,
   required BigInt maxSpendableZatoshi,
@@ -56,6 +110,11 @@ BigInt paymentLinkClaimableAmountZatoshi({
 /// Keeping the screen on this small surface makes transaction behavior
 /// replaceable in widget tests without weakening the production service.
 abstract interface class PaymentLinkOperations {
+  Future<PaymentLinkFundingQuote> quoteFunding({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  });
+
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -67,6 +126,18 @@ abstract interface class PaymentLinkOperations {
   Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
     VizorPaymentLink link,
   );
+
+  Future<Map<String, PaymentLinkFundingProgress>> inspectCreatedLinkFundings(
+    List<PaymentLinkRecoveryRecord> records,
+  );
+
+  Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link);
+
+  Future<PaymentLinkClaimResult> claimPreparedLink(
+    PaymentLinkClaimSession session,
+  );
+
+  Future<void> discardClaimSession(PaymentLinkClaimSession session);
 
   Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link);
 }
@@ -205,6 +276,46 @@ class PaymentLinkService implements PaymentLinkOperations {
   final PaymentLinkRecoveryStore _recoveryStore;
 
   @override
+  Future<PaymentLinkFundingQuote> quoteFunding({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    if (sourceAccountUuid.isEmpty) {
+      throw StateError('No active account.');
+    }
+    final fundingAmount = paymentLinkFundingAmountZatoshi(amountZatoshi);
+    return _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
+          accountUuid: sourceAccountUuid,
+          operation: () async {
+            final dbPath = await getWalletDbPath();
+            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+            final estimateAddress = await rust_wallet.getUnifiedAddress(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: sourceAccountUuid,
+            );
+            final fundingFee = await rust_sync.estimateFee(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: sourceAccountUuid,
+              toAddress: estimateAddress,
+              amountZatoshi: fundingAmount,
+              memo: null,
+            );
+            return PaymentLinkFundingQuote(
+              recipientAmountZatoshi: amountZatoshi,
+              fundingFeeZatoshi: fundingFee,
+              claimFeeReserveZatoshi: BigInt.from(
+                kPaymentLinkClaimFeeReserveZatoshi,
+              ),
+            );
+          },
+        );
+  }
+
+  @override
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -296,6 +407,102 @@ class PaymentLinkService implements PaymentLinkOperations {
     return _recoveryStore.markShared(address: link.address);
   }
 
+  @override
+  Future<Map<String, PaymentLinkFundingProgress>> inspectCreatedLinkFundings(
+    List<PaymentLinkRecoveryRecord> records,
+  ) async {
+    final needsHistory = records
+        .where((record) => record.state == PaymentLinkRecoveryState.funded)
+        .toList();
+    if (needsHistory.isEmpty) {
+      return {
+        for (final record in records)
+          record.link.address: PaymentLinkFundingProgress(
+            confirmationCount: record.state == PaymentLinkRecoveryState.shared
+                ? kPaymentLinkShareConfirmationTarget
+                : 0,
+          ),
+      };
+    }
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final dbPath = await getWalletDbPath();
+    final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
+    for (final accountUuid
+        in needsHistory.map((record) => record.sourceAccountUuid).toSet()) {
+      transactionsByAccount[accountUuid] = await rust_sync
+          .getTransactionHistory(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            limit: null,
+          );
+    }
+    final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
+    final chainTipHeight = cachedTip > 0
+        ? BigInt.from(cachedTip)
+        : await _ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .getLatestBlockHeight();
+    return {
+      for (final record in records)
+        record.link.address: record.state == PaymentLinkRecoveryState.shared
+            ? const PaymentLinkFundingProgress(
+                confirmationCount: kPaymentLinkShareConfirmationTarget,
+              )
+            : _fundingProgressForRecord(
+                record: record,
+                transactions:
+                    transactionsByAccount[record.sourceAccountUuid] ?? const [],
+                chainTipHeight: chainTipHeight,
+              ),
+    };
+  }
+
+  PaymentLinkFundingProgress _fundingProgressForRecord({
+    required PaymentLinkRecoveryRecord record,
+    required List<rust_sync.TransactionInfo> transactions,
+    required BigInt chainTipHeight,
+  }) {
+    final rawTxids = record.fundingTxids;
+    if (record.state == PaymentLinkRecoveryState.draft ||
+        rawTxids == null ||
+        rawTxids.trim().isEmpty) {
+      return const PaymentLinkFundingProgress(confirmationCount: 0);
+    }
+    final fundingTxids = rawTxids
+        .split(',')
+        .map(_normalizeTxid)
+        .where((txid) => txid.isNotEmpty)
+        .toSet();
+    if (fundingTxids.isEmpty) {
+      return const PaymentLinkFundingProgress(confirmationCount: 0);
+    }
+    final minedHeights = <String, BigInt>{};
+    for (final transaction in transactions) {
+      final txid = _normalizeTxid(transaction.txidHex);
+      if (transaction.minedHeight <= BigInt.zero) continue;
+      for (final fundingTxid in fundingTxids) {
+        if (paymentLinkTxidsMatch(fundingTxid, txid)) {
+          minedHeights[fundingTxid] = transaction.minedHeight;
+        }
+      }
+    }
+    final allFundingTransactionsMined = minedHeights.keys.toSet().containsAll(
+      fundingTxids,
+    );
+    final minedHeight = allFundingTransactionsMined
+        ? minedHeights.values.reduce(
+            (latest, height) => height > latest ? height : latest,
+          )
+        : BigInt.zero;
+    return PaymentLinkFundingProgress(
+      confirmationCount: paymentLinkConfirmationCount(
+        minedHeight: minedHeight,
+        chainTipHeight: chainTipHeight,
+      ),
+    );
+  }
+
   Future<PaymentLinkRecoveryRecord> setCreatedLinkArchived(
     VizorPaymentLink link, {
     required bool archived,
@@ -306,6 +513,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
   }
 
+  @override
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
     final receiverState = _ref.read(accountProvider).value;
     final receiverAddress = receiverState?.activeAddress;
@@ -444,6 +652,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
   }
 
+  @override
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
   ) async {
@@ -502,6 +711,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     return claimPreparedLink(session);
   }
 
+  @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) =>
       _deleteTemporaryWalletDb(session.directory);
 
@@ -731,4 +941,21 @@ class PaymentLinkService implements PaymentLinkOperations {
   void _zeroize(Uint8List bytes) {
     bytes.fillRange(0, bytes.length, 0);
   }
+}
+
+String _normalizeTxid(String txid) {
+  final normalized = txid.trim().toLowerCase();
+  return normalized.startsWith('0x') ? normalized.substring(2) : normalized;
+}
+
+bool _isTransactionIdHex(String value) {
+  return value.length == 64 && RegExp(r'^[0-9a-f]+$').hasMatch(value);
+}
+
+String _reverseHexBytes(String value) {
+  final reversed = StringBuffer();
+  for (var index = value.length; index > 0; index -= 2) {
+    reversed.write(value.substring(index - 2, index));
+  }
+  return reversed.toString();
 }

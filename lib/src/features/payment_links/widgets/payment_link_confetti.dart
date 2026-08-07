@@ -4,14 +4,14 @@ import 'package:flutter/widgets.dart';
 
 /// Decorative, one-shot celebration used by the payment-link ready states.
 ///
-/// Piece geometry comes directly from the Figma Confetti component. Motion is
-/// applied to three cached layers, keeping the individual painter geometry
-/// deterministic for captures and tests.
+/// Piece geometry comes directly from the Figma Confetti component. Its
+/// radial launch, gravity, spin, and fade timing follow the designer-provided
+/// `vizor-card` motion handoff.
 class PaymentLinkConfetti extends StatefulWidget {
   const PaymentLinkConfetti({super.key});
 
   static const int pieceCount = 165;
-  static const Duration entranceDuration = Duration(milliseconds: 620);
+  static const Duration burstDuration = Duration(milliseconds: 1200);
 
   @override
   State<PaymentLinkConfetti> createState() => _PaymentLinkConfettiState();
@@ -21,8 +21,9 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: PaymentLinkConfetti.entranceDuration,
+    duration: PaymentLinkConfetti.burstDuration,
   );
+  bool _showStaticFrame = false;
 
   @override
   void didChangeDependencies() {
@@ -30,6 +31,7 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (reduceMotion) {
+      _showStaticFrame = true;
       _controller
         ..stop()
         ..value = 1;
@@ -37,10 +39,12 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
     }
 
     if (!TickerMode.valuesOf(context).enabled) {
+      _showStaticFrame = true;
       _controller.stop();
       return;
     }
 
+    _showStaticFrame = false;
     if (_controller.value < 1 && !_controller.isAnimating) {
       _controller.forward();
     }
@@ -50,13 +54,6 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  double _layerProgress(int layer, double value) {
-    final start = layer * 0.08;
-    final end = 0.84 + (layer * 0.08);
-    final normalized = ((value - start) / (end - start)).clamp(0.0, 1.0);
-    return Curves.easeOutCubic.transform(normalized);
   }
 
   @override
@@ -73,43 +70,16 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
             child: AnimatedBuilder(
               animation: _controller,
               builder: (context, _) {
-                return Stack(
-                  clipBehavior: Clip.none,
-                  fit: StackFit.expand,
-                  children: [
-                    for (var layer = 0; layer < 3; layer += 1)
-                      _buildLayer(
-                        layer,
-                        _layerProgress(layer, _controller.value),
-                      ),
-                  ],
+                return RepaintBoundary(
+                  child: CustomPaint(
+                    key: const ValueKey('payment_link_confetti_burst'),
+                    painter: _ConfettiPainter(
+                      progress: _controller.value,
+                      showStaticFrame: _showStaticFrame,
+                    ),
+                  ),
                 );
               },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLayer(int layer, double progress) {
-    const horizontalOffsets = [-5.0, 4.0, -3.0];
-    const rotations = [-0.025, 0.018, -0.012];
-    return Opacity(
-      key: ValueKey('payment_link_confetti_layer_$layer'),
-      opacity: progress,
-      child: Transform.translate(
-        key: ValueKey('payment_link_confetti_transform_$layer'),
-        offset: Offset(
-          horizontalOffsets[layer] * (1 - progress),
-          (10 + (layer * 3)) * (1 - progress),
-        ),
-        child: Transform.rotate(
-          angle: rotations[layer] * (1 - progress),
-          child: Transform.scale(
-            scale: 0.96 + (0.04 * progress),
-            child: RepaintBoundary(
-              child: CustomPaint(painter: _ConfettiPainter(layer)),
             ),
           ),
         ),
@@ -119,39 +89,102 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
 }
 
 class _ConfettiPainter extends CustomPainter {
-  const _ConfettiPainter(this.layer);
+  const _ConfettiPainter({
+    required this.progress,
+    required this.showStaticFrame,
+  });
 
-  final int layer;
+  static const _gravity = 0.9;
+  static const _palette = <Color>[
+    Color(0xFF5D0527),
+    Color(0xFF8B0838),
+    Color(0xFFB90A4A),
+    Color(0xFFD43B6C),
+    Color(0xFFE86E94),
+    Color(0xFFF7A9C2),
+  ];
+
+  final double progress;
+  final bool showStaticFrame;
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (var index = layer; index < _pieces.length; index += 3) {
+    final origin = size.center(Offset.zero);
+    final scale = size.shortestSide;
+    final outward = 1 - (1 - progress) * (1 - progress);
+    final gravityEnd = 0.5 * _gravity * scale;
+    final fade = showStaticFrame
+        ? 1.0
+        : (1 - ((progress - 0.7) / 0.3)).clamp(0.0, 1.0);
+
+    for (var index = 0; index < _pieces.length; index += 1) {
       final piece = _pieces[index];
       if (piece.opacity == 0) continue;
-      final center = Offset(
+      final target = Offset(
         piece.left + (piece.outerWidth / 2),
         piece.top + (piece.outerHeight / 2),
       );
+      final center = showStaticFrame
+          ? target
+          : _animatedCenter(
+              index: index,
+              origin: origin,
+              target: target,
+              outward: outward,
+              gravityEnd: gravityEnd,
+              scale: scale,
+            );
+      final spin = (((index * 53) % 101) / 100 - 0.5) * 8;
+      final tumble = showStaticFrame
+          ? 1.0
+          : 0.4 + 0.6 * math.cos(progress * 8 + spin).abs();
       canvas
         ..save()
         ..translate(center.dx, center.dy)
-        ..rotate(piece.rotationDegrees * math.pi / 180)
+        ..rotate(
+          (piece.rotationDegrees * math.pi / 180) +
+              (showStaticFrame ? 0 : spin * progress * math.pi),
+        )
         ..drawRect(
           Rect.fromCenter(
             center: Offset.zero,
             width: piece.innerWidth,
-            height: piece.innerHeight,
+            height: piece.innerHeight * tumble,
           ),
           Paint()
-            ..color = const Color(0xFFA83861).withValues(alpha: piece.opacity),
+            ..color = _palette[index % _palette.length].withValues(
+              alpha: piece.opacity * fade,
+            ),
         )
         ..restore();
     }
   }
 
+  Offset _animatedCenter({
+    required int index,
+    required Offset origin,
+    required Offset target,
+    required double outward,
+    required double gravityEnd,
+    required double scale,
+  }) {
+    final velocity = Offset(
+      target.dx - origin.dx,
+      target.dy - origin.dy - gravityEnd,
+    );
+    final drift = (((index * 37) % 101) / 100 - 0.5) * 0.15 * scale;
+    return Offset(
+      origin.dx + velocity.dx * outward + math.sin(progress * 6) * drift,
+      origin.dy +
+          velocity.dy * outward +
+          0.5 * _gravity * scale * progress * progress,
+    );
+  }
+
   @override
   bool shouldRepaint(covariant _ConfettiPainter oldDelegate) =>
-      oldDelegate.layer != layer;
+      oldDelegate.progress != progress ||
+      oldDelegate.showStaticFrame != showStaticFrame;
 }
 
 class _ConfettiPiece {
