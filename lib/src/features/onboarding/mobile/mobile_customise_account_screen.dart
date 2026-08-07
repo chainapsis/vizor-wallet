@@ -55,6 +55,9 @@ class _MobileCustomiseAccountScreenState
     extends ConsumerState<MobileCustomiseAccountScreen> {
   late final TextEditingController _nameController;
   final _nameFocusNode = FocusNode();
+  Animation<double>? _routeAnimation;
+  var _initialFocusMonitoringScheduled = false;
+  var _initialFocusRequested = false;
   late String _profilePictureId;
   var _submitPhase = _SubmitPhase.idle;
   String? _submitError;
@@ -82,7 +85,46 @@ class _MobileCustomiseAccountScreenState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialFocusMonitoringScheduled) return;
+    _initialFocusMonitoringScheduled = true;
+    // iOS can discard a software-keyboard request while the Cupertino route
+    // is still entering, so defer the first focus until that transition ends.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialFocusRequested) return;
+      final routeAnimation = ModalRoute.of(context)?.animation;
+      if (routeAnimation == null ||
+          routeAnimation.status == AnimationStatus.completed) {
+        _requestInitialFocus();
+        return;
+      }
+      _routeAnimation = routeAnimation
+        ..addStatusListener(_handleRouteAnimationStatus);
+    });
+  }
+
+  void _handleRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _requestInitialFocus();
+    }
+  }
+
+  void _requestInitialFocus() {
+    if (_initialFocusRequested) return;
+    _initialFocusRequested = true;
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
+    _routeAnimation = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _nameFocusNode.canRequestFocus) {
+        _nameFocusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _nameController.dispose();
     _nameFocusNode.dispose();
     super.dispose();
@@ -319,7 +361,6 @@ class _AccountProfileCard extends StatelessWidget {
                         ),
                         controller: nameController,
                         focusNode: nameFocusNode,
-                        autofocus: true,
                         enabled: enabled,
                         maxLines: 1,
                         textInputAction: TextInputAction.done,

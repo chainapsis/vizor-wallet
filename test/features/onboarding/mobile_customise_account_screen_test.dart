@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,7 +63,6 @@ void main() {
         find.byKey(const ValueKey('mobile_customise_account_name_field')),
       );
 
-      expect(field.autofocus, isTrue);
       expect(field.focusNode!.hasFocus, isTrue);
       expect(tester.testTextInput.isVisible, isTrue);
       expect(
@@ -71,6 +71,55 @@ void main() {
       );
     });
   }
+
+  testWidgets('keeps account name focused after the route transition', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const SizedBox.shrink(),
+          ),
+        ),
+        GoRoute(
+          path: '/customise',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: MobileCustomiseAccountScreen(
+              args: const CustomiseAccountArgs(
+                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              ),
+              random: _SequenceRandom([0, 1, 2]),
+              onFinish: (_, _) async {},
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routerHarness(router));
+    router.push('/customise');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    var field = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+    );
+    expect(field.focusNode!.hasFocus, isFalse);
+
+    await tester.pumpAndSettle();
+
+    field = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+    );
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+  });
 
   testWidgets('keeps its random persona stable and uses the eighth progress', (
     tester,
@@ -518,6 +567,15 @@ Widget _harness(Widget child) {
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
       home: child,
+    ),
+  );
+}
+
+Widget _routerHarness(GoRouter router) {
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     ),
   );
 }
