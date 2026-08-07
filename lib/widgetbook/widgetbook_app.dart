@@ -908,6 +908,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Created list',
                       builder: buildPaymentLinkCardsListUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Received list — claim pending',
+                      builder: buildPaymentLinkCardsReceivingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received list — mined',
+                      builder: buildPaymentLinkCardsReceivedUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

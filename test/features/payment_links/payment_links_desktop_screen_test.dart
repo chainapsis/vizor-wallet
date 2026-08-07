@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -379,18 +380,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your link will be here'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsNothing);
 
     operations.fundingConfirmationCount = 7;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
     expect(find.text('Link will be available soon'), findsOneWidget);
     expect(find.text('Your link will be here'), findsNothing);
+    expect(find.byType(PaymentLinkConfetti), findsNothing);
 
     operations.fundingConfirmationCount = 10;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Link will be available soon'), findsNothing);
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
   });
 
   testWidgets('shows a separate state when a valid link has no balance', (
