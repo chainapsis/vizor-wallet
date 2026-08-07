@@ -447,9 +447,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<VoteShareWire> dco_decode_list_vote_share_wire(dynamic raw);
 
   @protected
-  List<WireEncryptedShare> dco_decode_list_wire_encrypted_share(dynamic raw);
-
-  @protected
   List<ZcashBatchMessageInput> dco_decode_list_zcash_batch_message_input(
     dynamic raw,
   );
@@ -591,6 +588,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
+
+  @protected
+  PirLayout dco_decode_pir_layout(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -1301,11 +1301,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<WireEncryptedShare> sse_decode_list_wire_encrypted_share(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<ZcashBatchMessageInput> sse_decode_list_zcash_batch_message_input(
     SseDeserializer deserializer,
   );
@@ -1485,6 +1480,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
     SseDeserializer deserializer,
   );
+
+  @protected
+  PirLayout sse_decode_pir_layout(SseDeserializer deserializer);
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -2357,12 +2355,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_wire_encrypted_share(
-    List<WireEncryptedShare> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_zcash_batch_message_input(
     List<ZcashBatchMessageInput> self,
     SseSerializer serializer,
@@ -2571,6 +2563,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ParsedSignedVotingPczt self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_pir_layout(PirLayout self, SseSerializer serializer);
 
   @protected
   void sse_encode_proposal_result(

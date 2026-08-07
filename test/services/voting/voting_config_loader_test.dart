@@ -455,6 +455,11 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
     pirEndpoints: const [
       rust_config.ServiceEndpoint(url: 'https://pir.example', label: 'pir'),
     ],
+    pirLayout: const rust_config.PirLayout(
+      pirDepth: 19,
+      tier0Layers: 12,
+      tier1Layers: 7,
+    ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],
       voteProtocol: 'v0',

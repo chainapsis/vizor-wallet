@@ -3381,6 +3381,11 @@ ProviderContainer _statusContainer({
                         label: 'pir-primary',
                       ),
                     ],
+                    pirLayout: const rust_config.PirLayout(
+                      pirDepth: 19,
+                      tier0Layers: 12,
+                      tier1Layers: 7,
+                    ),
                     supportedVersions: rust_config.SupportedVersions(
                       pir: ['2.0'],
                       voteProtocol: '2.0',
@@ -4093,6 +4098,11 @@ class _CountingVotingConfigNotifier extends VotingConfigNotifier {
       dynamicConfigFingerprint: 'dynamic-config-fingerprint',
       voteServers: [],
       pirEndpoints: [],
+      pirLayout: rust_config.PirLayout(
+        pirDepth: 19,
+        tier0Layers: 12,
+        tier1Layers: 7,
+      ),
       supportedVersions: rust_config.SupportedVersions(
         pir: [],
         voteProtocol: 'vote-protocol',
@@ -4475,7 +4485,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(const [2]),
           spendAuthSig: base64Encode(const [3]),
-          sighash: base64Encode(const [4]),
+          tx1Effects: base64Encode(const [4]),
           nfSigned: base64Encode(const [5]),
           cmxNew: base64Encode(const [6]),
           govComm: base64Encode(const [7]),
@@ -4599,7 +4609,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(signature?.rk ?? const [4]),
           spendAuthSig: base64Encode(keystoneSig),
-          sighash: base64Encode(keystoneSighash),
+          tx1Effects: base64Encode(keystoneSighash),
           nfSigned: base64Encode(const [5]),
           cmxNew: base64Encode(const [6]),
           govComm: base64Encode(const [7]),
@@ -4625,7 +4635,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return jsonEncode({
       'rk': wire.rk,
       'spend_auth_sig': wire.spendAuthSig,
-      'sighash': wire.sighash,
+      'tx1_effects': wire.tx1Effects,
       'signed_note_nullifier': wire.nfSigned,
       'cmx_new': wire.cmxNew,
       'van_cmx': wire.govComm,
@@ -4775,15 +4785,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       },
       'share_index': share.shareIndex,
       'tree_position': (vcTreePosition ?? share.vcTreePosition).toInt(),
-      'all_enc_shares': share.allEncryptedShares
-          .map(
-            (share) => {
-              'c1': base64Encode(share.c1),
-              'c2': base64Encode(share.c2),
-              'share_index': share.shareIndex,
-            },
-          )
-          .toList(),
       'share_comms': share.shareComms,
       'primary_blind': share.primaryBlind,
       'submit_at': submitAt.toInt(),
@@ -5102,7 +5103,6 @@ rust_wire.SignedVoteCommitmentsView _commitments({
             encryptedShare: wireShare,
             shareIndex: wireShare.shareIndex,
             vcTreePosition: BigInt.from(9),
-            allEncryptedShares: [wireShare],
             shareComms: [base64Encode(Uint8List.fromList(List.filled(32, 10)))],
             primaryBlind: base64Encode(Uint8List.fromList(List.filled(32, 11))),
             submitAt: BigInt.zero,

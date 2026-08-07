@@ -15,7 +15,8 @@ use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
-    ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    ConfigSwitchKind, PirLayout, ResolveVotingConfigOptions, ResolvedVotingConfig,
+    ResolvedVotingConfigSummary,
 };
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
@@ -115,6 +116,8 @@ pub struct ApiVotingRoundContext {
     pub session_json: Option<String>,
     pub account_uuid: String,
     pub max_real_notes_per_bundle: Option<u32>,
+    /// Authenticated PIR geometry expected from the selected endpoint.
+    pub pir_layout: PirLayout,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -705,9 +708,14 @@ pub async fn precompute_delegation_pir(
     );
 
     // Warm the PIR path by precomputing/caching delegation bundle artifacts.
-    delegation::precompute_delegation_pir(&ctx.db_path, &pir_server_url, prepare_params)
-        .await
-        .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
+    delegation::precompute_delegation_pir(
+        &ctx.db_path,
+        &pir_server_url,
+        ctx.pir_layout,
+        prepare_params,
+    )
+    .await
+    .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
@@ -759,6 +767,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &seed,
         prepare_params,
         move |event| {
@@ -928,6 +937,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &ctx.account_uuid,
         prepare_params,
         &keystone_sig,
@@ -1593,6 +1603,12 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
+    fn test_tx1_effects() -> Vec<u8> {
+        let mut effects = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
+        effects[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
+        effects
+    }
+
     fn tx_events_json(events: Vec<TxEvent>) -> String {
         serde_json::to_string(&events).unwrap()
     }
@@ -1643,6 +1659,15 @@ mod tests {
             session_json: None,
             account_uuid: account_uuid.to_string(),
             max_real_notes_per_bundle: None,
+            pir_layout: test_pir_layout(),
+        }
+    }
+
+    fn test_pir_layout() -> zcash_voting::wire::PirLayout {
+        zcash_voting::wire::PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
         }
     }
 
@@ -1689,6 +1714,7 @@ mod tests {
             dynamic_config_fingerprint: "dynamic".to_string(),
             vote_servers: vec![],
             pir_endpoints: vec![],
+            pir_layout: test_pir_layout(),
             supported_versions: zcash_voting::config::SupportedVersions {
                 pir: vec!["v0".to_string()],
                 vote_protocol: "v0".to_string(),
@@ -1746,6 +1772,7 @@ mod tests {
                     vote_round_id: "00010203".to_string(),
                     spend_auth_sig: [6; 64],
                     sighash: [7; 32],
+                    tx1_effects: test_tx1_effects(),
                 },
                 pczt_bytes: vec![1, 2, 3],
                 eligible_weight_zatoshi: 20,
@@ -1798,7 +1825,7 @@ mod tests {
                     proof: b64(vec![8; 96]),
                     rk: b64(vec![1; 32]),
                     spend_auth_sig: b64(vec![2; 64]),
-                    sighash: b64(vec![3; 32]),
+                    tx1_effects: b64(test_tx1_effects()),
                     nf_signed: b64(vec![4; 32]),
                     cmx_new: b64(vec![5; 32]),
                     gov_comm: b64(vec![6; 32]),
@@ -1815,6 +1842,8 @@ mod tests {
         let wire: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert!(wire.get("signed_note_nullifier").is_some());
         assert!(wire.get("van_cmx").is_some());
+        assert!(wire.get("sighash").is_none());
+        assert!(wire.get("tx1_effects").is_some());
         assert_eq!(
             wire["gov_nullifiers"].as_array().unwrap().len(),
             zcash_voting::BUNDLE_NOTE_SLOTS
@@ -1867,18 +1896,6 @@ mod tests {
                 },
                 share_index: 1,
                 vc_tree_position: 55,
-                all_encrypted_shares: vec![
-                    zcash_voting::wire::WireEncryptedShare {
-                        c1: vec![3],
-                        c2: vec![4],
-                        share_index: 1,
-                    },
-                    zcash_voting::wire::WireEncryptedShare {
-                        c1: vec![5],
-                        c2: vec![6],
-                        share_index: 2,
-                    },
-                ],
                 share_comms: vec!["Bw==".to_string(), "CA==".to_string()],
                 primary_blind: "CQ==".to_string(),
                 submit_at: 0,
@@ -1888,10 +1905,6 @@ mod tests {
         )
         .unwrap();
         let expected = serde_json::json!({
-            "all_enc_shares": [
-                {"c1":"Aw==","c2":"BA==","share_index":1},
-                {"c1":"BQ==","c2":"Bg==","share_index":2}
-            ],
             "enc_share": {"c1":"Aw==","c2":"BA==","share_index":1},
             "primary_blind":"CQ==",
             "proposal_id":7,
@@ -1951,7 +1964,7 @@ mod tests {
         assert_eq!(recovered["tree_position"], 99);
         assert_eq!(recovered["submit_at"], 0);
         assert_eq!(recovered["enc_share"]["c1"], "Aw==");
-        assert_eq!(recovered["all_enc_shares"].as_array().unwrap().len(), 2);
+        assert!(recovered.get("all_enc_shares").is_none());
         assert_eq!(
             base64::engine::general_purpose::STANDARD
                 .decode(recovered["shares_hash"].as_str().unwrap())
@@ -1986,7 +1999,6 @@ mod tests {
                 },
                 share_index: 1,
                 vc_tree_position: 0,
-                all_encrypted_shares: vec![],
                 share_comms: vec![],
                 primary_blind: "CQ==".to_string(),
                 submit_at: 0,
@@ -2121,7 +2133,7 @@ mod tests {
                 submission: zcash_voting::wire::DelegationSubmissionWire {
                     rk: "rk".to_string(),
                     spend_auth_sig: "sig".to_string(),
-                    sighash: "sighash".to_string(),
+                    tx1_effects: "tx1-effects".to_string(),
                     nf_signed: "nf".to_string(),
                     cmx_new: "cmx".to_string(),
                     gov_comm: "gov".to_string(),
