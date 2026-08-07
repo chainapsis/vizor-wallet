@@ -1847,9 +1847,10 @@ Widget _buildMobileHomeUseCase({
         return announcement;
       }),
     ],
-    child: constrainToPreviewFrame
-        ? _MobilePreviewFrame(child: harness)
-        : harness,
+    child: _MobilePreviewFrame(
+      constrainToDesignSize: constrainToPreviewFrame,
+      child: harness,
+    ),
   );
 }
 
@@ -3197,9 +3198,13 @@ class _MobileSecretPassphraseProtectedPreviewState
 }
 
 class _MobilePreviewFrame extends StatelessWidget {
-  const _MobilePreviewFrame({required this.child});
+  const _MobilePreviewFrame({
+    required this.child,
+    this.constrainToDesignSize = true,
+  });
 
   final Widget child;
+  final bool constrainToDesignSize;
 
   static const size = Size(393, 852);
   static const safeAreaPadding = EdgeInsets.only(top: 55, bottom: 24);
@@ -3207,20 +3212,20 @@ class _MobilePreviewFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    return Center(
-      child: SizedBox.fromSize(
-        size: size,
-        child: ClipRect(
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              size: size,
-              padding: safeAreaPadding,
-              viewPadding: safeAreaPadding,
-            ),
-            child: child,
-          ),
+    final frameSize = constrainToDesignSize ? size : mediaQuery.size;
+    final frame = ClipRect(
+      child: MediaQuery(
+        data: mediaQuery.copyWith(
+          size: frameSize,
+          padding: safeAreaPadding,
+          viewPadding: safeAreaPadding,
         ),
+        child: child,
       ),
+    );
+    if (!constrainToDesignSize) return frame;
+    return Center(
+      child: SizedBox.fromSize(size: size, child: frame),
     );
   }
 }
