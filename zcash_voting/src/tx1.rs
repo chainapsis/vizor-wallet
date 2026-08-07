@@ -5,15 +5,15 @@
 //!
 //! Version 1 fixes the remaining profile to NU6.3, zero lock and expiry,
 //! absent transparent, Sapling, and Orchard bundles, and one Ironwood V3
-//! bundle with flags `0x07`, a positive 1-zatoshi value balance, and two
-//! actions. V6 signatures do not commit to the shielded anchor.
+//! bundle with flags `0x07`, a positive 1-zatoshi value balance, and one
+//! action. V6 signatures do not commit to the shielded anchor.
 
 use crate::VotingError;
 
 /// Version byte for the current TX1 effects encoding.
 pub const TX1_EFFECTS_VERSION: u8 = 1;
 /// Number of Ironwood actions in the current TX1 construction.
-pub const TX1_ACTION_COUNT: usize = 2;
+pub const TX1_ACTION_COUNT: usize = 1;
 /// Length of an Orchard/Ironwood encrypted note ciphertext.
 pub const TX1_ENC_CIPHERTEXT_LEN: usize = 580;
 /// Length of an Orchard/Ironwood outgoing ciphertext.
@@ -47,10 +47,10 @@ pub fn validate_tx1_effects(effects: &[u8]) -> Result<(), VotingError> {
     Ok(())
 }
 
-/// Encodes two finalized Ironwood actions as:
+/// Encodes the finalized Ironwood action as:
 ///
 /// `version || (cv_net || nullifier || rk || cmx || ephemeral_key ||
-/// enc_ciphertext || out_ciphertext) * 2`.
+/// enc_ciphertext || out_ciphertext)`.
 pub(crate) fn encode_tx1_effects(
     actions: &[pczt::orchard::Action],
 ) -> Result<Vec<u8>, VotingError> {

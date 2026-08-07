@@ -2065,13 +2065,19 @@ mod tests {
         let redacted_pczt = pczt::Pczt::parse(&redacted_pczt_bytes).expect("parse redacted PCZT");
 
         assert!(full_pczt.orchard().actions().is_empty());
-        assert_eq!(full_pczt.ironwood().actions().len(), 2);
+        assert_eq!(
+            full_pczt.ironwood().actions().len(),
+            crate::tx1::TX1_ACTION_COUNT
+        );
         assert!(ironwood_spend_witnesses_present(&full_pczt)
             .iter()
             .any(|witness| *witness));
 
         assert!(redacted_pczt.orchard().actions().is_empty());
-        assert_eq!(redacted_pczt.ironwood().actions().len(), 2);
+        assert_eq!(
+            redacted_pczt.ironwood().actions().len(),
+            crate::tx1::TX1_ACTION_COUNT
+        );
         assert!(ironwood_spend_witnesses_present(&redacted_pczt)
             .iter()
             .all(|witness| !*witness));

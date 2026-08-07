@@ -227,11 +227,11 @@ becomes a transaction whose expiry could be evaluated by consensus.
 ### Ironwood bundle
 
 The wallet MUST use the Ironwood builder with the V3 bundle version, default
-flags, and `BundleType::DEFAULT`.
+flags, and `BundleType::UNPADDED`.
 
-The builder may pad and independently shuffle spends and outputs. The wallet
-MUST retry construction until the real spend and real output occupy the same
-action index. It MUST persist that action index with the signing request.
+The fixed profile has one real spend and one real output. The unpadded builder
+pairs them in one action, whose index is `0`. The wallet MUST persist that
+action index with the signing request.
 
 The real spend is:
 
@@ -286,7 +286,7 @@ After the bundle is built, the wallet MUST:
 3. run the IO Finalizer role;
 4. serialize the full PCZT;
 5. compute `Signer::shielded_sighash()` from the finalized PCZT;
-6. encode the two finalized Ironwood actions' effecting data; and
+6. encode the finalized Ironwood action's effecting data; and
 7. persist the effecting data, sighash, `rk`, `alpha`, `nf_signed`, `cmx_new`,
    both rseeds, and proof inputs before requesting a signature, while retaining
    the action index with the active signing request.
@@ -301,10 +301,10 @@ custom voting hash.
 ### Submission effect encoding
 
 The vote-chain submission carries the finalized action effecting data, not the
-PCZT. The current encoding is exactly 1,641 bytes:
+PCZT. The current encoding is exactly 821 bytes:
 
 ```text
-version[1] || action[0][820] || action[1][820]
+version[1] || action[0][820]
 ```
 
 The version byte is `1`. Each action is encoded in PCZT order as:
@@ -322,7 +322,7 @@ The version byte is `1`. Each action is encoded in PCZT order as:
 The remaining TX1 effecting fields are fixed by this construction: V6 on
 NU6.3, lock time and expiry height zero, no transparent, Sapling, or Orchard
 bundle, and one Ironwood V3 bundle with default flags, a positive 1-zatoshi
-value balance, and exactly two actions. V6 shielded signatures do not commit
+value balance, and exactly one action. V6 shielded signatures do not commit
 to the bundle anchor, so the anchor is not included.
 
 The synthetic output is constructed without the governance account's outgoing
@@ -330,9 +330,9 @@ viewing key. Its published `out_ciphertext` therefore cannot be recovered with
 that account's FVK. The PCZT retains the output metadata needed by the signer.
 
 A verifier can reconstruct the ZIP-244 shielded sighash from this payload and
-the fixed profile. It must require `rk` to occur in exactly one action, require
-that action to match the submitted `nf_signed` and `cmx_new`, recompute the
-sighash, and verify the SpendAuth signature against that digest. The shared fixture
+the fixed profile. It must require the action to match the submitted `rk`,
+`nf_signed`, and `cmx_new`, recompute the sighash, and verify the SpendAuth
+signature against that digest. The shared fixture
 [`delegation_tx1_effects_v1.json`](../zcash_voting/test-vectors/delegation_tx1_effects_v1.json)
 pins this boundary for implementations in other repositories.
 

@@ -513,7 +513,7 @@ pub(crate) fn build_governance_pczt(
 
     for _ in 0..MAX_PCZT_LAYOUT_ATTEMPTS {
         let mut builder = Builder::new(
-            BundleType::DEFAULT,
+            BundleType::UNPADDED,
             bundle_version,
             bundle_version.default_flags(),
             anchor,
@@ -533,9 +533,8 @@ pub(crate) fn build_governance_pczt(
                 message: format!("Builder::add_output failed: {:?}", e),
             })?;
 
-        // Build the PCZT bundle. The Orchard builder pads and shuffles spends
-        // and outputs independently, so retry until the governance spend and
-        // governance output are paired in the same action slot.
+        // The unpadded profile pairs the single spend and output in one action.
+        // Keep the metadata check below as a defensive layout assertion.
         let (mut pczt_bundle, bundle_meta) =
             builder
                 .build_for_pczt(&mut rng)
@@ -741,10 +740,8 @@ pub fn extract_pczt_sighash(pczt_bytes: &[u8]) -> Result<[u8; 32], VotingError> 
 /// so a byte-diff between unsigned and signed PCZTs doesn't work. This function parses
 /// the signed PCZT structurally and reads the `spend_auth_sig` field directly.
 ///
-/// Tries `action_index` first, then falls back to scanning all actions. The Builder
-/// shuffles action order, so the governance spend may not end up at the expected index
-/// from Keystone's perspective. Our governance PCZT has exactly 2 actions (1 real +
-/// 1 dummy padding); only the real one gets signed (the dummy lacks zip32_derivation).
+/// Tries `action_index` first, then falls back to scanning all actions. The
+/// current governance PCZT has exactly one signable action.
 ///
 /// Returns the 64-byte SpendAuthSig, or an error if no signed action is found.
 pub fn extract_spend_auth_sig(
@@ -764,10 +761,8 @@ pub fn extract_spend_auth_sig(
         }
     }
 
-    // Fallback: scan all actions for a signature.
-    // The governance PCZT has 2 actions; only the real governance spend gets signed
-    // by Keystone (the padding action has no zip32_derivation so Keystone skips it).
-    // This is safe because there is exactly one signable action.
+    // Fallback: scan all actions for a signature. This remains unambiguous
+    // because the governance PCZT has exactly one signable action.
     for action in actions {
         if let Some(sig) = action.spend().spend_auth_sig() {
             return Ok(*sig);
@@ -983,13 +978,12 @@ mod tests {
             32 * (BUNDLE_NOTE_SLOTS + DELEGATION_ACTION_FIXED_FIELD_COUNT)
         );
 
-        // action_index is 0 or 1 (2 actions total: 1 real + 1 dummy padding)
-        assert!(result.action_index <= 1);
+        assert_eq!(result.action_index, 0);
 
-        // The parsed PCZT should have 2 Ironwood actions (1 real + 1 padding)
+        // The parsed PCZT has one Ironwood action containing the real spend and output.
         let pczt = parsed.unwrap();
         assert!(pczt.orchard().actions().is_empty());
-        assert_eq!(pczt.ironwood().actions().len(), 2);
+        assert_eq!(pczt.ironwood().actions().len(), 1);
         let output_value = pczt
             .ironwood()
             .actions()
@@ -1068,7 +1062,7 @@ mod tests {
         assert!(pczt.sapling().spends().is_empty());
         assert!(pczt.sapling().outputs().is_empty());
         assert!(pczt.orchard().actions().is_empty());
-        assert_eq!(pczt.ironwood().actions().len(), 2);
+        assert_eq!(pczt.ironwood().actions().len(), 1);
         assert_eq!(*pczt.ironwood().flags(), 0x07);
         assert_eq!(*pczt.ironwood().value_sum(), (1, false));
         crate::tx1::validate_tx1_effects(&result.tx1_effects).unwrap();
