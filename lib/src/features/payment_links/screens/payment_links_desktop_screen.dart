@@ -52,6 +52,8 @@ class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
 
 class _PaymentLinksDesktopScreenState
     extends ConsumerState<PaymentLinksDesktopScreen> {
+  static const _linkAvailableSoonRemainingConfirmations = 3;
+
   static const _monthNames = [
     'January',
     'February',
@@ -81,6 +83,9 @@ class _PaymentLinksDesktopScreenState
   final FocusNode _amountFocusNode = FocusNode();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
+  late final PaymentLinkOperations _paymentLinkOperations;
+  Timer? _fundingQuoteDebounce;
+  Timer? _fundingProgressTimer;
 
   _PaymentLinksLocalPage _page = _PaymentLinksLocalPage.home;
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
@@ -88,12 +93,18 @@ class _PaymentLinksDesktopScreenState
       PaymentLinkRedeemVisualState.paste;
   PaymentLinkCardsTab _activeCardsTab = PaymentLinkCardsTab.created;
   List<PaymentLinkRecoveryRecord> _recoveries = const [];
+  Map<String, PaymentLinkFundingProgress> _fundingProgressByAddress = const {};
   List<_ReceivedPaymentLinkRecord> _receivedCards = const [];
+  PaymentLinkFundingQuote? _fundingQuote;
+  PaymentLinkClaimSession? _receivedClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
   _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
+  bool _fundingQuoteInProgress = false;
+  String? _amountErrorText;
+  int _fundingQuoteGeneration = 0;
   bool _readyShowsBack = false;
   bool _receivedShowsBack = false;
   bool _operationInProgress = false;
@@ -102,17 +113,28 @@ class _PaymentLinksDesktopScreenState
   @override
   void initState() {
     super.initState();
+    _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
     _amountFocusNode.addListener(_handleAmountFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_loadRecoveries());
-      _consumePendingPaymentLink();
+      unawaited(_consumePendingPaymentLink());
     });
+    _fundingProgressTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_refreshFundingProgress()),
+    );
   }
 
   @override
   void dispose() {
+    _fundingQuoteDebounce?.cancel();
+    _fundingProgressTimer?.cancel();
+    final claimSession = _receivedClaimSession;
+    if (claimSession != null) {
+      unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
+    }
     _amountFocusNode
       ..removeListener(_handleAmountFocus)
       ..dispose();
@@ -137,10 +159,15 @@ class _PaymentLinksDesktopScreenState
   }
 
   void _startCreate() {
+    _fundingQuoteDebounce?.cancel();
+    _fundingQuoteGeneration++;
     _amountController.clear();
     _messageController.clear();
     setState(() {
       _selectedArtwork = PaymentLinkCardArtwork.gift;
+      _fundingQuote = null;
+      _fundingQuoteInProgress = false;
+      _amountErrorText = null;
       _readyLink = null;
       _readyShowsBack = false;
       _page = _PaymentLinksLocalPage.amount;
@@ -161,18 +188,11 @@ class _PaymentLinksDesktopScreenState
     });
   }
 
-  void _consumePendingPaymentLink() {
+  Future<void> _consumePendingPaymentLink() async {
     if (_operationInProgress) return;
     final link = ref.read(paymentLinkIntakeProvider.notifier).takePending();
     if (link == null || !mounted) return;
-    setState(() {
-      _receivedLink = link;
-      _receivedShowsBack = false;
-      _rememberReceivedLink(link);
-      _redeemState = PaymentLinkRedeemVisualState.paste;
-      _page = _PaymentLinksLocalPage.received;
-      _showHelp = false;
-    });
+    await _checkPaymentLink(link);
   }
 
   Future<void> _loadRecoveries({bool showError = true}) async {
@@ -184,10 +204,40 @@ class _PaymentLinksDesktopScreenState
       final visible = records.where((record) => !record.isArchived).toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       setState(() => _recoveries = visible);
+      unawaited(_refreshFundingProgress(records: visible));
     } catch (_) {
       if (mounted && showError) {
         _showError('Gift Cards could not be loaded.');
       }
+    }
+  }
+
+  Future<void> _refreshFundingProgress({
+    List<PaymentLinkRecoveryRecord>? records,
+  }) async {
+    final recoveries = records ?? _recoveries;
+    final pending = recoveries
+        .where(
+          (record) =>
+              !(_fundingProgressByAddress[record.link.address]?.isReady ??
+                  false),
+        )
+        .toList();
+    if (pending.isEmpty || _operationInProgress) return;
+    try {
+      final updates = await ref
+          .read(paymentLinkOperationsProvider)
+          .inspectCreatedLinkFundings(pending);
+      if (!mounted) return;
+      setState(
+        () => _fundingProgressByAddress = {
+          ..._fundingProgressByAddress,
+          ...updates,
+        },
+      );
+    } catch (_) {
+      // Keep the last known progress. A later foreground sync or timer tick
+      // retries this read without hiding an already-ready link.
     }
   }
 
@@ -224,11 +274,7 @@ class _PaymentLinksDesktopScreenState
   void _openReceivedCard(_ReceivedPaymentLinkRecord record) {
     final link = record.claimLink;
     if (link == null || _operationInProgress) return;
-    setState(() {
-      _receivedLink = link;
-      _receivedShowsBack = false;
-      _page = _PaymentLinksLocalPage.received;
-    });
+    unawaited(_checkPaymentLink(link));
   }
 
   bool get _hasPositiveAmount {
@@ -247,34 +293,111 @@ class _PaymentLinksDesktopScreenState
         : PaymentLinkAmountVisualState.focused;
   }
 
-  void _handleAmountChanged(String _) => setState(() {});
+  bool get _canContinueAmount =>
+      _hasPositiveAmount &&
+      !_fundingQuoteInProgress &&
+      _fundingQuote != null &&
+      _amountErrorText == null;
+
+  void _handleAmountChanged(String value) {
+    _fundingQuoteDebounce?.cancel();
+    final generation = ++_fundingQuoteGeneration;
+    final amount = parseZecAmount(value);
+    setState(() {
+      _fundingQuote = null;
+      _fundingQuoteInProgress = false;
+      _amountErrorText = null;
+    });
+    if (amount == null || amount <= BigInt.zero) return;
+
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final sync = ref.read(syncProvider).value;
+    if (accountUuid == null || accountUuid.isEmpty || sync == null) return;
+    final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
+    if (sync.hasBalanceData && sync.spendableBalance < minimumFunding) {
+      setState(() {
+        _amountErrorText =
+            'Insufficient balance to cover the Card amount and fees.';
+      });
+      return;
+    }
+
+    setState(() => _fundingQuoteInProgress = true);
+    _fundingQuoteDebounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(
+        _loadFundingQuote(
+          generation: generation,
+          amountZatoshi: amount,
+          sourceAccountUuid: accountUuid,
+        ),
+      );
+    });
+  }
+
+  Future<void> _loadFundingQuote({
+    required int generation,
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    try {
+      final quote = await ref
+          .read(paymentLinkOperationsProvider)
+          .quoteFunding(
+            amountZatoshi: amountZatoshi,
+            sourceAccountUuid: sourceAccountUuid,
+          );
+      if (!mounted || generation != _fundingQuoteGeneration) return;
+      final sync = ref.read(syncProvider).value;
+      final insufficient =
+          sync?.hasBalanceData == true &&
+          sync!.spendableBalance < quote.totalDeductedZatoshi;
+      setState(() {
+        _fundingQuoteInProgress = false;
+        _fundingQuote = insufficient ? null : quote;
+        _amountErrorText = insufficient
+            ? 'Insufficient balance to cover the Card amount and fees.'
+            : null;
+      });
+    } catch (_) {
+      if (!mounted || generation != _fundingQuoteGeneration) return;
+      setState(() {
+        _fundingQuoteInProgress = false;
+        _fundingQuote = null;
+        _amountErrorText = 'Card fee could not be estimated. Try again.';
+      });
+    }
+  }
 
   bool get _hasMessage => _messageController.text.trim().isNotEmpty;
 
   String? get _maxAmountText {
     final sync = ref.watch(syncProvider).value;
+    final quote = _fundingQuote;
     if (sync == null ||
         !sync.hasBalanceData ||
-        sync.spendableBalance <= BigInt.zero) {
+        quote == null ||
+        sync.spendableBalance <= quote.cardFeeZatoshi) {
       return null;
     }
-    return formatZecAmount(sync.spendableBalance);
+    return formatZecAmount(sync.spendableBalance - quote.cardFeeZatoshi);
   }
 
   void _useMaxAmount() {
     final sync = ref.read(syncProvider).value;
+    final quote = _fundingQuote;
     if (sync == null ||
         !sync.hasBalanceData ||
-        sync.spendableBalance <= BigInt.zero) {
+        quote == null ||
+        sync.spendableBalance <= quote.cardFeeZatoshi) {
       return;
     }
-    final text = formatZecAmount(sync.spendableBalance);
+    final text = formatZecAmount(sync.spendableBalance - quote.cardFeeZatoshi);
     _amountController.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
     _amountFocusNode.requestFocus();
-    setState(() {});
+    _handleAmountChanged(text);
   }
 
   void _handleMessageChanged(String _) => setState(() {});
@@ -295,16 +418,19 @@ class _PaymentLinksDesktopScreenState
       case 0:
         _showPage(_PaymentLinksLocalPage.amount);
       case 1:
-        if (_hasPositiveAmount) _showPage(_PaymentLinksLocalPage.message);
+        if (_canContinueAmount) {
+          _showPage(_PaymentLinksLocalPage.message);
+        }
     }
   }
 
   Future<void> _createFundedLink() async {
     if (_operationInProgress) return;
     final amount = parseZecAmount(_amountController.text.trim());
+    final quote = _fundingQuote;
     final accountState = ref.read(accountProvider).value;
     final sourceAccountUuid = accountState?.activeAccountUuid;
-    if (amount == null || amount <= BigInt.zero) {
+    if (amount == null || amount <= BigInt.zero || quote == null) {
       _showError('Enter a valid Gift Card amount.');
       return;
     }
@@ -341,13 +467,20 @@ class _PaymentLinksDesktopScreenState
       if (!mounted) return;
       setState(() {
         _readyLink = link;
+        _fundingProgressByAddress = {
+          ..._fundingProgressByAddress,
+          link.address: const PaymentLinkFundingProgress(confirmationCount: 0),
+        };
         _readyShowsBack = false;
         _page = _PaymentLinksLocalPage.ready;
       });
     } catch (_) {
       if (mounted) _showError('Gift Card creation failed. Try again.');
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      if (mounted) {
+        setState(() => _operationInProgress = false);
+        unawaited(_refreshFundingProgress());
+      }
     }
   }
 
@@ -370,9 +503,14 @@ class _PaymentLinksDesktopScreenState
       _keystoneFundingRequest = null;
       _operationInProgress = false;
       _readyLink = link;
+      _fundingProgressByAddress = {
+        ..._fundingProgressByAddress,
+        link.address: const PaymentLinkFundingProgress(confirmationCount: 0),
+      };
       _readyShowsBack = false;
       _page = _PaymentLinksLocalPage.ready;
     });
+    unawaited(_refreshFundingProgress());
     if (status == 'broadcasted_storage_failed') {
       showAppToast(
         context,
@@ -430,13 +568,7 @@ class _PaymentLinksDesktopScreenState
       }
       final link = notifier.takePending();
       if (link == null || !mounted) return;
-      setState(() {
-        _receivedLink = link;
-        _receivedShowsBack = false;
-        _rememberReceivedLink(link);
-        _redeemState = PaymentLinkRedeemVisualState.paste;
-        _page = _PaymentLinksLocalPage.received;
-      });
+      await _prepareDecodedPaymentLink(link);
     } catch (_) {
       if (mounted) {
         setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
@@ -446,17 +578,92 @@ class _PaymentLinksDesktopScreenState
     }
   }
 
+  Future<void> _checkPaymentLink(VizorPaymentLink link) async {
+    if (_operationInProgress) return;
+    setState(() {
+      _operationInProgress = true;
+      _redeemState = PaymentLinkRedeemVisualState.loading;
+      _page = _PaymentLinksLocalPage.redeem;
+      _showHelp = false;
+    });
+    try {
+      await _prepareDecodedPaymentLink(link);
+    } finally {
+      if (mounted) setState(() => _operationInProgress = false);
+    }
+  }
+
+  Future<void> _prepareDecodedPaymentLink(VizorPaymentLink link) async {
+    final previousSession = _receivedClaimSession;
+    if (previousSession != null &&
+        previousSession.link.address != link.address) {
+      await ref
+          .read(paymentLinkOperationsProvider)
+          .discardClaimSession(previousSession);
+      _receivedClaimSession = null;
+    }
+    try {
+      final session = await ref
+          .read(paymentLinkOperationsProvider)
+          .prepareClaim(link);
+      if (!mounted) {
+        await ref
+            .read(paymentLinkOperationsProvider)
+            .discardClaimSession(session);
+        return;
+      }
+      if (!session.canClaim) {
+        await ref
+            .read(paymentLinkOperationsProvider)
+            .discardClaimSession(session);
+        setState(() {
+          _receivedClaimSession = null;
+          _redeemState = PaymentLinkRedeemVisualState.unavailable;
+          _page = _PaymentLinksLocalPage.redeem;
+        });
+        return;
+      }
+      setState(() {
+        _receivedClaimSession = session;
+        _receivedLink = link;
+        _receivedShowsBack = false;
+        _rememberReceivedLink(link);
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+        _page = _PaymentLinksLocalPage.received;
+      });
+    } on FormatException {
+      if (mounted) {
+        setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _redeemState = PaymentLinkRedeemVisualState.paste);
+        _showError('Card balance could not be checked. Try again.');
+      }
+    }
+  }
+
   Future<void> _clearClipboard() async {
     await ref.read(paymentLinkClipboardProvider).clear();
+    final claimSession = _receivedClaimSession;
+    if (claimSession != null) {
+      await ref
+          .read(paymentLinkOperationsProvider)
+          .discardClaimSession(claimSession);
+    }
     ref.read(paymentLinkIntakeProvider.notifier).clearError();
     if (mounted) {
-      setState(() => _redeemState = PaymentLinkRedeemVisualState.paste);
+      setState(() {
+        _receivedClaimSession = null;
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+      });
     }
   }
 
   Future<void> _claimReceivedLink() async {
     final link = _receivedLink;
-    if (link == null || _operationInProgress) return;
+    final session = _receivedClaimSession;
+    if (link == null || session == null || _operationInProgress) return;
     setState(() {
       _operationInProgress = true;
       _receivedLink = null;
@@ -472,16 +679,22 @@ class _PaymentLinksDesktopScreenState
     try {
       final result = await ref
           .read(paymentLinkOperationsProvider)
-          .claimLink(link);
+          .claimPreparedLink(session);
       if (!mounted) return;
-      if (result.isBroadcasted) {
-        setState(() {
+      setState(() {
+        // A successful submission owns its temporary claim DB from here. For
+        // pending broadcasts the service deliberately retains that DB so a
+        // later paste can reopen and reconcile it.
+        _receivedClaimSession = null;
+        if (result.isBroadcasted) {
           _setReceivedCardStatus(
             link.address,
             _ReceivedPaymentLinkStatus.received,
             clearClaimLink: true,
           );
-        });
+        }
+      });
+      if (result.isBroadcasted) {
         showAppToast(context, 'Gift claimed');
       } else {
         showAppToast(context, 'Gift claim submitted');
@@ -564,9 +777,14 @@ class _PaymentLinksDesktopScreenState
           showCaret: false,
         ),
         onBack: () => _showPage(_PaymentLinksLocalPage.home),
+        cardAmountText:
+            '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC',
+        cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
+        totalAmountText:
+            '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC',
         onConfirm: _operationInProgress ? null : _createFundedLink,
         onStepSelected: _operationInProgress ? null : _selectWizardStep,
-        confirmLabel: _operationInProgress ? 'Creating...' : 'Confirm & create',
+        confirmLabel: _operationInProgress ? 'Creating...' : 'Create card',
       ),
       _PaymentLinksLocalPage.ready => _buildReady(),
       _PaymentLinksLocalPage.redeem => PaymentLinkRedeemDesktopView(
@@ -600,8 +818,23 @@ class _PaymentLinksDesktopScreenState
 
   Widget _buildCardsList() {
     final showingCreated = _activeCardsTab == PaymentLinkCardsTab.created;
+    final creatingCards = _recoveries
+        .where(
+          (record) =>
+              !(_fundingProgressByAddress[record.link.address]?.isReady ??
+                  false),
+        )
+        .map(_buildRecoveryRow)
+        .toList();
+    final pendingCards = _recoveries
+        .where(
+          (record) =>
+              _fundingProgressByAddress[record.link.address]?.isReady ?? false,
+        )
+        .map(_buildRecoveryRow)
+        .toList();
     final available = showingCreated
-        ? _recoveries.map(_buildRecoveryRow).toList()
+        ? creatingCards
         : _receivedCards.isNotEmpty
         ? _receivedCards.map(_buildReceivedRow).toList()
         : <Widget>[
@@ -616,28 +849,39 @@ class _PaymentLinksDesktopScreenState
               ),
             ),
           ];
+    final sections = showingCreated
+        ? <PaymentLinkCardsSection>[
+            if (creatingCards.isNotEmpty)
+              PaymentLinkCardsSection(label: 'Creating', cards: creatingCards),
+            if (pendingCards.isNotEmpty)
+              PaymentLinkCardsSection(label: 'Pending', cards: pendingCards),
+          ]
+        : <PaymentLinkCardsSection>[
+            PaymentLinkCardsSection(label: 'Received', cards: available),
+          ];
     return PaymentLinkCardsDesktopView(
-      pendingCards: available,
-      createdCards: const [],
+      sections: sections,
       onBack: () => context.go('/home'),
       onCreate: _startCreate,
       onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
       activeTab: _activeCardsTab,
       onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
-      pendingLabel: showingCreated ? 'Available' : 'Received',
     );
   }
 
   Widget _buildRecoveryRow(PaymentLinkRecoveryRecord record) {
+    final fundingReady =
+        _fundingProgressByAddress[record.link.address]?.isReady ?? false;
     final canUseLink =
-        record.state == PaymentLinkRecoveryState.funded ||
-        record.state == PaymentLinkRecoveryState.shared;
+        fundingReady &&
+        (record.state == PaymentLinkRecoveryState.funded ||
+            record.state == PaymentLinkRecoveryState.shared);
     final copyEnabled = canUseLink && !_operationInProgress;
-    final statusText = switch (record.state) {
-      PaymentLinkRecoveryState.draft => 'Funding incomplete',
-      PaymentLinkRecoveryState.funded ||
-      PaymentLinkRecoveryState.shared => 'Copy link',
-    };
+    final statusText = record.state == PaymentLinkRecoveryState.draft
+        ? 'Funding incomplete'
+        : canUseLink
+        ? 'Copy link'
+        : 'Preparing...';
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: Image.asset(
@@ -652,6 +896,7 @@ class _PaymentLinksDesktopScreenState
       statusText: statusText,
       onAction: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       showCopyIcon: canUseLink,
+      showLoader: !canUseLink && record.state != PaymentLinkRecoveryState.draft,
     );
   }
 
@@ -700,9 +945,10 @@ class _PaymentLinksDesktopScreenState
         onSelected: (artwork) => setState(() => _selectedArtwork = artwork),
       ),
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
-      onCreate: _hasPositiveAmount
+      onCreate: _canContinueAmount
           ? () => _showPage(_PaymentLinksLocalPage.message)
           : null,
+      errorText: _amountErrorText,
     );
   }
 
@@ -744,6 +990,18 @@ class _PaymentLinksDesktopScreenState
     );
     final message = link.presentation?.message ?? '';
     final hasMessage = message.isNotEmpty;
+    final fundingProgress =
+        _fundingProgressByAddress[link.address] ??
+        const PaymentLinkFundingProgress(confirmationCount: 0);
+    final readyToShare = fundingProgress.isReady;
+    final confirmationsRemaining =
+        fundingProgress.confirmationTarget - fundingProgress.confirmationCount;
+    final linkAvailableSoon =
+        fundingProgress.confirmationCount > 0 &&
+        confirmationsRemaining <= _linkAvailableSoonRemainingConfirmations;
+    final waitingStatusLabel = linkAvailableSoon
+        ? 'Link will be available soon'
+        : 'Your link will be here';
     final card = hasMessage
         ? PaymentLinkCardFlip(
             showBack: _readyShowsBack,
@@ -764,18 +1022,23 @@ class _PaymentLinksDesktopScreenState
             showCaret: false,
           );
     return PaymentLinkReadyDesktopView(
-      state: hasMessage
-          ? PaymentLinkReadyVisualState.flipHint
+      state: !readyToShare
+          ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
-      decoration: const PaymentLinkConfetti(),
+      decoration: readyToShare || linkAvailableSoon
+          ? const PaymentLinkConfetti()
+          : null,
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
-      onCopy: _operationInProgress ? null : () => _copyPaymentLink(link),
-      onCardTap: hasMessage
+      onCopy: !readyToShare || _operationInProgress
+          ? null
+          : () => _copyPaymentLink(link),
+      onCardTap: readyToShare && hasMessage
           ? () => setState(() => _readyShowsBack = !_readyShowsBack)
           : null,
       onReturnHome: () => _showPage(_PaymentLinksLocalPage.home),
-      copyLabel: _operationInProgress ? 'Copying...' : 'Copy the gift link',
+      waitingStatusLabel: waitingStatusLabel,
+      copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
     );
   }
 

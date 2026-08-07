@@ -28,17 +28,20 @@ enum PaymentLinkPreviewState {
   createEmpty,
   createFocused,
   createAmount,
+  createInsufficient,
   createFiatLoading,
   createFiat,
   messageEmpty,
   messageFilled,
   review,
-  readyFlip,
+  readyWaiting,
+  readySoon,
   ready,
   cardsList,
   redeemPaste,
   redeemLoading,
   redeemInvalid,
+  redeemUnavailable,
   received,
   receivedMessage,
 }
@@ -60,6 +63,11 @@ Widget buildPaymentLinkCreateFocusedUseCase(BuildContext context) =>
 Widget buildPaymentLinkCreateAmountUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
       state: PaymentLinkPreviewState.createAmount,
+    );
+
+Widget buildPaymentLinkCreateInsufficientUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.createInsufficient,
     );
 
 Widget buildPaymentLinkCreateFiatLoadingUseCase(BuildContext context) =>
@@ -89,8 +97,13 @@ Widget buildPaymentLinkMessageInteractiveUseCase(BuildContext context) =>
 Widget buildPaymentLinkReviewUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.review);
 
-Widget buildPaymentLinkReadyFlipUseCase(BuildContext context) =>
-    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.readyFlip);
+Widget buildPaymentLinkReadyWaitingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.readyWaiting,
+    );
+
+Widget buildPaymentLinkReadySoonUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.readySoon);
 
 Widget buildPaymentLinkReadyUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.ready);
@@ -109,6 +122,11 @@ Widget buildPaymentLinkRedeemLoadingUseCase(BuildContext context) =>
 Widget buildPaymentLinkRedeemInvalidUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
       state: PaymentLinkPreviewState.redeemInvalid,
+    );
+
+Widget buildPaymentLinkRedeemUnavailableUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.redeemUnavailable,
     );
 
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
@@ -158,21 +176,6 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.help => PaymentLinkHowItWorksDesktopView(
         background: _home(),
         onClose: _noop,
-        // This is the exact Figma-authored fixture copy. It is intentionally
-        // confined here because the current bearer-secret link is not encrypted.
-        // Preserve the authored first-paragraph breaks across renderers.
-        createDescription:
-            'Enter amount to gift, pick a design,\n'
-            'add a message (optional) and create\n'
-            'your Card with a single click.',
-        shareDescription:
-            'After the card created, you will get a uniquely generated Link. '
-            'All data in the link is encrypted and safe to share. send this '
-            'Link to the recipient.',
-        redeemDescription:
-            'Recipient can redeem the card in their Vizor wallet using the '
-            'link. They receive the full amount shown because the sender '
-            'covers the claim fee.',
       ),
       PaymentLinkPreviewState.createEmpty => _amount(
         visualState: PaymentLinkAmountVisualState.empty,
@@ -200,6 +203,18 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
           maxAmountText: '142.23',
         ),
       ),
+      PaymentLinkPreviewState.createInsufficient => _amount(
+        visualState: PaymentLinkAmountVisualState.amount,
+        artwork: PaymentLinkCardArtwork.diamond,
+        errorText: 'Insufficient balance to cover the Card amount and fees.',
+        enableContinue: false,
+        cardBuilder: (artwork) => PaymentLinkGiftCard(
+          artwork: artwork,
+          amountText: '4.45',
+          supportingText: r'$1,210.20',
+          showCaret: false,
+        ),
+      ),
       PaymentLinkPreviewState.createFiatLoading => _amount(
         visualState: PaymentLinkAmountVisualState.fiatLoading,
         artwork: PaymentLinkCardArtwork.ruby,
@@ -225,12 +240,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         card: const PaymentLinkGiftCard(
           artwork: PaymentLinkCardArtwork.ruby,
           showBack: true,
-          emptyMessageLabel: 'Start Typing',
         ),
         onBack: _noop,
         onSkip: _noop,
-        title: 'Attach Encrypted Message',
-        subtitle: 'Optional. A short message only the receiver will see.',
       ),
       PaymentLinkPreviewState.messageFilled => PaymentLinkMessageDesktopView(
         state: PaymentLinkMessageVisualState.filled,
@@ -244,8 +256,6 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onBack: _noop,
         onSkip: _noop,
         onContinue: _noop,
-        title: 'Attach Encrypted Message',
-        subtitle: 'Optional. A short message only the receiver will see.',
       ),
       PaymentLinkPreviewState.review => PaymentLinkReviewDesktopView(
         card: const PaymentLinkGiftCard(
@@ -256,56 +266,101 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         ),
         onBack: _noop,
         onConfirm: _noop,
-        subtitle: 'You will get a secure link you can share.',
-        feeText: 'Creating fee: 0.12 ZEC',
-        confirmLabel: 'Confirm & create',
+        cardAmountText: '4.45 ZEC',
+        cardFeeText: '0.04 ZEC',
+        totalAmountText: '4.49 ZEC',
       ),
-      PaymentLinkPreviewState.readyFlip => const _PaymentLinkReadyFlipPreview(),
-      PaymentLinkPreviewState.ready => PaymentLinkReadyDesktopView(
-        state: PaymentLinkReadyVisualState.ready,
+      PaymentLinkPreviewState.readyWaiting => PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.waiting,
+        card: _readyCard(),
+        onBack: _noop,
+        onCopy: null,
+      ),
+      PaymentLinkPreviewState.readySoon => PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
         decoration: const PaymentLinkConfetti(),
         onBack: _noop,
-        onCopy: _noop,
-        onReturnHome: _noop,
+        onCopy: null,
+        waitingStatusLabel: 'Link will be available soon',
       ),
+      PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
       PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(
-        pendingCards: const [
-          PaymentLinkCardListRow(
-            thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
-            amountText: '0.25 ZEC',
-            dateText: 'July 2',
-            statusText: 'Copy link',
-            onAction: _noop,
-            showCopyIcon: true,
+        sections: const [
+          PaymentLinkCardsSection(
+            label: 'Creating',
+            cards: [
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
+                amountText: '1.10 ZEC',
+                dateText: 'May 20',
+                statusText: 'Preparing...',
+                showLoader: true,
+              ),
+            ],
           ),
-          PaymentLinkCardListRow(
-            thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
-            amountText: '1.10 ZEC',
-            dateText: 'May 20',
-            statusText: 'Copy link',
-            onAction: _noop,
-            showCopyIcon: true,
+          PaymentLinkCardsSection(
+            label: 'Pending',
+            cards: [
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
+                amountText: '0.25 ZEC',
+                dateText: 'July 2',
+                statusText: 'New Wallet',
+                onAction: _noop,
+                showCopyIcon: true,
+              ),
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
+                amountText: '1.10 ZEC',
+                dateText: 'May 20',
+                statusText: 'New Wallet',
+                onAction: _noop,
+                showCopyIcon: true,
+              ),
+            ],
           ),
-        ],
-        createdCards: const [
-          PaymentLinkCardListRow(
-            thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.chestLava),
-            amountText: '2.5 ZEC',
-            dateText: 'July 20',
-            statusText: 'Redeemed',
-          ),
-          PaymentLinkCardListRow(
-            thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.chestLava),
-            amountText: '2.5 ZEC',
-            dateText: 'July 20',
-            statusText: 'Redeemed',
+          PaymentLinkCardsSection(
+            label: 'July 2026',
+            cards: [
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(
+                  PaymentLinkCardArtwork.chestLava,
+                ),
+                amountText: '2.5 ZEC',
+                dateText: 'July 20',
+                statusText: 'Redeemed',
+              ),
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(
+                  PaymentLinkCardArtwork.chestLava,
+                ),
+                amountText: '2.5 ZEC',
+                dateText: 'July 20',
+                statusText: 'Redeemed',
+              ),
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(
+                  PaymentLinkCardArtwork.chestLava,
+                ),
+                amountText: '2.5 ZEC',
+                dateText: 'July 20',
+                statusText: 'Redeemed',
+              ),
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(
+                  PaymentLinkCardArtwork.chestLava,
+                ),
+                amountText: '2.5 ZEC',
+                dateText: 'July 20',
+                statusText: 'Redeemed',
+              ),
+            ],
           ),
         ],
         onBack: _noop,
         onCreate: _noop,
         onRedeem: _noop,
-        createdSectionLabel: 'July 2026',
       ),
       PaymentLinkPreviewState.redeemPaste => PaymentLinkRedeemDesktopView(
         state: PaymentLinkRedeemVisualState.paste,
@@ -329,9 +384,17 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         pasteLabel: 'Paste card link',
         clearLabel: 'Clear clipboard',
       ),
-      PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(),
+      PaymentLinkPreviewState.redeemUnavailable => PaymentLinkRedeemDesktopView(
+        state: PaymentLinkRedeemVisualState.unavailable,
+        onBack: _noop,
+        onPaste: _noop,
+        onClearClipboard: _noop,
+      ),
+      PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(
+        hasMessage: false,
+      ),
       PaymentLinkPreviewState.receivedMessage =>
-        const _PaymentLinkReceivedPreview(initialShowBack: true),
+        const _PaymentLinkReceivedPreview(hasMessage: true),
     };
   }
 
@@ -355,11 +418,15 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
     required PaymentLinkAmountVisualState visualState,
     required PaymentLinkCardArtwork artwork,
     required _PaymentLinkGiftCardBuilder cardBuilder,
+    String? errorText,
+    bool enableContinue = true,
   }) {
     return _PaymentLinkStaticAmountPreview(
       visualState: visualState,
       initialArtwork: artwork,
       cardBuilder: cardBuilder,
+      errorText: errorText,
+      enableContinue: enableContinue,
     );
   }
 
@@ -381,11 +448,15 @@ class _PaymentLinkStaticAmountPreview extends StatefulWidget {
     required this.visualState,
     required this.initialArtwork,
     required this.cardBuilder,
+    this.errorText,
+    this.enableContinue = true,
   });
 
   final PaymentLinkAmountVisualState visualState;
   final PaymentLinkCardArtwork initialArtwork;
   final _PaymentLinkGiftCardBuilder cardBuilder;
+  final String? errorText;
+  final bool enableContinue;
 
   @override
   State<_PaymentLinkStaticAmountPreview> createState() =>
@@ -424,21 +495,21 @@ class _PaymentLinkStaticAmountPreviewState
         },
       ),
       onBack: _noop,
-      onCreate: _noop,
+      onCreate: widget.enableContinue ? _noop : null,
+      errorText: widget.errorText,
     );
   }
 }
 
-class _PaymentLinkReadyFlipPreview extends StatefulWidget {
-  const _PaymentLinkReadyFlipPreview();
+class _PaymentLinkReadyPreview extends StatefulWidget {
+  const _PaymentLinkReadyPreview();
 
   @override
-  State<_PaymentLinkReadyFlipPreview> createState() =>
-      _PaymentLinkReadyFlipPreviewState();
+  State<_PaymentLinkReadyPreview> createState() =>
+      _PaymentLinkReadyPreviewState();
 }
 
-class _PaymentLinkReadyFlipPreviewState
-    extends State<_PaymentLinkReadyFlipPreview> {
+class _PaymentLinkReadyPreviewState extends State<_PaymentLinkReadyPreview> {
   bool _showBack = false;
 
   void _toggleCardSide() => setState(() => _showBack = !_showBack);
@@ -446,7 +517,7 @@ class _PaymentLinkReadyFlipPreviewState
   @override
   Widget build(BuildContext context) {
     return PaymentLinkReadyDesktopView(
-      state: PaymentLinkReadyVisualState.flipHint,
+      state: PaymentLinkReadyVisualState.ready,
       card: PaymentLinkCardFlip(
         showBack: _showBack,
         front: const PaymentLinkGiftCard(
@@ -484,7 +555,6 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
     extends State<PaymentLinkInteractiveMessageDesktopPreview> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-
   bool get _hasMessage => _controller.text.isNotEmpty;
 
   @override
@@ -538,9 +608,9 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
 }
 
 class _PaymentLinkReceivedPreview extends StatefulWidget {
-  const _PaymentLinkReceivedPreview({this.initialShowBack = false});
+  const _PaymentLinkReceivedPreview({required this.hasMessage});
 
-  final bool initialShowBack;
+  final bool hasMessage;
 
   @override
   State<_PaymentLinkReceivedPreview> createState() =>
@@ -554,13 +624,26 @@ class _PaymentLinkReceivedPreviewState
   @override
   void initState() {
     super.initState();
-    _showBack = widget.initialShowBack;
+    _showBack = false;
   }
 
   void _toggleCardSide() => setState(() => _showBack = !_showBack);
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.hasMessage) {
+      return PaymentLinkReceivedDesktopView(
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.ruby,
+          amountText: '4.45',
+          supportingText: r'$1,210.20',
+          showCaret: false,
+        ),
+        decoration: const PaymentLinkConfetti(),
+        onBack: _noop,
+        onClaim: _noop,
+      );
+    }
     return PaymentLinkReceivedDesktopView(
       card: PaymentLinkCardFlip(
         showBack: _showBack,

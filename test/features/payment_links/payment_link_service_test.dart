@@ -19,6 +19,56 @@ void main() {
     );
   });
 
+  test(
+    'funding quote includes deposit and redeem fees in the sender total',
+    () {
+      final quote = PaymentLinkFundingQuote(
+        recipientAmountZatoshi: BigInt.from(100000000),
+        fundingFeeZatoshi: BigInt.from(15000),
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+
+      expect(quote.cardFeeZatoshi, BigInt.from(25000));
+      expect(quote.totalDeductedZatoshi, BigInt.from(100025000));
+    },
+  );
+
+  test('share readiness requires ten mined confirmations', () {
+    expect(
+      paymentLinkConfirmationCount(
+        minedHeight: BigInt.from(100),
+        chainTipHeight: BigInt.from(108),
+      ),
+      9,
+    );
+    expect(
+      const PaymentLinkFundingProgress(confirmationCount: 9).isReady,
+      isFalse,
+    );
+    expect(
+      const PaymentLinkFundingProgress(confirmationCount: 10).isReady,
+      isTrue,
+    );
+    expect(
+      paymentLinkConfirmationCount(
+        minedHeight: BigInt.zero,
+        chainTipHeight: BigInt.from(108),
+      ),
+      0,
+    );
+  });
+
+  test('matches broadcast and history txids across byte order', () {
+    const broadcastTxid =
+        '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+    const historyTxid =
+        'e3c77449aa6deca8d14d15f3d05f9635ed33eed98bc818f19b0289c799fe0999';
+
+    expect(paymentLinkTxidsMatch(broadcastTxid, historyTxid), isTrue);
+    expect(paymentLinkTxidsMatch('0x$broadcastTxid', broadcastTxid), isTrue);
+    expect(paymentLinkTxidsMatch(broadcastTxid, 'not-a-txid'), isFalse);
+  });
+
   test('claim exposes only the amount promised by the link', () {
     final recipientAmount = BigInt.from(100000000);
 
