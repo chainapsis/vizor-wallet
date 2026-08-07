@@ -239,11 +239,10 @@ class RustPaymentLinkHardwareSigningService
       rethrow;
     }
 
-    final hasTxid = result.txid.trim().isNotEmpty;
-    final fundingAccepted =
-        hasTxid &&
-        (result.status == 'broadcasted' ||
-            result.status == 'broadcasted_storage_failed');
+    final fundingAccepted = isPaymentLinkFundingSubmitted(
+      status: result.status,
+      txids: result.txid,
+    );
     if (result.status == 'broadcast_unknown' ||
         result.status == 'broadcasted_storage_failed') {
       await _retainPcztDraftLockUntilExpiry(draft);
