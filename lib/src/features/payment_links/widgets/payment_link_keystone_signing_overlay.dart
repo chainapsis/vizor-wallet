@@ -11,6 +11,7 @@ import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
+import '../services/payment_link_service.dart';
 
 class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkKeystoneSigningOverlay({
@@ -196,11 +197,10 @@ class _PaymentLinkKeystoneSigningOverlayState
         outputParamsPath:
             draft.needsSaplingParams ? saplingParams!.outputPath : null,
       );
-      final hasTxid = result.txid.trim().isNotEmpty;
-      final fundingAccepted =
-          hasTxid &&
-          (result.status == 'broadcasted' ||
-              result.status == 'broadcasted_storage_failed');
+      final fundingAccepted = isPaymentLinkFundingSubmitted(
+        status: result.status,
+        txids: result.txid,
+      );
       if (!fundingAccepted) {
         if (!mounted) return;
         setState(() {

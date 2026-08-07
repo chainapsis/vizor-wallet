@@ -27,7 +27,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -469,7 +469,15 @@ void main() {
 
       expect(hardwareSigning.discardedDrafts, [BigInt.one]);
       expect(find.byType(KeystoneSigningModal), findsNothing);
-      expect(find.text('Card amount'), findsOneWidget);
+      expect(
+        find.text('Card amount'),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((widget) => widget.data)
+            .whereType<String>()
+            .join(' | '),
+      );
     },
   );
 
@@ -508,6 +516,62 @@ void main() {
     expect(operations.createdArtworkIds, ['ruby']);
     expect(operations.createdMessages, ['Congratulations!']);
   });
+
+  testWidgets(
+    'requotes and returns to amount when the active account changes',
+    (tester) async {
+      final operations = _FakePaymentLinkOperations();
+      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      await _pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        accountNotifier: accountNotifier,
+        bootstrap: _twoAccountBootstrap,
+      );
+
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_amount_editor')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip message'));
+      await tester.pumpAndSettle();
+      expect(find.text('Create card'), findsOneWidget);
+
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pump();
+
+      expect(find.text('Enter amount'), findsOneWidget);
+      expect(find.text('Create card'), findsNothing);
+      expect(
+        find.text(
+          'Active account changed. Review the Gift Card amount and fees again.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip message'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create card'));
+      await tester.pumpAndSettle();
+
+      expect(operations.quotedAccounts, ['account-1', 'account-2']);
+      expect(operations.createdFromAccounts, ['account-2']);
+    },
+  );
 
   testWidgets('hardware cancel releases a draft that finishes preparing late', (
     tester,
@@ -835,6 +899,7 @@ Future<void> _pumpPaymentLinksScreen(
   _FakePaymentLinkOperations? operations,
   _FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  AccountNotifier? accountNotifier,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
 }) async {
@@ -847,6 +912,8 @@ Future<void> _pumpPaymentLinksScreen(
     ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+        if (accountNotifier != null)
+          accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
         if (hardwareSigning != null)
@@ -965,6 +1032,38 @@ final _hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+const _twoAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Primary Vault',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+    AccountInfo(
+      uuid: 'account-2',
+      name: 'Savings',
+      order: 1,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+final _twoAccountBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: _twoAccountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 final _incomingLink = VizorPaymentLink(
   network: 'main',
   address: 'u1paymentlinkaddress',
@@ -1014,6 +1113,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<String> createdFromAccounts = [];
   final List<String?> createdArtworkIds = [];
   final List<String?> createdMessages = [];
+  final List<String> quotedAccounts = [];
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
@@ -1023,7 +1123,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
   }) async {
+    quotedAccounts.add(sourceAccountUuid);
     return PaymentLinkFundingQuote(
+      sourceAccountUuid: sourceAccountUuid,
       recipientAmountZatoshi: amountZatoshi,
       fundingFeeZatoshi: BigInt.from(10000),
       claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
@@ -1199,6 +1301,21 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
       (record) => record.address == address,
     );
     if (index >= 0) receivedRecords[index] = update(receivedRecords[index]);
+  }
+}
+
+class _SwitchablePaymentLinkAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => _twoAccountState;
+
+  void setActiveAccount(String uuid) {
+    final current = state.value ?? _twoAccountState;
+    state = AsyncData(
+      current.copyWith(
+        activeAccountUuid: uuid,
+        activeAddress: 'u1${uuid}address',
+      ),
+    );
   }
 }
 

@@ -113,11 +113,13 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
+    required this.sourceAccountUuid,
     required this.recipientAmountZatoshi,
     required this.fundingFeeZatoshi,
     required this.claimFeeReserveZatoshi,
   });
 
+  final String sourceAccountUuid;
   final BigInt recipientAmountZatoshi;
   final BigInt fundingFeeZatoshi;
   final BigInt claimFeeReserveZatoshi;
@@ -125,6 +127,22 @@ class PaymentLinkFundingQuote {
   BigInt get cardFeeZatoshi => fundingFeeZatoshi + claimFeeReserveZatoshi;
 
   BigInt get totalDeductedZatoshi => recipientAmountZatoshi + cardFeeZatoshi;
+}
+
+const _submittedPaymentLinkFundingStatuses = {
+  'broadcasted',
+  'pending_broadcast',
+  'partial_broadcast',
+  'broadcast_unknown',
+  'broadcasted_storage_failed',
+};
+
+bool isPaymentLinkFundingSubmitted({
+  required String status,
+  required String txids,
+}) {
+  return txids.trim().isNotEmpty &&
+      _submittedPaymentLinkFundingStatuses.contains(status);
 }
 
 class PaymentLinkFundingProgress {
@@ -308,21 +326,6 @@ class PaymentLinkClaimResult {
       status == PaymentLinkClaimBroadcastStatus.broadcasted;
 }
 
-class PaymentLinkBroadcastPendingException implements Exception {
-  const PaymentLinkBroadcastPendingException({
-    required this.txids,
-    required this.status,
-    required this.message,
-  });
-
-  final String txids;
-  final String status;
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 class PaymentLinkService implements PaymentLinkOperations {
   PaymentLinkService(this._ref, this._recoveryStore, this._receivedStore);
 
@@ -358,6 +361,7 @@ class PaymentLinkService implements PaymentLinkOperations {
               memo: null,
             );
             return PaymentLinkFundingQuote(
+              sourceAccountUuid: sourceAccountUuid,
               recipientAmountZatoshi: amountZatoshi,
               fundingFeeZatoshi: fundingFee,
               claimFeeReserveZatoshi: BigInt.from(
@@ -392,13 +396,21 @@ class PaymentLinkService implements PaymentLinkOperations {
       amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
       memo: null,
     );
+    if (!isPaymentLinkFundingSubmitted(
+      status: fundingResult.status,
+      txids: fundingResult.txids,
+    )) {
+      throw StateError(
+        fundingResult.message ??
+            'Payment link funding did not produce a trackable transaction.',
+      );
+    }
     await _recoveryStore.markFunded(
       address: link.address,
       fundingTxids: fundingResult.txids,
     );
 
     unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
-    _requireFullyBroadcasted(fundingResult);
     return link;
   }
 
@@ -1036,19 +1048,6 @@ class PaymentLinkService implements PaymentLinkOperations {
       await directory.delete(recursive: true);
     }
     await directory.create(recursive: true);
-  }
-
-  void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {
-    if (paymentLinkClaimBroadcastStatusFromWire(result.status) ==
-        PaymentLinkClaimBroadcastStatus.broadcasted) {
-      return;
-    }
-    throw PaymentLinkBroadcastPendingException(
-      txids: result.txids,
-      status: result.status,
-      message: result.message ??
-          'Payment link funding transaction is waiting to be broadcast.',
-    );
   }
 
   Future<void> _deleteTemporaryWalletDb(Directory directory) async {
