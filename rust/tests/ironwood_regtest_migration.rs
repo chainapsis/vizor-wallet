@@ -164,6 +164,11 @@ fn run_harness(script: &str, args: &[&str]) -> String {
 }
 
 fn ensure_stack_up() {
+    // Declared before the first lightwalletd call. The library refuses a route
+    // nothing has declared rather than treating it as direct, so that a caller
+    // which never read the user's preference cannot reach the network; a test
+    // process says direct for the same reason the native passes do.
+    rust_lib_zcash_wallet::network_privacy::mark_direct_route();
     run_harness("up.sh", &[]);
 }
 
