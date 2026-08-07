@@ -17,6 +17,7 @@ import '../../../providers/sync_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
+import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
 import '../widgets/payment_link_card_flip.dart';
@@ -94,7 +95,7 @@ class _PaymentLinksDesktopScreenState
   PaymentLinkCardsTab _activeCardsTab = PaymentLinkCardsTab.created;
   List<PaymentLinkRecoveryRecord> _recoveries = const [];
   Map<String, PaymentLinkFundingProgress> _fundingProgressByAddress = const {};
-  List<_ReceivedPaymentLinkRecord> _receivedCards = const [];
+  List<PaymentLinkReceivedRecord> _receivedCards = const [];
   PaymentLinkFundingQuote? _fundingQuote;
   PaymentLinkClaimSession? _receivedClaimSession;
   VizorPaymentLink? _readyLink;
@@ -108,6 +109,7 @@ class _PaymentLinksDesktopScreenState
   bool _readyShowsBack = false;
   bool _receivedShowsBack = false;
   bool _operationInProgress = false;
+  bool _receivedRefreshInProgress = false;
   bool _pendingIntakeScheduled = false;
 
   @override
@@ -119,12 +121,13 @@ class _PaymentLinksDesktopScreenState
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_loadRecoveries());
+      unawaited(_loadReceivedCards());
       unawaited(_consumePendingPaymentLink());
     });
-    _fundingProgressTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => unawaited(_refreshFundingProgress()),
-    );
+    _fundingProgressTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      unawaited(_refreshFundingProgress());
+      unawaited(_refreshReceivedClaims());
+    });
   }
 
   @override
@@ -241,37 +244,80 @@ class _PaymentLinksDesktopScreenState
     }
   }
 
+  Future<void> _loadReceivedCards({bool showError = true}) async {
+    try {
+      final records = await ref
+          .read(paymentLinkOperationsProvider)
+          .loadReceivedLinkRecoveries();
+      if (!mounted) return;
+      final sorted = List<PaymentLinkReceivedRecord>.of(records)
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      setState(() => _receivedCards = sorted);
+      unawaited(_refreshReceivedClaims(records: sorted));
+    } catch (_) {
+      if (mounted && showError) {
+        _showError('Received Gift Cards could not be loaded.');
+      }
+    }
+  }
+
+  Future<void> _refreshReceivedClaims({
+    List<PaymentLinkReceivedRecord>? records,
+  }) async {
+    final receivedCards = records ?? _receivedCards;
+    final hasReceiving = receivedCards.any(
+      (record) => record.status == PaymentLinkReceivedStatus.receiving,
+    );
+    if (!hasReceiving || _operationInProgress || _receivedRefreshInProgress) {
+      return;
+    }
+    _receivedRefreshInProgress = true;
+    try {
+      final updated = await ref
+          .read(paymentLinkOperationsProvider)
+          .inspectReceivedLinkClaims(receivedCards);
+      if (!mounted) return;
+      final sorted = List<PaymentLinkReceivedRecord>.of(updated)
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      setState(() => _receivedCards = sorted);
+    } catch (_) {
+      // Keep the last persisted status. The main wallet sync and the next
+      // timer tick will retry the mined-history check.
+    } finally {
+      _receivedRefreshInProgress = false;
+    }
+  }
+
   void _rememberReceivedLink(VizorPaymentLink link) {
     final existingIndex = _receivedCards.indexWhere(
       (record) => record.address == link.address,
     );
-    final existing = existingIndex < 0 ? null : _receivedCards[existingIndex];
-    final status = existing?.status ?? _ReceivedPaymentLinkStatus.readyToClaim;
-    final updated = _ReceivedPaymentLinkRecord.fromLink(
-      link,
-      status: status,
-      retainClaimLink: status != _ReceivedPaymentLinkStatus.received,
-    );
-    final records = List<_ReceivedPaymentLinkRecord>.of(_receivedCards);
-    if (existingIndex >= 0) records.removeAt(existingIndex);
-    _receivedCards = [updated, ...records];
+    if (existingIndex >= 0) return;
+    _receivedCards = [
+      PaymentLinkReceivedRecord.fromLink(link),
+      ..._receivedCards,
+    ];
   }
 
   void _setReceivedCardStatus(
     String address,
-    _ReceivedPaymentLinkStatus status, {
+    PaymentLinkReceivedStatus status, {
     bool clearClaimLink = false,
   }) {
     _receivedCards = [
       for (final record in _receivedCards)
         if (record.address == address)
-          record.withStatus(status, clearClaimLink: clearClaimLink)
+          record.copyWith(
+            status: status,
+            claimLink: clearClaimLink ? null : record.claimLink,
+            updatedAt: DateTime.now(),
+          )
         else
           record,
     ];
   }
 
-  void _openReceivedCard(_ReceivedPaymentLinkRecord record) {
+  void _openReceivedCard(PaymentLinkReceivedRecord record) {
     final link = record.claimLink;
     if (link == null || _operationInProgress) return;
     unawaited(_checkPaymentLink(link));
@@ -668,43 +714,27 @@ class _PaymentLinksDesktopScreenState
       _operationInProgress = true;
       _receivedLink = null;
       _receivedShowsBack = false;
-      _setReceivedCardStatus(
-        link.address,
-        _ReceivedPaymentLinkStatus.receiving,
-      );
+      _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
       _page = _PaymentLinksLocalPage.home;
       _showHelp = false;
     });
     try {
-      final result = await ref
-          .read(paymentLinkOperationsProvider)
-          .claimPreparedLink(session);
+      await ref.read(paymentLinkOperationsProvider).claimPreparedLink(session);
       if (!mounted) return;
       setState(() {
-        // A successful submission owns its temporary claim DB from here. For
-        // pending broadcasts the service deliberately retains that DB so a
-        // later paste can reopen and reconcile it.
+        // Broadcast acceptance is not receipt. The persisted receiver record
+        // remains Receiving until main-wallet history sees the claim mined.
         _receivedClaimSession = null;
-        if (result.isBroadcasted) {
-          _setReceivedCardStatus(
-            link.address,
-            _ReceivedPaymentLinkStatus.received,
-            clearClaimLink: true,
-          );
-        }
       });
-      if (result.isBroadcasted) {
-        showAppToast(context, 'Gift claimed');
-      } else {
-        showAppToast(context, 'Gift claim submitted');
-      }
+      showAppToast(context, 'Gift claim submitted');
+      unawaited(_refreshReceivedClaims());
     } catch (_) {
       if (mounted) {
         setState(() {
           _setReceivedCardStatus(
             link.address,
-            _ReceivedPaymentLinkStatus.readyToClaim,
+            PaymentLinkReceivedStatus.readyToClaim,
           );
         });
         _showError(
@@ -900,14 +930,14 @@ class _PaymentLinksDesktopScreenState
     );
   }
 
-  Widget _buildReceivedRow(_ReceivedPaymentLinkRecord record) {
+  Widget _buildReceivedRow(PaymentLinkReceivedRecord record) {
     final statusText = switch (record.status) {
-      _ReceivedPaymentLinkStatus.readyToClaim => 'Claim',
-      _ReceivedPaymentLinkStatus.receiving => 'Receiving',
-      _ReceivedPaymentLinkStatus.received => 'Received',
+      PaymentLinkReceivedStatus.readyToClaim => 'Claim',
+      PaymentLinkReceivedStatus.receiving => 'Receiving...',
+      PaymentLinkReceivedStatus.received => 'Received',
     };
     final canClaim =
-        record.status == _ReceivedPaymentLinkStatus.readyToClaim &&
+        record.status == PaymentLinkReceivedStatus.readyToClaim &&
         record.claimLink != null &&
         !_operationInProgress;
     return PaymentLinkCardListRow(
@@ -921,6 +951,7 @@ class _PaymentLinksDesktopScreenState
       dateText: _formatCardDate(record.createdAt),
       statusText: statusText,
       onAction: canClaim ? () => _openReceivedCard(record) : null,
+      showLoader: record.status == PaymentLinkReceivedStatus.receiving,
     );
   }
 
@@ -1097,53 +1128,4 @@ class _PaymentLinkKeystoneFundingRequest {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation presentation;
-}
-
-enum _ReceivedPaymentLinkStatus { readyToClaim, receiving, received }
-
-class _ReceivedPaymentLinkRecord {
-  const _ReceivedPaymentLinkRecord({
-    required this.address,
-    required this.amountZatoshi,
-    required this.createdAt,
-    required this.artworkId,
-    required this.status,
-    required this.claimLink,
-  });
-
-  factory _ReceivedPaymentLinkRecord.fromLink(
-    VizorPaymentLink link, {
-    _ReceivedPaymentLinkStatus status = _ReceivedPaymentLinkStatus.readyToClaim,
-    bool retainClaimLink = true,
-  }) {
-    return _ReceivedPaymentLinkRecord(
-      address: link.address,
-      amountZatoshi: link.amountZatoshi,
-      createdAt: link.createdAt,
-      artworkId: link.presentation?.artworkId,
-      status: status,
-      claimLink: retainClaimLink ? link : null,
-    );
-  }
-
-  final String address;
-  final BigInt amountZatoshi;
-  final DateTime createdAt;
-  final String? artworkId;
-  final _ReceivedPaymentLinkStatus status;
-  final VizorPaymentLink? claimLink;
-
-  _ReceivedPaymentLinkRecord withStatus(
-    _ReceivedPaymentLinkStatus nextStatus, {
-    bool clearClaimLink = false,
-  }) {
-    return _ReceivedPaymentLinkRecord(
-      address: address,
-      amountZatoshi: amountZatoshi,
-      createdAt: createdAt,
-      artworkId: artworkId,
-      status: nextStatus,
-      claimLink: clearClaimLink ? null : claimLink,
-    );
-  }
 }
