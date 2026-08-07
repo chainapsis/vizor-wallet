@@ -88,10 +88,6 @@ void main() {
         tester,
         const ValueKey('payment_link_amount_continue_button'),
       );
-      await tapAppWidget(
-        tester,
-        const ValueKey('payment_link_message_card_front'),
-      );
       await enterAppText(
         tester,
         const ValueKey('payment_link_message_editor'),
