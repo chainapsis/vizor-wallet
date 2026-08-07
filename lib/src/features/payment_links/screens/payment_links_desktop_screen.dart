@@ -97,6 +97,7 @@ class _PaymentLinksDesktopScreenState
   Map<String, PaymentLinkFundingProgress> _fundingProgressByAddress = const {};
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   PaymentLinkFundingQuote? _fundingQuote;
+  String? _fundingQuoteRequestedAccountUuid;
   PaymentLinkClaimSession? _receivedClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
@@ -351,6 +352,7 @@ class _PaymentLinksDesktopScreenState
     final amount = parseZecAmount(value);
     setState(() {
       _fundingQuote = null;
+      _fundingQuoteRequestedAccountUuid = null;
       _fundingQuoteInProgress = false;
       _amountErrorText = null;
     });
@@ -359,6 +361,7 @@ class _PaymentLinksDesktopScreenState
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || accountUuid.isEmpty || sync == null) return;
+    _fundingQuoteRequestedAccountUuid = accountUuid;
     final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
     if (sync.hasBalanceData && sync.spendableBalance < minimumFunding) {
       setState(() {
@@ -380,6 +383,38 @@ class _PaymentLinksDesktopScreenState
     });
   }
 
+  void _handleActiveAccountChanged(String? previous, String? current) {
+    final quotedAccount = _fundingQuote?.sourceAccountUuid;
+    final priorAccount =
+        previous ?? quotedAccount ?? _fundingQuoteRequestedAccountUuid;
+    if (current == null || priorAccount == null || priorAccount == current) {
+      return;
+    }
+    if (_page != _PaymentLinksLocalPage.amount &&
+        _page != _PaymentLinksLocalPage.message &&
+        _page != _PaymentLinksLocalPage.review) {
+      return;
+    }
+
+    final wasPastAmountStep = _page != _PaymentLinksLocalPage.amount;
+    _fundingQuoteDebounce?.cancel();
+    _fundingQuoteGeneration += 1;
+    setState(() {
+      _fundingQuote = null;
+      _fundingQuoteInProgress = false;
+      _amountErrorText = null;
+      _page = _PaymentLinksLocalPage.amount;
+    });
+    _handleAmountChanged(_amountController.text);
+    if (wasPastAmountStep) {
+      showAppToast(
+        context,
+        'Active account changed. Review the Gift Card amount and fees again.',
+        iconName: AppIcons.warning,
+      );
+    }
+  }
+
   Future<void> _loadFundingQuote({
     required int generation,
     required BigInt amountZatoshi,
@@ -393,10 +428,14 @@ class _PaymentLinksDesktopScreenState
             sourceAccountUuid: sourceAccountUuid,
           );
       if (!mounted || generation != _fundingQuoteGeneration) return;
+      if (quote.sourceAccountUuid != sourceAccountUuid) {
+        throw StateError('Gift Card quote was returned for another account.');
+      }
       final sync = ref.read(syncProvider).value;
       final insufficient =
           sync?.hasBalanceData == true &&
-          sync!.spendableBalance < quote.totalDeductedZatoshi;
+          sync!.accountUuid == sourceAccountUuid &&
+          sync.spendableBalance < quote.totalDeductedZatoshi;
       setState(() {
         _fundingQuoteInProgress = false;
         _fundingQuote = insufficient ? null : quote;
@@ -475,20 +514,30 @@ class _PaymentLinksDesktopScreenState
     final amount = parseZecAmount(_amountController.text.trim());
     final quote = _fundingQuote;
     final accountState = ref.read(accountProvider).value;
-    final sourceAccountUuid = accountState?.activeAccountUuid;
+    final activeAccountUuid = accountState?.activeAccountUuid;
     if (amount == null || amount <= BigInt.zero || quote == null) {
       _showError('Enter a valid Gift Card amount.');
       return;
     }
-    if (sourceAccountUuid == null || sourceAccountUuid.isEmpty) {
+    if (activeAccountUuid == null || activeAccountUuid.isEmpty) {
       _showError('No active account is available.');
       return;
     }
+    if (activeAccountUuid != quote.sourceAccountUuid) {
+      _handleActiveAccountChanged(quote.sourceAccountUuid, activeAccountUuid);
+      _showError(
+        'The active account changed. Review the amount and try again.',
+      );
+      return;
+    }
+    final sourceAccountUuid = quote.sourceAccountUuid;
     final presentation = PaymentLinkPresentation(
       artworkId: _selectedArtwork.protocolId,
       message: _messageController.text,
     );
-    if (ref.read(accountProvider.notifier).isActiveAccountHardware) {
+    if (ref
+        .read(accountProvider.notifier)
+        .isHardwareAccount(sourceAccountUuid)) {
       setState(() {
         _operationInProgress = true;
         _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(
@@ -557,11 +606,14 @@ class _PaymentLinksDesktopScreenState
       _page = _PaymentLinksLocalPage.ready;
     });
     unawaited(_refreshFundingProgress());
-    if (status == 'broadcasted_storage_failed') {
+    if (status == 'broadcasted_storage_failed' ||
+        status == 'broadcast_unknown') {
       showAppToast(
         context,
         message ??
-            'Funding was sent, but local transaction storage needs to sync.',
+            (status == 'broadcast_unknown'
+                ? 'Funding is still being verified. Vizor will keep checking it.'
+                : 'Funding was sent, but local transaction storage needs to sync.'),
         iconName: AppIcons.warning,
       );
     }
@@ -758,6 +810,10 @@ class _PaymentLinksDesktopScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+      _handleActiveAccountChanged,
+    );
     final pendingLink = ref.watch(
       paymentLinkIntakeProvider.select((state) => state.pendingLink),
     );
