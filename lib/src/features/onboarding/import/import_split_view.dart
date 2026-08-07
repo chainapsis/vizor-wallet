@@ -186,7 +186,8 @@ class _SidebarIllustration extends StatelessWidget {
   final ImportOnboardingStep activeStep;
 
   static const _frameWidth = 256.0;
-  static const _frameHeight = 405.0;
+  static const _defaultFrameHeight = 405.0;
+  static const _customiseAccountFrameHeight = 430.0;
 
   @override
   Widget build(BuildContext context) {
@@ -207,12 +208,15 @@ class _SidebarIllustration extends StatelessWidget {
       ImportOnboardingStep.customiseAccount =>
         'assets/illustrations/onboarding_customise_account_sidebar.png',
     };
+    final frameHeight = activeStep == ImportOnboardingStep.customiseAccount
+        ? _customiseAccountFrameHeight
+        : _defaultFrameHeight;
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
         child: SizedBox(
           width: _frameWidth,
-          height: _frameHeight,
+          height: frameHeight,
           child: Image.asset(
             asset,
             fit: BoxFit.cover,
