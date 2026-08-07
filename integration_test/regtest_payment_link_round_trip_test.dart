@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -56,8 +58,17 @@ void main() {
 
       await importDesktopRegtestWallet(tester);
       final senderAccountUuid = await firstDesktopRegtestAccountUuid();
-      await _waitForHomeBalance(tester, '1.25');
       await _waitForForegroundSyncIdle(tester);
+      final senderStartingBalance = await _waitForAccountBalanceAtLeast(
+        tester,
+        accountUuid: senderAccountUuid,
+        total: BigInt.from(125000000),
+        spendable: BigInt.from(125000000),
+      );
+      await _waitForHomeBalance(
+        tester,
+        ZecAmount.fromZatoshi(senderStartingBalance.total).balance.amountText,
+      );
 
       await _openPaymentLinksFromSidebar(tester);
       await tapAppButton(
@@ -77,6 +88,10 @@ void main() {
         tester,
         const ValueKey('payment_link_amount_continue_button'),
       );
+      await tapAppWidget(
+        tester,
+        const ValueKey('payment_link_message_card_front'),
+      );
       await enterAppText(
         tester,
         const ValueKey('payment_link_message_editor'),
@@ -90,6 +105,59 @@ void main() {
         tester,
         const ValueKey('payment_link_confirm_create_button'),
       );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Gift Card is\nalmost ready!')),
+        description: 'payment-link funding to reach confirmation wait',
+        timeout: const Duration(minutes: 2),
+      );
+      expect(find.text('Gift Card is\nalmost ready!'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('payment_link_copy_link_button')),
+        findsNothing,
+      );
+
+      final pendingFunding = await _waitForHistoryTransaction(
+        tester,
+        accountUuid: senderAccountUuid,
+        txKind: 'sent',
+        amount: _fundingAmountZatoshi,
+        pending: true,
+      );
+      await _mineRegtestBlocks(kPaymentLinkShareConfirmationTarget);
+      final minedFunding = await _waitForHistoryTransaction(
+        tester,
+        accountUuid: senderAccountUuid,
+        txKind: 'sent',
+        amount: _fundingAmountZatoshi,
+        pending: false,
+        txid: pendingFunding.txidHex,
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ZcashWalletApp)),
+      );
+      final operations = container.read(paymentLinkOperationsProvider);
+      final senderRecoveries =
+          (await operations.loadCreatedLinkRecoveries())
+              .where((record) => record.sourceAccountUuid == senderAccountUuid)
+              .toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      final fundingRecovery = senderRecoveries.first;
+      final fundingProgress = await operations.inspectCreatedLinkFundings([
+        fundingRecovery,
+      ]);
+      expect(
+        fundingProgress[fundingRecovery.link.address]?.confirmationCount,
+        kPaymentLinkShareConfirmationTarget,
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('payment_link_copy_link_button')),
+        ),
+        description: 'payment-link copy action after ten confirmations',
+        timeout: const Duration(minutes: 2),
+      );
       await tapAppButton(
         tester,
         const ValueKey('payment_link_copy_link_button'),
@@ -102,32 +170,14 @@ void main() {
       expect(link.presentation?.artworkId, 'coin');
       expect(link.presentation?.message, _giftMessage);
 
-      final pendingFunding = await _waitForHistoryTransaction(
-        tester,
-        accountUuid: senderAccountUuid,
-        txKind: 'sent',
-        amount: _fundingAmountZatoshi,
-        pending: true,
-      );
-      await _mineRegtestBlocks(1);
-      final minedFunding = await _waitForHistoryTransaction(
-        tester,
-        accountUuid: senderAccountUuid,
-        txKind: 'sent',
-        amount: _fundingAmountZatoshi,
-        pending: false,
-        txid: pendingFunding.txidHex,
-      );
-
       await importAdditionalDesktopRegtestWallet(tester);
       final accounts = await desktopRegtestAccounts();
       final receiverAccountUuid = accounts
           .singleWhere((account) => account.uuid != senderAccountUuid)
           .uuid;
-      await _waitForAccountBalance(
-        tester,
-        accountUuid: receiverAccountUuid,
-        total: BigInt.zero,
+      await _waitForForegroundSyncIdle(tester);
+      final receiverStartingBalance = await _readAccountBalance(
+        receiverAccountUuid,
       );
       await _openPaymentLink(rawLink);
       await pumpUntil(
@@ -174,7 +224,7 @@ void main() {
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
-        total: _giftAmountZatoshi,
+        total: receiverStartingBalance.total + _giftAmountZatoshi,
       );
 
       // The claim wallet can spend the funding note after one confirmation.
@@ -184,11 +234,16 @@ void main() {
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
-        total: _giftAmountZatoshi,
-        spendable: _giftAmountZatoshi,
+        total: receiverStartingBalance.total + _giftAmountZatoshi,
+        spendable: receiverStartingBalance.spendable + _giftAmountZatoshi,
       );
       await tapAppWidget(tester, const ValueKey('sidebar_home_button'));
-      await _waitForHomeBalance(tester, '0.10');
+      await _waitForHomeBalance(
+        tester,
+        ZecAmount.fromZatoshi(
+          receiverStartingBalance.total + _giftAmountZatoshi,
+        ).balance.amountText,
+      );
       e2eLog('payment-link round trip completed with two distinct txids');
     },
     timeout: const Timeout(Duration(minutes: 12)),
@@ -395,6 +450,42 @@ Future<rust_sync.WalletBalance> _waitForAccountBalance(
     'Timed out waiting for account balance total=$total spendable=$spendable. '
     'Last total=${last?.total}, spendable=${last?.spendable}. '
     'Last error: $lastError',
+  );
+}
+
+Future<rust_sync.WalletBalance> _waitForAccountBalanceAtLeast(
+  WidgetTester tester, {
+  required String accountUuid,
+  required BigInt total,
+  required BigInt spendable,
+  Duration timeout = const Duration(minutes: 4),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  rust_sync.WalletBalance? last;
+  Object? lastError;
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      last = await _readAccountBalance(accountUuid);
+      if (last.total >= total && last.spendable >= spendable) return last;
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail(
+    'Timed out waiting for account balance total>=$total '
+    'spendable>=$spendable. Last total=${last?.total}, '
+    'spendable=${last?.spendable}. Last error: $lastError',
+  );
+}
+
+Future<rust_sync.WalletBalance> _readAccountBalance(String accountUuid) async {
+  return rust_sync.getBalance(
+    dbPath: await getWalletDbPath(),
+    network: _network,
+    accountUuid: accountUuid,
   );
 }
 
