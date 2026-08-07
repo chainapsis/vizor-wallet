@@ -175,14 +175,14 @@ After deriving `rho_signed`, the wallet:
 The 1-zatoshi value makes the action non-zero for existing signer display
 paths. It is synthetic and is not taken from the holder's balance.
 
-The wallet uses Merkle position zero and 32 zero-valued sibling encodings for
-the signed note's synthetic authentication path. Its anchor is computed from
-that note and path only so that the normal Zcash builder accepts the spend.
-The signed note is not in the Zcash note-commitment tree.
+The signed note is not in the Zcash note-commitment tree. Under the V6
+pre-authorization flow, the PCZT therefore leaves the Ironwood anchor and the
+spend's Merkle witness unset. TX1 is never proved or broadcast, so no Updater
+needs to supply them later.
 
 ZKP #1 MUST reconstruct the signed-note nullifier from the exact same note:
 the delegating-account recipient, 1-zatoshi value, `rho_signed`,
-`rseed_signed`, V3 note version, position zero, and account key material. TX1
+`rseed_signed`, V3 note version, and account key material. TX1
 places this nullifier in its spend, so it is covered by the ZIP-244 sighash.
 This is what binds the signature to the eligible-note slots, VAN, hotkey, and
 round.
@@ -238,9 +238,8 @@ The real spend is:
 | Field | Value |
 | --- | --- |
 | Note | The signed synthetic note |
-| Merkle position | `0` |
-| Authentication path | 32 zero-valued sibling encodings |
-| Anchor | Root computed from the synthetic note and synthetic path |
+| Merkle witness | Absent under V6 pre-authorization |
+| Anchor | Absent under V6 pre-authorization |
 | `alpha` | Fresh scalar sampled by the Ironwood builder |
 | `rk` | Randomized verification key derived from `ak` and `alpha` |
 | ZIP-32 path | `m / 32' / coin_type' / account'` |

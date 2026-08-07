@@ -2069,15 +2069,17 @@ mod tests {
             full_pczt.ironwood().actions().len(),
             crate::tx1::TX1_ACTION_COUNT
         );
+        assert!(full_pczt.ironwood().anchor().is_none());
         assert!(ironwood_spend_witnesses_present(&full_pczt)
             .iter()
-            .any(|witness| *witness));
+            .all(|witness| !*witness));
 
         assert!(redacted_pczt.orchard().actions().is_empty());
         assert_eq!(
             redacted_pczt.ironwood().actions().len(),
             crate::tx1::TX1_ACTION_COUNT
         );
+        assert!(redacted_pczt.ironwood().anchor().is_none());
         assert!(ironwood_spend_witnesses_present(&redacted_pczt)
             .iter()
             .all(|witness| !*witness));
