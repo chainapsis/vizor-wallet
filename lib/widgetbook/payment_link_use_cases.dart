@@ -38,6 +38,8 @@ enum PaymentLinkPreviewState {
   readySoon,
   ready,
   cardsList,
+  cardsReceiving,
+  cardsReceived,
   redeemPaste,
   redeemLoading,
   redeemInvalid,
@@ -110,6 +112,16 @@ Widget buildPaymentLinkReadyUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkCardsListUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.cardsList);
+
+Widget buildPaymentLinkCardsReceivingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.cardsReceiving,
+    );
+
+Widget buildPaymentLinkCardsReceivedUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.cardsReceived,
+    );
 
 Widget buildPaymentLinkRedeemPasteUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.redeemPaste);
@@ -279,7 +291,6 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.readySoon => PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
-        decoration: const PaymentLinkConfetti(),
         onBack: _noop,
         onCopy: null,
         waitingStatusLabel: 'Link will be available soon',
@@ -362,6 +373,12 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onCreate: _noop,
         onRedeem: _noop,
       ),
+      PaymentLinkPreviewState.cardsReceiving => _receivedCardsList(
+        statusText: 'Receiving...',
+      ),
+      PaymentLinkPreviewState.cardsReceived => _receivedCardsList(
+        statusText: 'Received',
+      ),
       PaymentLinkPreviewState.redeemPaste => PaymentLinkRedeemDesktopView(
         state: PaymentLinkRedeemVisualState.paste,
         onBack: _noop,
@@ -411,6 +428,31 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       onShowHelp: _noop,
       onCreate: _noop,
       onRedeem: _noop,
+    );
+  }
+
+  PaymentLinkCardsDesktopView _receivedCardsList({required String statusText}) {
+    return PaymentLinkCardsDesktopView(
+      sections: [
+        PaymentLinkCardsSection(
+          label: 'Received',
+          cards: [
+            PaymentLinkCardListRow(
+              thumbnail: const _PaymentLinkThumbnail(
+                PaymentLinkCardArtwork.ruby,
+              ),
+              amountText: '4.45 ZEC',
+              dateText: 'August 7',
+              statusText: statusText,
+              showLoader: statusText == 'Receiving...',
+            ),
+          ],
+        ),
+      ],
+      onBack: _noop,
+      onCreate: _noop,
+      onRedeem: _noop,
+      activeTab: PaymentLinkCardsTab.received,
     );
   }
 
