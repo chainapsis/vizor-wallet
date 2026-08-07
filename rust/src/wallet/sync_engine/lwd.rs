@@ -788,6 +788,11 @@ mod tests {
     #[test]
     fn background_transaction_submission_takes_its_own_circuit() {
         let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        // The declaration the native caller makes before its first network
+        // call. Without one the route resolves to a refusal and the opener
+        // never reaches a transport, so the circuit this is about is never
+        // chosen.
+        crate::network_privacy::mark_direct_route();
         let lightwalletd_url =
             std::ffi::CString::new(REFUSED_LIGHTWALLETD_URL).expect("valid lightwalletd URL");
         let raw_transaction = [0u8; 4];
@@ -814,6 +819,7 @@ mod tests {
         // Queries are linkable to one another whatever circuit carries them, so
         // they buy nothing with a circuit build the wallet would pay for.
         let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::mark_direct_route();
         let lightwalletd_url =
             std::ffi::CString::new(REFUSED_LIGHTWALLETD_URL).expect("valid lightwalletd URL");
         let mut height = 0u64;
@@ -832,6 +838,7 @@ mod tests {
     #[tokio::test]
     async fn isolation_leaves_the_direct_route_alone() {
         let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::mark_direct_route();
 
         let shared = open_lwd_channel(REFUSED_LIGHTWALLETD_URL)
             .await

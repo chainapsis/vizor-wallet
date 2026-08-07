@@ -9,7 +9,7 @@ use std::ffi::CStr;
 use std::future::Future;
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
@@ -99,7 +99,8 @@ fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
     log::error!("ffi: panic during {context}: {message}");
 }
 
-static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+static FFI_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static FFI_RUNTIME_BUILD: Mutex<()> = Mutex::new(());
 
 /// The runtime every C entry point runs its async work on.
 ///
@@ -109,15 +110,42 @@ static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock
 /// dropped, leaving a client that looks installed and cannot carry traffic.
 /// Multi-threaded because separate native threads block on it concurrently.
 fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
-    FFI_RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| format!("Create FFI runtime: {error}"))
-        })
-        .as_ref()
-        .map_err(|error| error.clone())
+    cached_runtime(&FFI_RUNTIME, &FFI_RUNTIME_BUILD, || {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| format!("Create FFI runtime: {error}"))
+    })
+}
+
+/// Publishes a process-lifetime runtime, and only ever a working one.
+///
+/// Construction reaches for file descriptors and memory for the reactor driver,
+/// so it can fail for reasons that pass: a background pass under memory
+/// pressure, or a process at its descriptor limit. Caching the failure
+/// alongside the success would answer every later call — chain tip, transaction
+/// observation, submission, background Tor enable — with that one moment's
+/// error for the rest of the process lifetime, with nothing to reset it.
+///
+/// The lock is not what makes this correct, the cell is; it only keeps two
+/// threads that arrive together from each standing up a multi-threaded runtime
+/// so one can be thrown away.
+fn cached_runtime(
+    cell: &'static OnceLock<tokio::runtime::Runtime>,
+    build_lock: &'static Mutex<()>,
+    build: impl FnOnce() -> Result<tokio::runtime::Runtime, String>,
+) -> Result<&'static tokio::runtime::Runtime, String> {
+    if let Some(runtime) = cell.get() {
+        return Ok(runtime);
+    }
+    let _guard = build_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(runtime) = cell.get() {
+        return Ok(runtime);
+    }
+    let runtime = build()?;
+    Ok(cell.get_or_init(|| runtime))
 }
 
 const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
@@ -428,6 +456,36 @@ pub extern "C" fn zcash_network_privacy_mark_tor_desired() -> i32 {
         Ok(code) => code,
         Err(panic) => {
             log_panic("network privacy Tor declaration", panic);
+            2
+        }
+    }
+}
+
+/// Adopt the user's persisted *direct* preference before any background network
+/// call — the mirror of [`zcash_network_privacy_mark_tor_desired`], and just as
+/// mandatory.
+///
+/// The route is process-local, and "nobody has declared yet" and "the user
+/// chose direct" are deliberately different states: the first is refused at the
+/// route chokepoint so that a background entry point which never read the
+/// preference cannot reach lightwalletd at all. A pass whose saved route is
+/// direct therefore has to say so, exactly as a Tor pass does, or its own
+/// network calls fail closed.
+///
+/// Writes nothing but the decision, touches no filesystem, and is ignored once
+/// the process has decided its own route — a persisted read can be stale, and
+/// this must never turn a live Tor route direct. Returns 0 on success.
+#[no_mangle]
+pub extern "C" fn zcash_network_privacy_mark_direct_route() -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        crate::network_privacy::mark_direct_route();
+        0
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("network privacy direct route declaration", panic);
             2
         }
     }
@@ -750,6 +808,60 @@ mod tests {
             assert_eq!(result, Err(()));
             assert!(started.elapsed() < Duration::from_secs(1));
         });
+    }
+
+    /// Runtime construction fails for reasons that pass — descriptor
+    /// exhaustion, memory pressure in a background pass. Remembering the
+    /// failure would answer every later chain-tip read, transaction
+    /// observation, submission and background Tor enable with it for the rest
+    /// of the process lifetime, and nothing in the process resets that.
+    #[test]
+    fn a_transient_runtime_construction_failure_is_not_cached() {
+        static CELL: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+        static BUILD: Mutex<()> = Mutex::new(());
+
+        let failed = cached_runtime(&CELL, &BUILD, || {
+            Err("Create FFI runtime: too many open files".to_string())
+        });
+        assert_eq!(
+            failed.unwrap_err(),
+            "Create FFI runtime: too many open files"
+        );
+
+        let retried = cached_runtime(&CELL, &BUILD, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| format!("Create FFI runtime: {error}"))
+        });
+
+        assert!(
+            retried.is_ok(),
+            "a transient runtime-construction failure was cached for the process lifetime"
+        );
+    }
+
+    #[test]
+    fn a_constructed_runtime_outlives_the_call_that_built_it() {
+        static CELL: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+        static BUILD: Mutex<()> = Mutex::new(());
+
+        let first = cached_runtime(&CELL, &BUILD, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| format!("Create FFI runtime: {error}"))
+        })
+        .expect("build the runtime");
+        // A second call must not rebuild: arti's directory, guard and circuit
+        // tasks run on whatever runtime created the Tor client, so replacing it
+        // leaves a client that looks installed and cannot carry traffic.
+        let second = cached_runtime(&CELL, &BUILD, || {
+            Err("rebuilt a runtime that was already published".to_string())
+        })
+        .expect("reuse the published runtime");
+
+        assert!(std::ptr::eq(first, second));
     }
 
     #[test]

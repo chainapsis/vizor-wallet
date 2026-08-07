@@ -44,6 +44,16 @@ const TOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const BACKGROUND_TOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(60);
 const TOR_BOOTSTRAP_TIMEOUT_MESSAGE: &str =
     "Tor could not connect. Check your internet connection and try again.";
+/// Refused at the route chokepoint when nothing in this process has said which
+/// route it is on.
+///
+/// The desired route lives in process memory and defaults to direct, so an
+/// entry point that never declares would otherwise reach lightwalletd over
+/// clearnet on a Tor-configured wallet — silently, and only in the lane that
+/// forgot. Declaring is one call ([`mark_tor_desired`], [`mark_direct_route`],
+/// [`begin_tor_enable`], [`enable_tor`] or [`disable_tor`]); not declaring is
+/// now an error every caller sees rather than a leak nobody does.
+const ROUTE_NOT_DECLARED_MESSAGE: &str = "Network route has not been declared for this process";
 
 const STATUS_DIRECT: u8 = 0;
 const STATUS_BOOTSTRAPPING: u8 = 1;
@@ -117,6 +127,21 @@ pub fn status() -> NetworkPrivacyStatus {
 /// new policy-aware request can race onto clearnet during teardown.
 pub fn begin_tor_enable() {
     ROUTE_DECIDED.store(true, Ordering::Release);
+    // The route and the status are written inside the slot lock, the way
+    // `disable_tor`, `install_bootstrapped_client` and `set_tor_failed` write
+    // them.
+    //
+    // This is strict alignment with those three, not a fix: no interleaving
+    // that actually diverges was constructed for the enable direction, which
+    // only ever tightens the policy. What it buys is one rule about where these
+    // two atomics may be written instead of three paths that follow it and one
+    // that does not, so the next reader does not have to re-derive whether this
+    // one is safe. The lock order is the same one the siblings take — slot
+    // first, then the waker map — and nothing reached while holding the waker
+    // map takes the slot, so there is no inversion to introduce.
+    let mut slot = client_slot()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let wakers = {
         let mut wakers = direct_io_wakers()
             .lock()
@@ -126,12 +151,14 @@ pub fn begin_tor_enable() {
         DIRECT_ROUTE_EPOCH.fetch_add(1, Ordering::AcqRel);
         wakers.drain().map(|(_, waker)| waker).collect::<Vec<_>>()
     };
+    *slot = None;
+    drop(slot);
+    // Woken with both locks released. A woken lease re-reads the route and
+    // aborts itself without touching either, but waking underneath them would
+    // hand a scheduler the opportunity to run that on this thread.
     for waker in wakers {
         waker.wake();
     }
-    *client_slot()
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     log::info!("network privacy: Tor requested; direct requests blocked");
 }
 
@@ -159,6 +186,30 @@ pub fn mark_tor_desired() {
         return;
     }
     begin_tor_enable();
+}
+
+/// Adopts a persisted *direct* preference in a process where the Dart layer has
+/// not run yet — the mirror of [`mark_tor_desired`].
+///
+/// Direct is where the atomics start, so this writes nothing but the decision
+/// itself. That is the whole point: without it, "nobody has said yet" and "the
+/// user chose direct" are the same state, and [`route_decision`] cannot refuse
+/// the first while allowing the second. A background entry point that reaches
+/// lightwalletd on a direct-route wallet calls this, and one that forgets is
+/// refused instead of quietly reaching clearnet on a wallet whose route it
+/// never read.
+///
+/// Stale in the same way its sibling is — the caller read the preference from
+/// storage — so a process that has already decided its own route keeps it, and
+/// this never turns a live Tor route direct.
+pub fn mark_direct_route() {
+    if ROUTE_DECIDED
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+    log::info!("network privacy: direct route adopted from the saved preference");
 }
 
 #[cfg(test)]
@@ -510,7 +561,26 @@ async fn bootstrap_tor(
     tor_directory: &Path,
     deadline: Duration,
 ) -> Result<NetworkPrivacyStatus, String> {
-    let _init_guard = init_lock().lock().await;
+    // The deadline covers the wait for the init lock as well as the bootstrap
+    // it guards, so it bounds the call the caller actually made.
+    //
+    // Two enables can be in flight at once — a foreground toggle and a
+    // background pass — and the holder may be spending the foreground's three
+    // minutes on a network that blocks Tor. A waiter that started its own timer
+    // only after acquiring would sit there for the holder's deadline and then
+    // its own on top. For a background pass that is the whole execution
+    // opportunity spent inside one blocking call: it holds no cancellation
+    // handle the OS expiration handler can reach, and every re-arm path lives
+    // on the far side of it, so the window ends with nothing armed.
+    let started = std::time::Instant::now();
+    let Ok(_init_guard) = tokio::time::timeout(deadline, init_lock().lock()).await else {
+        // Nothing is published here. Whichever bootstrap holds the lock owns the
+        // status, and this call only reports that it could not get Tor up inside
+        // its budget. The route stays Tor-desired either way, so every
+        // policy-aware client keeps refusing — running out of patience is not a
+        // reason to reach the network another way.
+        return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string());
+    };
     if !is_tor_desired() {
         return Ok(NetworkPrivacyStatus::Direct);
     }
@@ -534,10 +604,17 @@ async fn bootstrap_tor(
     // body that is actively streaming enough time to complete. Small app API
     // responses retain their own shorter body deadline.
     let timeouts = TorTimeouts::default().with_response_body(Duration::from_secs(2 * 60 * 60));
+    // What is left of the budget after the wait, so waiting and bootstrapping
+    // cannot add up to more than the caller asked for. Bounding the bootstrap
+    // separately rather than wrapping the whole body in one timer is what keeps
+    // a failure published: a timer that fired out here would drop
+    // `install_bootstrapped_client` mid-await and skip the `set_tor_failed` it
+    // exists to perform, leaving the status Bootstrapping with nothing running.
+    let remaining = deadline.saturating_sub(started.elapsed());
     // Returning here drops `_init_guard`, so a bootstrap that ran out of time
     // does not block the next enable attempt.
     install_bootstrapped_client(
-        deadline,
+        remaining,
         TorClient::create_with_timeouts(
             tor_directory,
             // Arti refuses a data directory other users could reach. On desktop
@@ -642,11 +719,22 @@ fn set_tor_failed() {
 }
 
 fn route_decision(
+    route_decided: bool,
     tor_desired: bool,
     tor_status: NetworkPrivacyStatus,
     has_client: bool,
     isolated: bool,
 ) -> Result<RouteDecision, &'static str> {
+    // Direct is a decision, not a default. Every Rust lightwalletd connection
+    // funnels through here, and the entry points that reach it from outside
+    // Dart — the C background calls, and anything added beside them — carry
+    // their contract to declare in a header comment and in their callers. A
+    // lane that forgets fails here, loudly and on its first connection, instead
+    // of reaching lightwalletd over clearnet on a Tor-configured wallet with
+    // nothing failing to compile and no test going red.
+    if !route_decided {
+        return Err(ROUTE_NOT_DECLARED_MESSAGE);
+    }
     if !tor_desired {
         return Ok(RouteDecision::Direct);
     }
@@ -664,12 +752,22 @@ fn route_decision(
     })
 }
 
+fn is_route_decided() -> bool {
+    ROUTE_DECIDED.load(Ordering::Acquire)
+}
+
 pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, String> {
     let client = client_slot()
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    match route_decision(is_tor_desired(), status(), client.is_some(), isolated) {
+    match route_decision(
+        is_route_decided(),
+        is_tor_desired(),
+        status(),
+        client.is_some(),
+        isolated,
+    ) {
         Ok(RouteDecision::Direct) => Ok(None),
         Ok(RouteDecision::TorShared) => Ok(client),
         Ok(RouteDecision::TorIsolated) => Ok(client.map(|client| client.isolated_client())),
@@ -703,6 +801,14 @@ pub(crate) mod test_route_policy {
             // A lease outlives the test that took it, and it masks the intent
             // every later test reads.
             super::BACKGROUND_WAKE_UNTIL_MS.store(0, Ordering::Release);
+            // The intent the lease masks leaks the same way, and one process
+            // runs every test in this crate: a test that asks for dormancy and
+            // returns leaves process-wide dormancy intent set for all of them,
+            // so any later assertion about the mode is decided by test order.
+            // Restored here rather than by each test's last line, because the
+            // guard is what owns handing the process back in its default state
+            // — including for a test that fails or panics before its own reset.
+            super::TOR_DORMANT.store(false, Ordering::Release);
         }
     }
 
@@ -724,13 +830,14 @@ mod tests {
     };
 
     use super::{
-        await_tor_bootstrap, cancel_direct_connections, client_slot, disable_tor,
+        await_tor_bootstrap, bootstrap_tor, cancel_direct_connections, client_slot, disable_tor,
         dormant_mode_for, enable_tor_for_background_work, init_lock, install_bootstrapped_client,
-        is_tor_desired, mark_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant,
-        set_tor_failed, status, test_route_policy::lock_route_policy, tor_client_for_route,
-        DirectRouteIo, DormantMode, NetworkPrivacyStatus, RouteDecision, TorClient,
-        BACKGROUND_TOR_BOOTSTRAP_TIMEOUT, BACKGROUND_WAKE_UNTIL_MS, STATUS_READY,
-        TOR_BOOTSTRAP_TIMEOUT, TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
+        is_route_decided, is_tor_desired, mark_direct_route, mark_tor_desired, pending_dormant_mode,
+        route_decision, set_tor_dormant, set_tor_failed, status,
+        test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
+        NetworkPrivacyStatus, RouteDecision, TorClient, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT,
+        BACKGROUND_WAKE_UNTIL_MS, ROUTE_NOT_DECLARED_MESSAGE, STATUS_READY, TOR_BOOTSTRAP_TIMEOUT,
+        TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
     };
 
     /// Ends whatever lease is outstanding, the way waiting out the lease would.
@@ -762,7 +869,6 @@ mod tests {
         // The intent the app left behind is still the one in force, so nothing
         // had to be restored and no exit had to remember to restore it.
         assert_eq!(pending_dormant_mode(), DormantMode::Soft);
-        set_tor_dormant(false);
     }
 
     #[tokio::test]
@@ -784,19 +890,66 @@ mod tests {
     #[test]
     fn direct_route_does_not_require_a_tor_client() {
         assert_eq!(
-            route_decision(false, NetworkPrivacyStatus::Direct, false, false),
+            route_decision(true, false, NetworkPrivacyStatus::Direct, false, false),
             Ok(RouteDecision::Direct)
         );
     }
 
     #[test]
+    fn an_undeclared_route_is_refused_instead_of_resolving_to_a_direct_connection() {
+        let _policy = lock_route_policy();
+        // The state a process starts in, and the one a background wake into a
+        // cold process is still in until something declares.
+        assert!(!is_route_decided());
+
+        assert_eq!(
+            route_decision(false, false, NetworkPrivacyStatus::Direct, false, false),
+            Err(ROUTE_NOT_DECLARED_MESSAGE)
+        );
+        // The chokepoint every Rust lightwalletd connection funnels through:
+        // an entry point that never declared must not get a transport out of it.
+        assert!(
+            tor_client_for_route(false).is_err(),
+            "an undeclared route resolved to a direct connection"
+        );
+        assert!(
+            tor_client_for_route(true).is_err(),
+            "an undeclared route resolved to a direct connection"
+        );
+    }
+
+    #[test]
+    fn a_declared_direct_route_still_connects_directly() {
+        let _policy = lock_route_policy();
+
+        mark_direct_route();
+
+        assert!(is_route_decided());
+        assert!(!is_tor_desired());
+        assert!(matches!(tor_client_for_route(false), Ok(None)));
+        assert!(matches!(tor_client_for_route(true), Ok(None)));
+    }
+
+    #[test]
+    fn marking_a_stale_direct_preference_leaves_a_process_that_chose_tor_alone() {
+        let _policy = lock_route_policy();
+        mark_tor_desired();
+
+        mark_direct_route();
+
+        assert!(is_tor_desired());
+        assert_eq!(status(), NetworkPrivacyStatus::Bootstrapping);
+        assert!(tor_client_for_route(false).is_err());
+    }
+
+    #[test]
     fn tor_bootstrap_and_failure_are_fail_closed() {
         assert_eq!(
-            route_decision(true, NetworkPrivacyStatus::Bootstrapping, false, false),
+            route_decision(true, true, NetworkPrivacyStatus::Bootstrapping, false, false),
             Err("Tor is still connecting")
         );
         assert_eq!(
-            route_decision(true, NetworkPrivacyStatus::Failed, false, false),
+            route_decision(true, true, NetworkPrivacyStatus::Failed, false, false),
             Err("Tor connection failed")
         );
     }
@@ -804,11 +957,11 @@ mod tests {
     #[test]
     fn ready_tor_selects_shared_or_isolated_routes() {
         assert_eq!(
-            route_decision(true, NetworkPrivacyStatus::Ready, true, false),
+            route_decision(true, true, NetworkPrivacyStatus::Ready, true, false),
             Ok(RouteDecision::TorShared)
         );
         assert_eq!(
-            route_decision(true, NetworkPrivacyStatus::Ready, true, true),
+            route_decision(true, true, NetworkPrivacyStatus::Ready, true, true),
             Ok(RouteDecision::TorIsolated)
         );
     }
@@ -816,7 +969,7 @@ mod tests {
     #[test]
     fn ready_status_without_a_client_is_still_fail_closed() {
         assert_eq!(
-            route_decision(true, NetworkPrivacyStatus::Ready, false, false),
+            route_decision(true, true, NetworkPrivacyStatus::Ready, false, false),
             Err("Tor is enabled but unavailable")
         );
     }
@@ -824,16 +977,19 @@ mod tests {
     #[test]
     fn marking_a_persisted_tor_route_refuses_instead_of_going_direct() {
         let _policy = lock_route_policy();
+        // Undeclared going in: this is the cold background process the mark
+        // exists for, so the contrast below is with a refusal, not with a
+        // direct connection.
         assert_eq!(
-            route_decision(is_tor_desired(), status(), false, false),
-            Ok(RouteDecision::Direct)
+            route_decision(is_route_decided(), is_tor_desired(), status(), false, false),
+            Err(ROUTE_NOT_DECLARED_MESSAGE)
         );
 
         mark_tor_desired();
 
         assert!(is_tor_desired());
         assert_eq!(
-            route_decision(is_tor_desired(), status(), false, false),
+            route_decision(is_route_decided(), is_tor_desired(), status(), false, false),
             Err("Tor is still connecting")
         );
         assert!(tor_client_for_route(false).is_err());
@@ -964,7 +1120,7 @@ mod tests {
 
         assert_eq!(status(), NetworkPrivacyStatus::Direct);
         assert_eq!(
-            route_decision(is_tor_desired(), status(), false, false),
+            route_decision(is_route_decided(), is_tor_desired(), status(), false, false),
             Ok(RouteDecision::Direct)
         );
     }
@@ -1015,7 +1171,6 @@ mod tests {
         // Nothing here is about to do work on a Tor route, so the intent the
         // app's own lifecycle left behind is not this call's to overwrite.
         assert_eq!(pending_dormant_mode(), DormantMode::Soft);
-        set_tor_dormant(false);
     }
 
     #[tokio::test]
@@ -1028,6 +1183,66 @@ mod tests {
         let _ = enable_tor_for_background_work(&unusable_tor_directory(&temp)).await;
 
         assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+    }
+
+    /// The lease and the dormancy intent are both process-wide, and `cargo
+    /// test` runs the whole crate in one process. A test that asks for
+    /// dormancy and returns is the ordinary case — the guard is what hands the
+    /// process back, so no test has to end with a reset line it could forget or
+    /// fail before reaching.
+    #[test]
+    fn the_route_policy_guard_hands_back_the_default_dormancy_intent() {
+        {
+            let _policy = lock_route_policy();
+            set_tor_dormant(true);
+            assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+        }
+
+        let _policy = lock_route_policy();
+
+        assert_eq!(
+            pending_dormant_mode(),
+            DormantMode::Normal,
+            "a test's dormancy intent outlived its route-policy guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bootstrap_waiting_on_another_bootstrap_is_bounded_by_its_own_deadline() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        mark_tor_desired();
+
+        // A bootstrap already in flight, of the kind a foreground enable starts:
+        // it holds the init lock for far longer than the waiter's whole budget.
+        let (acquired_tx, acquired_rx) = tokio::sync::oneshot::channel();
+        let holder = tokio::spawn(async move {
+            let _init_guard = init_lock().lock().await;
+            let _ = acquired_tx.send(());
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        });
+        acquired_rx.await.unwrap();
+
+        let started = std::time::Instant::now();
+        let result = bootstrap_tor(&unusable_tor_directory(&temp), Duration::from_millis(100)).await;
+        let waited = started.elapsed();
+
+        holder.abort();
+        let _ = holder.await;
+
+        // The deadline covers the wait, not just the bootstrap on its far side.
+        // A background pass has one execution opportunity and no cancellation
+        // handle reaching into this call, so parking here for the holder's
+        // deadline spends the window with nothing armed.
+        assert!(
+            waited < Duration::from_secs(5),
+            "a waiting bootstrap ignored its own deadline: waited {waited:?}"
+        );
+        assert_eq!(result.unwrap_err(), TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
+        // Running out of time is still not a reason to reach the network another
+        // way: the route stays Tor and every policy-aware client keeps refusing.
+        assert!(is_tor_desired());
+        assert!(tor_client_for_route(false).is_err());
     }
 
     #[tokio::test]

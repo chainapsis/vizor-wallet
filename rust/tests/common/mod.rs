@@ -23,6 +23,13 @@ pub fn repo_root() -> PathBuf {
 }
 
 pub fn exclusive_regtest() -> MutexGuard<'static, ()> {
+    // Every regtest test takes this before its first lightwalletd call, which
+    // makes it the one place this process declares its route. The library
+    // refuses a route nothing has declared instead of treating it as direct, so
+    // that a background entry point which never read the user's preference
+    // cannot reach lightwalletd on a Tor wallet; a test process is exactly such
+    // a caller, and it says direct for the same reason the native passes do.
+    rust_lib_zcash_wallet::network_privacy::mark_direct_route();
     match REGTEST_LOCK.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),

@@ -79,6 +79,21 @@ int32_t zcash_lightwalletd_send_transaction(
 /// Returns 0 on success.
 int32_t zcash_network_privacy_mark_tor_desired(void);
 
+/// Declares that the user's persisted network route is direct — the mirror of
+/// zcash_network_privacy_mark_tor_desired, and just as mandatory.
+///
+/// "Nobody has declared yet" and "the user chose direct" are deliberately
+/// different states in Rust. The first is refused wherever a route is resolved,
+/// so a background entry point that never read the preference cannot reach
+/// lightwalletd at all instead of quietly reaching it over clearnet on a
+/// Tor-configured wallet. A pass whose saved route is direct therefore declares
+/// it, exactly as a Tor pass does, or its own network calls fail closed.
+///
+/// Writes nothing but the decision, touches no filesystem, never bootstraps,
+/// and is ignored once this process has decided its own route, so it can never
+/// turn a live Tor route direct. Returns 0 on success.
+int32_t zcash_network_privacy_mark_direct_route(void);
+
 /// Tor is up and the caller may do network work over it.
 #define ZCASH_NETWORK_PRIVACY_TOR_READY 0
 /// Tor is not up. The route stays Tor-desired and fail-closed, so the caller
