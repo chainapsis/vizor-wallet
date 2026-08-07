@@ -657,7 +657,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _syncSub;
   Timer? _displayProgressTimer;
   AppLifecycleListener? _lifecycleListener;
-
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   int _sensitiveStateEpoch = 0;
