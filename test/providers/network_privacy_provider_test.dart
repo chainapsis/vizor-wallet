@@ -1,12 +1,63 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 
 void main() {
+  // The launch this owner exists for reads almost nothing: a locked app routes
+  // to `/unlock`, `syncKeepAwakeActiveProvider` returns early on
+  // `requiresUnlock` before it reaches `syncProvider`, and the unlock screens
+  // only read that provider when the user submits. Nothing here builds a
+  // provider at all, which is the point — the persisted route is applied
+  // regardless of the lock, so the intent has to have an owner regardless too.
+  group('Tor dormancy lifecycle', () {
+    tearDown(disposeTorDormancyLifecycle);
+
+    testWidgets('sleeps only where backgrounding stops the process', (
+      tester,
+    ) async {
+      // Lane-dependent on purpose, and the desktop half is the load-bearing
+      // one: a desktop app with every window hidden keeps polling, and a
+      // client put to sleep underneath it pays a circuit build on each poll.
+      for (final (formFactor, expected) in [
+        (AppFormFactor.mobile, [true]),
+        (AppFormFactor.desktop, <bool>[]),
+      ]) {
+        final dormancy = <bool>[];
+        startTorDormancyLifecycle(
+          setTorDormant: ({required dormant}) => dormancy.add(dormant),
+          formFactor: formFactor,
+        );
+
+        await _sendAppLifecycleState(AppLifecycleState.inactive);
+        await _sendAppLifecycleState(AppLifecycleState.hidden);
+
+        expect(dormancy, expected, reason: '$formFactor');
+      }
+    });
+
+    testWidgets('wakes on every foreground entry', (tester) async {
+      // Asked for unconditionally: a sleep request that outlived its asker —
+      // issued before Tor finished bootstrapping, so it lands on the client
+      // only once that client exists — would otherwise keep the client asleep
+      // for the whole foreground session.
+      final dormancy = <bool>[];
+      startTorDormancyLifecycle(
+        setTorDormant: ({required dormant}) => dormancy.add(dormant),
+      );
+
+      await _sendAppLifecycleState(AppLifecycleState.inactive);
+      await _sendAppLifecycleState(AppLifecycleState.resumed);
+
+      expect(dormancy, contains(false));
+    });
+  });
+
   test('preference read failure pauses native updates before launch', () async {
     final events = <String>[];
     try {
@@ -1507,4 +1558,13 @@ class _FakeDirectRequestGate implements NetworkPrivacyDirectRequestGate {
   Future<void> quiesce() async {
     events.add('direct-quiesce');
   }
+}
+
+Future<void> _sendAppLifecycleState(AppLifecycleState state) async {
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'flutter/lifecycle',
+        const StringCodec().encodeMessage(state.toString()),
+        (_) {},
+      );
 }

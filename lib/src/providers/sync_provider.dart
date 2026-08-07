@@ -10,7 +10,6 @@ import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/storage/wallet_paths.dart';
-import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
 import 'app_security_provider.dart';
@@ -630,12 +629,8 @@ bool shouldRestartSyncForMigrationEntry({
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
-  SyncNotifier({
-    Future<String> Function()? walletDbPathResolver,
-    void Function({required bool dormant})? setTorDormant,
-  }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
-       _setTorDormant =
-           setTorDormant ?? rust_network_privacy.setNetworkPrivacyDormant;
+  SyncNotifier({Future<String> Function()? walletDbPathResolver})
+    : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
 
   static const _displayBlockDuration = Duration(milliseconds: 20);
   static const _maxIncompleteDisplayPercentage = 0.999;
@@ -663,10 +658,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Timer? _displayProgressTimer;
   AppLifecycleListener? _lifecycleListener;
 
-  /// Suspends or resumes Tor's circuit maintenance. Rust keeps the request
-  /// process-wide rather than per notifier, so both directions are published
-  /// unconditionally.
-  final void Function({required bool dormant}) _setTorDormant;
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   int _sensitiveStateEpoch = 0;
@@ -775,12 +766,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
-        // Asked for on every foreground entry, not only when this notifier is
-        // the one that asked for the sleep: a request that outlived its
-        // asker — issued before Tor finished bootstrapping, so it lands on the
-        // client only once that client exists — would otherwise keep the
-        // client asleep for the whole foreground session.
-        _setTorDormant(dormant: false);
         unawaited(_refreshBalanceAfterResume());
         _checkAndSync();
       },
@@ -789,12 +774,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _foregroundEpoch++;
         if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
           _stopPolling();
-          // Only once this process really stops working. An idle Tor client
-          // still pads its guard connection continuously — measured at roughly
-          // 500 B/s, against 27 B/s dormant — but waking on the next request
-          // costs a circuit build, so a process that keeps polling (desktop
-          // with its windows hidden) would pay that repeatedly for nothing.
-          _setTorDormant(dormant: true);
         }
       },
     );

@@ -227,16 +227,36 @@ _MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
     ),
-    // A failed disable leaves Tor connected and carrying traffic, so this
-    // must not reuse the blocked-requests copy above.
-    (NetworkPrivacyConnectionStatus.failed, false) => _MobileTorPresentation(
-      statusLabel: 'Switch failed',
-      description:
-          'Vizor could not switch to a direct connection. Tor is '
-          'still on and requests keep going through it.',
-      statusColor: (colors) => colors.text.brandCrimson,
-      iconColor: (colors) => colors.icon.brandCrimson,
-    ),
+    // A failed disable has two shapes, and they carry opposite privacy
+    // guarantees, so the route decides which is described rather than the
+    // target. Neither may reuse the blocked-requests copy above.
+    (NetworkPrivacyConnectionStatus.failed, false) =>
+      state.torEnabled
+          // The transport never switched. Tor is still up and still carrying
+          // traffic.
+          ? _MobileTorPresentation(
+              statusLabel: 'Switch failed',
+              description:
+                  'Vizor could not switch to a direct connection. Tor is '
+                  'still on and requests keep going through it.',
+              statusColor: (colors) => colors.text.brandCrimson,
+              iconColor: (colors) => colors.icon.brandCrimson,
+            )
+          // The transport did switch and only the setting could not be saved.
+          // Requests are direct from here, and the saved route is still Tor —
+          // the stricter half, so the next launch comes back on Tor rather
+          // than silently staying direct. Saying "Tor is still on" here would
+          // promise the user the opposite of what is actually carrying their
+          // traffic.
+          : _MobileTorPresentation(
+              statusLabel: 'Setting not saved',
+              description:
+                  'Requests now use a direct connection, but Vizor could not '
+                  'save the change. Tor turns back on the next time you open '
+                  'the app.',
+              statusColor: (colors) => colors.text.brandCrimson,
+              iconColor: (colors) => colors.icon.brandCrimson,
+            ),
     (NetworkPrivacyConnectionStatus.off, _) => _MobileTorPresentation(
       statusLabel: 'Off',
       description:

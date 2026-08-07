@@ -422,6 +422,41 @@ void main() {
     expect(calls, [false]);
   });
 
+  testWidgets('a save-only failure never claims Tor is carrying traffic', (
+    tester,
+  ) async {
+    // The transport did switch and only the preference write failed, so this
+    // shares `(failed, target: false)` with the case above while carrying the
+    // opposite privacy guarantee. Reading the target alone told the user Tor
+    // was still on while their requests were going out directly.
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: false,
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: <bool>[],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_retry')),
+      200,
+    );
+    final description = tester
+        .widget<Text>(
+          find.byKey(const ValueKey('mobile_settings_tor_description')),
+        )
+        .data;
+    expect(description, isNot(contains('Tor is still on')));
+    expect(description, contains('direct connection'));
+    // The saved route stays at Tor — the stricter half — so the next launch
+    // comes back on Tor rather than silently staying direct.
+    expect(description, contains('next time you open the app'));
+  });
+
   testWidgets('the Tor row publishes its status to assistive technology', (
     tester,
   ) async {

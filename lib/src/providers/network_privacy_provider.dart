@@ -1,11 +1,13 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/layout/app_form_factor.dart';
+import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/network_privacy.dart' as rust_network_privacy;
@@ -399,6 +401,55 @@ const _kStartupNativeUpdatePauseTimeout = Duration(seconds: 10);
 /// routing synchronously, so blocking here would only delay the first frame —
 /// and on a network that blocks Tor it would delay it forever, leaving the
 /// user no window to turn the setting back off from.
+/// Ties the process-wide Tor dormancy intent to the app lifecycle.
+///
+/// Owned here rather than by a provider because a provider only exists once
+/// something reads it, and the launch that most needs this one reads the least:
+/// a locked app routes to `/unlock`, the keep-awake providers return early on
+/// `requiresUnlock` before they reach `syncProvider`, and the unlock screens
+/// only read it when the user submits. Meanwhile the persisted route is applied
+/// regardless of the lock, so Tor can be up and padding its guard connection
+/// with nothing constructed to put it to sleep when the user walks away.
+///
+/// Rust holds the intent process-wide and applies it to the client whenever one
+/// appears, so an intent stated before a bootstrap finishes is not lost.
+AppLifecycleListener? _torDormancyLifecycle;
+
+/// Starts the lifecycle owner, replacing any previous one.
+///
+/// Sleeping is asked for only where backgrounding actually stops this process
+/// working: a desktop app with every window hidden keeps polling, and a client
+/// put to sleep underneath it would pay a circuit build on each of those polls.
+void startTorDormancyLifecycle({
+  void Function({required bool dormant}) setTorDormant =
+      rust_network_privacy.setNetworkPrivacyDormant,
+  AppFormFactor formFactor = kAppFormFactor,
+}) {
+  _torDormancyLifecycle?.dispose();
+  _torDormancyLifecycle = AppLifecycleListener(
+    // Asked for on every foreground entry, not only after a sleep this owner
+    // requested: a request that outlived its asker — issued before Tor
+    // finished bootstrapping, so it lands on the client only once that client
+    // exists — would otherwise keep the client asleep for the whole foreground
+    // session.
+    onResume: () => setTorDormant(dormant: false),
+    onHide: () {
+      if (!canRunAppProcessWork(
+        isInForeground: false,
+        formFactor: formFactor,
+      )) {
+        setTorDormant(dormant: true);
+      }
+    },
+  );
+}
+
+@visibleForTesting
+void disposeTorDormancyLifecycle() {
+  _torDormancyLifecycle?.dispose();
+  _torDormancyLifecycle = null;
+}
+
 Future<void> initializeNetworkPrivacyRuntime({
   NetworkPrivacyPreferenceStore store =
       const SharedPreferencesNetworkPrivacyStore(),
@@ -410,6 +461,10 @@ Future<void> initializeNetworkPrivacyRuntime({
 }) async {
   _pendingStartupActivation = null;
   _startupActivationSuperseded = false;
+  // Before the route is applied, and outside the try: the owner has to exist
+  // on every launch, including the one where reading the preference throws and
+  // this process goes fail-closed Tor without ever being asked.
+  startTorDormancyLifecycle();
   late final bool enabled;
   try {
     enabled = await store.readTorEnabled();
