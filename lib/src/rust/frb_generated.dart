@@ -437,6 +437,9 @@ abstract class RustLibApi extends BaseApi {
   Future<BigInt> crateApiNetworkPrivacyEstimateImportBirthdayHeight({
     required String lightwalletdUrl,
     required PlatformInt64 targetEpochSeconds,
+    required bool useMainnetFastPath,
+    BigInt? tipHeight,
+    int? tipTime,
   });
 
   Future<SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -541,6 +544,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ImportBirthdayMetadata>
   crateApiNetworkPrivacyGetImportBirthdayMetadata({
     required String lightwalletdUrl,
+    required bool useMainnetFastPath,
   });
 
   Future<List<KeystoneSignatureRecord>> crateApiVotingGetKeystoneSignatures({
@@ -3493,6 +3497,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<BigInt> crateApiNetworkPrivacyEstimateImportBirthdayHeight({
     required String lightwalletdUrl,
     required PlatformInt64 targetEpochSeconds,
+    required bool useMainnetFastPath,
+    BigInt? tipHeight,
+    int? tipTime,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3500,6 +3507,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_i_64(targetEpochSeconds, serializer);
+          sse_encode_bool(useMainnetFastPath, serializer);
+          sse_encode_opt_box_autoadd_u_64(tipHeight, serializer);
+          sse_encode_opt_box_autoadd_u_32(tipTime, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3512,7 +3522,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiNetworkPrivacyEstimateImportBirthdayHeightConstMeta,
-        argValues: [lightwalletdUrl, targetEpochSeconds],
+        argValues: [
+          lightwalletdUrl,
+          targetEpochSeconds,
+          useMainnetFastPath,
+          tipHeight,
+          tipTime,
+        ],
         apiImpl: this,
       ),
     );
@@ -3522,7 +3538,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get kCrateApiNetworkPrivacyEstimateImportBirthdayHeightConstMeta =>
       const TaskConstMeta(
         debugName: "estimate_import_birthday_height",
-        argNames: ["lightwalletdUrl", "targetEpochSeconds"],
+        argNames: [
+          "lightwalletdUrl",
+          "targetEpochSeconds",
+          "useMainnetFastPath",
+          "tipHeight",
+          "tipTime",
+        ],
       );
 
   @override
@@ -4173,12 +4195,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ImportBirthdayMetadata>
   crateApiNetworkPrivacyGetImportBirthdayMetadata({
     required String lightwalletdUrl,
+    required bool useMainnetFastPath,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(useMainnetFastPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4191,7 +4215,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiNetworkPrivacyGetImportBirthdayMetadataConstMeta,
-        argValues: [lightwalletdUrl],
+        argValues: [lightwalletdUrl, useMainnetFastPath],
         apiImpl: this,
       ),
     );
@@ -4200,7 +4224,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiNetworkPrivacyGetImportBirthdayMetadataConstMeta =>
       const TaskConstMeta(
         debugName: "get_import_birthday_metadata",
-        argNames: ["lightwalletdUrl"],
+        argNames: ["lightwalletdUrl", "useMainnetFastPath"],
       );
 
   @override
