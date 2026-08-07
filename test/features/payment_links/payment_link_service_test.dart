@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   test('funding covers the exact recipient amount and claim fee', () {
@@ -67,6 +69,45 @@ void main() {
     expect(paymentLinkTxidsMatch(broadcastTxid, historyTxid), isTrue);
     expect(paymentLinkTxidsMatch('0x$broadcastTxid', broadcastTxid), isTrue);
     expect(paymentLinkTxidsMatch(broadcastTxid, 'not-a-txid'), isFalse);
+  });
+
+  test('claim remains Receiving until every transaction is mined', () {
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-a,claim-b',
+        transactions: [
+          _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+          _transaction(txid: 'claim-b', txKind: 'receiving'),
+        ],
+      ),
+      PaymentLinkReceivedStatus.receiving,
+    );
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-a,claim-b',
+        transactions: [
+          _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+          _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
+        ],
+      ),
+      PaymentLinkReceivedStatus.received,
+    );
+  });
+
+  test('expired unmined claim becomes actionable again', () {
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-txid',
+        transactions: [
+          _transaction(
+            txid: 'claim-txid',
+            txKind: 'receiving',
+            expiredUnmined: true,
+          ),
+        ],
+      ),
+      PaymentLinkReceivedStatus.readyToClaim,
+    );
   });
 
   test('claim exposes only the amount promised by the link', () {
@@ -288,5 +329,26 @@ VizorPaymentLink _link() {
     birthdayHeight: 3_456_789,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
+  );
+}
+
+rust_sync.TransactionInfo _transaction({
+  required String txid,
+  required String txKind,
+  int minedHeight = 0,
+  bool expiredUnmined = false,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txid,
+    minedHeight: BigInt.from(minedHeight),
+    expiredUnmined: expiredUnmined,
+    accountBalanceDelta: 1,
+    fee: BigInt.zero,
+    blockTime: BigInt.zero,
+    isTransparent: false,
+    txKind: txKind,
+    displayAmount: BigInt.one,
+    displayPool: 'shielded',
+    createdTime: BigInt.zero,
   );
 }

@@ -10,6 +10,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -198,6 +199,11 @@ void main() {
       expect(find.text(_giftMessage), findsOneWidget);
 
       await tapAppButton(tester, const ValueKey('payment_link_claim_button'));
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Receiving...')),
+        description: 'accepted claim to remain in Receiving state',
+      );
       final pendingClaim = await _waitForHistoryTransaction(
         tester,
         accountUuid: receiverAccountUuid,
@@ -206,6 +212,11 @@ void main() {
         pending: true,
       );
       expect(pendingClaim.txidHex, isNot(minedFunding.txidHex));
+      final receivingRecord = (await operations.loadReceivedLinkRecoveries())
+          .singleWhere((record) => record.address == link.address);
+      expect(receivingRecord.status, PaymentLinkReceivedStatus.receiving);
+      expect(receivingRecord.claimTxids, isNotEmpty);
+      expect(receivingRecord.claimLink?.encode(), link.encode());
 
       await _mineRegtestBlocks(1);
       final minedClaim = await _waitForHistoryTransaction(
@@ -217,6 +228,21 @@ void main() {
         txid: pendingClaim.txidHex,
       );
       expect(minedClaim.txidHex, isNot(minedFunding.txidHex));
+      await tester.pump(const Duration(seconds: 10));
+      final receivedRow = find.byKey(
+        ValueKey('payment_link_received_${link.address}'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.descendant(of: receivedRow, matching: find.text('Received')),
+        ),
+        description: 'mined claim to transition from Receiving to Received',
+      );
+      final receivedRecord = (await operations.loadReceivedLinkRecoveries())
+          .singleWhere((record) => record.address == link.address);
+      expect(receivedRecord.status, PaymentLinkReceivedStatus.received);
+      expect(receivedRecord.claimLink, isNull);
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
