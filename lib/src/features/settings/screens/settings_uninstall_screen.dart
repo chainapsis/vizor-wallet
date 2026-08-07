@@ -51,7 +51,7 @@ final String _wipeSubtitle =
         ? 'this Mac'
         : Platform.isWindows
         ? 'this PC'
-        : 'this device'}.';
+        : 'this device'}. Unshared Gift Card links will be permanently lost.';
 
 final String _finishSubtitle = Platform.isMacOS
     ? 'To finish uninstallation, remove the Vizor app from Applications.'
