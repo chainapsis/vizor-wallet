@@ -206,15 +206,14 @@ _MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: 'Connected',
-      // The closing sentence is a disclosure, not a limitation: background
-      // migration keeps the direct transport it has always had, by design —
-      // a background pass never brings Tor up, and converting that lane into
-      // failures would only stall migrations. A user who chose Tor deserves
-      // to know which of their traffic it does not cover.
+      // "Most", not "all": background migration transport is pinned direct
+      // by design, and the boundary is disclosed on the migration screen at
+      // the moment it invites the user to background the app — a permanent
+      // settings card is the wrong home for a transient feature's caveat.
       description:
           'Wallet sync and most in-app requests go through Tor. Some '
           'services may be unavailable over Tor, and links you open leave '
-          'the app. Background migration activity uses a direct connection.',
+          'the app.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
     ),

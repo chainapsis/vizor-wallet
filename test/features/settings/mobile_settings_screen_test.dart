@@ -278,17 +278,11 @@ void main() {
             find.byKey(const ValueKey('mobile_settings_tor_description')),
           )
           .data;
-      expect(
-        description,
-        contains(
-          'Background migration activity uses a direct connection.',
-        ),
-      );
-      // The card must not promise Tor coverage the background lane does not
-      // have, and must not promise conditional background progress either —
-      // there is no charger-and-Wi-Fi gate to meet.
-      expect(description, isNot(contains('charging on an unmetered network')));
-      expect(description, isNot(contains('only while Vizor is open')));
+      // "Most in-app requests" carries the coverage hedge; the background
+      // migration boundary is disclosed on the migration screen instead, at
+      // the moment it invites the user to background the app.
+      expect(description, contains('most in-app requests go through Tor'));
+      expect(description, isNot(contains('migration')));
     },
   );
 
