@@ -166,12 +166,92 @@ enum IronwoodMigrationOutboxWakeDisposition: Equatable {
 /// owed announcement, no preparation run to resume. A wake that the foreground
 /// has taken over, or one on a wallet whose accounts are being mutated, also
 /// stops here; those have an owner already.
+///
+/// `hasRunnableWork` comes last and is deferred. Answering it inspects the
+/// preparation run, which opens the wallet database — the one thing a wake
+/// that has just found `mutationQuiesced` set must not do, because the fence
+/// that set it has already told Dart the wallet is free.
 func ironwoodMigrationTorDeferredWakeShouldRearm(
   disposition: IronwoodMigrationOutboxWakeDisposition,
   mutationQuiesced: Bool,
-  hasRunnableWork: Bool
+  hasRunnableWork: @autoclosure () -> Bool
 ) -> Bool {
-  disposition.shouldReschedule && !mutationQuiesced && hasRunnableWork
+  disposition.shouldReschedule && !mutationQuiesced && hasRunnableWork()
+}
+
+/// How a wake that reached no network left its replacement.
+enum IronwoodMigrationRearmOutcome: Equatable {
+  /// There was nothing to arm — no armed item, no owed announcement, no
+  /// preparation run to resume, or the work already has an owner.
+  case nothingToArm
+  /// The replacement was submitted.
+  case armed
+  /// The hold ran out while the submission was still in flight. The
+  /// submission has not answered and has not failed.
+  case stillArming
+  /// The submission answered, and the answer was no.
+  case refused
+}
+
+/// What the scheduler is told about a wake that reached no network.
+///
+/// Declining the route is the policy working, not a wake that failed, and
+/// every sibling completion says so: `finishTorDeferredTask` always reports
+/// success, and the guard in front of this one does too. This path did not,
+/// for one reason: it holds the wake open while `schedule` waits on
+/// `UNUserNotificationCenter.getNotificationSettings`, and at background
+/// launch that call can outlast the hold. The hold expiring used to report
+/// failure — for a replacement that lands moments later and is armed. Repeated
+/// on exactly the route-and-battery combination this feature exists for, that
+/// teaches `BGTaskScheduler` to stop scheduling the identifier the whole
+/// re-arm chain depends on.
+///
+/// So the hold expiring reports what it observed, which is nothing: the
+/// submission is still arming. A submission that actually came back refused is
+/// the one outcome that still reports failure — there the wake really did end
+/// with no replacement and nothing on the way.
+func ironwoodMigrationWakeWithoutNetworkWorkSucceeded(
+  _ outcome: IronwoodMigrationRearmOutcome
+) -> Bool {
+  switch outcome {
+  case .nothingToArm, .armed, .stillArming:
+    return true
+  case .refused:
+    return false
+  }
+}
+
+/// Holds a wake open while its replacement is submitted, and completes it
+/// exactly once with a status that reflects what actually happened.
+///
+/// The hold and the submission race by design — the submission must be filed
+/// before `setTaskCompleted` returns, or iOS may suspend the process with
+/// nothing armed, and the task must complete even if the submission callback
+/// never fires. Whichever arrives first decides, and the loser is dropped;
+/// what the winner reports is the whole of `ironwoodMigrationRearmOutcome`'s
+/// job.
+final class IronwoodMigrationRearmHold {
+  private let latch = MigrationPreparationCompletionLatch()
+  private let complete: (IronwoodMigrationRearmOutcome) -> Void
+
+  init(complete: @escaping (IronwoodMigrationRearmOutcome) -> Void) {
+    self.complete = complete
+  }
+
+  /// The hold's deadline passed before the submission answered.
+  func holdExpired() {
+    finish(.stillArming)
+  }
+
+  /// The submission answered.
+  func submissionFinished(armed: Bool) {
+    finish(armed ? .armed : .refused)
+  }
+
+  private func finish(_ outcome: IronwoodMigrationRearmOutcome) {
+    guard latch.claim() else { return }
+    complete(outcome)
+  }
 }
 
 /// What a wake is still allowed to do, from the two flags that can take it away
@@ -510,8 +590,23 @@ final class BackgroundMigrationManager {
   /// completes is a worse outcome than one that completes unarmed.
   private static let rearmSubmissionTimeout: TimeInterval = 10
 
+  /// Everything a wake does that can reach the wallet, and the fence a wallet
+  /// mutation drains to establish that none of it is still running.
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-migration.outbox",
+    qos: .utility
+  )
+
+  /// The Tor bring-up, and only that.
+  ///
+  /// It is the one step of a wake that takes no cancellation handle — it can
+  /// be outlived but never stopped — and a cold bootstrap holds for tens of
+  /// seconds. Run on `queue` it made `quiesce` wait out a bootstrap before it
+  /// could answer, which is a wallet-mutation fence blocking the accounts UI
+  /// for up to a minute. It touches no wallet database, so the fence has
+  /// nothing to establish about it and it belongs off the fence's queue.
+  private let torBringUpQueue = DispatchQueue(
+    label: "com.keplr.vizor.ironwood-migration.tor-bring-up",
     qos: .utility
   )
   private let stateLock = NSLock()
@@ -670,6 +765,20 @@ final class BackgroundMigrationManager {
     }
   }
 
+  /// Establishes that no native work is touching the wallet before Dart
+  /// mutates accounts, and blocks the caller's flow until it has.
+  ///
+  /// Close the gate, then drain, in that order. `stopActiveWork` sets
+  /// `mutationQuiesced` and cancels whatever is running, so work that has not
+  /// started yet refuses at its own gate; the `queue` barrier below then waits
+  /// out whatever had already started. Everything that can reach the wallet
+  /// runs on `queue`, which is what makes draining it sufficient.
+  ///
+  /// It is a real barrier and has to stay one. The thing that must never come
+  /// back into it is the Tor bring-up: that is uninterruptible, has nothing to
+  /// do with the wallet database, and runs on `torBringUpQueue` for exactly
+  /// that reason. A wake caught mid-bring-up finds the gate closed when it
+  /// hops back here and stops.
   func quiesce(completion: @escaping (Bool) -> Void) {
     stopActiveWork(quiesceForMutation: true)
     queue.async {
@@ -849,24 +958,36 @@ final class BackgroundMigrationManager {
       return
     }
     startAuthorizationMonitoring()
-    queue.async { [weak self] in
+    // Published before the bring-up below, not after it. Expiration, a
+    // foreground handoff, and a wallet mutation all end a wake by cancelling
+    // whatever token is published; a window with none leaves them nothing to
+    // reach, and the work on the far side of it starts uncancelled.
+    let cancellation = BackgroundMigrationCancellation()
+    stateLock.vizorWithLock {
+      activeCancellation = cancellation
+    }
+    torBringUpQueue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
         return
       }
-      // Published before the bring-up below, not after it. Expiration, a
-      // foreground handoff, and a wallet mutation all end a wake by cancelling
-      // whatever token is published; a window with none leaves them nothing to
-      // reach, and the work on the far side of it starts uncancelled.
-      let cancellation = BackgroundMigrationCancellation()
-      self.stateLock.vizorWithLock {
-        self.activeCancellation = cancellation
-      }
       // Tor before the first query or broadcast. A cold bootstrap blocks for
-      // tens of seconds, so it runs here on this manager's own queue rather
-      // than on the notification-gate callback. A client that does not come up
-      // ready ends the wake the same way an unaffordable one does: fail-closed,
-      // no network work, the run left to the foreground.
+      // tens of seconds, so it runs on a queue of its own rather than on the
+      // notification-gate callback — and, just as deliberately, not on
+      // `queue`.
+      //
+      // `queue` is the fence a wallet mutation waits behind: `quiesce` cancels
+      // this wake and then drains `queue` to establish that nothing native is
+      // still touching the wallet database. This step touches no database.
+      // Running it on the fence queue made the fence wait out a bring-up it
+      // has no reason to wait for — and one that, unlike every other step
+      // here, ignores the cancellation `quiesce` just delivered — so the
+      // accounts, uninstall and forgot-passcode screens blocked for up to a
+      // minute behind a Tor bootstrap.
+      //
+      // A client that does not come up ready ends the wake the same way an
+      // unaffordable one does: fail-closed, no network work, the run left to
+      // the foreground.
       guard BackgroundNetworkRoute.allowsBackgroundNetworkWork(
         while: { self.wakeMaySpendTime }
       ) else {
@@ -875,41 +996,52 @@ final class BackgroundMigrationManager {
         self.finishTorDeferredWake(task)
         return
       }
-      // The bring-up above cannot be cancelled, only outlived, and it is long
-      // enough to be outlived. Ask again before the first byte goes out: the
-      // outbox is transport for already-signed transactions, so entering it on
-      // a reclaimed wake risks suspension mid-broadcast, and it would consume
-      // this execution opportunity without leaving a replacement.
-      guard ironwoodMigrationOutboxWakeMayStartNetworkWork(
-        expired: self.isWakeExpired,
-        disposition: self.wakeDisposition,
-        mutationQuiesced: self.isMutationQuiesced,
-        routeStillAffordable: BackgroundNetworkRoute.torBackgroundPassRemainsAffordable
-      ) else {
-        self.clearActiveCancellation()
-        self.stopAuthorizationMonitoring()
-        self.finishWakeWithoutNetworkWork(task)
-        return
+      // Back onto the fence queue for everything from here on, because
+      // everything from here on can reach the wallet. A mutation that landed
+      // during the bring-up is already past `quiesce` by now; what stops this
+      // wake is the `mutationQuiesced` read in the gate below, which was set
+      // before the fence released and is what every not-yet-started piece of
+      // work checks.
+      self.queue.async {
+        // The bring-up above cannot be cancelled, only outlived, and it is
+        // long enough to be outlived. Ask again before the first byte goes
+        // out: the outbox is transport for already-signed transactions, so
+        // entering it on a reclaimed wake risks suspension mid-broadcast, and
+        // it would consume this execution opportunity without leaving a
+        // replacement.
+        guard ironwoodMigrationOutboxWakeMayStartNetworkWork(
+          expired: self.isWakeExpired,
+          disposition: self.wakeDisposition,
+          mutationQuiesced: self.isMutationQuiesced,
+          routeStillAffordable: BackgroundNetworkRoute
+            .torBackgroundPassRemainsAffordable
+        ) else {
+          self.clearActiveCancellation()
+          self.stopAuthorizationMonitoring()
+          self.finishWakeWithoutNetworkWork(task)
+          return
+        }
+        // This wake has established what a confirmation tracker that stood
+        // down for the route is waiting on: a device that can carry it. The
+        // tracker's own request type cannot hold that wait — the scheduler
+        // starts it rather than scheduling it — so this is where it gets armed
+        // again. Self-gating: it submits nothing unless a run is still waiting
+        // for denomination confirmations, and it runs before the outbox so the
+        // submission is not racing this wake's completion.
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared.start { _ in }
+        }
+        // This wake is a silent BGProcessingTask. It queries the chain tip,
+        // broadcasts transactions that are already signed, and notifies — it
+        // does not scan. The separate continued-processing task owns
+        // denomination confirmation tracking and hands confirmed waves back to
+        // the foreground.
+        self.runOutbox(
+          task: task,
+          cancellation: cancellation,
+          preparationResult: .completed
+        )
       }
-      // This wake has established what a confirmation tracker that stood down
-      // for the route is waiting on: a device that can carry it. The tracker's
-      // own request type cannot hold that wait — the scheduler starts it
-      // rather than scheduling it — so this is where it gets armed again.
-      // Self-gating: it submits nothing unless a run is still waiting for
-      // denomination confirmations, and it runs before the outbox so the
-      // submission is not racing this wake's completion.
-      if #available(iOS 26.0, *) {
-        BackgroundMigrationPreparationManager.shared.start { _ in }
-      }
-      // This wake is a silent BGProcessingTask. It queries the chain tip,
-      // broadcasts transactions that are already signed, and notifies — it does
-      // not scan. The separate continued-processing task owns denomination
-      // confirmation tracking and hands confirmed waves back to the foreground.
-      self.runOutbox(
-        task: task,
-        cancellation: cancellation,
-        preparationResult: .completed
-      )
     }
   }
 
@@ -1042,12 +1174,17 @@ final class BackgroundMigrationManager {
   /// by the caller before it gets here, because an interrupted wake has
   /// seconds, and the replacement is what those seconds are for.
   private func finishWakeWithoutNetworkWork(_ task: BGProcessingTask) {
+    let report = { (outcome: IronwoodMigrationRearmOutcome) in
+      task.setTaskCompleted(
+        success: ironwoodMigrationWakeWithoutNetworkWorkSucceeded(outcome)
+      )
+    }
     guard ironwoodMigrationTorDeferredWakeShouldRearm(
       disposition: wakeDisposition,
       mutationQuiesced: isMutationQuiesced,
       hasRunnableWork: hasRunnableOutboxWork() || hasResumablePreparationWork()
     ) else {
-      task.setTaskCompleted(success: true)
+      report(.nothingToArm)
       return
     }
     // The replacement goes in before the completion. `schedule` runs the
@@ -1061,15 +1198,16 @@ final class BackgroundMigrationManager {
     // on power and Wi-Fi anyway, which is when a Tor route is affordable. A
     // longer floor would only push the wake past the moment the device plugs
     // in, and signed items expire by height.
-    let latch = MigrationPreparationCompletionLatch()
-    let complete = { (rescheduled: Bool) in
-      guard latch.claim() else { return }
-      task.setTaskCompleted(success: rescheduled)
-    }
+    let hold = IronwoodMigrationRearmHold(complete: report)
     // The task must finish even if the schedule callback never fires; never
-    // completing it is worse than an unarmed replacement.
+    // completing it is worse than an unarmed replacement. It reports
+    // `.stillArming` rather than a failure: at background launch the gate
+    // `schedule` waits on can outlast this hold, and the replacement it is
+    // still submitting usually lands. A wake that declined for policy and has
+    // its replacement on the way is not a failed execution opportunity, and
+    // saying it was is how the identifier stops being scheduled.
     queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
-      complete(false)
+      hold.holdExpired()
     }
     schedule(
       earliestBeginDate: Date().addingTimeInterval(
@@ -1079,7 +1217,7 @@ final class BackgroundMigrationManager {
       if !rescheduled {
         print("[BGMigration] wake without network work could not re-arm")
       }
-      complete(rescheduled)
+      hold.submissionFinished(armed: rescheduled)
     }
   }
 

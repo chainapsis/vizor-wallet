@@ -43,20 +43,30 @@ enum BackgroundNetworkRoute {
   /// `shared_preferences` stores Dart values in `UserDefaults.standard` behind
   /// a `flutter.` prefix; the suffix is `kTorEnabledPreferenceKey` in
   /// `lib/src/providers/network_privacy_provider.dart`.
-  private static let torEnabledKey = "flutter.zcash_tor_enabled"
+  ///
+  /// Hand-assembled, so the two ends are one rename apart from disagreeing —
+  /// and the divergence fails OPEN: `persistedRouteIsTor` reads false for
+  /// every user, `declareBackgroundNetworkRoute` declares the direct route on
+  /// their behalf, and already-signed migration transactions go out over
+  /// clearnet for someone who chose Tor. Declaring is what lets the pass reach
+  /// the network at all, so it cannot rescue a preference read that came back
+  /// wrong — only the key agreeing with Dart's can. `testTorPreferenceKeyMatchesDart`
+  /// reads the Dart declaration and pins both halves so the rename breaks a
+  /// test instead.
+  static let torEnabledPreferenceSuffix = "zcash_tor_enabled"
+  static let torEnabledKey = "flutter.\(torEnabledPreferenceSuffix)"
 
   /// Same directory Dart passes to the foreground toggle: the app's
   /// Application Support directory plus `tor`. Arti keeps its guard state and
   /// directory cache there, so a background bootstrap that used a different
   /// path would pick fresh guards and re-download the 46.3 MB cache instead of
   /// warming the one the foreground already paid for.
-  private static let torDirectoryName = "tor"
-
-  /// `UIDevice` answers `.unknown` for a moment after battery monitoring is
-  /// switched on. Bounded so a gate never stalls on a device that simply has
-  /// nothing to report.
-  private static let batteryStateReadAttempts = 10
-  private static let batteryStateReadRetryInterval: TimeInterval = 0.05
+  ///
+  /// Named in three places — here, `getTorDataDirectoryPath` in
+  /// `lib/src/core/storage/wallet_paths.dart`, and the backup exclusions in
+  /// `android/app/src/main/res/xml/data_extraction_rules.xml` — so
+  /// `testTorDirectoryNameMatchesDartAndAndroid` pins it across all three.
+  static let torDirectoryName = "tor"
 
   /// `NWPathMonitor` reports the current path almost immediately; this only
   /// bounds the wait for a first report that never arrives.
@@ -67,8 +77,18 @@ enum BackgroundNetworkRoute {
 
   /// Whether the saved route is Tor. A missing value — never chosen, or
   /// cleared by a wallet reset — reads as direct, matching the Dart default.
+  ///
+  /// Takes its store as a parameter only so a test can supply one; every
+  /// caller reads the same `UserDefaults.standard` `shared_preferences`
+  /// writes to.
+  static func persistedRouteIsTor(
+    in defaults: UserDefaults = .standard
+  ) -> Bool {
+    defaults.bool(forKey: torEnabledKey)
+  }
+
   static var persistedRouteIsTor: Bool {
-    UserDefaults.standard.bool(forKey: torEnabledKey)
+    persistedRouteIsTor(in: .standard)
   }
 
   /// Whether a background pass on a Tor route can afford to run right now.
@@ -132,30 +152,20 @@ enum BackgroundNetworkRoute {
     return bringTorUp()
   }
 
-  /// `batteryState` is `.unknown` until battery monitoring is enabled, so
-  /// `AppDelegate` turns it on at launch — including the launch a background
-  /// task causes. Enabling here as well keeps the gate honest if it is ever
-  /// reached first, and the retry covers the moment before the first report
-  /// lands rather than letting a startable pass read `.unknown` and defer.
+  /// Where this device's power comes from, as last reported to
+  /// `BackgroundPowerSupplyMonitor`.
+  ///
+  /// Reads a recorded value rather than `UIDevice`: every caller of this gate
+  /// is off the main thread — a `UNUserNotificationCenter` callback or one of
+  /// the two `.utility` background queues — and `UIDevice` is main-actor
+  /// isolated. Hopping to main synchronously to fix that would deadlock,
+  /// because the main thread can itself be inside a wallet-mutation fence
+  /// waiting on the very queue the caller is running on.
+  ///
+  /// `.unknown` still refuses, and is still what a device that has reported
+  /// nothing answers.
   static func currentPowerSupply() -> BackgroundPowerSupply {
-    let device = UIDevice.current
-    if !device.isBatteryMonitoringEnabled {
-      device.isBatteryMonitoringEnabled = true
-    }
-    for attempt in 0..<batteryStateReadAttempts {
-      switch device.batteryState {
-      case .charging, .full:
-        return .external
-      case .unplugged:
-        return .battery
-      default:
-        break
-      }
-      if attempt < batteryStateReadAttempts - 1 {
-        Thread.sleep(forTimeInterval: batteryStateReadRetryInterval)
-      }
-    }
-    return .unknown
+    BackgroundPowerSupplyMonitor.shared.currentSupply()
   }
 
   /// `isExpensive` covers cellular and personal hotspots, `isConstrained`
@@ -201,7 +211,15 @@ enum BackgroundNetworkRoute {
   /// order. It samples nothing and never bootstraps.
   @discardableResult
   static func declareBackgroundNetworkRoute() -> Bool {
-    guard persistedRouteIsTor else { return false }
+    guard persistedRouteIsTor else {
+      // Declared too. Rust refuses a route nothing has declared rather than
+      // treating it as direct, so that an entry point which never read the
+      // preference cannot reach lightwalletd on a Tor wallet — which makes
+      // saying "direct" the direct pass's job rather than something it gets
+      // by staying quiet.
+      _ = zcash_network_privacy_mark_direct_route()
+      return false
+    }
     _ = zcash_network_privacy_mark_tor_desired()
     return true
   }
@@ -376,6 +394,129 @@ enum BackgroundNetworkRoute {
     } catch {
       print("[BGMigration] tor directory exclude failed: \(error)")
     }
+  }
+}
+
+/// Records the device's power supply where `UIDevice` may legally be touched,
+/// so the background gates can read it from where they actually run.
+///
+/// Three things were wrong with sampling `UIDevice` inside the gate. It is
+/// annotated `NS_SWIFT_UI_ACTOR` and every gate runs off the main thread, and
+/// nothing diagnosed that because this target builds in Swift 5 mode with no
+/// strict-concurrency checking. It also *wrote* `isBatteryMonitoringEnabled`,
+/// which two background samplers could do at once — the silent wake starts the
+/// preparation gate alongside its own outbox run. And it spent up to 450 ms of
+/// a wake in `Thread.sleep` waiting for a first report.
+///
+/// So the sample moves to the one place that is already main-thread and
+/// already runs before any task handler can: `didFinishLaunchingWithOptions`.
+/// Monitoring is enabled there, once, by one writer. After that the state is
+/// kept current by `UIDevice.batteryStateDidChangeNotification`, delivered on
+/// the main queue.
+///
+/// A reader still has to cope with the moment before the first report lands:
+/// `batteryState` answers `.unknown` for a beat after monitoring is switched
+/// on, and `.unknown` refuses, which costs a device that is genuinely on a
+/// charger a full deferral. So a reader that finds no report yet waits for
+/// one — on a condition the recorder signals, not on a sleep loop, so it
+/// returns the instant the report arrives and never later than the same
+/// bounded budget the old loop spent. Waiting on a condition is also what
+/// keeps this safe to call from a queue the main thread may be blocked on:
+/// nothing here requires main to run, and a main thread that never gets there
+/// costs the reader a timeout, not a deadlock.
+final class BackgroundPowerSupplyMonitor: @unchecked Sendable {
+  static let shared = BackgroundPowerSupplyMonitor()
+
+  /// How long a reader waits for the first report before answering
+  /// `.unknown`. Matches what the previous retry loop was willing to spend.
+  private static let firstReportWait: TimeInterval = 0.5
+
+  private let condition = NSCondition()
+  private var recordedSupply: BackgroundPowerSupply = .unknown
+  private var hasReport = false
+  private var started = false
+  private var observer: NSObjectProtocol?
+
+  init() {}
+
+  /// Enables battery monitoring, takes the first sample, and subscribes to
+  /// later changes. Main thread only, and idempotent.
+  @MainActor
+  func start() {
+    let alreadyStarted = condition.withPowerSupplyLock { () -> Bool in
+      defer { started = true }
+      return started
+    }
+    guard !alreadyStarted else { return }
+    let device = UIDevice.current
+    if !device.isBatteryMonitoringEnabled {
+      device.isBatteryMonitoringEnabled = true
+    }
+    observer = NotificationCenter.default.addObserver(
+      forName: UIDevice.batteryStateDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.record(UIDevice.current.batteryState)
+    }
+    record(device.batteryState)
+    // A state that settles without posting a change notification is caught
+    // here, one run-loop turn later, still on the main thread. Costs nothing
+    // when the sample above already landed a real state.
+    DispatchQueue.main.async { [weak self] in
+      self?.record(UIDevice.current.batteryState)
+    }
+  }
+
+  /// The last reported supply, waiting briefly for a first report if none has
+  /// arrived. Safe from any thread.
+  func currentSupply() -> BackgroundPowerSupply {
+    condition.lock()
+    defer { condition.unlock() }
+    if !hasReport {
+      let deadline = Date().addingTimeInterval(Self.firstReportWait)
+      while !hasReport && Date() < deadline {
+        if !condition.wait(until: deadline) { break }
+      }
+    }
+    return recordedSupply
+  }
+
+  /// Records a battery state. Called on the main thread in the app; called
+  /// directly by tests, which is why it takes the state rather than reading
+  /// `UIDevice` itself.
+  func record(_ state: UIDevice.BatteryState) {
+    let supply: BackgroundPowerSupply
+    switch state {
+    case .charging, .full:
+      supply = .external
+    case .unplugged:
+      supply = .battery
+    default:
+      // Still `.unknown`, and `.unknown` refuses. Recording it would tell a
+      // waiting reader that a report arrived, so it is deliberately not
+      // recorded as one.
+      return
+    }
+    condition.lock()
+    recordedSupply = supply
+    hasReport = true
+    condition.broadcast()
+    condition.unlock()
+  }
+
+  deinit {
+    if let observer {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
+}
+
+extension NSCondition {
+  fileprivate func withPowerSupplyLock<T>(_ body: () -> T) -> T {
+    lock()
+    defer { unlock() }
+    return body()
   }
 }
 

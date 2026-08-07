@@ -704,6 +704,75 @@ class RunnerTests: XCTestCase {
     }
   }
 
+  /// The predicate above has always been right; the stand-down that feeds it
+  /// was not. `standDownForUnavailableTorRoute` released the tracking slot —
+  /// which clears `foregroundHandoffRequested` — and only then completed,
+  /// where the completion read that flag to decide. So the `.none` case pinned
+  /// by `testRouteStandDownLeavesNothingBehindForWorkThatHasAnOwner` could
+  /// never be reached from this path: a handoff landing during the tens of
+  /// seconds of a cold Tor bring-up (the gate in front of the bring-up asks
+  /// `passIsLive` *before* the route, so it does land here) arrived at the
+  /// completion as "nobody owns this run", armed a background wake for a run
+  /// the foreground was already advancing, and on a failed arming posted a
+  /// "needs attention" alert over a healthy run.
+  ///
+  /// This drives the production release rather than the predicate:
+  /// `standDownDeferralForTesting` sets the flags a running task would hold,
+  /// calls `releaseTrackingSlotForStandDown`, and reports what that release
+  /// handed forward. Reverse the read and the clear inside it and this fails.
+  @available(iOS 26.0, *)
+  func testRouteStandDownCarriesTheHandoffItHeldIntoItsCompletion() {
+    let manager = BackgroundMigrationPreparationManager.shared
+
+    let handedOff = manager.standDownDeferralForTesting(
+      handedOff: true,
+      expired: false
+    )
+    XCTAssertTrue(
+      handedOff.runtime.handedOff,
+      "the release must report the handoff the task still held"
+    )
+    XCTAssertEqual(
+      handedOff.action,
+      .none,
+      "a run the foreground has taken over gets no background wake armed for it"
+    )
+
+    // An expiry landing on a handed-off task does not change who owns the run.
+    let handedOffAndExpired = manager.standDownDeferralForTesting(
+      handedOff: true,
+      expired: true
+    )
+    XCTAssertTrue(handedOffAndExpired.runtime.handedOff)
+    XCTAssertEqual(handedOffAndExpired.action, .none)
+
+    // And the ordinary stand-down still leaves its wait behind.
+    let unowned = manager.standDownDeferralForTesting(
+      handedOff: false,
+      expired: false
+    )
+    XCTAssertFalse(unowned.runtime.handedOff)
+    XCTAssertEqual(unowned.action, .waitOnProcessingWake)
+  }
+
+  /// The other half of "read, then clear". Reporting the handoff is what stops
+  /// a spurious wake; still clearing it is what stops the next task inheriting
+  /// a handoff nobody asked for. A fix that only stopped clearing would pass
+  /// the test above and fail this one.
+  @available(iOS 26.0, *)
+  func testRouteStandDownStillClearsTheHandoffItReported() {
+    let manager = BackgroundMigrationPreparationManager.shared
+    let probe = manager.standDownDeferralForTesting(
+      handedOff: true,
+      expired: false
+    )
+    XCTAssertTrue(probe.runtime.handedOff)
+    XCTAssertFalse(
+      probe.handoffAfterRelease,
+      "the released slot must not leave a handoff behind for the next task"
+    )
+  }
+
   func testRearmThatItsOwnRequestCouldNotTakeFallsBackToTheProcessingWake() {
     // The re-arm submits another continued-processing request, and that
     // request type declines for reasons it cannot wait out — the run moved to
@@ -3250,6 +3319,272 @@ final class NativeLightwalletdClientTests: XCTestCase {
       XCTFail("Expected unavailable trailers in both byte orders to be NotFound")
       return
     }
+  }
+
+  // MARK: - Power supply is recorded on main and read from anywhere
+
+  /// The gate used to sample `UIDevice` itself, from background queues, where
+  /// touching it is an actor violation nothing in this target diagnoses. It
+  /// also wrote `isBatteryMonitoringEnabled` — from two samplers at once — and
+  /// spent up to 450 ms per call in `Thread.sleep` waiting for a first report.
+  ///
+  /// What survives all of that is the semantics: a monitor that has been told
+  /// nothing answers `.unknown`, and `.unknown` refuses.
+  func testPowerSupplyMonitorRefusesUntilSomethingIsReported() {
+    let monitor = BackgroundPowerSupplyMonitor()
+    XCTAssertEqual(monitor.currentSupply(), .unknown)
+    XCTAssertFalse(
+      BackgroundNetworkRoute.torBackgroundWorkIsAffordable(
+        power: monitor.currentSupply(),
+        metering: .unmetered
+      )
+    )
+  }
+
+  func testPowerSupplyMonitorRecordsWhatTheDeviceReports() {
+    let charging = BackgroundPowerSupplyMonitor()
+    charging.record(.charging)
+    XCTAssertEqual(charging.currentSupply(), .external)
+
+    let full = BackgroundPowerSupplyMonitor()
+    full.record(.full)
+    XCTAssertEqual(full.currentSupply(), .external)
+
+    let unplugged = BackgroundPowerSupplyMonitor()
+    unplugged.record(.unplugged)
+    XCTAssertEqual(unplugged.currentSupply(), .battery)
+  }
+
+  /// `.unknown` is the absence of a report, not a report. Recording it would
+  /// release a reader that is waiting for the first real state and hand it a
+  /// refusal — a 10-minute deferral on a device that is plugged in.
+  func testPowerSupplyMonitorDoesNotTreatUnknownAsAReport() {
+    let monitor = BackgroundPowerSupplyMonitor()
+    monitor.record(.unknown)
+    XCTAssertEqual(monitor.currentSupply(), .unknown)
+    monitor.record(.charging)
+    XCTAssertEqual(monitor.currentSupply(), .external)
+  }
+
+  /// A reader on a background queue must not block on the main thread, which
+  /// may itself be waiting inside a wallet-mutation fence on the queue that
+  /// reader is running on. It waits on a condition the recorder signals, so a
+  /// report arriving late still reaches it and a report that never arrives
+  /// costs a timeout rather than a deadlock.
+  func testPowerSupplyReaderIsReleasedByALateReport() {
+    let monitor = BackgroundPowerSupplyMonitor()
+    let read = expectation(description: "reader observes the late report")
+
+    DispatchQueue.global(qos: .utility).async {
+      XCTAssertEqual(monitor.currentSupply(), .external)
+      read.fulfill()
+    }
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(
+      deadline: .now() + 0.05
+    ) {
+      monitor.record(.charging)
+    }
+
+    wait(for: [read], timeout: 2)
+  }
+
+  // MARK: - A wake that declined the route reports what actually happened
+
+  /// The hold exists because the replacement has to be filed before
+  /// `setTaskCompleted` returns, and the task has to complete even if the
+  /// submission callback never fires. At background launch the notification
+  /// gate `schedule` waits on can outlast the 10 s hold, and the hold expiring
+  /// used to complete the task `success: false` — for a replacement that lands
+  /// a moment later and IS armed.
+  ///
+  /// That matters beyond bookkeeping: repeated failure on exactly the
+  /// route-and-battery combination this feature targets is what teaches
+  /// `BGTaskScheduler` to stop scheduling the identifier the whole re-arm
+  /// chain depends on. Declining is the policy working, and every sibling
+  /// completion already says so.
+  func testHoldExpiringOnAnInFlightRearmIsNotAFailedOpportunity() {
+    var reported: [Bool] = []
+    let hold = IronwoodMigrationRearmHold { outcome in
+      reported.append(
+        ironwoodMigrationWakeWithoutNetworkWorkSucceeded(outcome)
+      )
+    }
+
+    hold.holdExpired()
+    // The submission answers after the hold gave up; it was never refused.
+    hold.submissionFinished(armed: true)
+
+    XCTAssertEqual(
+      reported,
+      [true],
+      "a wake whose replacement is still being submitted did not fail"
+    )
+  }
+
+  func testSubmissionRefusedIsTheOneOutcomeThatStillReportsFailure() {
+    var reported: [Bool] = []
+    let hold = IronwoodMigrationRearmHold { outcome in
+      reported.append(
+        ironwoodMigrationWakeWithoutNetworkWorkSucceeded(outcome)
+      )
+    }
+
+    hold.submissionFinished(armed: false)
+    // The hold fires afterwards and must not report a second time.
+    hold.holdExpired()
+
+    XCTAssertEqual(reported, [false])
+  }
+
+  func testArmedAndNothingToArmBothReportSuccess() {
+    XCTAssertTrue(
+      ironwoodMigrationWakeWithoutNetworkWorkSucceeded(.armed)
+    )
+    XCTAssertTrue(
+      ironwoodMigrationWakeWithoutNetworkWorkSucceeded(.nothingToArm)
+    )
+    XCTAssertTrue(
+      ironwoodMigrationWakeWithoutNetworkWorkSucceeded(.stillArming)
+    )
+    XCTAssertFalse(
+      ironwoodMigrationWakeWithoutNetworkWorkSucceeded(.refused)
+    )
+  }
+
+  func testRearmHoldCompletesExactlyOnce() {
+    var completions = 0
+    let hold = IronwoodMigrationRearmHold { _ in completions += 1 }
+    hold.submissionFinished(armed: true)
+    hold.submissionFinished(armed: false)
+    hold.holdExpired()
+    XCTAssertEqual(completions, 1)
+  }
+
+  // MARK: - The saved route survives the trip from Dart to a cold process
+
+  /// `persistedRouteIsTor` is the only thing standing between a user who chose
+  /// Tor and a background wake that broadcasts their already-signed migration
+  /// transactions over clearnet, and it had no coverage at all.
+  ///
+  /// Note which way it fails: a key that does not match reads `false`, so
+  /// `declareBackgroundNetworkRoute` marks nothing and the process stays
+  /// direct. There is no error, no deferral, and nothing the user can see —
+  /// the traffic just goes out unwrapped.
+  func testPersistedRouteIsTorReadsTheKeySharedPreferencesWrites() throws {
+    let suite = "com.keplr.vizor.tests.tor-route"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    defaults.removePersistentDomain(forName: suite)
+    XCTAssertFalse(
+      BackgroundNetworkRoute.persistedRouteIsTor(in: defaults),
+      "never chosen, or cleared by a wallet reset, reads as direct"
+    )
+
+    defaults.set(true, forKey: "flutter.zcash_tor_enabled")
+    XCTAssertTrue(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+
+    defaults.set(false, forKey: "flutter.zcash_tor_enabled")
+    XCTAssertFalse(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+
+    // The `flutter.` prefix is part of the contract, not decoration. A
+    // migration to an unprefixed store — `SharedPreferencesAsync`, or a
+    // `SharedPreferences.setPrefix` call — leaves the value here and this
+    // reader finding nothing.
+    defaults.removePersistentDomain(forName: suite)
+    defaults.set(true, forKey: "zcash_tor_enabled")
+    XCTAssertFalse(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+  }
+
+  /// Pins the key from both ends. The Swift side hand-assembles a string that
+  /// only Dart's constant and `shared_preferences`' prefix make correct, so a
+  /// rename on either side is invisible until a user's traffic leaks. Reading
+  /// the Dart declaration is what turns that into a red test.
+  func testTorPreferenceKeyMatchesDart() throws {
+    XCTAssertEqual(
+      BackgroundNetworkRoute.torEnabledKey,
+      "flutter.\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)"
+    )
+
+    let provider = try repositoryFileContents(
+      "lib/src/providers/network_privacy_provider.dart"
+    )
+    XCTAssertTrue(
+      provider.contains(
+        "const kTorEnabledPreferenceKey = "
+          + "'\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)';"
+      ),
+      "kTorEnabledPreferenceKey no longer declares "
+        + "'\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)'; "
+        + "BackgroundNetworkRoute.torEnabledKey must be renamed with it"
+    )
+    // The prefix half of the contract. `SharedPreferences.getInstance` is what
+    // writes under `flutter.`; the async store and `setPrefix` do not.
+    XCTAssertTrue(
+      provider.contains("SharedPreferences.getInstance()"),
+      "the Tor preference must keep using the prefixed shared_preferences API"
+    )
+    XCTAssertFalse(
+      provider.contains("SharedPreferencesAsync"),
+      "an unprefixed store would leave the background reader finding nothing"
+    )
+    XCTAssertFalse(
+      provider.contains("setPrefix"),
+      "changing the prefix would leave the background reader finding nothing"
+    )
+  }
+
+  /// The arti directory name is spelled out in three places. A divergence
+  /// costs a re-download of the 46.3 MB cache and gives one wallet a second,
+  /// independent set of guards.
+  func testTorDirectoryNameMatchesDartAndAndroid() throws {
+    let name = BackgroundNetworkRoute.torDirectoryName
+
+    let paths = try repositoryFileContents(
+      "lib/src/core/storage/wallet_paths.dart"
+    )
+    XCTAssertTrue(
+      paths.contains(#"${Platform.pathSeparator}"# + name + "'"),
+      "getTorDataDirectoryPath no longer ends in '\(name)'"
+    )
+
+    let rules = try repositoryFileContents(
+      "android/app/src/main/res/xml/data_extraction_rules.xml"
+    )
+    let excluded = rules.components(
+      separatedBy: "path=\"\(name)\""
+    ).count - 1
+    XCTAssertEqual(
+      excluded,
+      2,
+      "cloud-backup and device-transfer must both exclude '\(name)'"
+    )
+  }
+
+  /// Reads a file from the checkout this test was compiled out of.
+  ///
+  /// `#filePath` is baked in at compile time and points at
+  /// `<repo>/ios/RunnerTests/RunnerTests.swift`, which is how a test running
+  /// in a simulator reaches the Dart and Android sources it has to pin.
+  private func repositoryFileContents(
+    _ relativePath: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()  // RunnerTests
+      .deletingLastPathComponent()  // ios
+      .deletingLastPathComponent()  // repository root
+    let url = root.appendingPathComponent(relativePath)
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+      XCTFail(
+        "Could not read \(relativePath) at \(url.path)",
+        file: file,
+        line: line
+      )
+      throw CocoaError(.fileNoSuchFile)
+    }
+    return contents
   }
 
   func testTorBackgroundPassRunsOnlyOnExternalPowerOverAnUnmeteredLink() {

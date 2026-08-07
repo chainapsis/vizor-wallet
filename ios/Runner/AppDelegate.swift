@@ -14,10 +14,16 @@ import UIKit
     FreshInstallKeychainCleaner.runIfNeeded()
     // `batteryState` reports `.unknown` until monitoring is on, and the
     // background Tor gate reads that state to decide whether this device can
-    // afford a Tor pass. Enable it here, on the main thread, before any task
-    // handler can run — a background task launch reaches this method first, so
-    // the gate finds a real state instead of deferring on `.unknown`.
-    UIDevice.current.isBatteryMonitoringEnabled = true
+    // afford a Tor pass. Start the monitor here, on the main thread, before
+    // any task handler can run — a background task launch reaches this method
+    // first, so the gate finds a real state instead of deferring on
+    // `.unknown`.
+    //
+    // This is the only place `UIDevice` is touched for that state. The gates
+    // themselves run on background queues, where reading it is an actor
+    // violation and writing `isBatteryMonitoringEnabled` from two of them at
+    // once is a race; they read what this monitor recorded instead.
+    BackgroundPowerSupplyMonitor.shared.start()
     BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {

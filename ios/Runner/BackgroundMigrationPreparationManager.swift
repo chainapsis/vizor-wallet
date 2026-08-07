@@ -752,6 +752,21 @@ enum MigrationPreparationRouteDeferralAction: Equatable {
   case waitOnProcessingWake
 }
 
+/// The wake-scoped flags a completing task decides from.
+///
+/// Grouped so a path that has to release its bookkeeping before it completes
+/// can carry them across that release. Two of the four — `handedOff` and
+/// `expired` — describe the task run that set them and are cleared as the run
+/// ends, so a completion that reads them after the release reads a task that
+/// no longer exists and reports "nobody owns this run" for one the foreground
+/// just claimed.
+struct MigrationPreparationTaskRuntime: Equatable {
+  let handedOff: Bool
+  let expired: Bool
+  let quiesced: Bool
+  let disabled: Bool
+}
+
 /// What a tracking task that stood down for the saved route leaves behind.
 ///
 /// Never another continued-processing request. That request type has no usable
@@ -784,6 +799,18 @@ func migrationPreparationRouteDeferralAction(
   )
     ? .waitOnProcessingWake
     : .none
+}
+
+/// The same decision, from the flags a task carried out of its release.
+func migrationPreparationRouteDeferralAction(
+  _ runtime: MigrationPreparationTaskRuntime
+) -> MigrationPreparationRouteDeferralAction {
+  migrationPreparationRouteDeferralAction(
+    quiesced: runtime.quiesced,
+    expired: runtime.expired,
+    handedOff: runtime.handedOff,
+    notificationsDisabled: runtime.disabled
+  )
 }
 
 /// What a task whose own re-arm did not take must leave behind instead.
@@ -1016,8 +1043,23 @@ final class BackgroundMigrationPreparationManager {
   private static let foregroundContinuationScopesKey =
     "ironwoodMigrationPreparationForegroundContinuationScopes"
 
+  /// Everything a task does that can reach the wallet, and the fence a wallet
+  /// mutation drains to establish that none of it is still running.
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-preparation",
+    qos: .utility
+  )
+
+  /// The Tor bring-up, and only that.
+  ///
+  /// It is the one step of a task that answers no cancellation — it can be
+  /// outlived but never stopped — and a cold bootstrap holds for tens of
+  /// seconds. Run on `queue` it made `quiesce` wait out a bootstrap before it
+  /// could answer, which is a wallet-mutation fence blocking the accounts UI.
+  /// It touches no wallet database, so the fence has nothing to establish
+  /// about it and it belongs off the fence's queue.
+  private let torBringUpQueue = DispatchQueue(
+    label: "com.keplr.vizor.ironwood-preparation.tor-bring-up",
     qos: .utility
   )
   private let stateLock = NSLock()
@@ -1585,6 +1627,20 @@ final class BackgroundMigrationPreparationManager {
     resetNeedsActionNotifications()
   }
 
+  /// Establishes that no native preparation work is touching the wallet before
+  /// Dart mutates accounts, and blocks the caller's flow until it has.
+  ///
+  /// Close the gate, then drain, in that order. The flags below stop work that
+  /// has not started and the cancellation stops work that has; the `queue`
+  /// barrier then waits out whatever was already inside. Everything that can
+  /// reach the wallet runs on `queue`, which is what makes draining it
+  /// sufficient.
+  ///
+  /// It is a real barrier and has to stay one. The thing that must never come
+  /// back into it is the Tor bring-up: that answers no cancellation, has
+  /// nothing to do with the wallet database, and runs on `torBringUpQueue` for
+  /// exactly that reason. A task caught mid-bring-up finds the gate closed
+  /// when it hops back here and stands down.
   func quiesce(completion: @escaping (Bool) -> Void) {
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
@@ -1843,99 +1899,115 @@ final class BackgroundMigrationPreparationManager {
     startAuthorizationMonitoring()
     recordSchedulingState("tracking_confirmations")
 
-    queue.async { [weak self] in
+    torBringUpQueue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
         return
       }
       // Tor before the first query. A cold bootstrap blocks for tens of
-      // seconds, so it runs here on this manager's own queue rather than on the
-      // notification-gate callback that delivered this task. A direct route
-      // passes straight through and bootstraps nothing. A client that does not
-      // come up ready — or a device unplugged since the gate above — ends the
-      // task exactly the way that gate does: fail-closed, no network work, and
-      // the run left to the foreground.
+      // seconds, so it runs on a queue of its own rather than on the
+      // notification-gate callback that delivered this task — and, just as
+      // deliberately, not on `queue`.
+      //
+      // `queue` is the fence a wallet mutation waits behind: `quiesce` cancels
+      // this task and then drains `queue` to establish that nothing native is
+      // still touching the wallet database. Every other step of this task
+      // answers that cancellation; the bring-up is the only one that cannot,
+      // and it touches no database, so the fence has nothing to establish
+      // about it. Running it here made the accounts, uninstall and
+      // forgot-passcode screens wait out a Tor bootstrap.
+      //
+      // A direct route passes straight through and bootstraps nothing. A
+      // client that does not come up ready — or a device unplugged since the
+      // gate above — ends the task exactly the way that gate does:
+      // fail-closed, no network work, and the run left to the foreground.
       guard BackgroundNetworkRoute.allowsBackgroundNetworkWork(
         while: { !self.isTaskEndedByOwner }
       ) else {
         self.standDownForUnavailableTorRoute(task)
         return
       }
-      var pass = self.runConfirmationTrackingPass(
-        cancellation: cancellation
-      )
-      var taskFailureObserved = false
-      // The pass above already ran, so the activity's progress bar is seeded
-      // from real confirmation counts even if the app is active. Every later
-      // pass is subject to the foreground pause.
-      var hasCompletedInitialQuery = false
-      while true {
-        switch pass {
-        case .batch(let batch):
-          hasCompletedInitialQuery = true
-          taskFailureObserved =
-            taskFailureObserved || batch.hasTaskFailure
-          let notificationSubmitted = self.applyTrackingBatch(
-            batch,
-            task: task
-          )
-          taskFailureObserved =
-            taskFailureObserved || !notificationSubmitted
-          switch migrationPreparationTrackingPostBatchAction(
-            batch,
-            taskFailureObserved: taskFailureObserved,
-            stopRequested: self.isTrackingStopRequested
-          ) {
-          case .finishConfirmed(let presentation):
-            // One task tracks one confirmation wave. The next wave cannot
-            // exist until the foreground app syncs and advances the run, so
-            // finish successfully now instead of idling until the OS expires
-            // the task and the expiry reads as a migration failure.
-            self.finishConfirmationTrackingTask(
-              task,
-              taskFailed: false,
-              completionPresentation: presentation
+      // Back onto the fence queue for the tracking loop, which reads the
+      // wallet. A mutation that landed during the bring-up has already been
+      // answered by `quiesce`; what stops this task is `isTrackingStopRequested`
+      // at the top of every pass, set before the fence released.
+      self.queue.async {
+        var pass = self.runConfirmationTrackingPass(
+          cancellation: cancellation
+        )
+        var taskFailureObserved = false
+        // The pass above already ran, so the activity's progress bar is seeded
+        // from real confirmation counts even if the app is active. Every later
+        // pass is subject to the foreground pause.
+        var hasCompletedInitialQuery = false
+        while true {
+          switch pass {
+          case .batch(let batch):
+            hasCompletedInitialQuery = true
+            taskFailureObserved =
+              taskFailureObserved || batch.hasTaskFailure
+            let notificationSubmitted = self.applyTrackingBatch(
+              batch,
+              task: task
             )
-            return
-          case .finish:
+            taskFailureObserved =
+              taskFailureObserved || !notificationSubmitted
+            switch migrationPreparationTrackingPostBatchAction(
+              batch,
+              taskFailureObserved: taskFailureObserved,
+              stopRequested: self.isTrackingStopRequested
+            ) {
+            case .finishConfirmed(let presentation):
+              // One task tracks one confirmation wave. The next wave cannot
+              // exist until the foreground app syncs and advances the run, so
+              // finish successfully now instead of idling until the OS expires
+              // the task and the expiry reads as a migration failure.
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: false,
+                completionPresentation: presentation
+              )
+              return
+            case .finish:
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: taskFailureObserved,
+                completionPresentation: nil
+              )
+              return
+            case .continueTracking:
+              break
+            }
+            guard self.waitForNextConfirmationQuery(
+              cancellation: cancellation,
+              hasCompletedInitialQuery: hasCompletedInitialQuery
+            ) else {
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: taskFailureObserved,
+                completionPresentation: nil
+              )
+              return
+            }
+            pass = self.runConfirmationTrackingPass(
+              cancellation: cancellation
+            )
+          case .cancelled:
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: taskFailureObserved,
               completionPresentation: nil
             )
             return
-          case .continueTracking:
-            break
-          }
-          guard self.waitForNextConfirmationQuery(
-            cancellation: cancellation,
-            hasCompletedInitialQuery: hasCompletedInitialQuery
-          ) else {
+          case .routeDeferred:
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: taskFailureObserved,
-              completionPresentation: nil
+              completionPresentation: nil,
+              routeDeferred: true
             )
             return
           }
-          pass = self.runConfirmationTrackingPass(
-            cancellation: cancellation
-          )
-        case .cancelled:
-          self.finishConfirmationTrackingTask(
-            task,
-            taskFailed: taskFailureObserved,
-            completionPresentation: nil
-          )
-          return
-        case .routeDeferred:
-          self.finishConfirmationTrackingTask(
-            task,
-            taskFailed: taskFailureObserved,
-            completionPresentation: nil,
-            routeDeferred: true
-          )
-          return
         }
       }
     }
@@ -1957,20 +2029,21 @@ final class BackgroundMigrationPreparationManager {
   /// was armed, and nothing outside the app arms another, so the stand-down
   /// hands that job on. It hands it to the silent processing wake rather than
   /// to another request of this kind, because this kind cannot wait.
-  private func finishTorDeferredTask(_ task: BGContinuedProcessingTask) {
+  ///
+  /// `runtime` is supplied by a caller that has already released the task's
+  /// bookkeeping, because releasing it clears flags this decision is made
+  /// from. Callers that have released nothing pass nothing and this reads the
+  /// flags itself.
+  private func finishTorDeferredTask(
+    _ task: BGContinuedProcessingTask,
+    runtime suppliedRuntime: MigrationPreparationTaskRuntime? = nil
+  ) {
     queue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
         return
       }
-      let runtime = self.stateLock.withPreparationLock {
-        (
-          handedOff: self.foregroundHandoffRequested,
-          expired: self.expired,
-          quiesced: self.mutationQuiesced,
-          disabled: self.notificationAuthorization.isDisabled
-        )
-      }
+      let runtime = suppliedRuntime ?? self.currentTaskRuntime()
       let recoveryEvents: [MigrationPreparationNotificationEvent] =
         runtime.disabled
         ? []
@@ -1978,12 +2051,7 @@ final class BackgroundMigrationPreparationManager {
       let recoveryAlertSubmitted =
         !recoveryEvents.isEmpty
         && self.submitNotificationEvents(recoveryEvents)
-      let deferralAction = migrationPreparationRouteDeferralAction(
-        quiesced: runtime.quiesced,
-        expired: runtime.expired,
-        handedOff: runtime.handedOff,
-        notificationsDisabled: runtime.disabled
-      )
+      let deferralAction = migrationPreparationRouteDeferralAction(runtime)
       // Nothing of this kind is left queued either way. A queued request is
       // started, not held, so it cannot be what waits for the route.
       BGTaskScheduler.shared.cancel(
@@ -2034,16 +2102,104 @@ final class BackgroundMigrationPreparationManager {
     _ task: BGContinuedProcessingTask
   ) {
     stopAuthorizationMonitoring()
+    let runtime = releaseTrackingSlotForStandDown()
+    markForegroundContinuationsReadyForHandoff()
+    finishTorDeferredTask(task, runtime: runtime)
+  }
+
+  /// Releases the bookkeeping this task claimed and reports the wake-scoped
+  /// flags it still held while claiming it.
+  ///
+  /// Read first, clear second, in one lock acquisition, and the two halves are
+  /// deliberately not separable. `foregroundHandoffRequested` is what tells the
+  /// completion that the foreground has taken this run over — the one input
+  /// that turns the deferral into `.none`. A stand-down that cleared it before
+  /// the completion read it could only ever report "nobody owns this", so it
+  /// armed a background wake for a run the foreground was already advancing,
+  /// and when that arming failed it painted a "needs attention" alert over a
+  /// healthy run.
+  ///
+  /// This is reachable, not theoretical: the gate this stand-down comes from
+  /// asks `passIsLive` before the route, so a `handoffToForeground()` landing
+  /// during the tens of seconds of a cold bring-up arrives here with the flag
+  /// set. `finishConfirmationTrackingTask` has always read before it cleared;
+  /// this is the same ordering, made into one operation so a caller cannot
+  /// take only half of it.
+  private func releaseTrackingSlotForStandDown()
+    -> MigrationPreparationTaskRuntime
+  {
     stateLock.withPreparationLock {
+      let runtime = MigrationPreparationTaskRuntime(
+        handedOff: foregroundHandoffRequested,
+        expired: expired,
+        quiesced: mutationQuiesced,
+        disabled: notificationAuthorization.isDisabled
+      )
       taskRunning = false
       taskProgress = nil
       trackingCancellation = nil
       latestTrackingProgress = nil
       foregroundHandoffRequested = false
+      return runtime
     }
-    markForegroundContinuationsReadyForHandoff()
-    finishTorDeferredTask(task)
   }
+
+  private func currentTaskRuntime() -> MigrationPreparationTaskRuntime {
+    stateLock.withPreparationLock {
+      MigrationPreparationTaskRuntime(
+        handedOff: foregroundHandoffRequested,
+        expired: expired,
+        quiesced: mutationQuiesced,
+        disabled: notificationAuthorization.isDisabled
+      )
+    }
+  }
+
+  #if DEBUG || targetEnvironment(simulator)
+    /// What a stand-down handed forward, and what it left behind.
+    struct StandDownProbe {
+      /// The flags the release reported to the completion.
+      let runtime: MigrationPreparationTaskRuntime
+      /// The action the completion takes from them.
+      let action: MigrationPreparationRouteDeferralAction
+      /// `foregroundHandoffRequested` as the release left it. Both halves
+      /// matter: reporting the handoff is what stops a spurious wake, and
+      /// clearing it is what stops the next task inheriting one.
+      let handoffAfterRelease: Bool
+    }
+
+    /// Drives the stand-down's flag handling without a system task.
+    ///
+    /// Sets the wake-scoped flags a running task would hold, then calls the
+    /// production release, and reports what that release handed forward
+    /// together with the deferral action the completion would take from it.
+    /// The point is the ordering inside `releaseTrackingSlotForStandDown`, so
+    /// this must keep calling it rather than re-deriving the answer.
+    func standDownDeferralForTesting(
+      handedOff: Bool,
+      expired: Bool
+    ) -> StandDownProbe {
+      stateLock.withPreparationLock {
+        taskRunning = true
+        foregroundHandoffRequested = handedOff
+        self.expired = expired
+      }
+      let runtime = releaseTrackingSlotForStandDown()
+      let residualHandoff = stateLock.withPreparationLock {
+        foregroundHandoffRequested
+      }
+      stateLock.withPreparationLock {
+        taskRunning = false
+        foregroundHandoffRequested = false
+        self.expired = false
+      }
+      return StandDownProbe(
+        runtime: runtime,
+        action: migrationPreparationRouteDeferralAction(runtime),
+        handoffAfterRelease: residualHandoff
+      )
+    }
+  #endif
 
   private func finishForegroundOnlyTask(
     _ task: BGContinuedProcessingTask
