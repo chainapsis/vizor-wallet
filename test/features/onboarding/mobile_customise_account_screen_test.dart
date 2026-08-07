@@ -21,6 +21,21 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic = 'stub mnemonic words';
 
+const _setupArgsByFlow = <SetPasswordScreenArgs>[
+  SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+  SetPasswordScreenArgs.importWallet(
+    mnemonic: _mnemonic,
+    birthdayHeight: 2500000,
+  ),
+  SetPasswordScreenArgs.importKeystone(
+    name: 'Keystone account',
+    ufvk: 'uview-test',
+    seedFingerprint: [1, 2, 3, 4],
+    zip32Index: 0,
+    birthdayHeight: 2500000,
+  ),
+];
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +43,34 @@ void main() {
       ..physicalSize = const Size(393, 852)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final setupArgs in _setupArgsByFlow) {
+    testWidgets('autofocuses the account name and opens text input for '
+        '${setupArgs.flow.name}', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          MobileCustomiseAccountScreen(
+            args: CustomiseAccountArgs(setupArgs: setupArgs),
+            random: _SequenceRandom([0, 1, 2]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+      );
+
+      expect(field.autofocus, isTrue);
+      expect(field.focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(
+        field.controller!.selection,
+        TextSelection.collapsed(offset: field.controller!.text.length),
+      );
+    });
+  }
 
   testWidgets('keeps its random persona stable and uses the eighth progress', (
     tester,
@@ -232,9 +275,7 @@ void main() {
           path: '/',
           builder: (_, _) => const MobileCustomiseAccountScreen(
             args: CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(
-                mnemonic: _mnemonic,
-              ),
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
               pendingPassword: '123456',
             ),
           ),

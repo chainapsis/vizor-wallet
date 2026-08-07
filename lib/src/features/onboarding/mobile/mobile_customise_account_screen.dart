@@ -76,7 +76,8 @@ class _MobileCustomiseAccountScreenState
   void initState() {
     super.initState();
     final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name);
+    _nameController = TextEditingController(text: suggestion.name)
+      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
     _profilePictureId = suggestion.profilePictureId;
   }
 
@@ -318,6 +319,7 @@ class _AccountProfileCard extends StatelessWidget {
                         ),
                         controller: nameController,
                         focusNode: nameFocusNode,
+                        autofocus: true,
                         enabled: enabled,
                         maxLines: 1,
                         textInputAction: TextInputAction.done,

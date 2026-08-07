@@ -29,6 +29,41 @@ void main() {
     );
   });
 
+  for (final setupArgs in _setupArgsByFlow) {
+    testWidgets('autofocuses the account name for ${setupArgs.flow.name}', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _screenHarness(
+          CustomiseAccountScreen(
+            args: CustomiseAccountArgs(setupArgs: setupArgs),
+            random: _SequenceRandom([0, 1, 2]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('customise_account_name_field')),
+      );
+      final editable = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('customise_account_name_field')),
+          matching: find.byType(EditableText),
+        ),
+      );
+
+      expect(field.autofocus, isTrue);
+      expect(editable.focusNode.hasFocus, isTrue);
+      expect(
+        field.controller!.selection,
+        TextSelection.collapsed(offset: field.controller!.text.length),
+      );
+    });
+  }
+
   testWidgets('set password continues to customise without creating a wallet', (
     tester,
   ) async {
@@ -379,3 +414,18 @@ const _mnemonic =
     'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima '
     'mike november oscar papa quebec romeo sierra tango uniform victor whiskey '
     'xray';
+
+const _setupArgsByFlow = <SetPasswordScreenArgs>[
+  SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+  SetPasswordScreenArgs.importWallet(
+    mnemonic: _mnemonic,
+    birthdayHeight: 2500000,
+  ),
+  SetPasswordScreenArgs.importKeystone(
+    name: 'Keystone account',
+    ufvk: 'uview-test',
+    seedFingerprint: [1, 2, 3, 4],
+    zip32Index: 0,
+    birthdayHeight: 2500000,
+  ),
+];
