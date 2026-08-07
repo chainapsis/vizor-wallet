@@ -175,6 +175,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? null
                     : _updateLabel(updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
+                onViewingKey: () => context.push('/settings/viewing-key'),
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
@@ -287,6 +288,7 @@ class _SettingsPane extends StatelessWidget {
     required this.themeLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
+    required this.onViewingKey,
     required this.onChangePassword,
     required this.onEndpoint,
     required this.onAccountName,
@@ -307,6 +309,7 @@ class _SettingsPane extends StatelessWidget {
   final String themeLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
+  final VoidCallback onViewingKey;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
@@ -350,6 +353,7 @@ class _SettingsPane extends StatelessWidget {
                 themeLabel: themeLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
+                onViewingKey: onViewingKey,
                 onChangePassword: onChangePassword,
                 onEndpoint: onEndpoint,
                 onAccountName: onAccountName,
@@ -380,6 +384,7 @@ class _SettingsList extends StatelessWidget {
     required this.themeLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
+    required this.onViewingKey,
     required this.onChangePassword,
     required this.onEndpoint,
     required this.onAccountName,
@@ -400,6 +405,7 @@ class _SettingsList extends StatelessWidget {
   final String themeLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
+  final VoidCallback onViewingKey;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
@@ -423,6 +429,11 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.key,
               label: 'Secret passphrase',
               onTap: activeAccountIsHardware ? null : onSeedPhrase,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.eye,
+              label: 'Viewing key',
+              onTap: onViewingKey,
             ),
             _SettingsRow(
               iconName: AppIcons.lock,

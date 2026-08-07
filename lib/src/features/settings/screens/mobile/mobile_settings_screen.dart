@@ -50,6 +50,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
     final seedPhraseEnabled = account != null && !account.isHardware;
+    final viewingKeyEnabled = account != null;
 
     return SafeArea(
       bottom: false,
@@ -84,6 +85,19 @@ class MobileSettingsScreen extends ConsumerWidget {
                       enabled: seedPhraseEnabled,
                       onTap: seedPhraseEnabled
                           ? () => context.push('/settings/seed-phrase')
+                          : null,
+                    ),
+                    MobileListRow(
+                      key: const ValueKey('mobile_settings_viewing_key_row'),
+                      leading: _RowIcon(AppIcons.eye),
+                      label: 'Viewing Key',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      enabled: viewingKeyEnabled,
+                      onTap: viewingKeyEnabled
+                          ? () => context.push('/settings/viewing-key')
                           : null,
                     ),
                     MobileListRow(
