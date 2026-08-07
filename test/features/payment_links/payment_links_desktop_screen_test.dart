@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +54,7 @@ void main() {
     expect(
       find.text(
         'Enter amount to gift, pick a design, add a message (optional) '
-        'and create your card with a single click.',
+        'and create your Card with a single click.',
       ),
       findsOneWidget,
     );
@@ -64,9 +65,9 @@ void main() {
     );
     expect(
       find.text(
-        'Recipient can redeem the card in their Vizor wallet using the link. '
-        'They receive the full amount shown because the sender covers the '
-        'claim fee.',
+        'Recipient can redeem the Card in their Vizor wallet using the Link. '
+        'The sender covers the deposit and redeem fees, so the recipient '
+        'receives the full Card amount.',
       ),
       findsOneWidget,
     );
@@ -182,7 +183,8 @@ void main() {
     );
 
     await tester.enterText(amountEditor, '1.25');
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
 
     expect(amountSemantics.evaluate().single.value, '1.25');
 
@@ -206,27 +208,33 @@ void main() {
       findsOneWidget,
     );
 
-    expect(find.text('Use max: 142.23'), findsOneWidget);
-    await tester.tap(find.text('Use max: 142.23'));
+    expect(find.text('Use max: 142.2298'), findsOneWidget);
+    await tester.tap(find.text('Use max: 142.2298'));
     await tester.pump();
-    expect(tester.widget<TextField>(amountEditor).controller?.text, '142.23');
+    expect(tester.widget<TextField>(amountEditor).controller?.text, '142.2298');
     await tester.enterText(amountEditor, '1.25');
-    await tester.pump();
-
-    await tester.tap(find.text('Create card'));
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
-    expect(find.text('Attach a message'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Add Message'), findsOneWidget);
 
     final messageEditor = find.byKey(
       const ValueKey('payment_link_message_editor'),
     );
     expect(messageEditor, findsOneWidget);
+    expect(find.text('Start typing...'), findsOneWidget);
     expect(
       tester.widget<TextField>(messageEditor).focusNode?.hasFocus,
       isFalse,
     );
 
     await tester.tap(messageEditor);
+    await tester.pump();
+    expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
     await tester.enterText(messageEditor, 'For you');
     await tester.pump();
 
@@ -235,9 +243,7 @@ void main() {
     expect(find.text('121/128'), findsOneWidget);
 
     var continueButton = tester.widget<AppButton>(
-      find
-          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
-          .first,
+      find.widgetWithText(AppButton, 'Confirm & review'),
     );
     expect(continueButton.onPressed, isNotNull);
 
@@ -246,27 +252,24 @@ void main() {
     expect(tester.widget<TextField>(messageEditor).controller?.text, isEmpty);
     expect(find.text('128/128'), findsOneWidget);
     continueButton = tester.widget<AppButton>(
-      find
-          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
-          .first,
+      find.widgetWithText(AppButton, 'Continue'),
     );
     expect(continueButton.onPressed, isNull);
 
     await tester.enterText(messageEditor, '   \n');
     await tester.pump();
     continueButton = tester.widget<AppButton>(
-      find
-          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
-          .first,
+      find.widgetWithText(AppButton, 'Continue'),
     );
     expect(continueButton.onPressed, isNull);
 
     await tester.enterText(messageEditor, 'For you');
     await tester.pump();
-    await tester.tap(find.text('Continue'));
+    await tester.tap(find.text('Confirm & review'));
     await tester.pumpAndSettle();
-    expect(find.text('Review your Gift Card'), findsOneWidget);
-    expect(find.textContaining('Creating fee'), findsNothing);
+    expect(find.text('Card amount'), findsOneWidget);
+    expect(find.text('Card fee (deposit + redeem)'), findsOneWidget);
+    expect(find.text('1.2502 ZEC'), findsOneWidget);
 
     await tester.tap(find.text('Add Message'));
     await tester.pumpAndSettle();
@@ -274,30 +277,138 @@ void main() {
 
     await tester.tap(find.text('Skip message'));
     await tester.pumpAndSettle();
-    expect(find.text('Review your Gift Card'), findsOneWidget);
-    expect(find.textContaining('Creating fee'), findsNothing);
+    expect(find.text('Card amount'), findsOneWidget);
 
     final confirmButton = tester.widget<AppButton>(
       find
           .ancestor(
-            of: find.text('Confirm & create'),
+            of: find.text('Create card'),
             matching: find.byType(AppButton),
           )
           .first,
     );
     expect(confirmButton.onPressed, isNotNull);
-    await tester.tap(find.text('Confirm & create'));
+    await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
 
     expect(operations.createdAmounts, [BigInt.from(125000000)]);
     expect(operations.createdFromAccounts, ['account-1']);
     expect(find.textContaining('is ready!'), findsOneWidget);
 
-    await tester.tap(find.text('Copy the gift link'));
+    await tester.tap(find.text('Copy link'));
     await tester.pumpAndSettle();
     expect(operations.sharedLinks, hasLength(1));
     expect(clipboard.copiedSecrets, hasLength(1));
     semantics.dispose();
+  });
+
+  testWidgets(
+    'disables Continue when the Card amount and fees exceed balance',
+    (tester) async {
+      await _pumpPaymentLinksScreen(
+        tester,
+        spendableBalance: BigInt.from(100000000),
+      );
+
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_amount_editor')),
+        '1',
+      );
+      await tester.pump();
+
+      expect(
+        find.text('Insufficient balance to cover the Card amount and fees.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('payment_link_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets('keeps a created link private until ten confirmations', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      records: [_sharedRecovery],
+      fundingConfirmationCount: 9,
+    );
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.text('Copy link'), findsNothing);
+
+    operations.fundingConfirmationCount = 10;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing...'), findsNothing);
+    expect(find.text('Copy link'), findsOneWidget);
+  });
+
+  testWidgets('changes the waiting label for the final three confirmations', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(fundingConfirmationCount: 0);
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your link will be here'), findsOneWidget);
+
+    operations.fundingConfirmationCount = 7;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(find.text('Link will be available soon'), findsOneWidget);
+    expect(find.text('Your link will be here'), findsNothing);
+
+    operations.fundingConfirmationCount = 10;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Link will be available soon'), findsNothing);
+  });
+
+  testWidgets('shows a separate state when a valid link has no balance', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(claimable: false);
+    final clipboard = _FakePaymentLinkClipboard(text: _incomingLink.encode());
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('This Card has no available balance.'), findsOneWidget);
+    expect(find.text('The link doesn’t look legit.'), findsNothing);
   });
 
   testWidgets(
@@ -320,17 +431,20 @@ void main() {
         find.byKey(const ValueKey('payment_link_amount_editor')),
         '0.1',
       );
-      await tester.pump();
-      await tester.tap(find.text('Create card'));
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_amount_continue_button')),
+      );
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_message_editor')),
         'For Keystone',
       );
       await tester.pump();
-      await tester.tap(find.text('Continue'));
+      await tester.tap(find.text('Confirm & review'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Confirm & create'));
+      await tester.tap(find.text('Create card'));
 
       for (var i = 0; i < 20 && hardwareSigning.createdAmounts.isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 50));
@@ -349,7 +463,7 @@ void main() {
 
       expect(hardwareSigning.discardedDrafts, [BigInt.one]);
       expect(find.byType(KeystoneSigningModal), findsNothing);
-      expect(find.text('Review your Gift Card'), findsOneWidget);
+      expect(find.text('Card amount'), findsOneWidget);
     },
   );
 
@@ -369,17 +483,20 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '0.1',
     );
-    await tester.pump();
-    await tester.tap(find.text('Create card'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_message_editor')),
       'Congratulations!',
     );
     await tester.pump();
-    await tester.tap(find.text('Continue'));
+    await tester.tap(find.text('Confirm & review'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Confirm & create'));
+    await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
 
     expect(operations.createdArtworkIds, ['ruby']);
@@ -405,12 +522,15 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '0.1',
     );
-    await tester.pump();
-    await tester.tap(find.text('Create card'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Skip message'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Confirm & create'));
+    await tester.tap(find.text('Create card'));
     await tester.pump();
 
     expect(find.byType(KeystoneSigningModal), findsOneWidget);
@@ -580,6 +700,10 @@ void main() {
     expect(find.text('Receiving'), findsOneWidget);
     expect(find.text('Gift claim submitted'), findsOneWidget);
     expect(find.text('Gift claimed'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(operations.discardedClaimAddresses, isEmpty);
   });
 
   testWidgets('returns a failed claim to an actionable Received card', (
@@ -647,6 +771,7 @@ Future<void> _pumpPaymentLinksScreen(
   _FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
   AppBootstrapState? bootstrap,
+  BigInt? spendableBalance,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -671,8 +796,9 @@ Future<void> _pumpPaymentLinksScreen(
               isSyncComplete: true,
               percentage: 1,
               displayPercentage: 1,
-              spendableBalance: BigInt.from(14223000000),
-              displaySpendableBalance: BigInt.from(14223000000),
+              spendableBalance: spendableBalance ?? BigInt.from(14223000000),
+              displaySpendableBalance:
+                  spendableBalance ?? BigInt.from(14223000000),
             ),
           ),
         ),
@@ -695,7 +821,17 @@ Future<void> _pumpPaymentLinksScreen(
       child: const ZcashWalletApp(),
     ),
   );
-  await tester.pumpAndSettle();
+  await tester.pump();
+  for (var i = 0; i < 20; i++) {
+    if (find
+        .byKey(const ValueKey('payment_links_desktop_screen'))
+        .evaluate()
+        .isNotEmpty) {
+      break;
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  await tester.pump(const Duration(milliseconds: 100));
 }
 
 const _accountState = AccountState(
@@ -797,9 +933,13 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   _FakePaymentLinkOperations({
     List<PaymentLinkRecoveryRecord> records = const [],
     this.claimCompleter,
+    this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
+    this.claimable = true,
   }) : records = List.of(records);
 
   final Completer<PaymentLinkClaimResult>? claimCompleter;
+  int fundingConfirmationCount;
+  final bool claimable;
   final List<PaymentLinkRecoveryRecord> records;
   final List<BigInt> createdAmounts = [];
   final List<String> createdFromAccounts = [];
@@ -807,6 +947,19 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<String?> createdMessages = [];
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
+  final List<String> discardedClaimAddresses = [];
+
+  @override
+  Future<PaymentLinkFundingQuote> quoteFunding({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    return PaymentLinkFundingQuote(
+      recipientAmountZatoshi: amountZatoshi,
+      fundingFeeZatoshi: BigInt.from(10000),
+      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+    );
+  }
 
   @override
   Future<VizorPaymentLink> createFundedLink({
@@ -859,6 +1012,44 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     );
     records[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<Map<String, PaymentLinkFundingProgress>> inspectCreatedLinkFundings(
+    List<PaymentLinkRecoveryRecord> records,
+  ) async {
+    return {
+      for (final record in records)
+        record.link.address: PaymentLinkFundingProgress(
+          confirmationCount: fundingConfirmationCount,
+        ),
+    };
+  }
+
+  @override
+  Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
+    return PaymentLinkClaimSession(
+      link: link,
+      destinationAddress: 'u1receiver',
+      directory: Directory('/tmp/vizor-payment-link-test'),
+      dbPath: '/tmp/vizor-payment-link-test/wallet.db',
+      accountUuid: 'payment-link-account',
+      totalZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
+      claimableZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
+      feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+    );
+  }
+
+  @override
+  Future<PaymentLinkClaimResult> claimPreparedLink(
+    PaymentLinkClaimSession session,
+  ) {
+    return claimLink(session.link);
+  }
+
+  @override
+  Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
+    discardedClaimAddresses.add(session.link.address);
   }
 
   @override
