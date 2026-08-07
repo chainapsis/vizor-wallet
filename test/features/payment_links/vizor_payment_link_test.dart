@@ -67,7 +67,14 @@ void main() {
     });
 
     test('rejects invalid presentation values', () {
+      final maxKoreanMessage = List.filled(128, '한').join();
       final maxSimpleEmojiMessage = List.filled(128, '🎉').join();
+      expect(
+        PaymentLinkPresentation(
+          message: maxKoreanMessage,
+        ).toPayload()?['message'],
+        maxKoreanMessage,
+      );
       expect(
         PaymentLinkPresentation(
           message: maxSimpleEmojiMessage,

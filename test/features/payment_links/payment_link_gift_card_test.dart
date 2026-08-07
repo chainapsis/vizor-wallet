@@ -111,6 +111,7 @@ void main() {
       expect(field.keyboardType, TextInputType.multiline);
       expect(field.cursorOpacityAnimates, isTrue);
       expect(field.cursorWidth, greaterThan(0));
+      expect(field.decoration?.hintText, isNull);
       expect(
         tester
             .widget<MouseRegion>(
@@ -225,6 +226,8 @@ void main() {
     expect(actionSemantics.evaluate().single.flagsCollection.isButton, isTrue);
     await tester.tap(actionText);
     expect(useMaxCount, 1);
+    focusNode.requestFocus();
+    await tester.pump();
 
     final currencyBox = find.byKey(
       const ValueKey('payment_link_amount_currency_box'),
@@ -232,25 +235,38 @@ void main() {
     final amountEditor = find.byKey(
       const ValueKey('test_payment_link_amount_editor'),
     );
-    expect(tester.getSize(currencyBox), const Size(70, 40));
+    final amountEditorBox = find.byKey(
+      const ValueKey('payment_link_amount_editor_box'),
+    );
     expect(
-      tester.getTopLeft(currencyBox).dx - tester.getTopRight(amountEditor).dx,
+      tester.getTopLeft(amountEditorBox).dy -
+          tester.getBottomLeft(actionText).dy,
+      AppSpacing.xs,
+    );
+    expect(tester.getSize(currencyBox).height, 40);
+    expect(
+      tester.getTopLeft(currencyBox).dx -
+          tester.getTopRight(amountEditorBox).dx,
       moreOrLessEquals(AppSpacing.xxs, epsilon: 0.01),
     );
 
-    final amountEditable = find.descendant(
-      of: amountEditor,
-      matching: find.byType(EditableText),
-    );
+    final amountField = tester.widget<EditableText>(amountEditor);
+    expect(amountField.cursorWidth, 2);
+    expect(amountField.cursorHeight, 34);
+
     final currencyText = find.descendant(
       of: currencyBox,
       matching: find.text('ZEC'),
     );
     final amountRenderBox = _findRenderEditable(
-      tester.renderObject(amountEditable),
+      tester.renderObject(amountEditor),
     );
     final currencyRenderBox = tester.renderObject<RenderParagraph>(
       currencyText,
+    );
+    expect(
+      tester.getSize(currencyBox).width,
+      moreOrLessEquals(currencyRenderBox.size.width, epsilon: 0.01),
     );
     final amountTextBox = amountRenderBox
         .getBoxesForSelection(
@@ -268,7 +284,29 @@ void main() {
     final currencyBottom = currencyRenderBox.localToGlobal(
       Offset(0, currencyTextBox.bottom),
     );
-    expect(currencyBottom.dy, moreOrLessEquals(amountBottom.dy, epsilon: 1.1));
+    // Figma centers the 33 px amount and 30 px suffix line boxes inside the
+    // same 40 px row, which places the suffix two physical pixels higher.
+    expect(
+      currencyBottom.dy,
+      moreOrLessEquals(amountBottom.dy - 2, epsilon: 0.6),
+    );
+    final caretRect = _globalCaretRect(amountRenderBox, controller.text.length);
+    final amountTextRight = amountRenderBox.localToGlobal(
+      Offset(amountTextBox.right, 0),
+    );
+    expect(
+      caretRect.left - amountTextRight.dx,
+      moreOrLessEquals(AppSpacing.xxs, epsilon: 1.1),
+    );
+    final currencyRect = tester.getRect(currencyText);
+    expect(
+      currencyRect.left - caretRect.right,
+      moreOrLessEquals(AppSpacing.xxs, epsilon: 1.1),
+    );
+    expect(
+      tester.widget<Text>(currencyText).style!.color!.a,
+      moreOrLessEquals(0.55, epsilon: 0.01),
+    );
     semantics.dispose();
   });
 

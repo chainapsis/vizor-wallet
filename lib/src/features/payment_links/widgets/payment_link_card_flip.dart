@@ -16,6 +16,7 @@ class PaymentLinkCardFlip extends StatelessWidget {
     required this.front,
     required this.back,
     this.animationDuration = duration,
+    this.onAnimationEnd,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class PaymentLinkCardFlip extends StatelessWidget {
   final Widget front;
   final Widget back;
   final Duration animationDuration;
+  final VoidCallback? onAnimationEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +50,7 @@ class PaymentLinkCardFlip extends StatelessWidget {
       tween: Tween<double>(end: showBack ? 1 : 0),
       duration: animationDuration,
       curve: Curves.easeInOutCubic,
+      onEnd: onAnimationEnd,
       builder: (context, value, _) {
         final showingBack = value >= 0.5;
         final rawAngle = showingBack

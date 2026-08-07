@@ -19,8 +19,8 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 23 desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(23));
+  test('preview inventory covers all 25 desktop states', () {
+    expect(PaymentLinkPreviewState.values, hasLength(25));
   });
 
   for (final state in PaymentLinkPreviewState.values) {
@@ -192,6 +192,30 @@ void main() {
       ),
     );
     expect(tester.getSize(reviewGiftIconFinder), const Size(16, 16));
+  });
+
+  testWidgets('review preview flips between the amount and message sides', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.review),
+    );
+
+    expect(
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
+      isFalse,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Welcome to the Shielded'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Show gift card front'));
+    await tester.pumpAndSettle();
+    expect(find.text('4.45'), findsOneWidget);
   });
 
   testWidgets('empty actions keep the Figma help-to-CTA spacing', (
@@ -481,13 +505,13 @@ void main() {
 
       expect(
         tester
-            .widget<TextField>(
+            .widget<EditableText>(
               find.byKey(
                 const ValueKey('payment_link_interactive_amount_editor'),
               ),
             )
             .controller
-            ?.text,
+            .text,
         '2.5',
       );
       expect(
@@ -540,6 +564,28 @@ void main() {
     },
   );
 
+  testWidgets('focused amount preview renders the real editor with ZEC', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      const PaymentLinkInteractiveDesktopPreview(
+        initialAmount: '1',
+        focusAmount: true,
+      ),
+      disableAnimations: false,
+    );
+
+    final editor = find.byKey(
+      const ValueKey('payment_link_interactive_amount_editor'),
+    );
+    expect(tester.widget<EditableText>(editor).controller.text, '1');
+    expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isTrue);
+    expect(find.text('ZEC'), findsOneWidget);
+  });
+
   testWidgets(
     'interactive Widgetbook message preview accepts and clears text',
     (tester) async {
@@ -550,10 +596,21 @@ void main() {
       final editor = find.byKey(
         const ValueKey('payment_link_interactive_message_editor'),
       );
-      expect(editor, findsOneWidget);
+      expect(editor, findsNothing);
       expect(find.text('Start typing...'), findsOneWidget);
 
-      await tester.tap(editor);
+      await tester.tap(find.text('Start typing...'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+            .showBack,
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+      expect(editor, findsOneWidget);
+      expect(tester.widget<TextField>(editor).focusNode?.hasFocus, isTrue);
+
       await tester.enterText(editor, 'A real message');
       await tester.pump();
 
@@ -569,6 +626,21 @@ void main() {
             )
             .onPressed,
         isNotNull,
+      );
+
+      await tester.enterText(editor, List.filled(25, '👨‍👩‍👧‍👦').join());
+      await tester.pump();
+      expect(
+        find.text('This message is too large. Try using fewer complex emoji.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.widgetWithText(AppButton, 'Confirm & review'),
+            )
+            .onPressed,
+        isNull,
       );
 
       await tester.tap(find.bySemanticsLabel('Delete gift card message'));
