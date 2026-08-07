@@ -774,15 +774,11 @@ class _ImportingBackground extends StatelessWidget {
         : 'assets/illustrations/home_importing_background_light.png';
 
     return Positioned.fill(
-      child: Align(
+      child: Image.asset(
+        assetName,
+        key: const ValueKey('mobile_home_importing_background'),
+        fit: BoxFit.cover,
         alignment: Alignment.topCenter,
-        child: Image.asset(
-          assetName,
-          key: const ValueKey('mobile_home_importing_background'),
-          width: 1080,
-          height: 720,
-          fit: BoxFit.fill,
-        ),
       ),
     );
   }

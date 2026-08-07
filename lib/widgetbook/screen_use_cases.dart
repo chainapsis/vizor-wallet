@@ -995,6 +995,19 @@ Widget buildMobileHomeImportingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeImportingResponsiveUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      isSyncing: true,
+      percentage: 0.34,
+      displayPercentage: 0.34,
+    ),
+    constrainToPreviewFrame: false,
+  );
+}
+
 Widget buildMobileHomeAccountsModalUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
@@ -1797,7 +1810,12 @@ Widget _buildMobileHomeUseCase({
   ),
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
+  bool constrainToPreviewFrame = true,
 }) {
+  final harness = _MobileHomeHarness(
+    openAccountsSheet: openAccountsSheet,
+    showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
@@ -1830,10 +1848,8 @@ Widget _buildMobileHomeUseCase({
       }),
     ],
     child: _MobilePreviewFrame(
-      child: _MobileHomeHarness(
-        openAccountsSheet: openAccountsSheet,
-        showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
-      ),
+      constrainToDesignSize: constrainToPreviewFrame,
+      child: harness,
     ),
   );
 }
@@ -3182,9 +3198,13 @@ class _MobileSecretPassphraseProtectedPreviewState
 }
 
 class _MobilePreviewFrame extends StatelessWidget {
-  const _MobilePreviewFrame({required this.child});
+  const _MobilePreviewFrame({
+    required this.child,
+    this.constrainToDesignSize = true,
+  });
 
   final Widget child;
+  final bool constrainToDesignSize;
 
   static const size = Size(393, 852);
   static const safeAreaPadding = EdgeInsets.only(top: 55, bottom: 24);
@@ -3192,20 +3212,20 @@ class _MobilePreviewFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    return Center(
-      child: SizedBox.fromSize(
-        size: size,
-        child: ClipRect(
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              size: size,
-              padding: safeAreaPadding,
-              viewPadding: safeAreaPadding,
-            ),
-            child: child,
-          ),
+    final frameSize = constrainToDesignSize ? size : mediaQuery.size;
+    final frame = ClipRect(
+      child: MediaQuery(
+        data: mediaQuery.copyWith(
+          size: frameSize,
+          padding: safeAreaPadding,
+          viewPadding: safeAreaPadding,
         ),
+        child: child,
       ),
+    );
+    if (!constrainToDesignSize) return frame;
+    return Center(
+      child: SizedBox.fromSize(size: size, child: frame),
     );
   }
 }
