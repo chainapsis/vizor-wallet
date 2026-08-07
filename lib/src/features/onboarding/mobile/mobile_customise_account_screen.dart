@@ -130,24 +130,6 @@ class _MobileCustomiseAccountScreenState
     super.dispose();
   }
 
-  Future<void> _goBack() async {
-    if (_isSubmitting) return;
-    final args = widget.args;
-    final router = GoRouter.maybeOf(context);
-    if (router != null) {
-      if (args.configuresPassword) {
-        router.go('/onboarding/set-passcode', extra: args.setupArgs);
-      } else {
-        router.go(
-          args.setupArgs.backRoutePath,
-          extra: args.setupArgs.backRouteExtra,
-        );
-      }
-    } else {
-      await Navigator.of(context).maybePop();
-    }
-  }
-
   void _handleNameChanged(String _) {
     setState(() => _submitError = null);
   }
@@ -258,7 +240,7 @@ class _MobileCustomiseAccountScreenState
           'Wallet Link does not use account customisation.',
         ),
       },
-      onBack: _isSubmitting ? null : _goBack,
+      showBackButton: false,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
@@ -292,7 +274,7 @@ class _MobileCustomiseAccountScreenState
         ],
       ),
     );
-    return PopScope<void>(canPop: !_isSubmitting, child: content);
+    return PopScope<void>(canPop: false, child: content);
   }
 }
 

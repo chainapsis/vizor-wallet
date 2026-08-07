@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -70,6 +69,35 @@ void main() {
         TextSelection.collapsed(offset: field.controller!.text.length),
       );
     });
+  }
+
+  for (final setupArgs in _setupArgsByFlow) {
+    for (final pendingPassword in const <String?>[null, '123456']) {
+      final securityState = pendingPassword == null ? 'configured' : 'new';
+      testWidgets(
+        'hides and blocks back for ${setupArgs.flow.name} with $securityState '
+        'security',
+        (tester) async {
+          await tester.pumpWidget(
+            _harness(
+              MobileCustomiseAccountScreen(
+                args: CustomiseAccountArgs(
+                  setupArgs: setupArgs,
+                  pendingPassword: pendingPassword,
+                ),
+                onFinish: (_, _) async {},
+              ),
+            ),
+          );
+
+          expect(find.bySemanticsLabel('Back'), findsNothing);
+          expect(
+            tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+            isFalse,
+          );
+        },
+      );
+    }
   }
 
   testWidgets('keeps account name focused after the route transition', (
@@ -263,7 +291,7 @@ void main() {
     expect(submittedProfilePictureId, 'pfp-02');
   });
 
-  testWidgets('blocks route pops while account creation is in flight', (
+  testWidgets('blocks route pops throughout account customisation', (
     tester,
   ) async {
     final finish = Completer<void>();
@@ -291,66 +319,50 @@ void main() {
     finish.complete();
     await tester.pump();
 
-    expect(tester.widget<PopScope<void>>(popScope).canPop, isTrue);
+    expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
   });
 
-  testWidgets('back is safe in the router-free Widgetbook preview', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _harness(
-        const MobileCustomiseAccountScreen(
-          args: CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-            pendingPassword: '123456',
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.bySemanticsLabel('Back'));
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Customise Account'), findsOneWidget);
-  });
-
-  testWidgets('returning to passcode does not reopen the phrase back stack', (
+  testWidgets('blocks platform back after a pushed passcode flow', (
     tester,
   ) async {
     final router = GoRouter(
+      initialLocation: '/',
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, _) => const MobileCustomiseAccountScreen(
-            args: CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-              pendingPassword: '123456',
-            ),
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const Text('passcode route'),
           ),
         ),
         GoRoute(
-          path: '/onboarding/set-passcode',
-          builder: (_, state) =>
-              MobilePasscodeScreen(args: state.extra! as SetPasswordScreenArgs),
+          path: '/customise',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const MobileCustomiseAccountScreen(
+              args: CustomiseAccountArgs(
+                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+                pendingPassword: '123456',
+              ),
+            ),
+          ),
         ),
       ],
     );
+    addTearDown(router.dispose);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp.router(
-          routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
-        ),
-      ),
-    );
-
-    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpWidget(_routerHarness(router));
+    router.push('/customise');
     await tester.pumpAndSettle();
 
-    expect(find.text('Create Passcode'), findsOneWidget);
     expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.text('Customise Account'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Customise Account'), findsOneWidget);
+    expect(find.text('passcode route'), findsNothing);
   });
 
   testWidgets('creates the initial account with the selected persona', (
