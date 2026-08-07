@@ -13,6 +13,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import 'payment_link_action.dart';
+import 'payment_link_card_motion.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_skeleton.dart';
 
@@ -574,6 +575,10 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
   Widget build(BuildContext context) {
     final waiting = state == PaymentLinkReadyVisualState.waiting;
     final canFlip = !waiting && onCardTap != null;
+    final motionCard = PaymentLinkCardMotion(
+      celebrate: !waiting,
+      child: canFlip ? IgnorePointer(child: card) : card,
+    );
     final cardContent = canFlip
         ? PaymentLinkAction(
             onPressed: onCardTap,
@@ -581,10 +586,10 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
             builder: (context, _, focused) => _ActionFocusRing(
               focused: focused,
               borderRadius: AppRadii.large,
-              child: ExcludeSemantics(child: IgnorePointer(child: card)),
+              child: ExcludeSemantics(child: motionCard),
             ),
           )
-        : card;
+        : motionCard;
     return _PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
@@ -694,6 +699,11 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canRevealMessage = onRevealMessage != null;
+    final motionCard = PaymentLinkCardMotion(
+      celebrate: true,
+      child: canRevealMessage ? IgnorePointer(child: card) : card,
+    );
     return _PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
@@ -731,7 +741,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: onRevealMessage != null
+                  child: canRevealMessage
                       ? PaymentLinkAction(
                           key: const ValueKey(
                             'payment_link_reveal_message_action',
@@ -741,12 +751,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                           builder: (context, _, focused) => _ActionFocusRing(
                             focused: focused,
                             borderRadius: AppRadii.large,
-                            child: ExcludeSemantics(
-                              child: IgnorePointer(child: card),
-                            ),
+                            child: ExcludeSemantics(child: motionCard),
                           ),
                         )
-                      : card,
+                      : motionCard,
                 ),
               ),
               Positioned(
