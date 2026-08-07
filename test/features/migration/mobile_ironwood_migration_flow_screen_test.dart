@@ -6442,6 +6442,60 @@ void main() {
     );
   });
 
+  testWidgets('names the notification block alongside the Tor conditions', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _DurablePhaseRetryTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.disabled,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Both native lanes refuse on a denied notification whatever the route is,
+    // so stating only the route hands the user a condition they can meet while
+    // nothing moves afterwards. The route condition is transient; this one is
+    // not, so it leads.
+    expect(
+      find.text(
+        'Allow notifications. Tor also needs charging on an unmetered network.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Tor confirms in the background only while charging on an unmetered '
+        'network.',
+      ),
+      findsNothing,
+    );
+    // It has to fit the preparation dial, which is what kept this to one
+    // message in the first place.
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('names the device limit ahead of the Tor conditions when the '
       'device has no background lane', (tester) async {
     _useMobileViewport(tester);
@@ -7632,6 +7686,49 @@ void main() {
         'Next migration step expected in\n'
         '~25 minutes.\n'
         'Notifications are disabled. Open Vizor again to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Notifications are on'), findsNothing);
+  });
+
+  testWidgets('broadcasting copy names disabled notifications on a Tor route', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The route only delays the wake; a denied notification stops it outright.
+    // Charging on an unmetered network would still deliver nothing, so the
+    // notification block cannot be hidden behind the route condition.
+    expect(
+      find.text(
+        'Next migration step expected in\n'
+        '~25 minutes.\n'
+        'Notifications are disabled. Open Vizor again to continue.\n'
+        'Tor also needs charging on an unmetered network to continue this in '
+        'the background.',
       ),
       findsOneWidget,
     );

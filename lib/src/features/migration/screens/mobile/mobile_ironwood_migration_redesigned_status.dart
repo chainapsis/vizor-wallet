@@ -866,12 +866,27 @@ class _MobileMigrationRedesignedStatusState
       // The route limits a lane that does exist, and only conditionally.
       final backgroundTrackingConstrained =
           !backgroundTrackingUnsupported && routeConstrainsBackgroundWork;
+      // Notifications block the lane wherever the lane exists: the rearm gate
+      // refuses on a denied notification whatever the route is, and submission
+      // is blocked outright. The device with no lane at all stays excluded —
+      // there, asking the user to allow notifications promises something
+      // granting them cannot deliver. A constrained route is not that case: it
+      // delays a lane that does run, so the notification block outlives it.
+      final notificationsDisabled =
+          !backgroundTrackingUnsupported &&
+          _preparationRuntimeState ==
+              IronwoodMigrationPreparationRuntimeState.disabled;
       // The device limit outranks the route: naming a condition the user could
-      // meet would promise a lane this OS build does not have.
+      // meet would promise a lane this OS build does not have. The route and
+      // the notification block are both meetable and both real, so when they
+      // coincide the message names both — meeting only the one it stated would
+      // leave the user waiting on a pass that still cannot run.
       final backgroundLaneLimitMessage = backgroundTrackingUnsupported
           ? _migrationPreparationBackgroundUnsupportedMessage
           : backgroundTrackingConstrained
-          ? _migrationPreparationTorRouteMessage
+          ? (notificationsDisabled
+                ? _migrationPreparationNotificationsDisabledTorRouteMessage
+                : _migrationPreparationTorRouteMessage)
           : null;
       // Whether leaving now stalls the run. An advance holds the foreground
       // permit, so backgrounding drops it and nothing moves until the next
@@ -890,14 +905,6 @@ class _MobileMigrationRedesignedStatusState
                   IronwoodMigrationPreparationRuntimeState.scheduled ||
               _preparationRuntimeState ==
                   IronwoodMigrationPreparationRuntimeState.running);
-      // Notifications are only the blocker where the lane exists and nothing
-      // else limits it. Elsewhere, asking the user to allow notifications
-      // promises something granting them cannot deliver.
-      final notificationsDisabled =
-          !backgroundTrackingUnsupported &&
-          !backgroundTrackingConstrained &&
-          _preparationRuntimeState ==
-              IronwoodMigrationPreparationRuntimeState.disabled;
       // Display-only debounce: a user-triggered action shows its progress at
       // once, while the coordinator's own advance probes have to persist before
       // they may relabel the dial. Reading `actionInProgress` here instead would
@@ -1127,21 +1134,30 @@ class _MobileMigrationRedesignedStatusState
           timing == 'Timing is updating' || timing == 'ready now'
           ? 'Next migration step is on the way.'
           : 'Next migration step expected in\n$timing.';
+      if (_notificationsAuthorized == false) {
+        // Notifications outrank the route. Both native lanes refuse on a
+        // denied one — the wake finishes foreground-only, the tracking task
+        // never rearms, and submission is blocked — so this is the blocker
+        // that has to be named. The route condition follows as the one the
+        // user meets next, never in place of it: stating Tor alone hands the
+        // user a condition they can satisfy while nothing moves afterwards.
+        const notificationsLine =
+            'Notifications are disabled. Open Vizor again to continue.';
+        return routeConstrainsBackgroundWork
+            ? '$expectation\n$notificationsLine\n'
+                  '$_migrationTorRouteAdditionalExpectation'
+            : '$expectation\n$notificationsLine';
+      }
       // The background wake that would deliver this step runs on a Tor route
       // only on external power over an unmetered link, so an authorized
       // notification is not on its own enough to carry it.
       if (routeConstrainsBackgroundWork) {
         return '$expectation\n$_migrationTorRouteExpectation';
       }
-      return switch (_notificationsAuthorized) {
-        true =>
-          '$expectation\nNotifications are on. You can leave Vizor and check '
-              'back later.',
-        false =>
-          '$expectation\nNotifications are disabled. Open Vizor again to '
-              'continue.',
-        null => expectation,
-      };
+      return _notificationsAuthorized == true
+          ? '$expectation\nNotifications are on. You can leave Vizor and check '
+                'back later.'
+          : expectation;
     }
     if (state == _MigrationProgressState.readyToSubmit) {
       return 'The scheduled transaction is ready for automatic submission. '

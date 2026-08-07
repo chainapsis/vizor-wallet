@@ -639,11 +639,25 @@ const _migrationPreparationBackgroundUnsupportedMessage =
 const _migrationPreparationTorRouteMessage =
     'Tor confirms in the background only while charging on an unmetered '
     'network.';
+// Both blockers at once. A denied notification stops both native lanes
+// outright while the route only delays them, so the remedy leads and the route
+// condition follows: naming the route alone would let the user meet it and
+// still watch nothing happen. Held to the length of the single-cause messages
+// above — this one has to say two things inside the same dial, so each half is
+// stated in its shortest form that still names a condition the user can act on.
+const _migrationPreparationNotificationsDisabledTorRouteMessage =
+    'Allow notifications. Tor also needs charging on an unmetered network.';
 // The same condition stated where the progress surface would otherwise promise
 // that the next step arrives while Vizor is closed.
 const _migrationTorRouteExpectation =
     'Tor continues this in the background only while charging on an unmetered '
     'network. Otherwise keep Vizor open.';
+// The route condition stated after a notification block rather than instead of
+// it, so it reads as the next thing to meet and not as the reason the step is
+// stalled.
+const _migrationTorRouteAdditionalExpectation =
+    'Tor also needs charging on an unmetered network to continue this in the '
+    'background.';
 
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
