@@ -19,8 +19,8 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 21 desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(21));
+  test('preview inventory covers all 23 desktop states', () {
+    expect(PaymentLinkPreviewState.values, hasLength(23));
   });
 
   for (final state in PaymentLinkPreviewState.values) {
@@ -915,6 +915,7 @@ void main() {
       ),
     );
     expect(find.text('Your link will be here'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsNothing);
     final initialPill = find.ancestor(
       of: find.text('Your link will be here'),
       matching: find.byType(CustomPaint),
@@ -927,6 +928,8 @@ void main() {
     );
     expect(find.text('Link will be available soon'), findsOneWidget);
     expect(find.text('Your link will be here'), findsNothing);
+    expect(find.byType(PaymentLinkConfetti), findsNothing);
+    expect(find.textContaining('after 10 confirmations.'), findsOneWidget);
   });
 
   testWidgets('cards list fades only where more content exists', (
@@ -968,6 +971,62 @@ void main() {
       findsOneWidget,
     );
     expect(tester.widget<AnimatedOpacity>(bottomFade).opacity, 0);
+  });
+
+  testWidgets('received-list fixtures distinguish pending and mined claims', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.cardsReceiving,
+      ),
+    );
+
+    var receivedRows = find.byType(PaymentLinkCardListRow);
+    expect(
+      find.descendant(of: receivedRows, matching: find.text('Receiving...')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: receivedRows, matching: find.text('Received')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: receivedRows,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.cardsReceived,
+      ),
+    );
+
+    receivedRows = find.byType(PaymentLinkCardListRow);
+    expect(
+      find.descendant(of: receivedRows, matching: find.text('Receiving...')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: receivedRows, matching: find.text('Received')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: receivedRows,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('key desktop fixtures keep the measured Figma geometry', (

@@ -1057,9 +1057,7 @@ class _PaymentLinksDesktopScreenState
           ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
-      decoration: readyToShare || linkAvailableSoon
-          ? const PaymentLinkConfetti()
-          : null,
+      decoration: readyToShare ? const PaymentLinkConfetti() : null,
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress
           ? null
