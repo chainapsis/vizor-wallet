@@ -545,6 +545,27 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Tor and the network route
+
+Tor covers the app's foreground traffic only. The desired route lives in Rust
+process memory, applied by the Dart layer at startup and by the settings
+toggle; every foreground lightwalletd and HTTP path goes through the
+policy-aware openers and fails closed while Tor is starting or broken.
+
+- **iOS background migration transport is pinned direct**
+  (`open_background_direct_lwd_channel`), bypassing the route policy as a
+  product decision. A background pass never brings Tor up or borrows the
+  foreground's client, so routing that lane through the policy would only
+  convert it into failures on a Tor wallet. The mobile settings card
+  discloses this. Nothing in the foreground may use the pinned opener.
+- **The saved route may be stricter than the enforced route, never laxer.**
+  The saved preference is all a fresh launch has to go on, so a toggle
+  persists in whichever order keeps this true at every intermediate point:
+  enabling writes before the runtime switch (a failed write aborts a toggle
+  that has not happened yet), disabling writes after it (a failed write
+  leaves the stricter Tor value behind). `networkPrivacyPersistedRouteIsSafe`
+  is the executable statement of this rule.
+
 Key files:
 - `rust/src/migration_preparation.rs` — shared mobile preparation core
 - `rust/src/android_jni.rs` — Android preparation execution adapter
