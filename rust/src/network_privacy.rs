@@ -390,7 +390,24 @@ async fn bootstrap_tor(
         remaining,
         TorClient::create_with_timeouts(
             tor_directory,
-            |_| {},
+            // Arti refuses a data directory other users could reach. On desktop
+            // those POSIX mode bits are the real boundary, so the check stays
+            // on. On mobile the app sandbox is the boundary, and the pinned
+            // fs-mistrust already knows it: on iOS and Android it compiles out
+            // the owner check and stops forbidding the group bits, which is the
+            // group-writable container ancestor that used to reject the
+            // directory outright. What it still rejects there — a world-
+            // writable ancestor, or arti's own 0o700 directories opened up — a
+            // sandboxed container is not expected to have, so this bypass is
+            // probably redundant. Dropping it needs evidence from a real
+            // device, because a rejected directory fails the bootstrap from
+            // inside fail-closed mode: every request blocked, Tor never Ready.
+            |permissions| {
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                permissions.dangerously_trust_everyone();
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                let _ = permissions;
+            },
             timeouts,
         ),
     )
