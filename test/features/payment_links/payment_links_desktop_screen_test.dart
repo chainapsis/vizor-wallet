@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ha
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
@@ -128,9 +129,9 @@ void main() {
     final amountEditor = find.byKey(
       const ValueKey('payment_link_amount_editor'),
     );
-    final amountField = tester.widget<TextField>(amountEditor);
-    expect(amountField.focusNode?.hasFocus, isFalse);
-    expect(amountField.cursorColor?.a, greaterThan(0));
+    final amountField = tester.widget<EditableText>(amountEditor);
+    expect(amountField.focusNode.hasFocus, isFalse);
+    expect(amountField.cursorColor.a, greaterThan(0));
     expect(amountField.cursorOpacityAnimates, isTrue);
     expect(
       tester
@@ -173,7 +174,10 @@ void main() {
 
     await tester.tap(amountEditor);
     await tester.pump();
-    expect(tester.widget<TextField>(amountEditor).focusNode?.hasFocus, isTrue);
+    expect(
+      tester.widget<EditableText>(amountEditor).focusNode.hasFocus,
+      isTrue,
+    );
     expect(
       amountSemantics.evaluate().single.getSemanticsData().hasAction(
         SemanticsAction.setText,
@@ -191,9 +195,7 @@ void main() {
 
     expect(amountSemantics.evaluate().single.value, '1.25');
 
-    final editableRoot = tester.renderObject(
-      find.descendant(of: amountEditor, matching: find.byType(EditableText)),
-    );
+    final editableRoot = tester.renderObject(amountEditor);
     final caretRect = _globalCaretRect(
       _findRenderEditable(editableRoot),
       '1.25'.length,
@@ -214,7 +216,10 @@ void main() {
     expect(find.text('Use max: 142.2298'), findsOneWidget);
     await tester.tap(find.text('Use max: 142.2298'));
     await tester.pump();
-    expect(tester.widget<TextField>(amountEditor).controller?.text, '142.2298');
+    expect(
+      tester.widget<EditableText>(amountEditor).controller.text,
+      '142.2298',
+    );
     await tester.enterText(amountEditor, '1.25');
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
@@ -228,16 +233,28 @@ void main() {
     final messageEditor = find.byKey(
       const ValueKey('payment_link_message_editor'),
     );
-    expect(messageEditor, findsOneWidget);
+    expect(messageEditor, findsNothing);
     expect(find.text('Start typing...'), findsOneWidget);
     expect(
-      tester.widget<TextField>(messageEditor).focusNode?.hasFocus,
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
       isFalse,
     );
 
-    await tester.tap(messageEditor);
+    await tester.tap(find.text('Start typing...'));
     await tester.pump();
+    expect(
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(messageEditor, findsOneWidget);
+    expect(find.text('Start typing...'), findsNothing);
     expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
+
     await tester.enterText(messageEditor, 'For you');
     await tester.pump();
 
@@ -249,6 +266,35 @@ void main() {
       find.widgetWithText(AppButton, 'Confirm & review'),
     );
     expect(continueButton.onPressed, isNotNull);
+
+    await tester.enterText(
+      messageEditor,
+      List.filled(25, '👨‍👩‍👧‍👦').join(),
+    );
+    await tester.pump();
+    expect(
+      find.text('This message is too large. Try using fewer complex emoji.'),
+      findsOneWidget,
+    );
+    continueButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Confirm & review'),
+    );
+    expect(continueButton.onPressed, isNull);
+
+    await tester.enterText(messageEditor, List.filled(128, '한').join());
+    await tester.pump();
+    expect(
+      find.text('This message is too large. Try using fewer complex emoji.'),
+      findsNothing,
+    );
+    expect(find.text('0/128'), findsOneWidget);
+    continueButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Confirm & review'),
+    );
+    expect(continueButton.onPressed, isNotNull);
+
+    await tester.enterText(messageEditor, 'For you');
+    await tester.pump();
 
     await tester.tap(find.bySemanticsLabel('Delete gift card message'));
     await tester.pump();
@@ -273,6 +319,32 @@ void main() {
     expect(find.text('Card amount'), findsOneWidget);
     expect(find.text('Card fee (deposit + redeem)'), findsOneWidget);
     expect(find.text('1.2502 ZEC'), findsOneWidget);
+    expect(
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
+      isFalse,
+    );
+    expect(find.text('For you'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
+      isTrue,
+    );
+    expect(find.text('For you'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Show gift card front'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
+          .showBack,
+      isFalse,
+    );
 
     await tester.tap(find.text('Add Message'));
     await tester.pumpAndSettle();
@@ -281,6 +353,7 @@ void main() {
     await tester.tap(find.text('Skip message'));
     await tester.pumpAndSettle();
     expect(find.text('Card amount'), findsOneWidget);
+    expect(find.byType(PaymentLinkCardFlip), findsNothing);
 
     final confirmButton = tester.widget<AppButton>(
       find
@@ -335,6 +408,80 @@ void main() {
       );
     },
   );
+
+  testWidgets('estimates the Card fee automatically after sync completes', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    final syncNotifier = FakeSyncNotifier(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+        percentage: 0.7,
+        displayPercentage: 0.7,
+        spendableBalance: BigInt.from(14223000000),
+        displaySpendableBalance: BigInt.from(14223000000),
+      ),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      syncNotifier: syncNotifier,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump();
+
+    expect(
+      find.text('Card fee will be estimated when wallet sync completes.'),
+      findsOneWidget,
+    );
+    expect(operations.quotedAccounts, isEmpty);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('payment_link_amount_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        percentage: 1,
+        displayPercentage: 1,
+        spendableBalance: BigInt.from(14223000000),
+        displaySpendableBalance: BigInt.from(14223000000),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+
+    expect(operations.quotedAccounts, ['account-1']);
+    expect(
+      find.text('Card fee will be estimated when wallet sync completes.'),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('payment_link_amount_continue_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
 
   testWidgets('keeps a created link private until ten confirmations', (
     tester,
@@ -443,6 +590,8 @@ void main() {
         find.byKey(const ValueKey('payment_link_amount_continue_button')),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Start typing...'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_message_editor')),
         'For Keystone',
@@ -503,6 +652,8 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_continue_button')),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Start typing...'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_message_editor')),
       'Congratulations!',
@@ -522,11 +673,23 @@ void main() {
     (tester) async {
       final operations = _FakePaymentLinkOperations();
       final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final syncNotifier = FakeSyncNotifier(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          percentage: 1,
+          displayPercentage: 1,
+          spendableBalance: BigInt.from(14223000000),
+          displaySpendableBalance: BigInt.from(14223000000),
+        ),
+      );
       await _pumpPaymentLinksScreen(
         tester,
         operations: operations,
         accountNotifier: accountNotifier,
         bootstrap: _twoAccountBootstrap,
+        syncNotifier: syncNotifier,
       );
 
       await tester.tap(find.text('Create new card'));
@@ -548,7 +711,14 @@ void main() {
       accountNotifier.setActiveAccount('account-2');
       await tester.pump();
 
-      expect(find.text('Enter amount'), findsOneWidget);
+      final requotedAmountEditor = find.byKey(
+        const ValueKey('payment_link_amount_editor'),
+      );
+      expect(requotedAmountEditor, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(requotedAmountEditor).controller.text,
+        '0.1',
+      );
       expect(find.text('Create card'), findsNothing);
       expect(
         find.text(
@@ -557,6 +727,18 @@ void main() {
         findsOneWidget,
       );
 
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: 'account-2',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          percentage: 1,
+          displayPercentage: 1,
+          spendableBalance: BigInt.from(14223000000),
+          displaySpendableBalance: BigInt.from(14223000000),
+        ),
+      );
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pumpAndSettle();
       await tester.tap(
@@ -902,16 +1084,20 @@ Future<void> _pumpPaymentLinksScreen(
   AccountNotifier? accountNotifier,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
+  FakeSyncNotifier? syncNotifier,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final paymentLinkOperations = operations ?? _FakePaymentLinkOperations();
   final paymentLinkClipboard = clipboard ?? _FakePaymentLinkClipboard();
+  final appBootstrap = bootstrap ?? _bootstrap;
+  final initialAccountUuid =
+      appBootstrap.initialAccountState.activeAccountUuid ?? 'account-1';
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+        appBootstrapProvider.overrideWithValue(appBootstrap),
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
@@ -921,18 +1107,21 @@ Future<void> _pumpPaymentLinksScreen(
             hardwareSigning,
           ),
         syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(
-              accountUuid: 'account-1',
-              hasAccountScopedData: true,
-              isSyncComplete: true,
-              percentage: 1,
-              displayPercentage: 1,
-              spendableBalance: spendableBalance ?? BigInt.from(14223000000),
-              displaySpendableBalance:
-                  spendableBalance ?? BigInt.from(14223000000),
-            ),
-          ),
+          () =>
+              syncNotifier ??
+              FakeSyncNotifier(
+                SyncState(
+                  accountUuid: initialAccountUuid,
+                  hasAccountScopedData: true,
+                  isSyncComplete: true,
+                  percentage: 1,
+                  displayPercentage: 1,
+                  spendableBalance:
+                      spendableBalance ?? BigInt.from(14223000000),
+                  displaySpendableBalance:
+                      spendableBalance ?? BigInt.from(14223000000),
+                ),
+              ),
         ),
         ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
           return const IronwoodHomeMigrationCtaState.hidden();

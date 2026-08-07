@@ -8,6 +8,10 @@ import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_skeleton.dart';
 
+const _amountCaretWidth = 2.0;
+const _amountCaretHeight = 34.0;
+const _amountElementGap = AppSpacing.xxs;
+
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
 enum PaymentLinkCardArtwork {
   knight('payment_link_card_knight.png', 'Knight'),
@@ -517,7 +521,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AppSpacing.xs),
             ] else if (supportingText case final supporting?) ...[
               Text(
                 supporting,
@@ -525,7 +529,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.labelLarge.copyWith(color: cardTextColor),
               ),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AppSpacing.xs),
             ] else if (maxAmountText case final maxAmount?) ...[
               if (onUseMax == null)
                 Text(
@@ -553,7 +557,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                     ),
                   ),
                 ),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AppSpacing.xs),
             ],
             if (editing)
               _PaymentLinkAmountTextField(
@@ -617,15 +621,14 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
         ],
         if (showCaret) ...[
           Container(
-            width: 3,
-            height: 33,
+            width: _amountCaretWidth,
+            height: _amountCaretHeight,
             decoration: BoxDecoration(
               color: cardTextColor,
               borderRadius: BorderRadius.circular(AppRadii.full),
             ),
           ),
-          if (currencySymbol.isNotEmpty)
-            const SizedBox(width: AppSpacing.xxs),
+          if (currencySymbol.isNotEmpty) const SizedBox(width: AppSpacing.xxs),
         ],
         if (currencySymbol.isNotEmpty)
           _PaymentLinkCurrencyLabel(
@@ -673,8 +676,12 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
     final focused = focusNode.hasFocus;
     final value = controller.text;
     final style = AppTypography.headlineLarge.copyWith(color: cardTextColor);
+    final currencyStyle = AppTypography.headlineMedium.copyWith(
+      color: cardTextColor.withValues(alpha: 0.55),
+    );
     final strutStyle = StrutStyle.fromTextStyle(style, forceStrutHeight: true);
     final showCurrency = focused || value.isNotEmpty;
+    final cursorGap = focused && value.isNotEmpty ? _amountElementGap : 0.0;
     final measuredText = value.isEmpty && !focused ? emptyAmountLabel : value;
     final painter = TextPainter(
       text: TextSpan(text: measuredText, style: style),
@@ -683,56 +690,94 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
       textScaler: MediaQuery.textScalerOf(context),
       strutStyle: strutStyle,
     )..layout();
-    final maxInputWidth = showCurrency ? 198.0 : 272.0;
-    final inputWidth = (painter.width + (focused ? 5 : 0)).clamp(
-      3.0,
-      maxInputWidth,
-    );
+    final currencyPainter = TextPainter(
+      text: TextSpan(text: currencySymbol, style: currencyStyle),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final contentWidth = PaymentLinkGiftCard.width - (AppSpacing.md * 2);
+    final maxInputWidth = showCurrency
+        ? contentWidth - _amountElementGap - currencyPainter.width
+        : contentWidth;
+    final inputWidth =
+        (painter.width + (focused ? cursorGap + _amountCaretWidth : 0)).clamp(
+          2.0,
+          maxInputWidth,
+        );
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
+          key: const ValueKey('payment_link_amount_editor_box'),
           width: inputWidth,
           height: 40,
           child: MergeSemantics(
             child: Semantics(
               label: semanticLabel,
-              child: TextField(
-                key: editorKey,
-                controller: controller,
-                focusNode: focusNode,
-                style: style,
-                strutStyle: strutStyle,
-                cursorColor: cardTextColor,
-                cursorWidth: 3,
-                cursorHeight: 33,
-                cursorRadius: const Radius.circular(AppRadii.full),
-                cursorOpacityAnimates: true,
-                mouseCursor: SystemMouseCursors.text,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                textInputAction: TextInputAction.done,
-                inputFormatters: inputFormatters,
-                autocorrect: false,
-                enableSuggestions: false,
-                maxLines: 1,
-                textAlignVertical: TextAlignVertical.center,
-                decoration: InputDecoration.collapsed(
-                  hintText: focused ? null : emptyAmountLabel,
-                  hintStyle: style.copyWith(
-                    color: cardTextColor.withValues(alpha: 0.55),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: SizedBox(
+                      width: inputWidth,
+                      height: _amountCaretHeight,
+                      child: EditableText(
+                        key: editorKey,
+                        controller: controller,
+                        focusNode: focusNode,
+                        style: style,
+                        strutStyle: strutStyle,
+                        cursorColor: cardTextColor,
+                        backgroundCursorColor: cardTextColor,
+                        selectionColor: cardTextColor.withValues(alpha: 0.25),
+                        cursorWidth: _amountCaretWidth,
+                        cursorHeight: _amountCaretHeight,
+                        cursorRadius: const Radius.circular(AppRadii.full),
+                        cursorOpacityAnimates: true,
+                        cursorOffset: Offset(cursorGap, 0),
+                        mouseCursor: SystemMouseCursors.text,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        textInputAction: TextInputAction.done,
+                        inputFormatters: inputFormatters,
+                        autocorrect: false,
+                        smartDashesType: SmartDashesType.disabled,
+                        smartQuotesType: SmartQuotesType.disabled,
+                        enableSuggestions: false,
+                        maxLines: 1,
+                        textScaler: MediaQuery.textScalerOf(context),
+                        keyboardAppearance: MediaQuery.platformBrightnessOf(
+                          context,
+                        ),
+                        onChanged: onChanged,
+                      ),
+                    ),
                   ),
-                ),
-                onChanged: onChanged,
+                  if (!focused && value.isEmpty)
+                    IgnorePointer(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          emptyAmountLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          style: style.copyWith(
+                            color: cardTextColor.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
         ),
         if (showCurrency && currencySymbol.isNotEmpty) ...[
-          const SizedBox(width: AppSpacing.xxs),
+          const SizedBox(width: _amountElementGap),
           _PaymentLinkCurrencyLabel(
             currencySymbol: currencySymbol,
             cardTextColor: cardTextColor,
@@ -756,15 +801,15 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('payment_link_amount_currency_box'),
-      width: 70,
       height: 40,
       child: Align(
+        widthFactor: 1,
         alignment: Alignment.centerLeft,
         child: Text(
           currencySymbol,
           maxLines: 1,
           style: AppTypography.headlineMedium.copyWith(
-            color: cardTextColor.withValues(alpha: 0.65),
+            color: cardTextColor.withValues(alpha: 0.55),
           ),
         ),
       ),
@@ -850,7 +895,6 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
                   focusNode: messageFocusNode!,
                   inputFormatters: messageInputFormatters,
                   onChanged: onMessageChanged,
-                  emptyMessageLabel: emptyMessageLabel,
                   maxMessageLength: maxMessageLength,
                   semanticLabel: semanticLabel,
                   cardTextColor: cardTextColor,
@@ -937,7 +981,6 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
     required this.focusNode,
     required this.inputFormatters,
     required this.onChanged,
-    required this.emptyMessageLabel,
     required this.maxMessageLength,
     required this.semanticLabel,
     required this.cardTextColor,
@@ -948,7 +991,6 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
   final FocusNode focusNode;
   final List<TextInputFormatter> inputFormatters;
   final ValueChanged<String>? onChanged;
-  final String emptyMessageLabel;
   final int maxMessageLength;
   final String semanticLabel;
   final Color cardTextColor;
@@ -979,10 +1021,7 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
             minLines: 1,
             maxLines: 7,
             textAlign: TextAlign.center,
-            decoration: InputDecoration.collapsed(
-              hintText: emptyMessageLabel,
-              hintStyle: style,
-            ),
+            decoration: const InputDecoration.collapsed(hintText: null),
             onChanged: onChanged,
           ),
         ),
