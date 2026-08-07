@@ -3050,4 +3050,117 @@ private final class KeychainAccessibilityMigrationCompletionStoreHarness:
   private func key(service: String, version: Int) -> String {
     "\(version):\(service)"
   }
+  // MARK: - The saved route is a contract between Dart and every native gate
+
+  /// `persistedRouteIsTor` is the only thing standing between a user who chose
+  /// Tor and a background wake that broadcasts their already-signed migration
+  /// transactions over clearnet, and it had no coverage at all.
+  ///
+  /// Note which way it fails: a key that does not match reads `false`, so
+  /// `declareBackgroundNetworkRoute` marks nothing and the process stays
+  /// direct. There is no error, no deferral, and nothing the user can see —
+  /// the traffic just goes out unwrapped.
+  func testPersistedRouteIsTorReadsTheKeySharedPreferencesWrites() throws {
+    let suite = "com.keplr.vizor.tests.tor-route"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    defaults.removePersistentDomain(forName: suite)
+    XCTAssertFalse(
+      BackgroundNetworkRoute.persistedRouteIsTor(in: defaults),
+      "never chosen, or cleared by a wallet reset, reads as direct"
+    )
+
+    defaults.set(true, forKey: "flutter.zcash_tor_enabled")
+    XCTAssertTrue(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+
+    defaults.set(false, forKey: "flutter.zcash_tor_enabled")
+    XCTAssertFalse(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+
+    // The `flutter.` prefix is part of the contract, not decoration. A
+    // migration to an unprefixed store — `SharedPreferencesAsync`, or a
+    // `SharedPreferences.setPrefix` call — leaves the value here and this
+    // reader finding nothing.
+    defaults.removePersistentDomain(forName: suite)
+    defaults.set(true, forKey: "zcash_tor_enabled")
+    XCTAssertFalse(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+  }
+
+  /// Pins the key from both ends. The Swift side hand-assembles a string that
+  /// only Dart's constant and `shared_preferences`' prefix make correct, so a
+  /// rename on either side is invisible until a user's traffic leaks. Reading
+  /// the Dart declaration is what turns that into a red test.
+  func testTorPreferenceKeyMatchesDart() throws {
+    XCTAssertEqual(
+      BackgroundNetworkRoute.torEnabledKey,
+      "flutter.\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)"
+    )
+
+    let provider = try repositoryFileContents(
+      "lib/src/providers/network_privacy_provider.dart"
+    )
+    XCTAssertTrue(
+      provider.contains(
+        "const kTorEnabledPreferenceKey = "
+          + "'\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)';"
+      ),
+      "kTorEnabledPreferenceKey no longer declares "
+        + "'\(BackgroundNetworkRoute.torEnabledPreferenceSuffix)'; "
+        + "BackgroundNetworkRoute.torEnabledKey must be renamed with it"
+    )
+    // The prefix half of the contract. `SharedPreferences.getInstance` is what
+    // writes under `flutter.`; the async store and `setPrefix` do not.
+    XCTAssertTrue(
+      provider.contains("SharedPreferences.getInstance()"),
+      "the Tor preference must keep using the prefixed shared_preferences API"
+    )
+    XCTAssertFalse(
+      provider.contains("SharedPreferencesAsync"),
+      "an unprefixed store would leave the background reader finding nothing"
+    )
+    XCTAssertFalse(
+      provider.contains("setPrefix"),
+      "changing the prefix would leave the background reader finding nothing"
+    )
+  }
+
+  /// Tor-route background passes decline before any native call, and the
+  /// decline is deliberate: this process never brings Tor up, so proceeding
+  /// could only fail every query, and falling back to a direct connection is
+  /// the leak the declaration exists to prevent.
+  func testDeclareReportsTheSavedRoute() throws {
+    let suite = "com.keplr.vizor.tests.tor-route-declare"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(true, forKey: BackgroundNetworkRoute.torEnabledKey)
+    XCTAssertTrue(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+    defaults.set(false, forKey: BackgroundNetworkRoute.torEnabledKey)
+    XCTAssertFalse(BackgroundNetworkRoute.persistedRouteIsTor(in: defaults))
+  }
+
+  /// `#filePath` is baked in at compile time and points at
+  /// `<repo>/ios/RunnerTests/RunnerTests.swift`, which is how a test running
+  /// in a simulator reaches the Dart and Android sources it has to pin.
+  private func repositoryFileContents(
+    _ relativePath: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()  // RunnerTests
+      .deletingLastPathComponent()  // ios
+      .deletingLastPathComponent()  // repository root
+    let url = root.appendingPathComponent(relativePath)
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+      XCTFail(
+        "Could not read \(relativePath) at \(url.path)",
+        file: file,
+        line: line
+      )
+      throw CocoaError(.fileNoSuchFile)
+    }
+    return contents
+  }
+
+
 }

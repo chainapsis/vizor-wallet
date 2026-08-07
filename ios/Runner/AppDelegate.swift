@@ -12,6 +12,15 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     FreshInstallKeychainCleaner.runIfNeeded()
+    // Adopt the saved network route before any background task handler can
+    // run — a background task launch reaches this method first, and it never
+    // runs Dart. Rust refuses a route nothing has declared, so this one call
+    // is what keeps both wallets honest: a direct wallet's cold wake works
+    // exactly as it does today, and a Tor wallet's cold wake finds the route
+    // Tor with no client behind it, so every lightwalletd call refuses and
+    // the work waits for the foreground, which owns the Tor client. This
+    // process never brings Tor up in the background.
+    BackgroundNetworkRoute.declareBackgroundNetworkRoute()
     BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {
