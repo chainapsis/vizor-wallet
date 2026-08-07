@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `VoteRecord`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -188,7 +188,9 @@ class DelegationStatusView {
 class DelegationSubmissionWire {
   final String rk;
   final String spendAuthSig;
-  final String sighash;
+
+  /// Base64-encoded versioned Ironwood TX1 effecting data.
+  final String tx1Effects;
   final String nfSigned;
   final String cmxNew;
   final String govComm;
@@ -199,7 +201,7 @@ class DelegationSubmissionWire {
   const DelegationSubmissionWire({
     required this.rk,
     required this.spendAuthSig,
-    required this.sighash,
+    required this.tx1Effects,
     required this.nfSigned,
     required this.cmxNew,
     required this.govComm,
@@ -212,7 +214,7 @@ class DelegationSubmissionWire {
   int get hashCode =>
       rk.hashCode ^
       spendAuthSig.hashCode ^
-      sighash.hashCode ^
+      tx1Effects.hashCode ^
       nfSigned.hashCode ^
       cmxNew.hashCode ^
       govComm.hashCode ^
@@ -227,7 +229,7 @@ class DelegationSubmissionWire {
           runtimeType == other.runtimeType &&
           rk == other.rk &&
           spendAuthSig == other.spendAuthSig &&
-          sighash == other.sighash &&
+          tx1Effects == other.tx1Effects &&
           nfSigned == other.nfSigned &&
           cmxNew == other.cmxNew &&
           govComm == other.govComm &&
@@ -840,7 +842,6 @@ class VoteShareWire {
   final WireEncryptedShare encryptedShare;
   final int shareIndex;
   final BigInt vcTreePosition;
-  final List<WireEncryptedShare> allEncryptedShares;
   final List<String> shareComms;
   final String primaryBlind;
   final BigInt submitAt;
@@ -852,7 +853,6 @@ class VoteShareWire {
     required this.encryptedShare,
     required this.shareIndex,
     required this.vcTreePosition,
-    required this.allEncryptedShares,
     required this.shareComms,
     required this.primaryBlind,
     required this.submitAt,
@@ -866,7 +866,6 @@ class VoteShareWire {
       encryptedShare.hashCode ^
       shareIndex.hashCode ^
       vcTreePosition.hashCode ^
-      allEncryptedShares.hashCode ^
       shareComms.hashCode ^
       primaryBlind.hashCode ^
       submitAt.hashCode;
@@ -882,7 +881,6 @@ class VoteShareWire {
           encryptedShare == other.encryptedShare &&
           shareIndex == other.shareIndex &&
           vcTreePosition == other.vcTreePosition &&
-          allEncryptedShares == other.allEncryptedShares &&
           shareComms == other.shareComms &&
           primaryBlind == other.primaryBlind &&
           submitAt == other.submitAt;

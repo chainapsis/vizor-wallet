@@ -3262,8 +3262,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) {
     final wire = submission.submission;
     if (!_bytesEqual(_decodeBase64(wire.rk), signature.rk) ||
-        !_bytesEqual(_decodeBase64(wire.spendAuthSig), signature.sig) ||
-        !_bytesEqual(_decodeBase64(wire.sighash), signature.sighash)) {
+        !_bytesEqual(_decodeBase64(wire.spendAuthSig), signature.sig)) {
       throw StateError(
         'Keystone signature did not match delegation bundle $bundleIndex.',
       );

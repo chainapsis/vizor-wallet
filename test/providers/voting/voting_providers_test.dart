@@ -5506,11 +5506,11 @@ const _bytes12x64Base64 =
     'DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA==';
 const _bytes13x32Base64 = 'DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=';
 const _delegationSubmissionWireGolden =
-    '{"rk":"Ag==","spend_auth_sig":"Aw==","sighash":"BA==","signed_note_nullifier":"BQ==","cmx_new":"Bg==","van_cmx":"Bw==","gov_nullifiers":["CA=="],"proof":"AQ==","vote_round_id":"$_roundIdBase64"}';
+    '{"rk":"Ag==","spend_auth_sig":"Aw==","tx1_effects":"BA==","signed_note_nullifier":"BQ==","cmx_new":"Bg==","van_cmx":"Bw==","gov_nullifiers":["CA=="],"proof":"AQ==","vote_round_id":"$_roundIdBase64"}';
 const _voteCommitmentWireGolden =
     '{"van_nullifier":"$_bytes1x32Base64","vote_authority_note_new":"$_bytes2x32Base64","vote_commitment":"$_bytes3x32Base64","proposal_id":7,"proof":"BA==","vote_round_id":"$_roundIdBase64","vote_comm_tree_anchor_height":10,"r_vpk":"$_bytes13x32Base64","vote_auth_sig":"$_bytes12x64Base64"}';
 const _voteShareWireGolden =
-    '{"shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"all_enc_shares":[{"c1":"CA==","c2":"CQ==","share_index":0}],"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0,"vote_round_id":"$kRoundId"}';
+    '{"shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0,"vote_round_id":"$kRoundId"}';
 const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   attempts: 1,
   delay: Duration.zero,
@@ -6370,7 +6370,7 @@ class FakeVotingRustApi implements VotingRustApi {
         submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(const [2]),
           spendAuthSig: base64Encode(const [3]),
-          sighash: base64Encode(const [4]),
+          tx1Effects: base64Encode(const [4]),
           nfSigned: base64Encode(const [5]),
           cmxNew: base64Encode(const [6]),
           govComm: base64Encode(const [7]),
@@ -6518,7 +6518,7 @@ class FakeVotingRustApi implements VotingRustApi {
         submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(rk),
           spendAuthSig: base64Encode(keystoneSig),
-          sighash: base64Encode(keystoneSighash),
+          tx1Effects: base64Encode(keystoneSighash),
           nfSigned: base64Encode(const [5]),
           cmxNew: base64Encode(const [6]),
           govComm: base64Encode(const [7]),
@@ -6544,7 +6544,7 @@ class FakeVotingRustApi implements VotingRustApi {
     return jsonEncode({
       'rk': wire.rk,
       'spend_auth_sig': wire.spendAuthSig,
-      'sighash': wire.sighash,
+      'tx1_effects': wire.tx1Effects,
       'signed_note_nullifier': wire.nfSigned,
       'cmx_new': wire.cmxNew,
       'van_cmx': wire.govComm,
@@ -6770,15 +6770,6 @@ class FakeVotingRustApi implements VotingRustApi {
       },
       'share_index': share.shareIndex,
       'tree_position': (vcTreePosition ?? share.vcTreePosition).toInt(),
-      'all_enc_shares': share.allEncryptedShares
-          .map(
-            (share) => {
-              'c1': base64Encode(share.c1),
-              'c2': base64Encode(share.c2),
-              'share_index': share.shareIndex,
-            },
-          )
-          .toList(),
       'share_comms': share.shareComms,
       'primary_blind': share.primaryBlind,
       'submit_at': submitAt.toInt(),
@@ -6924,16 +6915,6 @@ class FakeVotingRustApi implements VotingRustApi {
       },
       'share_index': shareIndex,
       'tree_position': vcTreePosition.toInt(),
-      'all_enc_shares': (payload['all_enc_shares'] as List<dynamic>)
-          .cast<Map<String, dynamic>>()
-          .map(
-            (share) => {
-              'c1': base64Encode(_bytesFromHex(share['c1'] as String)),
-              'c2': base64Encode(_bytesFromHex(share['c2'] as String)),
-              'share_index': share['share_index'],
-            },
-          )
-          .toList(),
       'share_comms': (payload['share_comms'] as List<dynamic>)
           .cast<String>()
           .map((hex) => base64Encode(_bytesFromHex(hex)))
@@ -7081,7 +7062,6 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         encryptedShare: wireShare,
         shareIndex: wireShare.shareIndex,
         vcTreePosition: BigInt.from(9),
-        allEncryptedShares: wireShares,
         shareComms: [
           for (var i = 0; i < shareCount; i++)
             base64Encode(Uint8List.fromList(List.filled(32, 10 + i))),
