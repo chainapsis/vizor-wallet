@@ -560,6 +560,67 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
     }
 }
 
+/// Adopt the user's persisted Tor preference before any background network
+/// call. The desired route is process-local and defaults to direct, so a
+/// background wake into a cold process would otherwise reach lightwalletd over
+/// clearnet. The caller must have read the persisted preference itself; this
+/// only makes the process fail closed, and returns without bootstrapping Tor or
+/// touching the filesystem.
+///
+/// This is the whole of what a background pass does about a Tor route: it
+/// marks, does no network work, and leaves the run to the foreground. This
+/// process never brings Tor up in the background; the foreground owns the
+/// client.
+///
+/// A preference read outside Dart can be stale, so this is ignored once the
+/// process has decided its own route, and reports success either way — the
+/// caller refuses its network pass on a persisted Tor route regardless.
+#[no_mangle]
+pub extern "C" fn zcash_network_privacy_mark_tor_desired() -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        crate::network_privacy::mark_tor_desired();
+        0
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("network privacy Tor declaration", panic);
+            2
+        }
+    }
+}
+
+/// Adopt the user's persisted *direct* preference before any background network
+/// call — the mirror of [`zcash_network_privacy_mark_tor_desired`], and just as
+/// mandatory.
+///
+/// The route is process-local, and "nobody has declared yet" and "the user
+/// chose direct" are deliberately different states: the first is refused at the
+/// route chokepoint so that a background entry point which never read the
+/// preference cannot reach lightwalletd at all. A pass whose saved route is
+/// direct therefore has to say so, exactly as a Tor pass does, or its own
+/// network calls fail closed.
+///
+/// Writes nothing but the decision, touches no filesystem, and is ignored once
+/// the process has decided its own route — a persisted read can be stale, and
+/// this must never turn a live Tor route direct. Returns 0 on success.
+#[no_mangle]
+pub extern "C" fn zcash_network_privacy_mark_direct_route() -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        crate::network_privacy::mark_direct_route();
+        0
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("network privacy direct route declaration", panic);
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

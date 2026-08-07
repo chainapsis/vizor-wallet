@@ -1,5 +1,68 @@
 import Foundation
 
+/// The network route a background pass runs under.
+///
+/// The desired route lives in Rust process memory and a background wake can be
+/// a cold launch where Dart never applied the saved preference, so every entry
+/// point that may reach lightwalletd declares the saved route before its first
+/// native call. Rust refuses a route nothing has declared rather than treating
+/// it as direct, so a lane that forgets fails closed on its first connection
+/// instead of putting wallet queries — or signed transactions — on clearnet
+/// for a user who chose Tor.
+///
+/// On a Tor route, background passes do no network work at all. This process
+/// never brings Tor up; the foreground owns the client, and every background
+/// lane that finds the saved route at Tor stands down and leaves its work to
+/// the next foreground entry. Declining is the policy working, not a failure.
+enum BackgroundNetworkRoute {
+  /// `shared_preferences` stores Dart values in `UserDefaults.standard` behind
+  /// a `flutter.` prefix; the suffix is `kTorEnabledPreferenceKey` in
+  /// `lib/src/providers/network_privacy_provider.dart`.
+  ///
+  /// Hand-assembled, so the two ends are one rename apart from disagreeing —
+  /// and the divergence fails OPEN: `persistedRouteIsTor` reads false for
+  /// every user and background work runs direct for someone who chose Tor.
+  /// `testTorPreferenceKeyMatchesDart` reads the Dart declaration and pins
+  /// both halves so a rename breaks a test instead.
+  static let torEnabledPreferenceSuffix = "zcash_tor_enabled"
+  static let torEnabledKey = "flutter.\(torEnabledPreferenceSuffix)"
+
+  /// Whether the saved route is Tor. A missing value — never chosen, or
+  /// cleared by a wallet reset — reads as direct, matching the Dart default.
+  ///
+  /// Takes its store as a parameter only so a test can supply one; every
+  /// caller reads the same `UserDefaults.standard` `shared_preferences`
+  /// writes to.
+  static func persistedRouteIsTor(
+    in defaults: UserDefaults = .standard
+  ) -> Bool {
+    defaults.bool(forKey: torEnabledKey)
+  }
+
+  static var persistedRouteIsTor: Bool {
+    persistedRouteIsTor(in: .standard)
+  }
+
+  /// Declares the saved route to Rust and reports whether it is Tor.
+  ///
+  /// Call it before the first native call of a background pass. It samples
+  /// nothing and never bootstraps; a persisted read can be stale, so Rust
+  /// ignores a declaration once this process has decided its own route — it
+  /// can never turn a live Tor route direct.
+  @discardableResult
+  static func declareBackgroundNetworkRoute() -> Bool {
+    guard persistedRouteIsTor else {
+      // Declared too. Rust refuses a route nothing has declared rather than
+      // treating it as direct, so saying "direct" is the direct pass's job
+      // rather than something it gets by staying quiet.
+      _ = zcash_network_privacy_mark_direct_route()
+      return false
+    }
+    _ = zcash_network_privacy_mark_tor_desired()
+    return true
+  }
+}
+
 final class BackgroundMigrationCancellation: @unchecked Sendable {
   private let condition = NSCondition()
   private var cancelled = false

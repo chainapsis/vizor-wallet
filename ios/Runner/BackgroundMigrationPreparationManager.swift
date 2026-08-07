@@ -1246,6 +1246,10 @@ final class BackgroundMigrationPreparationManager {
     authorizationEpoch: UInt64,
     completion: @escaping (Bool) -> Void
   ) {
+    // Submission does no network work itself, but this process can be a cold
+    // launch: declare the saved route first, so anything that does reach
+    // lightwalletd fails closed rather than defaulting to direct.
+    let routeIsTor = BackgroundNetworkRoute.declareBackgroundNetworkRoute()
     pruneForegroundContinuationScopes()
     switch migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
@@ -1282,6 +1286,12 @@ final class BackgroundMigrationPreparationManager {
       if mutationQuiesced { return "blocked_mutation_quiesced" }
       if submissionInFlight { return "blocked_submission_in_flight" }
       if taskRunning { return "blocked_task_running" }
+      // A tracking task on a Tor route could only decline every query: this
+      // process never brings Tor up in the background, so submitting would
+      // start a user-visible activity that claims to be checking
+      // confirmations and cannot. The wave waits for the foreground, which
+      // owns the Tor client.
+      if routeIsTor { return "blocked_tor_route" }
       if pendingScopes.isEmpty {
         // Not "blocked": nothing is waiting for denomination confirmations
         // that has not already been handed to the foreground.
@@ -1297,6 +1307,7 @@ final class BackgroundMigrationPreparationManager {
       recordSchedulingState(submissionBlockedReason)
       let canContinue = stateLock.withPreparationLock {
         !mutationQuiesced
+          && !routeIsTor
           && !notificationAuthorization.isDisabled
           && (submissionInFlight || taskRunning
             || !foregroundContinuationScopes.isEmpty)
@@ -1530,6 +1541,16 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func handleAuthorized(_ task: BGContinuedProcessingTask) {
+    // A task submitted before Tor was enabled can launch after it. Declare
+    // the saved route before any native call; on a Tor route this task can
+    // only decline every query, so it stands down at once and leaves the wave
+    // to the foreground. Completing successfully is deliberate — declining
+    // for policy is not a failed execution opportunity.
+    if BackgroundNetworkRoute.declareBackgroundNetworkRoute() {
+      recordSchedulingState("tor_route_stand_down")
+      task.setTaskCompleted(success: true)
+      return
+    }
     stateLock.withPreparationLock {
       submissionInFlight = false
     }

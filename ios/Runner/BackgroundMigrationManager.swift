@@ -700,6 +700,18 @@ final class BackgroundMigrationManager {
       task.setTaskCompleted(success: true)
       return
     }
+    // This wake queries the chain tip and broadcasts signed transactions, and
+    // it can be a cold launch where Dart never applied the saved route.
+    // Declare that route before any other native call, so a path that still
+    // reaches lightwalletd fails closed rather than putting a transaction on
+    // clearnet — and on a Tor route do no background network work at all.
+    // This process never brings Tor up; the foreground owns the client, and
+    // the outbox holds already-signed items for it. Declining is the policy
+    // working, so the task reports success, exactly like the declines above.
+    guard !BackgroundNetworkRoute.declareBackgroundNetworkRoute() else {
+      task.setTaskCompleted(success: true)
+      return
+    }
     startAuthorizationMonitoring()
     task.expirationHandler = { [weak self] in
       self?.expire()

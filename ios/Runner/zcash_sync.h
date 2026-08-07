@@ -76,4 +76,32 @@ int32_t zcash_inspect_migration_proof_readiness(
     bool* output
 );
 
+/// Declares that the user's persisted network route is Tor, so this process
+/// refuses to reach the network directly.
+///
+/// The desired route lives in process memory and defaults to direct, so a
+/// background launch in which Dart never ran would otherwise send lightwalletd
+/// traffic over clearnet. The caller must have read the persisted preference
+/// itself and must call this before the first network call of the pass. It
+/// never bootstraps Tor, so a pass that only calls this can do no network work
+/// and defers to the foreground. The process then stays fail-closed for the
+/// rest of its lifetime; only the foreground route toggle returns it to direct.
+/// Returns 0 on success.
+int32_t zcash_network_privacy_mark_tor_desired(void);
+
+/// Declares that the user's persisted network route is direct — the mirror of
+/// zcash_network_privacy_mark_tor_desired, and just as mandatory.
+///
+/// "Nobody has declared yet" and "the user chose direct" are deliberately
+/// different states in Rust. The first is refused wherever a route is resolved,
+/// so a background entry point that never read the preference cannot reach
+/// lightwalletd at all instead of quietly reaching it over clearnet on a
+/// Tor-configured wallet. A pass whose saved route is direct therefore declares
+/// it, exactly as a Tor pass does, or its own network calls fail closed.
+///
+/// Writes nothing but the decision, touches no filesystem, never bootstraps,
+/// and is ignored once this process has decided its own route, so it can never
+/// turn a live Tor route direct. Returns 0 on success.
+int32_t zcash_network_privacy_mark_direct_route(void);
+
 #endif // ZCASH_SYNC_H
