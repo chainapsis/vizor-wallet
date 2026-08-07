@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
+import 'payment_link_card_motion.dart';
 import 'payment_link_skeleton.dart';
 
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
@@ -228,6 +229,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
 
   @override
   Widget build(BuildContext context) {
+    final motion = PaymentLinkCardMotionScope.maybeOf(context);
     final label =
         widget.semanticLabel ??
         (widget.showBack
@@ -242,9 +244,12 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
           fit: StackFit.expand,
           children: [
             if (widget.showBack)
-              const _PaymentLinkGiftCardBackBackground()
+              _PaymentLinkGiftCardBackBackground(motion: motion)
             else
-              _PaymentLinkGiftCardFrontBackground(artwork: widget.artwork),
+              _PaymentLinkGiftCardFrontBackground(
+                artwork: widget.artwork,
+                motion: motion,
+              ),
             if (widget.showBack)
               _PaymentLinkGiftCardBackContent(
                 message: widget.message,
@@ -275,6 +280,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 emptyAmountLabel: widget.emptyAmountLabel,
                 semanticLabel: label,
                 showCaret: widget.showCaret,
+                motion: motion,
               ),
             const _PaymentLinkGiftCardBorder(),
           ],
@@ -365,9 +371,13 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
 }
 
 class _PaymentLinkGiftCardFrontBackground extends StatelessWidget {
-  const _PaymentLinkGiftCardFrontBackground({required this.artwork});
+  const _PaymentLinkGiftCardFrontBackground({
+    required this.artwork,
+    required this.motion,
+  });
 
   final PaymentLinkCardArtwork artwork;
+  final PaymentLinkCardMotionScope? motion;
 
   @override
   Widget build(BuildContext context) {
@@ -390,6 +400,8 @@ class _PaymentLinkGiftCardFrontBackground extends StatelessWidget {
             ),
           ),
         ),
+        if (motion case final motion?)
+          PaymentLinkCardHoloShine(light: motion.light),
       ],
     );
   }
@@ -411,6 +423,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     required this.emptyAmountLabel,
     required this.semanticLabel,
     required this.showCaret,
+    required this.motion,
   });
 
   final String? amountText;
@@ -427,6 +440,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
   final String emptyAmountLabel;
   final String semanticLabel;
   final bool showCaret;
+  final PaymentLinkCardMotionScope? motion;
 
   @override
   Widget build(BuildContext context) {
@@ -555,45 +569,77 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 cardTextColor: cardTextColor,
               )
             else
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (amount!.isNotEmpty) ...[
-                    Flexible(
-                      child: Text(
-                        amount,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.headlineLarge.copyWith(
-                          color: cardTextColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ],
-                  if (showCaret) ...[
-                    Container(
-                      width: 3,
-                      height: 33,
-                      decoration: BoxDecoration(
-                        color: cardTextColor,
-                        borderRadius: BorderRadius.circular(AppRadii.full),
-                      ),
-                    ),
-                    if (currencySymbol.isNotEmpty)
-                      const SizedBox(width: AppSpacing.xxs),
-                  ],
-                  if (currencySymbol.isNotEmpty)
-                    _PaymentLinkCurrencyLabel(
-                      currencySymbol: currencySymbol,
-                      cardTextColor: cardTextColor,
-                    ),
-                ],
+              _PaymentLinkStaticAmountRow(
+                amount: amount!,
+                currencySymbol: currencySymbol,
+                showCaret: showCaret,
+                cardTextColor: cardTextColor,
+                motion: motion,
               ),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _PaymentLinkStaticAmountRow extends StatelessWidget {
+  const _PaymentLinkStaticAmountRow({
+    required this.amount,
+    required this.currencySymbol,
+    required this.showCaret,
+    required this.cardTextColor,
+    required this.motion,
+  });
+
+  final String amount;
+  final String currencySymbol;
+  final bool showCaret;
+  final Color cardTextColor;
+  final PaymentLinkCardMotionScope? motion;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (amount.isNotEmpty) ...[
+          Flexible(
+            child: Text(
+              amount,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.headlineLarge.copyWith(color: cardTextColor),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+        if (showCaret) ...[
+          Container(
+            width: 3,
+            height: 33,
+            decoration: BoxDecoration(
+              color: cardTextColor,
+              borderRadius: BorderRadius.circular(AppRadii.full),
+            ),
+          ),
+          if (currencySymbol.isNotEmpty)
+            const SizedBox(width: AppSpacing.xxs),
+        ],
+        if (currencySymbol.isNotEmpty)
+          _PaymentLinkCurrencyLabel(
+            currencySymbol: currencySymbol,
+            cardTextColor: cardTextColor,
+          ),
+      ],
+    );
+    final cardMotion = motion;
+    if (cardMotion == null) return row;
+    return PaymentLinkCardMetallicShine(
+      light: cardMotion.light,
+      rotation: cardMotion.rotation,
+      child: row,
     );
   }
 }
@@ -727,7 +773,9 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
 }
 
 class _PaymentLinkGiftCardBackBackground extends StatelessWidget {
-  const _PaymentLinkGiftCardBackBackground();
+  const _PaymentLinkGiftCardBackBackground({required this.motion});
+
+  final PaymentLinkCardMotionScope? motion;
 
   @override
   Widget build(BuildContext context) {
@@ -741,6 +789,8 @@ class _PaymentLinkGiftCardBackBackground extends StatelessWidget {
           fit: BoxFit.cover,
           excludeFromSemantics: true,
         ),
+        if (motion case final motion?)
+          PaymentLinkCardGlossShine(light: motion.light),
       ],
     );
   }

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'payment_link_card_motion.dart';
+
 /// A controlled, two-sided Y-axis flip for payment-link gift cards.
 ///
 /// The parent owns which side is visible through [showBack]. Rebuilding with
@@ -28,10 +30,17 @@ class PaymentLinkCardFlip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final motion = PaymentLinkCardMotionScope.maybeOf(context);
     final disableAnimations =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (disableAnimations || !TickerMode.valuesOf(context).enabled) {
-      return _side(showBack: showBack, front: front, back: back);
+      return _side(
+        showBack: showBack,
+        front: front,
+        back: back,
+        motion: motion,
+        rotation: (motion?.rotation ?? 0) + (showBack ? math.pi : 0),
+      );
     }
 
     return TweenAnimationBuilder<double>(
@@ -55,7 +64,13 @@ class PaymentLinkCardFlip extends StatelessWidget {
           transform: Matrix4.identity()
             ..setEntry(3, 2, 0.001)
             ..rotateY(angle),
-          child: _side(showBack: showingBack, front: front, back: back),
+          child: _side(
+            showBack: showingBack,
+            front: front,
+            back: back,
+            motion: motion,
+            rotation: (motion?.rotation ?? 0) + (value * math.pi),
+          ),
         );
       },
     );
@@ -65,12 +80,22 @@ class PaymentLinkCardFlip extends StatelessWidget {
     required bool showBack,
     required Widget front,
     required Widget back,
+    required PaymentLinkCardMotionScope? motion,
+    required double rotation,
   }) {
-    return KeyedSubtree(
+    Widget side = KeyedSubtree(
       key: ValueKey(
         showBack ? 'payment_link_flip_back' : 'payment_link_flip_front',
       ),
       child: showBack ? back : front,
     );
+    if (motion != null) {
+      side = PaymentLinkCardMotionScope(
+        light: motion.light,
+        rotation: rotation,
+        child: side,
+      );
+    }
+    return side;
   }
 }
