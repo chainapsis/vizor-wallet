@@ -3381,6 +3381,11 @@ ProviderContainer _statusContainer({
                         label: 'pir-primary',
                       ),
                     ],
+                    pirLayout: const rust_config.PirLayout(
+                      pirDepth: 19,
+                      tier0Layers: 12,
+                      tier1Layers: 7,
+                    ),
                     supportedVersions: rust_config.SupportedVersions(
                       pir: ['2.0'],
                       voteProtocol: '2.0',
@@ -4093,6 +4098,11 @@ class _CountingVotingConfigNotifier extends VotingConfigNotifier {
       dynamicConfigFingerprint: 'dynamic-config-fingerprint',
       voteServers: [],
       pirEndpoints: [],
+      pirLayout: rust_config.PirLayout(
+        pirDepth: 19,
+        tier0Layers: 12,
+        tier1Layers: 7,
+      ),
       supportedVersions: rust_config.SupportedVersions(
         pir: [],
         voteProtocol: 'vote-protocol',

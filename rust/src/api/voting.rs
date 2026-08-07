@@ -15,7 +15,8 @@ use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
-    ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    ConfigSwitchKind, PirLayout, ResolveVotingConfigOptions, ResolvedVotingConfig,
+    ResolvedVotingConfigSummary,
 };
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
@@ -115,6 +116,8 @@ pub struct ApiVotingRoundContext {
     pub session_json: Option<String>,
     pub account_uuid: String,
     pub max_real_notes_per_bundle: Option<u32>,
+    /// Authenticated PIR geometry expected from the selected endpoint.
+    pub pir_layout: PirLayout,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -705,9 +708,14 @@ pub async fn precompute_delegation_pir(
     );
 
     // Warm the PIR path by precomputing/caching delegation bundle artifacts.
-    delegation::precompute_delegation_pir(&ctx.db_path, &pir_server_url, prepare_params)
-        .await
-        .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
+    delegation::precompute_delegation_pir(
+        &ctx.db_path,
+        &pir_server_url,
+        ctx.pir_layout,
+        prepare_params,
+    )
+    .await
+    .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
@@ -759,6 +767,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &seed,
         prepare_params,
         move |event| {
@@ -928,6 +937,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &ctx.account_uuid,
         prepare_params,
         &keystone_sig,
@@ -1649,6 +1659,15 @@ mod tests {
             session_json: None,
             account_uuid: account_uuid.to_string(),
             max_real_notes_per_bundle: None,
+            pir_layout: test_pir_layout(),
+        }
+    }
+
+    fn test_pir_layout() -> zcash_voting::wire::PirLayout {
+        zcash_voting::wire::PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
         }
     }
 
@@ -1695,6 +1714,7 @@ mod tests {
             dynamic_config_fingerprint: "dynamic".to_string(),
             vote_servers: vec![],
             pir_endpoints: vec![],
+            pir_layout: test_pir_layout(),
             supported_versions: zcash_voting::config::SupportedVersions {
                 pir: vec!["v0".to_string()],
                 vote_protocol: "v0".to_string(),

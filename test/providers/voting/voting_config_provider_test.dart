@@ -229,6 +229,11 @@ rust_config_api.VotingConfigResolution _resolution(
           label: 'pir-$seed',
         ),
       ],
+      pirLayout: const rust_config.PirLayout(
+        pirDepth: 19,
+        tier0Layers: 12,
+        tier1Layers: 7,
+      ),
       supportedVersions: const rust_config.SupportedVersions(
         pir: ['1'],
         voteProtocol: '1',

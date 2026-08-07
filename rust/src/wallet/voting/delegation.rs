@@ -11,6 +11,7 @@ use crate::wallet::voting::network::wallet_network;
 
 use super::db::open_voting_db;
 
+use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
@@ -51,6 +52,7 @@ fn prepare_params_with_whale_protection<'a>(
 async fn prove_delegation_bundle<F>(
     db_path: &str,
     pir_server_url: &str,
+    pir_layout: PirLayout,
     account_uuid: &str,
     prepared: &PreparedDelegationBundle,
     on_progress: Arc<F>,
@@ -65,7 +67,8 @@ where
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
-        let pir_client = zcash_voting::PirClientBlocking::with_transport(
+        let pir_client = zcash_voting::connect_pir_blocking(
+            pir_layout,
             &proof_pir_server_url,
             Arc::new(zcash_voting::HyperTransport::new()),
         )
@@ -180,6 +183,7 @@ pub async fn check_voting_eligibility(
 pub async fn precompute_delegation_pir(
     db_path: &str,
     pir_server_url: &str,
+    pir_layout: PirLayout,
     prepare_params: PrepareDelegationBundleParams<'_>,
 ) -> Result<zcash_voting::delegate::PreparedDelegationReport, String> {
     let PrepareDelegationBundleParams {
@@ -221,7 +225,8 @@ pub async fn precompute_delegation_pir(
             prepare_params,
         )
         .map_err(|e| e.to_string())?;
-        let pir_client = zcash_voting::PirClientBlocking::with_transport(
+        let pir_client = zcash_voting::connect_pir_blocking(
+            pir_layout,
             &pir_server_url,
             Arc::new(zcash_voting::HyperTransport::new()),
         )
@@ -247,6 +252,7 @@ pub async fn precompute_delegation_pir(
 pub async fn build_prove_and_sign_delegation_payload<F>(
     db_path: &str,
     pir_server_url: &str,
+    pir_layout: PirLayout,
     seed: &SecretVec<u8>,
     prepare_params: PrepareDelegationBundleParams<'_>,
     on_progress: F,
@@ -282,6 +288,7 @@ where
     prove_delegation_bundle(
         db_path,
         pir_server_url,
+        pir_layout,
         account_uuid,
         &prepared_bundle,
         on_progress.clone(),
@@ -383,6 +390,7 @@ pub async fn build_keystone_delegation_request(
 pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
     db_path: &str,
     pir_server_url: &str,
+    pir_layout: PirLayout,
     account_uuid: &str,
     prepare_params: PrepareDelegationBundleParams<'_>,
     keystone_sig: &[u8],
@@ -407,6 +415,7 @@ where
     prove_delegation_bundle(
         db_path,
         pir_server_url,
+        pir_layout,
         account_uuid,
         &prepared_bundle,
         on_progress.clone(),
@@ -497,6 +506,11 @@ mod tests {
             .block_on(build_prove_and_sign_delegation_payload(
                 db_path.to_str().unwrap(),
                 "http://127.0.0.1:2",
+                PirLayout {
+                    pir_depth: 19,
+                    tier0_layers: 12,
+                    tier1_layers: 7,
+                },
                 &seed,
                 PrepareDelegationBundleParams {
                     lwd: zcash_voting::delegate::DelegationLwdInputs {

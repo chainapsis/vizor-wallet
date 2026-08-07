@@ -592,6 +592,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
 
   @protected
+  PirLayout dco_decode_pir_layout(dynamic raw);
+
+  @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
 
   @protected
@@ -1479,6 +1482,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
     SseDeserializer deserializer,
   );
+
+  @protected
+  PirLayout sse_decode_pir_layout(SseDeserializer deserializer);
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -2559,6 +2565,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ParsedSignedVotingPczt self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_pir_layout(PirLayout self, SseSerializer serializer);
 
   @protected
   void sse_encode_proposal_result(
