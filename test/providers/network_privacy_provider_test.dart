@@ -132,11 +132,11 @@ void main() {
 
     expect(events, [
       'native:true',
+      'store:true',
       'begin-enable',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
       'native-resume',
     ]);
@@ -178,11 +178,11 @@ void main() {
     final state = container.read(networkPrivacyProvider);
     expect(events, [
       'native:true',
+      'store:true',
       'begin-enable',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
     ]);
     expect(state.torEnabled, isTrue);
@@ -221,8 +221,8 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -296,8 +296,8 @@ void main() {
       'native-prepare-disable',
       'native-disable-drained',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -381,6 +381,7 @@ void main() {
 
       expect(events, [
         'native:true',
+        'store:true',
         'begin-enable',
         'runtime-quiesce',
         'direct-quiesce',
@@ -478,7 +479,6 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
@@ -503,10 +503,102 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
+  });
+
+  test('a failed strict save aborts the enable before anything changes', () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _WriteFailingStore(events, failOn: true),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    // Refused before the process changes: no fail-closed switch, no drain, no
+    // transport restart. Requests keep flowing directly, the saved route
+    // still says direct, and the updater preflight is undone — the toggle
+    // simply never happened, apart from the failure the user is shown.
+    expect(events, ['native:true', 'store:write-failed', 'native:false']);
+    expect(runtime.isTorEnabled(), isFalse);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.targetTorEnabled, isTrue);
+  });
+
+  test('a failed direct save still opens the direct request gate', () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _WriteFailingStore(events, failOn: false),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+
+    // The runtime is direct with its Tor client dropped, so the gate follows
+    // it: left shut, every direct request would fail for the rest of the
+    // session behind a UI that reports Tor off. The saved route stays at Tor
+    // — the stricter half — so the next launch comes back on Tor instead of
+    // silently staying direct.
+    expect(events, [
+      'native-prepare-disable',
+      'restart',
+      'configure:false',
+      'store:write-failed',
+      'direct-allow',
+    ]);
+    expect(runtime.isTorEnabled(), isFalse);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.targetTorEnabled, isFalse);
   });
 
   test(
@@ -901,6 +993,27 @@ class _FakeStore implements NetworkPrivacyPreferenceStore {
 
   @override
   Future<void> writeTorEnabled(bool enabled) async {
+    events.add('store:$enabled');
+  }
+}
+
+/// Fails the write in one direction only, the shape a full disk has: the
+/// previously saved value is already on disk when the new one is refused.
+class _WriteFailingStore implements NetworkPrivacyPreferenceStore {
+  _WriteFailingStore(this.events, {required this.failOn});
+
+  final List<String> events;
+  final bool failOn;
+
+  @override
+  Future<bool> readTorEnabled() async => false;
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    if (enabled == failOn) {
+      events.add('store:write-failed');
+      throw StateError('Could not save the Tor preference.');
+    }
     events.add('store:$enabled');
   }
 }

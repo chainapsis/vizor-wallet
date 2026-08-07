@@ -557,6 +557,39 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         return;
       }
       if (generation != _generation) return;
+      // The saved route is written before this process changes at all. The
+      // two halves may diverge in only one direction: saved may be stricter
+      // than the route the user has been told about, never laxer. Written
+      // after `beginEnable`, a failed write would leave this process
+      // enforcing Tor while the saved route still said direct — and the
+      // saved half is what a relaunch believes, so restarting the app would
+      // silently undo a choice the user never reversed. Written first, a
+      // failure aborts a toggle that has not changed anything yet: the route
+      // is still direct, requests still flow, nothing needs rolling back.
+      try {
+        await store.writeTorEnabled(true);
+      } catch (error) {
+        if (generation != _generation) return;
+        // Undo the updater preflight so software updates are not left routed
+        // for a Tor session that never started. Best-effort: failing here
+        // only pauses update checks, and `retry()` re-runs the whole toggle.
+        var softwareUpdatesAvailable = previousState.softwareUpdatesAvailable;
+        try {
+          await nativeUpdates.setTorEnabled(false);
+        } catch (_) {
+          softwareUpdatesAvailable = false;
+        }
+        if (generation != _generation) return;
+        state = NetworkPrivacyState(
+          torEnabled: previousState.torEnabled,
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: true,
+          softwareUpdatesAvailable: softwareUpdatesAvailable,
+          error: error.toString(),
+        );
+        return;
+      }
+      if (generation != _generation) return;
       runtime.beginEnable();
     } else {
       state = NetworkPrivacyState(
@@ -606,15 +639,26 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         if (directDrain != null) {
           _throwIfDirectDrainFailed(await directDrain);
         }
-        if (generation != _generation) return;
-        await store.writeTorEnabled(enabled);
         // Re-check after every suspension point: a superseded disable that
         // reached `configure(false)` or `allow()` would reopen clearnet
         // underneath a newer enable that has already gone fail-closed.
         if (generation != _generation) return;
         nextStatus = await runtime.configure(enabled: enabled);
-        if (!enabled && generation == _generation) {
-          directRequests.allow();
+        if (enabled || generation != _generation) return;
+        try {
+          // Written only now that the runtime has actually gone direct — the
+          // mirror of the enable ordering above. Saved any earlier, a
+          // relaunch would read direct while this process was still
+          // enforcing Tor.
+          await store.writeTorEnabled(false);
+        } finally {
+          // The gate follows the runtime, not the preference. Rust is on the
+          // direct route with its Tor client dropped, so a gate left shut
+          // would strand every direct request for the rest of the session
+          // while the UI reports Tor off. A failed write leaves the saved
+          // route at Tor — the stricter half — so the next launch comes back
+          // on Tor instead of silently staying direct.
+          if (generation == _generation) directRequests.allow();
         }
       });
       if (generation != _generation) return;
