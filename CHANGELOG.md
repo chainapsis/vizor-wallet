@@ -6,6 +6,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
+### Changed
+- Changed vote-share wire JSON to include only the encrypted share assigned to
+  the receiving helper. The `all_enc_shares` field is no longer serialized.
+
 ## v2.0.0-rc.3
 
 ### Changed

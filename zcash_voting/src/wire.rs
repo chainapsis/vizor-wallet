@@ -107,8 +107,6 @@ pub struct VoteShareWire {
     pub share_index: u32,
     #[serde(rename = "tree_position")]
     pub vc_tree_position: u64,
-    #[serde(rename = "all_enc_shares")]
-    pub all_encrypted_shares: Vec<WireEncryptedShare>,
     pub share_comms: Vec<String>,
     pub primary_blind: String,
     pub submit_at: u64,

@@ -60,7 +60,6 @@ impl VoteShareWire {
                 vc_tree_position.unwrap_or(payload.tree_position),
                 "tree_position",
             )?,
-            all_encrypted_shares: payload.all_enc_shares.clone(),
             share_comms: payload.share_comms.iter().map(b64).collect(),
             primary_blind: b64(&payload.primary_blind),
             submit_at: json_safe_u64(submit_at, "submit_at")?,
@@ -609,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn vote_share_wire_json_shape() {
+    fn vote_share_wire_json_contains_only_assigned_encrypted_share() {
         let payload = SharePayload {
             shares_hash: vec![0x21; 32],
             proposal_id: 9,
@@ -620,11 +619,18 @@ mod tests {
                 share_index: 1,
             },
             tree_position: 99,
-            all_enc_shares: vec![crate::WireEncryptedShare {
-                c1: vec![0x24; 32],
-                c2: vec![0x25; 32],
-                share_index: 1,
-            }],
+            all_enc_shares: vec![
+                crate::WireEncryptedShare {
+                    c1: vec![0x24; 32],
+                    c2: vec![0x25; 32],
+                    share_index: 0,
+                },
+                crate::WireEncryptedShare {
+                    c1: vec![0x28; 32],
+                    c2: vec![0x29; 32],
+                    share_index: 1,
+                },
+            ],
             share_comms: vec![vec![0x26; 32]],
             primary_blind: vec![0x27; 32],
         };
@@ -633,8 +639,13 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value.get("tree_position").unwrap().as_u64().unwrap(), 99);
         assert_eq!(value.get("submit_at").unwrap().as_u64().unwrap(), 123);
-        assert!(value.get("enc_share").is_some());
-        assert!(value.get("all_enc_shares").is_some());
+        assert_eq!(value["enc_share"]["share_index"].as_u64().unwrap(), 1);
+        assert_eq!(value["enc_share"]["c1"], b64(&payload.enc_share.c1));
+        assert_eq!(value["enc_share"]["c2"], b64(&payload.enc_share.c2));
+        assert!(
+            value.get("all_enc_shares").is_none(),
+            "helper wire JSON does not include all_enc_shares"
+        );
     }
 
     #[test]

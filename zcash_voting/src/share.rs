@@ -343,6 +343,11 @@ mod tests {
         assert_eq!(value["share_index"].as_u64().unwrap(), 1);
         assert_eq!(value["tree_position"].as_u64().unwrap(), 999);
         assert_eq!(value["submit_at"].as_u64().unwrap(), 123);
+        assert_eq!(value["enc_share"]["share_index"].as_u64().unwrap(), 1);
+        assert!(
+            value.get("all_enc_shares").is_none(),
+            "recovered helper wire JSON does not include all_enc_shares"
+        );
     }
 
     #[test]
