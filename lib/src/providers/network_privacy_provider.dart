@@ -2,9 +2,12 @@ import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/layout/app_form_factor.dart';
+import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/network_privacy.dart' as rust_network_privacy;
@@ -94,6 +97,7 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   const RustNetworkPrivacyRuntime({
     this.configureRuntime = rust_network_privacy.configureNetworkPrivacy,
     this.resolveTorDirectory = getTorDataDirectoryPath,
+    this.excludeTorDirectoryFromBackup = _excludeFromDeviceBackup,
   });
 
   final Future<rust_types.NetworkPrivacyStatus> Function({
@@ -102,6 +106,7 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   })
   configureRuntime;
   final Future<String> Function() resolveTorDirectory;
+  final Future<void> Function(String directory) excludeTorDirectoryFromBackup;
 
   @override
   void beginEnable() {
@@ -119,11 +124,56 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   Future<NetworkPrivacyConnectionStatus> configure({
     required bool enabled,
   }) async {
-    final status = await configureRuntime(
-      enabled: enabled,
-      torDirectory: enabled ? await resolveTorDirectory() : '',
-    );
-    return _connectionStatus(status);
+    final torDirectory = enabled ? await resolveTorDirectory() : '';
+    // Arti's directory records which guards this wallet chose. Restoring it
+    // onto a second device would carry that choice across, so keep it out of
+    // device backups and let a restored install pick fresh guards.
+    //
+    // Marked before the bootstrap, because from its first moment the directory
+    // holds guard state and the process can be killed at any point during it —
+    // and again afterwards, because the mark is best-effort and the run that
+    // matters is the one that succeeds.
+    await _markTorDirectory(enabled, torDirectory);
+    try {
+      final status = await configureRuntime(
+        enabled: enabled,
+        torDirectory: torDirectory,
+      );
+      return _connectionStatus(status);
+    } finally {
+      await _markTorDirectory(enabled, torDirectory);
+    }
+  }
+
+  Future<void> _markTorDirectory(bool enabled, String torDirectory) async {
+    if (!enabled) return;
+    try {
+      await excludeTorDirectoryFromBackup(torDirectory);
+    } catch (error, stackTrace) {
+      // A weaker backup posture is not a reason to fail the route.
+      debugPrint(
+        'RustNetworkPrivacyRuntime: failed to keep the Tor directory out '
+        'of device backups: $error\n$stackTrace',
+      );
+    }
+  }
+}
+
+const _deviceBackupChannel = MethodChannel('com.zcash.wallet/network_privacy');
+
+Future<void> _excludeFromDeviceBackup(String directory) async {
+  // Android has no runtime equivalent. `android:allowBackup="false"` in the
+  // manifest keeps app files out of cloud backup, but from targetSdk 31 that
+  // attribute no longer covers device-to-device transfer; excluding the
+  // directory from a phone-to-phone migration takes `<device-transfer>`
+  // data-extraction rules in the manifest, which the app does not carry.
+  if (!Platform.isIOS) return;
+  try {
+    await _deviceBackupChannel.invokeMethod<void>('excludeFromBackup', {
+      'path': directory,
+    });
+  } on MissingPluginException {
+    // Test hosts and older builds have no native side to ask.
   }
 }
 
@@ -294,6 +344,26 @@ void _throwIfDirectDrainFailed(_NetworkPrivacyDrainFailure? failure) {
   Error.throwWithStackTrace(failure.error, failure.stackTrace);
 }
 
+/// Whether a (saved route, enforced route) pair is one a background wake can be
+/// trusted with.
+///
+/// The saved value is the only thing a process that never ran Dart has to go
+/// on. A background wake reads it, declares that route to Rust, and — finding
+/// direct — queries lightwalletd and broadcasts already-signed transactions
+/// over a direct connection. So the saved value may be stricter than what this
+/// process is enforcing, never laxer: a wake that declares Tor and cannot
+/// afford it defers, which costs a delay, while a wake that declares direct
+/// against a session enforcing Tor leaks.
+///
+/// A route change therefore persists in whichever order keeps this true at
+/// every point in between: tightening writes before the runtime switch, so a
+/// failure in between leaves the strict value behind; loosening writes after
+/// it, so the lax value never precedes the runtime it describes.
+bool networkPrivacyPersistedRouteIsSafe({
+  required bool persistedTorEnabled,
+  required bool runtimeTorDesired,
+}) => persistedTorEnabled || !runtimeTorDesired;
+
 NetworkPrivacyConnectionStatus _connectionStatus(
   rust_types.NetworkPrivacyStatus status,
 ) => switch (status) {
@@ -323,6 +393,55 @@ var _startupActivationSuperseded = false;
 /// update session to finish.
 const _kStartupNativeUpdatePauseTimeout = Duration(seconds: 10);
 
+/// Ties the process-wide Tor dormancy intent to the app lifecycle.
+///
+/// Owned here rather than by a provider because a provider only exists once
+/// something reads it, and the launch that most needs this one reads the least:
+/// a locked app routes to `/unlock`, the keep-awake providers return early on
+/// `requiresUnlock` before they reach `syncProvider`, and the unlock screens
+/// only read it when the user submits. Meanwhile the persisted route is applied
+/// regardless of the lock, so Tor can be up and padding its guard connection
+/// with nothing constructed to put it to sleep when the user walks away.
+///
+/// Rust holds the intent process-wide and applies it to the client whenever one
+/// appears, so an intent stated before a bootstrap finishes is not lost.
+AppLifecycleListener? _torDormancyLifecycle;
+
+/// Starts the lifecycle owner, replacing any previous one.
+///
+/// Sleeping is asked for only where backgrounding actually stops this process
+/// working: a desktop app with every window hidden keeps polling, and a client
+/// put to sleep underneath it would pay a circuit build on each of those polls.
+void startTorDormancyLifecycle({
+  void Function({required bool dormant}) setTorDormant =
+      rust_network_privacy.setNetworkPrivacyDormant,
+  AppFormFactor formFactor = kAppFormFactor,
+}) {
+  _torDormancyLifecycle?.dispose();
+  _torDormancyLifecycle = AppLifecycleListener(
+    // Asked for on every foreground entry, not only after a sleep this owner
+    // requested: a request that outlived its asker — issued before Tor
+    // finished bootstrapping, so it lands on the client only once that client
+    // exists — would otherwise keep the client asleep for the whole foreground
+    // session.
+    onResume: () => setTorDormant(dormant: false),
+    onHide: () {
+      if (!canRunAppProcessWork(
+        isInForeground: false,
+        formFactor: formFactor,
+      )) {
+        setTorDormant(dormant: true);
+      }
+    },
+  );
+}
+
+@visibleForTesting
+void disposeTorDormancyLifecycle() {
+  _torDormancyLifecycle?.dispose();
+  _torDormancyLifecycle = null;
+}
+
 /// Applies the persisted route before app bootstrap or providers can start any
 /// network work. Failure is retained as an enabled/failed state; Rust has
 /// already switched to fail-closed routing at that point.
@@ -342,6 +461,10 @@ Future<void> initializeNetworkPrivacyRuntime({
 }) async {
   _pendingStartupActivation = null;
   _startupActivationSuperseded = false;
+  // Before the route is applied, and outside the try: the owner has to exist
+  // on every launch, including the one where reading the preference throws and
+  // this process goes fail-closed Tor without ever being asked.
+  startTorDormancyLifecycle();
   late final bool enabled;
   try {
     enabled = await store.readTorEnabled();

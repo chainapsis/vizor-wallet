@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Arti's directory records which guards this wallet chose. Carrying it to a
+  second device would carry that choice with it, so a transferred install picks
+  fresh guards at the cost of one bootstrap.
+
+  `allowBackup="false"` already covers cloud backup, but from target SDK 31
+  device-to-device transfer is governed here instead and defaults to including
+  app data. `domain="file"` is getFilesDir(), which is what
+  getApplicationSupportDirectory() resolves to on Android.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="tor" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="tor" />
+    </device-transfer>
+</data-extraction-rules>
