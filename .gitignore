@@ -1,4 +1,5 @@
 /target
+.vscode/
 
 # zcash-voting-ffi build artifacts
 zcash-voting-ffi/target
