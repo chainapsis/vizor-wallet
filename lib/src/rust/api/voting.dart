@@ -861,6 +861,9 @@ class ApiVotingRoundContext {
   final String accountUuid;
   final int? maxRealNotesPerBundle;
 
+  /// Authenticated PIR geometry expected from the selected endpoint.
+  final PirLayout pirLayout;
+
   const ApiVotingRoundContext({
     required this.dbPath,
     required this.lightwalletdUrl,
@@ -870,6 +873,7 @@ class ApiVotingRoundContext {
     this.sessionJson,
     required this.accountUuid,
     this.maxRealNotesPerBundle,
+    required this.pirLayout,
   });
 
   @override
@@ -881,7 +885,8 @@ class ApiVotingRoundContext {
       roundName.hashCode ^
       sessionJson.hashCode ^
       accountUuid.hashCode ^
-      maxRealNotesPerBundle.hashCode;
+      maxRealNotesPerBundle.hashCode ^
+      pirLayout.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -895,7 +900,8 @@ class ApiVotingRoundContext {
           roundName == other.roundName &&
           sessionJson == other.sessionJson &&
           accountUuid == other.accountUuid &&
-          maxRealNotesPerBundle == other.maxRealNotesPerBundle;
+          maxRealNotesPerBundle == other.maxRealNotesPerBundle &&
+          pirLayout == other.pirLayout;
 }
 
 class VotingConfigResolution {

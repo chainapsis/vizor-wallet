@@ -8601,8 +8601,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ApiVotingRoundContext(
       dbPath: dco_decode_String(arr[0]),
       lightwalletdUrl: dco_decode_String(arr[1]),
@@ -8612,6 +8612,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sessionJson: dco_decode_opt_String(arr[5]),
       accountUuid: dco_decode_String(arr[6]),
       maxRealNotesPerBundle: dco_decode_opt_box_autoadd_u_32(arr[7]),
+      pirLayout: dco_decode_pir_layout(arr[8]),
     );
   }
 
@@ -10025,6 +10026,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PirLayout dco_decode_pir_layout(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PirLayout(
+      pirDepth: dco_decode_u_32(arr[0]),
+      tier0Layers: dco_decode_u_32(arr[1]),
+      tier1Layers: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
   ProposalResult dco_decode_proposal_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -10057,18 +10071,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return ResolvedVotingConfig(
       sourceFingerprint: dco_decode_String(arr[0]),
       trustedKeyFingerprint: dco_decode_String(arr[1]),
       dynamicConfigFingerprint: dco_decode_String(arr[2]),
       voteServers: dco_decode_list_service_endpoint(arr[3]),
       pirEndpoints: dco_decode_list_service_endpoint(arr[4]),
-      supportedVersions: dco_decode_supported_versions(arr[5]),
-      authenticatedRounds: dco_decode_list_authenticated_round(arr[6]),
-      skippedRoundIds: dco_decode_list_String(arr[7]),
-      conditions: dco_decode_list_config_condition(arr[8]),
+      pirLayout: dco_decode_pir_layout(arr[5]),
+      supportedVersions: dco_decode_supported_versions(arr[6]),
+      authenticatedRounds: dco_decode_list_authenticated_round(arr[7]),
+      skippedRoundIds: dco_decode_list_String(arr[8]),
+      conditions: dco_decode_list_config_condition(arr[9]),
     );
   }
 
@@ -10993,6 +11008,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_maxRealNotesPerBundle = sse_decode_opt_box_autoadd_u_32(
       deserializer,
     );
+    var var_pirLayout = sse_decode_pir_layout(deserializer);
     return ApiVotingRoundContext(
       dbPath: var_dbPath,
       lightwalletdUrl: var_lightwalletdUrl,
@@ -11002,6 +11018,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sessionJson: var_sessionJson,
       accountUuid: var_accountUuid,
       maxRealNotesPerBundle: var_maxRealNotesPerBundle,
+      pirLayout: var_pirLayout,
     );
   }
 
@@ -12979,6 +12996,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PirLayout sse_decode_pir_layout(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_pirDepth = sse_decode_u_32(deserializer);
+    var var_tier0Layers = sse_decode_u_32(deserializer);
+    var var_tier1Layers = sse_decode_u_32(deserializer);
+    return PirLayout(
+      pirDepth: var_pirDepth,
+      tier0Layers: var_tier0Layers,
+      tier1Layers: var_tier1Layers,
+    );
+  }
+
+  @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_proposalId = sse_decode_u_64(deserializer);
@@ -13018,6 +13048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_dynamicConfigFingerprint = sse_decode_String(deserializer);
     var var_voteServers = sse_decode_list_service_endpoint(deserializer);
     var var_pirEndpoints = sse_decode_list_service_endpoint(deserializer);
+    var var_pirLayout = sse_decode_pir_layout(deserializer);
     var var_supportedVersions = sse_decode_supported_versions(deserializer);
     var var_authenticatedRounds = sse_decode_list_authenticated_round(
       deserializer,
@@ -13030,6 +13061,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       dynamicConfigFingerprint: var_dynamicConfigFingerprint,
       voteServers: var_voteServers,
       pirEndpoints: var_pirEndpoints,
+      pirLayout: var_pirLayout,
       supportedVersions: var_supportedVersions,
       authenticatedRounds: var_authenticatedRounds,
       skippedRoundIds: var_skippedRoundIds,
@@ -14087,6 +14119,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.sessionJson, serializer);
     sse_encode_String(self.accountUuid, serializer);
     sse_encode_opt_box_autoadd_u_32(self.maxRealNotesPerBundle, serializer);
+    sse_encode_pir_layout(self.pirLayout, serializer);
   }
 
   @protected
@@ -15710,6 +15743,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_pir_layout(PirLayout self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.pirDepth, serializer);
+    sse_encode_u_32(self.tier0Layers, serializer);
+    sse_encode_u_32(self.tier1Layers, serializer);
+  }
+
+  @protected
   void sse_encode_proposal_result(
     ProposalResult self,
     SseSerializer serializer,
@@ -15743,6 +15784,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.dynamicConfigFingerprint, serializer);
     sse_encode_list_service_endpoint(self.voteServers, serializer);
     sse_encode_list_service_endpoint(self.pirEndpoints, serializer);
+    sse_encode_pir_layout(self.pirLayout, serializer);
     sse_encode_supported_versions(self.supportedVersions, serializer);
     sse_encode_list_authenticated_round(self.authenticatedRounds, serializer);
     sse_encode_list_String(self.skippedRoundIds, serializer);

@@ -65,6 +65,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       sessionJson: context.round.sessionJson,
       accountUuid: context.accountUuid,
       maxRealNotesPerBundle: null,
+      pirLayout: context.config.pirLayout,
     );
   }
 

@@ -6923,6 +6923,12 @@ const _: fn() = || {
         let _: u32 = NextStepView.share_index;
     }
     {
+        let PirLayout = None::<zcash_voting::config::PirLayout>.unwrap();
+        let _: u32 = PirLayout.pir_depth;
+        let _: u32 = PirLayout.tier0_layers;
+        let _: u32 = PirLayout.tier1_layers;
+    }
+    {
         let RecoverableCommitmentBundle =
             None::<zcash_voting::wire::RecoverableCommitmentBundle>.unwrap();
         let _: u32 = RecoverableCommitmentBundle.bundle_index;
@@ -6937,6 +6943,7 @@ const _: fn() = || {
         let _: String = ResolvedVotingConfig.dynamic_config_fingerprint;
         let _: Vec<zcash_voting::config::ServiceEndpoint> = ResolvedVotingConfig.vote_servers;
         let _: Vec<zcash_voting::config::ServiceEndpoint> = ResolvedVotingConfig.pir_endpoints;
+        let _: zcash_voting::config::PirLayout = ResolvedVotingConfig.pir_layout;
         let _: zcash_voting::config::SupportedVersions = ResolvedVotingConfig.supported_versions;
         let _: Vec<zcash_voting::config::AuthenticatedRound> =
             ResolvedVotingConfig.authenticated_rounds;
@@ -7341,6 +7348,7 @@ impl SseDecode for crate::api::voting::ApiVotingRoundContext {
         let mut var_sessionJson = <Option<String>>::sse_decode(deserializer);
         let mut var_accountUuid = <String>::sse_decode(deserializer);
         let mut var_maxRealNotesPerBundle = <Option<u32>>::sse_decode(deserializer);
+        let mut var_pirLayout = <zcash_voting::config::PirLayout>::sse_decode(deserializer);
         return crate::api::voting::ApiVotingRoundContext {
             db_path: var_dbPath,
             lightwalletd_url: var_lightwalletdUrl,
@@ -7350,6 +7358,7 @@ impl SseDecode for crate::api::voting::ApiVotingRoundContext {
             session_json: var_sessionJson,
             account_uuid: var_accountUuid,
             max_real_notes_per_bundle: var_maxRealNotesPerBundle,
+            pir_layout: var_pirLayout,
         };
     }
 }
@@ -9152,6 +9161,20 @@ impl SseDecode for crate::api::sync::OrchardMigrationPrivatePlan {
     }
 }
 
+impl SseDecode for zcash_voting::config::PirLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_pirDepth = <u32>::sse_decode(deserializer);
+        let mut var_tier0Layers = <u32>::sse_decode(deserializer);
+        let mut var_tier1Layers = <u32>::sse_decode(deserializer);
+        return zcash_voting::config::PirLayout {
+            pir_depth: var_pirDepth,
+            tier0_layers: var_tier0Layers,
+            tier1_layers: var_tier1Layers,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::ProposalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9192,6 +9215,7 @@ impl SseDecode for zcash_voting::config::ResolvedVotingConfig {
             <Vec<zcash_voting::config::ServiceEndpoint>>::sse_decode(deserializer);
         let mut var_pirEndpoints =
             <Vec<zcash_voting::config::ServiceEndpoint>>::sse_decode(deserializer);
+        let mut var_pirLayout = <zcash_voting::config::PirLayout>::sse_decode(deserializer);
         let mut var_supportedVersions =
             <zcash_voting::config::SupportedVersions>::sse_decode(deserializer);
         let mut var_authenticatedRounds =
@@ -9205,6 +9229,7 @@ impl SseDecode for zcash_voting::config::ResolvedVotingConfig {
             dynamic_config_fingerprint: var_dynamicConfigFingerprint,
             vote_servers: var_voteServers,
             pir_endpoints: var_pirEndpoints,
+            pir_layout: var_pirLayout,
             supported_versions: var_supportedVersions,
             authenticated_rounds: var_authenticatedRounds,
             skipped_round_ids: var_skippedRoundIds,
@@ -10486,6 +10511,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingRoundContext
             self.session_json.into_into_dart().into_dart(),
             self.account_uuid.into_into_dart().into_dart(),
             self.max_real_notes_per_bundle.into_into_dart().into_dart(),
+            self.pir_layout.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -11760,6 +11786,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::OrchardMigrationPrivate
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::PirLayout> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.pir_depth.into_into_dart().into_dart(),
+            self.0.tier0_layers.into_into_dart().into_dart(),
+            self.0.tier1_layers.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::config::PirLayout>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::config::PirLayout>>
+    for zcash_voting::config::PirLayout
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::config::PirLayout> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::ProposalResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -11816,6 +11864,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::Resolved
                 .into_dart(),
             self.0.vote_servers.into_into_dart().into_dart(),
             self.0.pir_endpoints.into_into_dart().into_dart(),
+            self.0.pir_layout.into_into_dart().into_dart(),
             self.0.supported_versions.into_into_dart().into_dart(),
             self.0.authenticated_rounds.into_into_dart().into_dart(),
             self.0.skipped_round_ids.into_into_dart().into_dart(),
@@ -13058,6 +13107,7 @@ impl SseEncode for crate::api::voting::ApiVotingRoundContext {
         <Option<String>>::sse_encode(self.session_json, serializer);
         <String>::sse_encode(self.account_uuid, serializer);
         <Option<u32>>::sse_encode(self.max_real_notes_per_bundle, serializer);
+        <zcash_voting::config::PirLayout>::sse_encode(self.pir_layout, serializer);
     }
 }
 
@@ -14369,6 +14419,15 @@ impl SseEncode for crate::api::sync::OrchardMigrationPrivatePlan {
     }
 }
 
+impl SseEncode for zcash_voting::config::PirLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.pir_depth, serializer);
+        <u32>::sse_encode(self.tier0_layers, serializer);
+        <u32>::sse_encode(self.tier1_layers, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::ProposalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -14396,6 +14455,7 @@ impl SseEncode for zcash_voting::config::ResolvedVotingConfig {
         <String>::sse_encode(self.dynamic_config_fingerprint, serializer);
         <Vec<zcash_voting::config::ServiceEndpoint>>::sse_encode(self.vote_servers, serializer);
         <Vec<zcash_voting::config::ServiceEndpoint>>::sse_encode(self.pir_endpoints, serializer);
+        <zcash_voting::config::PirLayout>::sse_encode(self.pir_layout, serializer);
         <zcash_voting::config::SupportedVersions>::sse_encode(self.supported_versions, serializer);
         <Vec<zcash_voting::config::AuthenticatedRound>>::sse_encode(
             self.authenticated_rounds,

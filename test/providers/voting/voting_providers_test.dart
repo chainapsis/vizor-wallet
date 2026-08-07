@@ -1366,44 +1366,67 @@ void main() {
     expect(rust.delegationBundleCalls, isEmpty);
   });
 
-  test('wallet sync guard waits before delegation setup', () async {
-    final rust = FakeVotingRustApi();
-    final readiness = FakeVotingWalletSyncReadinessChecker(
-      responses: const [
-        VotingWalletSyncReadiness(
-          scannedHeight: 122,
-          snapshotHeight: 123,
-          chainTipHeight: 130,
+  test(
+    'wallet sync guard waits and forwards the resolved PIR layout',
+    () async {
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            pirLayout: const {
+              'pir_depth': 18,
+              'tier0_layers': 11,
+              'tier1_layers': 7,
+            },
+          ),
         ),
-        VotingWalletSyncReadiness(
-          scannedHeight: 123,
-          snapshotHeight: 123,
-          chainTipHeight: 130,
+      );
+      final readiness = FakeVotingWalletSyncReadinessChecker(
+        responses: const [
+          VotingWalletSyncReadiness(
+            scannedHeight: 122,
+            snapshotHeight: 123,
+            chainTipHeight: 130,
+          ),
+          VotingWalletSyncReadiness(
+            scannedHeight: 123,
+            snapshotHeight: 123,
+            chainTipHeight: 130,
+          ),
+        ],
+      );
+      var syncStartCalls = 0;
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncStarter: () {
+          syncStartCalls++;
+        },
+        walletSyncPollInterval: Duration.zero,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(readiness.calls, 2);
+      expect(syncStartCalls, 1);
+      expect(rust.setupCalls, 1);
+      expect(
+        rust.lastPirLayout,
+        const rust_config.PirLayout(
+          pirDepth: 18,
+          tier0Layers: 11,
+          tier1Layers: 7,
         ),
-      ],
-    );
-    var syncStartCalls = 0;
-    final container = _sessionContainer(
-      rust: rust,
-      walletSyncReadinessChecker: readiness,
-      walletSyncStarter: () {
-        syncStartCalls++;
-      },
-      walletSyncPollInterval: Duration.zero,
-    );
-    addTearDown(container.dispose);
-
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .prepareDelegation();
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
-
-    expect(readiness.calls, 2);
-    expect(syncStartCalls, 1);
-    expect(rust.setupCalls, 1);
-    expect(state.phase, VotingSessionPhase.readyToDelegate);
-  });
+      );
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+    },
+  );
 
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
@@ -5492,6 +5515,11 @@ rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
     pirEndpoints: const [
       rust_config.ServiceEndpoint(url: 'https://pir.example', label: 'pir'),
     ],
+    pirLayout: const rust_config.PirLayout(
+      pirDepth: 19,
+      tier0Layers: 12,
+      tier1Layers: 7,
+    ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],
       voteProtocol: 'v0',
@@ -5644,6 +5672,7 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
         ),
       )
       .toList(growable: false);
+  final pirLayout = dynamicJson['pir_layout'] as Map<String, dynamic>;
   final versions = dynamicJson['supported_versions'] as Map<String, dynamic>;
   final dynamicRounds = dynamicJson['rounds'] as Map<String, dynamic>;
   final effectiveAuthenticatedRoundIds =
@@ -5676,6 +5705,11 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
     dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
     voteServers: voteServers,
     pirEndpoints: pirEndpoints,
+    pirLayout: rust_config.PirLayout(
+      pirDepth: (pirLayout['pir_depth'] as num).toInt(),
+      tier0Layers: (pirLayout['tier0_layers'] as num).toInt(),
+      tier1Layers: (pirLayout['tier1_layers'] as num).toInt(),
+    ),
     supportedVersions: rust_config.SupportedVersions(
       pir: (versions['pir'] as List<dynamic>)
           .map((value) => value.toString())
@@ -5711,12 +5745,18 @@ Map<String, dynamic> dynamicConfigJson({
   List<Map<String, String>> voteServers = const [
     {'url': 'https://voting.example', 'label': 'primary'},
   ],
+  Map<String, int> pirLayout = const {
+    'pir_depth': 19,
+    'tier0_layers': 12,
+    'tier1_layers': 7,
+  },
 }) => {
   'config_version': 1,
   'vote_servers': voteServers,
   'pir_endpoints': [
     {'url': 'https://pir.example', 'label': 'pir'},
   ],
+  'pir_layout': pirLayout,
   'supported_versions': {
     'pir': ['v0'],
     'vote_protocol': 'v0',
@@ -6369,6 +6409,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   rust_wire.VotingRoundParams? lastTrustedRoundParams;
   rust_wire.VotingRoundParams? lastSetupRoundParams;
+  rust_config.PirLayout? lastPirLayout;
   int trustedRoundParamsCalls = 0;
   int eligibilityCheckCalls = 0;
   int generateVotingHotkeyCalls = 0;
@@ -6403,6 +6444,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     lastSetupRoundParams = ctx.roundParams;
+    lastPirLayout = ctx.pirLayout;
     accountUuids.add(ctx.accountUuid);
     _activeSetups++;
     if (_activeSetups > maxConcurrentSetups) {
