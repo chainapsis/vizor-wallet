@@ -142,6 +142,46 @@ pub(crate) async fn open_isolated_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, true).await
 }
 
+/// Opens a lightwalletd channel that is always direct, bypassing the
+/// process-wide route policy entirely.
+///
+/// This is the transport for iOS background migration work, and it is pinned
+/// direct as a product decision: Tor covers the app's foreground traffic, and
+/// a background pass never brings Tor up or borrows the foreground's client —
+/// a launch where Dart never ran has no client, and a warm process may drop
+/// its client at any moment. Routing background work through the policy would
+/// therefore only convert it into failures whenever Tor is on. It uses a
+/// plain connector rather than the leased one, so a foreground toggle to Tor
+/// does not abort a background broadcast already in flight.
+///
+/// Nothing in the foreground may use this: every foreground path goes through
+/// [`open_lwd_channel`] or [`open_isolated_lwd_channel`], which respect the
+/// user's chosen route and fail closed while Tor is starting or broken.
+pub(crate) async fn open_background_direct_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+    RUSTLS_INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+
+    let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+        .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
+    let endpoint = if lightwalletd_url.starts_with("https://") {
+        endpoint
+            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
+    } else {
+        endpoint
+    };
+    let channel = endpoint
+        .connect()
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
+    Ok(CompactTxStreamerClient::new(channel))
+}
+
 async fn open_lwd_channel_for_route(
     lightwalletd_url: &str,
     isolated: bool,
@@ -709,6 +749,27 @@ mod tests {
                 if message.contains("get_address_utxos_stream")
                     && message.contains("timed out")
         ));
+    }
+
+    #[tokio::test]
+    async fn background_transport_stays_direct_while_tor_is_desired() {
+        // The background lane is pinned direct as a product decision: Tor
+        // covers foreground traffic, and a background pass never brings Tor
+        // up or borrows the foreground's client. Routed through the policy,
+        // this call would be refused the moment Tor was desired; pinned, it
+        // reaches the socket and fails only because nothing is listening.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+
+        let error = open_background_direct_lwd_channel("http://127.0.0.1:1")
+            .await
+            .expect_err("nothing listens on port 1");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("gRPC connect failed"),
+            "expected a transport failure, got a policy refusal: {message}"
+        );
     }
 
     #[tokio::test]
