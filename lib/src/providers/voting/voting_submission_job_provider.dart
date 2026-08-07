@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import '../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../account_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
@@ -32,6 +35,8 @@ class VotingSubmissionJobState {
     this.errorMessage,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
+    this.keystoneBatchMessageCount = 0,
+    this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
@@ -45,6 +50,8 @@ class VotingSubmissionJobState {
   final String? errorMessage;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
+  final int keystoneBatchMessageCount;
+  final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final List<rust_wire.DraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
@@ -66,6 +73,8 @@ class VotingSubmissionJobState {
     bool clearErrorMessage = false,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
+    int? keystoneBatchMessageCount,
+    int? keystoneBatchTotalCount,
     String? keystoneQrError,
     bool clearKeystoneQrError = false,
     List<rust_wire.DraftVote>? pendingDraftVotes,
@@ -84,6 +93,10 @@ class VotingSubmissionJobState {
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
+      keystoneBatchMessageCount:
+          keystoneBatchMessageCount ?? this.keystoneBatchMessageCount,
+      keystoneBatchTotalCount:
+          keystoneBatchTotalCount ?? this.keystoneBatchTotalCount,
       keystoneQrError: clearKeystoneQrError
           ? null
           : keystoneQrError ?? this.keystoneQrError,
@@ -204,13 +217,13 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     state = state.removeJobKey(key);
   }
 
-  Future<void> handleKeystoneSignedPczt(
+  Future<void> handleKeystoneBatchSignResponse(
     VotingSessionKey key,
-    List<int> signedPczt,
+    List<int> responseCbor,
   ) {
     return ref
         .read(votingSubmissionJobProvider(key).notifier)
-        .handleKeystoneSignedPczt(signedPczt);
+        .handleKeystoneBatchSignResponse(responseCbor);
   }
 
   Future<void> skipRemainingKeystoneBundles(VotingSessionKey key) {
@@ -230,6 +243,21 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
   }
 }
 
+class _VotingKeystoneSigningRound {
+  const _VotingKeystoneSigningRound({
+    required this.requestId,
+    required this.requests,
+  });
+
+  final String requestId;
+  final List<rust_delegate.KeystoneSigningRequest> requests;
+
+  List<String> get messageIds => [
+    for (final request in requests)
+      _votingKeystoneMessageId(request.bundleIndex),
+  ];
+}
+
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   VotingSubmissionJobNotifier(this._key);
 
@@ -238,6 +266,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   ProviderSubscription<AsyncValue<VotingSessionState>>? _sessionSubscription;
   VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
+  _VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
 
   @override
@@ -258,6 +287,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   Future<void> retry() async {
     _releaseGuard();
+    _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key);
     _startJob(_key);
   }
@@ -267,6 +297,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
+    _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
   }
 
@@ -274,6 +305,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _cancelCompletionPoll();
     _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
     _retainSession(key);
+    _keystoneSigningRound = null;
     final sessionNotifier = ref.read(
       votingSubmissionSessionProvider(key).notifier,
     );
@@ -287,16 +319,65 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     unawaited(_run(key: key, generation: generation));
   }
 
-  Future<void> handleKeystoneSignedPczt(List<int> signedPczt) async {
+  Future<void> handleKeystoneBatchSignResponse(List<int> responseCbor) async {
     final job = state;
     final key = job.key;
-    if (key == null || !job.isInFlight || signedPczt.isEmpty) return;
+    final signingRound = _keystoneSigningRound;
+    if (key == null ||
+        !job.isInFlight ||
+        responseCbor.isEmpty ||
+        signingRound == null) {
+      return;
+    }
     final generation = job.generation;
+    final sessionNotifier = ref.read(
+      votingSubmissionSessionProvider(key).notifier,
+    );
+    late final List<VotingKeystoneBatchSignature> batchSignatures;
     try {
-      final sessionNotifier = ref.read(
-        votingSubmissionSessionProvider(key).notifier,
+      final decoded = await rust_keystone.decodeZcashBatchSignResponse(
+        cbor: responseCbor,
+        expectedRequestId: signingRound.requestId,
+        messageIds: signingRound.messageIds,
       );
-      await sessionNotifier.handleKeystoneSignedPczt(signedPczt);
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      if (decoded.results.length != signingRound.requests.length) {
+        throw StateError(
+          'Keystone returned a different number of voting signatures than requested.',
+        );
+      }
+
+      batchSignatures = <VotingKeystoneBatchSignature>[];
+      for (var index = 0; index < signingRound.requests.length; index++) {
+        final request = signingRound.requests[index];
+        final result = decoded.results[index];
+        final expectedMessageId = signingRound.messageIds[index];
+        if (!listEquals(result.messageId, utf8.encode(expectedMessageId)) ||
+            result.sigs.length != 1) {
+          throw StateError(
+            'Keystone returned signatures that do not match this voting request.',
+          );
+        }
+        final signature = result.sigs.single;
+        batchSignatures.add(
+          VotingKeystoneBatchSignature(
+            bundleIndex: request.bundleIndex,
+            pool: signature.pool,
+            actionIndex: signature.actionIndex,
+            signature: signature.sig,
+          ),
+        );
+      }
+    } catch (error) {
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      await sessionNotifier.reportKeystoneScanError(
+        'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.',
+      );
+      return;
+    }
+
+    try {
+      await sessionNotifier.handleKeystoneBatchSignatures(batchSignatures);
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final session = _sessionForJob(key);
       if (session == null) return;
@@ -304,12 +385,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failFromSession(key: key, generation: generation, session: session);
         return;
       }
-      final request = session.keystoneSigningRequest;
-      if (request != null) {
+      final requests = session.keystoneSigningRequests;
+      if (requests.isNotEmpty) {
         await _updateKeystoneQr(
           key: key,
           generation: generation,
-          request: request,
+          requests: requests,
         );
         return;
       }
@@ -626,12 +707,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failFromSession(key: key, generation: generation, session: session);
       return;
     }
-    final request = session.keystoneSigningRequest;
-    if (request != null) {
+    final requests = session.keystoneSigningRequests;
+    if (requests.isNotEmpty) {
       await _updateKeystoneQr(
         key: key,
         generation: generation,
-        request: request,
+        requests: requests,
       );
       return;
     }
@@ -645,23 +726,51 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> _updateKeystoneQr({
     required VotingSessionKey key,
     required int generation,
-    required rust_delegate.KeystoneSigningRequest request,
+    required List<rust_delegate.KeystoneSigningRequest> requests,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    if (requests.isEmpty) {
+      throw StateError('No Keystone voting requests are ready to encode.');
+    }
+    _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.waitingForKeystone,
       keystoneUrParts: const [],
+      keystoneBatchMessageCount: 0,
+      keystoneBatchTotalCount: requests.length,
       clearKeystoneQrError: true,
     );
     try {
-      final urParts = await rust_keystone.encodePcztUrParts(
-        pcztBytes: request.redactedPcztBytes,
+      final baseRequestId = _votingKeystoneRequestId(key, requests);
+      final allMessages = _votingKeystoneBatchMessages(requests);
+      final roundCounts = await rust_keystone.zcashSignBatchRoundMessageCounts(
+        requestId: baseRequestId,
+        messages: allMessages,
+        maxMessages: _votingKeystoneBatchMaxMessages,
+      );
+      if (roundCounts.isEmpty || roundCounts.first <= 0) {
+        throw StateError('Keystone returned an invalid voting batch plan.');
+      }
+      final messageCount = roundCounts.first;
+      if (messageCount > requests.length) {
+        throw StateError('Keystone voting batch plan exceeds the request.');
+      }
+      final roundRequests = requests.sublist(0, messageCount);
+      final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
+        requestId: baseRequestId,
+        messages: _votingKeystoneBatchMessages(roundRequests),
         maxFragmentLen: BigInt.from(200),
       );
       if (!_isCurrentJob(key: key, generation: generation)) return;
+      _keystoneSigningRound = _VotingKeystoneSigningRound(
+        requestId: baseRequestId,
+        requests: roundRequests,
+      );
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForKeystone,
         keystoneUrParts: urParts,
+        keystoneBatchMessageCount: roundRequests.length,
+        keystoneBatchTotalCount: requests.length,
         clearKeystoneQrError: true,
       );
     } catch (error) {
@@ -836,9 +945,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   void _setRunning({required VotingSessionKey key, required int generation}) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.running,
       keystoneUrParts: const [],
+      keystoneBatchMessageCount: 0,
+      keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
       clearErrorMessage: true,
     );
@@ -850,11 +962,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _releaseGuard();
     _releaseSessionSubscription();
     ref.invalidate(votingSessionProvider(key.roundId));
+    _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.complete,
       clearErrorMessage: true,
       softwareAccountRequired: false,
       keystoneUrParts: const [],
+      keystoneBatchMessageCount: 0,
+      keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
@@ -885,11 +1000,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
+    _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.error,
       errorMessage: message,
       softwareAccountRequired: softwareAccountRequired,
       keystoneUrParts: const [],
+      keystoneBatchMessageCount: 0,
+      keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
@@ -1223,6 +1341,43 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ];
   }
 }
+
+const _votingKeystoneBatchMaxMessages = 40;
+
+String _votingKeystoneMessageId(int bundleIndex) =>
+    'voting-bundle-$bundleIndex';
+
+String _votingKeystoneRequestId(
+  VotingSessionKey key,
+  List<rust_delegate.KeystoneSigningRequest> requests,
+) {
+  final material = <int>[
+    ...utf8.encode('vizor-voting-batch-v1'),
+    0,
+    ...utf8.encode(key.accountUuid),
+    0,
+    ...utf8.encode(key.roundId),
+  ];
+  for (final request in requests) {
+    material
+      ..add(0)
+      ..addAll(utf8.encode(request.bundleIndex.toString()))
+      ..add(0)
+      ..addAll(request.pcztSighash);
+  }
+  return 'vizor-vote-${sha256.convert(material)}';
+}
+
+List<rust_keystone_wallet.ZcashBatchMessageInput> _votingKeystoneBatchMessages(
+  List<rust_delegate.KeystoneSigningRequest> requests,
+) => [
+  for (final request in requests)
+    rust_keystone_wallet.ZcashBatchMessageInput(
+      id: _votingKeystoneMessageId(request.bundleIndex),
+      pcztBytes: request.redactedPcztBytes,
+      expectedSignatureCount: 1,
+    ),
+];
 
 final votingSubmissionJobsProvider =
     NotifierProvider<VotingSubmissionJobsNotifier, VotingSubmissionJobsState>(

@@ -125,15 +125,6 @@ pub struct ApiVotingEligibility {
     pub eligible_weight_zatoshi: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Parsed fields from a Keystone-signed voting PCZT.
-pub struct ParsedSignedVotingPczt {
-    /// ZIP-244 sighash extracted from the signed PCZT.
-    pub sighash: Vec<u8>,
-    /// Orchard SpendAuth signature extracted from the signed PCZT.
-    pub spend_auth_sig: Vec<u8>,
-}
-
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
 /// Binary fields are base64-encoded here so Dart does not duplicate protocol
@@ -774,17 +765,30 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
-/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+/// Build and redact voting PCZTs that Keystone can sign in one or more batches.
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution fails or if PCZT construction and
-/// redaction for the requested bundle fails.
-pub async fn build_keystone_delegation_request(
+/// Returns an error if bundle indexes are empty or duplicated, round input
+/// resolution fails, or PCZT construction and redaction for any requested
+/// bundle fails.
+pub async fn build_keystone_delegation_requests(
     ctx: ApiVotingRoundContext,
     stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
+    bundle_indices: Vec<u32>,
+) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
+    if bundle_indices.is_empty() {
+        return Err("Keystone delegation bundle indexes must not be empty".to_string());
+    }
+    let unique_bundle_count = bundle_indices
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if unique_bundle_count != bundle_indices.len() {
+        return Err("Keystone delegation bundle indexes must be unique".to_string());
+    }
+
     // Resolve static round inputs and validate Keystone-provided hotkey bytes.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
@@ -799,44 +803,28 @@ pub async fn build_keystone_delegation_request(
         voting_network,
     )
     .await?;
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
+    let mut requests = Vec::with_capacity(bundle_indices.len());
+    for bundle_index in bundle_indices {
+        let prepare_params = prepare_delegation_bundle_params(
+            lwd.clone(),
+            ctx.session_json.as_deref(),
+            &ctx.account_uuid,
+            &voting_hotkey,
+            bundle_index,
+            bundle_policy,
+        );
 
-    // Build and redact the PCZT request that Keystone signs out of process.
-    delegation::build_keystone_delegation_request(&ctx.db_path, &ctx.account_uuid, prepare_params)
-        .await
-}
-
-/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
-///
-/// # Errors
-///
-/// Returns an error if the signed PCZT cannot be decoded, does not contain a
-/// spend authorization sighash, or does not contain a SpendAuth signature for
-/// the expected action.
-pub fn parse_signed_voting_pczt(
-    signed_pczt_bytes: Vec<u8>,
-    action_index: u32,
-) -> Result<ParsedSignedVotingPczt, String> {
-    catch(|| {
-        let action_index =
-            usize::try_from(action_index).map_err(|_| "action_index does not fit in usize")?;
-        let sighash = zcash_voting::delegate::pczt_sighash(&signed_pczt_bytes)
-            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))?;
-        let spend_auth_sig =
-            zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
-                .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))?;
-        Ok(ParsedSignedVotingPczt {
-            sighash: sighash.to_vec(),
-            spend_auth_sig: spend_auth_sig.to_vec(),
-        })
-    })
+        // Keep the full PCZT in Rust-side state and return its signer view.
+        requests.push(
+            delegation::build_keystone_delegation_request(
+                &ctx.db_path,
+                &ctx.account_uuid,
+                prepare_params,
+            )
+            .await?,
+        );
+    }
+    Ok(requests)
 }
 
 /// Persist a Keystone signature for one delegation bundle.
@@ -2915,15 +2903,15 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_request_rejects_invalid_network_before_network_io() {
+    fn build_keystone_delegation_requests_reject_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_request(
+            .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "bogus", "wallet-1"),
                 vec![9; 64],
-                0,
+                vec![0],
             ))
             .unwrap_err();
 
@@ -2931,19 +2919,51 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_request_rejects_invalid_hotkey_before_network_io() {
+    fn build_keystone_delegation_requests_reject_invalid_hotkey_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_request(
+            .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 vec![9; 1],
-                0,
+                vec![0],
             ))
             .unwrap_err();
 
         assert!(err.contains("Voting hotkey reconstruction failed"));
+    }
+
+    #[test]
+    fn build_keystone_delegation_requests_rejects_empty_bundle_indexes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(build_keystone_delegation_requests(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                vec![9; 64],
+                vec![],
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("must not be empty"));
+    }
+
+    #[test]
+    fn build_keystone_delegation_requests_rejects_duplicate_bundle_indexes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(build_keystone_delegation_requests(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                vec![9; 64],
+                vec![1, 1],
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("must be unique"));
     }
 
     fn test_vote_recovery_json(

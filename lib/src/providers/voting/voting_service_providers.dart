@@ -370,15 +370,11 @@ abstract interface class VotingRustApi {
 
   Future<List<int>> generateVotingHotkey({required String network});
 
-  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
-  });
-
-  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
+    required List<int> bundleIndices,
   });
 
   Future<void> storeKeystoneSignature({
@@ -654,26 +650,16 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndices,
   }) {
-    return rust_api.buildKeystoneDelegationRequest(
+    return rust_api.buildKeystoneDelegationRequests(
       ctx: ctx,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
-    );
-  }
-
-  @override
-  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  }) {
-    return rust_api.parseSignedVotingPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
+      bundleIndices: bundleIndices,
     );
   }
 

@@ -118,12 +118,12 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   Future<void> _scanKeystoneSignature() async {
     final key = _selectedJobKey();
     if (key == null) return;
-    final signedPczt = await context.push<List<int>>('/voting/keystone/scan');
+    final responseCbor = await context.push<List<int>>('/voting/keystone/scan');
     if (!mounted || _selectedJobKey() != key) return;
-    if (signedPczt == null || signedPczt.isEmpty) return;
+    if (responseCbor == null || responseCbor.isEmpty) return;
     await ref
         .read(votingSubmissionJobsProvider.notifier)
-        .handleKeystoneSignedPczt(key, signedPczt);
+        .handleKeystoneBatchSignResponse(key, responseCbor);
   }
 
   Future<void> _skipRemainingKeystoneBundles() async {
@@ -258,6 +258,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
               canSkipRemainingKeystoneBundles:
                   state.canSkipRemainingKeystoneBundles,
               keystoneUrParts: job?.keystoneUrParts ?? const [],
+              keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
+              keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
               keystoneQrError: job?.keystoneQrError,
               keystoneScanError: state.keystoneScanError,
               walletScannedHeight: state.walletScannedHeight,
@@ -549,6 +551,8 @@ class _StatusContent extends StatelessWidget {
     this.keystoneSigningRequest,
     this.canSkipRemainingKeystoneBundles = false,
     this.keystoneUrParts = const [],
+    this.keystoneBatchMessageCount = 0,
+    this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.keystoneScanError,
     this.walletScannedHeight,
@@ -573,6 +577,8 @@ class _StatusContent extends StatelessWidget {
   final rust_delegate.KeystoneSigningRequest? keystoneSigningRequest;
   final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
+  final int keystoneBatchMessageCount;
+  final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final String? keystoneScanError;
   final int? walletScannedHeight;
@@ -639,6 +645,8 @@ class _StatusContent extends StatelessWidget {
                 _KeystoneSigningPanel(
                   request: keystoneSigningRequest!,
                   urParts: keystoneUrParts,
+                  batchMessageCount: keystoneBatchMessageCount,
+                  batchTotalCount: keystoneBatchTotalCount,
                   qrError: keystoneQrError,
                   scanError: keystoneScanError,
                   canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
@@ -805,6 +813,8 @@ class _KeystoneSigningPanel extends StatefulWidget {
   const _KeystoneSigningPanel({
     required this.request,
     required this.urParts,
+    required this.batchMessageCount,
+    required this.batchTotalCount,
     this.qrError,
     this.scanError,
     this.canSkipRemainingBundles = false,
@@ -814,6 +824,8 @@ class _KeystoneSigningPanel extends StatefulWidget {
 
   final rust_delegate.KeystoneSigningRequest request;
   final List<String> urParts;
+  final int batchMessageCount;
+  final int batchTotalCount;
   final String? qrError;
   final String? scanError;
   final bool canSkipRemainingBundles;
@@ -875,7 +887,12 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
         : urParts.isEmpty
         ? KeystonePcztQrStagePhase.preparing
         : KeystonePcztQrStagePhase.ready;
-    final currentBundle = request.bundleIndex + 1;
+    final batchMessageCount = widget.batchMessageCount;
+    final signingLabel = batchMessageCount <= 0
+        ? 'Preparing voting signatures'
+        : batchMessageCount == 1
+        ? 'Sign 1 voting bundle'
+        : 'Sign $batchMessageCount voting bundles';
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -919,21 +936,26 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                       },
                       child: Column(
                         key: ValueKey<String>(
-                          'bundle-${request.bundleIndex}-${request.bundleCount}',
+                          'batch-${request.bundleIndex}-$batchMessageCount',
                         ),
                         children: [
                           Text(
-                            'Sign bundle $currentBundle of ${request.bundleCount}',
+                            signingLabel,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMediumStrong.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
-                          if (request.bundleCount > 1) ...[
+                          if (batchMessageCount > 0) ...[
                             const SizedBox(height: AppSpacing.xxs),
-                            _KeystoneBundleProgress(
-                              currentBundle: currentBundle,
-                              bundleCount: request.bundleCount,
+                            Text(
+                              widget.batchTotalCount > batchMessageCount
+                                  ? 'This QR signs $batchMessageCount of ${widget.batchTotalCount} remaining bundles'
+                                  : 'One Keystone approval',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodySmall.copyWith(
+                                color: colors.text.secondary,
+                              ),
                             ),
                           ],
                         ],
@@ -965,10 +987,10 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                 color: colors.text.secondary,
               ),
             ),
-            if (_showTransitionCue && request.bundleCount > 1) ...[
+            if (_showTransitionCue) ...[
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Now signing bundle $currentBundle of ${request.bundleCount}',
+                'The next signing batch is ready',
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.accent,
@@ -1010,49 +1032,6 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _KeystoneBundleProgress extends StatelessWidget {
-  const _KeystoneBundleProgress({
-    required this.currentBundle,
-    required this.bundleCount,
-  });
-
-  final int currentBundle;
-  final int bundleCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    if (bundleCount <= 1) return const SizedBox.shrink();
-
-    final segments = List<Widget>.generate(bundleCount, (index) {
-      final isActive = index + 1 == currentBundle;
-      final isComplete = index + 1 < currentBundle;
-      return Expanded(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-          height: 6,
-          decoration: BoxDecoration(
-            color: isActive || isComplete
-                ? colors.icon.regular
-                : colors.border.subtle,
-            borderRadius: BorderRadius.circular(AppRadii.full),
-          ),
-        ),
-      );
-    });
-
-    return Row(
-      children: [
-        for (var i = 0; i < segments.length; i++) ...[
-          if (i > 0) const SizedBox(width: AppSpacing.xxs),
-          segments[i],
-        ],
-      ],
     );
   }
 }

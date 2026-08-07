@@ -332,6 +332,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_keystone_signed_migration_message(dynamic raw);
 
   @protected
+  List<KeystoneSigningRequest> dco_decode_list_keystone_signing_request(
+    dynamic raw,
+  );
+
+  @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -587,9 +592,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
     dynamic raw,
   );
-
-  @protected
-  ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -1151,6 +1153,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<KeystoneSigningRequest> sse_decode_list_keystone_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   );
@@ -1472,11 +1479,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
     SseDeserializer deserializer,
   );
 
@@ -2162,6 +2164,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_keystone_signing_request(
+    List<KeystoneSigningRequest> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
     SseSerializer serializer,
@@ -2551,12 +2559,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_parsed_signed_voting_pczt(
-    ParsedSignedVotingPczt self,
     SseSerializer serializer,
   );
 

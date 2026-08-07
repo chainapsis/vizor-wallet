@@ -34,6 +34,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
 import 'package:zcash_wallet/src/rust/api/voting_config.dart'
@@ -55,6 +56,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
+import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
+    as rust_keystone_wallet;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
@@ -3052,9 +3055,11 @@ void main() {
         child: _statusHarness(keystoneScanResult: const [3]),
       ),
     );
-    await _pumpUntilFound(tester, find.text('Sign bundle 1 of 1'));
+    await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
 
-    expect(find.text('Sign bundle 1 of 1'), findsOneWidget);
+    expect(find.text('Sign 1 voting bundle'), findsOneWidget);
+    expect(find.text('One Keystone approval'), findsOneWidget);
+    expect(_RustApiFake.lastEncodedBatchMessageCount, 1);
     expect(find.text('Memo'), findsOneWidget);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
@@ -3083,8 +3088,10 @@ void main() {
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
     tester,
   ) async {
+    _RustApiFake.maxBatchMessages = 1;
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
+      _RustApiFake.maxBatchMessages = 40;
       await tester.binding.setSurfaceSize(null);
     });
 
@@ -3174,7 +3181,8 @@ void main() {
         child: _statusHarness(keystoneScanResult: const [3]),
       ),
     );
-    await _pumpUntilFound(tester, find.text('Sign bundle 1 of 2'));
+    await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
+    expect(find.text('This QR signs 1 of 2 remaining bundles'), findsOneWidget);
     expect(find.text('1 / 2'), findsNothing);
 
     await tester.tap(find.text('Scan signature'));
@@ -3182,7 +3190,8 @@ void main() {
     await tester.tap(find.text('Return Signature'));
     await _pumpUntilFound(tester, find.text('Skip'));
 
-    expect(find.text('Sign bundle 2 of 2'), findsOneWidget);
+    expect(find.text('Sign 1 voting bundle'), findsWidgets);
+    expect(find.text('One Keystone approval'), findsOneWidget);
     expect(find.text('2 / 2'), findsNothing);
     expect(find.text('Skip'), findsOneWidget);
 
@@ -3219,14 +3228,15 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
-    final recoveryApi = _MutableVotingRecoveryApi();
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(bundleCount: 2);
     final container = _statusContainer(
       accountOverride: _HardwareAccountNotifier.new,
       activeAccountUuid: () async => 'hardware-1',
       accountIsHardware: true,
       hardwareAccountUuids: const {'hardware-1'},
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
+      rust: _VotingStatusRustApi(recoveryApi, bundleCount: 2),
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -3244,11 +3254,13 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    await _pumpUntilFound(tester, find.text('Sign bundle 1 of 1'));
+    await _pumpUntilFound(tester, find.text('Sign 2 voting bundles'));
 
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.text('Sign bundle 1 of 1'), findsOneWidget);
+    expect(find.text('Sign 2 voting bundles'), findsOneWidget);
+    expect(find.text('One Keystone approval'), findsOneWidget);
+    expect(_RustApiFake.lastEncodedBatchMessageCount, 2);
   });
 
   testWidgets('hardware status screen shows retry when Keystone QR fails', (
@@ -3256,10 +3268,10 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
-      _RustApiFake.failPcztEncoding = false;
+      _RustApiFake.failBatchEncoding = false;
       await tester.binding.setSurfaceSize(null);
     });
-    _RustApiFake.failPcztEncoding = true;
+    _RustApiFake.failBatchEncoding = true;
 
     final recoveryApi = _MutableVotingRecoveryApi();
     final container = _statusContainer(
@@ -4527,8 +4539,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return bundleCount - keepCount;
   }
 
-  @override
-  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
+  Future<rust_delegate.KeystoneSigningRequest> _buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -4550,14 +4561,20 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildKeystoneDelegationRequests({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<int> bundleIndices,
   }) async {
-    return rust_api.ParsedSignedVotingPczt(
-      sighash: Uint8List.fromList(signedPcztBytes),
-      spendAuthSig: Uint8List.fromList([5, actionIndex]),
-    );
+    return Future.wait([
+      for (final bundleIndex in bundleIndices)
+        _buildKeystoneDelegationRequest(
+          ctx: ctx,
+          storedHotkeySecret: storedHotkeySecret,
+          bundleIndex: bundleIndex,
+        ),
+    ]);
   }
 
   @override
@@ -5130,17 +5147,75 @@ class _GatedShareVotingHttpClient extends FakeVotingHttpClient {
 }
 
 class _RustApiFake implements RustLibApi {
-  static bool failPcztEncoding = false;
+  static bool failBatchEncoding = false;
+  static int maxBatchMessages = 40;
+  static int lastEncodedBatchMessageCount = 0;
 
   @override
   Future<List<String>> crateApiKeystoneEncodePcztUrParts({
     required List<int> pcztBytes,
     required BigInt maxFragmentLen,
   }) async {
-    if (failPcztEncoding) {
+    if (failBatchEncoding) {
       throw StateError('forced PCZT encoding failure');
     }
     return const ['ur:zcash-pczt/test'];
+  }
+
+  @override
+  Future<Uint32List> crateApiKeystoneZcashSignBatchRoundMessageCounts({
+    required String requestId,
+    required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
+    required int maxMessages,
+  }) async {
+    final roundLimit = maxMessages < maxBatchMessages
+        ? maxMessages
+        : maxBatchMessages;
+    final counts = <int>[];
+    for (var offset = 0; offset < messages.length; offset += roundLimit) {
+      final remaining = messages.length - offset;
+      counts.add(remaining < roundLimit ? remaining : roundLimit);
+    }
+    return Uint32List.fromList(counts);
+  }
+
+  @override
+  Future<List<String>> crateApiKeystoneEncodeZcashSignBatchUrParts({
+    required String requestId,
+    required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
+    required BigInt maxFragmentLen,
+  }) async {
+    if (failBatchEncoding) {
+      throw StateError('forced batch encoding failure');
+    }
+    lastEncodedBatchMessageCount = messages.length;
+    return const ['ur:zcash-sign-batch/test'];
+  }
+
+  @override
+  Future<rust_keystone.KeystoneSigResult>
+  crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) async {
+    return rust_keystone.KeystoneSigResult(
+      firmwareVersion: Uint8List.fromList(const [1, 0, 0]),
+      requestId: Uint8List.fromList(utf8.encode(expectedRequestId)),
+      results: [
+        for (final messageId in messageIds)
+          rust_keystone.KeystoneMsgSig(
+            messageId: Uint8List.fromList(utf8.encode(messageId)),
+            sigs: [
+              rust_keystone.KeystoneActionSig(
+                pool: 1,
+                actionIndex: 0,
+                sig: Uint8List.fromList(List.filled(64, 5)),
+              ),
+            ],
+          ),
+      ],
+    );
   }
 
   @override
