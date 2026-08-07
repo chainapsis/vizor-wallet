@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -198,7 +199,10 @@ void main() {
 
     expect(find.text('Connecting…'), findsOneWidget);
     expect(
-      find.text('New requests wait until the Tor connection is ready.'),
+      find.text(
+        'New requests wait until the Tor connection is ready. Turn Tor off to '
+        'stop connecting and use a direct connection.',
+      ),
       findsOneWidget,
     );
 
@@ -206,8 +210,116 @@ void main() {
       find.byKey(const ValueKey('network_privacy_status_icon')),
     );
     expect(statusIcon.name, AppIcons.loader);
-    expect(_toggleTrackOpacity(tester), lessThan(1));
+    // Not dimmed: the control is the way out of the wait, so it has to look
+    // like something the user may act on.
+    expect(_toggleTrackOpacity(tester), 1);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('network_privacy_toggle')),
+    );
+    await tester.tap(find.byKey(const ValueKey('network_privacy_toggle')));
+    await tester.pump();
+    // The bootstrap runs to a three-minute deadline with every request failing
+    // closed, and relaunching starts the same wait, so switching to direct has
+    // to stay reachable for the whole of it.
+    expect(calls, [false]);
+  });
+
+  test('the toggle offers an escape from a pending Tor connection', () {
+    // Every state maps to exactly one action, and the connecting-to-Tor state
+    // maps to an escape rather than to nothing.
+    NetworkPrivacyToggleAction actionFor({
+      required bool torEnabled,
+      required NetworkPrivacyConnectionStatus status,
+      bool? targetTorEnabled,
+    }) => networkPrivacyToggleAction(
+      NetworkPrivacyState(
+        torEnabled: torEnabled,
+        status: status,
+        targetTorEnabled: targetTorEnabled,
+      ),
+    );
+
+    expect(
+      actionFor(
+        torEnabled: false,
+        status: NetworkPrivacyConnectionStatus.off,
+      ),
+      NetworkPrivacyToggleAction.enable,
+    );
+    expect(
+      actionFor(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connected,
+      ),
+      NetworkPrivacyToggleAction.disable,
+    );
+    // A startup activation publishes no explicit target, so the effective one
+    // is the route already shown — which is the state a user relaunching into a
+    // blocked network lands in.
+    expect(
+      actionFor(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connecting,
+      ),
+      NetworkPrivacyToggleAction.cancelPendingTor,
+    );
+    expect(
+      actionFor(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connecting,
+        targetTorEnabled: true,
+      ),
+      NetworkPrivacyToggleAction.cancelPendingTor,
+    );
+    expect(
+      actionFor(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connecting,
+        targetTorEnabled: false,
+      ),
+      NetworkPrivacyToggleAction.none,
+    );
+  });
+
+  test('cancelling a pending Tor connection asks for the direct route', () {
+    expect(
+      NetworkPrivacyToggleAction.cancelPendingTor.requestedTorEnabled,
+      isFalse,
+    );
+    expect(NetworkPrivacyToggleAction.enable.requestedTorEnabled, isTrue);
+    expect(NetworkPrivacyToggleAction.disable.requestedTorEnabled, isFalse);
+    // Leaving a wait is not a second transition, and does not announce itself
+    // as one.
+    expect(
+      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel,
+      'Stop connecting to Tor',
+    );
+    expect(NetworkPrivacyToggleAction.disable.semanticsLabel, 'Use Tor');
+    expect(NetworkPrivacyToggleAction.none.isInteractive, isFalse);
+  });
+
+  testWidgets('a switch to direct cannot be driven back into Tor', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pump();
+
+    // Nothing to escape from here: the route is already on its way to direct.
+    expect(_toggleTrackOpacity(tester), lessThan(1));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('network_privacy_toggle')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('network_privacy_toggle')),
       warnIfMissed: false,
@@ -216,7 +328,9 @@ void main() {
     expect(calls, isEmpty);
   });
 
-  testWidgets('connected Tor state includes software updates', (tester) async {
+  testWidgets('connected Tor state describes Vizor and external app routes', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _settingsHarness(
         networkPrivacyState: const NetworkPrivacyState(
@@ -270,7 +384,7 @@ void main() {
     expect(description.style?.color, AppThemeData.light.colors.text.accent);
   });
 
-  testWidgets('Linux Tor copy excludes external update traffic', (
+  testWidgets('Linux Tor copy assigns external traffic to the other app', (
     tester,
   ) async {
     _overridePlatform(TargetPlatform.linux);

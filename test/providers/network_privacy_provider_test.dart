@@ -1,11 +1,64 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 
 void main() {
+  // The launch this owner exists for reads almost nothing: a locked app routes
+  // to `/unlock`, `syncKeepAwakeActiveProvider` returns early on
+  // `requiresUnlock` before it reaches `syncProvider`, and the unlock screens
+  // only read that provider when the user submits. Nothing here builds a
+  // provider at all, which is the point — the persisted route is applied
+  // regardless of the lock, so the intent has to have an owner regardless too.
+  group('Tor dormancy lifecycle', () {
+    tearDown(disposeTorDormancyLifecycle);
+
+    testWidgets('sleeps only where backgrounding stops the process', (
+      tester,
+    ) async {
+      // Lane-dependent on purpose, and the desktop half is the load-bearing
+      // one: a desktop app with every window hidden keeps polling, and a
+      // client put to sleep underneath it pays a circuit build on each poll.
+      for (final (formFactor, expected) in [
+        (AppFormFactor.mobile, [true]),
+        (AppFormFactor.desktop, <bool>[]),
+      ]) {
+        final dormancy = <bool>[];
+        startTorDormancyLifecycle(
+          setTorDormant: ({required dormant}) => dormancy.add(dormant),
+          formFactor: formFactor,
+        );
+
+        await _sendAppLifecycleState(AppLifecycleState.inactive);
+        await _sendAppLifecycleState(AppLifecycleState.hidden);
+
+        expect(dormancy, expected, reason: '$formFactor');
+      }
+    });
+
+    testWidgets('wakes on every foreground entry', (tester) async {
+      // Asked for unconditionally: a sleep request that outlived its asker —
+      // issued before Tor finished bootstrapping, so it lands on the client
+      // only once that client exists — would otherwise keep the client asleep
+      // for the whole foreground session.
+      final dormancy = <bool>[];
+      startTorDormancyLifecycle(
+        setTorDormant: ({required dormant}) => dormancy.add(dormant),
+      );
+
+      await _sendAppLifecycleState(AppLifecycleState.inactive);
+      await _sendAppLifecycleState(AppLifecycleState.resumed);
+
+      expect(dormancy, contains(false));
+    });
+  });
+
+
   test('preference read failure pauses native updates before launch', () async {
     final events = <String>[];
     try {
@@ -40,6 +93,80 @@ void main() {
       );
     }
   });
+
+  test('enabling keeps the Tor directory out of device backups', () async {
+    final excluded = <String>[];
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (directory) async =>
+          excluded.add(directory),
+    );
+
+    await runtime.configure(enabled: true);
+
+    // Once before the bootstrap, because the directory holds guard state from
+    // its first moment and the process can be killed during it, and once after,
+    // because the mark is best-effort.
+    expect(excluded, ['/tmp/vizor-tor', '/tmp/vizor-tor']);
+  });
+
+  test('a failed bootstrap still excludes the Tor directory', () async {
+    // Rust creates the directory and Arti writes guard state into it before
+    // the bootstrap can fail, so the failure path leaves exactly the state the
+    // exclusion exists to keep off a second device.
+    final excluded = <String>[];
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          throw StateError('bootstrap failed'),
+      excludeTorDirectoryFromBackup: (directory) async =>
+          excluded.add(directory),
+    );
+
+    await expectLater(
+      runtime.configure(enabled: true),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(excluded, ['/tmp/vizor-tor', '/tmp/vizor-tor']);
+  });
+
+  test('a backup exclusion failure is reported', () async {
+    final logs = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+    addTearDown(() => debugPrint = previousDebugPrint);
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (_) async =>
+          throw StateError('attribute write refused'),
+    );
+
+    await runtime.configure(enabled: true);
+
+    expect(logs, hasLength(2));
+    expect(logs.first, contains('attribute write refused'));
+  });
+
+  test('a backup exclusion failure does not fail the route', () async {
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (_) async =>
+          throw StateError('no native side'),
+    );
+
+    expect(
+      await runtime.configure(enabled: true),
+      NetworkPrivacyConnectionStatus.connected,
+    );
+  });
+
 
   test('direct runtime configuration skips Tor directory lookup', () async {
     var directoryLookups = 0;
@@ -132,11 +259,11 @@ void main() {
 
     expect(events, [
       'native:true',
+      'store:true',
       'begin-enable',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
       'native-resume',
     ]);
@@ -178,11 +305,11 @@ void main() {
     final state = container.read(networkPrivacyProvider);
     expect(events, [
       'native:true',
+      'store:true',
       'begin-enable',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
     ]);
     expect(state.torEnabled, isTrue);
@@ -221,8 +348,8 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -296,8 +423,8 @@ void main() {
       'native-prepare-disable',
       'native-disable-drained',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -381,6 +508,7 @@ void main() {
 
       expect(events, [
         'native:true',
+        'store:true',
         'begin-enable',
         'runtime-quiesce',
         'direct-quiesce',
@@ -478,7 +606,6 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
@@ -503,10 +630,136 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
+  });
+
+  test('the saved route may be stricter than the runtime, never laxer', () {
+    // A wake that declares Tor and cannot afford it defers; a wake that
+    // declares direct against a session enforcing Tor puts wallet queries and
+    // signed transactions on a direct connection.
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: true,
+        runtimeTorDesired: true,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: false,
+        runtimeTorDesired: false,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: true,
+        runtimeTorDesired: false,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: false,
+        runtimeTorDesired: true,
+      ),
+      isFalse,
+    );
+  });
+
+  test('a failed strict save aborts the enable before anything changes', () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _WriteFailingStore(events, failOn: true),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    // Refused before the process changes: no fail-closed switch, no drain, no
+    // transport restart. Requests keep flowing directly, the saved route
+    // still says direct, and the updater preflight is undone — the toggle
+    // simply never happened, apart from the failure the user is shown.
+    expect(events, ['native:true', 'store:write-failed', 'native:false']);
+    expect(runtime.isTorEnabled(), isFalse);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.targetTorEnabled, isTrue);
+  });
+
+  test('a failed direct save still opens the direct request gate', () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _WriteFailingStore(events, failOn: false),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+
+    // The runtime is direct with its Tor client dropped, so the gate follows
+    // it: left shut, every direct request would fail for the rest of the
+    // session behind a UI that reports Tor off. The saved route stays at Tor
+    // — the stricter half — so the next launch comes back on Tor instead of
+    // silently staying direct.
+    expect(events, [
+      'native-prepare-disable',
+      'restart',
+      'configure:false',
+      'store:write-failed',
+      'direct-allow',
+    ]);
+    expect(runtime.isTorEnabled(), isFalse);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.targetTorEnabled, isFalse);
   });
 
   test(
@@ -905,6 +1158,27 @@ class _FakeStore implements NetworkPrivacyPreferenceStore {
   }
 }
 
+/// Fails the write in one direction only, the shape a full disk has: the
+/// previously saved value is already on disk when the new one is refused.
+class _WriteFailingStore implements NetworkPrivacyPreferenceStore {
+  _WriteFailingStore(this.events, {required this.failOn});
+
+  final List<String> events;
+  final bool failOn;
+
+  @override
+  Future<bool> readTorEnabled() async => false;
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    if (enabled == failOn) {
+      events.add('store:write-failed');
+      throw StateError('Could not save the Tor preference.');
+    }
+    events.add('store:$enabled');
+  }
+}
+
 class _ThrowingReadStore implements NetworkPrivacyPreferenceStore {
   _ThrowingReadStore(this.events);
 
@@ -1158,3 +1432,13 @@ class _FakeDirectRequestGate implements NetworkPrivacyDirectRequestGate {
     events.add('direct-quiesce');
   }
 }
+
+Future<void> _sendAppLifecycleState(AppLifecycleState state) async {
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'flutter/lifecycle',
+        const StringCodec().encodeMessage(state.toString()),
+        (_) {},
+      );
+}
+
