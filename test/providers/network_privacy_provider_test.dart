@@ -626,13 +626,83 @@ void main() {
 
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
-    // Nothing past the write ran, and the runtime is left fail-closed, so this
-    // process reaches nothing while the user decides whether to retry.
-    expect(events, ['native:true', 'begin-enable', 'store:write-failed']);
+    // The route is refused and nothing past the drain runs, but `beginEnable`
+    // has already put this process fail-closed — so the direct work it left
+    // behind is drained on the way out. Rust's own sockets went with the
+    // route-epoch bump; a Dart request already streaming does not stop until
+    // the client is torn down, and the refusal tells the user requests are
+    // paused.
+    expect(events, [
+      'native:true',
+      'begin-enable',
+      'store:write-failed',
+      'runtime-quiesce',
+      'direct-quiesce',
+    ]);
+    // The drain tightens; it must never end by reopening the gate this route
+    // just closed.
+    expect(events, isNot(contains('direct-allow')));
     expect(runtime.isTorEnabled(), isTrue);
     final state = container.read(networkPrivacyProvider);
     expect(state.status, NetworkPrivacyConnectionStatus.failed);
     expect(state.targetTorEnabled, isTrue);
+  });
+
+  test('a failed direct save still opens the direct request gate', () async {
+    final events = <String>[];
+    final store = _DisableWriteFailingStore(events);
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(store),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+
+    // The runtime is direct with its Tor client dropped, so the gate follows
+    // it. Leaving it latched shut would fail every direct request for the rest
+    // of the session behind a UI that reports Tor off.
+    expect(runtime.isTorEnabled(), isFalse);
+    expect(events, [
+      'native-prepare-disable',
+      'restart',
+      'configure:false',
+      'store:write-failed',
+      'direct-allow',
+    ]);
+    // The write is still refused, and the saved route stays at Tor — the
+    // stricter half, which is the safe thing for the next cold process to read.
+    expect(store.saved, isTrue);
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: store.saved ?? false,
+        runtimeTorDesired: runtime.isTorEnabled(),
+      ),
+      isTrue,
+    );
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
   });
 
   test('failed Tor disable preserves the effective Tor route', () async {
@@ -1097,6 +1167,28 @@ class _RecordingStore implements NetworkPrivacyPreferenceStore {
 
   @override
   Future<void> writeTorEnabled(bool enabled) async {
+    saved = enabled;
+    events.add('store:$enabled');
+  }
+}
+
+/// Saves the strict route and refuses the lax one, which is the shape a full
+/// disk has: the Tor value is already on disk when the direct write fails.
+class _DisableWriteFailingStore implements NetworkPrivacyPreferenceStore {
+  _DisableWriteFailingStore(this.events);
+
+  final List<String> events;
+  bool? saved;
+
+  @override
+  Future<bool> readTorEnabled() async => false;
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    if (!enabled) {
+      events.add('store:write-failed');
+      throw StateError('Could not save the Tor preference.');
+    }
     saved = enabled;
     events.add('store:$enabled');
   }

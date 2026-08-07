@@ -636,6 +636,15 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         await store.writeTorEnabled(true);
       } catch (error) {
         if (generation != _generation) return;
+        // The route is refused, but `beginEnable` already put this process
+        // fail-closed, so the direct work it left behind still has to be
+        // drained. Rust's own in-flight sockets went with the route-epoch
+        // bump; Dart's did not — an `HttpClient` request already streaming
+        // keeps reaching clearnet until the client is torn down. Refusing
+        // without the drain leaves that traffic running behind copy that says
+        // network requests are paused.
+        final drainFailure = await _captureDirectDrain(runtime, directRequests);
+        if (generation != _generation) return;
         // Nothing proceeds on a route whose saved half could not be made safe.
         // The runtime stays fail-closed, so this process leaks nothing while
         // the user decides whether to retry.
@@ -644,7 +653,11 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
           status: NetworkPrivacyConnectionStatus.failed,
           targetTorEnabled: true,
           softwareUpdatesAvailable: false,
-          error: error.toString(),
+          error: [
+            error.toString(),
+            if (drainFailure != null)
+              'Could not stop direct requests: ${drainFailure.error}',
+          ].join(' '),
           startupNotice: kTorStartupFailureNotice,
         );
         return;
@@ -704,12 +717,20 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         if (generation != _generation) return;
         nextStatus = await runtime.configure(enabled: enabled);
         if (enabled || generation != _generation) return;
-        // Written only now that the runtime has actually gone direct. Saving
-        // it any earlier would leave a window in which a background wake read
-        // direct while this process was still enforcing Tor.
-        await store.writeTorEnabled(false);
-        if (generation != _generation) return;
-        directRequests.allow();
+        try {
+          // Written only now that the runtime has actually gone direct. Saving
+          // it any earlier would leave a window in which a background wake read
+          // direct while this process was still enforcing Tor.
+          await store.writeTorEnabled(false);
+        } finally {
+          // The gate follows the runtime, not the preference. Rust is on the
+          // direct route with its Tor client already dropped, so a gate left
+          // latched shut would strand every direct request for the rest of the
+          // session while the UI reports Tor off. A write that failed leaves
+          // the saved route at Tor, which is the stricter half a cold
+          // background wake may read, so the refusal costs nothing here.
+          if (generation == _generation) directRequests.allow();
+        }
       });
       if (generation != _generation) return;
       String? startupNotice;
