@@ -28,6 +28,12 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Changed vote-share wire JSON to include only the encrypted share assigned to
   the receiving helper. The `all_enc_shares` field is no longer serialized.
 
+### Fixed
+- Vote commitment tree sync now bounds each HTTP response to 8 MiB and each
+  request to 60 seconds, and limits complete syncs to 4,096 pages and five
+  minutes. Per-round client locks prevent a stalled node from blocking tree
+  operations for unrelated rounds in the same wallet.
+
 ## v2.0.0-rc.3
 
 ### Changed

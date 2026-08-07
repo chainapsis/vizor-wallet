@@ -38,7 +38,7 @@ pub mod sync_api;
 // -- Re-exports (public API) -----------------------------------------------
 
 pub use anchor::Anchor;
-pub use client::{SyncError, TreeClient};
+pub use client::{SyncError, SyncLimits, TreeClient};
 pub use hash::{MerkleHashVote, TREE_DEPTH};
 pub use path::{MerklePath, MERKLE_PATH_BYTES};
 pub use server::{AppendFromKvError, MemoryTreeServer, SyncableServer, TreeServer};

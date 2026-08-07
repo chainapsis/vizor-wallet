@@ -19,6 +19,11 @@ type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
 // and bound the complete request so a slow or endless body cannot stall setup.
 const MAX_PIR_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const PIR_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+// Tree pages are JSON encoded and can be larger than the compact state
+// responses. Bound every tree response before buffering or parsing it, and
+// cover connection setup plus the complete body read with one deadline.
+const MAX_TREE_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const TREE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct HyperResponse {
     status: u16,
@@ -58,7 +63,7 @@ impl HyperTransport {
         method: Method,
         url: &str,
         body: Vec<u8>,
-        max_response_bytes: Option<usize>,
+        max_response_bytes: usize,
     ) -> Result<HyperResponse> {
         let request = Request::builder()
             .method(method)
@@ -81,23 +86,16 @@ impl HyperTransport {
                     .map(|value| (name.as_str().to_string(), value.to_string()))
             })
             .collect();
-        let body = match max_response_bytes {
-            Some(limit) => Limited::new(response.into_body(), limit)
-                .collect()
-                .await
-                .map_err(|error| {
-                    anyhow::anyhow!("read HTTP response body (limit {limit} bytes): {error}")
-                })?
-                .to_bytes()
-                .to_vec(),
-            None => response
-                .into_body()
-                .collect()
-                .await
-                .context("read HTTP response body")?
-                .to_bytes()
-                .to_vec(),
-        };
+        let body = Limited::new(response.into_body(), max_response_bytes)
+            .collect()
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "read HTTP response body (limit {max_response_bytes} bytes): {error}"
+                )
+            })?
+            .to_bytes()
+            .to_vec();
 
         Ok(HyperResponse {
             status,
@@ -157,7 +155,7 @@ impl pir_client::Transport for HyperTransport {
         Box::pin(async move {
             tokio::time::timeout(
                 PIR_REQUEST_TIMEOUT,
-                self.request(Method::GET, url, Vec::new(), Some(MAX_PIR_RESPONSE_BYTES)),
+                self.request(Method::GET, url, Vec::new(), MAX_PIR_RESPONSE_BYTES),
             )
             .await
             .context("PIR HTTP request timed out")?
@@ -173,7 +171,7 @@ impl pir_client::Transport for HyperTransport {
         Box::pin(async move {
             tokio::time::timeout(
                 PIR_REQUEST_TIMEOUT,
-                self.request(Method::POST, url, body, Some(MAX_PIR_RESPONSE_BYTES)),
+                self.request(Method::POST, url, body, MAX_PIR_RESPONSE_BYTES),
             )
             .await
             .context("PIR HTTP request timed out")?
@@ -195,7 +193,14 @@ impl vote_commitment_tree_client::transport::Transport for HyperTransport {
         vote_commitment_tree_client::transport::TransportError,
     > {
         self.runtime
-            .block_on(async { self.request(Method::GET, url, Vec::new(), None).await })
+            .block_on(async {
+                tokio::time::timeout(
+                    TREE_REQUEST_TIMEOUT,
+                    self.request(Method::GET, url, Vec::new(), MAX_TREE_RESPONSE_BYTES),
+                )
+                .await
+                .context("vote-tree HTTP request timed out")?
+            })
             .map(
                 |response| vote_commitment_tree_client::transport::TransportResponse {
                     status: response.status,

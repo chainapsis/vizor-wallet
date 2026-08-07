@@ -11,6 +11,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::time::{Duration, Instant};
 
 use incrementalmerkletree::{Hashable, Level, Retention};
 use pasta_curves::Fp;
@@ -19,6 +20,24 @@ use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use crate::hash::{MerkleHashVote, MAX_CHECKPOINTS, SHARD_HEIGHT, TREE_DEPTH};
 use crate::path::MerklePath;
 use crate::sync_api::TreeSyncApi;
+
+/// Resource limits applied to one complete tree synchronization.
+#[derive(Clone, Copy, Debug)]
+pub struct SyncLimits {
+    /// Maximum number of commitment pages fetched after the initial state.
+    pub max_pages: usize,
+    /// Maximum wall-clock duration, checked before and after each API call.
+    pub max_duration: Duration,
+}
+
+impl Default for SyncLimits {
+    fn default() -> Self {
+        Self {
+            max_pages: 4_096,
+            max_duration: Duration::from_secs(5 * 60),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // SyncError
@@ -54,6 +73,10 @@ pub enum SyncError<E: fmt::Debug> {
     },
     /// The server returned a pagination cursor that does not move forward.
     InvalidPagination { current: u32, next: u32 },
+    /// The server required more pages than one sync operation permits.
+    PageLimitExceeded { max_pages: usize },
+    /// The complete sync exceeded its wall-clock budget.
+    TimeLimitExceeded { max_duration: Duration },
 }
 
 impl<E: fmt::Debug> fmt::Display for SyncError<E> {
@@ -91,6 +114,12 @@ impl<E: fmt::Debug> fmt::Display for SyncError<E> {
                 "invalid pagination cursor: current={}, next={}",
                 current, next
             ),
+            SyncError::PageLimitExceeded { max_pages } => {
+                write!(f, "sync page limit exceeded: max_pages={max_pages}")
+            }
+            SyncError::TimeLimitExceeded { max_duration } => {
+                write!(f, "sync time limit exceeded: max_duration={max_duration:?}")
+            }
         }
     }
 }
@@ -178,7 +207,22 @@ impl TreeClient {
     /// - After pagination completes, the client must match the tip advertised by
     ///   `get_tree_state()`.
     pub fn sync<A: TreeSyncApi>(&mut self, api: &A) -> Result<(), SyncError<A::Error>> {
+        self.sync_with_limits(api, SyncLimits::default())
+    }
+
+    /// Sync with explicit resource limits.
+    ///
+    /// API implementations should also bound each individual request. The
+    /// duration here bounds a sequence of otherwise valid pages and is checked
+    /// between calls; it cannot interrupt an API implementation that blocks.
+    pub fn sync_with_limits<A: TreeSyncApi>(
+        &mut self,
+        api: &A,
+        limits: SyncLimits,
+    ) -> Result<(), SyncError<A::Error>> {
+        let started_at = Instant::now();
         let state = api.get_tree_state()?;
+        Self::check_sync_duration(started_at, limits.max_duration)?;
         if state.next_index == self.next_position {
             if state.next_index > 0 {
                 let local = self.root();
@@ -201,8 +245,17 @@ impl TreeClient {
         }
 
         let mut page_from = from_height;
+        let mut pages_fetched = 0usize;
         loop {
+            Self::check_sync_duration(started_at, limits.max_duration)?;
+            if pages_fetched >= limits.max_pages {
+                return Err(SyncError::PageLimitExceeded {
+                    max_pages: limits.max_pages,
+                });
+            }
             let page = api.get_block_commitments(page_from, to_height)?;
+            pages_fetched += 1;
+            Self::check_sync_duration(started_at, limits.max_duration)?;
 
             for block in &page.blocks {
                 // Validate start_index continuity: the block's first leaf index must
@@ -297,6 +350,17 @@ impl TreeClient {
         }
 
         Ok(())
+    }
+
+    fn check_sync_duration<E: fmt::Debug>(
+        started_at: Instant,
+        max_duration: Duration,
+    ) -> Result<(), SyncError<E>> {
+        if started_at.elapsed() > max_duration {
+            Err(SyncError::TimeLimitExceeded { max_duration })
+        } else {
+            Ok(())
+        }
     }
 
     /// Generate a Merkle authentication path for the leaf at `position`,
