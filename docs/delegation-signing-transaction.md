@@ -26,7 +26,7 @@ build TX1 PCZT
     +------------------+--------------------> delegation submission
                                                + ZKP #1
                                                + rk
-                                               + TX1 sighash
+                                               + TX1 effecting data
                                                + SpendAuth signature
 ```
 
@@ -251,7 +251,7 @@ The real output is:
 | --- | --- |
 | Recipient | Voting hotkey address |
 | Value | `0` zatoshi |
-| OVK | External outgoing viewing key of the delegating account |
+| OVK | `None` (no account outgoing viewing key) |
 | Memo | 512-byte delegation display memo |
 | `rseed_output` | Fresh randomness sampled by the builder |
 
@@ -285,9 +285,11 @@ After the bundle is built, the wallet MUST:
 2. build the PCZT with the Creator role;
 3. run the IO Finalizer role;
 4. serialize the full PCZT;
-5. compute `Signer::shielded_sighash()` from the finalized PCZT; and
-6. persist the sighash, `rk`, `alpha`, action index, `nf_signed`,
-   `cmx_new`, both rseeds, and proof inputs before requesting a signature.
+5. compute `Signer::shielded_sighash()` from the finalized PCZT;
+6. encode the two finalized Ironwood actions' effecting data; and
+7. persist the effecting data, sighash, `rk`, `alpha`, `nf_signed`, `cmx_new`,
+   both rseeds, and proof inputs before requesting a signature, while retaining
+   the action index with the active signing request.
 
 The caller MUST retain the exact full PCZT for the active signing session.
 The current voting database persists the binding fields, but not the full PCZT
@@ -295,6 +297,44 @@ bytes.
 
 The sighash is the 32-byte ZIP-244 shielded signature digest. It is not a
 custom voting hash.
+
+### Submission effect encoding
+
+The vote-chain submission carries the finalized action effecting data, not the
+PCZT. The current encoding is exactly 1,641 bytes:
+
+```text
+version[1] || action[0][820] || action[1][820]
+```
+
+The version byte is `1`. Each action is encoded in PCZT order as:
+
+| Field | Length |
+| --- | ---: |
+| `cv_net` | 32 |
+| `nullifier` | 32 |
+| `rk` | 32 |
+| `cmx` | 32 |
+| `ephemeral_key` | 32 |
+| `enc_ciphertext` | 580 |
+| `out_ciphertext` | 80 |
+
+The remaining TX1 effecting fields are fixed by this construction: V6 on
+NU6.3, lock time and expiry height zero, no transparent, Sapling, or Orchard
+bundle, and one Ironwood V3 bundle with default flags, a positive 1-zatoshi
+value balance, and exactly two actions. V6 shielded signatures do not commit
+to the bundle anchor, so the anchor is not included.
+
+The synthetic output is constructed without the governance account's outgoing
+viewing key. Its published `out_ciphertext` therefore cannot be recovered with
+that account's FVK. The PCZT retains the output metadata needed by the signer.
+
+A verifier can reconstruct the ZIP-244 shielded sighash from this payload and
+the fixed profile. It must require `rk` to occur in exactly one action, require
+that action to match the submitted `nf_signed` and `cmx_new`, recompute the
+sighash, and verify the SpendAuth signature against that digest. The shared fixture
+[`delegation_tx1_effects_v1.json`](../zcash_voting/test-vectors/delegation_tx1_effects_v1.json)
+pins this boundary for implementations in other repositories.
 
 ## Signing
 
@@ -335,15 +375,20 @@ Before assembling the vote-chain delegation submission, the wallet MUST:
 2. require the supplied sighash to equal the write-once persisted TX1
    sighash;
 3. verify the signature under the write-once persisted `rk` and sighash;
-4. require ZKP #1 public values `rk`, `nf_signed`, `cmx_new`, VAN, and
+4. require the versioned TX1 effecting data to match the write-once persisted
+   setup payload;
+5. require ZKP #1 public values `rk`, `nf_signed`, `cmx_new`, VAN, and
    governance nullifiers to equal the values persisted during TX1 setup; and
-5. verify the final delegation proof before releasing a submission whenever
+6. verify the final delegation proof before releasing a submission whenever
    the wallet has a local verifier available.
 
-The vote-chain submission contains the SpendAuth signature, `rk`, and TX1
-sighash, but it is not TX1 and does not contain a Zcash transaction.
+The vote-chain submission contains the SpendAuth signature, `rk`, and the
+compact effecting data from which the verifier reconstructs the sighash. It is
+not TX1, does not contain a Zcash transaction, and never carries a PCZT.
 
-To hand the resulting voting authority to another application, use the
+Portable transfer of the resulting voting authority is not yet exposed as a
+complete export and import API. The required credential handling and
+validation are documented in
 [external software export](exporting-to-external-software.md). Do not export
 the wallet seed or account spending key.
 
@@ -424,6 +469,9 @@ The complete caller-oriented flows are implemented in
 
 - TX1 construction:
   [`zcash_voting/src/action.rs`](../zcash_voting/src/action.rs)
+- TX1 effect encoding and cross-repository fixture:
+  [`zcash_voting/src/tx1.rs`](../zcash_voting/src/tx1.rs),
+  [`zcash_voting/test-vectors/delegation_tx1_effects_v1.json`](../zcash_voting/test-vectors/delegation_tx1_effects_v1.json)
 - Prepared signing API:
   [`zcash_voting/src/delegate.rs`](../zcash_voting/src/delegate.rs)
 - Wallet integration example:

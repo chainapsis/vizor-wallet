@@ -92,7 +92,7 @@ impl TryFrom<&DelegationSubmission> for DelegationSubmissionWire {
         Ok(Self {
             rk: b64(submission.rk),
             spend_auth_sig: b64(submission.spend_auth_sig),
-            sighash: b64(submission.sighash),
+            tx1_effects: b64(&submission.tx1_effects),
             nf_signed: b64(submission.nf_signed),
             cmx_new: b64(submission.cmx_new),
             gov_comm: b64(submission.gov_comm),
@@ -562,12 +562,18 @@ mod tests {
             vote_round_id: "0a0b".to_string(),
             spend_auth_sig: [0x06; 64],
             sighash: [0x07; 32],
+            tx1_effects: crate::tx1::placeholder_tx1_effects(),
         };
 
         let json = submission.to_wire_json().unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value.get("sighash").is_none());
         assert!(value.get("signed_note_nullifier").is_some());
         assert!(value.get("van_cmx").is_some());
+        assert_eq!(
+            decode_b64(value.get("tx1_effects").unwrap().as_str().unwrap()),
+            crate::tx1::placeholder_tx1_effects()
+        );
         assert_eq!(
             decode_b64(value.get("vote_round_id").unwrap().as_str().unwrap()),
             vec![0x0a, 0x0b]
@@ -743,6 +749,7 @@ mod tests {
                 vote_round_id: "00010203".to_string(),
                 spend_auth_sig: [6; 64],
                 sighash: [7; 32],
+                tx1_effects: crate::tx1::placeholder_tx1_effects(),
             },
             pczt_bytes: vec![1, 2, 3],
             eligible_weight_zatoshi: 20,

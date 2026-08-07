@@ -404,6 +404,9 @@ pub struct GovernancePczt {
     /// ZIP-244 sighash extracted from the PCZT (32 bytes).
     /// Both Keystone and non-Keystone paths sign this.
     pub pczt_sighash: Vec<u8>,
+    /// Versioned effecting data for reconstructing the Ironwood TX1 sighash.
+    /// This contains transaction data only, never PCZT signer metadata.
+    pub tx1_effects: Vec<u8>,
 }
 
 /// El Gamal ciphertext of a voting share.
@@ -556,8 +559,8 @@ pub struct CastVoteSignature {
 }
 
 /// All fields needed to submit a delegation TX to the chain.
-/// Fields from DB (proof, rk, nf_signed, cmx_new, gov_comm, gov_nullifiers, alpha)
-/// plus computed fields (spend_auth_sig, sighash).
+/// Fields from DB (proof, rk, nf_signed, cmx_new, gov_comm, gov_nullifiers,
+/// alpha, tx1_effects) plus computed fields (spend_auth_sig, sighash).
 #[derive(Clone, Debug)]
 pub struct DelegationSubmissionData {
     pub proof: Vec<u8>,
@@ -573,8 +576,10 @@ pub struct DelegationSubmissionData {
     /// Legacy seed paths compute this from `seed + alpha`; new integrations pass
     /// an externally produced SpendAuth signature.
     pub spend_auth_sig: Vec<u8>,
-    /// Canonical sighash (32 bytes). Blake2b-256 of domain-separated fields.
+    /// ZIP-244 sighash extracted from the finalized delegation PCZT (32 bytes).
     pub sighash: Vec<u8>,
+    /// Versioned effecting data needed to reconstruct the Ironwood TX1 sighash.
+    pub tx1_effects: Vec<u8>,
 }
 
 /// Result of real delegation proof generation (ZKP #1).

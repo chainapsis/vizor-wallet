@@ -398,6 +398,8 @@ pub struct DelegationSetup {
     pub rk: [u8; 32],
     pub action_index: usize,
     pub action_bytes: Vec<u8>,
+    /// Versioned Ironwood TX1 effecting data persisted for submission.
+    pub tx1_effects: Vec<u8>,
 }
 
 /// Account-scoped data a wallet needs to sign a delegation PCZT locally.
@@ -487,7 +489,10 @@ impl PreparedSigner {
     }
 }
 
-/// Chain-ready delegation transaction fields for one bundle.
+/// Validated delegation transaction fields for one bundle.
+///
+/// The sighash is retained for wallet-side signing checks. The vote-chain wire
+/// format omits it because verifiers reconstruct it from `tx1_effects`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DelegationSubmission {
     pub proof: Vec<u8>,
@@ -500,6 +505,8 @@ pub struct DelegationSubmission {
     pub vote_round_id: String,
     pub spend_auth_sig: [u8; 64],
     pub sighash: [u8; 32],
+    /// Versioned effecting data needed to reconstruct the Ironwood TX1 sighash.
+    pub tx1_effects: Vec<u8>,
 }
 
 /// Signed delegation bundle plus bundle-level metadata for wallet submission.
@@ -854,6 +861,7 @@ pub fn setup(
         rk: array32("rk", pczt.rk)?,
         action_index: pczt.action_index,
         action_bytes: pczt.action_bytes,
+        tx1_effects: pczt.tx1_effects,
     })
 }
 
@@ -926,6 +934,7 @@ pub fn submission(
         vote_round_id: data.vote_round_id,
         spend_auth_sig: array64("spend_auth_sig", data.spend_auth_sig)?,
         sighash: array32("sighash", data.sighash)?,
+        tx1_effects: data.tx1_effects,
     })
 }
 
@@ -1252,6 +1261,7 @@ mod tests {
                 0,
                 &[],
                 &[0x99; 32],
+                &crate::tx1::placeholder_tx1_effects(),
             )
             .unwrap();
         }

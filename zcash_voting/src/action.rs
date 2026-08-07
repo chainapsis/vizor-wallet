@@ -498,7 +498,6 @@ pub(crate) fn build_governance_pczt(
 
     // Add output to hotkey address. The circuit commits to a zero-value output
     // note for cmx_new, so Phase 1 must use the same value and rseed.
-    let ovk = fvk.to_ovk(Scope::External);
     let memo = {
         let memo_str = crate::delegate::display_memo(round_name, total_weight);
         let mut buf = [0u8; 512];
@@ -529,12 +528,7 @@ pub(crate) fn build_governance_pczt(
             })?;
 
         builder
-            .add_output(
-                Some(ovk.clone()),
-                hotkey_addr.clone(),
-                NoteValue::ZERO,
-                memo,
-            )
+            .add_output(None, hotkey_addr.clone(), NoteValue::ZERO, memo)
             .map_err(|e| VotingError::Internal {
                 message: format!("Builder::add_output failed: {:?}", e),
             })?;
@@ -685,6 +679,7 @@ pub(crate) fn build_governance_pczt(
         // --- Extract ZIP-244 sighash ---
         // This is the sighash that Keystone signs; the non-Keystone path also uses it.
         let pczt_sighash = extract_pczt_sighash(&pczt_bytes)?;
+        let tx1_effects = crate::tx1::encode_tx1_effects(indexed_actions)?;
 
         // --- Encode canonical action bytes for cosmos chain ---
         let action_bytes = encode_delegation_action_bytes(
@@ -714,6 +709,7 @@ pub(crate) fn build_governance_pczt(
             action_index,
             padded_note_secrets: normalized_padded_note_secrets,
             pczt_sighash: pczt_sighash.to_vec(),
+            tx1_effects,
         });
     }
 
@@ -790,7 +786,15 @@ pub fn extract_spend_auth_sig(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchard::keys::SpendingKey;
+    use orchard::{
+        keys::SpendingKey,
+        note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
+        note_encryption::IronwoodDomain,
+        primitives::redpallas::{SpendAuth, VerificationKey},
+        value::ValueCommitment,
+        Action,
+    };
+    use zcash_note_encryption::try_output_recovery_with_ovk;
 
     fn mock_note() -> NoteInfo {
         NoteInfo {
@@ -1049,8 +1053,45 @@ mod tests {
         let result = build_mock_nu6_3_pczt(&[mock_note()]);
 
         let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+        assert_eq!(*pczt.global().tx_version(), 6);
+        assert_eq!(
+            *pczt.global().consensus_branch_id(),
+            u32::from(BranchId::Nu6_3)
+        );
+        assert_eq!(
+            pczt::common::determine_lock_time(pczt.global(), pczt.transparent().inputs()),
+            Some(0)
+        );
+        assert_eq!(*pczt.global().expiry_height(), 0);
+        assert!(pczt.transparent().inputs().is_empty());
+        assert!(pczt.transparent().outputs().is_empty());
+        assert!(pczt.sapling().spends().is_empty());
+        assert!(pczt.sapling().outputs().is_empty());
         assert!(pczt.orchard().actions().is_empty());
         assert_eq!(pczt.ironwood().actions().len(), 2);
+        assert_eq!(*pczt.ironwood().flags(), 0x07);
+        assert_eq!(*pczt.ironwood().value_sum(), (1, false));
+        crate::tx1::validate_tx1_effects(&result.tx1_effects).unwrap();
+
+        for (index, action) in pczt.ironwood().actions().iter().enumerate() {
+            let action_start = 1 + (index * crate::tx1::TX1_ACTION_EFFECTS_LEN);
+            let encoded = &result.tx1_effects
+                [action_start..action_start + crate::tx1::TX1_ACTION_EFFECTS_LEN];
+            let enc_ciphertext = action
+                .output()
+                .enc_ciphertext()
+                .clone()
+                .into_encrypted()
+                .unwrap();
+
+            assert_eq!(&encoded[0..32], action.cv_net().as_ref().unwrap());
+            assert_eq!(&encoded[32..64], action.spend().nullifier());
+            assert_eq!(&encoded[64..96], action.spend().rk());
+            assert_eq!(&encoded[96..128], action.output().cmx().as_ref().unwrap());
+            assert_eq!(&encoded[128..160], action.output().ephemeral_key());
+            assert_eq!(&encoded[160..740], enc_ciphertext.as_slice());
+            assert_eq!(&encoded[740..820], action.output().out_ciphertext());
+        }
 
         let indexed_action = pczt
             .ironwood()
@@ -1066,6 +1107,64 @@ mod tests {
             indexed_action.output().cmx().map(|cmx| cmx.to_vec()),
             Some(result.cmx_new)
         );
+    }
+
+    #[test]
+    fn test_governance_outputs_are_not_recoverable_with_account_ovk() {
+        let result = build_mock_nu6_3_pczt(&[mock_note()]);
+        let fvk = FullViewingKey::from_bytes(&mock_fvk_bytes().try_into().unwrap()).unwrap();
+        let ovk = fvk.to_ovk(Scope::External);
+
+        for index in 0..crate::tx1::TX1_ACTION_COUNT {
+            let start = 1 + index * crate::tx1::TX1_ACTION_EFFECTS_LEN;
+            let action = Action::from_parts(
+                Nullifier::from_bytes(
+                    result.tx1_effects[start + 32..start + 64]
+                        .try_into()
+                        .unwrap(),
+                )
+                .unwrap(),
+                VerificationKey::<SpendAuth>::try_from(
+                    <[u8; 32]>::try_from(&result.tx1_effects[start + 64..start + 96]).unwrap(),
+                )
+                .unwrap(),
+                ExtractedNoteCommitment::from_bytes(
+                    result.tx1_effects[start + 96..start + 128]
+                        .try_into()
+                        .unwrap(),
+                )
+                .unwrap(),
+                TransmittedNoteCiphertext {
+                    epk_bytes: result.tx1_effects[start + 128..start + 160]
+                        .try_into()
+                        .unwrap(),
+                    enc_ciphertext: result.tx1_effects[start + 160..start + 740]
+                        .try_into()
+                        .unwrap(),
+                    out_ciphertext: result.tx1_effects[start + 740..start + 820]
+                        .try_into()
+                        .unwrap(),
+                },
+                ValueCommitment::from_bytes(
+                    result.tx1_effects[start..start + 32].try_into().unwrap(),
+                )
+                .unwrap(),
+                (),
+            )
+            .unwrap();
+
+            assert!(
+                try_output_recovery_with_ovk(
+                    &IronwoodDomain::for_action(&action),
+                    &ovk,
+                    &action,
+                    action.cv_net(),
+                    &action.encrypted_note().out_ciphertext,
+                )
+                .is_none(),
+                "action {index} was recoverable with the governance account OVK"
+            );
+        }
     }
 
     #[test]

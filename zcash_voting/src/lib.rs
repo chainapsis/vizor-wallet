@@ -34,6 +34,7 @@ mod shielded_protocol;
 pub mod storage;
 pub mod transport;
 pub mod tree_sync;
+pub mod tx1;
 pub mod types;
 pub mod vote;
 pub mod vote_commitment;

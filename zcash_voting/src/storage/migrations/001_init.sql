@@ -35,6 +35,7 @@ CREATE TABLE bundles (
     gov_nullifiers_blob BLOB,
     padded_note_secrets BLOB,
     pczt_sighash        BLOB,
+    tx1_effects         BLOB,
     delegation_tx_hash  TEXT,
     PRIMARY KEY (round_id, wallet_id, bundle_index),
     FOREIGN KEY (round_id, wallet_id) REFERENCES rounds(round_id, wallet_id) ON DELETE CASCADE

@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 12;
+const CURRENT_VERSION: u32 = 13;
 
 const RESET_SQL: &str = "DROP TABLE IF EXISTS ballot_intent;
 DROP TABLE IF EXISTS imt_proofs;
@@ -141,6 +141,7 @@ mod tests {
 
         let columns = table_columns(&conn, "bundles");
         assert!(columns.contains(&"note_identity_hashes_blob".to_string()));
+        assert!(columns.contains(&"tx1_effects".to_string()));
     }
 
     #[test]
@@ -196,9 +197,9 @@ mod tests {
             [],
         ).unwrap();
 
-        // Insert a bundle row using all nullable BLOB columns.
+        // Insert a bundle row using the delegation BLOB columns.
         conn.execute(
-            "INSERT INTO bundles (round_id, wallet_id, bundle_index, van_comm_rand, dummy_nullifiers, rho_signed, padded_note_data, nf_signed, cmx_new, alpha, rseed_signed, rseed_output) VALUES ('test', 'w1', 0, X'AA', X'BB', X'CC', X'DD', X'EE', X'FF', X'11', X'22', X'33')",
+            "INSERT INTO bundles (round_id, wallet_id, bundle_index, van_comm_rand, dummy_nullifiers, rho_signed, padded_note_data, nf_signed, cmx_new, alpha, rseed_signed, rseed_output, tx1_effects) VALUES ('test', 'w1', 0, X'AA', X'BB', X'CC', X'DD', X'EE', X'FF', X'11', X'22', X'33', X'44')",
             [],
         ).unwrap();
 
@@ -221,6 +222,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(dummies, vec![0xBB]);
+
+        let tx1_effects: Vec<u8> = conn
+            .query_row(
+                "SELECT tx1_effects FROM bundles WHERE round_id = 'test' AND bundle_index = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tx1_effects, vec![0x44]);
     }
 
     fn table_columns(conn: &Connection, table: &str) -> Vec<String> {

@@ -546,6 +546,7 @@ mod session_reset_tests {
         conn.execute(
             "UPDATE bundles
              SET pczt_sighash = :sighash,
+                 tx1_effects = :tx1_effects,
                  padded_note_secrets = :secrets,
                  padded_note_data = :padded
              WHERE round_id = :round_id
@@ -556,6 +557,7 @@ mod session_reset_tests {
                 ":wallet_id": WALLET_ID,
                 ":bundle_index": bundle_index,
                 ":sighash": vec![0xAAu8; 32],
+                ":tx1_effects": crate::tx1::placeholder_tx1_effects(),
                 ":secrets": vec![0xBBu8; 64],
                 ":padded": vec![0xCCu8; 32],
             },
@@ -565,7 +567,12 @@ mod session_reset_tests {
 
     fn has_unsigned_setup_fields(db: &VotingDb, round_id: &str, bundle_index: u32) -> bool {
         let conn = db.conn();
-        queries::load_pczt_sighash(&conn, round_id, WALLET_ID, bundle_index).is_ok()
+        let has_sighash =
+            queries::load_pczt_sighash(&conn, round_id, WALLET_ID, bundle_index).is_ok();
+        let has_tx1_effects =
+            queries::load_tx1_effects(&conn, round_id, WALLET_ID, bundle_index).is_ok();
+        assert_eq!(has_sighash, has_tx1_effects);
+        has_sighash
     }
 
     #[test]

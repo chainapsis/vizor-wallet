@@ -598,8 +598,7 @@ impl VotingDb {
             .ok_or_else(|| VotingError::InvalidInput {
                 message: "total note weight overflows u64".to_string(),
             })?;
-        // Persist delegation data fields
-        // plus padded_note_secrets and pczt_sighash for ZCA-74 randomness threading.
+        // Persist delegation data plus the PCZT-derived signing fields.
         let conn = self.conn();
         queries::store_delegation_data_with_pczt_fields(
             &conn,
@@ -620,6 +619,7 @@ impl VotingDb {
             keys.address_index,
             &result.padded_note_secrets,
             &result.pczt_sighash,
+            &result.tx1_effects,
             &result.rk,
             &result.gov_nullifiers,
         )?;
@@ -1267,6 +1267,7 @@ impl VotingDb {
             vote_round_id: data.vote_round_id,
             spend_auth_sig: signature.to_vec(),
             sighash: stored_sighash,
+            tx1_effects: data.tx1_effects,
         })
     }
 
@@ -2520,6 +2521,7 @@ mod tests {
                 0,
                 &[],
                 &pczt_sighash,
+                &crate::tx1::placeholder_tx1_effects(),
             )
             .unwrap();
         }
@@ -2556,6 +2558,7 @@ mod tests {
             0,
             &[],
             &[0x99; 32],
+            &crate::tx1::placeholder_tx1_effects(),
         )
         .unwrap();
         queries::store_padded_note_secrets_if_absent(conn, ROUND_ID, W, 0, &[]).unwrap();
@@ -2692,6 +2695,116 @@ mod tests {
     }
 
     #[test]
+    fn test_tx1_effects_are_persisted_write_once() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+        let gov_nullifiers = vec![vec![0x0B; 32]; BUNDLE_NOTE_SLOTS];
+
+        let store = |tx1_effects: &[u8]| {
+            queries::store_delegation_data_with_pczt_fields(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &[0x01; 32],
+                &[],
+                &[0x02; 32],
+                &[],
+                &[0x03; 32],
+                &[0x04; 32],
+                &[0x05; 32],
+                &[0x06; 32],
+                &[0x07; 32],
+                &[0x08; 32],
+                1,
+                0,
+                &[],
+                &[0x09; 32],
+                tx1_effects,
+                &[0x0A; 32],
+                &gov_nullifiers,
+            )
+        };
+
+        let effects = crate::tx1::placeholder_tx1_effects();
+        store(&effects).unwrap();
+        store(&effects).unwrap();
+        assert_eq!(
+            queries::load_tx1_effects(&conn, ROUND_ID, W, 0).unwrap(),
+            effects
+        );
+
+        let mut replacement = effects.clone();
+        replacement[1] = 1;
+        let err = store(&replacement).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("refusing to overwrite tx1_effects"));
+        assert_eq!(
+            queries::load_tx1_effects(&conn, ROUND_ID, W, 0).unwrap(),
+            effects
+        );
+    }
+
+    #[test]
+    fn test_public_delegation_store_supports_submission_loading() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+
+        let tx1_effects = crate::tx1::placeholder_tx1_effects();
+        let rk = [0x0A; 32];
+        let gov_nullifiers = vec![vec![0x0B; 32]; BUNDLE_NOTE_SLOTS];
+        let nf_signed = [0x03; 32];
+        let cmx_new = [0x04; 32];
+
+        queries::store_delegation_data(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &[0x01; 32],
+            &[],
+            &[0x02; 32],
+            &[],
+            &nf_signed,
+            &cmx_new,
+            &[0x05; 32],
+            &[0x06; 32],
+            &[0x07; 32],
+            &[0x08; 32],
+            1,
+            0,
+            &[],
+            &[0x09; 32],
+            &tx1_effects,
+        )
+        .unwrap();
+        queries::store_proof_result_fields(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &rk,
+            &gov_nullifiers,
+            &nf_signed,
+            &cmx_new,
+        )
+        .unwrap();
+        queries::store_proof(&conn, ROUND_ID, W, 0, &[0xAC; 96]).unwrap();
+
+        let submission = queries::load_delegation_submission_data(&conn, ROUND_ID, W, 0).unwrap();
+        assert_eq!(submission.tx1_effects, tx1_effects);
+        assert_eq!(submission.rk, rk);
+        assert_eq!(submission.gov_nullifiers, gov_nullifiers);
+    }
+
+    #[test]
     fn test_store_proof_result_fields_rejects_pczt_mismatch() {
         let db = test_db();
         db.init_round(Network::Testnet, &test_params(), None)
@@ -2725,6 +2838,7 @@ mod tests {
             0,
             &[],
             &[0x06; 32],
+            &crate::tx1::placeholder_tx1_effects(),
             &rk,
             &gov_nullifiers,
         )
@@ -2804,6 +2918,7 @@ mod tests {
             0,
             &[],
             &[0x06; 32],
+            &crate::tx1::placeholder_tx1_effects(),
         )
         .unwrap();
 
@@ -3320,6 +3435,7 @@ mod tests {
         assert_eq!(submission.rk, setup.rk);
         assert_eq!(submission.sighash, setup.pczt_sighash);
         assert_eq!(submission.spend_auth_sig, signature);
+        assert_eq!(submission.tx1_effects, setup.tx1_effects);
     }
 
     #[test]
@@ -3341,7 +3457,7 @@ mod tests {
         {
             let conn = db.conn();
             queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
-            queries::store_delegation_data(
+            queries::store_delegation_data_with_pczt_fields(
                 &conn,
                 ROUND_ID,
                 W,
@@ -3360,6 +3476,9 @@ mod tests {
                 0,
                 &[],
                 &stored_sighash,
+                &crate::tx1::placeholder_tx1_effects(),
+                &rk,
+                &[vec![0x89; 32]],
             )
             .unwrap();
             queries::store_proof_result_fields_with_van_comm(

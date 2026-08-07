@@ -1,17 +1,25 @@
-# Exporting to external software
+# External software export design
 
 ## Purpose
 
 After delegation, later votes are authorized by the voting hotkey instead of
-the Zcash account spending key. A wallet can hand that delegated voting
-authority to external software by sending an export package.
+the Zcash account spending key. A future portable export can hand that
+delegated voting authority to external software without sharing the account
+spending key.
 
 This export does not include the wallet seed, mnemonic, account spending key,
 or full viewing key. It also does not move ZEC.
 
+## Status
+
+The crate does not currently expose a complete portable export and import API.
+The material below defines credential components and validation requirements
+for a future format. Applications MUST NOT treat the credential fields alone
+as a complete import package.
+
 ## Export contents
 
-The package has three credential fields:
+A future package needs at least three credential fields:
 
 | Field | Contents |
 | --- | --- |
@@ -19,9 +27,9 @@ The package has three credential fields:
 | `signature` | The TX1 SpendAuth signature record for each delegated bundle. |
 | `ivk` | The delegating account's 64-byte raw external Orchard incoming viewing key. |
 
-The package also needs a format version, Zcash network, and voting round ID so
-that the receiver can interpret those fields in the correct context. These
-are transport metadata, not additional authority.
+A complete package also needs a format version, Zcash network, and voting round
+ID so that the receiver can interpret those fields in the correct context.
+These are transport metadata, not additional authority.
 
 ### Hotkey private key
 
@@ -62,9 +70,17 @@ signature:
     rk
 ```
 
-The receiver MUST verify `spend_auth_sig` under `rk` and `sighash` before
-accepting the package. It MUST also bind the record to the package's network,
-round ID, and bundle index.
+The receiver MUST NOT verify the signature against only the supplied sighash.
+It must also obtain the corresponding confirmed delegation submission,
+including its versioned `tx1_effects`, and perform the same binding checks as
+the vote chain. The receiver must reconstruct the canonical sighash from those
+effects, require it to equal the recorded sighash, require the effects to match
+the confirmed `rk`, signed-note nullifier, and output commitment, and then
+verify `spend_auth_sig` under `rk` and that sighash.
+
+A complete format must therefore carry the confirmed delegation data or an
+authenticated reference from which it can be retrieved. That container and
+retrieval mechanism are not defined by the current crate API.
 
 One TX1 authorizes one delegation bundle. If a voting identity has more than
 five eligible notes, it has more than one TX1 and the export MUST contain one
@@ -108,7 +124,7 @@ protocol-level revocation mechanism.
 
 ## Relationship to TX1
 
-TX1 delegates one eligible-note bundle to the hotkey; the export package hands
-control of that hotkey to external software. See
+TX1 delegates one eligible-note bundle to the hotkey. A future export package
+can hand control of that hotkey to external software. See
 [Delegation signing transaction (TX1)](delegation-signing-transaction.md) for
 the note construction, `rho_signed` binding, and signature flow.

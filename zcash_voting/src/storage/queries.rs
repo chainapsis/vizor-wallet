@@ -618,10 +618,9 @@ pub fn require_bundle_notes(
 //   - dummy_nullifiers: nullifiers generated for zero-value padded note slots (§1.3.5).
 //     Each is 32 bytes. Stored so the witness builder can reconstruct padded notes.
 
-/// Persist all delegation action data in a single UPDATE on the bundles table:
-/// blinding factor, dummy nullifiers, constrained rho, padded note cmx values,
-/// signed action fields (nf_signed, cmx_new, alpha), note rseeds,
-/// VAN leaf value, total note value, and address index.
+/// Persist all delegation action data and finalized TX1 effects in a single
+/// UPDATE on the bundles table. The effects are required by
+/// [`load_delegation_submission_data`].
 pub fn store_delegation_data(
     conn: &Connection,
     round_id: &str,
@@ -641,6 +640,7 @@ pub fn store_delegation_data(
     address_index: u32,
     padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
     pczt_sighash: &[u8],
+    tx1_effects: &[u8],
 ) -> Result<(), VotingError> {
     store_delegation_data_inner(
         conn,
@@ -661,13 +661,14 @@ pub fn store_delegation_data(
         address_index,
         padded_note_secrets,
         pczt_sighash,
+        Some(tx1_effects),
         None,
         None,
     )
 }
 
-/// Persist delegation action data plus PCZT-derived public inputs that the
-/// later delegation proof must reproduce.
+/// Persist delegation action data, the finalized TX1 effects, and PCZT-derived
+/// public inputs that the later delegation proof must reproduce.
 pub(crate) fn store_delegation_data_with_pczt_fields(
     conn: &Connection,
     round_id: &str,
@@ -687,6 +688,7 @@ pub(crate) fn store_delegation_data_with_pczt_fields(
     address_index: u32,
     padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
     pczt_sighash: &[u8],
+    tx1_effects: &[u8],
     rk: &[u8],
     gov_nullifiers: &[Vec<u8>],
 ) -> Result<(), VotingError> {
@@ -710,6 +712,7 @@ pub(crate) fn store_delegation_data_with_pczt_fields(
         address_index,
         padded_note_secrets,
         pczt_sighash,
+        Some(tx1_effects),
         Some(rk),
         Some(gov_nullifiers_blob.as_slice()),
     )
@@ -734,9 +737,14 @@ fn store_delegation_data_inner(
     address_index: u32,
     padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
     pczt_sighash: &[u8],
+    tx1_effects: Option<&[u8]>,
     rk: Option<&[u8]>,
     gov_nullifiers_blob: Option<&[u8]>,
 ) -> Result<(), VotingError> {
+    if let Some(tx1_effects) = tx1_effects {
+        crate::tx1::validate_tx1_effects(tx1_effects)?;
+    }
+
     // Serialize padded-note nullifiers as a flat byte blob: [nf0 (32 bytes) | nf1 | nf2 | ...].
     // Length 0 means no padding was needed because all note slots were real.
     let dummy_blob: Vec<u8> = dummy_nullifiers
@@ -750,22 +758,22 @@ fn store_delegation_data_inner(
     // Serialize padded_note_secrets as flat blob: N * 64 bytes (rho[32] || rseed[32] per entry).
     let secrets_blob = encode_padded_note_secrets(padded_note_secrets);
 
-    let existing: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = conn
+    let existing: Option<(Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>)> = conn
         .query_row(
-            "SELECT padded_note_secrets, pczt_sighash FROM bundles \
+            "SELECT padded_note_secrets, pczt_sighash, tx1_effects FROM bundles \
              WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
             named_params! {
                 ":round_id": round_id,
                 ":wallet_id": wallet_id,
                 ":bundle_index": bundle_index as i64,
             },
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|e| VotingError::Internal {
             message: format!("failed to load existing delegation data: {}", e),
         })?;
-    let Some((existing_secrets, existing_sighash)) = existing else {
+    let Some((existing_secrets, existing_sighash, existing_tx1_effects)) = existing else {
         return Err(VotingError::InvalidInput {
             message: format!(
                 "bundle not found: round={}, bundle={}",
@@ -793,6 +801,16 @@ fn store_delegation_data_inner(
             });
         }
     }
+    if let (Some(existing_tx1_effects), Some(tx1_effects)) = (existing_tx1_effects, tx1_effects) {
+        if existing_tx1_effects != tx1_effects {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "refusing to overwrite tx1_effects for round={}, bundle={}",
+                    round_id, bundle_index
+                ),
+            });
+        }
+    }
 
     let rows = conn
         .execute(
@@ -803,6 +821,7 @@ fn store_delegation_data_inner(
              total_note_value = :total_note_value, address_index = :address_index, \
              padded_note_secrets = COALESCE(padded_note_secrets, :secrets), \
              pczt_sighash = COALESCE(pczt_sighash, :sighash), \
+             tx1_effects = COALESCE(tx1_effects, :tx1_effects), \
              rk = COALESCE(:rk, rk), \
              gov_nullifiers_blob = COALESCE(:gov_nullifiers_blob, gov_nullifiers_blob) \
              WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
@@ -821,6 +840,7 @@ fn store_delegation_data_inner(
                 ":address_index": address_index as i64,
                 ":secrets": secrets_blob,
                 ":sighash": pczt_sighash,
+                ":tx1_effects": tx1_effects,
                 ":rk": rk,
                 ":gov_nullifiers_blob": gov_nullifiers_blob,
                 ":round_id": round_id,
@@ -1037,6 +1057,29 @@ pub fn load_pczt_sighash(
     .map_err(|e| VotingError::InvalidInput {
         message: format!("no pczt_sighash for round={}, bundle={} ({})", round_id, bundle_index, e),
     })
+}
+
+/// Load the versioned Ironwood TX1 effecting data persisted at PCZT setup.
+pub fn load_tx1_effects(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+) -> Result<Vec<u8>, VotingError> {
+    let effects: Vec<u8> = conn
+        .query_row(
+            "SELECT tx1_effects FROM bundles WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
+            named_params! { ":round_id": round_id, ":wallet_id": wallet_id, ":bundle_index": bundle_index as i64 },
+            |row| row.get(0),
+        )
+        .map_err(|e| VotingError::InvalidInput {
+            message: format!(
+                "no tx1_effects for round={}, bundle={} ({})",
+                round_id, bundle_index, e
+            ),
+        })?;
+    crate::tx1::validate_tx1_effects(&effects)?;
+    Ok(effects)
 }
 
 /// Load the VAN blinding factor for a bundle. Needed as a private witness in ZKP #2.
@@ -1427,6 +1470,7 @@ pub struct DelegationDbFields {
     pub gov_nullifiers: Vec<Vec<u8>>,
     pub alpha: Vec<u8>,
     pub vote_round_id: String,
+    pub tx1_effects: Vec<u8>,
 }
 
 /// Load all fields needed to reconstruct the chain-ready delegation TX payload.
@@ -1436,12 +1480,30 @@ pub fn load_delegation_submission_data(
     wallet_id: &str,
     bundle_index: u32,
 ) -> Result<DelegationDbFields, VotingError> {
-    let (proof_bytes, rk, nf_signed, cmx_new, gov_comm, gov_nullifiers_blob, alpha, vote_round_id): (
-        Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, String,
+    let (
+        proof_bytes,
+        rk,
+        nf_signed,
+        cmx_new,
+        gov_comm,
+        gov_nullifiers_blob,
+        alpha,
+        vote_round_id,
+        tx1_effects,
+    ): (
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        String,
+        Vec<u8>,
     ) = conn
         .query_row(
             "SELECT p.proof, b.rk, b.nf_signed, b.cmx_new, b.gov_comm, \
-             b.gov_nullifiers_blob, b.alpha, b.round_id \
+             b.gov_nullifiers_blob, b.alpha, b.round_id, b.tx1_effects \
              FROM bundles b JOIN proofs p ON b.round_id = p.round_id AND b.bundle_index = p.bundle_index AND b.wallet_id = p.wallet_id \
              WHERE b.round_id = :round_id AND b.wallet_id = :wallet_id AND b.bundle_index = :bundle_index AND p.success = 1",
             named_params! { ":round_id": round_id, ":wallet_id": wallet_id, ":bundle_index": bundle_index as i64 },
@@ -1455,6 +1517,7 @@ pub fn load_delegation_submission_data(
                     row.get(5)?,
                     row.get(6)?,
                     row.get(7)?,
+                    row.get(8)?,
                 ))
             },
         )
@@ -1478,6 +1541,7 @@ pub fn load_delegation_submission_data(
         .chunks_exact(32)
         .map(|c| c.to_vec())
         .collect();
+    crate::tx1::validate_tx1_effects(&tx1_effects)?;
 
     Ok(DelegationDbFields {
         proof: proof_bytes,
@@ -1488,6 +1552,7 @@ pub fn load_delegation_submission_data(
         gov_nullifiers,
         alpha,
         vote_round_id,
+        tx1_effects,
     })
 }
 
@@ -2544,7 +2609,8 @@ pub fn clear_unsigned_delegation_setup_fields(
              rk = NULL,
              gov_nullifiers_blob = NULL,
              padded_note_secrets = NULL,
-             pczt_sighash = NULL
+             pczt_sighash = NULL,
+             tx1_effects = NULL
          WHERE round_id = :round_id
            AND wallet_id = :wallet_id
            AND delegation_tx_hash IS NULL

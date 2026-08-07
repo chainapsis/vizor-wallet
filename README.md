@@ -82,9 +82,9 @@ in [Delegation signing transaction (TX1)](docs/delegation-signing-transaction.md
 It distinguishes the PCZT-only signing artifact from the vote-chain
 delegation submission and includes software-wallet and Keystone examples.
 The companion
-[external software export](docs/exporting-to-external-software.md) defines the
-hotkey private key, delegation signature, and IVK handed to another
-application.
+[external software export](docs/exporting-to-external-software.md) documents
+credential material and validation requirements for a future portable format.
+The crate does not yet expose a complete export and import API.
 
 ## Migrating 0.11 to 0.12
 
