@@ -191,6 +191,7 @@ void main() {
       find.byKey(const ValueKey('mobile_settings_tor_row')),
       200,
     );
+    expect(find.text('Privacy'), findsOneWidget);
     expect(find.text('Use Tor'), findsOneWidget);
     expect(find.text('Off'), findsOneWidget);
     expect(

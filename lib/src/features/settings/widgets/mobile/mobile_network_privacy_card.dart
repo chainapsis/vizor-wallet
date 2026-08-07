@@ -62,7 +62,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Network',
+              'Privacy',
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
