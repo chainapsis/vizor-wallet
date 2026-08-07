@@ -18,6 +18,7 @@ import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import '../../features/payment_links/providers/payment_link_cards_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/providers/swap_state_provider.dart';
 import '../config/network_config.dart';
@@ -95,6 +96,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   bool _isSigningOut = false;
   bool _isCopyingAddress = false;
+  bool _isOpeningPaymentLinks = false;
   OverlayEntry? _accountMenuEntry;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
@@ -187,6 +189,40 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       '/pay',
       extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
     );
+  }
+
+  Future<void> _openPaymentLinks() async {
+    const routePath = '/payment-links';
+    if (_matches(routePath) ||
+        widget.disabledRoutePaths.contains(routePath) ||
+        _isOpeningPaymentLinks) {
+      return;
+    }
+
+    final router = GoRouter.of(context);
+    final entryPath = router.routerDelegate.currentConfiguration.uri.path;
+    setState(() => _isOpeningPaymentLinks = true);
+    try {
+      final cards = await ref.read(paymentLinkCardsLoaderProvider)();
+      if (!mounted ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      router.go(routePath, extra: cards);
+    } catch (_) {
+      if (!mounted ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      showAppToast(
+        context,
+        'Gift Cards could not be loaded.',
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+    } finally {
+      if (mounted) setState(() => _isOpeningPaymentLinks = false);
+    }
   }
 
   void _toggleAccountMenu({
@@ -547,6 +583,21 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                             : () => unawaited(_openPay()),
                       ),
                     ],
+                    const SizedBox(height: AppSpacing.xs),
+                    AppSidebarItem(
+                      key: const ValueKey('sidebar_payment_links_button'),
+                      label: 'Gift Cards',
+                      iconName: AppIcons.giftCard,
+                      active: _matches('/payment-links'),
+                      onTap:
+                          isImporting ||
+                              _isOpeningPaymentLinks ||
+                              widget.disabledRoutePaths.contains(
+                                '/payment-links',
+                              )
+                          ? null
+                          : () => unawaited(_openPaymentLinks()),
+                    ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_voting_button'),

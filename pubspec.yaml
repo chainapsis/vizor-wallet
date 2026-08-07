@@ -105,6 +105,7 @@ flutter:
 
   assets:
     - assets/illustrations/
+    - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/
     - assets/swap/tokens/

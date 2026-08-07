@@ -12,6 +12,12 @@ class PaymentLinkPresentation {
   final String? artworkId;
   final String? message;
 
+  static bool isMessageWithinUtf8ByteLimit(String? message) {
+    final normalizedMessage = _normalizeOptionalString(message);
+    return normalizedMessage == null ||
+        utf8.encode(normalizedMessage).length <= maxMessageUtf8Bytes;
+  }
+
   Map<String, Object?>? toPayload() {
     final normalizedArtworkId = _normalizeOptionalString(artworkId);
     final normalizedMessage = _normalizeOptionalString(message);
@@ -48,7 +54,7 @@ class PaymentLinkPresentation {
       if (message.characters.length > maxMessageCharacters) {
         throw const FormatException('Payment link message is too long.');
       }
-      if (utf8.encode(message).length > maxMessageUtf8Bytes) {
+      if (!isMessageWithinUtf8ByteLimit(message)) {
         throw const FormatException('Payment link message is too large.');
       }
     }

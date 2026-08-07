@@ -129,6 +129,13 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull);
+    expect(
+      find.textContaining(
+        'This deletes all accounts and unshared Gift Card links.',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Reset Vizor'));
     await tester.pump();
