@@ -642,6 +642,8 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pump();
 
+    await tester.ensureVisible(find.text('Theme'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Theme'));
     await tester.pumpAndSettle();
 
@@ -781,6 +783,7 @@ void main() {
     for (final label in [
       'Contacts',
       'Secret Passphrase',
+      'Viewing Key',
       'Keep screen awake',
     ]) {
       final row = tester.widget<Text>(find.text(label));
@@ -810,6 +813,25 @@ void main() {
     expect(row.onTap, isNull);
     expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
     expect(chevron.color, AppThemeData.dark.colors.icon.disabled);
+  });
+
+  testWidgets('hardware accounts still allow the viewing key row', (
+    tester,
+  ) async {
+    // Unlike the secret passphrase, a UFVK export never grants spend
+    // authority, so hardware accounts keep this row enabled.
+    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    await tester.pump();
+
+    final rowFinder = find.byKey(
+      const ValueKey('mobile_settings_viewing_key_row'),
+    );
+    final row = tester.widget<MobileListRow>(rowFinder);
+    final label = tester.widget<Text>(find.text('Viewing Key'));
+
+    expect(row.enabled, isTrue);
+    expect(row.onTap, isNotNull);
+    expect(label.style?.color, isNot(AppThemeData.dark.colors.text.disabled));
   });
 
   testWidgets('labels Face ID hardware by brand', (tester) async {

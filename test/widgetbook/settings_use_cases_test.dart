@@ -73,6 +73,32 @@ void main() {
     expect(find.text('To view the secret passphrase.'), findsOneWidget);
   });
 
+  testWidgets('settings viewing key gate use case renders the gate', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsViewingKeyGateUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Confirm access'), findsOneWidget);
+    expect(find.text('To view the viewing key.'), findsOneWidget);
+  });
+
+  testWidgets('settings viewing key reveal use case renders the key', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsViewingKeyRevealUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Viewing Key'), findsOneWidget);
+    expect(find.text('Full Viewing Key'), findsOneWidget);
+  });
+
   testWidgets('settings change password gate use case renders the gate', (
     tester,
   ) async {

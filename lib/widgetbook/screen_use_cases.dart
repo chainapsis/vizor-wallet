@@ -57,6 +57,7 @@ import '../src/features/settings/screens/settings_endpoint_screen.dart';
 import '../src/features/settings/screens/settings_screen.dart';
 import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
 import '../src/features/settings/screens/settings_uninstall_screen.dart';
+import '../src/features/settings/screens/settings_viewing_key_screen.dart';
 import '../src/features/wallet_link/models/wallet_link_models.dart';
 import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
@@ -84,6 +85,15 @@ const _previewLongWordMnemonic =
 final _previewImportWordList = _previewMnemonic.split(' ');
 
 bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
+
+/// Placeholder string only — long enough to exercise the viewing-key card's
+/// wrapping, but not a real bech32-encoded UFVK.
+const _previewUfvk =
+    'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'previewonly';
 
 const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
@@ -739,6 +749,20 @@ Widget buildSettingsSecretPassphraseRevealWithoutBip39UseCase(
     const SettingsSeedPhraseRevealPreview(
       mnemonic: _previewImportReviewMnemonic,
     ),
+  );
+}
+
+Widget buildSettingsViewingKeyGateUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/viewing-key',
+    const SettingsViewingKeyScreen(),
+  );
+}
+
+Widget buildSettingsViewingKeyRevealUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/viewing-key',
+    const SettingsViewingKeyRevealPreview(ufvk: _previewUfvk),
   );
 }
 
@@ -2437,6 +2461,14 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
           builder: (_, state) => _PreviewRoutePlaceholder(
             label:
                 '/settings/seed-phrase '
+                '(${state.extra as String? ?? 'active account'})',
+          ),
+        ),
+        GoRoute(
+          path: '/settings/viewing-key',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label:
+                '/settings/viewing-key '
                 '(${state.extra as String? ?? 'active account'})',
           ),
         ),

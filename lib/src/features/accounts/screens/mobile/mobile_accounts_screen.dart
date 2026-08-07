@@ -98,9 +98,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 
   /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
-  /// menu: secret passphrase (software only) / copy address / send ZEC / edit,
-  /// with removal separated below a divider when the eligibility rule allows
-  /// it.
+  /// menu: secret passphrase (software only) / viewing key / copy address /
+  /// send ZEC / edit, with removal separated below a divider when the
+  /// eligibility rule allows it.
   void _showRowMenu(AccountInfo account, BuildContext anchorContext) {
     if (_rowMenuEntry != null) {
       final wasOpenForAccount = _openRowMenuAccountUuid == account.uuid;
@@ -137,7 +137,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       (false, true) => 173.0,
       (false, false) => 126.0,
     };
-    final menuHeight = baseMenuHeight + (account.isHardware ? 0 : 34);
+    // The viewing-key row is always shown (unlike the secret-passphrase
+    // row, a UFVK never grants spend authority, so hardware accounts get
+    // it too); each extra row costs the same fixed 34 (26 item + 8 gap).
+    final menuHeight = baseMenuHeight + 34 + (account.isHardware ? 0 : 34);
     const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
     final colors = context.colors;
     final appTheme = AppTheme.of(context);
@@ -163,6 +166,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         switch (action) {
           case _AccountAction.viewSecretPassphrase:
             context.push('/settings/seed-phrase', extra: account.uuid);
+          case _AccountAction.viewViewingKey:
+            context.push('/settings/viewing-key', extra: account.uuid);
           case _AccountAction.copy:
             unawaited(_copyAddress(account));
           case _AccountAction.send:
@@ -234,6 +239,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           label: 'View secret phrase',
           action: _AccountAction.viewSecretPassphrase,
         ),
+      item(
+        key: const ValueKey('mobile_account_menu_viewing_key'),
+        iconName: AppIcons.eye,
+        label: 'View viewing key',
+        action: _AccountAction.viewViewingKey,
+      ),
       item(
         key: const ValueKey('mobile_account_menu_copy'),
         iconName: AppIcons.copy,
@@ -633,7 +644,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 }
 
-enum _AccountAction { viewSecretPassphrase, copy, send, edit, remove }
+enum _AccountAction {
+  viewSecretPassphrase,
+  viewViewingKey,
+  copy,
+  send,
+  edit,
+  remove,
+}
 
 class _AccountsGroupCard extends StatelessWidget {
   const _AccountsGroupCard({
