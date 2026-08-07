@@ -545,10 +545,349 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Declaring the network route
+
+The desired route lives in Rust process memory, and a background wake can be a
+cold launch where the Dart layer never ran. So "nobody has declared yet" is a
+distinct state from "the user chose direct", and Rust refuses it at the route
+chokepoint rather than treating it as direct.
+
+- **iOS declares the saved route once, at launch.** `AppDelegate` reads the
+  persisted preference and calls `zcash_network_privacy_mark_tor_desired` or
+  `zcash_network_privacy_mark_direct_route` before any background task handler
+  can run. Declaring samples nothing, never bootstraps, and is ignored once
+  the process has decided its own route, so it can never turn a live Tor route
+  direct.
+- A process that reaches lightwalletd without a declaration fails closed with
+  `Network route has not been declared for this process`. That is the intended
+  outcome: the alternative is reaching lightwalletd over clearnet on a
+  Tor-configured wallet. The Rust test
+  `an_undeclared_route_is_refused_instead_of_resolving_to_a_direct_connection`
+  pins the chokepoint.
+- **On a Tor route, background work does not run.** A background process never
+  brings Tor up — the foreground owns the client — so a background launch on a
+  Tor wallet finds the route declared with no client behind it, every
+  lightwalletd call refuses, and the existing failure handling defers the work
+  to the next foreground entry. Nothing falls back to clearnet. Direct-route
+  wallets keep today's background behaviour unchanged.
+- **The saved route may be stricter than the enforced route, never laxer.**
+  The saved preference is all a cold background process has to go on, so a
+  toggle persists in whichever order keeps this true at every intermediate
+  point: enabling writes before the runtime switch (a failed write aborts a
+  toggle that has not happened yet), disabling writes after it (a failed write
+  leaves the stricter Tor value behind). `networkPrivacyPersistedRouteIsSafe`
+  is the executable statement of this rule.
+- Surfaces that describe what background work will do must read the saved
+  route (`NetworkPrivacyState.savedRouteTorEnabled`), not `torEnabled`: the
+  two diverge in exactly one state — a disable whose transport switched and
+  whose preference write failed — and the native lanes read the saved half.
+
 Key files:
 - `rust/src/migration_preparation.rs` — shared mobile preparation core
 - `rust/src/android_jni.rs` — Android preparation execution adapter
-- `rust/src/ffi.rs` — iOS read-only inspection and query adapter
+- `rust/src/ffi.rs` — iOS C adapter: read-only inspection and queries, plus the
+  route declaration and background Tor bring-up the queries run on
+- `ios/Runner/zcash_sync.h` — matching C header
+- `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
+  confirmation tracker and foreground-handoff owner
+- `lib/src/providers/wallet_mutation_guard.dart` — mutation ordering fence
+- `lib/src/features/migration/services/ironwood_migration_service.dart` —
+  foreground preparation recovery
+
+### iOS Preparation Confirmation Tracking
+
+`BGContinuedProcessingTask`
+(`com.keplr.vizor.ironwood-preparation`) polls lightwalletd every 60 seconds
+while an executed denomination preparation waits for confirmations.
+
+- `BackgroundMigrationPreparationManager.swift` owns the task, reads observable
+  txids through C FFI, updates the system task `Progress`, and advances its
+  progress heartbeat every 15 seconds.
+- `NativeLightwalletdClient.swift` uses only `GetLatestBlock` and
+  `GetTransaction`; it checks both txid byte orientations.
+- `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
+  confirmations. A normal mined height contributes
+  `tip - minedHeight + 1`, capped at 3.
+- Reaching 3 confirmations finishes only the current observation wave. The
+  manager stores a foreground-continuation token, posts an “Open Vizor”
+  notification under its own `confirmedWaveReady` kind so healthy copy never
+  reuses failure copy, and immediately completes that system task successfully
+  without opening the wallet DB for sync or advance. It does not wait for the
+  user; a completed wave leaves nothing for a read-only task to observe.
+- Foreground reentry acknowledges the token before syncing and advancing the
+  durable run. If another transaction wave is materialized, it submits a fresh
+  read-only continued-processing task.
+- A foreground handoff records continuations only for runs that genuinely need
+  the foreground — never for a run the read-only task could still finish. A
+  multi-account task otherwise parks an account that is merely mid-wave, and
+  that account stops being re-armed until the user makes it active. The
+  "is a preparation bound to this request" boolean stays broader than the
+  recorded set on purpose: it gates cancellation of the pending request, so
+  deriving it from the recorded set would cancel healthy mid-wave runs.
+- OS expiration is completed without a failure presentation and re-arms
+  background tracking, because it interrupts one execution opportunity rather
+  than proving the migration failed. Expiry posts no notification of its own:
+  scopes whose waves already confirmed keep their earlier step-confirmed
+  alert, and the interrupted wave resumes when the re-armed task runs.
+
+### Send Flow
+
+2-step: `propose_send(account_uuid)` → confirmation dialog (shows fee) → `execute_proposal()` → broadcast via `SendTransaction` gRPC.
+
+- Integer-only ZEC-to-zatoshi parsing (no floating-point)
+- Real fee estimation via `estimate_fee(account_uuid)` on each keystroke
+- No-op Sapling provers for Orchard-only TXs (avoids 50MB param download)
+- Post-send: `refreshAfterSend()` for immediate pending TX display
+- Friendly error messages via `_friendlyError()` pattern matching
+
+### Hardware Wallet (Keystone) Send Flow
+
+Hardware send uses a **three-PCZT pipeline** that matches the
+`zcash-android-wallet-sdk` / Zashi pattern. The hardware device cannot generate
+ZK proofs (proving keys are too big for the device), and the phone cannot
+sign (spending key lives on the device), so the two sides work on separate
+clones of the same base PCZT and the phone combines them at the end.
+
+```
+1. createPcztFromProposal                      → base PCZT (phone)
+   (IO-finalized, no proofs, no signatures)
+      │
+      ├── 2a. addProofsToPczt(base, params?)   → pcztWithProofs   (phone, CPU)
+      │       (Orchard proof always; Sapling output proofs if the
+      │        proposal has needsSaplingParams=true)
+      │
+      └── 2b. redactPcztForSigner(base)        → redactedPczt     (phone)
+              → Keystone device (animated QR)
+              → device signs Orchard spend_auth_sig
+              → signed PCZT back to phone       → pcztWithSignatures
+                                                       ↓
+3. extractAndBroadcastPczt(
+     pcztWithProofs, pcztWithSignatures,
+     spend_params?, output_params?,
+   )                                             → txid
+```
+
+Roles in the split:
+
+| Step | PCZT role              | Runs on | Needs what                          |
+|------|------------------------|---------|--------------------------------------|
+| 1    | Creator + IoFinalizer  | phone   | wallet DB                            |
+| 2a   | Prover                 | phone   | proving params (Orchard always; Sapling ~50MB if target recipient is Sapling) |
+| 2b   | Redactor               | phone   | —                                    |
+| sign | Signer                 | device  | spend_auth_sig derivation (device holds USK) |
+| 3    | Combiner + TransactionExtractor | phone | verifying keys (Orchard always; Sapling if bundle non-empty) + wallet DB |
+
+**Critical invariants** (each of these was a real bug at some point in
+development; breaking them is a correctness or data-loss regression):
+
+1. **`extract_and_broadcast_pczt` must broadcast before it persists.**
+   The function order is: `TransactionExtractor::extract()` (in-memory, no
+   DB) → `send_transaction` gRPC → *only then* `extract_and_store_transaction_from_pczt`.
+   Store-then-broadcast leaves the wallet in an unrecoverable state if
+   lightwalletd rejects the tx: DB thinks the notes are spent, network
+   has no record of the tx, user has to manually rescue the wallet.
+
+2. **Local storage failure after a successful broadcast must not surface
+   as a send failure.** The primary store path is
+   `extract_and_store_transaction_from_pczt` (preserves rich PCZT
+   recipient/memo metadata). On failure, fall back to
+   `decrypt_and_store_transaction` — the same path sync uses when it
+   discovers one of our sent txs on-chain. Correctness is preserved
+   (spent notes get marked spent via nullifier matching) at the cost of
+   some PCZT-only display metadata. Only if both paths fail do we
+   return an error, and the error message must tell the user the tx is
+   on the network and not to retry.
+
+3. **Sapling params must be passed to BOTH `add_proofs_to_pczt` AND
+   `extract_and_broadcast_pczt` whenever the PCZT contains a Sapling
+   bundle.** `add_proofs_to_pczt` needs `LocalTxProver` to build Sapling
+   output proofs; `extract_and_broadcast_pczt` needs `LocalTxProver
+   ::verifying_keys()` (a) to validate the extracted transaction and
+   (b) to let `extract_and_store_transaction_from_pczt` store it. Both
+   functions share the `Option<&str>` / `Option<&str>` signature. If
+   the caller supplied paths to `add_proofs_to_pczt` but passed `None`
+   here, extraction bails with `SaplingRequired` and the user sees a
+   cryptic error after already downloading 50MB of params and
+   approving on the device. `send_screen.dart` threads the same
+   `proposal.needsSaplingParams ? spendPath : null` into both FFI
+   calls — keep it that way.
+
+4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths, plus
+   explicit discard on cancel.**
+   - `create_pczt_from_proposal` and `execute_proposal` both call
+     `.remove()` at the top (dropping the store lock before any DB
+     work). A second call with the same `proposal_id` returns
+     `"Proposal not found (expired or already consumed)"`.
+   - Dart `_send()` runs the whole flow inside a `try/finally`
+     with a `proposalConsumed` flag that flips to true immediately
+     after the consume call. The `finally` block calls
+     `discardProposal(proposalId)` when the flag is still false —
+     this covers confirmation-dialog cancel, Sapling-params-dialog
+     cancel, exceptions during Sapling download, and any error
+     before the consume call. `discardProposal` is idempotent.
+   - If you add a new entry point that reads a stored proposal,
+     follow the same "consume on entry, idempotent discard on any
+     non-consuming exit" pattern. Silently reading without
+     consuming (`.get()`) reintroduces the memory-leak /
+     replayable-ID bugs that a prior revision of this branch had.
+
+The Dart flow in `lib/src/features/send/screens/send_screen.dart`
+implements this pipeline end-to-end; the Rust side lives in
+`rust/src/wallet/sync.rs::{create_pczt_from_proposal,
+add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt,
+discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
+
+### Wallet Creation
+
+`create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
+
+### Rust API Design Constraint
+
+FRB codegen works best with simple types. Keep the `rust/src/api/` surface limited to primitives, `String`, and flat structs. Do all complex Zcash type manipulation inside `rust/src/wallet/` and return simple results through `rust/src/api/`.
+
+All per-account API functions take `account_uuid: String`. Sync-level operations (`start_full_sync`, etc.) operate on all accounts and do NOT take account_uuid.
+
+### Key Security Model
+
+`zcash_client_sqlite` intentionally does NOT store spending keys in the DB — only viewing keys (UFVK).
+
+**Software accounts**: the mnemonic/seed lives in Flutter's `flutter_secure_storage` (iOS Keychain / Android Keystore) per-account (`zcash_account_mnemonic_{uuid}`) and is passed to Rust only when needed for transaction signing. Seed is scoped in a block and dropped before network I/O (broadcast).
+
+**Hardware (Keystone) accounts**: no seed ever reaches the phone. On import the phone receives only the UFVK via QR/UR; the USK stays on the device. There is no corresponding `zcash_account_mnemonic_{uuid}` entry, and `getActiveMnemonic()` returns null for hardware accounts. Transaction signing happens inside the device via the PCZT handoff (see "Hardware Wallet (Keystone) Send Flow"), so the phone never holds spending key material for these accounts at any point.
+
+### WalletDb Initialization
+
+`WalletDb::for_path()` requires 4 params: `(path, Network, SystemClock, OsRng)`. `init_wallet_db()` must be called before `create_account()` — it runs schema migrations.
+
+Seed-relevance rule:
+- **Software bootstrap account**: `init_db_and_create_account` calls `init_wallet_db(Some(seed))` then `create_account` → `AccountSource::Derived`. This pins the seed fingerprint so future seed-requiring migrations can verify relevance.
+- **Subsequent opens**: `ensure_db_initialized` calls `init_wallet_db(None)`. Calling `init_wallet_db(Some(other_seed))` after the first account would fail the relevance check when any `Imported` account exists.
+- **Hardware-first bootstrap is allowed**: `import_hardware_account` initializes without a local seed and imports the Keystone UFVK. This can produce an `Imported`-only DB, so seed-requiring migration recovery must be handled at the product layer if such a migration appears.
+
+### Dart Sync Provider
+
+`lib/src/providers/sync_provider.dart` — Riverpod `AsyncNotifier`.
+
+**Auto-sync lifecycle:**
+- `build()` watches `accountProvider` via `ref.listen` (not `ref.watch` — avoids rebuild on switch/rename)
+- Account count increase triggers `startSync()` + `_startPolling()` (both first account and additional accounts)
+- `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`percentage < 1.0`)
+- `_checkAndSync()`, `_refreshBalance()`, and `_onSyncProgress()` all bail out while
+  locked and discard late async completions via `_sensitiveStateEpoch`
+- Polling stops during `_checkAndSync` execution to prevent concurrent overlap, restarts after
+- Duplicate sync guard: `_isSyncing` (Dart-side bool) + `isSyncRunning()` (Rust AtomicBool)
+
+**startSync() is fire-and-forget:**
+- Sets up FRB stream listener and returns immediately (no Completer, no await)
+- `_syncGen` generation counter: incremented by `stopSync()`, checked in `.then()` callbacks to invalidate pending operations after user-initiated stop
+- Stream `onDone` → `_onSyncDone()` (balance refresh + start polling)
+- Stream `onError` → sets error state + starts polling for auto-retry
+
+**Sync control:**
+- `stopSync()`: increments `_syncGen` + `cancelFullSync()` + `_stopPolling()`. Polling does not restart until next `onResume`
+- `clearSensitiveStateForLock()`: increments `_syncGen`/`_sensitiveStateEpoch`,
+  clears in-memory sync state, sends `setSyncMode(0)` + `cancelFullSync()`,
+  and waits briefly for stale Rust sync / mempool work to stop
+- `startSyncAnyway()`: unlock recovery path. If Rust is still running but already
+  cancelling, waits for teardown before starting foreground sync; if teardown
+  times out, it at least restores polling so a later retry can recover
+
+**Lifecycle:**
+- `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
+- `onHide`: stops polling (no wasted network in background)
+- `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
+- All balance/history queries pass `activeAccountUuid` from `AccountProvider`
+
+### Desktop Window Bootstrap
+
+Desktop window appearance is managed by the external [`desktop_window_bootstrap`](https://github.com/chainapsis/desktop_window_bootstrap) package plus `window_manager`, with a strict responsibility split:
+
+- `desktop_window_bootstrap` owns window appearance and titlebar overlap handling.
+  - On macOS this means the transparent titlebar / full-size content-view shell is applied natively before the window is shown, via `macos/Runner/MainFlutterWindow.swift`.
+  - The app calls `DesktopWindowBootstrap.initialize()` in `lib/main.dart` after `initializeDesktopWindow()` has created the OS window but before `showDesktopWindow()` reveals it.
+  - `DesktopWindowTitlebarSafeArea` in `lib/app.dart` pads Flutter content below the macOS traffic-light/titlebar area. Keep it wrapped around the app root.
+- `window_manager` owns sizing/lifecycle only.
+  - `lib/src/core/layout/app_layout.dart` should remain responsible for initial size, minimum size, aspect ratio, `show()`, `focus()`, and layout-mode reconciliation from window events.
+  - Do not reintroduce `TitleBarStyle` ownership or other appearance writes through `window_manager`; that overlaps with `desktop_window_bootstrap`.
+
+Current startup order for desktop platforms:
+
+```text
+WidgetsFlutterBinding.ensureInitialized()
+→ RustLib.init()
+→ initializeDesktopWindow()      // window_manager creates the OS window
+→ DesktopWindowBootstrap.initialize()
+→ showDesktopWindow()
+→ runApp()
+```
+
+### Figma comparison tooling
+
+For deterministic code-to-Figma screenshots, use the widget-test capture as
+the normal iteration path. It renders the same `FigmaCompareApp` and registered
+scenario without building Rust, CocoaPods, Xcode, or a macOS app:
+
+```bash
+scripts/figma-compare.sh widget --scenario pay-recipient --theme dark
+```
+
+Use the native entry point only for final macOS window-shell and restoration
+verification:
+
+```bash
+scripts/figma-compare.sh native --scenario pay-recipient --theme dark
+```
+
+Registered states live in
+`lib/figma_compare/figma_compare_scenarios.dart` and must use deterministic
+dev-only mocks. Outputs go below the app sandbox's `vizor-figma-compare`
+temporary directory: `content.widget.png` is the fast app-content reference;
+`content.png` and `content.window.png` are the real-engine and native-window
+final evidence. The native entry point reuses production macOS window
+initialization without starting Rust, storage, sync, wallet, or network state,
+automatically restores a minimized window before capture, and returns it and
+the previously foreground app to their original states afterward. Full
+workflow, mobile capture, and cleanup rules are in `FIGMA-AI-FIX.md`.
+
+Important desktop design rule:
+
+- `Scaffold.backgroundColor: Colors.transparent` is required anywhere the native acrylic/translucent shell should remain visible.
+- Any opaque `Container`, `ColoredBox`, decoration color, or other filled background will cover the native effect in that region.
+- Treat transparency as opt-in per region: only paint solid backgrounds where the UI should actually be solid.
+
+### Mobile Bottom Safe Area (iOS proportional padding)
+
+Mobile bottom-sheet bodies and the floating tab bar wrap their bottom
+edge in `MobileBottomSafeArea`
+(`lib/src/core/layout/mobile/mobile_bottom_safe_area.dart`), not raw
+`SafeArea(top: false)`.
+
+- The rule: on iOS, when the wrapped content's own bottom padding is
+  `kIosHomeIndicatorClearance` (16) or more, the bottom safe-area inset
+  is skipped so the bottom gap equals the side padding. Android always
+  honors the inset — navigation-bar modes vary per device.
+- Why: the iOS home indicator is an overlay occupying only the bottom
+  ~13pt of the screen (8pt offset + 5pt bar), so it floats inside 16px
+  of empty padding; stacking the 34pt inset on top of that padding
+  makes the bottom gap visually heavier than the sides.
+- `bottomPadding` must equal the bottom padding the wrapped content
+  actually provides below its last control — when changing a sheet's
+  padding token, update the argument with it.
+- Tab bar (`AppMobileShell`): the gap below the bar is 16 on iOS
+  (matching its 16px side margins) and the Figma 12 + inset on Android.
+- Keyboard avoidance is unaffected — `viewInsets` is a separate channel
+  from the `viewPadding` this consumes.
+- Platform branching uses `defaultTargetPlatform` (overridable in
+  widget tests), not `dart:io` `Platform` checks.
+- New sheets follow `MobileBottomSafeArea(bottomPadding: token)` >
+  `Padding(...)`; both platform geometries are pinned in
+  `test/core/layout/mobile/mobile_bottom_safe_area_test.dart`.
+
+Key files:
+- `rust/src/migration_preparation.rs` — shared mobile preparation core
+- `rust/src/android_jni.rs` — Android preparation execution adapter
+- `rust/src/ffi.rs` — iOS C adapter: read-only inspection and queries, plus
+  the route declaration the queries run under
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
   confirmation tracker and foreground-handoff owner
