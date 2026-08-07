@@ -545,10 +545,38 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Declaring the network route
+
+The desired route lives in Rust process memory, and a background wake can be a
+cold launch where the Dart layer never ran. So "nobody has declared yet" is a
+distinct state from "the user chose direct", and Rust refuses it at the route
+chokepoint rather than treating it as direct.
+
+- **Every native entry point that may reach lightwalletd declares the route
+  before its first network call**, by reading the saved preference and calling
+  `zcash_network_privacy_mark_tor_desired` or
+  `zcash_network_privacy_mark_direct_route`. Declaring samples nothing, never
+  bootstraps, and is ignored once the process has decided its own route, so it
+  is safe to do first and unconditionally.
+- A lane that forgets fails closed on its first connection with
+  `Network route has not been declared for this process`. That is the intended
+  outcome: the alternative is reaching lightwalletd over clearnet on a
+  Tor-configured wallet, silently and only in the lane that forgot.
+- Adding a background entry point therefore means adding a declaration. Nothing
+  fails to compile without one, and the Rust-side test that pins this
+  (`an_undeclared_route_is_refused_instead_of_resolving_to_a_direct_connection`)
+  covers the chokepoint, not your new caller.
+- On a Tor route, background network work additionally requires external power
+  on an unmetered link, and Tor must be brought up for that process
+  (`zcash_network_privacy_enable_tor_for_background_work`). A client that does
+  not come up ready leaves the process fail-closed with no transport; the
+  caller defers to the foreground and never falls back to clearnet.
+
 Key files:
 - `rust/src/migration_preparation.rs` — shared mobile preparation core
 - `rust/src/android_jni.rs` — Android preparation execution adapter
-- `rust/src/ffi.rs` — iOS read-only inspection and query adapter
+- `rust/src/ffi.rs` — iOS C adapter: read-only inspection and queries, plus the
+  route declaration and background Tor bring-up the queries run on
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
   confirmation tracker and foreground-handoff owner

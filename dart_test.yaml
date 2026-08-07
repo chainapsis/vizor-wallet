@@ -8,3 +8,9 @@ tags:
   # See "Design Token Form Factor" in AGENTS.md.
   mobile:
     skip: "mobile token lane only: fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile"
+  # Probes that talk to the live Tor network from a booted device. They cost
+  # minutes, depend on a network nobody controls, and leave the process
+  # Tor-enabled and fail-closed for anything sharing the binary, so they stay
+  # out of `flutter test integration_test/` and are run by hand.
+  live-tor:
+    skip: "live Tor probe only: fvm flutter test --tags live-tor --run-skipped <path> -d <device>"
