@@ -126,22 +126,46 @@ pub fn status() -> NetworkPrivacyStatus {
 /// Runtime toggles call this synchronously before their first `await`, so no
 /// new policy-aware request can race onto clearnet during teardown.
 pub fn begin_tor_enable() {
-    ROUTE_DECIDED.store(true, Ordering::Release);
-    // The route and the status are written inside the slot lock, the way
-    // `disable_tor`, `install_bootstrapped_client` and `set_tor_failed` write
-    // them.
-    //
-    // This is strict alignment with those three, not a fix: no interleaving
-    // that actually diverges was constructed for the enable direction, which
-    // only ever tightens the policy. What it buys is one rule about where these
-    // two atomics may be written instead of three paths that follow it and one
-    // that does not, so the next reader does not have to re-derive whether this
-    // one is safe. The lock order is the same one the siblings take — slot
-    // first, then the waker map — and nothing reached while holding the waker
-    // map takes the slot, so there is no inversion to introduce.
+    enable_tor_route(RouteClaim::Unconditional);
+}
+
+/// Whether an enable may proceed over a route this process has already chosen.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RouteClaim {
+    /// The user asked for Tor in this process. Whatever the route was, it is
+    /// Tor now.
+    Unconditional,
+    /// A persisted preference is being adopted, and it loses to any route this
+    /// process decided for itself.
+    OnlyIfUndecided,
+}
+
+/// The enable, with the claim on the route and the state change it implies made
+/// as one operation.
+///
+/// The claim has to be inside the lock. Split from the writes below it, an
+/// adoption that won the claim and was then preempted let a whole
+/// `disable_tor()` run in the gap — and the writes below, arriving after it,
+/// put the route back to Tor with the client already dropped and no bootstrap
+/// behind them. That leaves every Rust request refused on a fail-closed Tor
+/// route while the app believes it is direct, which nothing recovers short of
+/// toggling Tor again. It is reachable: the native declaration runs on a
+/// background queue while the settings toggle runs on the platform thread.
+///
+/// The route and status writes are the same ones `disable_tor`,
+/// `install_bootstrapped_client` and `set_tor_failed` make under this lock, so
+/// all four paths now share one rule about where these atomics may be written.
+/// The lock order is theirs too — slot first, then the waker map — and nothing
+/// reached while holding the waker map takes the slot, so there is no inversion
+/// to introduce.
+fn enable_tor_route(claim: RouteClaim) {
     let mut slot = client_slot()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if claim == RouteClaim::OnlyIfUndecided && ROUTE_DECIDED.load(Ordering::Acquire) {
+        return;
+    }
+    ROUTE_DECIDED.store(true, Ordering::Release);
     let wakers = {
         let mut wakers = direct_io_wakers()
             .lock()
@@ -179,13 +203,7 @@ pub fn begin_tor_enable() {
 /// otherwise a stale read could strand a deliberately-direct session in
 /// fail-closed mode with nothing left to bootstrap it.
 pub fn mark_tor_desired() {
-    if ROUTE_DECIDED
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return;
-    }
-    begin_tor_enable();
+    enable_tor_route(RouteClaim::OnlyIfUndecided);
 }
 
 /// Adopts a persisted *direct* preference in a process where the Dart layer has
@@ -476,6 +494,34 @@ fn hold_background_wake() {
     schedule_background_wake_release(deadline);
 }
 
+/// Extends a lease that is currently held, and does nothing otherwise.
+///
+/// The lease is sized for one pass, not for the longest one: a confirmation
+/// round over enough accounts and transactions runs its queries serially and
+/// can outlive a fixed window, and the client would then be handed back to a
+/// dormancy intent while the pass is still querying through it. Arti lifts a
+/// soft-dormant client on use, so what that costs is churn rather than a
+/// failure — but the intent is meant to describe an idle process, and a process
+/// mid-round is not one.
+///
+/// Renewing on use rather than at the end of a round is deliberate, and is the
+/// same reason the lease exists instead of a restore call: a round has many
+/// ways to end and any of them can be forgotten, while a round that is still
+/// running is exactly a round that is still making requests.
+///
+/// Two things it deliberately does not do. It does not start a lease, so a
+/// request outside a pass cannot mask an intent no pass asked to mask. And it
+/// renews only while the app's own intent is dormant, which is the only time
+/// the mask changes anything: renewing on foreground traffic too would push the
+/// lease out for as long as the app was in use, and the client would then stay
+/// awake and padding for a lease window after the user put the app away — the
+/// exact cost the intent exists to avoid.
+fn renew_background_wake_while_held() {
+    if TOR_DORMANT.load(Ordering::Acquire) && background_wake_is_held() {
+        hold_background_wake();
+    }
+}
+
 /// Waits out one lease and hands the client back to the app's intent.
 ///
 /// A process with no runtime here simply has no timer; the lease still lapses by
@@ -681,14 +727,50 @@ async fn install_bootstrapped_client<E: Display>(
     Ok(NetworkPrivacyStatus::Ready)
 }
 
+/// How often a running bootstrap checks whether the route it is for still
+/// exists. Short enough that the abandon is not itself a wait, long enough to
+/// cost nothing over the minutes a blocked bootstrap can take.
+const BOOTSTRAP_ROUTE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const BOOTSTRAP_ABANDONED_MESSAGE: &str = "Tor was turned off while it was connecting";
+
+/// Waits out one bootstrap, and stops waiting if the route it is for goes away.
+///
+/// Clearing the client slot does not reach the `TorClient` future already
+/// running here, so a user who turned Tor off left arti bootstrapping — talking
+/// to directory authorities for up to the full deadline, on a route they had
+/// just switched off, while holding the init lock a re-enable would have to
+/// wait behind. Nothing wrong was ever published, because the publish re-reads
+/// the route under the slot lock; what was wrong is that the work continued at
+/// all.
+///
+/// Dropping the future is what cancels it, so the abandon is the return itself.
+/// Polling rather than signalling: registering for a notification has a window
+/// between the registration and the check that a route change can fall into,
+/// and a quarter-second poll over a bootstrap measured in tens of seconds costs
+/// less than closing that window would.
 async fn await_tor_bootstrap<T, E: Display>(
     deadline: Duration,
     bootstrap: impl Future<Output = Result<T, E>>,
 ) -> Result<T, String> {
-    match tokio::time::timeout(deadline, bootstrap).await {
-        Ok(Ok(client)) => Ok(client),
-        Ok(Err(error)) => Err(format!("Bootstrap Tor: {error}")),
-        Err(_) => Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string()),
+    tokio::pin!(bootstrap);
+    let expires_at = tokio::time::Instant::now() + deadline;
+    loop {
+        tokio::select! {
+            result = &mut bootstrap => {
+                return match result {
+                    Ok(client) => Ok(client),
+                    Err(error) => Err(format!("Bootstrap Tor: {error}")),
+                }
+            }
+            _ = tokio::time::sleep_until(expires_at) => {
+                return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string())
+            }
+            _ = tokio::time::sleep(BOOTSTRAP_ROUTE_POLL_INTERVAL) => {
+                if !is_tor_desired() {
+                    return Err(BOOTSTRAP_ABANDONED_MESSAGE.to_string());
+                }
+            }
+        }
     }
 }
 
@@ -757,6 +839,7 @@ fn is_route_decided() -> bool {
 }
 
 pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, String> {
+    renew_background_wake_while_held();
     let client = client_slot()
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -830,13 +913,15 @@ mod tests {
     };
 
     use super::{
-        await_tor_bootstrap, bootstrap_tor, cancel_direct_connections, client_slot, disable_tor,
+        await_tor_bootstrap, begin_tor_enable, bootstrap_tor, cancel_direct_connections,
+        client_slot, disable_tor,
         dormant_mode_for, enable_tor_for_background_work, init_lock, install_bootstrapped_client,
         is_route_decided, is_tor_desired, mark_direct_route, mark_tor_desired, pending_dormant_mode,
-        route_decision, set_tor_dormant, set_tor_failed, status,
+        process_uptime_ms, route_decision, set_tor_dormant, set_tor_failed, status,
         test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
         NetworkPrivacyStatus, RouteDecision, TorClient, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT,
-        BACKGROUND_WAKE_UNTIL_MS, ROUTE_NOT_DECLARED_MESSAGE, STATUS_READY, TOR_BOOTSTRAP_TIMEOUT,
+        BACKGROUND_WAKE_UNTIL_MS, BOOTSTRAP_ABANDONED_MESSAGE, ROUTE_DECIDED,
+        ROUTE_NOT_DECLARED_MESSAGE, STATUS_READY, TOR_BOOTSTRAP_TIMEOUT,
         TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
     };
 
@@ -928,6 +1013,112 @@ mod tests {
         assert!(!is_tor_desired());
         assert!(matches!(tor_client_for_route(false), Ok(None)));
         assert!(matches!(tor_client_for_route(true), Ok(None)));
+    }
+
+    /// The claim on the route and the state change it implies are one
+    /// operation, so a `disable_tor` cannot run between them.
+    ///
+    /// Split, the adoption claimed the route, was preempted, and its writes
+    /// arrived after a whole disable had finished — putting the route back to
+    /// Tor with the client dropped and no bootstrap behind it, which refuses
+    /// every request on a route the app believes is direct. Held here by
+    /// blocking the adoption on the slot lock and checking that it has claimed
+    /// nothing yet: before the fix the claim was already made while it waited.
+    #[test]
+    fn an_adoption_claims_no_route_until_it_can_act_on_it() {
+        let _policy = lock_route_policy();
+        let slot = client_slot()
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let adopting = std::thread::spawn(mark_tor_desired);
+        // Long enough for the thread to reach the lock. Overshooting only
+        // makes the check stricter; it cannot turn a held claim into an
+        // unheld one.
+        std::thread::sleep(Duration::from_millis(200));
+
+        assert!(
+            !ROUTE_DECIDED.load(Ordering::Acquire),
+            "the route was claimed before the claim could be acted on"
+        );
+
+        drop(slot);
+        adopting.join().expect("the adoption thread");
+        assert!(is_tor_desired());
+    }
+
+    /// A bootstrap is for a route, and stops when that route does.
+    ///
+    /// Clearing the client slot never reached the future running inside the
+    /// bootstrap, so turning Tor off left arti talking to directory
+    /// authorities for the rest of the deadline, holding the init lock a
+    /// re-enable would wait behind.
+    #[tokio::test]
+    async fn a_bootstrap_stops_when_the_route_it_is_for_goes_away() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+
+        let switching_to_direct = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            disable_tor();
+        });
+        let result = await_tor_bootstrap(
+            Duration::from_secs(5),
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await;
+        switching_to_direct.await.expect("the disable task");
+
+        assert_eq!(result.unwrap_err(), BOOTSTRAP_ABANDONED_MESSAGE);
+    }
+
+    /// A round that is still querying is still running, so its lease renews on
+    /// the requests themselves rather than on an end-of-round call nobody has
+    /// to remember to make.
+    #[test]
+    fn a_pass_that_keeps_querying_keeps_its_wake() {
+        let _policy = lock_route_policy();
+        set_tor_dormant(true);
+        let nearly_out = process_uptime_ms().saturating_add(50);
+        BACKGROUND_WAKE_UNTIL_MS.store(nearly_out, Ordering::Release);
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+
+        let _ = tor_client_for_route(false);
+
+        assert!(
+            BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire) > nearly_out,
+            "a query inside a live lease did not renew it"
+        );
+    }
+
+    /// Renewal is for a lease that exists. A foreground request on its way into
+    /// the background must not start one, or the client stays awake for a lease
+    /// window after the app asked it to sleep.
+    #[test]
+    fn a_query_outside_a_pass_starts_no_wake() {
+        let _policy = lock_route_policy();
+        set_tor_dormant(true);
+        BACKGROUND_WAKE_UNTIL_MS.store(0, Ordering::Release);
+
+        let _ = tor_client_for_route(false);
+
+        assert_eq!(BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire), 0);
+        assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+    }
+
+    /// Foreground traffic must not push the lease out. It would keep the client
+    /// awake for a lease window after the app was put away, which is what the
+    /// dormancy intent exists to prevent.
+    #[test]
+    fn a_query_from_an_app_that_wants_the_client_awake_renews_nothing() {
+        let _policy = lock_route_policy();
+        set_tor_dormant(false);
+        let nearly_out = process_uptime_ms().saturating_add(50);
+        BACKGROUND_WAKE_UNTIL_MS.store(nearly_out, Ordering::Release);
+
+        let _ = tor_client_for_route(false);
+
+        assert_eq!(BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire), nearly_out);
     }
 
     #[test]

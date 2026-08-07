@@ -23,8 +23,14 @@ import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 ///
 /// ```sh
 /// fvm flutter test --tags live-tor --run-skipped \
-///   integration_test/mobile_tor_bootstrap_probe_test.dart -d <device>
+///   integration_test/mobile_tor_bootstrap_probe_test.dart \
+///   -d <device> --dart-define=VIZOR_FORM_FACTOR=mobile
 /// ```
+///
+/// The define is what this probe is run with, and every mobile-targeted
+/// invocation carries it — the test binary is compiled per lane like any other
+/// build. Omitting it here compiles the probe against desktop tokens on a
+/// phone, which is the mismatch `lib/main.dart` asserts against.
 ///
 /// What it does not settle: whether arti's filesystem permission checks need
 /// the mobile exemption. The iOS simulator passes this with the exemption
