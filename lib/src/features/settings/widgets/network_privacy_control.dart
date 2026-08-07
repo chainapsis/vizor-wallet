@@ -492,15 +492,28 @@ _NetworkPrivacyPresentation _presentationFor(
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,
     ),
+    // Two failure shapes with opposite request behaviour: a bootstrap that
+    // failed after the process went fail-closed, and a save that aborted the
+    // toggle before anything changed.
     (NetworkPrivacyConnectionStatus.failed, true) =>
-      _NetworkPrivacyPresentation(
-        statusLabel: 'Connection failed',
-        description:
-            'Direct requests remain blocked. Try again or turn off Tor.',
-        statusColor: (colors) => colors.text.destructive,
-        iconColor: (colors) => colors.icon.destructive,
-        descriptionColor: (colors) => colors.text.destructive,
-      ),
+      state.torEnabled
+          ? _NetworkPrivacyPresentation(
+              statusLabel: 'Connection failed',
+              description:
+                  'Direct requests remain blocked. Try again or turn off Tor.',
+              statusColor: (colors) => colors.text.destructive,
+              iconColor: (colors) => colors.icon.destructive,
+              descriptionColor: (colors) => colors.text.destructive,
+            )
+          : _NetworkPrivacyPresentation(
+              statusLabel: 'Setting not saved',
+              description:
+                  'Vizor could not save the change, so Tor was not turned '
+                  'on. Requests keep using a direct connection.',
+              statusColor: (colors) => colors.text.destructive,
+              iconColor: (colors) => colors.icon.destructive,
+              descriptionColor: (colors) => colors.text.destructive,
+            ),
     (NetworkPrivacyConnectionStatus.failed, false) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Switch failed',
