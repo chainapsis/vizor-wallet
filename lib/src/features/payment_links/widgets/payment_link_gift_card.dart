@@ -69,7 +69,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.messageEditorKey,
     this.messageInputFormatters = const [],
     this.onMessageChanged,
-    this.emptyMessageLabel = 'Start typing',
+    this.emptyMessageLabel = 'Start typing...',
     this.maxMessageLength = 128,
     this.messageCharacterCount,
     this.onTap,
@@ -99,8 +99,8 @@ class PaymentLinkGiftCard extends StatefulWidget {
                  messageCharacterCount <= maxMessageLength),
        );
 
-  static const double width = 372;
-  static const double height = 253;
+  static const double width = 320;
+  static const double height = 200;
 
   final PaymentLinkCardArtwork artwork;
 
@@ -237,7 +237,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
       width: PaymentLinkGiftCard.width,
       height: PaymentLinkGiftCard.height,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+        borderRadius: BorderRadius.circular(AppRadii.large),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -311,7 +311,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                             : 'payment_link_${editorName}_hover_ring',
                       ),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+                        borderRadius: BorderRadius.circular(AppRadii.large),
                         border: Border.all(
                           color: focused
                               ? context.colors.state.focusRing
@@ -346,7 +346,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
               child: IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppRadii.xLarge),
+                    borderRadius: BorderRadius.circular(AppRadii.large),
                     border: Border.all(
                       color: focused
                           ? context.colors.state.focusRing
@@ -442,7 +442,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
           emptyAmountLabel,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppTypography.displayLarge.copyWith(
+          style: AppTypography.headlineLarge.copyWith(
             color: cardTextColor.withValues(alpha: 0.55),
           ),
         ),
@@ -503,7 +503,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.s),
+              const SizedBox(height: AppSpacing.xxs),
             ] else if (supportingText case final supporting?) ...[
               Text(
                 supporting,
@@ -511,7 +511,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.labelLarge.copyWith(color: cardTextColor),
               ),
-              const SizedBox(height: AppSpacing.s),
+              const SizedBox(height: AppSpacing.xxs),
             ] else if (maxAmountText case final maxAmount?) ...[
               if (onUseMax == null)
                 Text(
@@ -539,7 +539,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                     ),
                   ),
                 ),
-              const SizedBox(height: AppSpacing.s),
+              const SizedBox(height: AppSpacing.xxs),
             ],
             if (editing)
               _PaymentLinkAmountTextField(
@@ -565,23 +565,24 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                         amount,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.displayLarge.copyWith(
+                        style: AppTypography.headlineLarge.copyWith(
                           color: cardTextColor,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.xxs),
                   ],
                   if (showCaret) ...[
                     Container(
                       width: 3,
-                      height: 48,
+                      height: 33,
                       decoration: BoxDecoration(
                         color: cardTextColor,
                         borderRadius: BorderRadius.circular(AppRadii.full),
                       ),
                     ),
-                    if (currencySymbol.isNotEmpty) const SizedBox(width: 10),
+                    if (currencySymbol.isNotEmpty)
+                      const SizedBox(width: AppSpacing.xxs),
                   ],
                   if (currencySymbol.isNotEmpty)
                     _PaymentLinkCurrencyLabel(
@@ -625,7 +626,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
   Widget build(BuildContext context) {
     final focused = focusNode.hasFocus;
     final value = controller.text;
-    final style = AppTypography.displayLarge.copyWith(color: cardTextColor);
+    final style = AppTypography.headlineLarge.copyWith(color: cardTextColor);
     final strutStyle = StrutStyle.fromTextStyle(style, forceStrutHeight: true);
     final showCurrency = focused || value.isNotEmpty;
     final measuredText = value.isEmpty && !focused ? emptyAmountLabel : value;
@@ -636,7 +637,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
       textScaler: MediaQuery.textScalerOf(context),
       strutStyle: strutStyle,
     )..layout();
-    final maxInputWidth = showCurrency ? 239.0 : 324.0;
+    final maxInputWidth = showCurrency ? 198.0 : 272.0;
     final inputWidth = (painter.width + (focused ? 5 : 0)).clamp(
       3.0,
       maxInputWidth,
@@ -648,7 +649,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
       children: [
         SizedBox(
           width: inputWidth,
-          height: 48,
+          height: 40,
           child: MergeSemantics(
             child: Semantics(
               label: semanticLabel,
@@ -660,7 +661,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
                 strutStyle: strutStyle,
                 cursorColor: cardTextColor,
                 cursorWidth: 3,
-                cursorHeight: 48,
+                cursorHeight: 33,
                 cursorRadius: const Radius.circular(AppRadii.full),
                 cursorOpacityAnimates: true,
                 mouseCursor: SystemMouseCursors.text,
@@ -685,7 +686,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
           ),
         ),
         if (showCurrency && currencySymbol.isNotEmpty) ...[
-          const SizedBox(width: 10),
+          const SizedBox(width: AppSpacing.xxs),
           _PaymentLinkCurrencyLabel(
             currencySymbol: currencySymbol,
             cardTextColor: cardTextColor,
@@ -709,20 +710,15 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('payment_link_amount_currency_box'),
-      width: 75,
-      height: 46,
-      child: Transform.translate(
-        offset: const Offset(0, 3),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            currencySymbol,
-            maxLines: 1,
-            style: AppTypography.displayLarge.copyWith(
-              color: cardTextColor.withValues(alpha: 0.65),
-              fontSize: 40,
-              height: 48 / 40,
-            ),
+      width: 70,
+      height: 40,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          currencySymbol,
+          maxLines: 1,
+          style: AppTypography.headlineMedium.copyWith(
+            color: cardTextColor.withValues(alpha: 0.65),
           ),
         ),
       ),
@@ -735,7 +731,18 @@ class _PaymentLinkGiftCardBackBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(color: context.colors.background.brandCrimsonStrong);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(color: context.colors.background.brandCrimsonStrong),
+        Image.asset(
+          'assets/illustrations/payment_links/payment_link_message_pattern.png',
+          key: const ValueKey('payment_link_message_pattern'),
+          fit: BoxFit.cover,
+          excludeFromSemantics: true,
+        ),
+      ],
+    );
   }
 }
 
@@ -782,10 +789,10 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
     return Stack(
       children: [
         Positioned(
-          left: 56,
-          right: 56,
-          top: 46.5,
-          height: 160,
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.md,
+          height: 144,
           child: editing
               ? _PaymentLinkMessageTextField(
                   editorKey: messageEditorKey,
@@ -811,8 +818,8 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
                 ),
         ),
         Positioned(
-          left: 20,
-          bottom: 20,
+          left: AppSpacing.sm,
+          bottom: AppSpacing.sm,
           child: Text(
             '$characterCount/$maxMessageLength',
             style: AppTypography.labelLarge.copyWith(
@@ -822,8 +829,8 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
         ),
         if (onDeleteMessage != null)
           Positioned(
-            right: AppSpacing.s,
-            bottom: AppSpacing.s,
+            right: AppSpacing.sm,
+            bottom: AppSpacing.sm,
             child: PaymentLinkAction(
               onPressed: onDeleteMessage,
               semanticLabel: 'Delete gift card message',
@@ -942,10 +949,10 @@ class _PaymentLinkGiftCardBorder extends StatelessWidget {
     return IgnorePointer(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadii.xLarge),
+          borderRadius: BorderRadius.circular(AppRadii.large),
           border: Border.all(
             color: context.colors.text.homeCard.withValues(alpha: 0.55),
-            width: 2.5,
+            width: 1.5,
           ),
         ),
       ),
