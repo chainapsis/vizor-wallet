@@ -16,7 +16,28 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
   );
 });
 
+final paymentLinkUnsharedFundedCountProvider =
+    FutureProvider.family<int, String>((ref, sourceAccountUuid) {
+      return ref
+          .watch(paymentLinkRecoveryStoreProvider)
+          .countUnsharedFundedForAccount(sourceAccountUuid);
+    });
+
 enum PaymentLinkRecoveryState { draft, funded, shared }
+
+class PaymentLinkUnsharedGiftCardsException implements Exception {
+  const PaymentLinkUnsharedGiftCardsException({
+    required this.sourceAccountUuid,
+    required this.count,
+  });
+
+  final String sourceAccountUuid;
+  final int count;
+
+  @override
+  String toString() =>
+      'Copy your unshared Gift Card links before deleting this account.';
+}
 
 const _fieldNotProvided = Object();
 
@@ -108,6 +129,18 @@ class PaymentLinkRecoveryStore {
 
   Future<List<PaymentLinkRecoveryRecord>> load() {
     return _runExclusive(_loadUnlocked);
+  }
+
+  Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
+    if (sourceAccountUuid.isEmpty) return 0;
+    final records = await load();
+    return records
+        .where(
+          (record) =>
+              record.sourceAccountUuid == sourceAccountUuid &&
+              record.state == PaymentLinkRecoveryState.funded,
+        )
+        .length;
   }
 
   Future<PaymentLinkRecoveryRecord> saveDraft({

@@ -75,6 +75,10 @@ Future<void> _runUninstallFlow(
       await tester.pumpAndSettle();
     }
 
+    expect(
+      find.textContaining('Unshared Gift Card links will be permanently lost.'),
+      findsOneWidget,
+    );
     await tester.tap(find.widgetWithText(AppButton, 'Uninstall Vizor'));
     await tester.pumpAndSettle();
     expect(find.text('Confirm access'), findsOneWidget);
