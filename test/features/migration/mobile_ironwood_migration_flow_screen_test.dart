@@ -7412,7 +7412,8 @@ void main() {
         'Next migration step expected in\n'
         '~25 minutes.\n'
         'Notifications are on. You can leave Vizor and check back later.\n'
-        'Migration continues over a direct connection.',
+        'While Vizor is closed, migration continues over a direct '
+        'connection.',
       ),
       findsOneWidget,
     );
