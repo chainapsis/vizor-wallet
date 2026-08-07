@@ -7,6 +7,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## v2.0.0-rc.4
 
 ### Changed
+- Published `vote-commitment-tree 0.4.0-rc.2` and
+  `vote-commitment-tree-client 0.6.0-rc.2` with the workspace's
+  `imt-tree 0.2.1` dependency.
 - `pir::connect_pir` / `pir::connect_pir_blocking` now take an explicit
   `PirLayout` and fail closed on config/server layout mismatch before any
   private query (`VotingError::InvalidInput`). Clients accept any valid

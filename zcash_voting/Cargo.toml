@@ -52,8 +52,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.4.0-rc.1" }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.6.0-rc.1", features = ["http"] }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.4.0-rc.2" }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.6.0-rc.2", features = ["http"] }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
