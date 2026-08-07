@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -20,6 +21,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
@@ -603,12 +605,13 @@ void main() {
     expect(find.text('4.45'), findsOneWidget);
 
     await tester.tap(find.text('Claim my gift'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.claimedLinks.map((link) => link.encode()), [
       _incomingLink.encode(),
     ]);
-    expect(find.text('Gift claimed'), findsOneWidget);
+    expect(find.text('Gift claim submitted'), findsOneWidget);
+    expect(find.text('Receiving...'), findsOneWidget);
   });
 
   testWidgets('shows selected artwork and Receiving while claim is pending', (
@@ -642,18 +645,23 @@ void main() {
     await tester.tap(find.text('Claim my gift'));
     await tester.pump();
 
-    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Receiving...'), findsOneWidget);
     expect(find.text('Received'), findsWidgets);
     expect(find.text('You’ve received a gift!'), findsNothing);
+    final receivedRow = find.byKey(
+      const ValueKey('payment_link_received_u1paymentlinkaddress'),
+    );
+    expect(
+      find.descendant(
+        of: receivedRow,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsOneWidget,
+    );
     final receivedThumbnail = tester.widget<Image>(
-      find
-          .descendant(
-            of: find.byKey(
-              const ValueKey('payment_link_received_u1paymentlinkaddress'),
-            ),
-            matching: find.byType(Image),
-          )
-          .first,
+      find.descendant(of: receivedRow, matching: find.byType(Image)).first,
     );
     expect(
       (receivedThumbnail.image as AssetImage).assetName,
@@ -661,11 +669,64 @@ void main() {
     );
 
     claimCompleter.complete(_broadcastedClaimResult);
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Gift claim submitted'), findsOneWidget);
+
+    operations.receivedClaimStatuses[_incomingLink.address] =
+        PaymentLinkReceivedStatus.received;
+    await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receiving'), findsNothing);
+    expect(find.text('Receiving...'), findsNothing);
     expect(find.text('Received'), findsWidgets);
-    expect(find.text('Gift claimed'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: receivedRow,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(operations.receivedRecords.single.claimLink, isNull);
+  });
+
+  testWidgets('restores an in-flight received Card after the screen restarts', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .ingest(_incomingLink.encode());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(operations.receivedRecords.single.claimTxids, 'claim-txid');
+    expect(find.text('Receiving...'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(find.text('Received').first);
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Receiving...'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_received_u1paymentlinkaddress')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('keeps a pending broadcast in Receiving state', (tester) async {
@@ -695,9 +756,9 @@ void main() {
         status: PaymentLinkClaimBroadcastStatus.pendingBroadcast,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Receiving...'), findsOneWidget);
     expect(find.text('Gift claim submitted'), findsOneWidget);
     expect(find.text('Gift claimed'), findsNothing);
 
@@ -729,11 +790,11 @@ void main() {
     await tester.tap(find.text('Claim my gift'));
     await tester.pump();
 
-    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Receiving...'), findsOneWidget);
     claimCompleter.completeError(StateError('claim failed'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receiving'), findsNothing);
+    expect(find.text('Receiving...'), findsNothing);
     expect(find.text('Claim'), findsOneWidget);
     expect(find.textContaining('Gift Card claim failed.'), findsOneWidget);
   });
@@ -932,15 +993,19 @@ final _draftRecovery = PaymentLinkRecoveryRecord(
 class _FakePaymentLinkOperations implements PaymentLinkOperations {
   _FakePaymentLinkOperations({
     List<PaymentLinkRecoveryRecord> records = const [],
+    List<PaymentLinkReceivedRecord> receivedRecords = const [],
     this.claimCompleter,
     this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
     this.claimable = true,
-  }) : records = List.of(records);
+  }) : records = List.of(records),
+       receivedRecords = List.of(receivedRecords);
 
   final Completer<PaymentLinkClaimResult>? claimCompleter;
   int fundingConfirmationCount;
   final bool claimable;
   final List<PaymentLinkRecoveryRecord> records;
+  final List<PaymentLinkReceivedRecord> receivedRecords;
+  final Map<String, PaymentLinkReceivedStatus> receivedClaimStatuses = {};
   final List<BigInt> createdAmounts = [];
   final List<String> createdFromAccounts = [];
   final List<String?> createdArtworkIds = [];
@@ -1027,10 +1092,51 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }
 
   @override
+  Future<List<PaymentLinkReceivedRecord>> loadReceivedLinkRecoveries() async {
+    return List.unmodifiable(receivedRecords);
+  }
+
+  @override
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
+    List<PaymentLinkReceivedRecord> records,
+  ) async {
+    for (var index = 0; index < receivedRecords.length; index++) {
+      final record = receivedRecords[index];
+      final status = receivedClaimStatuses[record.address] ?? record.status;
+      receivedRecords[index] = switch (status) {
+        PaymentLinkReceivedStatus.readyToClaim => record.copyWith(
+          status: status,
+          destinationAccountUuid: null,
+          claimTxids: null,
+          updatedAt: DateTime.utc(2026, 8, 6, 3),
+        ),
+        PaymentLinkReceivedStatus.receiving => record,
+        PaymentLinkReceivedStatus.received => record.copyWith(
+          status: status,
+          claimLink: null,
+          updatedAt: DateTime.utc(2026, 8, 6, 3),
+        ),
+      };
+    }
+    return List.unmodifiable(receivedRecords);
+  }
+
+  @override
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
+    if (claimable &&
+        !receivedRecords.any((record) => record.address == link.address)) {
+      receivedRecords.insert(
+        0,
+        PaymentLinkReceivedRecord.fromLink(
+          link,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      );
+    }
     return PaymentLinkClaimSession(
       link: link,
       destinationAddress: 'u1receiver',
+      destinationAccountUuid: 'account-1',
       directory: Directory('/tmp/vizor-payment-link-test'),
       dbPath: '/tmp/vizor-payment-link-test/wallet.db',
       accountUuid: 'payment-link-account',
@@ -1043,8 +1149,31 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
-  ) {
-    return claimLink(session.link);
+  ) async {
+    try {
+      final result = await claimLink(session.link);
+      _replaceReceivedRecord(
+        session.link.address,
+        (record) => record.copyWith(
+          status: PaymentLinkReceivedStatus.receiving,
+          destinationAccountUuid: session.destinationAccountUuid,
+          claimTxids: result.txids,
+          updatedAt: DateTime.utc(2026, 8, 6, 2),
+        ),
+      );
+      return result;
+    } catch (_) {
+      _replaceReceivedRecord(
+        session.link.address,
+        (record) => record.copyWith(
+          status: PaymentLinkReceivedStatus.readyToClaim,
+          destinationAccountUuid: null,
+          claimTxids: null,
+          updatedAt: DateTime.utc(2026, 8, 6, 2),
+        ),
+      );
+      rethrow;
+    }
   }
 
   @override
@@ -1056,6 +1185,16 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
     claimedLinks.add(link);
     return claimCompleter?.future ?? _broadcastedClaimResult;
+  }
+
+  void _replaceReceivedRecord(
+    String address,
+    PaymentLinkReceivedRecord Function(PaymentLinkReceivedRecord record) update,
+  ) {
+    final index = receivedRecords.indexWhere(
+      (record) => record.address == address,
+    );
+    if (index >= 0) receivedRecords[index] = update(receivedRecords[index]);
   }
 }
 

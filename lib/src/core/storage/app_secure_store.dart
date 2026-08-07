@@ -27,6 +27,7 @@ const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kPaymentLinkRecoveryStorageKey = 'zcash_payment_link_recovery_v1';
+const kPaymentLinkReceivedStorageKey = 'zcash_payment_link_received_v1';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
@@ -379,7 +380,8 @@ class AppSecureStore {
       return;
     }
     if (key.startsWith(_votingHotkeyKeyPrefix) ||
-        key == kPaymentLinkRecoveryStorageKey) {
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"',
@@ -1033,7 +1035,8 @@ class AppSecureStore {
 
   bool _isAppManagedGeneralSecretKey(String key) {
     return key.startsWith(_votingHotkeyKeyPrefix) ||
-        key == kPaymentLinkRecoveryStorageKey;
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey;
   }
 
   Future<void> _deleteRotationRecordBestEffort() async {

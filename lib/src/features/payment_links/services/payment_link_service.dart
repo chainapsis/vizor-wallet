@@ -17,10 +17,15 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import 'payment_link_received_store.dart';
 import 'payment_link_recovery_store.dart';
 
 final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
-  return PaymentLinkService(ref, ref.read(paymentLinkRecoveryStoreProvider));
+  return PaymentLinkService(
+    ref,
+    ref.read(paymentLinkRecoveryStoreProvider),
+    ref.read(paymentLinkReceivedStoreProvider),
+  );
 });
 
 const kPaymentLinkMaxClaimLookbackBlocks = 100000;
@@ -65,6 +70,45 @@ bool paymentLinkTxidsMatch(String first, String second) {
     return false;
   }
   return _reverseHexBytes(normalizedFirst) == normalizedSecond;
+}
+
+@visibleForTesting
+PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
+  required String claimTxids,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedTxids = claimTxids
+      .split(',')
+      .map(_normalizeTxid)
+      .where((txid) => txid.isNotEmpty)
+      .toSet();
+  if (expectedTxids.isEmpty) return PaymentLinkReceivedStatus.receiving;
+
+  bool everyTxidMatches(
+    bool Function(rust_sync.TransactionInfo transaction) predicate,
+  ) {
+    return expectedTxids.every(
+      (expectedTxid) => transactions.any(
+        (transaction) =>
+            paymentLinkTxidsMatch(expectedTxid, transaction.txidHex) &&
+            predicate(transaction),
+      ),
+    );
+  }
+
+  final allMined = everyTxidMatches(
+    (transaction) =>
+        transaction.txKind == 'received' &&
+        transaction.minedHeight > BigInt.zero,
+  );
+  if (allMined) return PaymentLinkReceivedStatus.received;
+
+  final allExpired = everyTxidMatches(
+    (transaction) => transaction.expiredUnmined,
+  );
+  return allExpired
+      ? PaymentLinkReceivedStatus.readyToClaim
+      : PaymentLinkReceivedStatus.receiving;
 }
 
 class PaymentLinkFundingQuote {
@@ -131,6 +175,12 @@ abstract interface class PaymentLinkOperations {
     List<PaymentLinkRecoveryRecord> records,
   );
 
+  Future<List<PaymentLinkReceivedRecord>> loadReceivedLinkRecoveries();
+
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
+    List<PaymentLinkReceivedRecord> records,
+  );
+
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link);
 
   Future<PaymentLinkClaimResult> claimPreparedLink(
@@ -150,6 +200,7 @@ class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
     required this.destinationAddress,
+    required this.destinationAccountUuid,
     required this.directory,
     required this.dbPath,
     required this.accountUuid,
@@ -160,6 +211,7 @@ class PaymentLinkClaimSession {
 
   final VizorPaymentLink link;
   final String destinationAddress;
+  final String destinationAccountUuid;
   final Directory directory;
   final String dbPath;
   final String accountUuid;
@@ -239,7 +291,9 @@ int validatePaymentLinkClaimBirthday({
 @visibleForTesting
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
-      .convert(utf8.encode('${link.network}:${link.address}:${link.mnemonic}'))
+      .convert(
+        utf8.encode('${link.network}:${link.address}:${link.mnemonic}'),
+      )
       .toString();
   return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
 }
@@ -270,10 +324,11 @@ class PaymentLinkBroadcastPendingException implements Exception {
 }
 
 class PaymentLinkService implements PaymentLinkOperations {
-  PaymentLinkService(this._ref, this._recoveryStore);
+  PaymentLinkService(this._ref, this._recoveryStore, this._receivedStore);
 
   final Ref _ref;
   final PaymentLinkRecoveryStore _recoveryStore;
+  final PaymentLinkReceivedStore _receivedStore;
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -284,9 +339,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw StateError('No active account.');
     }
     final fundingAmount = paymentLinkFundingAmountZatoshi(amountZatoshi);
-    return _ref
-        .read(syncProvider.notifier)
-        .runWithAuthoritativeSpendable(
+    return _ref.read(syncProvider.notifier).runWithAuthoritativeSpendable(
           accountUuid: sourceAccountUuid,
           operation: () async {
             final dbPath = await getWalletDbPath();
@@ -429,20 +482,20 @@ class PaymentLinkService implements PaymentLinkOperations {
     final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
     for (final accountUuid
         in needsHistory.map((record) => record.sourceAccountUuid).toSet()) {
-      transactionsByAccount[accountUuid] = await rust_sync
-          .getTransactionHistory(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            limit: null,
-          );
+      transactionsByAccount[accountUuid] =
+          await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        limit: null,
+      );
     }
     final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
     final chainTipHeight = cachedTip > 0
         ? BigInt.from(cachedTip)
         : await _ref
-              .read(rpcEndpointFailoverProvider.notifier)
-              .getLatestBlockHeight();
+            .read(rpcEndpointFailoverProvider.notifier)
+            .getLatestBlockHeight();
     return {
       for (final record in records)
         record.link.address: record.state == PaymentLinkRecoveryState.shared
@@ -456,6 +509,68 @@ class PaymentLinkService implements PaymentLinkOperations {
                 chainTipHeight: chainTipHeight,
               ),
     };
+  }
+
+  @override
+  Future<List<PaymentLinkReceivedRecord>> loadReceivedLinkRecoveries() {
+    return _receivedStore.load();
+  }
+
+  @override
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
+    List<PaymentLinkReceivedRecord> _,
+  ) async {
+    // The screen can optimistically render Receiving before the broadcast
+    // result returns. Always reconcile from the persisted copy, which owns
+    // the destination account UUID and claim txids needed for history lookup.
+    final persistedRecords = await _receivedStore.load();
+    final receiving = persistedRecords
+        .where(
+          (record) =>
+              record.status == PaymentLinkReceivedStatus.receiving &&
+              record.destinationAccountUuid != null &&
+              record.claimTxids != null &&
+              record.claimTxids!.trim().isNotEmpty,
+        )
+        .toList();
+    if (receiving.isEmpty) return persistedRecords;
+
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final currentNetworkRecords = receiving
+        .where((record) => record.network == endpoint.networkName)
+        .toList();
+    if (currentNetworkRecords.isEmpty) return persistedRecords;
+
+    final dbPath = await getWalletDbPath();
+    final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
+    for (final accountUuid in currentNetworkRecords
+        .map((record) => record.destinationAccountUuid!)
+        .toSet()) {
+      transactionsByAccount[accountUuid] =
+          await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        limit: null,
+      );
+    }
+
+    for (final record in currentNetworkRecords) {
+      final status = paymentLinkReceivedStatusForTransactions(
+        claimTxids: record.claimTxids!,
+        transactions:
+            transactionsByAccount[record.destinationAccountUuid!] ?? const [],
+      );
+      switch (status) {
+        case PaymentLinkReceivedStatus.readyToClaim:
+          await _receivedStore.markReadyToClaim(address: record.address);
+        case PaymentLinkReceivedStatus.receiving:
+          break;
+        case PaymentLinkReceivedStatus.received:
+          await _receivedStore.markReceived(address: record.address);
+      }
+    }
+    return _receivedStore.load();
   }
 
   PaymentLinkFundingProgress _fundingProgressForRecord({
@@ -488,8 +603,8 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
     }
     final allFundingTransactionsMined = minedHeights.keys.toSet().containsAll(
-      fundingTxids,
-    );
+          fundingTxids,
+        );
     final minedHeight = allFundingTransactionsMined
         ? minedHeights.values.reduce(
             (latest, height) => height > latest ? height : latest,
@@ -516,18 +631,32 @@ class PaymentLinkService implements PaymentLinkOperations {
   @override
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
     final receiverState = _ref.read(accountProvider).value;
+    final receiverAccountUuid = receiverState?.activeAccountUuid;
     final receiverAddress = receiverState?.activeAddress;
-    if (receiverState?.activeAccountUuid == null ||
+    if (receiverAccountUuid == null ||
         receiverAddress == null ||
         receiverAddress.isEmpty) {
       throw StateError('No active receive account.');
     }
-    return _prepareSpend(link: link, destinationAddress: receiverAddress);
+    final session = await _prepareSpend(
+      link: link,
+      destinationAddress: receiverAddress,
+      destinationAccountUuid: receiverAccountUuid,
+    );
+    if (!session.canClaim) return session;
+    try {
+      await _receivedStore.saveReady(link);
+      return session;
+    } catch (_) {
+      await discardClaimSession(session);
+      rethrow;
+    }
   }
 
   Future<PaymentLinkClaimSession> _prepareSpend({
     required VizorPaymentLink link,
     required String destinationAddress,
+    required String destinationAccountUuid,
   }) async {
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -637,6 +766,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       return PaymentLinkClaimSession(
         link: link,
         destinationAddress: destinationAddress,
+        destinationAccountUuid: destinationAccountUuid,
         directory: tempWallet.directory,
         dbPath: tempWallet.dbPath,
         accountUuid: importedAccountUuid,
@@ -656,7 +786,32 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
   ) async {
-    return _broadcastPreparedSpend(session);
+    var didBroadcast = false;
+    try {
+      final result = await _broadcastPreparedSpend(session);
+      didBroadcast = true;
+      await _receivedStore.markReceiving(
+        address: session.link.address,
+        destinationAccountUuid: session.destinationAccountUuid,
+        claimTxids: result.txids,
+      );
+      if (!shouldRetainPaymentLinkClaimWallet(result.status)) {
+        try {
+          await discardClaimSession(session);
+        } catch (error, stackTrace) {
+          log(
+            'PaymentLinkService: failed to delete completed claim wallet: '
+            '$error\n$stackTrace',
+          );
+        }
+      }
+      return result;
+    } catch (_) {
+      if (!didBroadcast) {
+        await _receivedStore.markReadyToClaim(address: session.link.address);
+      }
+      rethrow;
+    }
   }
 
   Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
@@ -698,9 +853,6 @@ class PaymentLinkService implements PaymentLinkOperations {
       txids: sendResult.txids,
       status: paymentLinkClaimBroadcastStatusFromWire(sendResult.status),
     );
-    if (!shouldRetainPaymentLinkClaimWallet(claimResult.status)) {
-      await discardClaimSession(session);
-    }
     unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
     return claimResult;
   }
@@ -810,8 +962,8 @@ class PaymentLinkService implements PaymentLinkOperations {
 
     final mnemonicBytes = mnemonic == null
         ? await _ref
-              .read(accountProvider.notifier)
-              .getMnemonicBytesForAccount(accountUuid)
+            .read(accountProvider.notifier)
+            .getMnemonicBytesForAccount(accountUuid)
         : Uint8List.fromList(utf8.encode(mnemonic));
     if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
       throw StateError('Mnemonic not found for payment link account.');
@@ -835,9 +987,7 @@ class PaymentLinkService implements PaymentLinkOperations {
 
   Future<void> _runBlockingSync({required String dbPath}) async {
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    await _ref
-        .read(syncProvider.notifier)
-        .runWithExclusiveRustSync(
+    await _ref.read(syncProvider.notifier).runWithExclusiveRustSync(
           () => rust_sync.runFullSyncBlocking(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -848,7 +998,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   Future<({Directory directory, String dbPath, bool existed})>
-  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
+      _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
     final supportDir = await getWalletSupportDirectory();
     final separator = Platform.pathSeparator;
     final directory = Directory(
@@ -861,7 +1011,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   Future<({String address, String accountUuid})>
-  _importPaymentLinkClaimAccount({
+      _importPaymentLinkClaimAccount({
     required VizorPaymentLink link,
     required int birthdayHeight,
     required String dbPath,
@@ -896,8 +1046,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     throw PaymentLinkBroadcastPendingException(
       txids: result.txids,
       status: result.status,
-      message:
-          result.message ??
+      message: result.message ??
           'Payment link funding transaction is waiting to be broadcast.',
     );
   }
