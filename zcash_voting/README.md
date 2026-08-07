@@ -75,7 +75,57 @@ storage rows directly.
 The `config` module keeps voting service config policy in Rust while letting
 wallets choose URLs and transport. This is a two-step flow because the dynamic
 config URL is trusted only after the static config bytes pass hash-pin and
-schema validation:
+schema validation. Dynamic config must include the top-level PIR geometry used
+by the selected service:
+
+```json
+{
+  "pir_layout": {
+    "pir_depth": 19,
+    "tier0_layers": 12,
+    "tier1_layers": 7
+  }
+}
+```
+
+Resolution fails closed when the field is missing or malformed, the tier-layer
+sum does not equal `pir_depth`, or the depth is outside the voting circuit's
+supported range of 1 through 29.
+
+Roll out the additive `pir_layout` field in published dynamic config before
+shipping wallet builds that require it. Older wallets ignore the unknown field.
+New clients that resolve config without `pir_layout`, or that connect to a PIR
+server that does not advertise matching `/root.pir_layout`, fail closed at
+connect time before any private query.
+
+After resolution, wallets typically connect PIR through
+`pir::connect_pir_blocking` (or `pir::connect_pir`) with the resolved config's
+`pir_layout` and a caller-chosen endpoint URL. The helpers run the
+config/server/compiled-client layout handshake and fail closed before any
+private query (`VotingError::InvalidInput` on layout mismatch); they do not
+re-check advertised-endpoint membership. Do not pass a compiled-client layout
+constant in place of `resolved.pir_layout`.
+
+```rust
+use std::sync::Arc;
+use zcash_voting::{connect_pir_blocking, HyperTransport};
+
+# fn example(
+#     resolved: &zcash_voting::wire::ResolvedVotingConfig,
+#     pir_url: &str,
+# ) -> Result<(), zcash_voting::VotingError> {
+let pir_client = connect_pir_blocking(
+    resolved.pir_layout,
+    pir_url,
+    Arc::new(HyperTransport::new()),
+)?;
+# let _ = pir_client;
+# Ok(())
+# }
+```
+
+When the caller already selected an endpoint (for example after exact-height
+snapshot probing), pass that URL together with `resolved.pir_layout`.
 
 ```rust
 use zcash_voting::config::{
@@ -113,8 +163,11 @@ clear "remote authentication failed" message.
 `decide_config_switch` classifies the semantic wallet transition as
 `InitialLoad`, `Unchanged`, `SameChainServiceUpdate`, `NewChainOrRound`, or
 `ProtocolChanged`. The wallet owns executing that branch. Endpoint and signing
-key changes are same-chain service updates, so wallets should restart
-network-derived work while keeping durable artifacts indexed by round id.
+key changes and PIR layout changes are same-chain service updates, so wallets
+should restart network-derived work, including PIR precompute, while keeping
+durable artifacts indexed by round id. Summaries persisted before `pir_layout`
+was recorded remain readable and cause the first newly known layout to register
+as a service update.
 Authenticated round-set changes should reload and reselect the active round
 context, but do not by themselves require wiping hotkeys or vote commitments
 for old round ids.
@@ -132,6 +185,11 @@ to persist the resolved summary used for future switch decisions:
 - `read_config_state` / `write_config_state` load and save that state, so the
   first run reports an initial load and later runs detect service, round-set,
   or protocol changes.
+- `connect_pir_from_resolved` connects a PIR client with that config's
+  `pir_layout` and a caller-chosen PIR URL (layout handshake; no hardcoded
+  depth/split). Delegation example helpers
+  (`precompute_delegation_bundle`, `prove_and_submit_*`) take `PirLayout` plus
+  the selected PIR URL instead of the full resolved config.
 
 ## Crates.io diagram
 

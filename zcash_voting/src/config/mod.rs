@@ -76,6 +76,13 @@ const SHA256_CHECKSUM_PREFIX: &str = "sha256:";
 const VERSION_V0: &str = "v0";
 const VOTE_SERVER_VERSION_V1: &str = "v1";
 const ROUND_PARAM_BYTE_LEN: usize = 32;
+// Keep aligned with `imt_tree::tree::TREE_DEPTH` (nullifier IMT depth).
+const MAX_PIR_CIRCUIT_DEPTH: u32 = 29;
+// These limits are deliberately generous compared with supported depth-19
+// splits. They leave ample headroom for future layouts while protecting clients
+// from the worst-case exponential tier allocations.
+const MAX_PIR_TIER0_BYTES: usize = 7_864_000;
+const MAX_PIR_TIER1_ROW_BYTES: usize = 2_457_600;
 
 /// Versions of each voting-protocol component implemented by this crate.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +125,35 @@ pub struct ServiceEndpoint {
     pub label: String,
 }
 
+/// PIR tree geometry selected by the dynamic voting config.
+///
+/// Fixed-width fields keep this DTO stable for generated wallet bindings.
+/// [`PirLayout::UNKNOWN`] is reserved for summaries persisted before layout
+/// identity was recorded and is never accepted from dynamic config.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PirLayout {
+    pub pir_depth: u32,
+    pub tier0_layers: u32,
+    pub tier1_layers: u32,
+}
+
+impl PirLayout {
+    /// Sentinel used when deserializing a legacy resolved-config summary.
+    pub const UNKNOWN: Self = Self {
+        pir_depth: 0,
+        tier0_layers: 0,
+        tier1_layers: 0,
+    };
+}
+
+impl Default for PirLayout {
+    /// Same sentinel as [`PirLayout::UNKNOWN`]; not a live layout for connect
+    /// or dynamic config — only for legacy summary deserialization defaults.
+    fn default() -> Self {
+        Self::UNKNOWN
+    }
+}
+
 /// Protocol component versions advertised by the dynamic config.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SupportedVersions {
@@ -145,6 +181,7 @@ pub struct ResolvedVotingConfig {
     pub dynamic_config_fingerprint: String,
     pub vote_servers: Vec<ServiceEndpoint>,
     pub pir_endpoints: Vec<ServiceEndpoint>,
+    pub pir_layout: PirLayout,
     pub supported_versions: SupportedVersions,
     pub authenticated_rounds: Vec<AuthenticatedRound>,
     pub skipped_round_ids: Vec<String>,
@@ -238,6 +275,10 @@ pub struct ResolvedVotingConfigSummary {
     pub trusted_key_fingerprint: String,
     pub vote_server_fingerprint: String,
     pub pir_endpoint_fingerprint: String,
+    /// Defaults to [`PirLayout::UNKNOWN`] for summaries persisted by older
+    /// versions so the next known layout is treated as a service update.
+    #[serde(default)]
+    pub pir_layout: PirLayout,
     pub authenticated_round_set_fingerprint: String,
     pub protocol_versions: SupportedVersions,
 }
@@ -253,6 +294,7 @@ impl From<&ResolvedVotingConfig> for ResolvedVotingConfigSummary {
             trusted_key_fingerprint: config.trusted_key_fingerprint.clone(),
             vote_server_fingerprint: fingerprint_json(&config.vote_servers),
             pir_endpoint_fingerprint: fingerprint_json(&config.pir_endpoints),
+            pir_layout: config.pir_layout,
             authenticated_round_set_fingerprint: fingerprint_json(&authenticated_round_ids),
             protocol_versions: config.supported_versions.clone(),
         }
@@ -273,8 +315,8 @@ pub enum ConfigSwitchKind {
     Unchanged,
     /// There was no prior resolved config summary.
     InitialLoad,
-    /// Same authenticated round set and protocol tuple, but endpoint or
-    /// trusted-signing-key material changed.
+    /// Same authenticated round set and protocol tuple, but endpoint, PIR
+    /// layout, or trusted-signing-key material changed.
     ///
     /// Wallets should restart endpoint caches, status polls, share tracking,
     /// and PIR/delegation precompute. They should keep round-id-indexed wallet
@@ -374,6 +416,7 @@ pub fn resolve_dynamic_voting_config(
         dynamic_config_fingerprint: fingerprint_bytes(dynamic_bytes),
         vote_servers: dynamic_config.vote_servers,
         pir_endpoints: dynamic_config.pir_endpoints,
+        pir_layout: dynamic_config.pir_layout,
         supported_versions: dynamic_config.supported_versions,
         authenticated_rounds: authenticated_rounds.authenticated_rounds,
         skipped_round_ids: authenticated_rounds.skipped_round_ids.clone(),
@@ -425,6 +468,7 @@ pub fn decide_config_switch(
     } else if current.trusted_key_fingerprint != next.trusted_key_fingerprint
         || current.vote_server_fingerprint != next.vote_server_fingerprint
         || current.pir_endpoint_fingerprint != next.pir_endpoint_fingerprint
+        || current.pir_layout != next.pir_layout
     {
         ConfigSwitchKind::SameChainServiceUpdate
     } else {
@@ -505,6 +549,7 @@ struct WireVotingServiceConfig {
     config_version: u32,
     vote_servers: Vec<ServiceEndpoint>,
     pir_endpoints: Vec<ServiceEndpoint>,
+    pir_layout: PirLayout,
     supported_versions: SupportedVersions,
     rounds: BTreeMap<String, RoundEntry>,
 }
@@ -569,6 +614,7 @@ fn validate_dynamic_config(
     }
     validate_endpoints(&config.vote_servers, "vote_servers")?;
     validate_endpoints(&config.pir_endpoints, "pir_endpoints")?;
+    validate_pir_layout(config.pir_layout)?;
     for round_id in config.rounds.keys() {
         validate_vote_round_id_hex(round_id).map_err(|e| VotingConfigError::DecodeFailed {
             message: format!("invalid rounds key: {e}"),
@@ -601,6 +647,68 @@ fn validate_dynamic_config(
         });
     }
     Ok(())
+}
+
+fn validate_pir_layout(layout: PirLayout) -> Result<(), VotingConfigError> {
+    validate_and_convert_pir_layout(layout)
+        .map(|_| ())
+        .map_err(|message| VotingConfigError::DecodeFailed { message })
+}
+
+pub(crate) fn validate_and_convert_pir_layout(
+    layout: PirLayout,
+) -> Result<pir_types::PirLayout, String> {
+    let combined_depth = layout
+        .tier0_layers
+        .checked_add(layout.tier1_layers)
+        .ok_or_else(|| "pir_layout tier layer sum overflows u32".to_string())?;
+    if layout.pir_depth != combined_depth {
+        return Err(format!(
+            "pir_layout.pir_depth {} must equal tier0_layers {} + tier1_layers {}",
+            layout.pir_depth, layout.tier0_layers, layout.tier1_layers
+        ));
+    }
+    if layout.pir_depth == 0 || layout.pir_depth > MAX_PIR_CIRCUIT_DEPTH {
+        return Err(format!(
+            "pir_layout.pir_depth {} is outside the supported circuit range 1..={MAX_PIR_CIRCUIT_DEPTH}",
+            layout.pir_depth
+        ));
+    }
+
+    let negotiated = pir_types::PirLayout {
+        pir_depth: usize::try_from(layout.pir_depth).map_err(|_| {
+            format!(
+                "pir_layout.pir_depth {} does not fit usize",
+                layout.pir_depth
+            )
+        })?,
+        tier0_layers: usize::try_from(layout.tier0_layers).map_err(|_| {
+            format!(
+                "pir_layout.tier0_layers {} does not fit usize",
+                layout.tier0_layers
+            )
+        })?,
+        tier1_layers: usize::try_from(layout.tier1_layers).map_err(|_| {
+            format!(
+                "pir_layout.tier1_layers {} does not fit usize",
+                layout.tier1_layers
+            )
+        })?,
+    };
+    negotiated.validate_ypir_bounds()?;
+    let tier0_bytes = negotiated.tier0_bytes()?;
+    if tier0_bytes > MAX_PIR_TIER0_BYTES {
+        return Err(format!(
+            "pir_layout Tier 0 size {tier0_bytes} bytes exceeds client limit {MAX_PIR_TIER0_BYTES}"
+        ));
+    }
+    let tier1_row_bytes = negotiated.tier1_row_bytes()?;
+    if tier1_row_bytes > MAX_PIR_TIER1_ROW_BYTES {
+        return Err(format!(
+            "pir_layout Tier 1 row size {tier1_row_bytes} bytes exceeds client limit {MAX_PIR_TIER1_ROW_BYTES}"
+        ));
+    }
+    Ok(negotiated)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -801,6 +909,11 @@ mod tests {
             "config_version": 1,
             "vote_servers": [{"url": "https://vote.example.com", "label": "vote"}],
             "pir_endpoints": [{"url": "https://pir.example.com", "label": "pir"}],
+            "pir_layout": {
+                "pir_depth": 19,
+                "tier0_layers": 12,
+                "tier1_layers": 7
+            },
             "supported_versions": {
                 "pir": ["v0"],
                 "vote_protocol": "v0",
@@ -815,6 +928,19 @@ mod tests {
 
     fn dynamic_bytes(signing_key: &SigningKey) -> Vec<u8> {
         dynamic_bytes_with_round_signers(&[(ROUND_ID, signing_key)])
+    }
+
+    fn resolve_test_dynamic(
+        signing_key: &SigningKey,
+        dynamic_bytes: &[u8],
+    ) -> Result<ResolvedVotingConfig, VotingConfigError> {
+        let resolved_static =
+            resolve_static_voting_config(&source(), &static_bytes(signing_key)).unwrap();
+        resolve_dynamic_voting_config(
+            resolved_static,
+            dynamic_bytes,
+            ResolveVotingConfigOptions::default(),
+        )
     }
 
     #[test]
@@ -869,6 +995,213 @@ mod tests {
             }]
         );
         assert!(resolved.skipped_round_ids.is_empty());
+    }
+
+    #[test]
+    fn dynamic_resolution_exposes_fixed_width_pir_layout_on_wire_surface() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+
+        let resolved = resolve_test_dynamic(&signing_key, &dynamic_bytes(&signing_key)).unwrap();
+        let wire_layout: crate::wire::PirLayout = resolved.pir_layout;
+        let json = serde_json::to_value(wire_layout).unwrap();
+
+        assert_eq!(
+            resolved.pir_layout,
+            PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+            }
+        );
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "pir_depth": 19,
+                "tier0_layers": 12,
+                "tier1_layers": 7,
+            })
+        );
+    }
+
+    #[test]
+    fn dynamic_resolution_requires_pir_layout() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic.as_object_mut().unwrap().remove("pir_layout");
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err.to_string().contains("missing field `pir_layout`"));
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_pir_layout_values_outside_u32() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"]["pir_depth"] = serde_json::json!(u64::from(u32::MAX) + 1);
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err.to_string().contains("dynamic config decode failed"));
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_inconsistent_pir_layout() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"]["tier1_layers"] = serde_json::json!(8);
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err
+            .to_string()
+            .contains("pir_layout.pir_depth 19 must equal tier0_layers 12 + tier1_layers 8"));
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_pir_layout_arithmetic_overflow() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"] = serde_json::json!({
+            "pir_depth": 29,
+            "tier0_layers": u32::MAX,
+            "tier1_layers": 1,
+        });
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err.to_string().contains("tier layer sum overflows u32"));
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_pir_depth_outside_circuit_range() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        for layout in [
+            serde_json::json!({
+                "pir_depth": 0,
+                "tier0_layers": 0,
+                "tier1_layers": 0,
+            }),
+            serde_json::json!({
+                "pir_depth": 30,
+                "tier0_layers": 23,
+                "tier1_layers": 7,
+            }),
+        ] {
+            let mut dynamic: serde_json::Value =
+                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+            dynamic["pir_layout"] = layout;
+
+            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
+                .unwrap_err();
+
+            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+            assert!(err
+                .to_string()
+                .contains("outside the supported circuit range 1..=29"));
+        }
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_pir_layouts_unusable_by_ypir() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        for (layout, expected) in [
+            (
+                serde_json::json!({
+                    "pir_depth": 19,
+                    "tier0_layers": 10,
+                    "tier1_layers": 9,
+                }),
+                "Tier 1 rows 1024 below YPIR minimum 2048",
+            ),
+            (
+                serde_json::json!({
+                    "pir_depth": 19,
+                    "tier0_layers": 14,
+                    "tier1_layers": 5,
+                }),
+                "Tier 1 item bits 24576 below YPIR minimum 28672",
+            ),
+            (
+                serde_json::json!({
+                    "pir_depth": 19,
+                    "tier0_layers": 0,
+                    "tier1_layers": 19,
+                }),
+                "PIR layout tiers must be non-zero",
+            ),
+        ] {
+            let mut dynamic: serde_json::Value =
+                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+            dynamic["pir_layout"] = layout;
+
+            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
+                .unwrap_err();
+
+            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_pir_layouts_exceeding_client_resource_limits() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        for (layout, expected) in [
+            (
+                serde_json::json!({
+                    "pir_depth": 29,
+                    "tier0_layers": 23,
+                    "tier1_layers": 6,
+                }),
+                "Tier 0 size 805306336 bytes exceeds client limit 7864000",
+            ),
+            (
+                serde_json::json!({
+                    "pir_depth": 29,
+                    "tier0_layers": 11,
+                    "tier1_layers": 18,
+                }),
+                "Tier 1 row size 25165824 bytes exceeds client limit 2457600",
+            ),
+        ] {
+            let mut dynamic: serde_json::Value =
+                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+            dynamic["pir_layout"] = layout;
+
+            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
+                .unwrap_err();
+
+            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+    }
+
+    #[test]
+    fn dynamic_resolution_accepts_layouts_within_client_resource_limits() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11)] {
+            let mut dynamic: serde_json::Value =
+                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+            dynamic["pir_layout"] = serde_json::json!({
+                "pir_depth": tier0_layers + tier1_layers,
+                "tier0_layers": tier0_layers,
+                "tier1_layers": tier1_layers,
+            });
+
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
+        }
     }
 
     #[test]
@@ -927,6 +1260,11 @@ mod tests {
                 url: "https://pir.example.com".to_string(),
                 label: "pir".to_string(),
             }],
+            pir_layout: PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+            },
             supported_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],
                 vote_protocol: "v0".to_string(),
@@ -958,6 +1296,11 @@ mod tests {
             dynamic_config_fingerprint: "dyn".to_string(),
             vote_servers: vec![],
             pir_endpoints: vec![],
+            pir_layout: PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+            },
             supported_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],
                 vote_protocol: "v0".to_string(),
@@ -1079,11 +1422,73 @@ mod tests {
             trusted_key_fingerprint: "a".to_string(),
             vote_server_fingerprint: "b".to_string(),
             pir_endpoint_fingerprint: "c".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "d".to_string(),
             protocol_versions: versions.clone(),
         };
         let mut next = current.clone();
         next.pir_endpoint_fingerprint = "changed".to_string();
+
+        let decision = decide_config_switch(Some(current), next);
+
+        assert_eq!(decision.kind, ConfigSwitchKind::SameChainServiceUpdate);
+    }
+
+    #[test]
+    fn legacy_summary_deserializes_and_known_layout_is_service_update() {
+        let legacy_json = serde_json::json!({
+            "trusted_key_fingerprint": "same-keys",
+            "vote_server_fingerprint": "same-vote-servers",
+            "pir_endpoint_fingerprint": "same-pir-endpoints",
+            "authenticated_round_set_fingerprint": "same-rounds",
+            "protocol_versions": {
+                "pir": ["v0"],
+                "vote_protocol": "v0",
+                "tally": "v0",
+                "vote_server": "v1",
+            },
+        });
+        let current: ResolvedVotingConfigSummary =
+            serde_json::from_value(legacy_json).expect("legacy summary remains readable");
+        assert_eq!(current.pir_layout, PirLayout::UNKNOWN);
+
+        let mut next = current.clone();
+        next.pir_layout = PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
+        };
+
+        let decision = decide_config_switch(Some(current), next);
+
+        assert_eq!(decision.kind, ConfigSwitchKind::SameChainServiceUpdate);
+    }
+
+    #[test]
+    fn config_switch_for_known_pir_layout_change_is_service_update() {
+        let current = ResolvedVotingConfigSummary {
+            trusted_key_fingerprint: "same-keys".to_string(),
+            vote_server_fingerprint: "same-vote-servers".to_string(),
+            pir_endpoint_fingerprint: "same-pir-endpoints".to_string(),
+            pir_layout: PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+            },
+            authenticated_round_set_fingerprint: "same-rounds".to_string(),
+            protocol_versions: SupportedVersions {
+                pir: vec!["v0".to_string()],
+                vote_protocol: "v0".to_string(),
+                tally: "v0".to_string(),
+                vote_server: "v1".to_string(),
+            },
+        };
+        let mut next = current.clone();
+        next.pir_layout = PirLayout {
+            pir_depth: 20,
+            tier0_layers: 13,
+            tier1_layers: 7,
+        };
 
         let decision = decide_config_switch(Some(current), next);
 
@@ -1102,6 +1507,7 @@ mod tests {
             trusted_key_fingerprint: "same-keys".to_string(),
             vote_server_fingerprint: "same-chain".to_string(),
             pir_endpoint_fingerprint: "same-pir".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "rounds-a".to_string(),
             protocol_versions: versions.clone(),
         };
@@ -1125,6 +1531,7 @@ mod tests {
             trusted_key_fingerprint: "same-keys".to_string(),
             vote_server_fingerprint: "servers-a".to_string(),
             pir_endpoint_fingerprint: "same-pir".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "same-rounds".to_string(),
             protocol_versions: versions.clone(),
         };
@@ -1148,6 +1555,7 @@ mod tests {
             trusted_key_fingerprint: "keys-a".to_string(),
             vote_server_fingerprint: "same-servers".to_string(),
             pir_endpoint_fingerprint: "same-pir".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "same-rounds".to_string(),
             protocol_versions: versions.clone(),
         };
@@ -1165,6 +1573,7 @@ mod tests {
             trusted_key_fingerprint: "keys-a".to_string(),
             vote_server_fingerprint: "servers-a".to_string(),
             pir_endpoint_fingerprint: "pir-a".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "rounds-a".to_string(),
             protocol_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],
@@ -1188,6 +1597,7 @@ mod tests {
             trusted_key_fingerprint: "keys-a".to_string(),
             vote_server_fingerprint: "servers-a".to_string(),
             pir_endpoint_fingerprint: "pir-a".to_string(),
+            pir_layout: PirLayout::UNKNOWN,
             authenticated_round_set_fingerprint: "rounds-a".to_string(),
             protocol_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],

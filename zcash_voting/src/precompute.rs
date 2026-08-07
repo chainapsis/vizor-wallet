@@ -229,15 +229,8 @@ mod pir_tests {
                         ])),
                         "/params/tier1" => Ok(transport_response(
                             serde_json::to_vec(&pir_types::YpirScenario {
-                                num_items: pir_types::TIER1_YPIR_ROWS,
+                                num_items: pir_types::TIER1_ROWS,
                                 item_size_bits: pir_types::TIER1_ITEM_BITS,
-                            })
-                            .unwrap(),
-                        )),
-                        "/params/tier2" => Ok(transport_response(
-                            serde_json::to_vec(&pir_types::YpirScenario {
-                                num_items: pir_types::TIER1_YPIR_ROWS,
-                                item_size_bits: pir_types::TIER2_ITEM_BITS,
                             })
                             .unwrap(),
                         )),
@@ -246,10 +239,13 @@ mod pir_tests {
                                 zcash_network: pir_types::ZcashNetwork::Test,
                                 nullifier_pool: pir_types::NULLIFIER_POOL.to_owned(),
                                 dataset_version: pir_types::DATASET_VERSION,
-                                root29: hex::encode([0u8; 32]),
-                                root25: hex::encode([0u8; 32]),
+                                circuit_root: hex::encode([0u8; 32]),
+                                pir_root: hex::encode([0u8; 32]),
                                 num_ranges: 1,
+                                pir_layout: pir_types::COMPILED_PIR_LAYOUT,
                                 pir_depth: pir_types::PIR_DEPTH,
+                                tier1_rows: pir_types::TIER1_ROWS,
+                                tier1_row_bytes: pir_types::TIER1_ROW_BYTES,
                                 height: None,
                             })
                             .unwrap(),
@@ -318,6 +314,7 @@ mod pir_tests {
         };
         let pir_client = pir_client::PirClientBlocking::with_transport(
             "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
             std::sync::Arc::new(StaticPirTransport),
         )
         .unwrap();

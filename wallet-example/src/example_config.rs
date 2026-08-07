@@ -20,6 +20,7 @@ use zcash_voting::wire::{
     ConfigSwitchDecision, ResolveVotingConfigOptions, ResolvedVotingConfig,
     ResolvedVotingConfigSummary,
 };
+use zcash_voting::{connect_pir_blocking, HyperTransport, PirClientBlocking};
 
 type RequestBody = Full<Bytes>;
 type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
@@ -175,6 +176,29 @@ pub fn read_config_state(state_path: &Path) -> Result<Option<StoredConfigState>>
 pub fn write_config_state(state_path: &Path, state: &StoredConfigState) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(state).context("encode config state")?;
     fs::write(state_path, bytes).with_context(|| format!("write {}", state_path.display()))
+}
+
+/// Connects a blocking PIR client using the resolved dynamic config's layout.
+///
+/// Threads `resolved.pir_layout` and the caller-chosen `pir_server_url` into the
+/// PIR handshake so example callers never hardcode depth or tier-split
+/// constants. Endpoint selection (advertised list / snapshot probing) is the
+/// caller's responsibility.
+///
+/// # Errors
+///
+/// Returns an error if the layout handshake fails or the transport cannot
+/// complete client construction.
+pub fn connect_pir_from_resolved(
+    resolved: &ResolvedVotingConfig,
+    pir_server_url: &str,
+) -> Result<PirClientBlocking> {
+    connect_pir_blocking(
+        resolved.pir_layout,
+        pir_server_url,
+        std::sync::Arc::new(HyperTransport::new()),
+    )
+    .map_err(|e| anyhow!("connect PIR from resolved config failed: {e}"))
 }
 
 /// A minimal direct-HTTPS transport for config fetching.

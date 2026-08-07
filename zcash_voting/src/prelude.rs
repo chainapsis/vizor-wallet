@@ -33,7 +33,9 @@ pub use crate::note_bundling::{
     MINIMUM_VOTING_NOTE_COUNT, MINIMUM_VOTING_WEIGHT_ZATOSHI,
 };
 pub use crate::phases::{SharePhase, VotePhase, WorkflowPhase};
-pub use crate::pir::{select_pir_endpoint, PirEndpoint};
+pub use crate::pir::{
+    connect_pir, connect_pir_blocking, negotiated_pir_layout, select_pir_endpoint, PirEndpoint,
+};
 pub use crate::precompute::{
     note_witnesses, stored_note_witnesses, verify_witness, PirPrecomputeReport,
 };

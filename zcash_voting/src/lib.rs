@@ -45,8 +45,9 @@ pub mod zkp1;
 pub mod zkp2;
 
 pub use http_transport::HyperTransport;
-pub use pir_client::{
-    ImtProofData, PirClient, PirClientBlocking, Transport, TransportFuture, TransportResponse,
+pub use pir::{
+    connect_pir, connect_pir_blocking, negotiated_pir_layout, ImtProofData, NegotiatedPirLayout,
+    PirClient, PirClientBlocking, Transport, TransportFuture, TransportResponse,
 };
 
 pub use governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};

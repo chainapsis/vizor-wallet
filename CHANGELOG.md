@@ -7,6 +7,16 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 # Unreleased
 
 ### Changed
+- `pir::connect_pir` / `pir::connect_pir_blocking` now take an explicit
+  `PirLayout` and fail closed on config/server layout mismatch before any
+  private query (`VotingError::InvalidInput`). Clients accept any valid
+  two-tier layout matching `/root` rather than a compiled-layout gate.
+  `COMPILED_PIR_LAYOUT` is no longer re-exported from `zcash_voting` /
+  `prelude`; use resolved config `pir_layout` (tests may still import from
+  `pir-types`).
+- Dynamic voting config now requires top-level `pir_layout` (`pir_depth`,
+  `tier0_layers`, `tier1_layers`). `ResolvedVotingConfig` and its wire exports
+  expose it; layout changes are same-chain service updates.
 - Delegation submissions now carry compact, versioned Ironwood transaction
   effects so verifiers derive the signing digest directly instead of receiving
   it as a separate field. The payload excludes PCZT signer metadata, and
