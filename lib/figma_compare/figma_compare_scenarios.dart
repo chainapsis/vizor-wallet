@@ -189,6 +189,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-importing',
+    description: 'Mobile home while the initial wallet import is syncing',
+    builder: buildMobileHomeImportingResponsiveUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-home-no-balance',
     description: 'Mobile home with no balance or activity',
     builder: buildMobileHomeNoBalanceUseCase,

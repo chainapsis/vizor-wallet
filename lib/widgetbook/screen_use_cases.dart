@@ -995,6 +995,19 @@ Widget buildMobileHomeImportingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeImportingResponsiveUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      isSyncing: true,
+      percentage: 0.34,
+      displayPercentage: 0.34,
+    ),
+    constrainToPreviewFrame: false,
+  );
+}
+
 Widget buildMobileHomeAccountsModalUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
@@ -1797,7 +1810,12 @@ Widget _buildMobileHomeUseCase({
   ),
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
+  bool constrainToPreviewFrame = true,
 }) {
+  final harness = _MobileHomeHarness(
+    openAccountsSheet: openAccountsSheet,
+    showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
@@ -1829,12 +1847,9 @@ Widget _buildMobileHomeUseCase({
         return announcement;
       }),
     ],
-    child: _MobilePreviewFrame(
-      child: _MobileHomeHarness(
-        openAccountsSheet: openAccountsSheet,
-        showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
-      ),
-    ),
+    child: constrainToPreviewFrame
+        ? _MobilePreviewFrame(child: harness)
+        : harness,
   );
 }
 

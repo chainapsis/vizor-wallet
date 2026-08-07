@@ -651,6 +651,14 @@ void main() {
     expect(find.textContaining("importing"), findsOneWidget);
     expect(find.text('Send'), findsNothing);
 
+    final background = tester.widget<Image>(
+      find.byKey(const ValueKey('mobile_home_importing_background')),
+    );
+    expect(background.width, isNull);
+    expect(background.height, isNull);
+    expect(background.fit, BoxFit.cover);
+    expect(background.alignment, Alignment.topCenter);
+
     final canvasRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_rest_canvas')),
     );
@@ -661,6 +669,17 @@ void main() {
     expect(canvasRect.size, const Size(340, 220));
     expect(imageRect.size, const Size(246, 192));
     expect(canvasRect.bottom, moreOrLessEquals(744));
+
+    for (final size in const [Size(360, 800), Size(412, 915), Size(430, 932)]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pump();
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('mobile_home_importing_background')),
+        ),
+        size,
+      );
+    }
   });
 
   testWidgets('shows balance, actions, and empty activity when funded', (

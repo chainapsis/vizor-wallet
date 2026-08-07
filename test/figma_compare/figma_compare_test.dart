@@ -22,6 +22,7 @@ void main() {
         'import-customise-account',
         'mobile-customise-account',
         'mobile-home-default',
+        'mobile-home-importing',
         'mobile-home-no-balance',
         'ironwood-migration-announcement-modal',
       ]),
