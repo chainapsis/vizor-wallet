@@ -15,6 +15,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_received_store.dart';
@@ -44,7 +45,9 @@ enum _PaymentLinksLocalPage {
 /// [PaymentLinkOperations]. Artwork and message are carried by the v1
 /// presentation payload.
 class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
-  const PaymentLinksDesktopScreen({super.key});
+  const PaymentLinksDesktopScreen({this.initialCards, super.key});
+
+  final PaymentLinkCardsSnapshot? initialCards;
 
   @override
   ConsumerState<PaymentLinksDesktopScreen> createState() =>
@@ -54,6 +57,8 @@ class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
 class _PaymentLinksDesktopScreenState
     extends ConsumerState<PaymentLinksDesktopScreen> {
   static const _linkAvailableSoonRemainingConfirmations = 3;
+  static const _syncingFeeEstimateMessage =
+      'Card fee will be estimated when wallet sync completes.';
 
   static const _monthNames = [
     'January',
@@ -105,10 +110,14 @@ class _PaymentLinksDesktopScreenState
   bool _showHelp = false;
   bool _amountFocused = false;
   bool _fundingQuoteInProgress = false;
-  String? _amountErrorText;
+  String? _amountSupportingText;
+  bool _amountSupportingTextIsError = false;
   int _fundingQuoteGeneration = 0;
+  bool _fundingQuoteRetryScheduled = false;
+  bool _reviewShowsBack = false;
   bool _readyShowsBack = false;
   bool _receivedShowsBack = false;
+  bool _messageEditorRevealed = false;
   bool _operationInProgress = false;
   bool _receivedRefreshInProgress = false;
   bool _pendingIntakeScheduled = false;
@@ -117,12 +126,22 @@ class _PaymentLinksDesktopScreenState
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
+    final initialCards = widget.initialCards;
+    if (initialCards != null) {
+      _recoveries = initialCards.created;
+      _receivedCards = initialCards.received;
+    }
     _amountFocusNode.addListener(_handleAmountFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-      unawaited(_loadRecoveries());
-      unawaited(_loadReceivedCards());
+      if (initialCards == null) {
+        unawaited(_loadRecoveries());
+        unawaited(_loadReceivedCards());
+      } else {
+        unawaited(_refreshFundingProgress(records: initialCards.created));
+        unawaited(_refreshReceivedClaims(records: initialCards.received));
+      }
       unawaited(_consumePendingPaymentLink());
     });
     _fundingProgressTimer = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -157,6 +176,14 @@ class _PaymentLinksDesktopScreenState
     _amountFocusNode.unfocus();
     _messageFocusNode.unfocus();
     setState(() {
+      if (page == _PaymentLinksLocalPage.message &&
+          _page != _PaymentLinksLocalPage.message) {
+        _messageEditorRevealed = _hasMessage;
+      }
+      if (page == _PaymentLinksLocalPage.review &&
+          _page != _PaymentLinksLocalPage.review) {
+        _reviewShowsBack = false;
+      }
       _page = page;
       _showHelp = false;
     });
@@ -171,9 +198,12 @@ class _PaymentLinksDesktopScreenState
       _selectedArtwork = PaymentLinkCardArtwork.gift;
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
-      _amountErrorText = null;
+      _amountSupportingText = null;
+      _amountSupportingTextIsError = false;
       _readyLink = null;
+      _reviewShowsBack = false;
       _readyShowsBack = false;
+      _messageEditorRevealed = false;
       _page = _PaymentLinksLocalPage.amount;
       _showHelp = false;
     });
@@ -344,7 +374,51 @@ class _PaymentLinksDesktopScreenState
       _hasPositiveAmount &&
       !_fundingQuoteInProgress &&
       _fundingQuote != null &&
-      _amountErrorText == null;
+      _amountSupportingText == null;
+
+  bool _canEstimateCardFee(SyncState? sync, String accountUuid) {
+    return sync != null &&
+        sync.accountUuid == accountUuid &&
+        sync.hasBalanceData &&
+        sync.isSyncComplete &&
+        !sync.isSyncing &&
+        !sync.isBackgroundMode &&
+        sync.failure == null &&
+        sync.error == null;
+  }
+
+  void _handleFeeQuoteSyncGateChanged(
+    ({String? accountUuid, bool ready})? previous,
+    ({String? accountUuid, bool ready}) next,
+  ) {
+    if (!next.ready ||
+        (previous?.ready == true &&
+            previous?.accountUuid == next.accountUuid) ||
+        _fundingQuoteRetryScheduled) {
+      return;
+    }
+    if (_page != _PaymentLinksLocalPage.amount ||
+        next.accountUuid == null ||
+        _fundingQuoteRequestedAccountUuid != next.accountUuid ||
+        !_hasPositiveAmount ||
+        _fundingQuote != null ||
+        _fundingQuoteInProgress) {
+      return;
+    }
+
+    _fundingQuoteRetryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fundingQuoteRetryScheduled = false;
+      if (!mounted || _page != _PaymentLinksLocalPage.amount) return;
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      final sync = ref.read(syncProvider).value;
+      if (accountUuid != next.accountUuid ||
+          !_canEstimateCardFee(sync, next.accountUuid!)) {
+        return;
+      }
+      _handleAmountChanged(_amountController.text);
+    });
+  }
 
   void _handleAmountChanged(String value) {
     _fundingQuoteDebounce?.cancel();
@@ -354,19 +428,30 @@ class _PaymentLinksDesktopScreenState
       _fundingQuote = null;
       _fundingQuoteRequestedAccountUuid = null;
       _fundingQuoteInProgress = false;
-      _amountErrorText = null;
+      _amountSupportingText = null;
+      _amountSupportingTextIsError = false;
     });
     if (amount == null || amount <= BigInt.zero) return;
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final sync = ref.read(syncProvider).value;
-    if (accountUuid == null || accountUuid.isEmpty || sync == null) return;
-    _fundingQuoteRequestedAccountUuid = accountUuid;
-    final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
-    if (sync.hasBalanceData && sync.spendableBalance < minimumFunding) {
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    setState(() => _fundingQuoteRequestedAccountUuid = accountUuid);
+    if (!_canEstimateCardFee(sync, accountUuid)) {
       setState(() {
-        _amountErrorText =
+        _amountSupportingText = _syncingFeeEstimateMessage;
+        _amountSupportingTextIsError = false;
+      });
+      return;
+    }
+    final readySync = sync!;
+    final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
+    if (readySync.hasBalanceData &&
+        readySync.spendableBalance < minimumFunding) {
+      setState(() {
+        _amountSupportingText =
             'Insufficient balance to cover the Card amount and fees.';
+        _amountSupportingTextIsError = true;
       });
       return;
     }
@@ -402,7 +487,8 @@ class _PaymentLinksDesktopScreenState
     setState(() {
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
-      _amountErrorText = null;
+      _amountSupportingText = null;
+      _amountSupportingTextIsError = false;
       _page = _PaymentLinksLocalPage.amount;
     });
     _handleAmountChanged(_amountController.text);
@@ -439,21 +525,32 @@ class _PaymentLinksDesktopScreenState
       setState(() {
         _fundingQuoteInProgress = false;
         _fundingQuote = insufficient ? null : quote;
-        _amountErrorText = insufficient
+        _amountSupportingText = insufficient
             ? 'Insufficient balance to cover the Card amount and fees.'
             : null;
+        _amountSupportingTextIsError = insufficient;
       });
     } catch (_) {
       if (!mounted || generation != _fundingQuoteGeneration) return;
+      final sync = ref.read(syncProvider).value;
+      final waitingForSync = !_canEstimateCardFee(sync, sourceAccountUuid);
       setState(() {
         _fundingQuoteInProgress = false;
         _fundingQuote = null;
-        _amountErrorText = 'Card fee could not be estimated. Try again.';
+        _amountSupportingText = waitingForSync
+            ? _syncingFeeEstimateMessage
+            : 'Card fee could not be estimated. Try again.';
+        _amountSupportingTextIsError = !waitingForSync;
       });
     }
   }
 
   bool get _hasMessage => _messageController.text.trim().isNotEmpty;
+
+  bool get _messageExceedsByteLimit =>
+      !PaymentLinkPresentation.isMessageWithinUtf8ByteLimit(
+        _messageController.text,
+      );
 
   String? get _maxAmountText {
     final sync = ref.watch(syncProvider).value;
@@ -486,6 +583,35 @@ class _PaymentLinksDesktopScreenState
   }
 
   void _handleMessageChanged(String _) => setState(() {});
+
+  void _revealMessageEditor() {
+    if (_messageEditorRevealed) {
+      _messageFocusNode.requestFocus();
+      return;
+    }
+    setState(() => _messageEditorRevealed = true);
+    // Reduced-motion mode swaps the card face without running the flip, so
+    // focus the editor as soon as that face is mounted. In the animated path
+    // the editor is not mounted yet and onAnimationEnd handles the focus.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_messageEditorRevealed ||
+          _page != _PaymentLinksLocalPage.message ||
+          _messageFocusNode.context == null) {
+        return;
+      }
+      _messageFocusNode.requestFocus();
+    });
+  }
+
+  void _focusMessageEditorAfterFlip() {
+    if (!mounted ||
+        !_messageEditorRevealed ||
+        _page != _PaymentLinksLocalPage.message) {
+      return;
+    }
+    _messageFocusNode.requestFocus();
+  }
 
   void _clearMessage() {
     _messageController.clear();
@@ -814,6 +940,17 @@ class _PaymentLinksDesktopScreenState
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
     );
+    ref.listen<({String? accountUuid, bool ready})>(
+      syncProvider.select((state) {
+        final sync = state.value;
+        final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+        return (
+          accountUuid: accountUuid,
+          ready: accountUuid != null && _canEstimateCardFee(sync, accountUuid),
+        );
+      }),
+      _handleFeeQuoteSyncGateChanged,
+    );
     final pendingLink = ref.watch(
       paymentLinkIntakeProvider.select((state) => state.pendingLink),
     );
@@ -856,22 +993,7 @@ class _PaymentLinksDesktopScreenState
       _PaymentLinksLocalPage.home => _buildHome(),
       _PaymentLinksLocalPage.amount => _buildAmount(),
       _PaymentLinksLocalPage.message => _buildMessage(),
-      _PaymentLinksLocalPage.review => PaymentLinkReviewDesktopView(
-        card: PaymentLinkGiftCard(
-          artwork: _selectedArtwork,
-          amountText: _amountController.text,
-          showCaret: false,
-        ),
-        onBack: () => _showPage(_PaymentLinksLocalPage.home),
-        cardAmountText:
-            '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC',
-        cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
-        totalAmountText:
-            '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC',
-        onConfirm: _operationInProgress ? null : _createFundedLink,
-        onStepSelected: _operationInProgress ? null : _selectWizardStep,
-        confirmLabel: _operationInProgress ? 'Creating...' : 'Create card',
-      ),
+      _PaymentLinksLocalPage.review => _buildReview(),
       _PaymentLinksLocalPage.ready => _buildReady(),
       _PaymentLinksLocalPage.redeem => PaymentLinkRedeemDesktopView(
         state: _redeemState,
@@ -1035,36 +1157,91 @@ class _PaymentLinksDesktopScreenState
       onCreate: _canContinueAmount
           ? () => _showPage(_PaymentLinksLocalPage.message)
           : null,
-      errorText: _amountErrorText,
+      supportingText: _amountSupportingText,
+      supportingTextIsError: _amountSupportingTextIsError,
     );
   }
 
   Widget _buildMessage() {
+    final staticMessageCard = PaymentLinkGiftCard(
+      artwork: _selectedArtwork,
+      showBack: true,
+      message: _messageController.text,
+      onTap: _revealMessageEditor,
+      semanticLabel: 'Start writing gift card message',
+    );
+    final messageEditorCard = PaymentLinkGiftCard(
+      artwork: _selectedArtwork,
+      showBack: true,
+      messageController: _messageController,
+      messageFocusNode: _messageFocusNode,
+      messageEditorKey: const ValueKey('payment_link_message_editor'),
+      messageInputFormatters: [
+        LengthLimitingTextInputFormatter(
+          PaymentLinkPresentation.maxMessageCharacters,
+        ),
+      ],
+      onMessageChanged: _handleMessageChanged,
+      onDeleteMessage: _hasMessage ? _clearMessage : null,
+      semanticLabel: 'Gift card message input',
+    );
     return PaymentLinkMessageDesktopView(
       state: _hasMessage
           ? PaymentLinkMessageVisualState.filled
           : PaymentLinkMessageVisualState.empty,
-      card: PaymentLinkGiftCard(
-        artwork: _selectedArtwork,
-        showBack: true,
-        messageController: _messageController,
-        messageFocusNode: _messageFocusNode,
-        messageEditorKey: const ValueKey('payment_link_message_editor'),
-        messageInputFormatters: [
-          LengthLimitingTextInputFormatter(
-            PaymentLinkPresentation.maxMessageCharacters,
-          ),
-        ],
-        onMessageChanged: _handleMessageChanged,
-        onDeleteMessage: _hasMessage ? _clearMessage : null,
-        semanticLabel: 'Gift card message input',
+      card: PaymentLinkCardFlip(
+        showBack: _messageEditorRevealed,
+        front: staticMessageCard,
+        back: messageEditorCard,
+        onAnimationEnd: _focusMessageEditorAfterFlip,
       ),
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
       onSkip: _skipMessage,
-      onContinue: _hasMessage
+      onContinue: _hasMessage && !_messageExceedsByteLimit
           ? () => _showPage(_PaymentLinksLocalPage.review)
           : null,
       onStepSelected: _selectWizardStep,
+      errorText: _messageExceedsByteLimit
+          ? kPaymentLinkMessageTooLargeText
+          : null,
+    );
+  }
+
+  Widget _buildReview() {
+    final message = _messageController.text.trim();
+    final front = PaymentLinkGiftCard(
+      artwork: _selectedArtwork,
+      amountText: _amountController.text,
+      showCaret: false,
+      onTap: message.isEmpty
+          ? null
+          : () => setState(() => _reviewShowsBack = true),
+      semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
+    );
+    final card = message.isEmpty
+        ? front
+        : PaymentLinkCardFlip(
+            showBack: _reviewShowsBack,
+            front: front,
+            back: PaymentLinkGiftCard(
+              artwork: _selectedArtwork,
+              showBack: true,
+              message: message,
+              onTap: () => setState(() => _reviewShowsBack = false),
+              semanticLabel: 'Show gift card front',
+            ),
+          );
+    return PaymentLinkReviewDesktopView(
+      card: card,
+      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      cardAmountText:
+          '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC',
+      cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
+      totalAmountText:
+          '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC',
+      onConfirm: _operationInProgress ? null : _createFundedLink,
+      onStepSelected: _operationInProgress ? null : _selectWizardStep,
+      confirmLabel: _operationInProgress ? 'Creating...' : 'Create card',
     );
   }
 

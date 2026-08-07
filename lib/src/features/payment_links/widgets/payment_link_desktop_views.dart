@@ -17,6 +17,9 @@ import 'payment_link_card_motion.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_skeleton.dart';
 
+const kPaymentLinkMessageTooLargeText =
+    'This message is too large. Try using fewer complex emoji.';
+
 /// Static desktop states represented by the payment-link Figma flow.
 ///
 /// These values describe presentation only. They deliberately do not mirror
@@ -255,7 +258,8 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
     required this.onBack,
     this.onCreate,
     this.onStepSelected,
-    this.errorText,
+    this.supportingText,
+    this.supportingTextIsError = false,
     this.backLabel = 'Home',
     this.title = 'Create Gift Card',
     this.subtitle = 'Enter amount & select the design.',
@@ -270,7 +274,8 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback? onCreate;
   final ValueChanged<int>? onStepSelected;
-  final String? errorText;
+  final String? supportingText;
+  final bool supportingTextIsError;
   final String backLabel;
   final String title;
   final String subtitle;
@@ -299,13 +304,15 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
       action: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (errorText case final error?) ...[
+          if (supportingText case final message?) ...[
             Text(
-              error,
-              key: const ValueKey('payment_link_amount_error'),
+              message,
+              key: const ValueKey('payment_link_amount_supporting_text'),
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.destructive,
+                color: supportingTextIsError
+                    ? context.colors.text.destructive
+                    : context.colors.text.secondary,
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
@@ -343,6 +350,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
     required this.onSkip,
     this.onContinue,
     this.onStepSelected,
+    this.errorText,
     this.backLabel = 'Home',
     this.title = 'Create Gift Card',
     this.subtitle = 'Enter amount & select the design.',
@@ -358,6 +366,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
   final VoidCallback onSkip;
   final VoidCallback? onContinue;
   final ValueChanged<int>? onStepSelected;
+  final String? errorText;
   final String backLabel;
   final String title;
   final String subtitle;
@@ -381,6 +390,17 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
         children: [
           _TextAction(label: skipLabel, onTap: onSkip),
           const SizedBox(height: AppSpacing.sm),
+          if (errorText case final message?) ...[
+            Text(
+              message,
+              key: const ValueKey('payment_link_message_error_text'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           AppButton(
             key: const ValueKey('payment_link_message_continue_button'),
             onPressed: state == PaymentLinkMessageVisualState.filled

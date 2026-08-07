@@ -162,9 +162,19 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkCreateAmountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-create-amount-editor',
+    description: 'Desktop Gift Card focused amount editor with ZEC value',
+    builder: buildPaymentLinkInteractiveFocusedUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-create-insufficient',
     description: 'Desktop Gift Card amount step with insufficient balance',
     builder: buildPaymentLinkCreateInsufficientUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-syncing',
+    description: 'Desktop Gift Card amount step waiting for wallet sync',
+    builder: buildPaymentLinkCreateSyncingUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-create-fiat-loading',
@@ -187,9 +197,24 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkMessageFilledUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-message-editing',
+    description: 'Desktop Gift Card focused empty message editor',
+    builder: buildPaymentLinkMessageEditingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-too-large',
+    description: 'Desktop Gift Card message exceeding its UTF-8 byte limit',
+    builder: buildPaymentLinkMessageTooLargeUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-review',
     description: 'Desktop Gift Card review fixture',
     builder: buildPaymentLinkReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-review-message',
+    description: 'Desktop Gift Card review with its message revealed',
+    builder: buildPaymentLinkReviewMessageUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-ready-waiting',

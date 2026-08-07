@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -596,6 +598,32 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('sidebar_payment_links_button')),
     );
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links'), findsOneWidget);
+  });
+
+  testWidgets('sidebar waits for Gift Cards before opening the route', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        paymentLinkCardsLoader: () => cards.future,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+    );
+    await tester.pump();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('payment links'), findsNothing);
+
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
     await tester.pumpAndSettle();
 
     expect(find.text('payment links'), findsOneWidget);
@@ -1184,6 +1212,7 @@ Widget _sidebarHarness(
       const IronwoodPostMigrationState.unavailable(),
   IronwoodMigrationCoordinatorState migrationCoordinatorState =
       const IronwoodMigrationCoordinatorState(),
+  PaymentLinkCardsLoader? paymentLinkCardsLoader,
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -1284,6 +1313,11 @@ Widget _sidebarHarness(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
+      paymentLinkCardsLoaderProvider.overrideWithValue(
+        paymentLinkCardsLoader ??
+            () async =>
+                const PaymentLinkCardsSnapshot(created: [], received: []),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       paySelectedAssetStoreProvider.overrideWithValue(
         const _FakePaySelectedAssetStore(),
