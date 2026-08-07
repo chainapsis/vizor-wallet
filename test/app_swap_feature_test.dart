@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_s
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_desktop_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -125,6 +126,14 @@ void main() {
 
     expect(find.byType(SwapScreen), findsNothing);
     expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('disabled swap leaves payment links accessible', (tester) async {
+    await tester.pumpWidget(_appHarness('/payment-links', swapEnabled: false));
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+
+    expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
   });
 
   testWidgets('disabled swap activity detail redirects to home', (

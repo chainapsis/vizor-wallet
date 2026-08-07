@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
+    as rust_network_privacy;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
@@ -46,6 +48,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
     desktopRegtestPassword,
   );
   await tapAppButton(tester, const ValueKey('set_password_submit_button'));
+  await tapAppButton(tester, const ValueKey('customise_account_finish_button'));
   await pumpUntil(
     tester,
     () => tester.any(
@@ -74,6 +77,7 @@ Future<void> importAdditionalDesktopRegtestWallet(WidgetTester tester) async {
   await tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
   await tapAppButton(tester, const ValueKey('unknown_birthday_confirm_button'));
+  await tapAppButton(tester, const ValueKey('customise_account_finish_button'));
   await pumpUntil(
     tester,
     () => tester.any(
@@ -358,6 +362,10 @@ Future<void> cleanupDesktopRegtestWallet() async {
   }
 
   await stopRustWorkForCleanup();
+  await rust_network_privacy.configureNetworkPrivacy(
+    enabled: false,
+    torDirectory: '',
+  );
   final storage = AppSecureStore.instance;
   final dbName = await getWalletDbName();
   await storage.deleteAll();

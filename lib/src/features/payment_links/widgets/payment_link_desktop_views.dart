@@ -98,6 +98,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 AppButton(
+                  key: const ValueKey('payment_link_create_card_button'),
                   onPressed: onCreate,
                   size: AppButtonSize.mediumLarge,
                   leading: const AppIcon(
@@ -267,6 +268,7 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
       onBack: onBack,
       onStepSelected: onStepSelected,
       action: AppButton(
+        key: const ValueKey('payment_link_amount_continue_button'),
         onPressed: _hasAmount ? onCreate : null,
         minWidth: 210,
         size: AppButtonSize.large,
@@ -329,6 +331,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
           _TextAction(label: skipLabel, onTap: onSkip),
           const SizedBox(height: AppSpacing.sm),
           AppButton(
+            key: const ValueKey('payment_link_message_continue_button'),
             onPressed: state == PaymentLinkMessageVisualState.filled
                 ? onContinue
                 : null,
@@ -390,6 +393,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
           ],
           AppButton(
+            key: const ValueKey('payment_link_confirm_create_button'),
             onPressed: onConfirm,
             minWidth: 196,
             size: AppButtonSize.mediumLarge,
@@ -482,6 +486,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       AppButton(
+                        key: const ValueKey('payment_link_copy_link_button'),
                         onPressed: onCopy,
                         size: AppButtonSize.mediumLarge,
                         leading: const AppIcon(AppIcons.copy),
@@ -547,6 +552,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       AppButton(
+                        key: const ValueKey('payment_link_copy_link_button'),
                         onPressed: onCopy,
                         size: AppButtonSize.mediumLarge,
                         leading: const AppIcon(AppIcons.copy),
@@ -640,6 +646,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                   const SizedBox(height: AppSpacing.md),
                   if (onRevealMessage case final revealMessage?)
                     PaymentLinkAction(
+                      key: const ValueKey('payment_link_reveal_message_action'),
                       onPressed: revealMessage,
                       semanticLabel: cardActionLabel,
                       builder: (context, _, focused) => _ActionFocusRing(
@@ -675,6 +682,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                   ],
                   const SizedBox(height: AppSpacing.md),
                   AppButton(
+                    key: const ValueKey('payment_link_claim_button'),
                     onPressed: onClaim,
                     size: AppButtonSize.mediumLarge,
                     child: Text(claimLabel),
@@ -808,6 +816,7 @@ class PaymentLinkCardsDesktopView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppButton(
+            key: const ValueKey('payment_link_create_card_button'),
             onPressed: onCreate,
             size: AppButtonSize.mediumLarge,
             child: const Text('Create a card'),

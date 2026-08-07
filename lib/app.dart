@@ -361,9 +361,9 @@ String? appRedirect({
   final isLostPassword = state.matchedLocation == '/lost-password';
   final isUnlockFlow = isUnlock || isLostPassword;
   final isSwap =
-      state.matchedLocation.startsWith('/swap') ||
-      state.matchedLocation.startsWith('/pay') ||
-      state.matchedLocation.startsWith('/activity/swap');
+      _matchesRoutePrefix(state.matchedLocation, '/swap') ||
+      _matchesRoutePrefix(state.matchedLocation, '/pay') ||
+      _matchesRoutePrefix(state.matchedLocation, '/activity/swap');
   final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
   log(
