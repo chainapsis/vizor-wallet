@@ -6,13 +6,12 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use orchard::builder::{Builder, BundleType};
-use orchard::bundle::BundleVersion;
+use orchard::bundle::{BundleVersion, TxVersion as OrchardTxVersion};
 use orchard::keys::FullViewingKey;
 use orchard::note::{NoteVersion, RandomSeed, Rho};
 use orchard::pczt::Zip32Derivation;
-use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
-use orchard::{Address, Anchor};
+use orchard::Address;
 use voting_circuits::delegation::synthetic_padding_note_parts;
 use zcash_primitives::transaction::builder::PcztParts;
 use zcash_primitives::transaction::TxVersion;
@@ -28,8 +27,6 @@ use crate::types::{
     VotingError, VotingRoundParams,
 };
 
-/// Orchard Merkle tree depth (32 levels).
-const MERKLE_DEPTH: usize = 32;
 const DELEGATION_ACTION_FIXED_FIELD_COUNT: usize = 5;
 const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
 
@@ -478,24 +475,6 @@ pub(crate) fn build_governance_pczt(
     let (signed_note, rseed_signed_bytes) =
         make_dummy_note(sender_address, rho_for_note, &mut rng, shielded_protocol)?;
 
-    // --- Build PCZT using orchard Builder ---
-    // Dummy MerklePath: all-zero siblings, position 0.
-    // Compute the anchor from the note commitment so the Builder's anchor check passes.
-    let dummy_auth_path: [MerkleHashOrchard; MERKLE_DEPTH] = {
-        let zero_hash = MerkleHashOrchard::from_bytes(&[0u8; 32])
-            .into_option()
-            .ok_or_else(|| VotingError::Internal {
-                message: "zero bytes is not a valid MerkleHashOrchard".to_string(),
-            })?;
-        [zero_hash; MERKLE_DEPTH]
-    };
-    let dummy_merkle_path = MerklePath::from_parts(0u32, dummy_auth_path);
-    let anchor = {
-        let cm = signed_note.commitment();
-        let root = dummy_merkle_path.root(cm.into());
-        Anchor::from(root)
-    };
-
     // Add output to hotkey address. The circuit commits to a zero-value output
     // note for cmx_new, so Phase 1 must use the same value and rseed.
     let memo = {
@@ -512,19 +491,21 @@ pub(crate) fn build_governance_pczt(
     let consensus_network = consensus_network_for_voting_network(network);
 
     for _ in 0..MAX_PCZT_LAYOUT_ATTEMPTS {
-        let mut builder = Builder::new(
+        // TX1 is V6-only and is never proved or broadcast, so its unused anchor
+        // and spend witness remain deferred instead of being fabricated.
+        let mut builder = Builder::new_with_anchor_deferred(
             BundleType::UNPADDED,
             bundle_version,
             bundle_version.default_flags(),
-            anchor,
+            OrchardTxVersion::V6,
         )
-        .expect("default flags are representable under the bundle version");
+        .expect("Ironwood V3 in a V6 transaction supports anchor deferral");
 
         // Add the governance signed note as a spend.
         builder
-            .add_spend(fvk.clone(), signed_note.clone(), dummy_merkle_path.clone())
+            .add_spend_unwitnessed(fvk.clone(), signed_note.clone())
             .map_err(|e| VotingError::Internal {
-                message: format!("Builder::add_spend failed: {:?}", e),
+                message: format!("Builder::add_spend_unwitnessed failed: {:?}", e),
             })?;
 
         builder
@@ -984,6 +965,14 @@ mod tests {
         let pczt = parsed.unwrap();
         assert!(pczt.orchard().actions().is_empty());
         assert_eq!(pczt.ironwood().actions().len(), 1);
+        assert!(pczt.ironwood().anchor().is_none());
+        assert!(pczt
+            .ironwood()
+            .sole_action()
+            .expect("the Ironwood bundle has one action")
+            .spend()
+            .witness()
+            .is_none());
         let output_value = pczt
             .ironwood()
             .actions()
