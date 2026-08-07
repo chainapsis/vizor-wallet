@@ -7,7 +7,9 @@ import '../frb_generated.dart';
 import '../network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_headers`, `block_at_height`, `collect_body`, `network_http_response`, `timed_birthday_request`, `with_api_response_body_timeout`, `write_body_to_file`
+// These functions are ignored because they are not marked as `pub`: `apply_headers`, `binary_search_birthday_height`, `block_at_height`, `collect_body`, `correct_estimated_height`, `divide_round_nearest`, `estimate_mainnet_birthday_height`, `interpolate_height`, `is_mainnet`, `mainnet_anchor_segment`, `network_http_response`, `timed_birthday_request`, `with_api_response_body_timeout`, `write_body_to_file`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BirthdayAnchor`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`
 
 /// Blocks new policy-aware direct requests immediately. Tor bootstrap is
 /// intentionally separate so the caller can first quiesce channels that were
@@ -94,16 +96,24 @@ Future<NetworkHttpResponse> torHttpDownload({
 
 Future<ImportBirthdayMetadata> getImportBirthdayMetadata({
   required String lightwalletdUrl,
+  required bool useMainnetFastPath,
 }) => RustLib.instance.api.crateApiNetworkPrivacyGetImportBirthdayMetadata(
   lightwalletdUrl: lightwalletdUrl,
+  useMainnetFastPath: useMainnetFastPath,
 );
 
 Future<BigInt> estimateImportBirthdayHeight({
   required String lightwalletdUrl,
   required PlatformInt64 targetEpochSeconds,
+  required bool useMainnetFastPath,
+  BigInt? tipHeight,
+  int? tipTime,
 }) => RustLib.instance.api.crateApiNetworkPrivacyEstimateImportBirthdayHeight(
   lightwalletdUrl: lightwalletdUrl,
   targetEpochSeconds: targetEpochSeconds,
+  useMainnetFastPath: useMainnetFastPath,
+  tipHeight: tipHeight,
+  tipTime: tipTime,
 );
 
 class ImportBirthdayMetadata {

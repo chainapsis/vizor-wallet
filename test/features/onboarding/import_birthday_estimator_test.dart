@@ -14,6 +14,13 @@ typedef _EstimateBirthdayWithEndpoint =
     });
 
 void main() {
+  test('keeps the 15-day birthday safety margin', () {
+    expect(
+      importBirthdaySearchDate(DateTime(2026, 8, 7, 18, 30)),
+      DateTime(2026, 7, 23),
+    );
+  });
+
   test('estimator APIs accept the configured RPC endpoint', () {
     final _LoadMetadataWithEndpoint loadMetadata =
         ImportBirthdayEstimator.loadMetadata;

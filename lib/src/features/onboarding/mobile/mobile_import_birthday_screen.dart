@@ -249,6 +249,7 @@ class _MobileImportBirthdayScreenState
           final height = await ImportBirthdayEstimator.estimateBirthdayHeight(
             endpoint: endpoint,
             selectedDate: _selectedDate!,
+            metadata: _metadata,
           );
           if (!mounted) return;
           await _submit(height);
