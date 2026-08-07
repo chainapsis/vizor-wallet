@@ -25,6 +25,7 @@ import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
+import '../../widgets/mobile/mobile_network_privacy_card.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -177,6 +178,8 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
+                const MobileNetworkPrivacyCard(),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
                   title: 'System',

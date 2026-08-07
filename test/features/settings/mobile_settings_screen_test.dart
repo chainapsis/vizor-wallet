@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
@@ -120,10 +121,19 @@ Widget _app({
   BiometricUnlockState? biometric,
   BiometricUnlockNotifier Function()? biometricNotifier,
   _FakeSyncKeepAwakeNotifier? syncKeepAwakeNotifier,
+  NetworkPrivacyState? networkPrivacyState,
+  List<bool>? networkPrivacyCalls,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
+      if (networkPrivacyState != null)
+        networkPrivacyProvider.overrideWith(
+          () => _FakeNetworkPrivacyNotifier(
+            networkPrivacyState,
+            networkPrivacyCalls ?? <bool>[],
+          ),
+        ),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       syncKeepAwakeProvider.overrideWith(
@@ -143,6 +153,23 @@ Widget _app({
   );
 }
 
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier(this._state, this.calls);
+
+  final NetworkPrivacyState _state;
+
+  /// Routes requested by the card. `retry()` funnels through here too.
+  final List<bool> calls;
+
+  @override
+  NetworkPrivacyState build() => _state;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    calls.add(enabled);
+  }
+}
+
 void main() {
   setUp(() {
     // Phone-sized surface so the lazily-built list renders every group.
@@ -150,6 +177,367 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1200)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('the Tor card reports the off route', (tester) async {
+    await tester.pumpWidget(
+      _app(networkPrivacyState: const NetworkPrivacyState.off()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_row')),
+      200,
+    );
+    expect(find.text('Use Tor'), findsOneWidget);
+    expect(find.text('Off'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_tor_description')),
+          )
+          .data,
+      contains('connect directly'),
+    );
+  });
+
+  testWidgets('tapping the Tor row asks for the other route', (tester) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState.off(),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(calls, [true]);
+  });
+
+  testWidgets('the Tor toggle matches the keep-awake toggle', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final torThumb = find.byKey(
+      const ValueKey('mobile_settings_tor_toggle_thumb'),
+    );
+    final torTrack = find.byKey(const ValueKey('mobile_settings_tor_toggle'));
+    await tester.scrollUntilVisible(torThumb, 200);
+    expect(
+      tester.getSize(torThumb),
+      tester.getSize(
+        find.byKey(
+          const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+        ),
+      ),
+    );
+    expect(
+      tester.getSize(torTrack),
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_settings_sync_keep_awake_toggle')),
+      ),
+    );
+    expect(
+      tester.getCenter(torThumb).dx,
+      greaterThan(tester.getCenter(torTrack).dx),
+    );
+  });
+
+  testWidgets(
+    'a connected Tor route names the conditions background work needs',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          networkPrivacyState: const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('mobile_settings_tor_row')),
+        200,
+      );
+      expect(find.text('Connected'), findsOneWidget);
+      final description = tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_tor_description')),
+          )
+          .data;
+      expect(
+        description,
+        contains(
+          'Background migration activity uses a direct connection.',
+        ),
+      );
+      // The card must not promise Tor coverage the background lane does not
+      // have, and must not promise conditional background progress either —
+      // there is no charger-and-Wi-Fi gate to meet.
+      expect(description, isNot(contains('charging on an unmetered network')));
+      expect(description, isNot(contains('only while Vizor is open')));
+    },
+  );
+
+  testWidgets('a connecting Tor route says requests are paused', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    // pump() only: a connecting card must never be pumpAndSettle'd if it ever
+    // animates.
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
+    await tester.scrollUntilVisible(row, 200);
+    expect(find.text('Connecting…'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_tor_description')),
+          )
+          .data,
+      contains('wait until the Tor connection is ready'),
+    );
+    // The bootstrap runs to a three-minute deadline with every request failing
+    // closed, and relaunching starts the same wait, so switching to direct has
+    // to stay reachable for the whole of it.
+    expect(tester.widget<GestureDetector>(row).onTap, isNotNull);
+    await tester.tap(row);
+    await tester.pump();
+    expect(calls, [false]);
+  });
+
+  testWidgets('a switch to direct cannot be driven back into Tor', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
+    await tester.scrollUntilVisible(row, 200);
+    // Nothing to escape from here: the route is already on its way to direct.
+    expect(tester.widget<GestureDetector>(row).onTap, isNull);
+    await tester.tap(row);
+    await tester.pump();
+    expect(calls, isEmpty);
+  });
+
+  testWidgets('a failed Tor route stays blocked and offers a retry', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final retry = find.byKey(const ValueKey('mobile_settings_tor_retry'));
+    await tester.scrollUntilVisible(retry, 200);
+    expect(find.text('Failed'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_tor_description')),
+          )
+          .data,
+      contains('Requests stay blocked'),
+    );
+    expect(find.text('Try again'), findsOneWidget);
+
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+
+    expect(calls, [true]);
+  });
+
+  testWidgets('a failed switch to direct says Tor is still carrying traffic', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final retry = find.byKey(const ValueKey('mobile_settings_tor_retry'));
+    await tester.scrollUntilVisible(retry, 200);
+    expect(find.text('Switch failed'), findsOneWidget);
+    final description = tester
+        .widget<Text>(
+          find.byKey(const ValueKey('mobile_settings_tor_description')),
+        )
+        .data;
+    expect(description, contains('could not switch to a direct connection'));
+    expect(description, contains('Tor is still on'));
+    expect(description, isNot(contains('Requests stay blocked')));
+    expect(find.text('Try direct connection'), findsOneWidget);
+
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+
+    expect(calls, [false]);
+  });
+
+  testWidgets('an aborted enable never claims requests are blocked', (
+    tester,
+  ) async {
+    // The write-first ordering aborts an enable whose save failed before the
+    // process changes at all, so requests keep flowing directly. The
+    // bootstrap-failure copy — requests stay blocked — would describe the
+    // opposite of what is happening.
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: false,
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: true,
+        ),
+        networkPrivacyCalls: <bool>[],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_retry')),
+      200,
+    );
+    final description = tester
+        .widget<Text>(
+          find.byKey(const ValueKey('mobile_settings_tor_description')),
+        )
+        .data;
+    expect(description, isNot(contains('stay blocked')));
+    expect(description, contains('was not turned on'));
+    expect(find.text('Setting not saved'), findsOneWidget);
+  });
+
+  testWidgets('a save-only failure never claims Tor is carrying traffic', (
+    tester,
+  ) async {
+    // The transport did switch and only the preference write failed, so this
+    // shares `(failed, target: false)` with the case above while carrying the
+    // opposite privacy guarantee. Reading the target alone told the user Tor
+    // was still on while their requests were going out directly.
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: false,
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: <bool>[],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_retry')),
+      200,
+    );
+    final description = tester
+        .widget<Text>(
+          find.byKey(const ValueKey('mobile_settings_tor_description')),
+        )
+        .data;
+    expect(description, isNot(contains('Tor is still on')));
+    expect(description, contains('direct connection'));
+    // The saved route stays at Tor — the stricter half — so the next launch
+    // comes back on Tor rather than silently staying direct.
+    expect(description, contains('next time you open the app'));
+  });
+
+  testWidgets('the Tor row publishes its status to assistive technology', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_retry')),
+      200,
+    );
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('mobile_settings_tor_row')),
+      ),
+      isSemantics(label: 'Use Tor', value: 'Failed', isButton: true),
+    );
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('mobile_settings_tor_retry')),
+      ),
+      isSemantics(label: 'Try again', isButton: true, hasTapAction: true),
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('the Tor retry action is a touch-sized target', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final retry = find.byKey(const ValueKey('mobile_settings_tor_retry'));
+    await tester.scrollUntilVisible(retry, 200);
+    expect(tester.getSize(retry).height, greaterThanOrEqualTo(44));
   });
 
   testWidgets('renders the grouped settings with live values', (tester) async {
@@ -427,6 +815,10 @@ void main() {
     await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('mobile_settings_biometric_row')),
     );
@@ -467,6 +859,10 @@ void main() {
     await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('mobile_settings_biometric_row')),
     );
@@ -503,6 +899,10 @@ void main() {
     await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('mobile_settings_biometric_row')),
     );
