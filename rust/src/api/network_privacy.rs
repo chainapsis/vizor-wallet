@@ -58,6 +58,16 @@ pub fn is_tor_enabled() -> bool {
     crate::network_privacy::is_tor_desired()
 }
 
+/// Suspends or resumes Tor's circuit maintenance alongside the app lifecycle.
+///
+/// A bootstrapped client otherwise keeps guard connections and directory tasks
+/// running while the app is in the background, which costs battery on mobile
+/// and does work iOS will kill the app for. A no-op until Tor is connected.
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_network_privacy_dormant(dormant: bool) {
+    crate::network_privacy::set_tor_dormant(dormant);
+}
+
 /// Starts a token-protected loopback server that streams HTTPS update assets
 /// from the embedded Tor client directly to a native desktop updater.
 pub async fn start_tor_update_relay() -> Result<String, String> {

@@ -713,6 +713,9 @@ mod tests {
 
     #[tokio::test]
     async fn direct_connections_keep_tcp_nodelay_enabled() {
+        // A direct-route lease aborts itself whenever the process-wide route is
+        // Tor, so this has to hold the policy even though it never writes it.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("bind loopback listener");
