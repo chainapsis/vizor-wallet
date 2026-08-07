@@ -85,7 +85,7 @@ void main() {
     expect(completedStatus, 'broadcasted');
   });
 
-  testWidgets('does not expose the Gift Card after an unknown broadcast', (
+  testWidgets('hands an unknown broadcast with a txid to the preparing flow', (
     tester,
   ) async {
     final service = _FakeHardwareSigningService(
@@ -145,12 +145,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(completed, isFalse);
-    expect(
-      find.text('Broadcast timed out before confirmation.'),
-      findsOneWidget,
-    );
-    expect(find.text('Back to Gift Card'), findsOneWidget);
+    expect(completed, isTrue);
+    expect(find.text('Broadcast timed out before confirmation.'), findsNothing);
+    expect(find.text('Back to Gift Card'), findsNothing);
   });
 }
 

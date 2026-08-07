@@ -25,15 +25,45 @@ void main() {
     'funding quote includes deposit and redeem fees in the sender total',
     () {
       final quote = PaymentLinkFundingQuote(
+        sourceAccountUuid: 'account-1',
         recipientAmountZatoshi: BigInt.from(100000000),
         fundingFeeZatoshi: BigInt.from(15000),
         claimFeeReserveZatoshi: BigInt.from(10000),
       );
 
+      expect(quote.sourceAccountUuid, 'account-1');
       expect(quote.cardFeeZatoshi, BigInt.from(25000));
       expect(quote.totalDeductedZatoshi, BigInt.from(100025000));
     },
   );
+
+  test('a funding result with a known status and txid is submitted', () {
+    for (final status in const [
+      'broadcasted',
+      'pending_broadcast',
+      'partial_broadcast',
+      'broadcast_unknown',
+      'broadcasted_storage_failed',
+    ]) {
+      expect(
+        isPaymentLinkFundingSubmitted(status: status, txids: 'funding-txid'),
+        isTrue,
+        reason: status,
+      );
+    }
+
+    expect(
+      isPaymentLinkFundingSubmitted(status: 'broadcasted', txids: '  '),
+      isFalse,
+    );
+    expect(
+      isPaymentLinkFundingSubmitted(
+        status: 'unexpected',
+        txids: 'funding-txid',
+      ),
+      isFalse,
+    );
+  });
 
   test('share readiness requires ten mined confirmations', () {
     expect(
