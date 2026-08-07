@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -482,6 +484,51 @@ void main() {
   });
 
   test(
+    'account removal is rejected while it owns an unshared Gift Card',
+    () async {
+      final recoveryStorage = _AccountTestPaymentLinkRecoveryStorage();
+      final recoveryStore = PaymentLinkRecoveryStore(recoveryStorage);
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1accountremovalpaymentlink',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 8, 7),
+      );
+      await recoveryStore.saveDraft(link: link, sourceAccountUuid: 'account-2');
+      await recoveryStore.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).removeAccount('account-2'),
+        throwsA(
+          isA<PaymentLinkUnsharedGiftCardsException>()
+              .having((error) => error.count, 'count', 1)
+              .having(
+                (error) => error.sourceAccountUuid,
+                'sourceAccountUuid',
+                'account-2',
+              ),
+        ),
+      );
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+    },
+  );
+
+  test(
     'account switching is allowed while voting submission is guarded',
     () async {
       FlutterSecureStorage.setMockInitialValues({});
@@ -662,6 +709,20 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
 
   expect(_rustApi.deletedAccountUuids, ['account-2']);
   expect(shareTracking.isQuiesced('account-2'), isFalse);
+}
+
+class _AccountTestPaymentLinkRecoveryStorage
+    implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
 }
 
 AppBootstrapState _bootstrapWithAccounts() {
