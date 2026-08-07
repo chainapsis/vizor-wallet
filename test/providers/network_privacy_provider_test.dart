@@ -709,6 +709,8 @@ void main() {
     expect(state.torEnabled, isFalse);
     expect(state.status, NetworkPrivacyConnectionStatus.failed);
     expect(state.targetTorEnabled, isTrue);
+    // Nothing was saved and nothing was enabled; saved and enforced agree.
+    expect(state.savedRouteTorEnabled, isFalse);
   });
 
   test('a failed direct save still opens the direct request gate', () async {
@@ -760,6 +762,9 @@ void main() {
     expect(state.torEnabled, isFalse);
     expect(state.status, NetworkPrivacyConnectionStatus.failed);
     expect(state.targetTorEnabled, isFalse);
+    // What a background wake will read: the write failed, so the saved half
+    // is still Tor, and surfaces describing background behaviour follow it.
+    expect(state.savedRouteTorEnabled, isTrue);
   });
 
   test(

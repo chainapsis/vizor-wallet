@@ -630,13 +630,37 @@ const _migrationPreparationNotificationsDisabledMessage =
 // promise something granting them cannot deliver.
 const _migrationPreparationBackgroundUnsupportedMessage =
     'This device can\u2019t confirm in the background. Keep Vizor open.';
+// A Tor route constrains the background pass instead of removing it: bringing
+// up a cold Tor client costs 8.45 MB and 23.7 s, and an idle one keeps padding
+// its guard connection, so the pass only runs on external power over an
+// unmetered link. Unlike the device limit above this one is conditional, and
+// the user cannot see the gate from this screen \u2014 so state the condition
+// rather than the current verdict, and never promise more than it delivers.
+const _migrationPreparationTorRouteMessage =
+    'While Tor is on, migration continues only while Vizor is open.';
+// Both blockers at once, and both absolute: on a Tor route no background lane
+// runs at all, and a denied notification blocks the lane even off Tor. The
+// route consequence leads because it holds regardless of what the user grants;
+// the notification remedy follows so that turning Tor off later does not land
+// in a second surprise.
+const _migrationPreparationNotificationsDisabledTorRouteMessage =
+    'Allow notifications. With Tor on, migration continues only in the app.';
+// The same condition stated where the progress surface would otherwise promise
+// that the next step arrives while Vizor is closed.
+const _migrationTorRouteExpectation =
+    'While Tor is on, this continues only while Vizor is open.';
+// The route condition stated after a notification block rather than instead of
+// it, so it reads as the next thing to meet and not as the reason the step is
+// stalled.
+const _migrationTorRouteAdditionalExpectation =
+    'While Tor is on, this continues only while Vizor is open.';
 
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
     this.isKeystone = false,
     this.pausedMessage,
-    this.deviceLimitMessage,
+    this.backgroundLaneLimitMessage,
     this.onBack,
     this.onContinue,
     this.onViewSchedule,
@@ -646,11 +670,13 @@ class _MigrationPreparationPreview extends StatelessWidget {
   final bool isKeystone;
   final String? pausedMessage;
 
-  /// Set when this device cannot track preparation while Vizor is closed.
+  /// Set when background preparation tracking is limited, naming the cause —
+  /// this device, which can never do it, or a Tor route, which only does it on
+  /// external power over an unmetered link.
   ///
   /// Outranks [pausedMessage] and the waiting default because it is the only
-  /// message naming a limit the user cannot resolve from settings.
-  final String? deviceLimitMessage;
+  /// message naming a limit that granting notifications cannot lift.
+  final String? backgroundLaneLimitMessage;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
   final VoidCallback? onViewSchedule;
@@ -690,7 +716,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
           _MigrationPreparationDial(
             state: state,
             pausedMessage: pausedMessage,
-            deviceLimitMessage: deviceLimitMessage,
+            backgroundLaneLimitMessage: backgroundLaneLimitMessage,
             onViewSchedule: onViewSchedule,
           ),
           const SizedBox(height: AppSpacing.base),
@@ -708,13 +734,13 @@ class _MigrationPreparationDial extends StatelessWidget {
   const _MigrationPreparationDial({
     required this.state,
     this.pausedMessage,
-    this.deviceLimitMessage,
+    this.backgroundLaneLimitMessage,
     this.onViewSchedule,
   });
 
   final _MigrationPreparationState state;
   final String? pausedMessage;
-  final String? deviceLimitMessage;
+  final String? backgroundLaneLimitMessage;
   final VoidCallback? onViewSchedule;
 
   @override
@@ -753,7 +779,7 @@ class _MigrationPreparationDial extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   paused
-                      ? deviceLimitMessage ??
+                      ? backgroundLaneLimitMessage ??
                             pausedMessage ??
                             'Preparation was paused because you left.'
                       : syncing
@@ -763,12 +789,12 @@ class _MigrationPreparationDial extends StatelessWidget {
                             _migrationPreparationAdvancingMessage,
                           _MigrationPreparationState.backgroundTracking =>
                             _migrationPreparationBackgroundTrackingMessage,
-                          // A waiting device that cannot track in the
-                          // background must say so here too: the neutral
-                          // duration copy would let the user close Vizor and
-                          // silently stall the run.
+                          // A wallet whose background tracking is limited must
+                          // say so here too: the neutral duration copy would
+                          // let the user close Vizor and silently stall the
+                          // run.
                           _ =>
-                            deviceLimitMessage ??
+                            backgroundLaneLimitMessage ??
                                 'Preparation will\ntake 10–20 min',
                         },
                   textAlign: TextAlign.center,

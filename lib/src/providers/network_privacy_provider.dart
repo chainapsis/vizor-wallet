@@ -38,7 +38,8 @@ class NetworkPrivacyState {
     this.softwareUpdatesAvailable = true,
     this.error,
     this.startupNotice,
-  });
+    bool? savedRouteTorEnabled,
+  }) : savedRouteTorEnabled = savedRouteTorEnabled ?? torEnabled;
 
   const NetworkPrivacyState.off()
     : torEnabled = false,
@@ -46,9 +47,19 @@ class NetworkPrivacyState {
       targetTorEnabled = null,
       softwareUpdatesAvailable = true,
       error = null,
-      startupNotice = null;
+      startupNotice = null,
+      savedRouteTorEnabled = false;
 
   final bool torEnabled;
+  /// The route a background wake into a cold process will read.
+  ///
+  /// Saved and enforced may diverge in one direction only — saved stricter —
+  /// and exactly one published state carries the divergence: a disable whose
+  /// transport switched and whose preference write then failed. Surfaces that
+  /// describe what the native background lanes will do must read this rather
+  /// than [torEnabled], because those lanes read the saved preference, not
+  /// this process's memory.
+  final bool savedRouteTorEnabled;
   final NetworkPrivacyConnectionStatus status;
   final bool? targetTorEnabled;
   final bool softwareUpdatesAvailable;
@@ -831,6 +842,11 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         softwareUpdatesAvailable: softwareUpdatesAvailable,
         error: error.toString(),
         startupNotice: startupNotice,
+        // A disable that switched the transport and then failed to save is
+        // the one state whose saved half is stricter than its enforced half:
+        // the preference still says Tor, and that is what a background wake
+        // will read.
+        savedRouteTorEnabled: !enabled && !effectiveTorEnabled ? true : null,
       );
     }
   }

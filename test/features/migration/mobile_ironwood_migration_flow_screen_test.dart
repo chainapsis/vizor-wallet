@@ -37,6 +37,7 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -357,6 +358,29 @@ class _ControlledRefreshTestMigrationCoordinator
       ref.invalidate(ironwoodMigrationRouteCtaProvider);
     }
   }
+}
+
+/// A wallet whose saved route is Tor, which is the state both native
+/// background lanes only run in on external power over an unmetered link.
+class _TorRouteNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState(
+    torEnabled: true,
+    status: NetworkPrivacyConnectionStatus.connected,
+  );
+}
+
+/// A disable whose transport switched and whose preference write failed: this
+/// process sends directly, but the saved route — the only thing a background
+/// wake reads — still says Tor.
+class _SaveFailedDisableNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState(
+    torEnabled: false,
+    status: NetworkPrivacyConnectionStatus.failed,
+    targetTorEnabled: false,
+    savedRouteTorEnabled: true,
+  );
 }
 
 class _PreparationHandoffTestMigrationCoordinator
@@ -6328,6 +6352,295 @@ void main() {
     },
   );
 
+  testWidgets('background copy follows the saved route after a failed save', (
+    tester,
+  ) async {
+    // The native lanes read the saved preference from a process where Dart
+    // may never run, so a disable whose save failed leaves them constrained
+    // even though this process now sends directly. Copy that promised
+    // unconstrained background progress here would have the user close Vizor
+    // and wait for a wake that defers off the charger.
+    _useMobileViewport(tester);
+    final coordinator = _PreparationHandoffTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.scheduled,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _SaveFailedDisableNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'While Tor is on, migration continues only while Vizor is open.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('states the conditions Tor needs to confirm in the background', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _PreparationHandoffTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.idle,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'While Tor is on, migration continues only while Vizor is open.',
+      ),
+      findsOneWidget,
+    );
+    // The neutral duration copy would let the user close Vizor off the charger
+    // and stall the run, and this device is capable — the route is the limit,
+    // not the OS.
+    expect(find.text('Preparation will\ntake 10–20 min'), findsNothing);
+    expect(
+      find.text(
+        'This device can’t confirm in the background. Keep Vizor open.',
+      ),
+      findsNothing,
+    );
+    // The old flat refusal is wrong now: the gate does let the pass run.
+    expect(
+      find.text('Tor can’t confirm in the background. Keep Vizor open.'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('keeps stating the Tor conditions while the background task is '
+      'armed', (tester) async {
+    _useMobileViewport(tester);
+    final coordinator = _PreparationHandoffTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          // An armed task proves only that the gate passed for this pass.
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.running,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Unqualified, this promise outlives unplugging the charger or moving onto
+    // a metered link, either of which stands the next pass down.
+    expect(
+      find.text('Confirming in the background. You can close Vizor.'),
+      findsNothing,
+    );
+    expect(
+      find.text(
+        'While Tor is on, migration continues only while Vizor is open.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('names the notification block alongside the Tor conditions', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _DurablePhaseRetryTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.disabled,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Both native lanes refuse on a denied notification whatever the route is,
+    // so stating only the route hands the user a condition they can meet while
+    // nothing moves afterwards. The route condition is transient; this one is
+    // not, so it leads.
+    expect(
+      find.text(
+        'Allow notifications. With Tor on, migration continues only in the '
+        'app.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'While Tor is on, migration continues only while Vizor is open.',
+      ),
+      findsNothing,
+    );
+    // It has to fit the preparation dial, which is what kept this to one
+    // message in the first place.
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('names the device limit ahead of the Tor conditions when the '
+      'device has no background lane', (tester) async {
+    _useMobileViewport(tester);
+    final coordinator = _PreparationHandoffTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          supportsBackgroundPreparationTracking: () async => false,
+          getPreparationRuntimeState:
+              ({
+                required network,
+                required accountUuid,
+                required runId,
+              }) async => IronwoodMigrationPreparationRuntimeState.idle,
+        ),
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Charging on an unmetered network cannot give this OS build a lane it
+    // never had, so naming a condition the user could meet would over-promise.
+    expect(
+      find.text(
+        'This device can’t confirm in the background. Keep Vizor open.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('only while Vizor is open'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('broadcasting copy promises background delivery on a Tor route '
+      'only under its conditions', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Next migration step expected in\n'
+        '~25 minutes.\n'
+        'While Tor is on, this continues only while Vizor is open.',
+      ),
+      findsOneWidget,
+    );
+    // Authorized notifications alone cannot carry a wake the gate can stand
+    // down, so the unconditional invitation to leave must not appear.
+    expect(find.textContaining('You can leave Vizor'), findsNothing);
+  });
+
   testWidgets('resumes software preparation on reentry without a tap', (
     tester,
   ) async {
@@ -7428,6 +7741,48 @@ void main() {
         'Next migration step expected in\n'
         '~25 minutes.\n'
         'Notifications are disabled. Open Vizor again to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Notifications are on'), findsNothing);
+  });
+
+  testWidgets('broadcasting copy names disabled notifications on a Tor route', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The route only delays the wake; a denied notification stops it outright.
+    // Charging on an unmetered network would still deliver nothing, so the
+    // notification block cannot be hidden behind the route condition.
+    expect(
+      find.text(
+        'Next migration step expected in\n'
+        '~25 minutes.\n'
+        'Notifications are disabled. Open Vizor again to continue.\n'
+        'While Tor is on, this continues only while Vizor is open.',
       ),
       findsOneWidget,
     );
