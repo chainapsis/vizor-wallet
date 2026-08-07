@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use zcash_client_backend::tor::{Client as TorClient, Timeouts as TorTimeouts};
+use zcash_client_backend::tor::{Client as TorClient, DormantMode, Timeouts as TorTimeouts};
 
 /// `TorTimeouts` only bounds connect, request and response-body phases, so
 /// bootstrapping itself is unbounded: arti retries it 128 times with a growing
@@ -52,6 +52,14 @@ static TOR_DESIRED: AtomicBool = AtomicBool::new(false);
 /// from outside Dart is only a fallback for a process that has not decided yet,
 /// so it must never overwrite a decision that has already been made.
 static ROUTE_DECIDED: AtomicBool = AtomicBool::new(false);
+/// The dormancy asked for, kept whether or not a client exists yet. A request
+/// that arrives mid-bootstrap has nothing to apply to, and the app lifecycle
+/// callbacks do not repeat themselves once it finishes.
+static TOR_DORMANT: AtomicBool = AtomicBool::new(false);
+/// Serialises reading the intent and applying a mode to the client, so two
+/// lifecycle callbacks racing cannot apply a mode from a different moment than
+/// the intent they read.
+static DORMANT_APPLY_LOCK: Mutex<()> = Mutex::new(());
 static TOR_STATUS: AtomicU8 = AtomicU8::new(STATUS_DIRECT);
 static TOR_CLIENT: OnceLock<RwLock<Option<TorClient>>> = OnceLock::new();
 static TOR_INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -368,6 +376,55 @@ impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for DirectRouteIo<T> {
     }
 }
 
+/// Puts a Tor client to sleep, or wakes it up.
+///
+/// Arti keeps guard connections and directory tasks running; an idle client
+/// pads its guard connection continuously — measured at roughly 500 B/s,
+/// against 27 B/s dormant. On mobile that costs battery in a state the OS will
+/// kill the app for, so the app asks for sleep on its way out and for
+/// wakefulness on every foreground entry. This never forces a bootstrap, but a
+/// request made while one is still running is not lost either: the intent is
+/// process-wide, and a client picks it up as it is installed.
+pub fn set_tor_dormant(dormant: bool) {
+    {
+        let _guard = dormant_apply_lock();
+        TOR_DORMANT.store(dormant, Ordering::Release);
+        apply_dormant_mode_locked();
+    }
+    log::info!("network privacy: Tor dormant={dormant}");
+}
+
+fn dormant_apply_lock() -> std::sync::MutexGuard<'static, ()> {
+    DORMANT_APPLY_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The mode a client is put into as it is installed, so it never lands awake in
+/// a process the app has already backgrounded. Applying `Soft` to a client that
+/// has just finished bootstrapping is safe: arti lifts it back to `Normal` on
+/// the next use.
+fn pending_dormant_mode() -> DormantMode {
+    if TOR_DORMANT.load(Ordering::Acquire) {
+        DormantMode::Soft
+    } else {
+        DormantMode::Normal
+    }
+}
+
+/// Pushes the mode the current state implies onto the installed client.
+/// Caller holds [`DORMANT_APPLY_LOCK`], so the value read and the value applied
+/// cannot come from different moments.
+fn apply_dormant_mode_locked() {
+    let mode = pending_dormant_mode();
+    let slot = client_slot()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(client) = slot.as_ref() {
+        client.set_dormant(mode);
+    }
+}
+
 pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, String> {
     ROUTE_DECIDED.store(true, Ordering::Release);
     TOR_DESIRED.store(true, Ordering::Release);
@@ -470,6 +527,9 @@ async fn install_bootstrapped_client<E: Display>(
         if !is_tor_desired() {
             return Ok(NetworkPrivacyStatus::Direct);
         }
+        // Adopting the pending mode here is what keeps a sleep asked for
+        // mid-bootstrap from being overtaken by the client it was waiting for.
+        client.set_dormant(pending_dormant_mode());
         *slot = Some(client);
         TOR_STATUS.store(STATUS_READY, Ordering::Release);
     }
@@ -630,6 +690,10 @@ pub(crate) mod test_route_policy {
         fn drop(&mut self) {
             super::disable_tor();
             super::ROUTE_DECIDED.store(false, Ordering::Release);
+            // The intent is process-wide and one process runs every test in
+            // this crate: a test that asks for dormancy and returns would
+            // otherwise decide later assertions by execution order.
+            super::TOR_DORMANT.store(false, Ordering::Release);
         }
     }
 
@@ -654,7 +718,8 @@ mod tests {
         await_tor_bootstrap, begin_tor_enable, bootstrap_tor, cancel_direct_connections,
         client_slot, disable_tor, init_lock, install_bootstrapped_client, is_route_decided,
         is_tor_desired, mark_direct_route, mark_tor_desired, route_decision, set_tor_failed,
-        status, test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo,
+        pending_dormant_mode, set_tor_dormant, status, test_route_policy::lock_route_policy,
+        tor_client_for_route, DirectRouteIo, DormantMode,
         NetworkPrivacyStatus, RouteDecision, TorClient, BOOTSTRAP_ABANDONED_MESSAGE,
         ROUTE_DECIDED, ROUTE_NOT_DECLARED_MESSAGE, STATUS_READY,
         TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
@@ -859,6 +924,35 @@ mod tests {
         assert!(!is_tor_desired());
         assert_eq!(status(), NetworkPrivacyStatus::Direct);
         assert!(matches!(tor_client_for_route(false), Ok(None)));
+    }
+
+    #[test]
+    fn a_dormancy_request_made_before_the_client_exists_is_applied_to_it() {
+        let _policy = lock_route_policy();
+        assert!(client_slot()
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_none());
+
+        set_tor_dormant(true);
+        assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+
+        set_tor_dormant(false);
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+    }
+
+    /// A test's dormancy intent must not outlive its route-policy guard.
+    #[test]
+    fn the_route_policy_guard_hands_back_the_default_dormancy_intent() {
+        {
+            let _policy = lock_route_policy();
+            set_tor_dormant(true);
+            assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+        }
+
+        let _policy = lock_route_policy();
+
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
     }
 
     #[test]
