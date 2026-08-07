@@ -924,6 +924,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkCreateAmountUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Waiting for sync',
+                      builder: buildPaymentLinkCreateSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Insufficient balance',
                       builder: buildPaymentLinkCreateInsufficientUseCase,
                     ),
@@ -957,8 +961,20 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkMessageInteractiveUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Message editor focused',
+                      builder: buildPaymentLinkMessageEditingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message too large',
+                      builder: buildPaymentLinkMessageTooLargeUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Review',
                       builder: buildPaymentLinkReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review message side',
+                      builder: buildPaymentLinkReviewMessageUseCase,
                     ),
                   ],
                 ),
