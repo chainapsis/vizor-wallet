@@ -69,6 +69,14 @@ static ROUTE_DECIDED: AtomicBool = AtomicBool::new(false);
 /// that arrives mid-bootstrap has nothing to apply to, and neither the app
 /// lifecycle callbacks nor a background pass about to do work repeat themselves.
 static TOR_DORMANT: AtomicBool = AtomicBool::new(false);
+/// Whether the app lifecycle has ever stated an intent in this process.
+///
+/// Awake is the right default for a process the app is running, and the wrong
+/// one for a process the OS started for a background pass: only Flutter's
+/// lifecycle callbacks write the intent, so a cold background launch would keep
+/// the default forever and leave a client padding its guard connection with no
+/// foreground to serve.
+static DORMANCY_INTENT_DECLARED: AtomicBool = AtomicBool::new(false);
 /// Monotonic milliseconds, from [`process_uptime_ms`], until which a background
 /// pass needs the client awake. Zero means no pass holds one.
 static BACKGROUND_WAKE_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
@@ -404,10 +412,26 @@ impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for DirectRouteIo<T> {
 pub fn set_tor_dormant(dormant: bool) {
     {
         let _guard = dormant_apply_lock();
+        DORMANCY_INTENT_DECLARED.store(true, Ordering::Release);
         TOR_DORMANT.store(dormant, Ordering::Release);
         apply_dormant_mode_locked();
     }
     log::info!("network privacy: Tor dormant={dormant}");
+}
+
+/// Gives a process that the app never ran in the intent it was never given.
+///
+/// Only claims the undeclared default. An app that has stated an intent keeps
+/// it — including an app that asked to stay awake and is running while a pass
+/// happens to start — so this can never put a client to sleep underneath a
+/// foreground that wants it.
+fn adopt_background_dormancy_intent() {
+    let _guard = dormant_apply_lock();
+    if DORMANCY_INTENT_DECLARED.load(Ordering::Acquire) {
+        return;
+    }
+    TOR_DORMANT.store(true, Ordering::Release);
+    apply_dormant_mode_locked();
 }
 
 fn dormant_apply_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -595,10 +619,20 @@ pub async fn enable_tor_for_background_work(
     //
     // Held rather than written. The intent belongs to the app lifecycle, and a
     // pass that overwrote it would leave the client awake for as long as the
-    // process lived: `onHide` has already run by the time a pass starts, or
-    // never runs at all on a cold background launch, and the next foreground
-    // callback asks for awake too. So nothing would ask for sleep again on
-    // exactly the battery or metered route the caller's gate exists to protect.
+    // process lived: `onHide` has already run by the time a pass starts, and
+    // the next foreground callback asks for awake too. So nothing would ask for
+    // sleep again on exactly the battery or metered route the caller's gate
+    // exists to protect.
+    //
+    // Except on a cold background launch, where the lifecycle never speaks at
+    // all. There is no intent to preserve there, only a default that means
+    // "awake" and was chosen for a process the app is running — so a pass in
+    // that process would hold the client awake, finish, and hand it back to a
+    // default that keeps it awake, padding a guard connection for a foreground
+    // that does not exist. Adopting sleep as the intent is not overwriting one:
+    // it supplies the one this process was never given, and a foreground that
+    // does arrive later says so itself.
+    adopt_background_dormancy_intent();
     hold_background_wake();
     bootstrap_tor(tor_directory, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT).await
 }
@@ -892,6 +926,11 @@ pub(crate) mod test_route_policy {
             // guard is what owns handing the process back in its default state
             // — including for a test that fails or panics before its own reset.
             super::TOR_DORMANT.store(false, Ordering::Release);
+            // Restored with the intent it gates. A test that let a background
+            // pass adopt the undeclared default would otherwise leave the
+            // process claiming the app had spoken, and the next test to rely on
+            // that adoption would silently stop exercising it.
+            super::DORMANCY_INTENT_DECLARED.store(false, Ordering::Release);
         }
     }
 
@@ -1104,6 +1143,37 @@ mod tests {
 
         assert_eq!(BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire), 0);
         assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+    }
+
+    /// A process the app never ran in has no lifecycle to state an intent, so
+    /// the default — awake, chosen for a process the app is running — would
+    /// outlive the pass and keep a client padding a guard connection for a
+    /// foreground that does not exist.
+    #[tokio::test]
+    async fn a_cold_background_pass_leaves_the_client_asleep_behind_it() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+
+        let _ = enable_tor_for_background_work(&unusable_tor_directory(&temp)).await;
+
+        // Awake while the pass holds it, asleep once that lapses.
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+        lapse_background_wake();
+        assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+    }
+
+    /// An app that has stated an intent keeps it, including one that asked to
+    /// stay awake while a pass happens to start.
+    #[tokio::test]
+    async fn a_background_pass_never_overrides_an_intent_the_app_stated() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        set_tor_dormant(false);
+
+        let _ = enable_tor_for_background_work(&unusable_tor_directory(&temp)).await;
+        lapse_background_wake();
+
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
     }
 
     /// Foreground traffic must not push the lease out. It would keep the client
