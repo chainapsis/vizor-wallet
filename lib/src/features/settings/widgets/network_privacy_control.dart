@@ -420,7 +420,7 @@ _NetworkPrivacyPresentation _presentationFor(
     return _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description:
-          'Wallet sync and most in-app requests go through Tor. Software updates are unavailable.',
+          'Vizor’s network requests go through Tor, but software updates are unavailable.',
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.destructive,
@@ -483,11 +483,8 @@ _NetworkPrivacyPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
-      description: isLinux
-          ? 'Wallet sync, most in-app requests, and software update checks go '
-                'through Tor. Update pages and downloads opened in another app '
-                'use that app’s connection.'
-          : 'Wallet sync, most in-app requests, and software updates go through Tor. Some services may be unavailable over Tor.',
+      description:
+          'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,

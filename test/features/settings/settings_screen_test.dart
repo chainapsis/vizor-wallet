@@ -328,7 +328,9 @@ void main() {
     expect(calls, isEmpty);
   });
 
-  testWidgets('connected Tor state includes software updates', (tester) async {
+  testWidgets('connected Tor state describes Vizor and external app routes', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _settingsHarness(
         networkPrivacyState: const NetworkPrivacyState(
@@ -342,8 +344,8 @@ void main() {
     expect(find.text('Connected'), findsOneWidget);
     expect(
       find.text(
-        'Wallet sync, most in-app requests, and software updates go through '
-        'Tor. Some services may be unavailable over Tor.',
+        'Vizor’s network requests go through Tor. Links opened in other apps '
+        'use those apps’ network settings.',
       ),
       findsOneWidget,
     );
@@ -382,7 +384,7 @@ void main() {
     expect(description.style?.color, AppThemeData.light.colors.text.accent);
   });
 
-  testWidgets('Linux Tor copy excludes external update traffic', (
+  testWidgets('Linux Tor copy assigns external traffic to the other app', (
     tester,
   ) async {
     _overridePlatform(TargetPlatform.linux);
@@ -399,9 +401,8 @@ void main() {
 
       expect(
         find.text(
-          'Wallet sync, most in-app requests, and software update checks go '
-          'through Tor. Update pages and downloads opened in another app '
-          'use that app’s connection.',
+          'Vizor’s network requests go through Tor. Links opened in other apps '
+          'use those apps’ network settings.',
         ),
         findsOneWidget,
       );
@@ -454,8 +455,8 @@ void main() {
 
     expect(
       find.text(
-        'Wallet sync and most in-app requests go through Tor. Software '
-        'updates are unavailable.',
+        'Vizor’s network requests go through Tor, but software updates are '
+        'unavailable.',
       ),
       findsOneWidget,
     );

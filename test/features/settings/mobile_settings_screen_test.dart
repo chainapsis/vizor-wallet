@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -255,9 +257,12 @@ void main() {
     );
   });
 
-  testWidgets(
-    'a connected Tor route names the conditions background work needs',
-    (tester) async {
+  testWidgets('a connected Tor route names the iOS migration exception', (
+    tester,
+  ) async {
+    final previousPlatformOverride = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
       await tester.pumpWidget(
         _app(
           networkPrivacyState: const NetworkPrivacyState(
@@ -278,13 +283,53 @@ void main() {
             find.byKey(const ValueKey('mobile_settings_tor_description')),
           )
           .data;
-      // "Most in-app requests" carries the coverage hedge; the background
-      // migration boundary is disclosed on the migration screen instead, at
-      // the moment it invites the user to background the app.
-      expect(description, contains('most in-app requests go through Tor'));
+      expect(
+        description,
+        'Vizor’s network requests go through Tor. Ironwood private migration '
+        'uses a direct connection while Vizor is closed. Links opened in other '
+        'apps use those apps’ network settings.',
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = previousPlatformOverride;
+    }
+  });
+
+  testWidgets('a connected Tor route omits the iOS exception on Android', (
+    tester,
+  ) async {
+    final previousPlatformOverride = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(
+        _app(
+          networkPrivacyState: const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('mobile_settings_tor_row')),
+        200,
+      );
+      expect(find.text('Connected'), findsOneWidget);
+      final description = tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_tor_description')),
+          )
+          .data;
+      expect(
+        description,
+        'Vizor’s network requests go through Tor. Links opened in other apps '
+        'use those apps’ network settings.',
+      );
       expect(description, isNot(contains('migration')));
-    },
-  );
+    } finally {
+      debugDefaultTargetPlatformOverride = previousPlatformOverride;
+    }
+  });
 
   testWidgets('a connecting Tor route says requests are paused', (
     tester,

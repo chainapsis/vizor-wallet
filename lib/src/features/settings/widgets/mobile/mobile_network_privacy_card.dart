@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,7 +31,10 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
-    final presentation = _presentationFor(state);
+    final presentation = _presentationFor(
+      state,
+      platform: defaultTargetPlatform,
+    );
     final toggleAction = networkPrivacyToggleAction(state);
     final onToggle = toggleAction.isInteractive
         ? () => unawaited(
@@ -180,7 +185,10 @@ class _MobileTorPresentation {
   final Color Function(AppColors colors) iconColor;
 }
 
-_MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
+_MobileTorPresentation _presentationFor(
+  NetworkPrivacyState state, {
+  required TargetPlatform platform,
+}) {
   final targetTorEnabled = state.targetTorEnabled ?? state.torEnabled;
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.connecting, true) => _MobileTorPresentation(
@@ -206,14 +214,16 @@ _MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: 'Connected',
-      // "Most", not "all": background migration transport is pinned direct
-      // by design, and the boundary is disclosed on the migration screen at
-      // the moment it invites the user to background the app — a permanent
-      // settings card is the wrong home for a transient feature's caveat.
-      description:
-          'Wallet sync and most in-app requests go through Tor. Some '
-          'services may be unavailable over Tor, and links you open leave '
-          'the app.',
+      // iOS can continue Ironwood private migration through its native
+      // background task after Vizor closes. That task is pinned direct, so
+      // name the exception instead of weakening the foreground guarantee with
+      // "most". Android has no corresponding background migration lane.
+      description: platform == TargetPlatform.iOS
+          ? 'Vizor’s network requests go through Tor. Ironwood private '
+                'migration uses a direct connection while Vizor is closed. '
+                'Links opened in other apps use those apps’ network settings.'
+          : 'Vizor’s network requests go through Tor. Links opened in other '
+                'apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
     ),
