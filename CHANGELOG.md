@@ -4,7 +4,7 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v2.0.0-rc.5
 
 ### Fixed
 - Keystone signing requests now mark deliberate zero-value hotkey outputs with
