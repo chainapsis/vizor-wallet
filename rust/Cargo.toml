@@ -141,6 +141,11 @@ package = "ur-registry"
 default-features = false
 features = ["std"]
 
+[patch.crates-io]
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 

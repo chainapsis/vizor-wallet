@@ -515,67 +515,124 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(_prepareKeystoneSigningUnlocked);
   }
 
-  Future<void> handleKeystoneSignedPczt(List<int> signedPcztBytes) {
+  Future<void> handleKeystoneBatchSignatures(
+    List<VotingKeystoneBatchSignature> batchSignatures,
+  ) {
     return _enqueue(() async {
       final current = await future;
-      final request = current.keystoneSigningRequest;
-      if (request == null) {
+      final requests = current.keystoneSigningRequests;
+      if (requests.isEmpty) {
         _setError('No Keystone signing request is waiting for a signature.');
         return;
       }
 
       final context = await _loadContext(_roundId);
       final rust = ref.read(votingRustApiProvider);
-      final signatures = Map<int, rust_wire.KeystoneSignatureRecord>.from(
+      final storedSignatures = Map<int, rust_wire.KeystoneSignatureRecord>.from(
         current.keystoneSignatures,
       );
-      if (signatures.isEmpty) {
-        signatures.addAll(await _loadKeystoneSignatures(context));
+      if (storedSignatures.isEmpty) {
+        storedSignatures.addAll(await _loadKeystoneSignatures(context));
       }
 
-      final parsedPczt = await rust.parseSignedVotingPczt(
-        signedPcztBytes: signedPcztBytes,
-        actionIndex: request.actionIndex,
-      );
-      final scannedSighash = parsedPczt.sighash;
-      final duplicate = signatures.values.any(
-        (record) => _bytesEqual(record.sighash, scannedSighash),
-      );
-      if (duplicate) {
+      void reject(String message) {
         _setStateForContext(
           context,
           current.copyWith(
             phase: VotingSessionPhase.keystoneSigning,
-            keystoneSignatures: signatures,
-            keystoneScanError:
-                'This Keystone signature was already scanned. Open the next signature on Keystone and scan again.',
+            keystoneSignatures: storedSignatures,
+            keystoneScanError: message,
           ),
         );
-        return;
       }
-      if (!_bytesEqual(request.pcztSighash, scannedSighash)) {
-        _setStateForContext(
-          context,
-          current.copyWith(
-            phase: VotingSessionPhase.keystoneSigning,
-            keystoneSignatures: signatures,
-            keystoneScanError:
-                'This signature is for a different voting bundle. Scan the signature for bundle ${request.bundleIndex + 1}.',
-          ),
+
+      if (batchSignatures.isEmpty) {
+        reject(
+          'Keystone returned no voting signatures. Scan the result again.',
         );
         return;
       }
 
-      await rust.storeKeystoneSignature(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: request.bundleIndex,
-        sig: parsedPczt.spendAuthSig,
-        sighash: scannedSighash,
-        rk: request.rk,
-      );
+      final requestsByBundle = {
+        for (final request in requests) request.bundleIndex: request,
+      };
+      final seenBundleIndexes = <int>{};
+      for (final batchSignature in batchSignatures) {
+        final bundleIndex = batchSignature.bundleIndex;
+        final request = requestsByBundle[bundleIndex];
+        if (request == null || !seenBundleIndexes.add(bundleIndex)) {
+          reject(
+            'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.',
+          );
+          return;
+        }
+        if (storedSignatures.containsKey(bundleIndex)) {
+          reject(
+            'This Keystone signature was already scanned. Open the next signing result on Keystone and scan again.',
+          );
+          return;
+        }
+        if (batchSignature.pool != 1 ||
+            batchSignature.actionIndex != request.actionIndex ||
+            batchSignature.signature.length != 64) {
+          reject(
+            'Keystone returned an invalid voting signature. Scan the result for the QR shown here.',
+          );
+          return;
+        }
+      }
+
+      for (final batchSignature in batchSignatures) {
+        final request = requestsByBundle[batchSignature.bundleIndex]!;
+        await rust.storeKeystoneSignature(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: request.bundleIndex,
+          sig: batchSignature.signature,
+          sighash: request.pcztSighash,
+          rk: request.rk,
+        );
+      }
+
+      final signedBundleIndexes = batchSignatures
+          .map((batchSignature) => batchSignature.bundleIndex)
+          .toSet();
+      final remainingRequests = requests
+          .where(
+            (request) => !signedBundleIndexes.contains(request.bundleIndex),
+          )
+          .toList();
+      if (remainingRequests.isNotEmpty) {
+        final refreshedSignatures = await _loadKeystoneSignatures(context);
+        _setStateForContext(
+          context,
+          current.copyWith(
+            phase: VotingSessionPhase.keystoneSigning,
+            keystoneSigningRequests: remainingRequests,
+            keystoneSignatures: refreshedSignatures,
+            currentBundleIndex: remainingRequests.first.bundleIndex,
+            clearKeystoneScanError: true,
+            clearError: true,
+          ),
+        );
+        return;
+      }
       await _prepareKeystoneSigningUnlocked();
+    });
+  }
+
+  Future<void> reportKeystoneScanError(String message) {
+    return _enqueue(() async {
+      final current = await future;
+      final context = await _loadContext(_roundId);
+      _setStateForContext(
+        context,
+        current.copyWith(
+          phase: VotingSessionPhase.keystoneSigning,
+          keystoneScanError: message,
+        ),
+      );
     });
   }
 
@@ -2426,20 +2483,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     var plan = current.resumePlan ?? context.resumePlan;
     var roundPlan = current.roundPlan ?? context.roundPlan;
     var signatures = await _loadKeystoneSignatures(context);
-    int? nextUnsignedBundle;
-    for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-      if (!signatures.containsKey(bundleIndex)) {
-        nextUnsignedBundle = bundleIndex;
-        break;
-      }
-    }
+    var unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
+        .where((bundleIndex) => !signatures.containsKey(bundleIndex))
+        .toList();
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
       throw const VotingHotkeyUnavailable('missing stored voting hotkey');
     }
 
-    if (nextUnsignedBundle == null) {
+    if (unsignedBundleIndexes.isEmpty) {
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
@@ -2467,7 +2520,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         isHardwareAccount: true,
         resumePlan: plan,
         keystoneSignatures: signatures,
-        currentBundleIndex: nextUnsignedBundle,
+        currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneSigningRequest: true,
         clearKeystoneScanError: true,
         clearError: true,
@@ -2475,18 +2528,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
 
     final rust = ref.read(votingRustApiProvider);
-    late final rust_delegate.KeystoneSigningRequest request;
+    late final List<rust_delegate.KeystoneSigningRequest> requests;
     try {
-      request = await rust.buildKeystoneDelegationRequest(
+      requests = await rust.buildKeystoneDelegationRequests(
         ctx: _apiRoundContext(context),
         storedHotkeySecret: storedHotkeySecret,
-        bundleIndex: nextUnsignedBundle,
+        bundleIndices: unsignedBundleIndexes,
       );
     } catch (error) {
       if (!_isKeystoneSetupOverwriteError(error)) rethrow;
       debugPrint(
         '[zcash] Voting: Keystone request detected stale bundle setup '
-        'round=${context.round.roundId} bundle=$nextUnsignedBundle',
+        'round=${context.round.roundId} bundles=$unsignedBundleIndexes',
       );
       await _resetVotingSessionState(
         rust: rust,
@@ -2505,14 +2558,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               entry.key: entry.value,
         };
       }
-      nextUnsignedBundle = null;
-      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-        if (!signatures.containsKey(bundleIndex)) {
-          nextUnsignedBundle = bundleIndex;
-          break;
-        }
-      }
-      if (nextUnsignedBundle == null) {
+      unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
+          .where((bundleIndex) => !signatures.containsKey(bundleIndex))
+          .toList();
+      if (unsignedBundleIndexes.isEmpty) {
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
@@ -2537,16 +2586,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           resumePlan: plan,
           roundPlan: roundPlan,
           keystoneSignatures: signatures,
-          currentBundleIndex: nextUnsignedBundle,
+          currentBundleIndex: unsignedBundleIndexes.first,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
           clearError: true,
         ),
       );
-      request = await rust.buildKeystoneDelegationRequest(
+      requests = await rust.buildKeystoneDelegationRequests(
         ctx: _apiRoundContext(context),
         storedHotkeySecret: storedHotkeySecret,
-        bundleIndex: nextUnsignedBundle,
+        bundleIndices: unsignedBundleIndexes,
+      );
+    }
+
+    if (requests.length != unsignedBundleIndexes.length ||
+        !List.generate(
+          requests.length,
+          (index) =>
+              requests[index].bundleIndex == unsignedBundleIndexes[index],
+        ).every((matches) => matches)) {
+      throw StateError(
+        'Keystone voting requests do not match the pending bundles.',
       );
     }
 
@@ -2557,10 +2617,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         isHardwareAccount: true,
         resumePlan: plan,
         roundPlan: roundPlan,
-        eligibleWeightZatoshi: request.eligibleWeightZatoshi,
-        keystoneSigningRequest: request,
+        eligibleWeightZatoshi: requests.first.eligibleWeightZatoshi,
+        keystoneSigningRequests: requests,
         keystoneSignatures: signatures,
-        currentBundleIndex: nextUnsignedBundle,
+        currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneScanError: true,
         clearError: true,
       ),
