@@ -35,11 +35,15 @@ impl From<(MerklePath, u32)> for VanWitness {
 mod tests {
     use super::*;
     use pasta_curves::Fp;
+    use std::sync::mpsc;
+    use std::time::Duration;
     use vote_commitment_tree::MemoryTreeServer;
 
     use crate::{governance::BALLOT_DIVISOR, round::RoundParams, types::NoteInfo};
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+    const SECOND_ROUND_ID: &str =
+        "0202020202020202020202020202020202020202020202020202020202020202";
     const WALLET_ID: &str = "wallet-tree-sync";
 
     #[test]
@@ -71,6 +75,89 @@ mod tests {
         assert_eq!(height, 7);
         assert_eq!(witness.position, 4);
         assert_eq!(witness.anchor_height, 7);
+    }
+
+    #[test]
+    fn blocked_sync_does_not_block_another_round() {
+        struct BlockingApi {
+            entered: mpsc::Sender<()>,
+            release: mpsc::Receiver<()>,
+        }
+
+        impl TreeSyncApi for BlockingApi {
+            type Error = std::convert::Infallible;
+
+            fn get_block_commitments(
+                &self,
+                _from_height: u32,
+                _to_height: u32,
+            ) -> Result<vote_commitment_tree::sync_api::BlockCommitmentsPage, Self::Error>
+            {
+                unreachable!("empty tree does not fetch commitment pages")
+            }
+
+            fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+                Ok(None)
+            }
+
+            fn get_tree_state(
+                &self,
+            ) -> Result<vote_commitment_tree::sync_api::TreeState, Self::Error> {
+                self.entered.send(()).unwrap();
+                self.release.recv().unwrap();
+                Ok(vote_commitment_tree::sync_api::TreeState {
+                    next_index: 0,
+                    root: Fp::zero(),
+                    height: 0,
+                })
+            }
+        }
+
+        let sync = Arc::new(VoteTreeSync::new());
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+
+        let first_sync = sync.clone();
+        let first = std::thread::spawn(move || {
+            let db = db_for_round(ROUND_ID);
+            first_sync
+                .sync_with_api(
+                    &db,
+                    ROUND_ID,
+                    &BlockingApi {
+                        entered: entered_tx,
+                        release: release_rx,
+                    },
+                )
+                .unwrap()
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let second_sync = sync.clone();
+        let (second_done_tx, second_done_rx) = mpsc::channel();
+        let second = std::thread::spawn(move || {
+            let db = db_for_round(SECOND_ROUND_ID);
+            let result =
+                second_sync.sync_with_api(&db, SECOND_ROUND_ID, &MemoryTreeServer::empty());
+            second_done_tx.send(result).unwrap();
+        });
+
+        let second_result = second_done_rx.recv_timeout(Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        first.join().unwrap();
+        second.join().unwrap();
+
+        assert_eq!(second_result.unwrap().unwrap(), 0);
+    }
+
+    fn db_for_round(round_id: &str) -> VotingDb {
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id(WALLET_ID);
+        let mut params = round_params();
+        params.vote_round_id = round_id.to_string();
+        db.create_round(crate::Network::Testnet, &params, None)
+            .unwrap();
+        db
     }
 
     fn server_with_single_leaf_blocks(count: u32) -> MemoryTreeServer {
@@ -140,11 +227,10 @@ impl RoundTreeClient {
 
 /// Manages per-round in-memory vote commitment trees for VAN witness generation.
 ///
-/// Wraps a `HashMap<String, RoundTreeClient>` behind a `Mutex` for thread-safe
-/// per-round incremental sync. Each round gets its own `TreeClient`, created
-/// lazily on first `sync` call for that round.
+/// The map lock is held only while locating a round. Each round has a separate
+/// lock, so a remote sync cannot block unrelated rounds for the same wallet.
 pub struct VoteTreeSync {
-    clients: Mutex<HashMap<String, RoundTreeClient>>,
+    clients: Mutex<HashMap<String, Arc<Mutex<RoundTreeClient>>>>,
     transport: Arc<HyperTransport>,
 }
 
@@ -182,13 +268,18 @@ impl VoteTreeSync {
             }
         }
 
-        let mut guard = self.clients.lock().map_err(|e| VotingError::Internal {
-            message: format!("tree client lock poisoned: {}", e),
+        let round_client = {
+            let mut clients = self.clients.lock().map_err(|e| VotingError::Internal {
+                message: format!("tree client registry lock poisoned: {e}"),
+            })?;
+            clients
+                .entry(round_id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(RoundTreeClient::empty())))
+                .clone()
+        };
+        let mut round_client = round_client.lock().map_err(|e| VotingError::Internal {
+            message: format!("round tree client lock poisoned: {e}"),
         })?;
-
-        let round_client = guard
-            .entry(round_id.to_string())
-            .or_insert_with(RoundTreeClient::empty);
 
         if round_client.needs_resync_for(&positions) {
             *round_client = RoundTreeClient::empty();
@@ -221,15 +312,20 @@ impl VoteTreeSync {
     ) -> Result<VanWitness, VotingError> {
         let van_position = db.load_van_position(round_id, bundle_index)?;
 
-        let guard = self.clients.lock().map_err(|e| VotingError::Internal {
-            message: format!("tree client lock poisoned: {}", e),
-        })?;
-
-        let round_client = guard
-            .get(round_id)
-            .ok_or_else(|| VotingError::InvalidInput {
-                message: "must call sync before generate_van_witness".to_string(),
+        let round_client = {
+            let clients = self.clients.lock().map_err(|e| VotingError::Internal {
+                message: format!("tree client registry lock poisoned: {e}"),
             })?;
+            clients
+                .get(round_id)
+                .cloned()
+                .ok_or_else(|| VotingError::InvalidInput {
+                    message: "must call sync before generate_van_witness".to_string(),
+                })?
+        };
+        let round_client = round_client.lock().map_err(|e| VotingError::Internal {
+            message: format!("round tree client lock poisoned: {e}"),
+        })?;
 
         let path = round_client
             .client
@@ -250,7 +346,7 @@ impl VoteTreeSync {
     /// If `round_id` is empty, all clients are dropped.
     pub fn reset(&self, round_id: &str) -> Result<(), VotingError> {
         let mut guard = self.clients.lock().map_err(|e| VotingError::Internal {
-            message: format!("tree client lock poisoned: {}", e),
+            message: format!("tree client registry lock poisoned: {e}"),
         })?;
         if round_id.is_empty() {
             guard.clear();

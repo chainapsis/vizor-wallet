@@ -476,6 +476,92 @@ fn sync_rejects_invalid_pagination_cursors() {
 }
 
 #[test]
+fn sync_rejects_too_many_pages() {
+    struct AdvancingApi;
+
+    impl TreeSyncApi for AdvancingApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            Ok(BlockCommitmentsPage {
+                blocks: Vec::new(),
+                next_from_height: from_height + 1,
+            })
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            Ok(None)
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            Ok(TreeState {
+                next_index: 1,
+                root: fp(1),
+                height: 10,
+            })
+        }
+    }
+
+    let err = TreeClient::empty()
+        .sync_with_limits(
+            &AdvancingApi,
+            vote_commitment_tree::SyncLimits {
+                max_pages: 2,
+                max_duration: std::time::Duration::from_secs(60),
+            },
+        )
+        .unwrap_err();
+
+    assert!(matches!(err, SyncError::PageLimitExceeded { max_pages: 2 }));
+}
+
+#[test]
+fn sync_rejects_expired_time_budget() {
+    struct NonEmptyApi;
+
+    impl TreeSyncApi for NonEmptyApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            _from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            panic!("expired sync should stop after fetching state");
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            Ok(None)
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            Ok(TreeState {
+                next_index: 1,
+                root: fp(1),
+                height: 1,
+            })
+        }
+    }
+
+    let err = TreeClient::empty()
+        .sync_with_limits(
+            &NonEmptyApi,
+            vote_commitment_tree::SyncLimits {
+                max_pages: 1,
+                max_duration: std::time::Duration::ZERO,
+            },
+        )
+        .unwrap_err();
+
+    assert!(matches!(err, SyncError::TimeLimitExceeded { .. }));
+}
+
+#[test]
 fn sync_rejects_fast_path_root_mismatch() {
     struct WrongRootApi {
         state: TreeState,
