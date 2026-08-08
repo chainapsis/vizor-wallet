@@ -26,6 +26,20 @@ enum VotingSubmissionJobStatus {
   error,
 }
 
+/// Display metadata for requests included in the currently shown Keystone QR.
+@immutable
+class VotingKeystoneBatchMemo {
+  const VotingKeystoneBatchMemo({
+    required this.bundleIndex,
+    required this.bundleCount,
+    required this.displayMemo,
+  });
+
+  final int bundleIndex;
+  final int bundleCount;
+  final String displayMemo;
+}
+
 @immutable
 class VotingSubmissionJobState {
   const VotingSubmissionJobState({
@@ -35,6 +49,7 @@ class VotingSubmissionJobState {
     this.errorMessage,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
+    this.keystoneBatchMemos = const [],
     this.keystoneBatchMessageCount = 0,
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
@@ -50,6 +65,7 @@ class VotingSubmissionJobState {
   final String? errorMessage;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
+  final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
   final int keystoneBatchMessageCount;
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
@@ -73,6 +89,7 @@ class VotingSubmissionJobState {
     bool clearErrorMessage = false,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
+    List<VotingKeystoneBatchMemo>? keystoneBatchMemos,
     int? keystoneBatchMessageCount,
     int? keystoneBatchTotalCount,
     String? keystoneQrError,
@@ -93,6 +110,7 @@ class VotingSubmissionJobState {
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
+      keystoneBatchMemos: keystoneBatchMemos ?? this.keystoneBatchMemos,
       keystoneBatchMessageCount:
           keystoneBatchMessageCount ?? this.keystoneBatchMessageCount,
       keystoneBatchTotalCount:
@@ -736,6 +754,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = state.copyWith(
       status: VotingSubmissionJobStatus.waitingForKeystone,
       keystoneUrParts: const [],
+      keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: requests.length,
       clearKeystoneQrError: true,
@@ -769,6 +788,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForKeystone,
         keystoneUrParts: urParts,
+        keystoneBatchMemos: [
+          for (final request in roundRequests)
+            VotingKeystoneBatchMemo(
+              bundleIndex: request.bundleIndex,
+              bundleCount: request.bundleCount,
+              displayMemo: request.displayMemo,
+            ),
+        ],
         keystoneBatchMessageCount: roundRequests.length,
         keystoneBatchTotalCount: requests.length,
         clearKeystoneQrError: true,
@@ -949,6 +976,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = state.copyWith(
       status: VotingSubmissionJobStatus.running,
       keystoneUrParts: const [],
+      keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
@@ -968,6 +996,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       clearErrorMessage: true,
       softwareAccountRequired: false,
       keystoneUrParts: const [],
+      keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
@@ -1006,6 +1035,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       errorMessage: message,
       softwareAccountRequired: softwareAccountRequired,
       keystoneUrParts: const [],
+      keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,

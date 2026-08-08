@@ -11,7 +11,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
-import '../../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
@@ -254,10 +253,12 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
               submissionJobInFlight: submissionJobInFlight,
               softwareAccountRequired: job?.softwareAccountRequired ?? false,
               isHardwareAccount: state.isHardwareAccount,
-              keystoneSigningRequest: state.keystoneSigningRequest,
+              keystoneSigningBundleIndex:
+                  state.keystoneSigningRequest?.bundleIndex,
               canSkipRemainingKeystoneBundles:
                   state.canSkipRemainingKeystoneBundles,
               keystoneUrParts: job?.keystoneUrParts ?? const [],
+              keystoneBatchMemos: job?.keystoneBatchMemos ?? const [],
               keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
               keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
               keystoneQrError: job?.keystoneQrError,
@@ -548,9 +549,10 @@ class _StatusContent extends StatelessWidget {
     this.submissionJobInFlight = false,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
-    this.keystoneSigningRequest,
+    this.keystoneSigningBundleIndex,
     this.canSkipRemainingKeystoneBundles = false,
     this.keystoneUrParts = const [],
+    this.keystoneBatchMemos = const [],
     this.keystoneBatchMessageCount = 0,
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
@@ -574,9 +576,10 @@ class _StatusContent extends StatelessWidget {
   final bool submissionJobInFlight;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
-  final rust_delegate.KeystoneSigningRequest? keystoneSigningRequest;
+  final int? keystoneSigningBundleIndex;
   final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
+  final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
   final int keystoneBatchMessageCount;
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
@@ -641,10 +644,11 @@ class _StatusContent extends StatelessWidget {
               ],
               if (isHardwareAccount &&
                   phase == VotingSessionPhase.keystoneSigning &&
-                  keystoneSigningRequest != null) ...[
+                  keystoneSigningBundleIndex != null) ...[
                 _KeystoneSigningPanel(
-                  request: keystoneSigningRequest!,
+                  bundleIndex: keystoneSigningBundleIndex!,
                   urParts: keystoneUrParts,
+                  batchMemos: keystoneBatchMemos,
                   batchMessageCount: keystoneBatchMessageCount,
                   batchTotalCount: keystoneBatchTotalCount,
                   qrError: keystoneQrError,
@@ -811,8 +815,9 @@ class _WalletSyncProgressText extends StatelessWidget {
 
 class _KeystoneSigningPanel extends StatefulWidget {
   const _KeystoneSigningPanel({
-    required this.request,
+    required this.bundleIndex,
     required this.urParts,
+    required this.batchMemos,
     required this.batchMessageCount,
     required this.batchTotalCount,
     this.qrError,
@@ -822,8 +827,9 @@ class _KeystoneSigningPanel extends StatefulWidget {
     this.onSkipRemainingBundles,
   });
 
-  final rust_delegate.KeystoneSigningRequest request;
+  final int bundleIndex;
   final List<String> urParts;
+  final List<VotingKeystoneBatchMemo> batchMemos;
   final int batchMessageCount;
   final int batchTotalCount;
   final String? qrError;
@@ -846,7 +852,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
   @override
   void didUpdateWidget(covariant _KeystoneSigningPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.request.bundleIndex != widget.request.bundleIndex) {
+    if (oldWidget.bundleIndex != widget.bundleIndex) {
       _triggerTransitionCue();
     }
   }
@@ -875,8 +881,11 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final request = widget.request;
     final urParts = widget.urParts;
+    final batchMemos = [
+      for (final memo in widget.batchMemos)
+        if (memo.displayMemo.trim().isNotEmpty) memo,
+    ];
     final qrError = widget.qrError;
     final scanError = widget.scanError;
     final canSkipRemainingBundles = widget.canSkipRemainingBundles;
@@ -936,7 +945,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                       },
                       child: Column(
                         key: ValueKey<String>(
-                          'batch-${request.bundleIndex}-$batchMessageCount',
+                          'batch-${widget.bundleIndex}-$batchMessageCount',
                         ),
                         children: [
                           Text(
@@ -997,9 +1006,16 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                 ),
               ),
             ],
-            if (request.displayMemo.trim().isNotEmpty) ...[
+            if (batchMemos.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sm),
-              _KeystoneSigningMemo(displayMemo: request.displayMemo),
+              for (var index = 0; index < batchMemos.length; index++) ...[
+                if (index > 0) const SizedBox(height: AppSpacing.xs),
+                _KeystoneSigningMemo(
+                  label:
+                      'Bundle ${batchMemos[index].bundleIndex + 1} of ${batchMemos[index].bundleCount} memo',
+                  displayMemo: batchMemos[index].displayMemo,
+                ),
+              ],
             ],
             const SizedBox(height: AppSpacing.sm),
             KeystoneScanHelpOverlay(
@@ -1037,8 +1053,9 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
 }
 
 class _KeystoneSigningMemo extends StatelessWidget {
-  const _KeystoneSigningMemo({required this.displayMemo});
+  const _KeystoneSigningMemo({required this.label, required this.displayMemo});
 
+  final String label;
   final String displayMemo;
 
   @override
@@ -1058,7 +1075,7 @@ class _KeystoneSigningMemo extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Memo',
+                label,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.text.secondary,
                 ),

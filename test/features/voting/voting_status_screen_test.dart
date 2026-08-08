@@ -3060,7 +3060,7 @@ void main() {
     expect(find.text('Sign 1 voting bundle'), findsOneWidget);
     expect(find.text('One Keystone approval'), findsOneWidget);
     expect(_RustApiFake.lastEncodedBatchMessageCount, 1);
-    expect(find.text('Memo'), findsOneWidget);
+    expect(find.text('Bundle 1 of 1 memo'), findsOneWidget);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
     await tester.pump();
@@ -3183,6 +3183,8 @@ void main() {
     );
     await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
     expect(find.text('This QR signs 1 of 2 remaining bundles'), findsOneWidget);
+    expect(find.text('Bundle 1 of 2 memo'), findsOneWidget);
+    expect(find.text('Bundle 2 of 2 memo'), findsNothing);
     expect(find.text('1 / 2'), findsNothing);
 
     await tester.tap(find.text('Scan signature'));
@@ -3192,6 +3194,8 @@ void main() {
 
     expect(find.text('Sign 1 voting bundle'), findsWidgets);
     expect(find.text('One Keystone approval'), findsOneWidget);
+    expect(find.text('Bundle 1 of 2 memo'), findsNothing);
+    expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
     expect(find.text('2 / 2'), findsNothing);
     expect(find.text('Skip'), findsOneWidget);
 
@@ -3220,7 +3224,7 @@ void main() {
     expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
-  testWidgets('hardware status screen scrolls in a short window', (
+  testWidgets('hardware status screen shows each memo in a short window', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -3229,14 +3233,23 @@ void main() {
     });
 
     final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(bundleCount: 2);
+      ..state = _recoveryState(bundleCount: 4);
     final container = _statusContainer(
       accountOverride: _HardwareAccountNotifier.new,
       activeAccountUuid: () async => 'hardware-1',
       accountIsHardware: true,
       hardwareAccountUuids: const {'hardware-1'},
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi, bundleCount: 2),
+      rust: _VotingStatusRustApi(
+        recoveryApi,
+        bundleCount: 4,
+        keystoneMemoZecByBundle: const {
+          0: '0.00000100',
+          1: '0.00000200',
+          2: '0.00000300',
+          3: '0.00000400',
+        },
+      ),
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -3254,13 +3267,20 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    await _pumpUntilFound(tester, find.text('Sign 2 voting bundles'));
+    await _pumpUntilFound(tester, find.text('Sign 4 voting bundles'));
 
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.text('Sign 2 voting bundles'), findsOneWidget);
+    expect(find.text('Sign 4 voting bundles'), findsOneWidget);
     expect(find.text('One Keystone approval'), findsOneWidget);
-    expect(_RustApiFake.lastEncodedBatchMessageCount, 2);
+    expect(_RustApiFake.lastEncodedBatchMessageCount, 4);
+    for (var bundle = 1; bundle <= 4; bundle++) {
+      expect(find.text('Bundle $bundle of 4 memo'), findsOneWidget);
+      expect(
+        find.textContaining('Amount: 0.00000${bundle}00 ZEC'),
+        findsOneWidget,
+      );
+    }
   });
 
   testWidgets('hardware status screen shows retry when Keystone QR fails', (
@@ -4421,6 +4441,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     this.eligibilityWeightZatoshi,
     this.setupWeightPerBundle,
     this.shareTrackingDelaySeconds,
+    this.keystoneMemoZecByBundle = const {},
   }) : _persistedBundleCount = bundleCount;
 
   final _MutableVotingRecoveryApi recoveryApi;
@@ -4428,6 +4449,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final BigInt? eligibilityWeightZatoshi;
   final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
+  final Map<int, String> keystoneMemoZecByBundle;
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
@@ -4555,6 +4577,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int bundleIndex,
   }) async {
     keystoneDelegationRequestCalls++;
+    final displayAmount = keystoneMemoZecByBundle[bundleIndex] ?? '0.00000100';
     return rust_delegate.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
       redactedPcztBytes: Uint8List.fromList(const [2]),
@@ -4562,7 +4585,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       rk: Uint8List.fromList(const [4]),
       actionIndex: 0,
       displayMemo:
-          'I am authorizing this hotkey managed by my wallet to vote on ${ctx.roundName}.\nAmount: 0.00000100 ZEC.',
+          'I am authorizing this hotkey managed by my wallet to vote on ${ctx.roundName}.\nAmount: $displayAmount ZEC.',
       eligibleWeightZatoshi: BigInt.from(100),
       delegatedWeightZatoshi: BigInt.from(100),
       bundleCount: bundleCount,
