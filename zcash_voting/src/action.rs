@@ -13,6 +13,7 @@ use orchard::pczt::Zip32Derivation;
 use orchard::value::NoteValue;
 use orchard::Address;
 use voting_circuits::delegation::synthetic_padding_note_parts;
+use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::builder::PcztParts;
 use zcash_primitives::transaction::TxVersion;
 use zcash_protocol::consensus::{
@@ -489,6 +490,9 @@ pub(crate) fn build_governance_pczt(
     // Use Creator::build_from_parts to construct the PCZT with the selected
     // Orchard or Ironwood bundle, matching the wallet transaction builder path.
     let consensus_network = consensus_network_for_voting_network(network);
+    let hotkey_user_address = UnifiedAddress::from_receivers(Some(hotkey_addr.clone()), None, None)
+        .expect("an Orchard receiver forms a valid Unified Address")
+        .encode(&consensus_network);
 
     for _ in 0..MAX_PCZT_LAYOUT_ATTEMPTS {
         // TX1 is V6-only and is never proved or broadcast, so its unused anchor
@@ -592,6 +596,7 @@ pub(crate) fn build_governance_pczt(
             .update_with(|mut updater| {
                 updater.update_action_with(action_index, |mut action_updater| {
                     action_updater.set_spend_zip32_derivation(zip32_deriv);
+                    action_updater.set_output_user_address(hotkey_user_address.clone());
                     Ok(())
                 })
             })
@@ -966,20 +971,32 @@ mod tests {
         assert!(pczt.orchard().actions().is_empty());
         assert_eq!(pczt.ironwood().actions().len(), 1);
         assert!(pczt.ironwood().anchor().is_none());
-        assert!(pczt
+        let governance_action = pczt
             .ironwood()
             .sole_action()
-            .expect("the Ironwood bundle has one action")
-            .spend()
-            .witness()
-            .is_none());
-        let output_value = pczt
-            .ironwood()
-            .actions()
-            .iter()
-            .find_map(|action| action.output().value().as_ref().copied())
+            .expect("the Ironwood bundle has one action");
+        assert!(governance_action.spend().witness().is_none());
+        let output = governance_action.output();
+        let output_value = output
+            .value()
+            .as_ref()
+            .copied()
             .expect("PCZT should expose the output value");
         assert_eq!(output_value, NoteValue::ZERO.inner());
+
+        let hotkey_raw: [u8; 43] = mock_hotkey_address().try_into().unwrap();
+        let hotkey_addr = Address::from_raw_address_bytes(&hotkey_raw)
+            .into_option()
+            .expect("mock hotkey address is valid");
+        let expected_user_address = UnifiedAddress::from_receivers(Some(hotkey_addr), None, None)
+            .expect("an Orchard receiver forms a valid Unified Address")
+            .encode(&consensus_network_for_voting_network(
+                VotingNetwork::Regtest,
+            ));
+        assert_eq!(
+            output.user_address().as_deref(),
+            Some(expected_user_address.as_str())
+        );
     }
 
     #[test]

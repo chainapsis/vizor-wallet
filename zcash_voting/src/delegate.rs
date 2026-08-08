@@ -2088,6 +2088,20 @@ mod tests {
             .actions()
             .iter()
             .all(|action| { !action.output().proprietary().contains_key(OUTPUT_INFO_KEY) }));
+        let full_user_address = full_pczt
+            .ironwood()
+            .sole_action()
+            .expect("full PCZT has one Ironwood action")
+            .output()
+            .user_address();
+        let redacted_user_address = redacted_pczt
+            .ironwood()
+            .sole_action()
+            .expect("redacted PCZT has one Ironwood action")
+            .output()
+            .user_address();
+        assert!(full_user_address.is_some());
+        assert_eq!(redacted_user_address, full_user_address);
         assert_eq!(
             pczt_sighash(&redacted_pczt_bytes).unwrap(),
             pczt_sighash(&seeded_pczt_bytes).unwrap()
