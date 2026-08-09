@@ -97,16 +97,46 @@ pub struct KeystoneSigResult {
     pub results: Vec<KeystoneMsgSig>,
 }
 
+pub(crate) fn action_sigs_from_api(
+    actions: Vec<KeystoneActionSig>,
+    context: &str,
+) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
+    actions
+        .into_iter()
+        .map(|action| {
+            let sig: [u8; keystone::ZCASH_SIG_LEN] =
+                action.sig.as_slice().try_into().map_err(|_| {
+                    format!(
+                        "Keystone signature for {context} must be \
+                         {} bytes, got {}",
+                        keystone::ZCASH_SIG_LEN,
+                        action.sig.len()
+                    )
+                })?;
+            let value_pool = keystone::decode_signature_pool(u32::from(action.pool))
+                .map_err(|error| format!("Keystone signature for {context}: {error}"))?;
+            let action_index = usize::try_from(action.action_index).map_err(|_| {
+                format!(
+                    "Keystone signature action index {} exceeds usize",
+                    action.action_index
+                )
+            })?;
+            Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
+                value_pool,
+                action_index,
+                sig,
+            ))
+        })
+        .collect()
+}
+
 /// Reshape a PCZT [`SpendAuthSignature`] into the FRB-boundary form.
 ///
 /// [`SpendAuthSignature`]: pczt::roles::signer::SpendAuthSignature
 fn action_sig_to_api(
     action: &pczt::roles::signer::SpendAuthSignature,
 ) -> Result<KeystoneActionSig, String> {
-    let pool = match action.value_pool() {
-        orchard::ValuePool::Orchard => 0,
-        orchard::ValuePool::Ironwood => 1,
-    };
+    let pool = keystone::encode_signature_pool(action.value_pool());
     let action_index = u32::try_from(action.action_index())
         .map_err(|_| "PCZT signature action index exceeds u32".to_string())?;
     Ok(KeystoneActionSig {
@@ -315,6 +345,34 @@ pub fn decode_pczt_from_cbor(cbor: Vec<u8>) -> Result<Vec<u8>, String> {
 pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>, String> {
     let (_seed_fp, infos) = keystone::decode_accounts_ur(&ur_string)?;
     Ok(infos)
+}
+
+/// A compact PCZT prepared for one position in a `zcash-sign-batch` request.
+pub struct KeystoneBatchPczt {
+    pub redacted_pczt: Vec<u8>,
+    pub expected_signature_count: u32,
+}
+
+/// Redact a wallet-owned PCZT using the compact batch-signer policy and return
+/// the number of signatures Keystone must produce for it.
+pub fn prepare_keystone_batch_pczt(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
+    let (redacted_pczt, expected_signature_count) =
+        crate::wallet::sync::prepare_pczt_for_batch_signer(&pczt_bytes)?;
+    Ok(KeystoneBatchPczt {
+        redacted_pczt,
+        expected_signature_count,
+    })
+}
+
+/// Apply a compact, signatures-only Keystone response to the wallet-owned
+/// base PCZT. The result can be passed to the existing PCZT broadcast API as
+/// the signatures-bearing half of the transaction.
+pub fn apply_keystone_batch_pczt_signatures(
+    pczt_bytes: Vec<u8>,
+    signatures: Vec<KeystoneActionSig>,
+) -> Result<Vec<u8>, String> {
+    let signatures = action_sigs_from_api(signatures, "batch PCZT")?;
+    crate::wallet::sync::apply_compact_sigs_to_pczt(&pczt_bytes, &signatures)
 }
 
 #[cfg(test)]

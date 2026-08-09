@@ -1848,40 +1848,7 @@ fn to_wallet_signed_messages(
     signed_messages
         .into_iter()
         .map(|message| {
-            let sigs = message
-                .sigs
-                .into_iter()
-                .map(|action| {
-                    let sig: [u8; 64] = action.sig.as_slice().try_into().map_err(|_| {
-                        format!(
-                            "Keystone signature for {} must be 64 bytes, got {}",
-                            message.id,
-                            action.sig.len()
-                        )
-                    })?;
-                    let value_pool = match action.pool {
-                        0 => orchard::ValuePool::Orchard,
-                        1 => orchard::ValuePool::Ironwood,
-                        other => {
-                            return Err(format!(
-                                "Keystone signature for {} has unsupported pool {other}",
-                                message.id
-                            ));
-                        }
-                    };
-                    let action_index = usize::try_from(action.action_index).map_err(|_| {
-                        format!(
-                            "Keystone signature action index {} exceeds usize",
-                            action.action_index
-                        )
-                    })?;
-                    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
-                        value_pool,
-                        action_index,
-                        sig,
-                    ))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
+            let sigs = crate::api::keystone::action_sigs_from_api(message.sigs, &message.id)?;
             Ok(wallet_sync::KeystoneSignedMigrationMessage {
                 id: message.id,
                 sigs,
