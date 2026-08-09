@@ -2758,6 +2758,232 @@ fn batch_signer_redaction_compacts_and_preserves_signable_spends() {
     );
 }
 
+/// Builds the ordinary-send shape used for the four-action Swap/Pay round-trip
+/// test: three real Orchard inputs and one wallet-controlled zero-value spend
+/// paired with the output.
+fn built_v6_four_action_swap_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
+    use incrementalmerkletree::Retention;
+    use orchard::tree::MerkleHashOrchard;
+    use shardtree::{store::memory::MemoryShardStore, ShardTree};
+
+    const INPUT_COUNT: u8 = 3;
+    const INPUT_VALUE: u64 = 250_000;
+    const TARGET_HEIGHT: u32 = 120;
+    const EXPIRY_HEIGHT: u32 = 69_120;
+
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
+    let network = WalletNetwork::Regtest;
+    let spending_key = orchard::keys::SpendingKey::from_bytes([27; 32]).unwrap();
+    let fvk = orchard::keys::FullViewingKey::from(&spending_key);
+    let recipient = fvk.address_at(0u32, orchard::keys::Scope::Internal);
+    let mut tree =
+        ShardTree::<_, 32, 16>::new(MemoryShardStore::<MerkleHashOrchard, u32>::empty(), 100);
+    let notes = (0u8..INPUT_COUNT)
+        .map(|index| {
+            let rho = orchard::note::Rho::from_bytes(&[index + 10; 32]).unwrap();
+            let rseed = (0u8..=255)
+                .find_map(|byte| {
+                    orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option()
+                })
+                .unwrap();
+            let note = orchard::Note::from_parts(
+                recipient,
+                orchard::value::NoteValue::from_raw(INPUT_VALUE),
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .unwrap();
+            let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+            tree.append(MerkleHashOrchard::from_cmx(&cmx), Retention::Marked)
+                .unwrap();
+            note
+        })
+        .collect::<Vec<_>>();
+    tree.checkpoint(1).unwrap();
+    let inputs = notes
+        .iter()
+        .enumerate()
+        .map(|(index, note)| {
+            let path = tree
+                .witness_at_checkpoint_depth(Position::from(u64::try_from(index).unwrap()), 0)
+                .unwrap()
+                .unwrap();
+            (*note, path.into())
+        })
+        .collect::<Vec<(orchard::Note, orchard::tree::MerklePath)>>();
+    let first_cmx: orchard::note::ExtractedNoteCommitment = notes[0].commitment().into();
+    let anchor = inputs[0].1.root(first_cmx).into();
+    let fee_rule = ConservativeZip317FeeRule;
+    let build = |output_value| {
+        make_orchard_split_builder_with_padding(
+            network,
+            TARGET_HEIGHT,
+            EXPIRY_HEIGHT,
+            anchor,
+            &inputs,
+            &fvk,
+            Some(fvk.to_ovk(orchard::keys::Scope::Internal)),
+            recipient,
+            &[output_value],
+            &MemoBytes::empty(),
+            BundlePadding::DEFAULT,
+        )
+    };
+    let fee = build(100_000).unwrap().get_fee(&fee_rule).unwrap();
+    let result = build(INPUT_VALUE * u64::from(INPUT_COUNT) - u64::from(fee))
+        .unwrap()
+        .build_for_pczt(rand_core::OsRng, &fee_rule)
+        .unwrap();
+    assert_eq!(
+        result.pczt_parts.orchard.as_ref().unwrap().actions().len(),
+        4
+    );
+    let built = pczt_from_build_result(result, network, None, usize::from(INPUT_COUNT), 1).unwrap();
+    (built, spending_key)
+}
+
+#[test]
+fn swap_batch_round_trip_matches_legacy_for_four_actions() {
+    use pczt::roles::{
+        prover::Prover,
+        signer::{
+            batch::{BatchSignRequest, BatchSignResponse},
+            Signer,
+        },
+    };
+    use ur_registry::zcash::{
+        zcash_batch_sig_result::ZcashBatchSigResult, zcash_sign_batch::ZcashSignBatch,
+    };
+
+    const REQUEST_ID: &str = "swap-hw-deposit-test";
+    const MESSAGE_ID: &str = "zec-deposit";
+    const TEST_FIRMWARE_VERSION: [u8; 3] = [12, 5, 1];
+
+    let (built_pczt, spending_key) = built_v6_four_action_swap_pczt();
+    assert_eq!(built_pczt.orchard_spend_action_indices.len(), 4);
+
+    // Exercise the same FRB-facing preparation and animated request encoder
+    // that the Swap/Pay service calls.
+    let prepared =
+        crate::api::keystone::prepare_keystone_batch_pczt(built_pczt.bytes.clone()).unwrap();
+    assert_eq!(prepared.expected_signature_count, 4);
+    let request_parts = crate::api::keystone::encode_zcash_sign_batch_ur_parts(
+        REQUEST_ID.to_string(),
+        vec![crate::wallet::keystone::ZcashBatchMessageInput {
+            id: MESSAGE_ID.to_string(),
+            pczt_bytes: prepared.redacted_pczt.clone(),
+            expected_signature_count: prepared.expected_signature_count,
+        }],
+        140,
+    )
+    .unwrap();
+    assert!(request_parts.len() > 1);
+
+    let mut request_decoder = ur::Decoder::default();
+    for part in &request_parts {
+        request_decoder.receive(&part.to_lowercase()).unwrap();
+        if request_decoder.complete() {
+            break;
+        }
+    }
+    assert!(request_decoder.complete());
+    let request_cbor = request_decoder.message().unwrap().unwrap();
+    let request_envelope = ZcashSignBatch::try_from(request_cbor).unwrap();
+    assert_eq!(request_envelope.get_request_id(), REQUEST_ID.as_bytes());
+    let request = BatchSignRequest::parse(request_envelope.get_data()).unwrap();
+    assert_eq!(request.pczts().len(), 1);
+    let request_pczt = request.pczts()[0].clone();
+    assert_eq!(
+        request_pczt.clone().serialize().unwrap(),
+        prepared.redacted_pczt,
+    );
+
+    // Simulate Keystone's four signatures, then return the compact response
+    // envelope that the production scanner hands to Dart.
+    let base_pczt = pczt::Pczt::parse(&built_pczt.bytes).unwrap();
+    let base_sighash = Signer::new(base_pczt.clone()).unwrap().shielded_sighash();
+    let mut resolved_request = request_pczt.clone();
+    resolved_request.resolve_fields().unwrap();
+    let request_sighash = Signer::new(resolved_request).unwrap().shielded_sighash();
+    assert_eq!(request_sighash, base_sighash);
+
+    let ask = orchard::keys::SpendAuthorizingKey::from(&spending_key);
+    let signed_request = pczt::roles::low_level_signer::Signer::new(request_pczt)
+        .sign_orchard_with::<pczt::roles::low_level_signer::OrchardParseError, _>(|_, bundle, _| {
+            for &action_index in &built_pczt.orchard_spend_action_indices {
+                bundle.actions_mut()[action_index]
+                    .sign(request_sighash, &ask, rand_core::OsRng)
+                    .unwrap();
+            }
+            Ok(())
+        })
+        .unwrap()
+        .finish();
+    let signatures = pczt::roles::signer::extract_orchard_spend_auth_signatures(&signed_request);
+    assert_eq!(signatures.len(), 4);
+    let response_postcard = BatchSignResponse::new(vec![signatures])
+        .serialize()
+        .unwrap();
+    let response_cbor: Vec<u8> = ZcashBatchSigResult::new(
+        REQUEST_ID.as_bytes().to_vec(),
+        response_postcard,
+        TEST_FIRMWARE_VERSION,
+    )
+    .try_into()
+    .unwrap();
+
+    // Exercise response correlation and the public signature adapter before
+    // entering the existing proof-combination and extraction path.
+    let mut decoded = crate::api::keystone::decode_zcash_batch_sign_response(
+        response_cbor,
+        REQUEST_ID.to_string(),
+        vec![MESSAGE_ID.to_string()],
+    )
+    .unwrap();
+    assert_eq!(decoded.results.len(), 1);
+    let result = decoded.results.pop().unwrap();
+    assert_eq!(result.message_id, MESSAGE_ID.as_bytes());
+    let batch_signed_pczt = crate::api::keystone::apply_keystone_batch_pczt_signatures(
+        built_pczt.bytes.clone(),
+        result.sigs,
+    )
+    .unwrap();
+
+    let proving_key =
+        orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::PostNu6_3);
+    let proofs_pczt = Prover::new(pczt::Pczt::parse(&built_pczt.bytes).unwrap())
+        .create_orchard_proof(&proving_key)
+        .unwrap()
+        .finish()
+        .serialize()
+        .unwrap();
+    let mut legacy_signer = Signer::new(base_pczt).unwrap();
+    for &action_index in &built_pczt.orchard_spend_action_indices {
+        legacy_signer.sign_orchard(action_index, &ask).unwrap();
+    }
+    let signed_pczt = legacy_signer.finish().serialize().unwrap();
+    let legacy_signed_pczt =
+        crate::wallet::sync::pczt::redact_pczt_for_signer(&signed_pczt).unwrap();
+    let legacy = crate::wallet::sync::pczt::extract_transaction_from_pczt(
+        &proofs_pczt,
+        &legacy_signed_pczt,
+        None,
+        None,
+    )
+    .unwrap();
+    let batch = crate::wallet::sync::pczt::extract_transaction_from_pczt(
+        &proofs_pczt,
+        &batch_signed_pczt,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(batch.txid, legacy.txid);
+    assert_eq!(batch.raw_tx.len(), legacy.raw_tx.len());
+}
+
 #[test]
 #[ignore = "slow librustzcash transaction-construction regression (~100s); run explicitly when touching shielding transaction construction"]
 fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
