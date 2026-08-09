@@ -4,14 +4,12 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../models/swap_models.dart';
 
-const swapKeystoneSignatureUrType = 'zcash-batch-sig-result';
+const swapKeystoneSignatureUrType = keystoneBatchSignatureUrType;
 const _swapKeystoneBatchMessageId = 'zec-deposit';
-const _keystoneQrFragmentLength = 140;
 
 final swapHardwareSigningServiceProvider = Provider<SwapHardwareSigningService>(
   (ref) => RustSwapHardwareSigningService(ref),
@@ -162,20 +160,11 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
   @override
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
-  }) async {
-    final batchPczt = await rust_keystone.prepareKeystoneBatchPczt(
+  }) {
+    return encodeKeystoneBatchPcztUrParts(
       pcztBytes: draft.pcztBytes,
-    );
-    return rust_keystone.encodeZcashSignBatchUrParts(
       requestId: draft.sendFlowId,
-      messages: [
-        rust_keystone_wallet.ZcashBatchMessageInput(
-          id: _swapKeystoneBatchMessageId,
-          pcztBytes: batchPczt.redactedPczt,
-          expectedSignatureCount: batchPczt.expectedSignatureCount,
-        ),
-      ],
-      maxFragmentLen: BigInt.from(_keystoneQrFragmentLength),
+      messageId: _swapKeystoneBatchMessageId,
     );
   }
 
@@ -183,16 +172,12 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
   Future<List<int>> decodeSigningResponse({
     required SwapHardwarePcztDraft draft,
     required List<int> cbor,
-  }) async {
-    final decoded = await rust_keystone.decodeZcashBatchSignResponse(
-      cbor: cbor,
-      expectedRequestId: draft.sendFlowId,
-      messageIds: const [_swapKeystoneBatchMessageId],
-    );
-    final result = decoded.results.single;
-    return rust_keystone.applyKeystoneBatchPcztSignatures(
+  }) {
+    return decodeAndApplyKeystoneBatchPcztSignatures(
       pcztBytes: draft.pcztBytes,
-      signatures: result.sigs,
+      responseCbor: cbor,
+      requestId: draft.sendFlowId,
+      messageId: _swapKeystoneBatchMessageId,
     );
   }
 

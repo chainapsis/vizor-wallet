@@ -97,8 +97,8 @@ const _mobileKeystoneOrange = Color(0xFFF98F0E);
 /// Shared mobile Keystone PCZT round trip.
 ///
 /// Callers own domain-specific PCZT creation and broadcast; this widget owns the
-/// common mobile UX: animated transaction QR, camera scan for the signed PCZT,
-/// decode, and waiting for the locally-proved PCZT clone.
+/// common mobile UX: animated transaction QR, camera scan for the signature
+/// response, decode, and waiting for the locally-proved PCZT clone.
 class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   const MobileKeystonePcztSigningFlow({
     required this.title,

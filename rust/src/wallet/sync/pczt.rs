@@ -441,7 +441,7 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, false)
 }
 
-/// Redact a PCZT for a Keystone **migration batch** request.
+/// Redact a PCZT for a compact Keystone batch-signing request.
 ///
 /// The v6 path uses librustzcash's batch signer policy, including its checked
 /// compaction of regenerable Orchard and Ironwood fields. Keystone requires an
@@ -478,7 +478,7 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     use pczt::roles::redactor::Redactor;
 
     // The compact signer view requires PCZT v2, while legacy v5 signing uses
-    // v1 on the wire. Keep the existing local policy for v5 and ordinary sends.
+    // v1 on the wire. Keep the existing local policy for legacy PCZT signing.
     let compact =
         for_batch && *pczt.global().tx_version() == zcash_protocol::constants::V6_TX_VERSION;
     let pczt = if compact {
