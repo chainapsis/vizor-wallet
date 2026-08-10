@@ -724,6 +724,54 @@ void main() {
       expect(chosen?.contactId, 'contact-duplicate');
     });
 
+    testWidgets(
+      'address filtering preserves all same-address stale recent identities',
+      (tester) async {
+        final controller = TextEditingController(text: _recipient);
+        addTearDown(controller.dispose);
+
+        await _pumpStep(
+          tester,
+          MobilePayRecipientStep(
+            controller: controller,
+            typedAddress: _recipient,
+            addressError: null,
+            contacts: const [],
+            recents: const [
+              PayRecentRecipient(
+                address: _recipient,
+                contactId: 'deleted-contact-1',
+              ),
+              PayRecentRecipient(
+                address: _recipient,
+                contactId: 'deleted-contact-2',
+              ),
+            ],
+            busy: false,
+            externalAsset: SwapAsset.usdc,
+            onAddressChanged: (_) {},
+            onOpenScanner: () {},
+            onChooseRecipient: (_) {},
+            onSelectRecipient: () {},
+            onAddToContacts: () {},
+          ),
+        );
+
+        expect(
+          find.byKey(
+            const ValueKey('mobile_pay_recent_${_recipient}_deleted-contact-1'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey('mobile_pay_recent_${_recipient}_deleted-contact-2'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('keeps duplicate-address contacts individually selectable', (
       tester,
     ) async {

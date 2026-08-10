@@ -83,13 +83,15 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final contactMatches = valid
         ? payContactsForAddress(widget.contacts, typed)
         : const <AddressBookContact>[];
-    final recentMatch = valid ? _recentForAddress(typed, widget.recents) : null;
+    final recentMatches = valid
+        ? _recentsForAddress(typed, widget.recents)
+        : const <PayRecentRecipient>[];
     final unknownAddress =
-        valid && contactMatches.isEmpty && recentMatch == null;
+        valid && contactMatches.isEmpty && recentMatches.isEmpty;
     final visibleRecents = !hasInput
         ? widget.recents
-        : contactMatches.isEmpty && recentMatch != null
-        ? <PayRecentRecipient>[recentMatch]
+        : contactMatches.isEmpty
+        ? recentMatches
         : const <PayRecentRecipient>[];
     final visibleContacts = !hasInput
         ? widget.contacts
@@ -444,16 +446,16 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     );
   }
 
-  PayRecentRecipient? _recentForAddress(
+  List<PayRecentRecipient> _recentsForAddress(
     String address,
     Iterable<PayRecentRecipient> recents,
   ) {
     final needle = _normalizedAddress(address);
-    if (needle.isEmpty) return null;
-    for (final recent in recents) {
-      if (_normalizedAddress(recent.address) == needle) return recent;
-    }
-    return null;
+    if (needle.isEmpty) return const [];
+    return [
+      for (final recent in recents)
+        if (_normalizedAddress(recent.address) == needle) recent,
+    ];
   }
 
   String _normalizedAddress(String address) {
