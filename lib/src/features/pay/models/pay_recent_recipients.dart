@@ -39,13 +39,16 @@ class PayRecipientSelection {
 
 /// Derives the "Recently sent" list for [network] from past swap/pay intents:
 /// outgoing (ZEC -> external) recipients whose address is valid on [network],
-/// deduplicated using the destination network's address semantics, most recent
-/// first.
+/// deduplicated using the destination network's address semantics plus known
+/// contact identity, most recent first. Legacy entries coalesce with a single
+/// current contact, but remain address-only when the match is ambiguous.
 List<PayRecentRecipient> payRecentRecipients({
   required List<SwapIntent> intents,
   required AddressBookNetwork network,
+  required Iterable<AddressBookContact> contacts,
   int limit = 5,
 }) {
+  final uniqueContactIds = _payUniqueContactIdsByAddress(contacts, network);
   final byRecipient = <(String, String?), PayRecentRecipient>{};
   for (final intent in intents) {
     if (intent.direction != SwapDirection.zecToExternal) continue;
@@ -65,7 +68,7 @@ List<PayRecentRecipient> payRecentRecipients({
     final normalizedAddress = normalizedAddressBookAddress(network, address);
     final storedContactId = intent.userExternalContactId?.trim();
     final contactId = storedContactId == null || storedContactId.isEmpty
-        ? null
+        ? uniqueContactIds[normalizedAddress]
         : storedContactId;
     final key = (normalizedAddress, contactId);
     final existing = byRecipient[key];
@@ -93,6 +96,23 @@ List<PayRecentRecipient> payRecentRecipients({
       return bt.compareTo(at);
     });
   return entries.take(limit).toList();
+}
+
+Map<String, String?> _payUniqueContactIdsByAddress(
+  Iterable<AddressBookContact> contacts,
+  AddressBookNetwork network,
+) {
+  final result = <String, String?>{};
+  for (final contact in payCompatibleContacts(contacts, network)) {
+    final address = normalizedAddressBookAddress(network, contact.address);
+    if (address.isEmpty) continue;
+    if (!result.containsKey(address)) {
+      result[address] = contact.id;
+    } else if (result[address] != contact.id) {
+      result[address] = null;
+    }
+  }
+  return result;
 }
 
 bool _payNetworksAreCompatible(
@@ -134,8 +154,10 @@ bool _hasPayPayoutEvidence(SwapIntent intent) {
 }
 
 bool _hasBroadcastedPayDeposit(SwapIntent intent) {
+  final status = intent.broadcastStatus;
   return intent.payMode &&
-      intent.broadcastStatus == SwapDepositBroadcastStatus.broadcasted &&
+      (status == SwapDepositBroadcastStatus.broadcasted ||
+          status == SwapDepositBroadcastStatus.broadcastedStorageFailed) &&
       (intent.depositTxHash?.trim().isNotEmpty ?? false);
 }
 
