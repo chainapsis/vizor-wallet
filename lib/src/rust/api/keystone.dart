@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../wallet/keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`
+// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `action_sigs_from_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`
 
 /// Encode PCZT bytes to a UR string for QR code display.
 Future<String> encodePcztToUr({required List<int> pcztBytes}) =>
@@ -122,6 +122,25 @@ Future<List<KeystoneAccountInfo>> decodeAccountsUr({
   required String urString,
 }) => RustLib.instance.api.crateApiKeystoneDecodeAccountsUr(urString: urString);
 
+/// Redact a wallet-owned PCZT using the compact batch-signer policy and return
+/// the number of signatures Keystone must produce for it.
+Future<KeystoneBatchPczt> prepareKeystoneBatchPczt({
+  required List<int> pcztBytes,
+}) => RustLib.instance.api.crateApiKeystonePrepareKeystoneBatchPczt(
+  pcztBytes: pcztBytes,
+);
+
+/// Apply a compact, signatures-only Keystone response to the wallet-owned
+/// base PCZT. The result can be passed to the existing PCZT broadcast API as
+/// the signatures-bearing half of the transaction.
+Future<Uint8List> applyKeystoneBatchPcztSignatures({
+  required List<int> pcztBytes,
+  required List<KeystoneActionSig> signatures,
+}) => RustLib.instance.api.crateApiKeystoneApplyKeystoneBatchPcztSignatures(
+  pcztBytes: pcztBytes,
+  signatures: signatures,
+);
+
 /// One spend-authorization signature from a compact `zcash-batch-sig-result`,
 /// located by `pool` (0 = Orchard, 1 = Ironwood) and the spend action's index
 /// within that pool's bundle. `sig` is the raw 64-byte spend-authorization
@@ -150,6 +169,28 @@ class KeystoneActionSig {
           pool == other.pool &&
           actionIndex == other.actionIndex &&
           sig == other.sig;
+}
+
+/// A compact PCZT prepared for one position in a `zcash-sign-batch` request.
+class KeystoneBatchPczt {
+  final Uint8List redactedPczt;
+  final int expectedSignatureCount;
+
+  const KeystoneBatchPczt({
+    required this.redactedPczt,
+    required this.expectedSignatureCount,
+  });
+
+  @override
+  int get hashCode => redactedPczt.hashCode ^ expectedSignatureCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneBatchPczt &&
+          runtimeType == other.runtimeType &&
+          redactedPczt == other.redactedPczt &&
+          expectedSignatureCount == other.expectedSignatureCount;
 }
 
 /// The signatures produced for a single requested message, correlated back to

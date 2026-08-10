@@ -441,7 +441,7 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, false)
 }
 
-/// Redact a PCZT for a Keystone **migration batch** request.
+/// Redact a PCZT for a compact Keystone batch-signing request.
 ///
 /// The v6 path uses librustzcash's batch signer policy, including its checked
 /// compaction of regenerable Orchard and Ironwood fields. Keystone requires an
@@ -449,10 +449,27 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// retained on preauthorized padding spends. The wallet keeps the unredacted
 /// PCZT for proof and signature combination.
 ///
-/// Only use this for the migration batch flow; the single-transaction hardware
-/// send keeps [`redact_pczt_for_signer`].
+/// Use this for `zcash-sign-batch` requests, including a batch containing a
+/// single payment. The legacy `zcash-pczt` flow keeps
+/// [`redact_pczt_for_signer`].
 pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, true)
+}
+
+/// Prepare the compact signer view for one PCZT and count the signatures the
+/// external signer must return.
+///
+/// The count comes from the wallet-owned base PCZT, where IO-finalized dummy
+/// spends are already authorized. Batch redaction clears those retained dummy
+/// signatures from the transport copy, so counting the redacted PCZT would
+/// incorrectly ask the hardware wallet to sign them again.
+pub(crate) fn prepare_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<(Vec<u8>, u32), String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse base PCZT for batch signing: {e:?}"))?;
+    let signature_count = u32::try_from(unsigned_orchard_action_locations(&pczt).len())
+        .map_err(|_| "Batch PCZT signature count exceeds u32".to_string())?;
+    let redacted = redact_pczt_for_batch_signer(pczt_bytes)?;
+    Ok((redacted, signature_count))
 }
 
 /// Applies the standard signer policy, plus Keystone's additional migration
@@ -461,7 +478,7 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     use pczt::roles::redactor::Redactor;
 
     // The compact signer view requires PCZT v2, while legacy v5 signing uses
-    // v1 on the wire. Keep the existing local policy for v5 and ordinary sends.
+    // v1 on the wire. Keep the existing local policy for legacy PCZT signing.
     let compact =
         for_batch && *pczt.global().tx_version() == zcash_protocol::constants::V6_TX_VERSION;
     let pczt = if compact {
@@ -848,6 +865,23 @@ pub(crate) fn apply_sigs_and_extract(
         .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
     let signed = apply_compact_orchard_spend_auth_signatures(pczt, sigs)?;
     finalize_and_extract(signed, sapling_vks.as_ref())
+}
+
+/// Apply a complete compact signature response to a wallet-owned base PCZT.
+///
+/// This adapts a `zcash-batch-sig-result` response to the existing ordinary
+/// hardware-send pipeline, which combines this signed PCZT with its separately
+/// proved counterpart before extraction and broadcast.
+pub(crate) fn apply_compact_sigs_to_pczt(
+    base_pczt_bytes: &[u8],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<Vec<u8>, String> {
+    preflight_orchard_spend_auth_signatures(base_pczt_bytes, sigs)?;
+    let pczt = pczt::Pczt::parse(base_pczt_bytes)
+        .map_err(|e| format!("Parse base PCZT for compact signatures: {e:?}"))?;
+    apply_compact_orchard_spend_auth_signatures(pczt, sigs)?
+        .serialize()
+        .map_err(|e| format!("Serialize PCZT with compact signatures: {e:?}"))
 }
 
 /// Read the spend-authorization signatures out of a fully-signed PCZT as a
@@ -1299,9 +1333,10 @@ mod tests {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.
         use super::super::{
-            apply_sigs_and_extract, extract_compact_sigs_from_signed_pczt,
-            extract_transaction_from_pczt, ironwood_orchard_proving_key,
-            preflight_orchard_spend_auth_signatures, redact_pczt_for_signer,
+            apply_compact_sigs_to_pczt, apply_sigs_and_extract,
+            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
+            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
+            prepare_pczt_for_batch_signer, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
         };
         use orchard::tree::MerkleHashOrchard;
@@ -1732,6 +1767,10 @@ mod tests {
             )];
             let new = apply_sigs_and_extract(&proofs_bytes, &sigs, None, None)
                 .expect("compact apply_sigs_and_extract path should succeed");
+            let signed_base = apply_compact_sigs_to_pczt(&base_bytes, &sigs)
+                .expect("compact signatures should adapt to a signed PCZT");
+            let adapted = extract_transaction_from_pczt(&proofs_bytes, &signed_base, None, None)
+                .expect("adapted signed PCZT should use the ordinary extraction path");
 
             // The software migration path applies the FULL extracted set
             // (dummy-spend signatures included) onto a proofs base that already
@@ -1752,6 +1791,10 @@ mod tests {
             assert_eq!(
                 old.txid, new.txid,
                 "compact sigs-only path must produce the same txid as the full signed-PCZT path"
+            );
+            assert_eq!(
+                adapted.txid, new.txid,
+                "batch response adapter must preserve the compact-path txid"
             );
 
             // The transactions are the same size down to the byte.
@@ -1832,6 +1875,10 @@ mod tests {
             assert_eq!(ironwood_preauthorized.len(), 1);
 
             let batch = redact_pczt_for_batch_signer(&base_bytes).unwrap();
+            let (prepared, expected_signature_count) =
+                prepare_pczt_for_batch_signer(&base_bytes).unwrap();
+            assert_eq!(prepared, batch);
+            assert_eq!(expected_signature_count, 1);
             // The point of the compact format: a migration child small enough
             // for a short device QR carousel. The retained bytes are dominated
             // by the still-required `out_ciphertext`s and the

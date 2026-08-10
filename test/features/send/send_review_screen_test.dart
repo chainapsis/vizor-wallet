@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
@@ -31,7 +32,10 @@ import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
+    as rust_keystone_wallet;
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -403,12 +407,14 @@ void main() {
     tester,
   ) async {
     final statusExtras = <Object?>[];
+    final scanExtras = <Object?>[];
 
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
       _harness(
         _reviewArgs(addressType: 'unified'),
         bootstrap: _bootstrap(isHardware: true),
+        scanExtras: scanExtras,
         statusExtras: statusExtras,
       ),
     );
@@ -420,6 +426,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('keystone-scan-route'), findsOneWidget);
+    final scanArgs = scanExtras.single as KeystoneSendScanArgs;
+    expect(scanArgs.expectedUrType, 'zcash-batch-sig-result');
+    expect(scanArgs.returnRawCbor, isTrue);
     await tester.tap(find.text('keystone-scan-route'));
     await tester.pumpAndSettle();
 
@@ -430,6 +439,15 @@ void main() {
     expect(keystoneArgs.pcztWithProofsBytes, _fakeProofsBytes);
     expect(keystoneArgs.pcztWithSignaturesBytes, _fakeSignatureBytes);
     expect(keystoneArgs.reviewArgs.proposalId, BigInt.one);
+    expect(rustApi.batchRequestId, 'test-send-flow');
+    expect(rustApi.batchMessageId, 'zec-send');
+    expect(rustApi.encodedBatchPczt, [4, 5, 6]);
+    expect(rustApi.encodedBatchExpectedSignatureCount, 1);
+    expect(rustApi.encodedBatchMaxFragmentLength, BigInt.from(140));
+    expect(rustApi.decodedResponseCbor, _fakeResponseCbor);
+    expect(rustApi.appliedBasePczt, [1, 2, 3]);
+    expect(rustApi.legacyRedactCalls, 0);
+    expect(rustApi.legacyEncodeCalls, 0);
 
     // The proposal was consumed by createPcztFromProposal; the handoff must
     // not discard it.
@@ -687,6 +705,7 @@ Widget _harness(
   AppBootstrapState? bootstrap,
   AddressBookRepository? addressBookRepository,
   List<Object?>? statusExtras,
+  List<Object?>? scanExtras,
   Listenable? routerRefresh,
 }) {
   final router = GoRouter(
@@ -700,10 +719,13 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/keystone/scan',
-        builder: (context, _) => GestureDetector(
-          onTap: () => context.pop(Uint8List.fromList(_fakeSignatureBytes)),
-          child: const Text('keystone-scan-route'),
-        ),
+        builder: (context, state) {
+          scanExtras?.add(state.extra);
+          return GestureDetector(
+            onTap: () => context.pop(Uint8List.fromList(_fakeResponseCbor)),
+            child: const Text('keystone-scan-route'),
+          );
+        },
       ),
       GoRoute(
         path: '/send/status',
@@ -852,6 +874,7 @@ const _veryLongMemo =
 
 const _fakeProofsBytes = <int>[3, 3, 3];
 const _fakeSignatureBytes = <int>[9, 9];
+const _fakeResponseCbor = <int>[8, 8];
 
 class _FakePathProviderPlatform extends Fake
     with MockPlatformInterfaceMixin
@@ -878,6 +901,15 @@ class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   int createPcztCalls = 0;
   int previousTransactionCount = 0;
+  String? batchRequestId;
+  String? batchMessageId;
+  List<int>? encodedBatchPczt;
+  int? encodedBatchExpectedSignatureCount;
+  BigInt? encodedBatchMaxFragmentLength;
+  List<int>? decodedResponseCbor;
+  List<int>? appliedBasePczt;
+  int legacyRedactCalls = 0;
+  int legacyEncodeCalls = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
@@ -885,6 +917,15 @@ class _RustApiFake implements RustLibApi {
     discardCalls.clear();
     createPcztCalls = 0;
     previousTransactionCount = 0;
+    batchRequestId = null;
+    batchMessageId = null;
+    encodedBatchPczt = null;
+    encodedBatchExpectedSignatureCount = null;
+    encodedBatchMaxFragmentLength = null;
+    decodedResponseCbor = null;
+    appliedBasePczt = null;
+    legacyRedactCalls = 0;
+    legacyEncodeCalls = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -951,7 +992,68 @@ class _RustApiFake implements RustLibApi {
   Future<Uint8List> crateApiSyncRedactPcztForSigner({
     required List<int> pcztBytes,
   }) async {
+    legacyRedactCalls++;
     return Uint8List.fromList([4, 5, 6]);
+  }
+
+  @override
+  Future<rust_keystone.KeystoneBatchPczt>
+  crateApiKeystonePrepareKeystoneBatchPczt({
+    required List<int> pcztBytes,
+  }) async {
+    return rust_keystone.KeystoneBatchPczt(
+      redactedPczt: Uint8List.fromList([4, 5, 6]),
+      expectedSignatureCount: 1,
+    );
+  }
+
+  @override
+  Future<List<String>> crateApiKeystoneEncodeZcashSignBatchUrParts({
+    required String requestId,
+    required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
+    required BigInt maxFragmentLen,
+  }) async {
+    batchRequestId = requestId;
+    batchMessageId = messages.single.id;
+    encodedBatchPczt = messages.single.pcztBytes;
+    encodedBatchExpectedSignatureCount = messages.single.expectedSignatureCount;
+    encodedBatchMaxFragmentLength = maxFragmentLen;
+    return const ['UR:ZCASH-SIGN-BATCH/TESTPART'];
+  }
+
+  @override
+  Future<rust_keystone.KeystoneSigResult>
+  crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) async {
+    decodedResponseCbor = cbor;
+    return rust_keystone.KeystoneSigResult(
+      firmwareVersion: Uint8List.fromList([12, 5, 1]),
+      requestId: Uint8List.fromList(expectedRequestId.codeUnits),
+      results: [
+        rust_keystone.KeystoneMsgSig(
+          messageId: Uint8List.fromList(messageIds.single.codeUnits),
+          sigs: [
+            rust_keystone.KeystoneActionSig(
+              pool: 0,
+              actionIndex: 0,
+              sig: Uint8List(64),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<Uint8List> crateApiKeystoneApplyKeystoneBatchPcztSignatures({
+    required List<int> pcztBytes,
+    required List<rust_keystone.KeystoneActionSig> signatures,
+  }) async {
+    appliedBasePczt = pcztBytes;
+    return Uint8List.fromList(_fakeSignatureBytes);
   }
 
   @override
@@ -959,6 +1061,7 @@ class _RustApiFake implements RustLibApi {
     required List<int> pcztBytes,
     required BigInt maxFragmentLen,
   }) async {
+    legacyEncodeCalls++;
     return const ['UR:ZCASH-PCZT/TESTPART'];
   }
 

@@ -97,8 +97,8 @@ const _mobileKeystoneOrange = Color(0xFFF98F0E);
 /// Shared mobile Keystone PCZT round trip.
 ///
 /// Callers own domain-specific PCZT creation and broadcast; this widget owns the
-/// common mobile UX: animated transaction QR, camera scan for the signed PCZT,
-/// decode, and waiting for the locally-proved PCZT clone.
+/// common mobile UX: animated transaction QR, camera scan for the signature
+/// response, decode, and waiting for the locally-proved PCZT clone.
 class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   const MobileKeystonePcztSigningFlow({
     required this.title,
@@ -111,6 +111,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.readingSignatureLabel = 'Reading signature...',
     this.finalizingSignatureLabel,
     this.scanCaption = _mobileKeystoneScanCaption,
+    this.signedUrType = 'zcash-pczt',
     this.stepOneProgress = _mobileKeystoneStepOneProgress,
     this.stepTwoProgress = _mobileKeystoneStepTwoProgress,
     this.logTag = 'MobileKeystonePcztSigningFlow',
@@ -130,6 +131,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final String readingSignatureLabel;
   final String? finalizingSignatureLabel;
   final String scanCaption;
+  final String signedUrType;
   final double stepOneProgress;
   final double stepTwoProgress;
   final String logTag;
@@ -751,7 +753,7 @@ class _MobileKeystonePcztSigningFlowState
               ) ??
               AnimatedUrScannerView(
                 controller: scanController,
-                expectedUrType: 'zcash-pczt',
+                expectedUrType: widget.signedUrType,
                 scanSessionResetToken: scanSessionResetToken,
                 // Constrain detection to the visible viewfinder (this full-screen
                 // scanner's viewfinder is positioned, not centred), so a QR is

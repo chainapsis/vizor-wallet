@@ -4,9 +4,12 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../models/swap_models.dart';
+
+const swapKeystoneSignatureUrType = keystoneBatchSignatureUrType;
+const _swapKeystoneBatchMessageId = 'zec-deposit';
 
 final swapHardwareSigningServiceProvider = Provider<SwapHardwareSigningService>(
   (ref) => RustSwapHardwareSigningService(ref),
@@ -20,6 +23,11 @@ abstract interface class SwapHardwareSigningService {
 
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
+  });
+
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> cbor,
   });
 
   Future<List<int>> addProofsForSigning({
@@ -152,13 +160,24 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
   @override
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
-  }) async {
-    final redactedPczt = await rust_sync.redactPcztForSigner(
+  }) {
+    return encodeKeystoneBatchPcztUrParts(
       pcztBytes: draft.pcztBytes,
+      requestId: draft.sendFlowId,
+      messageId: _swapKeystoneBatchMessageId,
     );
-    return rust_keystone.encodePcztUrParts(
-      pcztBytes: redactedPczt,
-      maxFragmentLen: BigInt.from(140),
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> cbor,
+  }) {
+    return decodeAndApplyKeystoneBatchPcztSignatures(
+      pcztBytes: draft.pcztBytes,
+      responseCbor: cbor,
+      requestId: draft.sendFlowId,
+      messageId: _swapKeystoneBatchMessageId,
     );
   }
 

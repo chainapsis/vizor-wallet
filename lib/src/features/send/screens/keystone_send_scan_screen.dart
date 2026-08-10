@@ -15,8 +15,27 @@ import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
+class KeystoneSendScanArgs {
+  const KeystoneSendScanArgs({
+    required this.expectedUrType,
+    required this.returnRawCbor,
+  });
+
+  const KeystoneSendScanArgs.pczt()
+    : expectedUrType = 'zcash-pczt',
+      returnRawCbor = false;
+
+  final String expectedUrType;
+  final bool returnRawCbor;
+}
+
 class KeystoneSendScanScreen extends ConsumerStatefulWidget {
-  const KeystoneSendScanScreen({super.key});
+  const KeystoneSendScanScreen({
+    this.args = const KeystoneSendScanArgs.pczt(),
+    super.key,
+  });
+
+  final KeystoneSendScanArgs args;
 
   @override
   ConsumerState<KeystoneSendScanScreen> createState() =>
@@ -45,9 +64,9 @@ class _KeystoneSendScanScreenState
     });
 
     try {
-      final pcztBytes = await rust_keystone.decodePcztFromCbor(
-        cbor: result.data,
-      );
+      final pcztBytes = widget.args.returnRawCbor
+          ? Uint8List.fromList(result.data)
+          : await rust_keystone.decodePcztFromCbor(cbor: result.data);
       if (!mounted) return;
       context.pop(Uint8List.fromList(pcztBytes));
     } catch (e, st) {
@@ -123,7 +142,7 @@ class _KeystoneSendScanScreenState
                       ),
                       const SizedBox(height: AppSpacing.base),
                       KeystoneQrScannerCard(
-                        expectedUrType: 'zcash-pczt',
+                        expectedUrType: widget.args.expectedUrType,
                         decoding: _decoding,
                         error: _error,
                         onProgress: (progress) {

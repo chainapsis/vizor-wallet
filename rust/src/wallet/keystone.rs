@@ -140,16 +140,16 @@ pub(crate) const ZCASH_SIGN_BATCH_MAX_RESOLVED_TOTAL_BYTES: usize =
 const ZCASH_SIG_POOL_ORCHARD: u32 = 0;
 const ZCASH_SIG_POOL_IRONWOOD: u32 = 1;
 /// A Zcash spend-authorization signature is a 64-byte RedPallas signature.
-const ZCASH_SIG_LEN: usize = 64;
+pub(crate) const ZCASH_SIG_LEN: usize = 64;
 
-fn encode_signature_pool(value_pool: orchard::ValuePool) -> u8 {
+pub(crate) fn encode_signature_pool(value_pool: orchard::ValuePool) -> u8 {
     match value_pool {
-        orchard::ValuePool::Orchard => 0,
-        orchard::ValuePool::Ironwood => 1,
+        orchard::ValuePool::Orchard => ZCASH_SIG_POOL_ORCHARD as u8,
+        orchard::ValuePool::Ironwood => ZCASH_SIG_POOL_IRONWOOD as u8,
     }
 }
 
-fn decode_signature_pool(pool: u32) -> Result<orchard::ValuePool, String> {
+pub(crate) fn decode_signature_pool(pool: u32) -> Result<orchard::ValuePool, String> {
     match pool {
         ZCASH_SIG_POOL_ORCHARD => Ok(orchard::ValuePool::Orchard),
         ZCASH_SIG_POOL_IRONWOOD => Ok(orchard::ValuePool::Ironwood),

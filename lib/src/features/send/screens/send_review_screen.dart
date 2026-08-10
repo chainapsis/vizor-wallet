@@ -17,11 +17,12 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
+import 'keystone_send_scan_screen.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
@@ -50,6 +51,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   KeystoneSigningModalPhase? _keystonePhase;
   String? _keystoneError;
   List<String> _keystoneUrParts = const [];
+  List<int>? _keystoneBasePczt;
   List<int>? _keystonePcztWithProofs;
   SaplingParamsStatus? _keystoneSaplingParams;
 
@@ -129,6 +131,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _keystonePhase = KeystoneSigningModalPhase.preparing;
       _keystoneError = null;
       _keystoneUrParts = const [];
+      _keystoneBasePczt = null;
       _keystonePcztWithProofs = null;
       _keystoneSaplingParams = null;
     });
@@ -198,18 +201,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
       );
-      final redactedPczt = await rust_sync.redactPcztForSigner(
+      final urParts = await encodeKeystoneBatchPcztUrParts(
         pcztBytes: pcztBytes,
-      );
-      final urParts = await rust_keystone.encodePcztUrParts(
-        pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
+        requestId: widget.args.sendFlowId,
+        messageId: keystoneSendBatchMessageId,
       );
 
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.ready;
         _keystoneUrParts = urParts;
+        _keystoneBasePczt = pcztBytes;
       });
 
       final pcztWithProofs = await rust_sync.addProofsToPczt(
@@ -256,16 +258,44 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _getKeystoneSignature() async {
+    final basePczt = _keystoneBasePczt;
     final pcztWithProofs = _keystonePcztWithProofs;
     final saplingParams = _keystoneSaplingParams;
     if (_keystonePhase != KeystoneSigningModalPhase.ready ||
+        basePczt == null ||
         pcztWithProofs == null ||
         saplingParams == null) {
       return;
     }
 
-    final signatures = await context.push<List<int>>('/send/keystone/scan');
-    if (signatures == null || !mounted) return;
+    final responseCbor = await context.push<List<int>>(
+      '/send/keystone/scan',
+      extra: const KeystoneSendScanArgs(
+        expectedUrType: keystoneBatchSignatureUrType,
+        returnRawCbor: true,
+      ),
+    );
+    if (responseCbor == null || !mounted) return;
+
+    late final List<int> signatures;
+    try {
+      signatures = await decodeAndApplyKeystoneBatchPcztSignatures(
+        pcztBytes: basePczt,
+        responseCbor: responseCbor,
+        requestId: widget.args.sendFlowId,
+        messageId: keystoneSendBatchMessageId,
+      );
+    } catch (e, st) {
+      log('SendReview._decodeKeystoneSignature: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _keystonePhase = KeystoneSigningModalPhase.failed;
+        _keystoneError =
+            'The Keystone signature could not be verified. Return to Send and try again.';
+      });
+      return;
+    }
+    if (!mounted) return;
 
     _handoffToKeystone = true;
     final statusArgs = KeystoneBroadcastArgs(

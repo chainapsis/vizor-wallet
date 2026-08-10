@@ -977,7 +977,12 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   ),
   GoRoute(
     path: '/send/keystone/scan',
-    builder: (_, _) => const KeystoneSendScanScreen(),
+    builder: (_, state) => KeystoneSendScanScreen(
+      args: switch (state.extra) {
+        final KeystoneSendScanArgs args => args,
+        _ => const KeystoneSendScanArgs.pczt(),
+      },
+    ),
   ),
   GoRoute(
     path: '/send/status',

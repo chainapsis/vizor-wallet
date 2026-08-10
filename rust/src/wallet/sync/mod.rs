@@ -47,10 +47,12 @@ pub(crate) use migration::{
     MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
     PreparationTimingPolicy,
 };
-pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer, retain_proposal_lock_until_expiry, ExtractAndBroadcastPcztResult,
+};
+pub(crate) use pczt::{
+    apply_compact_sigs_to_pczt, extract_compact_sigs_from_pczt, prepare_pczt_for_batch_signer,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
