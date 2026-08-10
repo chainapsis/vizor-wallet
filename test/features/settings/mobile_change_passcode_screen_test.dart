@@ -172,13 +172,7 @@ void main() {
     expect(find.text('Confirm your access'), findsOneWidget);
     final verifyTitle = tester.widget<Text>(find.text('Enter Passcode'));
     expect(verifyTitle.style?.fontSize, AppTypography.displayLarge.fontSize);
-    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Passcode help'));
-    await tester.pumpAndSettle();
-    expect(find.text('Forgot Passcode?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
 
     await _enterPasscode(tester, '111111');
     expect(find.text('Incorrect Passcode'), findsOneWidget);
@@ -193,7 +187,7 @@ void main() {
     await tester.pumpWidget(_app(security, popResult: popResult));
     await open(tester);
 
-    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
     await _enterPasscode(tester, '111111');
     expect(find.text('Set New Passcode'), findsOneWidget);
     expect(find.text('6 digits length'), findsOneWidget);

@@ -127,6 +127,7 @@ void main() {
     expect(find.text('Enter Passcode'), findsOneWidget);
     expect(find.text('Confirm your access'), findsOneWidget);
     expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
   });
 
   testWidgets(

@@ -319,6 +319,9 @@ target account exists before removing account-scoped wallet rows.
   (6 on mobile, 8 on desktop) because the security provider enforces it
   on commit; the mobile passcode screens additionally require exactly
   6 digits (`kMobilePasscodeLength`).
+- The passcode keypad's `?` help action resets the wallet and must appear only
+  on the app-start `/unlock` screen. Never show it in any other passcode keypad
+  context.
 
 ### Dart Provider Structure
 
