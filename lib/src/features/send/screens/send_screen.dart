@@ -395,7 +395,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _handleFiatAmountChanged(String value) {
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
     if (_isMaxMode) {
       _maxDebounceTimer?.cancel();
@@ -478,7 +478,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final nextMode = _amountInputIsUsd
         ? _DesktopSendAmountInputMode.zec
         : _DesktopSendAmountInputMode.usd;
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     if (nextMode == _DesktopSendAmountInputMode.usd &&
         zecUsdUnitPrice == null) {
       return;
@@ -684,7 +684,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
           : sendSendableUsdInputTextForZatoshi(
@@ -949,7 +949,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<double?>(zecHomeUsdUnitPriceProvider, (previous, next) {
+    ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);
     });
@@ -966,7 +966,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final sendFieldLabelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
     );
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     final amountConversionText = _amountConversionText(
       amountZatoshi: amountZatoshi,

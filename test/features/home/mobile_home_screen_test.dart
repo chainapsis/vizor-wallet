@@ -36,6 +36,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_zec_market_data_cache.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -307,6 +308,7 @@ Widget _app(
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(marketData),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       payIntroductionBadgeStoreProvider.overrideWithValue(
         badgeStore ?? _FakePayIntroductionBadgeStore(),
       ),
