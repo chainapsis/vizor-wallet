@@ -33,6 +33,7 @@ type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
 const PREPARE_SEED: [u8; 32] = [3u8; 32];
 const TRUSTED_KEY_ID: &str = "pir-smoke-k1";
 const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+const ROUND_AUTH_V2_DOMAIN_TAG: &[u8] = b"zcash-shielded-vote:round-auth:v2";
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -91,7 +92,11 @@ fn prepare(args: Vec<String>) -> Result<()> {
     let signing_key = SigningKey::from_bytes(&PREPARE_SEED);
     let pubkey = signing_key.verifying_key().to_bytes();
     let ea_pk = [7u8; 32];
-    let sig = signing_key.sign(&ea_pk).to_bytes();
+    // Round-auth v2 preimage: domain tag || round_id bytes || ea_pk.
+    let mut preimage = ROUND_AUTH_V2_DOMAIN_TAG.to_vec();
+    preimage.extend_from_slice(&hex::decode(ROUND_ID).expect("round id hex"));
+    preimage.extend_from_slice(&ea_pk);
+    let sig = signing_key.sign(&preimage).to_bytes();
 
     let static_json = serde_json::json!({
         "static_config_version": 1,
@@ -126,7 +131,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
         },
         "rounds": {
             ROUND_ID: {
-                "auth_version": 1,
+                "auth_version": 2,
                 "ea_pk": BASE64.encode(ea_pk),
                 "signatures": [{
                     "key_id": TRUSTED_KEY_ID,

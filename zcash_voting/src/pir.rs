@@ -423,7 +423,10 @@ mod tests {
         let resolved_static = resolve_static_voting_config(source, &static_bytes).unwrap();
 
         let ea_pk = [7u8; 32];
-        let sig = signing_key.sign(&ea_pk).to_bytes();
+        let mut preimage = b"zcash-shielded-vote:round-auth:v2".to_vec();
+        preimage.extend_from_slice(&hex::decode(ROUND_ID).unwrap());
+        preimage.extend_from_slice(&ea_pk);
+        let sig = signing_key.sign(&preimage).to_bytes();
         let dynamic_bytes = json!({
             "config_version": 1,
             "vote_servers": [{"url": "https://vote.example.com", "label": "vote"}],
@@ -441,7 +444,7 @@ mod tests {
             },
             "rounds": {
                 ROUND_ID: {
-                    "auth_version": 1,
+                    "auth_version": 2,
                     "ea_pk": BASE64.encode(ea_pk),
                     "signatures": [{
                         "key_id": "k1",
