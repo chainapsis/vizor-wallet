@@ -3,6 +3,7 @@ import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../swap/domain/swap_direction.dart';
 import '../../swap/domain/swap_intent_status.dart';
+import '../../swap/models/swap_deposit_broadcast_result.dart';
 import '../../swap/models/swap_intent.dart';
 import '../../swap/models/swap_token_amount_formatting.dart';
 import '../../swap/widgets/swap_amount_text.dart';
@@ -123,12 +124,19 @@ bool _hasPayPayoutEvidence(SwapIntent intent) {
     SwapIntentStatus.depositObserved ||
     SwapIntentStatus.processing ||
     SwapIntentStatus.providerStatusUnknown =>
-      intent.destinationChainTxHash?.trim().isNotEmpty ?? false,
+      (intent.destinationChainTxHash?.trim().isNotEmpty ?? false) ||
+          _hasBroadcastedPayDeposit(intent),
     SwapIntentStatus.incompleteDeposit ||
     SwapIntentStatus.refunded ||
     SwapIntentStatus.expired ||
     SwapIntentStatus.failed => false,
   };
+}
+
+bool _hasBroadcastedPayDeposit(SwapIntent intent) {
+  return intent.payMode &&
+      intent.broadcastStatus == SwapDepositBroadcastStatus.broadcasted &&
+      (intent.depositTxHash?.trim().isNotEmpty ?? false);
 }
 
 /// Contacts whose network can receive on [network]: the same chain, or any
