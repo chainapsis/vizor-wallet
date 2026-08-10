@@ -662,7 +662,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final nextMode = _amountInputIsUsd
         ? MobileSendAmountInputMode.zec
         : MobileSendAmountInputMode.usd;
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
       return;
     }
@@ -793,7 +793,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleFiatAmountChanged(String value) {
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
     setState(() {
       _fiatAmountText = value.trim();
@@ -885,7 +885,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
           : sendSendableUsdInputTextForZatoshi(
@@ -1958,7 +1958,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -2456,7 +2456,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ? null
         : fiatTextForZatoshi(
             amountZatoshi,
-            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+            zecUsdUnitPrice: ref.watch(zecLiveUsdUnitPriceProvider),
           );
     final feeText = _feeZatoshi == null
         ? '—'

@@ -26,6 +26,8 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../../fakes/fake_zec_market_data_cache.dart';
+
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
@@ -296,6 +298,7 @@ Widget _app({
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(contacts),
       ),
@@ -321,7 +324,7 @@ Widget _amountStepWithPriceLoadingApp() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
-      zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+      zecLiveUsdUnitPriceProvider.overrideWithValue(null),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
@@ -356,6 +359,7 @@ Widget _reviewApp({
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
@@ -463,6 +467,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
