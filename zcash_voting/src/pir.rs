@@ -423,9 +423,13 @@ mod tests {
         let resolved_static = resolve_static_voting_config(source, &static_bytes).unwrap();
 
         let ea_pk = [7u8; 32];
+        let wallet_layout = compiled_wallet_layout();
         let mut preimage = b"zcash-shielded-vote:round-auth:v2".to_vec();
         preimage.extend_from_slice(&hex::decode(ROUND_ID).unwrap());
         preimage.extend_from_slice(&ea_pk);
+        preimage.extend_from_slice(&wallet_layout.pir_depth.to_le_bytes());
+        preimage.extend_from_slice(&wallet_layout.tier0_layers.to_le_bytes());
+        preimage.extend_from_slice(&wallet_layout.tier1_layers.to_le_bytes());
         let sig = signing_key.sign(&preimage).to_bytes();
         let dynamic_bytes = json!({
             "config_version": 1,

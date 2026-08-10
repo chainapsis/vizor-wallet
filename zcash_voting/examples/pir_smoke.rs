@@ -92,10 +92,15 @@ fn prepare(args: Vec<String>) -> Result<()> {
     let signing_key = SigningKey::from_bytes(&PREPARE_SEED);
     let pubkey = signing_key.verifying_key().to_bytes();
     let ea_pk = [7u8; 32];
-    // Round-auth v2 preimage: domain tag || round_id bytes || ea_pk.
+    // Round-auth v2 preimage: domain tag || round_id bytes || ea_pk
+    // || pir_depth (u32 LE) || tier0_layers (u32 LE) || tier1_layers (u32 LE).
+    // Layout values must match the pir_layout advertised below.
     let mut preimage = ROUND_AUTH_V2_DOMAIN_TAG.to_vec();
     preimage.extend_from_slice(&hex::decode(ROUND_ID).expect("round id hex"));
     preimage.extend_from_slice(&ea_pk);
+    preimage.extend_from_slice(&19u32.to_le_bytes());
+    preimage.extend_from_slice(&12u32.to_le_bytes());
+    preimage.extend_from_slice(&7u32.to_le_bytes());
     let sig = signing_key.sign(&preimage).to_bytes();
 
     let static_json = serde_json::json!({

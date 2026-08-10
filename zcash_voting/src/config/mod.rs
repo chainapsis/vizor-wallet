@@ -71,9 +71,11 @@ const STATIC_CONFIG_VERSION: u32 = 1;
 const DYNAMIC_CONFIG_VERSION: u32 = 1;
 const ROUND_AUTH_VERSION_V2: u32 = 2;
 // Domain-separation tag for round-auth v2 signatures. The signed preimage is
-// `ROUND_AUTH_DOMAIN_TAG_V2 || round_id (32 raw bytes) || ea_pk (32 bytes)`,
-// binding each attestation to its round so a signed ea_pk cannot be replayed
-// under a different rounds-map key. Must match the vote-sdk signer verbatim.
+// `ROUND_AUTH_DOMAIN_TAG_V2 || round_id (32 raw bytes) || ea_pk (32 bytes)
+//  || pir_depth (u32 LE) || tier0_layers (u32 LE) || tier1_layers (u32 LE)`,
+// binding each attestation to its round (no cross-round ea_pk replay) and to
+// the advertised PIR layout (no layout swap under attested rounds). Must
+// match the vote-sdk signer verbatim.
 const ROUND_AUTH_DOMAIN_TAG_V2: &[u8] = b"zcash-shielded-vote:round-auth:v2";
 const ALG_ED25519: &str = "ed25519";
 const CHECKSUM_QUERY_NAME: &str = "checksum";
@@ -409,8 +411,11 @@ pub fn resolve_dynamic_voting_config(
             message: format!("dynamic config decode failed: {e}"),
         })?;
     validate_dynamic_config(&dynamic_config, &options.capabilities)?;
-    let authenticated_rounds =
-        authenticate_dynamic_rounds(&dynamic_config.rounds, &resolved_static.trusted_keys);
+    let authenticated_rounds = authenticate_dynamic_rounds(
+        &dynamic_config.rounds,
+        &resolved_static.trusted_keys,
+        dynamic_config.pir_layout,
+    );
 
     let authenticated_count = authenticated_rounds.authenticated_rounds.len();
     let skipped_count = authenticated_rounds.skipped_round_ids.len();
@@ -725,11 +730,12 @@ struct AuthenticatedRounds {
 fn authenticate_dynamic_rounds(
     rounds: &BTreeMap<String, RoundEntry>,
     trusted_keys: &[TrustedKey],
+    pir_layout: PirLayout,
 ) -> AuthenticatedRounds {
     let mut authenticated_rounds = Vec::new();
     let mut skipped_round_ids = Vec::new();
     for (round_id, entry) in rounds {
-        if !verify_round_entry(round_id, entry, trusted_keys) {
+        if !verify_round_entry(round_id, entry, trusted_keys, pir_layout) {
             skipped_round_ids.push(round_id.clone());
             continue;
         }
@@ -744,7 +750,12 @@ fn authenticate_dynamic_rounds(
     }
 }
 
-fn verify_round_entry(round_id: &str, entry: &RoundEntry, trusted_keys: &[TrustedKey]) -> bool {
+fn verify_round_entry(
+    round_id: &str,
+    entry: &RoundEntry,
+    trusted_keys: &[TrustedKey],
+    pir_layout: PirLayout,
+) -> bool {
     if entry.auth_version != ROUND_AUTH_VERSION_V2
         || entry.ea_pk.len() != 32
         || entry.signatures.is_empty()
@@ -760,10 +771,13 @@ fn verify_round_entry(round_id: &str, entry: &RoundEntry, trusted_keys: &[Truste
         return false;
     }
     let mut preimage =
-        Vec::with_capacity(ROUND_AUTH_DOMAIN_TAG_V2.len() + round_id_bytes.len() + 32);
+        Vec::with_capacity(ROUND_AUTH_DOMAIN_TAG_V2.len() + round_id_bytes.len() + 32 + 12);
     preimage.extend_from_slice(ROUND_AUTH_DOMAIN_TAG_V2);
     preimage.extend_from_slice(&round_id_bytes);
     preimage.extend_from_slice(&entry.ea_pk);
+    preimage.extend_from_slice(&pir_layout.pir_depth.to_le_bytes());
+    preimage.extend_from_slice(&pir_layout.tier0_layers.to_le_bytes());
+    preimage.extend_from_slice(&pir_layout.tier1_layers.to_le_bytes());
 
     for signature in &entry.signatures {
         let Some(key) = trusted_keys
@@ -905,11 +919,22 @@ mod tests {
         .into_bytes()
     }
 
-    fn round_auth_v2_preimage(round_id: &str, ea_pk: &[u8]) -> Vec<u8> {
+    fn round_auth_v2_preimage(round_id: &str, ea_pk: &[u8], layout: PirLayout) -> Vec<u8> {
         let mut preimage = ROUND_AUTH_DOMAIN_TAG_V2.to_vec();
         preimage.extend_from_slice(&hex::decode(round_id).unwrap());
         preimage.extend_from_slice(ea_pk);
+        preimage.extend_from_slice(&layout.pir_depth.to_le_bytes());
+        preimage.extend_from_slice(&layout.tier0_layers.to_le_bytes());
+        preimage.extend_from_slice(&layout.tier1_layers.to_le_bytes());
         preimage
+    }
+
+    fn test_pir_layout() -> PirLayout {
+        PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
+        }
     }
 
     fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {
@@ -917,7 +942,7 @@ mod tests {
         for (round_id, signing_key) in round_signers {
             let ea_pk = [7u8; 32];
             let sig = signing_key
-                .sign(&round_auth_v2_preimage(round_id, &ea_pk))
+                .sign(&round_auth_v2_preimage(round_id, &ea_pk, test_pir_layout()))
                 .to_bytes();
             rounds.insert(
                 (*round_id).to_string(),
@@ -1253,9 +1278,10 @@ mod tests {
     fn dynamic_resolution_accepts_vote_sdk_signed_round_entry() {
         // Golden cross-implementation vector produced by the vote-sdk CLI:
         //   voting-config sign --round-id <ROUND_ID> --ea-pk base64([7u8;32])
+        //     --pir-depth 19 --tier0-layers 12 --tier1-layers 7
         // with the Ed25519 seed [3u8;32] (the same trusted key as static_bytes).
         // Proves byte-level preimage agreement between the Go signer and this
-        // verifier.
+        // verifier, including the layout binding.
         let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
         let mut dynamic: serde_json::Value =
             serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
@@ -1265,7 +1291,7 @@ mod tests {
             "signatures": [{
                 "key_id": "k1",
                 "alg": "ed25519",
-                "sig": "AVButMsluQ/HD7GQRSyWuSVH1WV8wKprmJ14gahSFtWa/RpgYZFSg4ko4bMX0ltl3vMJGjyJVIsRZDJ7/l77Bg=="
+                "sig": "KhB4irUNAqKDdYtP8jY7K2XTnXCRxCqc1vqMrqEiZN5fczmViOSjluIMNSIK23yYhVsmhFAQ2HS9NC0yhPnoBA=="
             }]
         });
 
@@ -1285,9 +1311,11 @@ mod tests {
     #[test]
     fn dynamic_resolution_accepts_vote_sdk_ui_signed_round_entry() {
         // Golden vector produced by the vote-sdk UI using its
-        // Keplr-derived Ed25519 key. Exercise the complete static + dynamic
-        // config path so key lookup, base64 decoding, preimage construction,
-        // and Ed25519 verification all use the bytes emitted by the UI.
+        // Keplr-derived Ed25519 key, signed over the layout-bound v2 preimage
+        // (tag || round_id || ea_pk || pir_layout 19/12/7). Exercise the
+        // complete static + dynamic config path so key lookup, base64
+        // decoding, preimage construction, and Ed25519 verification all use
+        // the bytes emitted by the UI.
         const UI_ROUND_ID: &str =
             "3fda6c83b054e77c637cdb40f77448289742460ff16f0202229af3c00894d71b";
         const UI_KEY_ID: &str = "keplr:sv1mqts0klc9768rns9h2ykeaka5tve6ts39c2zu3";
@@ -1315,7 +1343,7 @@ mod tests {
                 "signatures": [{
                     "key_id": UI_KEY_ID,
                     "alg": "ed25519",
-                    "sig": "QOcAK2EMwNZmg5Xg2V9nws3GPsXEYyo5RXeKnljXb56+y682yFrTvxB9JQCVyWJfaqXaskpNdCi8ornVPM3bCQ=="
+                    "sig": "iTN3ZDQTLrrbgyil6slshUrpdKuuqAtNGDSSXfGUChJFBs3ISftFPDGTkw2/b91IjBBjXEk971Zt6KgeQZxtDQ=="
                 }]
             }
         });
@@ -1386,6 +1414,26 @@ mod tests {
             }]
         );
         assert_eq!(resolved.skipped_round_ids, vec![ROUND_ID_2.to_string()]);
+    }
+
+    #[test]
+    fn dynamic_resolution_skips_rounds_when_pir_layout_changed_after_signing() {
+        let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
+        // Entries were signed over layout 19/12/7. A config host swapping the
+        // advertised layout must invalidate every round signature.
+        dynamic["pir_layout"] = serde_json::json!({
+            "pir_depth": 19,
+            "tier0_layers": 11,
+            "tier1_layers": 8,
+        });
+
+        let resolved =
+            resolve_test_dynamic(&trusted_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
+
+        assert!(resolved.authenticated_rounds.is_empty());
+        assert_eq!(resolved.skipped_round_ids, vec![ROUND_ID.to_string()]);
     }
 
     #[test]
