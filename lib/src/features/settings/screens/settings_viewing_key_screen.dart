@@ -412,8 +412,20 @@ class _ViewingKeyRevealView extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 620),
             child: Column(
               children: [
-                Text(
-                  viewingKeyExplanation,
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: viewingKeyAccessSummary,
+                        style: AppTypography.bodyLarge.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const TextSpan(text: ' $viewingKeyAccessDetails'),
+                    ],
+                  ),
+                  key: const ValueKey('viewing_key_explanation'),
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.primary,

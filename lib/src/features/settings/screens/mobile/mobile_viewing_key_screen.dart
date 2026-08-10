@@ -509,8 +509,19 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
         AppSpacing.lg,
       ),
       children: [
-        Text(
-          viewingKeyExplanation,
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: viewingKeyAccessSummary,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const TextSpan(text: ' $viewingKeyAccessDetails'),
+            ],
+          ),
+          key: const ValueKey('viewing_key_explanation'),
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
         ),
         const SizedBox(height: AppSpacing.xs),

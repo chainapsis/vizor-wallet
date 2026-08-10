@@ -152,6 +152,21 @@ void main() {
       expect(find.text('Full Viewing Key'), findsOneWidget);
       expect(find.text(viewingKeyExplanation), findsOneWidget);
       expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
+      final explanationText = tester.widget<Text>(
+        find.byKey(const ValueKey('viewing_key_explanation')),
+      );
+      final explanationSpans =
+          (explanationText.textSpan! as TextSpan).children!;
+      final explanationContext = tester.element(
+        find.byKey(const ValueKey('viewing_key_explanation')),
+      );
+      expect(
+        (explanationSpans.first as TextSpan).style,
+        AppTypography.bodyMediumStrong.copyWith(
+          color: AppTheme.of(explanationContext).colors.text.accent,
+        ),
+      );
+      expect((explanationSpans.last as TextSpan).style, isNull);
       expect(find.text(_ufvk), findsOneWidget);
     },
   );
