@@ -743,6 +743,13 @@ class AppSecureStore {
         SecureStorageUnavailableException(operation: operation, cause: error),
         stackTrace,
       );
+    } on Exception catch (error, stackTrace) {
+      // FFI-backed platforms can surface native and file-system exceptions
+      // directly instead of wrapping them in PlatformException.
+      Error.throwWithStackTrace(
+        SecureStorageUnavailableException(operation: operation, cause: error),
+        stackTrace,
+      );
     }
   }
 

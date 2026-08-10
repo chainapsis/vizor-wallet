@@ -89,6 +89,8 @@ dependency_overrides:
   freezed: ^3.2.5
   build_runner: ^2.13.1
   freezed_annotation: ^3.1.0
+  flutter_secure_storage_windows:
+    path: third_party/flutter_secure_storage_windows
   json_annotation: ^4.11.0
   json_serializable: ^6.13.1
 
