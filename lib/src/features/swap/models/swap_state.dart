@@ -73,6 +73,7 @@ class SwapState {
     this.depositSubmitting = false,
     this.selectedIntentId,
     this.payMode = false,
+    this.userExternalContactId,
   });
 
   final SwapDirection direction;
@@ -112,6 +113,7 @@ class SwapState {
   final bool depositSubmitting;
   final String? selectedIntentId;
   final bool payMode;
+  final String? userExternalContactId;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -317,6 +319,7 @@ class SwapState {
     bool? depositSubmitting,
     String? selectedIntentId,
     bool? payMode,
+    String? userExternalContactId,
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearSupportedAssetsError = false,
@@ -324,6 +327,7 @@ class SwapState {
     bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
     bool clearPendingKeystoneSigningIntent = false,
+    bool clearUserExternalContactId = false,
   }) {
     return SwapState(
       direction: direction ?? this.direction,
@@ -375,6 +379,9 @@ class SwapState {
           ? null
           : selectedIntentId ?? this.selectedIntentId,
       payMode: payMode ?? this.payMode,
+      userExternalContactId: clearUserExternalContactId
+          ? null
+          : userExternalContactId ?? this.userExternalContactId,
     );
   }
 }

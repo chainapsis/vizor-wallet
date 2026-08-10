@@ -17,6 +17,8 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 const _recipient = '0x1111111111111111111111111111111111111111';
 const _otherRecipient = '0x2222222222222222222222222222222222222222';
 const _unknownRecipient = '0x3333333333333333333333333333333333333333';
+const _recentRecipient = '0x4444444444444444444444444444444444444444';
+const _otherRecentRecipient = '0x5555555555555555555555555555555555555555';
 const _solanaRecipient = '4Nd1mYQx4jJXAWe3zUKgnQz5pFa9qTqfjEBWWWk3tS9e';
 
 const _amountState = SwapState(
@@ -54,12 +56,12 @@ final _contacts = [
 
 final _recents = [
   PayRecentRecipient(
-    address: _recipient,
+    address: _recentRecipient,
     amountText: '1.25 USDC',
     lastUsedAt: DateTime(2026, 7, 7),
   ),
   PayRecentRecipient(
-    address: _otherRecipient,
+    address: _otherRecentRecipient,
     amountText: '4 USDC',
     lastUsedAt: DateTime(2026, 7, 1),
   ),
@@ -397,8 +399,8 @@ void main() {
       expect(find.text('Recently sent'), findsOneWidget);
       expect(find.text('-1.25 USDC'), findsOneWidget);
       expect(find.text('2 contacts'), findsOneWidget);
-      expect(find.text('Mike'), findsNWidgets(2));
-      expect(find.text('Alice'), findsNWidgets(2));
+      expect(find.text('Mike'), findsOneWidget);
+      expect(find.text('Alice'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
         findsNothing,
@@ -462,14 +464,14 @@ void main() {
     testWidgets('known recent address keeps one row and only Continue', (
       tester,
     ) async {
-      final controller = TextEditingController(text: _recipient);
+      final controller = TextEditingController(text: _recentRecipient);
       addTearDown(controller.dispose);
 
       await _pumpStep(
         tester,
         MobilePayRecipientStep(
           controller: controller,
-          typedAddress: _recipient,
+          typedAddress: _recentRecipient,
           addressError: null,
           contacts: const [],
           recents: [_recents.first],
@@ -498,14 +500,14 @@ void main() {
     testWidgets('replaces Continue while the payment quote is loading', (
       tester,
     ) async {
-      final controller = TextEditingController(text: _recipient);
+      final controller = TextEditingController(text: _recentRecipient);
       addTearDown(controller.dispose);
 
       await _pumpStep(
         tester,
         MobilePayRecipientStep(
           controller: controller,
-          typedAddress: _recipient,
+          typedAddress: _recentRecipient,
           addressError: null,
           contacts: const [],
           recents: [_recents.first],
@@ -534,7 +536,7 @@ void main() {
       expect(loader, findsOneWidget);
       expect(
         tester.getCenter(loader).dx,
-        lessThan(tester.getCenter(find.text('Fetching quote')).dx),
+        greaterThan(tester.getCenter(find.text('Fetching quote')).dx),
       );
       expect(
         tester
@@ -549,14 +551,14 @@ void main() {
     testWidgets('shows support errors and blocks recipient continuation', (
       tester,
     ) async {
-      final controller = TextEditingController(text: _recipient);
+      final controller = TextEditingController(text: _recentRecipient);
       addTearDown(controller.dispose);
 
       await _pumpStep(
         tester,
         MobilePayRecipientStep(
           controller: controller,
-          typedAddress: _recipient,
+          typedAddress: _recentRecipient,
           addressError: null,
           quoteError: 'USDC on Base is not currently supported.',
           contacts: const [],
@@ -586,6 +588,130 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+
+    testWidgets('blocks recipient rows on an unsupported Pay rail', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      PayRecipientSelection? chosen;
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: '',
+          addressError: null,
+          contacts: _contacts,
+          recents: _recents,
+          busy: false,
+          enabled: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (selection) => chosen = selection,
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      await tester.tap(find.text('Mike'));
+      await tester.tap(
+        find.byKey(ValueKey('mobile_pay_recent_${_recents.first.address}')),
+      );
+      expect(chosen, isNull);
+    });
+
+    testWidgets('keeps duplicate-address contacts individually selectable', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: _recipient);
+      addTearDown(controller.dispose);
+      final second = AddressBookContact(
+        id: 'contact-duplicate',
+        label: 'Second Mike',
+        network: AddressBookNetwork.ethereum,
+        address: _recipient,
+        profilePictureId: 'pfp-03',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      );
+      PayRecipientSelection? chosen;
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: _recipient,
+          addressError: null,
+          contacts: [_contacts.first, second],
+          recents: const [PayRecentRecipient(address: _recipient)],
+          busy: false,
+          selectedContactId: second.id,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (selection) => chosen = selection,
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(find.text('2 contacts'), findsOneWidget);
+      expect(find.text('Mike'), findsOneWidget);
+      expect(find.text('Second Mike'), findsOneWidget);
+      expect(find.text('Recently sent'), findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey('mobile_pay_contact_selection_slot_contact-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('mobile_pay_contact_selection_slot_contact-duplicate'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('Selected contact'), findsOneWidget);
+
+      await tester.tap(find.text('Second Mike'));
+      expect(chosen?.contactId, 'contact-duplicate');
+    });
+
+    testWidgets('unique selected contact does not show a selection check', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: _recipient);
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: _recipient,
+          addressError: null,
+          contacts: [_contacts.first],
+          recents: const [],
+          busy: false,
+          selectedContactId: _contacts.first.id,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey('mobile_pay_contact_selection_slot_contact-1'),
+        ),
+        findsNothing,
+      );
+      expect(find.bySemanticsLabel('Selected contact'), findsNothing);
     });
 
     testWidgets('Solana recipient matching remains case-sensitive', (

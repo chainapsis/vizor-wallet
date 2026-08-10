@@ -207,7 +207,8 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
     super.dispose();
   }
 
-  void _selectAddress(String address) {
+  void _selectAddress(PayRecipientSelection selection) {
+    final address = selection.address;
     setState(() {
       _typedAddress = address;
       _controller.value = TextEditingValue(
@@ -556,7 +557,7 @@ final _previewContacts = [
 
 final _previewRecents = [
   PayRecentRecipient(
-    address: _contactAddress,
+    address: '0x4444444444444444444444444444444444444444',
     amountText: '-24 USDC',
     lastUsedAt: DateTime.now().subtract(const Duration(days: 2)),
   ),

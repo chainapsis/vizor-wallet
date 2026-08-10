@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -69,6 +70,64 @@ void main() {
       expect(confirm, findsOneWidget);
       expect(tester.widget<AppButton>(confirm).onPressed, isNotNull);
       expect(find.text('Not enough ZEC'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'payment review renders the explicitly selected duplicate contact',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const contacts = [
+        AddressBookContact(
+          id: 'first',
+          label: 'First',
+          network: AddressBookNetwork.ethereum,
+          address: _recipient,
+          profilePictureId: 'pfp-01',
+          createdAtMs: 0,
+          updatedAtMs: 0,
+        ),
+        AddressBookContact(
+          id: 'second',
+          label: 'Second',
+          network: AddressBookNetwork.ethereum,
+          address: _recipient,
+          profilePictureId: 'pfp-02',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        ),
+      ];
+      final router = GoRouter(
+        initialLocation: '/pay/review',
+        routes: [
+          GoRoute(
+            path: '/pay/review',
+            builder: (_, _) => const MobileSwapReviewScreen(
+              payMode: true,
+              recipientSelection: PayRecipientSelection(
+                address: _recipient,
+                contactId: 'second',
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        _app(
+          router,
+          quoteLifetime: const Duration(minutes: 5),
+          contacts: contacts,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Second'), findsOneWidget);
+      expect(find.text('First'), findsNothing);
     },
   );
 
@@ -324,12 +383,13 @@ Widget _app(
   required Duration quoteLifetime,
   SwapNotifier Function()? swapNotifier,
   SyncState? syncState,
+  List<AddressBookContact> contacts = const [],
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       addressBookRepositoryProvider.overrideWithValue(
-        const _EmptyAddressBookRepository(),
+        _TestAddressBookRepository(contacts),
       ),
       swapStateProvider.overrideWith(
         swapNotifier ?? () => _ExpiringPayReviewNotifier(quoteLifetime),
@@ -479,11 +539,13 @@ class _DelayedRefreshingPayReviewNotifier extends _ExpiringPayReviewNotifier {
   }
 }
 
-class _EmptyAddressBookRepository implements AddressBookRepository {
-  const _EmptyAddressBookRepository();
+class _TestAddressBookRepository implements AddressBookRepository {
+  const _TestAddressBookRepository(this.contacts);
+
+  final List<AddressBookContact> contacts;
 
   @override
-  Future<List<AddressBookContact>> loadContacts() async => const [];
+  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}

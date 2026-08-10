@@ -71,6 +71,7 @@ void main() {
             _intent(id: 'no-recipient', recipient: null),
           ],
           network: AddressBookNetwork.ethereum,
+          contacts: const [],
         );
 
         expect(recents.map((r) => r.address), [_evmB, _evmA]);
@@ -127,6 +128,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
+        contacts: const [],
       );
 
       expect(recents, hasLength(1));
@@ -153,6 +155,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
+        contacts: const [],
       );
 
       expect(recents, hasLength(1));
@@ -176,6 +179,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
+        contacts: const [],
       );
 
       expect(recents, hasLength(1));
@@ -200,6 +204,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.solana,
+        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [caseVariant, _solana]);
@@ -226,6 +231,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.dogecoin,
+        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [dogecoinAddress]);
@@ -241,6 +247,7 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.base,
+        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [_evmA]);
@@ -257,10 +264,115 @@ void main() {
             ),
         ],
         network: AddressBookNetwork.ethereum,
+        contacts: const [],
         limit: 5,
       );
 
       expect(recents, hasLength(5));
+    });
+
+    test('excludes saved contacts before applying the recent limit', () {
+      const thirdAddress = '0x2222222222222222222222222222222222222222';
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'contact',
+            recipient: _evmA,
+            createdAt: DateTime(2026, 7, 3),
+          ),
+          _intent(
+            id: 'recent-1',
+            recipient: _evmB,
+            createdAt: DateTime(2026, 7, 2),
+          ),
+          _intent(
+            id: 'recent-2',
+            recipient: thirdAddress,
+            createdAt: DateTime(2026, 7, 1),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [
+          AddressBookContact(
+            id: 'saved',
+            label: 'Saved',
+            network: AddressBookNetwork.ethereum,
+            address: _evmA,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ],
+        limit: 2,
+      );
+
+      expect(recents.map((recent) => recent.address), [_evmB, thirdAddress]);
+    });
+  });
+
+  group('PayRecipientSelection', () {
+    const first = AddressBookContact(
+      id: 'first',
+      label: 'First',
+      network: AddressBookNetwork.ethereum,
+      address: _evmA,
+      profilePictureId: 'pfp-01',
+      createdAtMs: 0,
+      updatedAtMs: 0,
+    );
+    const second = AddressBookContact(
+      id: 'second',
+      label: 'Second',
+      network: AddressBookNetwork.ethereum,
+      address: _evmA,
+      profilePictureId: 'pfp-02',
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+
+    test('direct entry binds a unique contact but not duplicate contacts', () {
+      expect(
+        payRecipientSelectionForAddress(const [first], _evmA).contactId,
+        'first',
+      );
+      expect(
+        payRecipientSelectionForAddress(const [first, second], _evmA).contactId,
+        isNull,
+      );
+    });
+
+    test('an explicit contact selection preserves the clicked identity', () {
+      const selection = PayRecipientSelection(
+        address: _evmA,
+        contactId: 'second',
+      );
+
+      expect(
+        payContactForSelection(const [first, second], selection),
+        same(second),
+      );
+    });
+
+    test('an invalid explicit contact degrades to the raw address', () {
+      const selection = PayRecipientSelection(
+        address: _evmA,
+        contactId: 'second',
+      );
+
+      final resolved = resolvePayRecipientSelection(
+        const [first],
+        _evmA,
+        explicitSelection: selection,
+      );
+
+      expect(resolved.address, _evmA);
+      expect(resolved.contactId, isNull);
+    });
+
+    test('direct entry still binds the unique matching contact', () {
+      final resolved = resolvePayRecipientSelection(const [first], _evmA);
+
+      expect(resolved.contactId, 'first');
     });
   });
 
@@ -338,28 +450,16 @@ void main() {
     });
 
     test('matches addresses case-insensitively', () {
-      expect(
-        payContactForAddress(
-          [ethContact],
-          AddressBookNetwork.ethereum,
-          _evmA.toLowerCase(),
-        ),
+      expect(payContactsForAddress([ethContact], _evmA.toLowerCase()), [
         ethContact,
-      );
-      expect(
-        payContactForAddress([ethContact], AddressBookNetwork.ethereum, _evmB),
-        isNull,
-      );
+      ]);
+      expect(payContactsForAddress([ethContact], _evmB), isEmpty);
     });
 
     test('keeps contact matching case-sensitive outside EVM and NEAR', () {
       expect(
-        payContactForAddress(
-          [solContact],
-          AddressBookNetwork.solana,
-          _solana.replaceFirst('N', 'n'),
-        ),
-        isNull,
+        payContactsForAddress([solContact], _solana.replaceFirst('N', 'n')),
+        isEmpty,
       );
     });
   });

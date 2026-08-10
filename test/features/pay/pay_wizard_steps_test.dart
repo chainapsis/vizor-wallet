@@ -59,11 +59,13 @@ Widget _recipientStep({
   String? addressError,
   List<AddressBookContact> contacts = const [],
   List<PayRecentRecipient> recents = const [],
-  ValueChanged<String>? onChooseRecipient,
+  ValueChanged<PayRecipientSelection>? onChooseRecipient,
   VoidCallback? onSelectRecipient,
   VoidCallback? onAddToContacts,
   String? quoteError,
   bool actionsEnabled = true,
+  bool busy = false,
+  String? selectedContactId,
 }) {
   final step = PayRecipientStep(
     controller: TextEditingController(text: typedAddress),
@@ -71,7 +73,9 @@ Widget _recipientStep({
     addressError: addressError,
     contacts: contacts,
     recents: recents,
-    busy: false,
+    busy: busy,
+    enabled: actionsEnabled,
+    selectedContactId: selectedContactId,
     onAddressChanged: (_) {},
     onOpenScanner: () {},
     onChooseRecipient: onChooseRecipient ?? (_) {},
@@ -80,7 +84,7 @@ Widget _recipientStep({
     typedAddress: typedAddress,
     addressError: addressError,
     contacts: contacts,
-    busy: false,
+    busy: busy,
     enabled: actionsEnabled,
     quoteError: quoteError,
     onSelectRecipient: onSelectRecipient ?? () {},
@@ -127,11 +131,8 @@ void main() {
     );
 
     expect(
-      payRecipientContactForAddress(
-        [contact],
-        _solanaAddress.replaceFirst('N', 'n'),
-      ),
-      isNull,
+      payContactsForAddress([contact], _solanaAddress.replaceFirst('N', 'n')),
+      isEmpty,
     );
   });
 
@@ -548,13 +549,13 @@ void main() {
   });
 
   group('PayRecipientStep', () {
-    testWidgets('empty input decorates recent contacts and shows no CTA', (
+    testWidgets('empty input keeps contact and distinct recent sections', (
       tester,
     ) async {
       await tester.pumpWidget(
         _harness(
           _recipientStep(
-            contacts: [_contact, _recentContact],
+            contacts: [_contact],
             recents: const [
               PayRecentRecipient(
                 address: _recentAddress,
@@ -571,7 +572,6 @@ void main() {
       );
       expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
       expect(find.text('Mike'), findsOneWidget);
-      expect(find.text('Recent Mike'), findsWidgets);
       expect(find.text('-24 USDC'), findsOneWidget);
       final userIcon = tester.widget<AppIcon>(
         find.descendant(
@@ -648,41 +648,72 @@ void main() {
       );
     });
 
-    testWidgets(
-      'recent result wins over the same contact and bypasses eager validation',
-      (tester) async {
-        await tester.pumpWidget(
-          _harness(
-            _recipientStep(
-              typedAddress: 'recent mike',
-              addressError: 'Not a valid Ethereum address.',
-              contacts: [_recentContact],
-              recents: const [
-                PayRecentRecipient(
-                  address: _recentAddress,
-                  amountText: '-24 USDC',
-                ),
-              ],
-            ),
+    testWidgets('shows the app spinner while the payment quote is loading', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _recentAddress,
+            recents: const [PayRecentRecipient(address: _recentAddress)],
+            busy: true,
           ),
-        );
+        ),
+      );
 
-        expect(
-          find.byKey(const ValueKey('pay_recent_recipients_card')),
-          findsOneWidget,
-        );
-        expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
-        expect(find.text('Recent Mike'), findsOneWidget);
-        expect(find.text('-24 USDC'), findsOneWidget);
-        expect(find.text('Not a valid Ethereum address.'), findsNothing);
-        expect(
-          find.byKey(const ValueKey('pay_select_recipient_button')),
-          findsNothing,
-        );
-      },
-    );
+      final selectButton = find.byKey(
+        const ValueKey('pay_select_recipient_button'),
+      );
+      final loader = find.descendant(
+        of: selectButton,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      );
 
-    testWidgets('exact recent contact keeps recent selected state', (
+      expect(find.text('Fetching quote'), findsOneWidget);
+      expect(tester.widget<AppButton>(selectButton).onPressed, isNull);
+      expect(loader, findsOneWidget);
+      expect(
+        tester.getCenter(loader).dx,
+        greaterThan(tester.getCenter(find.text('Fetching quote')).dx),
+      );
+    });
+
+    testWidgets('contact result wins over same-address recent history', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: 'recent mike',
+            addressError: 'Not a valid Ethereum address.',
+            contacts: [_recentContact],
+            recents: const [
+              PayRecentRecipient(
+                address: _recentAddress,
+                amountText: '-24 USDC',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('pay_recent_recipients_card')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
+      expect(find.text('Recent Mike'), findsOneWidget);
+      expect(find.text('-24 USDC'), findsNothing);
+      expect(find.text('Not a valid Ethereum address.'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('exact address prefers its saved contact over recent history', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -702,9 +733,9 @@ void main() {
 
       expect(
         find.byKey(const ValueKey('pay_recent_recipients_card')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('pay_add_to_contacts_button')),
         findsNothing,
@@ -816,6 +847,7 @@ void main() {
       tester,
     ) async {
       var reviewRequested = false;
+      var addRequested = false;
       await tester.pumpWidget(
         _harness(
           _recipientStep(
@@ -823,6 +855,7 @@ void main() {
             quoteError: 'USDC on Base is not currently supported.',
             actionsEnabled: false,
             onSelectRecipient: () => reviewRequested = true,
+            onAddToContacts: () => addRequested = true,
           ),
         ),
       );
@@ -835,33 +868,138 @@ void main() {
         find.byKey(const ValueKey('pay_select_recipient_button')),
       );
       expect(button.onPressed, isNull);
+      await tester.tap(
+        find.byKey(const ValueKey('pay_add_to_contacts_button')),
+      );
+      expect(addRequested, isTrue);
       expect(reviewRequested, isFalse);
     });
 
-    testWidgets('row selection does not request review until the CTA', (
-      tester,
-    ) async {
-      String? chosen;
-      var reviewRequested = false;
+    testWidgets('unsupported asset disables recipient rows', (tester) async {
+      PayRecipientSelection? chosen;
       await tester.pumpWidget(
         _harness(
           _recipientStep(
-            typedAddress: _contactAddress,
             contacts: [_contact],
-            onChooseRecipient: (address) => chosen = address,
-            onSelectRecipient: () => reviewRequested = true,
+            recents: const [PayRecentRecipient(address: _recentAddress)],
+            actionsEnabled: false,
+            onChooseRecipient: (selection) => chosen = selection,
           ),
         ),
       );
 
       await tester.tap(find.text('Mike'));
-      expect(chosen, _contactAddress);
-      expect(reviewRequested, isFalse);
+      await tester.tap(
+        find.byKey(const ValueKey('pay_recent_$_recentAddress')),
+      );
+      expect(chosen, isNull);
+    });
+
+    testWidgets('row selection returns the exact contact identity', (
+      tester,
+    ) async {
+      PayRecipientSelection? chosen;
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _contactAddress,
+            contacts: [_contact],
+            onChooseRecipient: (selection) => chosen = selection,
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Mike'));
+      expect(chosen?.address, _contactAddress);
+      expect(chosen?.contactId, _contact.id);
+    });
+
+    testWidgets('recent row selection returns an address-only recipient', (
+      tester,
+    ) async {
+      PayRecipientSelection? chosen;
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            recents: const [PayRecentRecipient(address: _recentAddress)],
+            onChooseRecipient: (selection) => chosen = selection,
+          ),
+        ),
+      );
 
       await tester.tap(
-        find.byKey(const ValueKey('pay_select_recipient_button')),
+        find.byKey(const ValueKey('pay_recent_$_recentAddress')),
       );
-      expect(reviewRequested, isTrue);
+      expect(chosen?.address, _recentAddress);
+      expect(chosen?.contactId, isNull);
+    });
+
+    testWidgets('duplicate-address contacts remain individually selectable', (
+      tester,
+    ) async {
+      final duplicate = _contact.copyWith(label: 'Second Mike');
+      final second = AddressBookContact(
+        id: 'second-mike',
+        label: duplicate.label,
+        network: duplicate.network,
+        address: duplicate.address,
+        profilePictureId: duplicate.profilePictureId,
+        createdAtMs: duplicate.createdAtMs,
+        updatedAtMs: duplicate.updatedAtMs,
+      );
+      PayRecipientSelection? chosen;
+
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _contactAddress,
+            contacts: [_contact, second],
+            recents: const [PayRecentRecipient(address: _contactAddress)],
+            selectedContactId: second.id,
+            onChooseRecipient: (selection) => chosen = selection,
+          ),
+        ),
+      );
+
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_recent_recipients_card')),
+        findsNothing,
+      );
+      expect(find.text('Mike'), findsOneWidget);
+      expect(find.text('Second Mike'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_contact_selection_slot_mike')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('pay_contact_selection_slot_second-mike')),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('Selected contact'), findsOneWidget);
+
+      await tester.tap(find.text('Second Mike'));
+      expect(chosen?.contactId, 'second-mike');
+    });
+
+    testWidgets('unique selected contact does not show a selection check', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _contactAddress,
+            contacts: [_contact],
+            selectedContactId: _contact.id,
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('pay_contact_selection_slot_mike')),
+        findsNothing,
+      );
+      expect(find.bySemanticsLabel('Selected contact'), findsNothing);
     });
   });
 
