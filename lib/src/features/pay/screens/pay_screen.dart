@@ -280,9 +280,19 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     }
 
     final recipientAddress = swapState.destinationText.trim();
+    final effectiveSelection = resolvePayRecipientSelection(
+      contacts,
+      recipientAddress,
+      explicitSelection: swapState.userExternalContactId == null
+          ? null
+          : PayRecipientSelection(
+              address: recipientAddress,
+              contactId: swapState.userExternalContactId,
+            ),
+    );
     final recipientContact = payContactForSelection(
       contacts,
-      payRecipientSelectionForAddress(contacts, recipientAddress),
+      effectiveSelection,
     );
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
