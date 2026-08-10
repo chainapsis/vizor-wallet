@@ -80,20 +80,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final typed = widget.typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final valid = hasInput && widget.addressError == null;
-    final selectableRecents = payRecentsWithoutContacts(
-      widget.recents,
-      widget.contacts,
-    );
     final contactMatches = valid
         ? payContactsForAddress(widget.contacts, typed)
         : const <AddressBookContact>[];
-    final recentMatch = valid
-        ? _recentForAddress(typed, selectableRecents)
-        : null;
+    final recentMatch = valid ? _recentForAddress(typed, widget.recents) : null;
     final unknownAddress =
         valid && contactMatches.isEmpty && recentMatch == null;
     final visibleRecents = !hasInput
-        ? selectableRecents
+        ? widget.recents
         : contactMatches.isEmpty && recentMatch != null
         ? <PayRecentRecipient>[recentMatch]
         : const <PayRecentRecipient>[];
@@ -102,6 +96,28 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         : contactMatches.isNotEmpty
         ? contactMatches
         : const <AddressBookContact>[];
+
+    Widget buildRecentRow(PayRecentRecipient recent) {
+      final selection = payRecipientSelectionForRecent(widget.contacts, recent);
+      final contact = payContactForSelection(widget.contacts, selection);
+      final identityKey = recent.contactId == null
+          ? recent.address
+          : '${recent.address}_${recent.contactId}';
+      return _RecipientRow(
+        key: ValueKey('mobile_pay_recent_$identityKey'),
+        contact: contact,
+        address: recent.address,
+        amountText: recent.amountText,
+        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        selected:
+            selection.contactId != null &&
+            selection.contactId == widget.selectedContactId,
+        showSelectionIndicator: false,
+        onTap: widget.busy || !widget.enabled
+            ? null
+            : () => widget.onChooseRecipient(selection),
+      );
+    }
 
     return Column(
       key: const ValueKey('mobile_pay_recipient_step'),
@@ -132,26 +148,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           title: 'Recently sent',
                           children: [
                             for (final recent in visibleRecents)
-                              _RecipientRow(
-                                key: ValueKey(
-                                  'mobile_pay_recent_${recent.address}',
-                                ),
-                                contact: null,
-                                address: recent.address,
-                                amountText: recent.amountText,
-                                timeLabel: payRecentTimeLabel(
-                                  recent.lastUsedAt,
-                                ),
-                                selected: false,
-                                showSelectionIndicator: false,
-                                onTap: widget.busy || !widget.enabled
-                                    ? null
-                                    : () => widget.onChooseRecipient(
-                                        PayRecipientSelection(
-                                          address: recent.address,
-                                        ),
-                                      ),
-                              ),
+                              buildRecentRow(recent),
                           ],
                         ),
                       ],

@@ -548,7 +548,7 @@ final _previewContacts = [
     id: 'contact-label',
     label: 'Contact label',
     network: AddressBookNetwork.ethereum,
-    address: '0x1111111111111111111111111111111111111111',
+    address: _contactAddress,
     profilePictureId: 'pfp-02',
     createdAtMs: 0,
     updatedAtMs: 0,
@@ -557,12 +557,14 @@ final _previewContacts = [
 
 final _previewRecents = [
   PayRecentRecipient(
-    address: '0x4444444444444444444444444444444444444444',
+    address: _contactAddress,
+    contactId: 'mike',
     amountText: '-24 USDC',
     lastUsedAt: DateTime.now().subtract(const Duration(days: 2)),
   ),
   PayRecentRecipient(
-    address: '0x2222222222222222222222222222222222222222',
+    address: _contactAddress,
+    contactId: 'contact-label',
     amountText: '-18.50 USDC',
     lastUsedAt: DateTime.now().subtract(const Duration(days: 3)),
   ),

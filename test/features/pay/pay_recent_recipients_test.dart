@@ -18,6 +18,7 @@ SwapIntent _intent({
   String? depositTxHash,
   String? destinationChainTxHash,
   String? broadcastStatus,
+  String? userExternalContactId,
   DateTime? createdAt,
   DateTime? updatedAt,
   DateTime? completedAt,
@@ -36,6 +37,7 @@ SwapIntent _intent({
     destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: recipient,
     broadcastStatus: broadcastStatus,
+    userExternalContactId: userExternalContactId,
     createdAt: createdAt,
     updatedAt: updatedAt,
     completedAt: completedAt,
@@ -71,7 +73,6 @@ void main() {
             _intent(id: 'no-recipient', recipient: null),
           ],
           network: AddressBookNetwork.ethereum,
-          contacts: const [],
         );
 
         expect(recents.map((r) => r.address), [_evmB, _evmA]);
@@ -128,7 +129,6 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [],
       );
 
       expect(recents, hasLength(1));
@@ -155,7 +155,6 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [],
       );
 
       expect(recents, hasLength(1));
@@ -179,11 +178,33 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [],
       );
 
       expect(recents, hasLength(1));
       expect(recents.single.lastUsedAt, DateTime(2026, 7, 7));
+    });
+
+    test('keeps same-address uses for different contacts separately', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'older',
+            recipient: _evmA,
+            userExternalContactId: 'first',
+            createdAt: DateTime(2026, 7, 1),
+          ),
+          _intent(
+            id: 'newer',
+            recipient: _evmA,
+            userExternalContactId: 'second',
+            completedAt: DateTime(2026, 7, 7),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+      );
+
+      expect(recents.map((recent) => recent.contactId), ['second', 'first']);
+      expect(recents.map((recent) => recent.address), [_evmA, _evmA]);
     });
 
     test('preserves case-distinct recipients on case-sensitive networks', () {
@@ -204,7 +225,6 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.solana,
-        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [caseVariant, _solana]);
@@ -231,7 +251,6 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.dogecoin,
-        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [dogecoinAddress]);
@@ -247,7 +266,6 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.base,
-        contacts: const [],
       );
 
       expect(recents.map((recent) => recent.address), [_evmA]);
@@ -264,14 +282,13 @@ void main() {
             ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [],
         limit: 5,
       );
 
       expect(recents, hasLength(5));
     });
 
-    test('excludes saved contacts before applying the recent limit', () {
+    test('keeps the newest recipients when applying the limit', () {
       const thirdAddress = '0x2222222222222222222222222222222222222222';
       final recents = payRecentRecipients(
         intents: [
@@ -292,21 +309,10 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [
-          AddressBookContact(
-            id: 'saved',
-            label: 'Saved',
-            network: AddressBookNetwork.ethereum,
-            address: _evmA,
-            profilePictureId: 'pfp-01',
-            createdAtMs: 0,
-            updatedAtMs: 0,
-          ),
-        ],
         limit: 2,
       );
 
-      expect(recents.map((recent) => recent.address), [_evmB, thirdAddress]);
+      expect(recents.map((recent) => recent.address), [_evmA, _evmB]);
     });
   });
 
@@ -373,6 +379,24 @@ void main() {
       final resolved = resolvePayRecipientSelection(const [first], _evmA);
 
       expect(resolved.contactId, 'first');
+    });
+
+    test('recent selection restores stored identity without guessing', () {
+      const stored = PayRecentRecipient(address: _evmA, contactId: 'second');
+      const legacy = PayRecentRecipient(address: _evmA);
+
+      expect(
+        payRecipientSelectionForRecent(const [first, second], stored).contactId,
+        'second',
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first], legacy).contactId,
+        'first',
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first, second], legacy).contactId,
+        isNull,
+      );
     });
   });
 

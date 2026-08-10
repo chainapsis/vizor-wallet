@@ -283,7 +283,6 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         : payRecentRecipients(
             intents: swapIntentsFromRecords(records),
             network: network,
-            contacts: contacts,
           );
 
     final quote = swapState.reviewQuote;

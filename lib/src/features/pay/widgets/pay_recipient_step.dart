@@ -58,22 +58,43 @@ class PayRecipientStep extends StatelessWidget {
     final typed = typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final validDestination = hasInput && addressError == null;
-    final selectableRecents = payRecentsWithoutContacts(recents, contacts);
-    final matchedRecents = !hasInput
-        ? selectableRecents
-        : [
-            for (final recent in selectableRecents)
-              if (_payRecentMatchesQuery(recent, typed)) recent,
-          ];
     final matchedContacts = !hasInput
         ? contacts
         : [
             for (final contact in contacts)
               if (_payContactMatchesQuery(contact, typed)) contact,
           ];
+    final matchedRecents = !hasInput
+        ? recents
+        : matchedContacts.isEmpty
+        ? [
+            for (final recent in recents)
+              if (_payRecentMatchesQuery(recent, typed)) recent,
+          ]
+        : const <PayRecentRecipient>[];
     final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
     final unknownAddress = validDestination && !hasMatches;
     final showAddressError = hasInput && addressError != null && !hasMatches;
+
+    Widget buildRecentRow(PayRecentRecipient recent) {
+      final selection = payRecipientSelectionForRecent(contacts, recent);
+      final contact = payContactForSelection(contacts, selection);
+      final identityKey = recent.contactId == null
+          ? recent.address
+          : '${recent.address}_${recent.contactId}';
+      return _PayRecipientRow(
+        key: ValueKey('pay_recent_$identityKey'),
+        contact: contact,
+        address: recent.address,
+        amountText: recent.amountText,
+        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        selected:
+            selection.contactId != null &&
+            selection.contactId == selectedContactId,
+        showSelectionIndicator: false,
+        onTap: busy || !enabled ? null : () => onChooseRecipient(selection),
+      );
+    }
 
     return Column(
       key: const ValueKey('pay_recipient_step'),
@@ -144,21 +165,7 @@ class PayRecipientStep extends StatelessWidget {
               key: const ValueKey('pay_recent_recipients_card'),
               title: 'Recently sent',
               children: [
-                for (final recent in matchedRecents)
-                  _PayRecipientRow(
-                    key: ValueKey('pay_recent_${recent.address}'),
-                    contact: null,
-                    address: recent.address,
-                    amountText: recent.amountText,
-                    timeLabel: payRecentTimeLabel(recent.lastUsedAt),
-                    selected: false,
-                    showSelectionIndicator: false,
-                    onTap: busy || !enabled
-                        ? null
-                        : () => onChooseRecipient(
-                            PayRecipientSelection(address: recent.address),
-                          ),
-                  ),
+                for (final recent in matchedRecents) buildRecentRow(recent),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),

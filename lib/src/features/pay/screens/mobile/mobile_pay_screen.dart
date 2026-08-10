@@ -303,7 +303,6 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         : payRecentRecipients(
             intents: swapIntentsFromRecords(records),
             network: network,
-            contacts: contacts,
           );
     final effectiveSelection = resolvePayRecipientSelection(
       contacts,
