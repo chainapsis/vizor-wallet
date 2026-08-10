@@ -808,6 +808,53 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     unawaited(_validateAmount());
   }
 
+  void _handleZecUsdPriceChanged(double? zecUsdUnitPrice) {
+    if (!_amountInputIsUsd) return;
+
+    if (_isMaxMode) {
+      _refreshMaxFiatAmountText(zecUsdUnitPrice);
+      return;
+    }
+
+    final fiatText = _fiatAmountText.trim();
+    if (fiatText.isEmpty) return;
+
+    final zatoshi = sendZatoshiFromUsdText(fiatText, zecUsdUnitPrice);
+    final nextAmountText = zatoshi == null
+        ? ''
+        : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    if (nextAmountText == _amountText) return;
+
+    setState(() {
+      _amountText = nextAmountText;
+      _invalidateReviewFeeQuote();
+      if (nextAmountText.isEmpty) {
+        _amountError = '';
+      }
+    });
+    unawaited(_validateAmount());
+  }
+
+  void _refreshMaxFiatAmountText(double? zecUsdUnitPrice) {
+    final zatoshi = parseZecAmount(_amountText.trim());
+    if (zatoshi == null ||
+        zatoshi <= BigInt.zero ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return;
+    }
+
+    final fiatText = sendSendableUsdInputTextForZatoshi(
+      zatoshi,
+      zecUsdUnitPrice,
+    );
+    if (fiatText.isEmpty || fiatText == _fiatAmountText) return;
+
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
+  }
+
   void _activateMaxMode() {
     if (_isResolvingMax) return;
     _amountFocus.unfocus();
@@ -1039,6 +1086,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   bool get _amountReady =>
       !_isResolvingMax &&
       _amountError == null &&
+      (!_amountInputIsUsd || ref.read(zecLiveUsdUnitPriceProvider) != null) &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
 
@@ -1494,6 +1542,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
+      if (previous == next || !mounted) return;
+      _handleZecUsdPriceChanged(next);
+    });
+
     final accountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
