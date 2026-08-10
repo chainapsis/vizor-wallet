@@ -18,6 +18,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../viewing_key_copy.dart';
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
 
@@ -407,14 +408,27 @@ class _ViewingKeyRevealView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.s),
-          Text(
-            'Anyone with this key can see this account’s balance and\n'
-            'transaction history — but they can never spend from it.',
-            textAlign: TextAlign.center,
-            style: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
-              height: 18 / 14,
-              letterSpacing: -0.14,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Column(
+              children: [
+                Text(
+                  viewingKeyExplanation,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  viewingKeyPrivacyNotice,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyLarge.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -515,7 +529,9 @@ class _ViewingKeyCard extends StatelessWidget {
             ),
             child: Text(
               ufvk,
-              style: AppTypography.codeSmall.copyWith(color: cardTextColor),
+              style: AppTypography.codeSmall.copyWith(
+                color: colors.text.accent,
+              ),
             ),
           ),
         ],

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_viewing_key_screen.dart';
+import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -81,6 +82,11 @@ void main() {
       expect(requestedUuids, ['account-2']);
       expect(find.text(_ufvk), findsOneWidget);
       expect(find.text('Full Viewing Key'), findsOneWidget);
+      expect(find.text(viewingKeyExplanation), findsOneWidget);
+      expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
+      final keyText = tester.widget<Text>(find.text(_ufvk));
+      final keyContext = tester.element(find.text(_ufvk));
+      expect(keyText.style?.color, AppTheme.of(keyContext).colors.text.accent);
 
       final copyButton = tester.widget<AppButton>(
         find.byKey(const ValueKey('settings_viewing_key_copy_button')),

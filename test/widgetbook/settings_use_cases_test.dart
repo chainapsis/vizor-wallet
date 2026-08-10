@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -97,6 +98,8 @@ void main() {
     _expectNoCrash(errors);
     expect(find.text('Viewing Key'), findsOneWidget);
     expect(find.text('Full Viewing Key'), findsOneWidget);
+    expect(find.text(viewingKeyExplanation), findsOneWidget);
+    expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
   });
 
   testWidgets('settings change password gate use case renders the gate', (

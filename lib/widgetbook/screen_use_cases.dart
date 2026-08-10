@@ -63,6 +63,7 @@ import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
+import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
@@ -529,6 +530,14 @@ Widget buildMobileSecretPassphraseLongWordsUseCase(BuildContext context) {
 
 Widget buildMobileSecretPassphraseProtectedUseCase(BuildContext context) {
   return const _MobileSecretPassphraseProtectedPreview();
+}
+
+Widget buildMobileSettingsViewingKeyRevealUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileViewingKeyRevealPreview(ufvk: _previewUfvk),
+    ),
+  );
 }
 
 Widget buildMobileSecretPassphraseScreenshotWarningUseCase(

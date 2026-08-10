@@ -28,6 +28,7 @@ import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../viewing_key_copy.dart';
 
 enum _ViewingKeyStage { confirmAccess, reveal }
 
@@ -57,6 +58,39 @@ class MobileViewingKeyScreen extends ConsumerStatefulWidget {
   ConsumerState<MobileViewingKeyScreen> createState() =>
       _MobileViewingKeyScreenState();
 }
+
+/// Deterministic reveal-state fixture used by Widgetbook and visual comparison.
+///
+/// Keeping this separate from [MobileViewingKeyScreen] ensures production
+/// navigation cannot bypass the passcode or biometric confirmation gate.
+class MobileViewingKeyRevealPreview extends StatelessWidget {
+  const MobileViewingKeyRevealPreview({required this.ufvk, super.key});
+
+  final String ufvk;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: SafeArea(
+        child: Column(
+          children: [
+            MobileTopNav.back(title: 'Viewing Key', onBack: () {}),
+            Expanded(
+              child: _MobileViewingKeyRevealView(
+                ufvk: ufvk,
+                onCopyUfvk: _noopPreviewCopy,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _noopPreviewCopy() async {}
 
 class _MobileViewingKeyScreenState
     extends ConsumerState<MobileViewingKeyScreen> {
@@ -368,7 +402,11 @@ class _MobileViewingKeyScreenState
                 Expanded(
                   child: switch (_stage) {
                     _ViewingKeyStage.confirmAccess => _buildGate(colors),
-                    _ViewingKeyStage.reveal => _buildReveal(colors),
+                    _ViewingKeyStage.reveal => _MobileViewingKeyRevealView(
+                      ufvk: _ufvk,
+                      errorText: _revealError,
+                      onCopyUfvk: _copyUfvk,
+                    ),
                   },
                 ),
               ],
@@ -447,8 +485,22 @@ class _MobileViewingKeyScreenState
       ],
     );
   }
+}
 
-  Widget _buildReveal(AppColors colors) {
+class _MobileViewingKeyRevealView extends StatelessWidget {
+  const _MobileViewingKeyRevealView({
+    required this.ufvk,
+    required this.onCopyUfvk,
+    this.errorText,
+  });
+
+  final String? ufvk;
+  final String? errorText;
+  final VoidCallback onCopyUfvk;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
@@ -457,10 +509,22 @@ class _MobileViewingKeyScreenState
         AppSpacing.lg,
       ),
       children: [
-        if (_revealError != null || _ufvk == null)
+        Text(
+          viewingKeyExplanation,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          viewingKeyPrivacyNotice,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (errorText != null || ufvk == null)
           MobileSurfaceCard(
             child: Text(
-              _revealError ?? 'Viewing key is not available for this account.',
+              errorText ?? 'Viewing key is not available for this account.',
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
               ),
@@ -486,7 +550,7 @@ class _MobileViewingKeyScreenState
                     _CopyChip(
                       key: const ValueKey('mobile_viewing_key_copy'),
                       label: 'Copy',
-                      onTap: _copyUfvk,
+                      onTap: onCopyUfvk,
                     ),
                   ],
                 ),
@@ -500,7 +564,7 @@ class _MobileViewingKeyScreenState
                     borderRadius: BorderRadius.circular(AppRadii.medium),
                   ),
                   child: Text(
-                    _ufvk!,
+                    ufvk!,
                     style: AppTypography.codeSmall.copyWith(
                       color: colors.text.accent,
                     ),

@@ -45,6 +45,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-viewing-key-reveal',
+    description: 'Desktop viewing key reveal with privacy guidance',
+    builder: buildSettingsViewingKeyRevealUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-reveal',
+    description: 'Mobile viewing key reveal with privacy guidance',
+    builder: buildMobileSettingsViewingKeyRevealUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'import-secret-passphrase-empty',
     description: 'Desktop wallet import with empty mnemonic fields',
     builder: buildImportSecretPassphraseUseCase,

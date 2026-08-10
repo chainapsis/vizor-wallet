@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
+import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -149,6 +150,8 @@ void main() {
       expect(requestedUuids, ['account-2']);
       expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
       expect(find.text('Full Viewing Key'), findsOneWidget);
+      expect(find.text(viewingKeyExplanation), findsOneWidget);
+      expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
       expect(find.text(_ufvk), findsOneWidget);
     },
   );
@@ -186,6 +189,8 @@ void main() {
       find.text('Viewing key is not available for this account.'),
       findsOneWidget,
     );
+    expect(find.text(viewingKeyExplanation), findsOneWidget);
+    expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
     expect(find.text(_ufvk), findsNothing);
   });
 
