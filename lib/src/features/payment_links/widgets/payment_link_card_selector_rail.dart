@@ -16,12 +16,21 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
     required this.selected,
     required this.onSelected,
     this.width = defaultWidth,
+    this.itemWidth = PaymentLinkCardSelector.width,
+    this.itemHeight = PaymentLinkCardSelector.height,
+    this.artworkWidth = 60,
+    this.artworkHeight = 44,
+    this.itemGap = AppSpacing.xxs,
+    this.selectionInset = const EdgeInsets.fromLTRB(1, 2, 0, 1),
     super.key,
   }) : assert(artworks.length > 0),
        assert(
-         width >= PaymentLinkCardSelector.width + (AppSpacing.xxs * 2),
+         width >= itemWidth + (AppSpacing.xxs * 2),
          'width must leave room for the selector edge treatment.',
-       );
+       ),
+       assert(itemWidth > 0),
+       assert(itemHeight > 0),
+       assert(itemGap >= 0);
 
   static const double defaultWidth = 396;
 
@@ -32,6 +41,12 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   final PaymentLinkCardArtwork selected;
   final ValueChanged<PaymentLinkCardArtwork> onSelected;
   final double width;
+  final double itemWidth;
+  final double itemHeight;
+  final double artworkWidth;
+  final double artworkHeight;
+  final double itemGap;
+  final EdgeInsets selectionInset;
 
   @override
   State<PaymentLinkCardSelectorRail> createState() =>
@@ -40,13 +55,13 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
 
 class _PaymentLinkCardSelectorRailState
     extends State<PaymentLinkCardSelectorRail> {
-  static const _itemGap = AppSpacing.xxs;
-  static const _itemStride = PaymentLinkCardSelector.width + _itemGap;
   static const _selectionDuration = Duration(milliseconds: 180);
 
   late final ScrollController _controller;
 
-  double get _sidePadding => (widget.width - PaymentLinkCardSelector.width) / 2;
+  double get _itemStride => widget.itemWidth + widget.itemGap;
+
+  double get _sidePadding => (widget.width - widget.itemWidth) / 2;
 
   @override
   void initState() {
@@ -122,7 +137,7 @@ class _PaymentLinkCardSelectorRailState
     return SizedBox(
       key: const ValueKey('payment_link_card_selector_rail'),
       width: widget.width,
-      height: PaymentLinkCardSelector.height,
+      height: widget.itemHeight,
       child: ClipRect(
         child: ShaderMask(
           key: const ValueKey('payment_link_card_selector_edge_fade'),
@@ -151,7 +166,7 @@ class _PaymentLinkCardSelectorRailState
               itemExtent: _itemStride,
               padding: EdgeInsets.only(
                 left: _sidePadding,
-                right: _sidePadding - _itemGap,
+                right: _sidePadding - widget.itemGap,
               ),
               itemCount: widget.artworks.length,
               itemBuilder: (context, index) {
@@ -163,6 +178,11 @@ class _PaymentLinkCardSelectorRailState
                     artwork: artwork,
                     selected: artwork == widget.selected,
                     onSelected: () => widget.onSelected(artwork),
+                    itemWidth: widget.itemWidth,
+                    itemHeight: widget.itemHeight,
+                    artworkWidth: widget.artworkWidth,
+                    artworkHeight: widget.artworkHeight,
+                    selectionInset: widget.selectionInset,
                   ),
                 );
               },

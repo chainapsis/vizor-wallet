@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/material.dart'
+    show InputDecoration, Material, MaterialType, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
@@ -54,6 +56,8 @@ enum PaymentLinkCardArtwork {
 class PaymentLinkGiftCard extends StatefulWidget {
   const PaymentLinkGiftCard({
     required this.artwork,
+    this.cardWidth = width,
+    this.cardHeight = height,
     this.amountText,
     this.amountController,
     this.amountFocusNode,
@@ -81,7 +85,9 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.onDeleteMessage,
     this.semanticLabel,
     super.key,
-  }) : assert(maxMessageLength > 0),
+  }) : assert(cardWidth > 0),
+       assert(cardHeight > 0),
+       assert(maxMessageLength > 0),
        assert(
          (amountController == null) == (amountFocusNode == null),
          'amountController and amountFocusNode must be supplied together.',
@@ -108,6 +114,8 @@ class PaymentLinkGiftCard extends StatefulWidget {
   static const double height = 200;
 
   final PaymentLinkCardArtwork artwork;
+  final double cardWidth;
+  final double cardHeight;
 
   /// Null is the default state; empty is active; non-empty is the value state.
   final String? amountText;
@@ -240,8 +248,8 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
             ? 'Gift card message'
             : 'Gift card, ${widget.artwork.semanticLabel} design');
     final card = SizedBox(
-      width: PaymentLinkGiftCard.width,
-      height: PaymentLinkGiftCard.height,
+      width: widget.cardWidth,
+      height: widget.cardHeight,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.large),
         child: Stack(
@@ -285,6 +293,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 semanticLabel: label,
                 showCaret: widget.showCaret,
                 motion: motion,
+                cardWidth: widget.cardWidth,
               ),
             const _PaymentLinkGiftCardBorder(),
           ],
@@ -428,6 +437,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     required this.semanticLabel,
     required this.showCaret,
     required this.motion,
+    required this.cardWidth,
   });
 
   final String? amountText;
@@ -445,6 +455,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
   final String semanticLabel;
   final bool showCaret;
   final PaymentLinkCardMotionScope? motion;
+  final double cardWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -487,6 +498,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
               emptyAmountLabel: emptyAmountLabel,
               semanticLabel: semanticLabel,
               cardTextColor: cardTextColor,
+              availableWidth: cardWidth - (AppSpacing.md * 2),
             ),
           ] else ...[
             if (supportingLoading) ...[
@@ -571,6 +583,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 emptyAmountLabel: emptyAmountLabel,
                 semanticLabel: semanticLabel,
                 cardTextColor: cardTextColor,
+                availableWidth: cardWidth - (AppSpacing.md * 2),
               )
             else
               _PaymentLinkStaticAmountRow(
@@ -658,6 +671,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
     required this.emptyAmountLabel,
     required this.semanticLabel,
     required this.cardTextColor,
+    required this.availableWidth,
     super.key,
   });
 
@@ -670,6 +684,7 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
   final String emptyAmountLabel;
   final String semanticLabel;
   final Color cardTextColor;
+  final double availableWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -696,10 +711,9 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
-    final contentWidth = PaymentLinkGiftCard.width - (AppSpacing.md * 2);
     final maxInputWidth = showCurrency
-        ? contentWidth - _amountElementGap - currencyPainter.width
-        : contentWidth;
+        ? availableWidth - _amountElementGap - currencyPainter.width
+        : availableWidth;
     final inputWidth =
         (painter.width + (focused ? cursorGap + _amountCaretWidth : 0)).clamp(
           2.0,
@@ -872,6 +886,13 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final cardTextColor = colors.text.homeCard;
+    final mobileMessageAction = kAppFormFactor == AppFormFactor.mobile;
+    final messageActionBackground = mobileMessageAction
+        ? colors.background.ground
+        : colors.background.homeCard;
+    final messageActionForeground = mobileMessageAction
+        ? colors.text.accent
+        : cardTextColor;
     final editing = messageController != null && messageFocusNode != null;
     final displayedMessage = editing ? messageController!.text : message;
     final usedCharacterCount = displayedMessage.characters.length.clamp(
@@ -937,14 +958,14 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: colors.background.homeCard,
+                          color: messageActionBackground,
                           shape: BoxShape.circle,
                         ),
                         child: Center(
                           child: AppIcon(
                             AppIcons.trash,
                             size: AppIconSize.medium,
-                            color: cardTextColor,
+                            color: messageActionForeground,
                           ),
                         ),
                       ),
@@ -1002,27 +1023,30 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
       child: MergeSemantics(
         child: Semantics(
           label: semanticLabel,
-          child: TextField(
-            key: editorKey,
-            controller: controller,
-            focusNode: focusNode,
-            style: style,
-            cursorColor: cardTextColor,
-            cursorWidth: 2,
-            cursorRadius: const Radius.circular(AppRadii.full),
-            cursorOpacityAnimates: true,
-            mouseCursor: SystemMouseCursors.text,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            inputFormatters: [
-              ...inputFormatters,
-              LengthLimitingTextInputFormatter(maxMessageLength),
-            ],
-            minLines: 1,
-            maxLines: 7,
-            textAlign: TextAlign.center,
-            decoration: const InputDecoration.collapsed(hintText: null),
-            onChanged: onChanged,
+          child: Material(
+            type: MaterialType.transparency,
+            child: TextField(
+              key: editorKey,
+              controller: controller,
+              focusNode: focusNode,
+              style: style,
+              cursorColor: cardTextColor,
+              cursorWidth: 2,
+              cursorRadius: const Radius.circular(AppRadii.full),
+              cursorOpacityAnimates: true,
+              mouseCursor: SystemMouseCursors.text,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              inputFormatters: [
+                ...inputFormatters,
+                LengthLimitingTextInputFormatter(maxMessageLength),
+              ],
+              minLines: 1,
+              maxLines: 7,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration.collapsed(hintText: null),
+              onChanged: onChanged,
+            ),
           ),
         ),
       ),
