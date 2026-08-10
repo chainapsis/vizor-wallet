@@ -617,6 +617,25 @@ void main() {
     );
   });
 
+  testWidgets('selector rail accepts the mobile item gap', (tester) async {
+    await _pump(
+      tester,
+      PaymentLinkCardSelectorRail(
+        artworks: PaymentLinkCardArtwork.values,
+        selected: PaymentLinkCardArtwork.knight,
+        itemWidth: 80,
+        itemHeight: 60,
+        itemGap: AppSpacing.xs,
+        onSelected: (_) {},
+      ),
+    );
+
+    final list = tester.widget<ListView>(
+      find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+    );
+    expect(list.itemExtent, 88);
+  });
+
   testWidgets('selector rail accepts mouse dragging', (tester) async {
     await _pump(
       tester,

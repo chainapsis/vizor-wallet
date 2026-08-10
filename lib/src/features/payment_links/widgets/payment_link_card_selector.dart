@@ -11,9 +11,17 @@ class PaymentLinkCardSelector extends StatelessWidget {
     required this.artwork,
     required this.selected,
     required this.onSelected,
+    this.itemWidth = width,
+    this.itemHeight = height,
+    this.artworkWidth = 60,
+    this.artworkHeight = 44,
+    this.selectionInset = const EdgeInsets.fromLTRB(1, 2, 0, 1),
     this.semanticLabel,
     super.key,
-  });
+  }) : assert(itemWidth > 0),
+       assert(itemHeight > 0),
+       assert(artworkWidth > 0 && artworkWidth <= itemWidth),
+       assert(artworkHeight > 0 && artworkHeight <= itemHeight);
 
   static const double width = 65;
   static const double height = 51;
@@ -21,6 +29,11 @@ class PaymentLinkCardSelector extends StatelessWidget {
   final PaymentLinkCardArtwork artwork;
   final bool selected;
   final VoidCallback onSelected;
+  final double itemWidth;
+  final double itemHeight;
+  final double artworkWidth;
+  final double artworkHeight;
+  final EdgeInsets selectionInset;
   final String? semanticLabel;
 
   @override
@@ -33,16 +46,18 @@ class PaymentLinkCardSelector extends StatelessWidget {
       builder: (context, hovered, focused) {
         final active = selected || focused;
         final opacity = selected || hovered || focused ? 1.0 : 0.5;
+        final artworkLeft = (itemWidth - artworkWidth) / 2;
+        final artworkTop = (itemHeight - artworkHeight) / 2;
         return SizedBox(
-          width: PaymentLinkCardSelector.width,
-          height: PaymentLinkCardSelector.height,
+          width: itemWidth,
+          height: itemHeight,
           child: Stack(
             children: [
               Positioned(
-                left: 3,
-                top: 4,
-                width: 60,
-                height: 44,
+                left: artworkLeft,
+                top: artworkTop,
+                width: artworkWidth,
+                height: artworkHeight,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(AppRadii.xSmall),
                   child: AnimatedOpacity(
@@ -60,10 +75,10 @@ class PaymentLinkCardSelector extends StatelessWidget {
               ),
               if (active)
                 Positioned(
-                  left: 1,
-                  top: 2,
-                  width: 64,
-                  height: 48,
+                  left: selectionInset.left,
+                  top: selectionInset.top,
+                  right: selectionInset.right,
+                  bottom: selectionInset.bottom,
                   child: IgnorePointer(
                     child: DecoratedBox(
                       key: const ValueKey('payment_link_card_focus_ring'),
