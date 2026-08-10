@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/clipboard/sensitive_clipboard.dart';
-import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../../core/storage/wallet_paths.dart';
@@ -19,12 +18,9 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
-import '../../../../providers/device_owner_auth_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../../services/biometric_unlock.dart';
-import '../../../../services/device_owner_auth.dart';
-import '../../../onboarding/mobile/forgot_passcode_sheet.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
@@ -230,58 +226,6 @@ class _MobileViewingKeyScreenState
     }
   }
 
-  Future<void> _showForgotPasscodeSheet() async {
-    final confirmed = await showAppMobileSheet<bool>(
-      context: context,
-      builder: (sheetContext) => const ForgotPasscodeSheet(),
-    );
-    if (confirmed != true || !mounted) return;
-    final lastWarningConfirmed = await showAppMobileSheet<bool>(
-      context: context,
-      builder: (sheetContext) => const ForgotPasscodeLastWarningSheet(),
-    );
-    if (lastWarningConfirmed != true || !mounted) return;
-    await _resetWallet();
-  }
-
-  Future<void> _resetWallet() async {
-    setState(() => _checking = true);
-    final router = GoRouter.of(context);
-    try {
-      final didReset = await resetWalletForForgottenPasscode(ref);
-      if (!mounted) return;
-      if (!didReset) {
-        setState(() {
-          _checking = false;
-          _entry = '';
-          _gateError = null;
-        });
-        return;
-      }
-    } on DeviceOwnerAuthException catch (e, st) {
-      log('MobileViewingKey._resetWallet auth failed: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _checking = false;
-        _entry = '';
-        _gateError = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
-      });
-      return;
-    } catch (e, st) {
-      log('MobileViewingKey._resetWallet: ERROR: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _checking = false;
-        _entry = '';
-        _gateError = "Couldn't reset the app. Please try again.";
-      });
-      return;
-    }
-    router.go('/welcome');
-  }
-
   // ── Reveal ─────────────────────────────────────────────────────────
 
   AccountInfo? _targetAccount(AccountState? accountState) {
@@ -462,7 +406,6 @@ class _MobileViewingKeyScreenState
           onDigit: _onDigit,
           onBackspace: _onBackspace,
           canDelete: _entry.isNotEmpty,
-          onHelp: _checking ? null : _showForgotPasscodeSheet,
           enabled: !_checking,
         ),
         if (showBiometric) ...[
