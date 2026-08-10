@@ -181,20 +181,24 @@ PayRecipientSelection payRecipientSelectionForAddress(
 }
 
 /// Restores a recent recipient's explicit contact identity when it is still
-/// valid. Older or stale records fall back to address matching only when that
-/// address identifies exactly one current contact.
+/// valid. Legacy records without an identity may use an unambiguous address
+/// match; stale explicit identities stay address-only instead of rebinding.
 PayRecipientSelection payRecipientSelectionForRecent(
   Iterable<AddressBookContact> contacts,
   PayRecentRecipient recent,
 ) {
+  final storedContactId = recent.contactId?.trim();
+  if (storedContactId == null || storedContactId.isEmpty) {
+    return payRecipientSelectionForAddress(contacts, recent.address);
+  }
   final explicitSelection = PayRecipientSelection(
     address: recent.address,
-    contactId: recent.contactId,
+    contactId: storedContactId,
   );
   if (payContactForSelection(contacts, explicitSelection) != null) {
     return explicitSelection;
   }
-  return payRecipientSelectionForAddress(contacts, recent.address);
+  return PayRecipientSelection(address: recent.address.trim());
 }
 
 /// Resolves the selection used for quote review from the current address and

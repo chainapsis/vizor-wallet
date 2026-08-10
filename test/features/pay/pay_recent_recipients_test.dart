@@ -428,11 +428,16 @@ void main() {
 
     test('recent selection restores stored identity without guessing', () {
       const stored = PayRecentRecipient(address: _evmA, contactId: 'second');
+      const stale = PayRecentRecipient(address: _evmA, contactId: 'deleted');
       const legacy = PayRecentRecipient(address: _evmA);
 
       expect(
         payRecipientSelectionForRecent(const [first, second], stored).contactId,
         'second',
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first], stale).contactId,
+        isNull,
       );
       expect(
         payRecipientSelectionForRecent(const [first], legacy).contactId,
