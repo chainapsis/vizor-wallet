@@ -23,6 +23,8 @@ import '../src/features/swap/providers/swap_state_provider.dart';
 const _mikeAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _aliceAddress = '0xde709f2102306220921060314715629080e2fb77';
 const _newAddress = '0x1111111111111111111111111111111111111111';
+const _recentAddress = '0x2222222222222222222222222222222222222222';
+const _otherRecentAddress = '0x3333333333333333333333333333333333333333';
 
 const _payContacts = [
   AddressBookContact(
@@ -47,12 +49,12 @@ const _payContacts = [
 
 final _payRecents = [
   PayRecentRecipient(
-    address: _mikeAddress,
+    address: _recentAddress,
     amountText: '990 USDC',
     lastUsedAt: DateTime(2026, 7, 8),
   ),
   PayRecentRecipient(
-    address: _aliceAddress,
+    address: _otherRecentAddress,
     amountText: '125 USDC',
     lastUsedAt: DateTime(2026, 4, 27),
   ),
@@ -419,7 +421,8 @@ class _MobilePayRecipientPreviewViewState
     );
   }
 
-  void _selectRecipient(String address) {
+  void _selectRecipient(PayRecipientSelection selection) {
+    final address = selection.address;
     setState(() {
       _typedAddress = address;
       _controller.text = address;
