@@ -21,6 +21,19 @@ class PayRecentRecipient {
   final DateTime? lastUsedAt;
 }
 
+/// The payment destination plus the optional address-book identity explicitly
+/// selected by the user.
+///
+/// The address is the payment contract. [contactId] is presentation metadata
+/// and stays null when a directly entered address matches more than one
+/// contact, so the UI never chooses an arbitrary label.
+class PayRecipientSelection {
+  const PayRecipientSelection({required this.address, this.contactId});
+
+  final String address;
+  final String? contactId;
+}
+
 /// Derives the "Recently sent" list for [network] from past swap/pay intents:
 /// outgoing (ZEC -> external) recipients whose address is valid on [network],
 /// deduplicated using the destination network's address semantics, most recent
@@ -28,8 +41,13 @@ class PayRecentRecipient {
 List<PayRecentRecipient> payRecentRecipients({
   required List<SwapIntent> intents,
   required AddressBookNetwork network,
+  required Iterable<AddressBookContact> contacts,
   int limit = 5,
 }) {
+  final contactAddresses = {
+    for (final contact in payCompatibleContacts(contacts, network))
+      normalizedAddressBookAddress(network, contact.address),
+  }..remove('');
   final byAddress = <String, PayRecentRecipient>{};
   for (final intent in intents) {
     if (intent.direction != SwapDirection.zecToExternal) continue;
@@ -47,6 +65,7 @@ List<PayRecentRecipient> payRecentRecipients({
     if (addressFormatIssue(network, address) != null) continue;
     final usedAt = intent.completedAt ?? intent.updatedAt ?? intent.createdAt;
     final key = normalizedAddressBookAddress(network, address);
+    if (contactAddresses.contains(key)) continue;
     final existing = byAddress[key];
     if (existing != null &&
         (usedAt == null ||
@@ -125,21 +144,87 @@ List<AddressBookContact> payCompatibleContacts(
   ];
 }
 
-/// The saved contact matching [address] on [network], if any.
-AddressBookContact? payContactForAddress(
+/// All compatible saved contacts matching [address].
+List<AddressBookContact> payContactsForAddress(
   Iterable<AddressBookContact> contacts,
-  AddressBookNetwork network,
   String address,
 ) {
-  final needle = normalizedAddressBookAddress(network, address);
-  if (needle.isEmpty) return null;
-  for (final contact in payCompatibleContacts(contacts, network)) {
-    if (normalizedAddressBookAddress(contact.network, contact.address) ==
-        needle) {
+  return [
+    for (final contact in contacts)
+      if (_payContactHasAddress(contact, address)) contact,
+  ];
+}
+
+/// Builds the selection produced by the field CTA.
+///
+/// A unique address-book match is safe to attach automatically. Duplicate
+/// contacts keep the address only until the user explicitly chooses a row.
+PayRecipientSelection payRecipientSelectionForAddress(
+  Iterable<AddressBookContact> contacts,
+  String address,
+) {
+  final matches = payContactsForAddress(contacts, address);
+  return PayRecipientSelection(
+    address: address.trim(),
+    contactId: matches.length == 1 ? matches.single.id : null,
+  );
+}
+
+/// Resolves the selection used for quote review from the current address and
+/// an optional row selection.
+///
+/// A missing or re-addressed explicit contact degrades to address-only instead
+/// of silently rebinding to another contact that happens to share the address.
+PayRecipientSelection resolvePayRecipientSelection(
+  Iterable<AddressBookContact> contacts,
+  String address, {
+  PayRecipientSelection? explicitSelection,
+}) {
+  if (explicitSelection == null) {
+    return payRecipientSelectionForAddress(contacts, address);
+  }
+  final currentSelection = PayRecipientSelection(
+    address: address.trim(),
+    contactId: explicitSelection.contactId,
+  );
+  if (payContactForSelection(contacts, currentSelection) != null) {
+    return currentSelection;
+  }
+  return PayRecipientSelection(address: address.trim());
+}
+
+/// Resolves the exact contact carried by [selection], if it still exists and
+/// still owns that address.
+AddressBookContact? payContactForSelection(
+  Iterable<AddressBookContact> contacts,
+  PayRecipientSelection selection,
+) {
+  final contactId = selection.contactId;
+  if (contactId == null) return null;
+  for (final contact in contacts) {
+    if (contact.id == contactId &&
+        _payContactHasAddress(contact, selection.address)) {
       return contact;
     }
   }
   return null;
+}
+
+/// Removes recent rows whose address already belongs to any visible contact.
+List<PayRecentRecipient> payRecentsWithoutContacts(
+  Iterable<PayRecentRecipient> recents,
+  Iterable<AddressBookContact> contacts,
+) {
+  return [
+    for (final recent in recents)
+      if (payContactsForAddress(contacts, recent.address).isEmpty) recent,
+  ];
+}
+
+bool _payContactHasAddress(AddressBookContact contact, String address) {
+  final needle = normalizedAddressBookAddress(contact.network, address);
+  return needle.isNotEmpty &&
+      normalizedAddressBookAddress(contact.network, contact.address) == needle;
 }
 
 const _payMonthNames = [

@@ -123,12 +123,14 @@ void main() {
           oneClickRefundTo: 'u1refund',
         ),
         accountUuid: 'account-1',
+        userExternalContactId: 'contact-second',
         now: now,
       );
 
       expect(intent.status, SwapIntentStatus.expired);
       expect(intent.nextAction, 'Start a fresh quote');
       expect(intent.completedAt, now);
+      expect(intent.userExternalContactId, 'contact-second');
     },
   );
 
