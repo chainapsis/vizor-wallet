@@ -37,6 +37,7 @@ import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dar
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
+import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
@@ -99,6 +100,15 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileSeedPhraseScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/viewing-key',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileViewingKeyScreen(
           accountUuid: state.extra is String ? state.extra as String : null,
         ),
       ),

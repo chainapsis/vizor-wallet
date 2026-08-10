@@ -357,12 +357,14 @@ void main() {
           .didExceedMaxLines,
       isFalse,
     );
+    expect(find.text('View viewing key'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
       'View secret phrase',
+      'View viewing key',
       'Edit account',
       'Copy address',
       'Remove account',
@@ -446,6 +448,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsNothing);
+    // Unlike the secret passphrase, a UFVK export never grants spend
+    // authority, so hardware accounts still get the viewing-key shortcut.
+    expect(find.text('View viewing key'), findsOneWidget);
+
+    await tester.tap(find.text('View viewing key'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('viewing key route hardware-account'), findsOneWidget);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -1321,6 +1331,11 @@ Widget _accountsHarness({
         path: '/settings/secret-passphrase',
         builder: (_, state) =>
             Text('secret passphrase route ${state.extra as String?}'),
+      ),
+      GoRoute(
+        path: '/settings/viewing-key',
+        builder: (_, state) =>
+            Text('viewing key route ${state.extra as String?}'),
       ),
       GoRoute(path: '/about', builder: (_, _) => const Text('about route')),
     ],
