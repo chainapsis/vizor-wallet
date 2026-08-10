@@ -106,7 +106,12 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _selectAddressBookContact(AddressBookContact contact) {
-    ref.read(swapStateProvider.notifier).updateDestination(contact.address);
+    ref
+        .read(swapStateProvider.notifier)
+        .selectDestinationContact(
+          address: contact.address,
+          contactId: contact.id,
+        );
     _closeSwapModal();
   }
 
