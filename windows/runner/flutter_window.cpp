@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "single_instance.h"
 #include "utils.h"
 #include "velopack_update.h"
 
@@ -378,8 +379,9 @@ void VerifyDeviceOwner(
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project,
+                             UINT activation_message)
+    : project_(project), activation_message_(activation_message) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -462,6 +464,24 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (activation_message_ != 0 && message == activation_message_) {
+    if (::IsIconic(hwnd)) {
+      ::ShowWindow(hwnd, SW_RESTORE);
+    } else {
+      ::ShowWindow(hwnd, SW_SHOW);
+    }
+    ::BringWindowToTop(hwnd);
+    if (::SetForegroundWindow(hwnd) == 0) {
+      FLASHWINFO flash_info = {};
+      flash_info.cbSize = sizeof(flash_info);
+      flash_info.hwnd = hwnd;
+      flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
+      flash_info.uCount = 3;
+      ::FlashWindowEx(&flash_info);
+    }
+    return kSingleInstanceActivationAcknowledged;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
