@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/payment_link_mobile_use_cases.dart';
 import '../widgetbook/payment_link_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
@@ -264,6 +265,62 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-link-received-message',
     description: 'Desktop received Gift Card message preview',
     builder: buildPaymentLinkReceivedMessageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-home-empty',
+    description: 'Mobile Gift Cards empty state',
+    builder: buildMobilePaymentLinkHomeEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-empty',
+    description: 'Mobile Gift Card amount step without an amount',
+    builder: buildMobilePaymentLinkAmountEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-filled',
+    description: 'Mobile Gift Card amount step with a ZEC value',
+    builder: buildMobilePaymentLinkAmountFilledUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-focused',
+    description: 'Mobile Gift Card focused amount editor without OS keyboard',
+    builder: buildMobilePaymentLinkAmountFocusedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-empty',
+    description: 'Mobile Gift Card optional-message step without a message',
+    builder: buildMobilePaymentLinkMessageEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-filled',
+    description: 'Mobile Gift Card optional-message step with a message',
+    builder: buildMobilePaymentLinkMessageFilledUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-focused',
+    description: 'Mobile Gift Card focused empty message editor',
+    builder: buildMobilePaymentLinkMessageFocusedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-review',
+    description: 'Mobile Gift Card fee review fixture',
+    builder: buildMobilePaymentLinkReviewUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'customise-account',
