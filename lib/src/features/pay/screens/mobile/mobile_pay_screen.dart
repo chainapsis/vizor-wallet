@@ -127,8 +127,30 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   }
 
   void _handleAddressScanned(String value) {
-    ref.read(swapStateProvider.notifier).updateDestination(value);
+    _handleAddressChanged(value);
     _closePayModal();
+  }
+
+  void _handleAddressChanged(String value) {
+    ref.read(swapStateProvider.notifier).updateDestination(value);
+  }
+
+  void _chooseRecipient(PayRecipientSelection selection) {
+    final notifier = ref.read(swapStateProvider.notifier);
+    final contactId = selection.contactId;
+    if (contactId == null) {
+      notifier.updateDestination(selection.address);
+    } else {
+      notifier.selectDestinationContact(
+        address: selection.address,
+        contactId: contactId,
+      );
+    }
+  }
+
+  Future<void> _reviewRecipient(PayRecipientSelection selection) async {
+    _chooseRecipient(selection);
+    await _openReview(selection);
   }
 
   Future<void> _saveContact(
@@ -224,7 +246,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     );
   }
 
-  Future<void> _openReview() async {
+  Future<void> _openReview(PayRecipientSelection selection) async {
     if (_reviewRequestInFlight) return;
     _reviewRequestInFlight = true;
     final requestGeneration = ++_reviewRequestGeneration;
@@ -243,7 +265,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
-      await context.push('/pay/review');
+      await context.push('/pay/review', extra: selection);
     }
   }
 
@@ -264,9 +286,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
     );
+    final addressBook = ref.watch(addressBookProvider);
+    final addressBookInitialLoading =
+        addressBook.isLoading && !addressBook.hasValue;
     final allContacts =
-        ref.watch(addressBookProvider).value?.contacts ??
-        const <AddressBookContact>[];
+        addressBook.value?.contacts ?? const <AddressBookContact>[];
     final contacts = network == null
         ? const <AddressBookContact>[]
         : payCompatibleContacts(allContacts, network);
@@ -281,6 +305,16 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             network: network,
             contacts: contacts,
           );
+    final effectiveSelection = resolvePayRecipientSelection(
+      contacts,
+      swapState.destinationText,
+      explicitSelection: swapState.userExternalContactId == null
+          ? null
+          : PayRecipientSelection(
+              address: swapState.destinationText,
+              contactId: swapState.userExternalContactId,
+            ),
+    );
 
     void back() {
       if (_step == _MobilePayStep.recipient) {
@@ -344,13 +378,17 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     contacts: contacts,
                     recents: recents,
                     busy: swapState.quoteLoading,
-                    enabled: swapState.externalAssetIsAvailable,
+                    enabled:
+                        swapState.externalAssetIsAvailable &&
+                        !addressBookInitialLoading,
+                    selectedContactId: swapState.userExternalContactId,
                     externalAsset: swapState.externalAsset,
-                    onAddressChanged: swapNotifier.updateDestination,
+                    onAddressChanged: _handleAddressChanged,
                     onOpenScanner: () =>
                         _openModal(_PayModalSurface.addressScanner),
-                    onChooseRecipient: swapNotifier.updateDestination,
-                    onSelectRecipient: () => unawaited(_openReview()),
+                    onChooseRecipient: _chooseRecipient,
+                    onSelectRecipient: () =>
+                        unawaited(_reviewRecipient(effectiveSelection)),
                     onAddToContacts: () =>
                         _openModal(_PayModalSurface.addContact),
                   ),
