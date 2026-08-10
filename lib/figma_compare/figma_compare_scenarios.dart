@@ -4,6 +4,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
+import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
@@ -115,6 +116,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-recipient-new-address',
     description: 'Pay recipient with a valid newly typed address',
     builder: buildPayRecipientNewAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-recipient',
+    description: 'Mobile Pay recipient selection with recent contacts',
+    builder: buildMobilePayRecipientUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'pay-in-progress',

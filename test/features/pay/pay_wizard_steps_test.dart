@@ -596,6 +596,35 @@ void main() {
       );
     });
 
+    testWidgets('empty input keeps same-address recent above contacts', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            contacts: [_recentContact],
+            recents: const [
+              PayRecentRecipient(
+                address: _recentAddress,
+                amountText: '-24 USDC',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final recents = find.byKey(const ValueKey('pay_recent_recipients_card'));
+      final contacts = find.byKey(const ValueKey('pay_contacts_card'));
+      expect(recents, findsOneWidget);
+      expect(contacts, findsOneWidget);
+      expect(
+        tester.getTopLeft(recents).dy,
+        lessThan(tester.getTopLeft(contacts).dy),
+      );
+      expect(find.text('Recent Mike'), findsNWidgets(2));
+      expect(find.text('-24 USDC'), findsOneWidget);
+    });
+
     testWidgets('contact match filters to the contact and hides add action', (
       tester,
     ) async {
@@ -932,6 +961,53 @@ void main() {
       );
       expect(chosen?.address, _recentAddress);
       expect(chosen?.contactId, isNull);
+    });
+
+    testWidgets('recent rows preserve same-address contact identities', (
+      tester,
+    ) async {
+      final second = AddressBookContact(
+        id: 'second-mike',
+        label: 'Second Mike',
+        network: _contact.network,
+        address: _contact.address,
+        profilePictureId: 'pfp-02',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      );
+      PayRecipientSelection? chosen;
+
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            contacts: [_contact, second],
+            recents: const [
+              PayRecentRecipient(address: _contactAddress, contactId: 'mike'),
+              PayRecentRecipient(
+                address: _contactAddress,
+                contactId: 'second-mike',
+              ),
+            ],
+            onChooseRecipient: (selection) => chosen = selection,
+          ),
+        ),
+      );
+
+      final recentCard = find.byKey(
+        const ValueKey('pay_recent_recipients_card'),
+      );
+      expect(
+        find.descendant(of: recentCard, matching: find.text('Mike')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: recentCard, matching: find.text('Second Mike')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('pay_recent_${_contactAddress}_second-mike')),
+      );
+      expect(chosen?.contactId, 'second-mike');
     });
 
     testWidgets('duplicate-address contacts remain individually selectable', (

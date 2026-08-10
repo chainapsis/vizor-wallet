@@ -407,6 +407,48 @@ void main() {
       );
     });
 
+    testWidgets('empty input keeps same-address recent above contacts', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: '',
+          addressError: null,
+          contacts: [_contacts.first],
+          recents: const [
+            PayRecentRecipient(address: _recipient, amountText: '1.25 USDC'),
+          ],
+          busy: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      final recents = find.byKey(
+        const ValueKey('mobile_pay_recent_recipients_section'),
+      );
+      final contacts = find.byKey(
+        const ValueKey('mobile_pay_contacts_section'),
+      );
+      expect(recents, findsOneWidget);
+      expect(contacts, findsOneWidget);
+      expect(
+        tester.getTopLeft(recents).dy,
+        lessThan(tester.getTopLeft(contacts).dy),
+      );
+      expect(find.text('Mike'), findsNWidgets(2));
+      expect(find.text('-1.25 USDC'), findsOneWidget);
+    });
+
     testWidgets('new address shows the notice and two pinned actions', (
       tester,
     ) async {
@@ -622,6 +664,113 @@ void main() {
       );
       expect(chosen, isNull);
     });
+
+    testWidgets('recent rows preserve same-address contact identities', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      final second = AddressBookContact(
+        id: 'contact-duplicate',
+        label: 'Second Mike',
+        network: AddressBookNetwork.ethereum,
+        address: _recipient,
+        profilePictureId: 'pfp-03',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      );
+      PayRecipientSelection? chosen;
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: '',
+          addressError: null,
+          contacts: [_contacts.first, second],
+          recents: const [
+            PayRecentRecipient(address: _recipient, contactId: 'contact-1'),
+            PayRecentRecipient(
+              address: _recipient,
+              contactId: 'contact-duplicate',
+            ),
+          ],
+          busy: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (selection) => chosen = selection,
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      final recentSection = find.byKey(
+        const ValueKey('mobile_pay_recent_recipients_section'),
+      );
+      expect(
+        find.descendant(of: recentSection, matching: find.text('Mike')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: recentSection, matching: find.text('Second Mike')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey('mobile_pay_recent_${_recipient}_contact-duplicate'),
+        ),
+      );
+      expect(chosen?.contactId, 'contact-duplicate');
+    });
+
+    testWidgets(
+      'address filtering preserves all same-address stale recent identities',
+      (tester) async {
+        final controller = TextEditingController(text: _recipient);
+        addTearDown(controller.dispose);
+
+        await _pumpStep(
+          tester,
+          MobilePayRecipientStep(
+            controller: controller,
+            typedAddress: _recipient,
+            addressError: null,
+            contacts: const [],
+            recents: const [
+              PayRecentRecipient(
+                address: _recipient,
+                contactId: 'deleted-contact-1',
+              ),
+              PayRecentRecipient(
+                address: _recipient,
+                contactId: 'deleted-contact-2',
+              ),
+            ],
+            busy: false,
+            externalAsset: SwapAsset.usdc,
+            onAddressChanged: (_) {},
+            onOpenScanner: () {},
+            onChooseRecipient: (_) {},
+            onSelectRecipient: () {},
+            onAddToContacts: () {},
+          ),
+        );
+
+        expect(
+          find.byKey(
+            const ValueKey('mobile_pay_recent_${_recipient}_deleted-contact-1'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey('mobile_pay_recent_${_recipient}_deleted-contact-2'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('keeps duplicate-address contacts individually selectable', (
       tester,

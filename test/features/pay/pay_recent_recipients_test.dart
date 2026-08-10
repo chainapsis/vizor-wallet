@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 const _evmA = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -18,6 +19,8 @@ SwapIntent _intent({
   String? depositTxHash,
   String? destinationChainTxHash,
   String? broadcastStatus,
+  String? userExternalContactId,
+  bool payMode = false,
   DateTime? createdAt,
   DateTime? updatedAt,
   DateTime? completedAt,
@@ -36,6 +39,8 @@ SwapIntent _intent({
     destinationChainTxHash: destinationChainTxHash,
     oneClickRecipient: recipient,
     broadcastStatus: broadcastStatus,
+    userExternalContactId: userExternalContactId,
+    payMode: payMode,
     createdAt: createdAt,
     updatedAt: updatedAt,
     completedAt: completedAt,
@@ -137,6 +142,72 @@ void main() {
       expect(recents.single.lastUsedAt, DateTime(2026, 7, 5));
     });
 
+    test('keeps a broadcasted Pay deposit before external delivery', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'pending-local-broadcast',
+            recipient: _evmB,
+            status: SwapIntentStatus.awaitingDeposit,
+            depositTxHash: 'local-zec-deposit-tx',
+            broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+            userExternalContactId: 'local-only',
+            payMode: true,
+            updatedAt: DateTime(2026, 7, 9),
+          ),
+          _intent(
+            id: 'broadcasted-swap-deposit',
+            recipient: _evmB,
+            status: SwapIntentStatus.awaitingDeposit,
+            depositTxHash: 'swap-zec-deposit-tx',
+            broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+            userExternalContactId: 'swap-contact',
+            updatedAt: DateTime(2026, 7, 8),
+          ),
+          _intent(
+            id: 'broadcasted-pay-deposit',
+            recipient: _evmA,
+            status: SwapIntentStatus.awaitingDeposit,
+            depositTxHash: 'pay-zec-deposit-tx',
+            broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+            userExternalContactId: 'alchemist',
+            payMode: true,
+            updatedAt: DateTime(2026, 7, 7),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [],
+      );
+
+      expect(recents, hasLength(1));
+      expect(recents.single.address, _evmA);
+      expect(recents.single.contactId, 'alchemist');
+      expect(recents.single.lastUsedAt, DateTime(2026, 7, 7));
+    });
+
+    test('keeps a storage-failed broadcasted Pay deposit in recents', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'broadcasted-storage-failed',
+            recipient: _evmA,
+            status: SwapIntentStatus.awaitingDeposit,
+            depositTxHash: 'pay-zec-deposit-tx',
+            broadcastStatus:
+                SwapDepositBroadcastStatus.broadcastedStorageFailed,
+            userExternalContactId: 'alchemist',
+            payMode: true,
+            updatedAt: DateTime(2026, 7, 7),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [],
+      );
+
+      expect(recents, hasLength(1));
+      expect(recents.single.contactId, 'alchemist');
+    });
+
     test('a newer failed attempt does not replace a completed recipient', () {
       final recents = payRecentRecipients(
         intents: [
@@ -185,6 +256,103 @@ void main() {
       expect(recents, hasLength(1));
       expect(recents.single.lastUsedAt, DateTime(2026, 7, 7));
     });
+
+    test('keeps same-address uses for different contacts separately', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'older',
+            recipient: _evmA,
+            userExternalContactId: 'first',
+            createdAt: DateTime(2026, 7, 1),
+          ),
+          _intent(
+            id: 'newer',
+            recipient: _evmA,
+            userExternalContactId: 'second',
+            completedAt: DateTime(2026, 7, 7),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [],
+      );
+
+      expect(recents.map((recent) => recent.contactId), ['second', 'first']);
+      expect(recents.map((recent) => recent.address), [_evmA, _evmA]);
+    });
+
+    test(
+      'coalesces legacy and identified uses for one contact before the limit',
+      () {
+        const contact = AddressBookContact(
+          id: 'first',
+          label: 'First',
+          network: AddressBookNetwork.ethereum,
+          address: _evmA,
+          profilePictureId: 'pfp-01',
+          createdAtMs: 0,
+          updatedAtMs: 0,
+        );
+        final recents = payRecentRecipients(
+          intents: [
+            _intent(
+              id: 'identified',
+              recipient: _evmA,
+              userExternalContactId: contact.id,
+              createdAt: DateTime(2026, 7, 3),
+            ),
+            _intent(
+              id: 'legacy',
+              recipient: _evmA,
+              createdAt: DateTime(2026, 7, 2),
+            ),
+            _intent(
+              id: 'other',
+              recipient: _evmB,
+              createdAt: DateTime(2026, 7, 1),
+            ),
+          ],
+          network: AddressBookNetwork.ethereum,
+          contacts: const [contact],
+          limit: 2,
+        );
+
+        expect(recents.map((recent) => recent.contactId), [contact.id, null]);
+        expect(recents.map((recent) => recent.address), [_evmA, _evmB]);
+      },
+    );
+
+    test(
+      'keeps a legacy use address-only when contact identity is ambiguous',
+      () {
+        const first = AddressBookContact(
+          id: 'first',
+          label: 'First',
+          network: AddressBookNetwork.ethereum,
+          address: _evmA,
+          profilePictureId: 'pfp-01',
+          createdAtMs: 0,
+          updatedAtMs: 0,
+        );
+        const second = AddressBookContact(
+          id: 'second',
+          label: 'Second',
+          network: AddressBookNetwork.ethereum,
+          address: _evmA,
+          profilePictureId: 'pfp-02',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        );
+
+        final recents = payRecentRecipients(
+          intents: [_intent(id: 'legacy', recipient: _evmA)],
+          network: AddressBookNetwork.ethereum,
+          contacts: const [first, second],
+        );
+
+        expect(recents.single.contactId, isNull);
+      },
+    );
 
     test('preserves case-distinct recipients on case-sensitive networks', () {
       final caseVariant = _solana.replaceFirst('N', 'n');
@@ -271,7 +439,7 @@ void main() {
       expect(recents, hasLength(5));
     });
 
-    test('excludes saved contacts before applying the recent limit', () {
+    test('keeps the newest recipients when applying the limit', () {
       const thirdAddress = '0x2222222222222222222222222222222222222222';
       final recents = payRecentRecipients(
         intents: [
@@ -292,21 +460,11 @@ void main() {
           ),
         ],
         network: AddressBookNetwork.ethereum,
-        contacts: const [
-          AddressBookContact(
-            id: 'saved',
-            label: 'Saved',
-            network: AddressBookNetwork.ethereum,
-            address: _evmA,
-            profilePictureId: 'pfp-01',
-            createdAtMs: 0,
-            updatedAtMs: 0,
-          ),
-        ],
+        contacts: const [],
         limit: 2,
       );
 
-      expect(recents.map((recent) => recent.address), [_evmB, thirdAddress]);
+      expect(recents.map((recent) => recent.address), [_evmA, _evmB]);
     });
   });
 
@@ -373,6 +531,29 @@ void main() {
       final resolved = resolvePayRecipientSelection(const [first], _evmA);
 
       expect(resolved.contactId, 'first');
+    });
+
+    test('recent selection restores stored identity without guessing', () {
+      const stored = PayRecentRecipient(address: _evmA, contactId: 'second');
+      const stale = PayRecentRecipient(address: _evmA, contactId: 'deleted');
+      const legacy = PayRecentRecipient(address: _evmA);
+
+      expect(
+        payRecipientSelectionForRecent(const [first, second], stored).contactId,
+        'second',
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first], stale).contactId,
+        isNull,
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first], legacy).contactId,
+        'first',
+      );
+      expect(
+        payRecipientSelectionForRecent(const [first, second], legacy).contactId,
+        isNull,
+      );
     });
   });
 
