@@ -310,6 +310,64 @@ void main() {
       expect(cache.writes, isEmpty);
     });
 
+    test('drops cached data when a failed refresh crosses the TTL', () async {
+      var now = DateTime.utc(2026, 8, 10, 12);
+      final source = _CompleterSource();
+      final cache = _FakeCache(
+        value: CachedZecMarketData(
+          data: const ZecMarketData(usdPrice: 30),
+          fetchedAt: now.subtract(const Duration(minutes: 59, seconds: 59)),
+        ),
+      );
+      final container = makeContainer(
+        swapEnabled: true,
+        source: source,
+        cache: cache,
+        now: () => now,
+      );
+      final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
+
+      await Future<void>.delayed(Duration.zero);
+      expect(sub.read()?.usdPrice, 30);
+
+      now = now.add(const Duration(seconds: 2));
+      source.completer.complete(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sub.read(), isNull);
+    });
+
+    test('expires cached data while a refresh is still in flight', () async {
+      final now = DateTime.utc(2026, 8, 10, 12);
+      final source = _CompleterSource();
+      final cache = _FakeCache(
+        value: CachedZecMarketData(
+          data: const ZecMarketData(usdPrice: 30),
+          fetchedAt: now.subtract(
+            zecMarketDataCacheTtl - const Duration(milliseconds: 10),
+          ),
+        ),
+      );
+      final container = makeContainer(
+        swapEnabled: true,
+        source: source,
+        cache: cache,
+        now: () => now,
+      );
+      final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
+
+      await Future<void>.delayed(Duration.zero);
+      expect(sub.read()?.usdPrice, 30);
+      expect(source.fetchCount, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(sub.read(), isNull);
+
+      source.completer.complete(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(sub.read(), isNull);
+    });
+
     test('removes the last value after its one-hour TTL expires', () async {
       var now = DateTime.utc(2026, 8, 10, 12);
       final cache = _FakeCache(

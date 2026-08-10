@@ -235,12 +235,14 @@ final zecHomeMarketDataStateProvider =
     >(ZecHomeMarketDataNotifier.new);
 
 class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
-  Timer? _timer;
+  Timer? _refreshTimer;
+  Timer? _expiryTimer;
   int _epoch = 0;
 
   @override
   ZecHomeMarketDataState build() {
-    _timer?.cancel();
+    _refreshTimer?.cancel();
+    _expiryTimer?.cancel();
     final epoch = ++_epoch;
     if (!ref.watch(swapFeatureEnabledProvider)) {
       return const ZecHomeMarketDataState();
@@ -252,8 +254,32 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
 
     ref.onDispose(() {
       _epoch++;
-      _timer?.cancel();
+      _refreshTimer?.cancel();
+      _expiryTimer?.cancel();
     });
+
+    void clearMarketData() {
+      _expiryTimer?.cancel();
+      _expiryTimer = null;
+      state = const ZecHomeMarketDataState();
+    }
+
+    void scheduleExpiry(DateTime fetchedAt) {
+      _expiryTimer?.cancel();
+      final remaining = fetchedAt
+          .toUtc()
+          .add(zecMarketDataCacheTtl)
+          .difference(now().toUtc());
+      if (remaining <= Duration.zero) {
+        clearMarketData();
+        return;
+      }
+      _expiryTimer = Timer(remaining, () {
+        if (epoch != _epoch || state.fetchedAt != fetchedAt) return;
+        _expiryTimer = null;
+        state = const ZecHomeMarketDataState();
+      });
+    }
 
     Future<void> persist(CachedZecMarketData value) async {
       try {
@@ -265,7 +291,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
 
     Future<void> tick() async {
       if (state.displayData != null && !state.isFreshAt(now())) {
-        state = const ZecHomeMarketDataState();
+        clearMarketData();
       }
       final data = await source.fetchMarketData();
       if (epoch != _epoch) return;
@@ -276,11 +302,14 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
           liveData: data,
           fetchedAt: fetchedAt,
         );
+        scheduleExpiry(fetchedAt);
         unawaited(
           persist(CachedZecMarketData(data: data, fetchedAt: fetchedAt)),
         );
+      } else if (state.displayData != null && !state.isFreshAt(now())) {
+        clearMarketData();
       }
-      _timer = Timer(refreshInterval, () => unawaited(tick()));
+      _refreshTimer = Timer(refreshInterval, () => unawaited(tick()));
     }
 
     Future<void> initialize() async {
@@ -292,6 +321,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
             displayData: cached.data,
             fetchedAt: cached.fetchedAt,
           );
+          scheduleExpiry(cached.fetchedAt);
         }
       } catch (e) {
         log('zecMarketData: cache read failed: $e');
