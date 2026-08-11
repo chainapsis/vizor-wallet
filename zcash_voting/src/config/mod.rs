@@ -76,13 +76,6 @@ const SHA256_CHECKSUM_PREFIX: &str = "sha256:";
 const VERSION_V0: &str = "v0";
 const VOTE_SERVER_VERSION_V1: &str = "v1";
 const ROUND_PARAM_BYTE_LEN: usize = 32;
-// Keep aligned with `imt_tree::tree::TREE_DEPTH` (nullifier IMT depth).
-const MAX_PIR_CIRCUIT_DEPTH: u32 = 29;
-// These limits are deliberately generous compared with supported depth-19
-// splits. They leave ample headroom for future layouts while protecting clients
-// from the worst-case exponential tier allocations.
-const MAX_PIR_TIER0_BYTES: usize = 7_864_000;
-const MAX_PIR_TIER1_ROW_BYTES: usize = 2_457_600;
 
 /// Versions of each voting-protocol component implemented by this crate.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -658,23 +651,6 @@ fn validate_pir_layout(layout: PirLayout) -> Result<(), VotingConfigError> {
 pub(crate) fn validate_and_convert_pir_layout(
     layout: PirLayout,
 ) -> Result<pir_types::PirLayout, String> {
-    let combined_depth = layout
-        .tier0_layers
-        .checked_add(layout.tier1_layers)
-        .ok_or_else(|| "pir_layout tier layer sum overflows u32".to_string())?;
-    if layout.pir_depth != combined_depth {
-        return Err(format!(
-            "pir_layout.pir_depth {} must equal tier0_layers {} + tier1_layers {}",
-            layout.pir_depth, layout.tier0_layers, layout.tier1_layers
-        ));
-    }
-    if layout.pir_depth == 0 || layout.pir_depth > MAX_PIR_CIRCUIT_DEPTH {
-        return Err(format!(
-            "pir_layout.pir_depth {} is outside the supported circuit range 1..={MAX_PIR_CIRCUIT_DEPTH}",
-            layout.pir_depth
-        ));
-    }
-
     let negotiated = pir_types::PirLayout {
         pir_depth: usize::try_from(layout.pir_depth).map_err(|_| {
             format!(
@@ -695,19 +671,7 @@ pub(crate) fn validate_and_convert_pir_layout(
             )
         })?,
     };
-    negotiated.validate_ypir_bounds()?;
-    let tier0_bytes = negotiated.tier0_bytes()?;
-    if tier0_bytes > MAX_PIR_TIER0_BYTES {
-        return Err(format!(
-            "pir_layout Tier 0 size {tier0_bytes} bytes exceeds client limit {MAX_PIR_TIER0_BYTES}"
-        ));
-    }
-    let tier1_row_bytes = negotiated.tier1_row_bytes()?;
-    if tier1_row_bytes > MAX_PIR_TIER1_ROW_BYTES {
-        return Err(format!(
-            "pir_layout Tier 1 row size {tier1_row_bytes} bytes exceeds client limit {MAX_PIR_TIER1_ROW_BYTES}"
-        ));
-    }
+    negotiated.validate_supported()?;
     Ok(negotiated)
 }
 
@@ -1062,56 +1026,49 @@ mod tests {
             resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
 
         assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
-        assert!(err
-            .to_string()
-            .contains("pir_layout.pir_depth 19 must equal tier0_layers 12 + tier1_layers 8"));
+        assert!(err.to_string().contains(
+            "PIR layout is inconsistent: pir_depth 19 != tier0_layers 12 + tier1_layers 8"
+        ));
     }
 
     #[test]
-    fn dynamic_resolution_rejects_pir_layout_arithmetic_overflow() {
+    fn dynamic_resolution_rejects_pir_layout_above_shared_tier_limit() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
         let mut dynamic: serde_json::Value =
             serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
         dynamic["pir_layout"] = serde_json::json!({
             "pir_depth": 29,
-            "tier0_layers": u32::MAX,
-            "tier1_layers": 1,
+            "tier0_layers": 17,
+            "tier1_layers": 12,
         });
 
         let err =
             resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
 
         assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
-        assert!(err.to_string().contains("tier layer sum overflows u32"));
+        assert!(err
+            .to_string()
+            .contains("PIR layout Tier 0 layers 17 exceeds maximum 16"));
     }
 
     #[test]
     fn dynamic_resolution_rejects_pir_depth_outside_circuit_range() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
-        for layout in [
-            serde_json::json!({
-                "pir_depth": 0,
-                "tier0_layers": 0,
-                "tier1_layers": 0,
-            }),
-            serde_json::json!({
-                "pir_depth": 30,
-                "tier0_layers": 23,
-                "tier1_layers": 7,
-            }),
-        ] {
-            let mut dynamic: serde_json::Value =
-                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
-            dynamic["pir_layout"] = layout;
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"] = serde_json::json!({
+            "pir_depth": 30,
+            "tier0_layers": 15,
+            "tier1_layers": 15,
+        });
 
-            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
-                .unwrap_err();
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
 
-            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
-            assert!(err
-                .to_string()
-                .contains("outside the supported circuit range 1..=29"));
-        }
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err
+            .to_string()
+            .contains("unsupported PIR layout depth 30; expected 1..=29"));
     }
 
     #[test]
@@ -1156,7 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_rejects_pir_layouts_exceeding_client_resource_limits() {
+    fn dynamic_resolution_rejects_pir_layouts_exceeding_shared_tier_limits() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
         for (layout, expected) in [
             (
@@ -1165,7 +1122,7 @@ mod tests {
                     "tier0_layers": 23,
                     "tier1_layers": 6,
                 }),
-                "Tier 0 size 805306336 bytes exceeds client limit 7864000",
+                "PIR layout Tier 0 layers 23 exceeds maximum 16",
             ),
             (
                 serde_json::json!({
@@ -1173,7 +1130,7 @@ mod tests {
                     "tier0_layers": 11,
                     "tier1_layers": 18,
                 }),
-                "Tier 1 row size 25165824 bytes exceeds client limit 2457600",
+                "PIR layout Tier 1 layers 18 exceeds maximum 15",
             ),
         ] {
             let mut dynamic: serde_json::Value =
@@ -1189,9 +1146,9 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_accepts_layouts_within_client_resource_limits() {
+    fn dynamic_resolution_accepts_layouts_supported_by_shared_predicate() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
-        for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11)] {
+        for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11), (11, 15)] {
             let mut dynamic: serde_json::Value =
                 serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
             dynamic["pir_layout"] = serde_json::json!({
