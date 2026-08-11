@@ -956,7 +956,6 @@ final class SecureScreenshotShield {
       if let attached = shieldedWindow, attached === Self.keyWindow() {
         return
       }
-      removeGeometryObservers()
       isLayerAttached = false
       shieldedWindow = nil
       canvasLayer = nil
@@ -1041,7 +1040,7 @@ final class SecureScreenshotShield {
         // (the token set is unchanged). Re-graft to the live window here — a
         // no-op when the window is unchanged — before re-pinning geometry, so
         // the new window is inside the secure canvas and stays blanked.
-        if self.isLayerAttached { self.attachLayerIfNeeded() }
+        self.attachLayerIfNeeded()
         self.reassertWindowGeometry()
       }
     }
@@ -1059,14 +1058,6 @@ final class SecureScreenshotShield {
         object: nil, queue: .main, using: reassert
       ),
     ]
-  }
-
-  private func removeGeometryObservers() {
-    let nc = NotificationCenter.default
-    for observer in geometryObservers {
-      nc.removeObserver(observer)
-    }
-    geometryObservers.removeAll()
   }
 
   private static func keyWindow() -> UIWindow? {
