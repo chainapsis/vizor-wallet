@@ -33,6 +33,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.onCopy,
     this.showTitle = true,
     this.addressBookContacts = const [],
+    this.userExternalContactId,
     this.payMode = false,
     super.key,
   });
@@ -43,6 +44,7 @@ class SwapReviewPageContent extends StatelessWidget {
   /// Saved contacts used to label the recipient/refund address lines when
   /// they match an address-book entry.
   final Iterable<AddressBookContact> addressBookContacts;
+  final String? userExternalContactId;
   final bool expired;
   final String? amountWarning;
   final String? startError;
@@ -182,6 +184,7 @@ class SwapReviewPageContent extends StatelessWidget {
       contacts: addressBookContacts,
       asset: asset,
       address: address,
+      contactId: userExternalContactId,
     )?.label.trim();
     final compact = compactSwapAddress(address);
     if (label == null || label.isEmpty) return compact;

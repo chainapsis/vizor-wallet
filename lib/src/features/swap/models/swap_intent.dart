@@ -34,6 +34,7 @@ class SwapIntentRecord {
     this.broadcastStatus,
     this.oneClickRecipient,
     this.oneClickRefundTo,
+    this.userExternalContactId,
     this.depositDeadline,
     this.accountUuid,
     this.payMode = false,
@@ -76,6 +77,7 @@ class SwapIntentRecord {
       broadcastStatus: intent.broadcastStatus,
       oneClickRecipient: intent.oneClickRecipient,
       oneClickRefundTo: intent.oneClickRefundTo,
+      userExternalContactId: intent.userExternalContactId,
       depositDeadline: intent.depositDeadline,
       accountUuid: intent.accountUuid,
       payMode: intent.payMode,
@@ -117,6 +119,7 @@ class SwapIntentRecord {
   final String? broadcastStatus;
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
+  final String? userExternalContactId;
   final DateTime? depositDeadline;
   final String? accountUuid;
   final bool payMode;
@@ -160,6 +163,7 @@ class SwapIntentRecord {
     String? broadcastStatus,
     String? oneClickRecipient,
     String? oneClickRefundTo,
+    String? userExternalContactId,
     DateTime? depositDeadline,
     String? accountUuid,
     bool? payMode,
@@ -209,6 +213,8 @@ class SwapIntentRecord {
           : broadcastStatus ?? this.broadcastStatus,
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
+      userExternalContactId:
+          userExternalContactId ?? this.userExternalContactId,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
       payMode: payMode ?? this.payMode,
@@ -251,6 +257,7 @@ class SwapIntent {
     this.statusError,
     this.oneClickRecipient,
     this.oneClickRefundTo,
+    this.userExternalContactId,
     this.depositDeadline,
     this.accountUuid,
     this.payMode = false,
@@ -291,6 +298,7 @@ class SwapIntent {
   final String? statusError;
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
+  final String? userExternalContactId;
   final DateTime? depositDeadline;
   final String? accountUuid;
   final bool payMode;
@@ -348,6 +356,7 @@ class SwapIntent {
     String? statusError,
     String? oneClickRecipient,
     String? oneClickRefundTo,
+    String? userExternalContactId,
     DateTime? depositDeadline,
     String? accountUuid,
     bool? payMode,
@@ -393,6 +402,8 @@ class SwapIntent {
       statusError: clearStatusError ? null : statusError ?? this.statusError,
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
+      userExternalContactId:
+          userExternalContactId ?? this.userExternalContactId,
       depositDeadline: depositDeadline ?? this.depositDeadline,
       accountUuid: accountUuid ?? this.accountUuid,
       payMode: payMode ?? this.payMode,

@@ -19,6 +19,7 @@ import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
         MobileIronwoodMigrationKeystoneDenominationSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
+import '../../features/pay/models/pay_recent_recipients.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -37,6 +38,7 @@ import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dar
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
+import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
@@ -99,6 +101,15 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileSeedPhraseScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/viewing-key',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileViewingKeyScreen(
           accountUuid: state.extra is String ? state.extra as String : null,
         ),
       ),
@@ -193,10 +204,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/pay/review',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileSwapReviewScreen(payMode: true),
-      ),
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileSwapReviewScreen(
+            payMode: true,
+            recipientSelection: extra is PayRecipientSelection ? extra : null,
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/pay/submitted/:intentId',

@@ -75,6 +75,7 @@ import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
+import 'src/features/settings/screens/settings_viewing_key_screen.dart';
 import 'src/features/settings/settings_platform.dart';
 import 'src/features/settings/widgets/windows_update_download_flow.dart';
 import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
@@ -1009,6 +1010,12 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
     ),
   ),
   GoRoute(
+    path: '/settings/viewing-key',
+    builder: (_, state) => SettingsViewingKeyScreen(
+      accountUuid: state.extra is String ? state.extra as String : null,
+    ),
+  ),
+  GoRoute(
     path: '/settings/change-password',
     builder: (_, _) => const SettingsChangePasswordScreen(),
   ),
@@ -1327,6 +1334,7 @@ class _WindowsUpdatePromptHostState
         path.startsWith('/import-keystone') ||
         path.startsWith('/send') ||
         path.startsWith('/settings/secret-passphrase') ||
+        path.startsWith('/settings/viewing-key') ||
         path.startsWith('/settings/change-password')) {
       return false;
     }

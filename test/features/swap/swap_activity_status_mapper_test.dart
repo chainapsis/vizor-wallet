@@ -246,11 +246,7 @@ void main() {
         ),
       );
 
-      expect(
-        presentation.receiveLabel,
-        'Recipient gets',
-        reason: status.name,
-      );
+      expect(presentation.receiveLabel, 'Recipient gets', reason: status.name);
     }
   });
 
@@ -502,6 +498,87 @@ void main() {
     );
     expect(depositing.payDetailText, startsWith('Refund to: Treasury ('));
     expect(depositing.payDetailCopyText, recipientAddress);
+  });
+
+  test('selected contact id distinguishes duplicate Activity labels', () {
+    const address = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final contacts = [
+      _contact(
+        label: 'First',
+        network: AddressBookNetwork.ethereum,
+        address: address,
+      ),
+      _contact(
+        label: 'Second',
+        network: AddressBookNetwork.ethereum,
+        address: address,
+      ),
+    ];
+
+    final sending = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: address,
+        userExternalContactId: 'contact_Second',
+      ),
+      addressBookContacts: contacts,
+    );
+    expect(sending.receiveDetailText, startsWith('To: Second ('));
+    expect(
+      _detailRow(sending.details, 'USDC recipient').addressBookLabel,
+      'Second',
+    );
+
+    final depositing = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.awaitingExternalDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        oneClickRefundTo: address,
+        userExternalContactId: 'contact_Second',
+      ),
+      addressBookContacts: contacts,
+    );
+    expect(depositing.payDetailText, startsWith('Refund to: Second ('));
+    expect(
+      _detailRow(depositing.details, 'USDC refund address').addressBookLabel,
+      'Second',
+    );
+
+    final legacy = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: address,
+      ),
+      addressBookContacts: contacts,
+    );
+    expect(legacy.receiveDetailText, startsWith('To: First ('));
+
+    final staleSelection = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: address,
+        userExternalContactId: 'deleted-contact',
+      ),
+      addressBookContacts: contacts,
+    );
+    expect(staleSelection.receiveDetailText, isNot(contains('First')));
+    expect(staleSelection.receiveDetailText, isNot(contains('Second')));
+    expect(
+      _detailRow(staleSelection.details, 'USDC recipient').addressBookLabel,
+      isNull,
+    );
   });
 
   test('EVM contact saved on another chain labels the address row', () {
@@ -951,6 +1028,7 @@ SwapIntent _intent({
   DateTime? createdAt,
   DateTime? completedAt,
   bool payMode = false,
+  String? userExternalContactId,
 }) {
   return SwapIntent(
     id: 'swap-activity',
@@ -978,6 +1056,7 @@ SwapIntent _intent({
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
     payMode: payMode,
+    userExternalContactId: userExternalContactId,
     createdAt: createdAt,
     completedAt: completedAt,
   );
