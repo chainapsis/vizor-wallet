@@ -1,4 +1,5 @@
 import Flutter
+import QuartzCore
 import Security
 import UIKit
 import UserNotifications
@@ -7,6 +8,25 @@ import XCTest
 @testable import Runner
 
 class RunnerTests: XCTestCase {
+
+  func testScreenshotShieldRestoresWindowLayerBeforeRegrafting() {
+    let hostLayer = CALayer()
+    let secureLayer = CALayer()
+    let canvasLayer = CALayer()
+    let windowLayer = CALayer()
+    hostLayer.addSublayer(secureLayer)
+    secureLayer.addSublayer(canvasLayer)
+    canvasLayer.addSublayer(windowLayer)
+
+    SecureScreenshotShield.restoreLayerHierarchy(
+      windowLayer: windowLayer,
+      secureLayer: secureLayer
+    )
+
+    XCTAssertTrue(windowLayer.superlayer === hostLayer)
+    XCTAssertNil(secureLayer.superlayer)
+    XCTAssertFalse(canvasLayer.sublayers?.contains(windowLayer) ?? false)
+  }
 
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(

@@ -924,6 +924,7 @@ final class SecureScreenshotShield {
   private let secureField = UITextField()
   private var isLayerAttached = false
   private weak var shieldedWindow: UIWindow?
+  private weak var shieldedWindowLayer: CALayer?
   private weak var canvasLayer: CALayer?
   private var geometryObservers: [NSObjectProtocol] = []
 
@@ -947,20 +948,29 @@ final class SecureScreenshotShield {
   }
 
   private func attachLayerIfNeeded() {
+    // Keep the existing graft intact while UIKit temporarily has no key window.
+    // If the same window becomes key again, the identity check below reuses it
+    // instead of trying to insert the secure field beneath its own descendant.
+    guard let window = Self.keyWindow() else { return }
+
     // Re-graft if not attached, or if the window we grafted into is gone or is
     // no longer the key window — a UIScene can reconnect and hand us a fresh
     // UIWindow. Without this, `isLayerAttached` would latch to a dead window and
     // silently stop blanking: a screenshot would then capture the secret in
     // plaintext with no error and no fallback.
     if isLayerAttached {
-      if let attached = shieldedWindow, attached === Self.keyWindow() {
+      if let attached = shieldedWindow, attached === window {
         return
       }
+      Self.restoreLayerHierarchy(
+        windowLayer: shieldedWindowLayer,
+        secureLayer: secureField.layer
+      )
       isLayerAttached = false
       shieldedWindow = nil
+      shieldedWindowLayer = nil
       canvasLayer = nil
     }
-    guard let window = Self.keyWindow() else { return }
 
     secureField.isUserInteractionEnabled = false
     secureField.translatesAutoresizingMaskIntoConstraints = false
@@ -989,11 +999,27 @@ final class SecureScreenshotShield {
     canvas.addSublayer(window.layer)
 
     shieldedWindow = window
+    shieldedWindowLayer = window.layer
     canvasLayer = canvas
     isLayerAttached = true
 
     reassertWindowGeometry()
     installGeometryObservers()
+  }
+
+  /// Reverses the secure-canvas graft before moving the field to a different
+  /// window. The field layer occupies the window layer's former host position,
+  /// so restore the window there before attempting another UIKit attachment.
+  static func restoreLayerHierarchy(
+    windowLayer: CALayer?,
+    secureLayer: CALayer
+  ) {
+    let originalSuperlayer = secureLayer.superlayer
+    windowLayer?.removeFromSuperlayer()
+    secureLayer.removeFromSuperlayer()
+    if let originalSuperlayer, let windowLayer {
+      originalSuperlayer.addSublayer(windowLayer)
+    }
   }
 
   /// Robust canvas identification: prefer the private secure-text canvas subview
