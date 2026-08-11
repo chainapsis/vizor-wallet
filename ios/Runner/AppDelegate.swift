@@ -934,9 +934,7 @@ final class SecureScreenshotShield {
   /// the one-time layer setup runs at most once even across Dart hot restarts.
   func setSensitiveContentVisible(_ visible: Bool) {
     guard Self.isNativeBlankingEnabled else { return }
-    // MethodChannel callbacks land on the main thread, but never assume it for
-    // UIKit access — hop explicitly.
-    DispatchQueue.main.async { [weak self] in
+    Self.performOnMain { [weak self] in
       guard let self else { return }
       self.attachLayerIfNeeded()
       // If the layer could not be attached (no window yet), a later call
@@ -944,6 +942,17 @@ final class SecureScreenshotShield {
       guard self.isLayerAttached else { return }
       self.reassertWindowGeometry()
       self.secureField.isSecureTextEntry = visible
+    }
+  }
+
+  /// MethodChannel handlers use the main thread by default. Apply inline there
+  /// so capture exclusion is enabled before the handler returns; retain a safe
+  /// fallback for any future caller that reaches this API off-main.
+  static func performOnMain(_ operation: @escaping () -> Void) {
+    if Thread.isMainThread {
+      operation()
+    } else {
+      DispatchQueue.main.async(execute: operation)
     }
   }
 

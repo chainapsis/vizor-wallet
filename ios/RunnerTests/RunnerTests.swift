@@ -9,6 +9,22 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testScreenshotShieldAppliesInlineOnMainThread() {
+    let applied = expectation(description: "secure flag applied inline")
+
+    DispatchQueue.main.async {
+      var didApply = false
+      SecureScreenshotShield.performOnMain {
+        didApply = true
+      }
+
+      XCTAssertTrue(didApply)
+      applied.fulfill()
+    }
+
+    wait(for: [applied], timeout: 1)
+  }
+
   func testScreenshotShieldRestoresWindowLayerBeforeRegrafting() {
     let hostLayer = CALayer()
     let secureLayer = CALayer()
