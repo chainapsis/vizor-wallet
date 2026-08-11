@@ -899,8 +899,11 @@ class MobileSeedScreenshotWarningSheet extends StatefulWidget {
 class _MobileSeedScreenshotWarningSheetState
     extends State<MobileSeedScreenshotWarningSheet> {
   late final AppLifecycleListener _lifecycleListener;
+  Timer? _inactiveGraceTimer;
+  var _canDismissOnInactive = false;
   var _dismissed = false;
 
+  static const _inactiveDismissGracePeriod = Duration(milliseconds: 500);
   static const _iconSize = 30.0;
   static const _titleMaxWidth = 253.0;
   static const _textHeightBehavior = TextHeightBehavior(
@@ -923,9 +926,18 @@ class _MobileSeedScreenshotWarningSheetState
   void initState() {
     super.initState();
     _lifecycleListener = AppLifecycleListener(
+      onInactive: _dismissAfterGracePeriod,
       onHide: _dismiss,
       onPause: _dismiss,
     );
+    _inactiveGraceTimer = Timer(_inactiveDismissGracePeriod, () {
+      if (mounted) _canDismissOnInactive = true;
+    });
+  }
+
+  void _dismissAfterGracePeriod() {
+    if (!_canDismissOnInactive) return;
+    _dismiss();
   }
 
   void _dismiss() {
@@ -936,6 +948,7 @@ class _MobileSeedScreenshotWarningSheetState
 
   @override
   void dispose() {
+    _inactiveGraceTimer?.cancel();
     _lifecycleListener.dispose();
     super.dispose();
   }

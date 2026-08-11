@@ -489,8 +489,40 @@ void main() {
     expect(tester.getSize(buttonFinder).height, 50);
   });
 
+  testWidgets('ignores immediate inactive then dismisses on a later inactive', (
+    tester,
+  ) async {
+    final screenshots = StreamController<void>();
+    addTearDown(screenshots.close);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+
+    await tester.pumpWidget(_app(screenshotStream: screenshots.stream));
+    await _revealSecret(tester);
+    screenshots.add(null);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 1));
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileSeedScreenshotWarningSheet), findsNothing);
+  });
+
   testWidgets(
-    'dismisses the screenshot warning when hidden',
+    'dismisses when hidden during the screenshot inactive grace period',
     (tester) async {
       final screenshots = StreamController<void>();
       addTearDown(screenshots.close);
