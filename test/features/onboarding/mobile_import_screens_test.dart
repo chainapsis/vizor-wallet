@@ -400,6 +400,44 @@ void main() {
     expect(find.text('Birthday: $_validMnemonic'), findsOneWidget);
   });
 
+  testWidgets('review releases sensitive visibility after birthday covers it', (
+    tester,
+  ) async {
+    _mockClipboard(tester, _validMnemonic);
+    await tester.pumpWidget(_entryAppWithBirthdayProbe());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
+    await tester.pumpAndSettle();
+
+    final overlayFinder = find.byType(
+      SensitivePrivacyOverlay,
+      skipOffstage: false,
+    );
+    expect(
+      tester
+          .widget<SensitivePrivacyOverlay>(overlayFinder)
+          .sensitiveContentVisible,
+      isTrue,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_review_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(MobileImportReviewScreen, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<SensitivePrivacyOverlay>(overlayFinder)
+          .sensitiveContentVisible,
+      isFalse,
+    );
+  });
+
   testWidgets('clearing a pasted review preserves the import stack', (
     tester,
   ) async {
