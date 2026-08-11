@@ -939,8 +939,8 @@ Widget _sendHarness({
         AsyncValue.data(migrationCta),
       ),
       zecUsdPriceProvider == null
-          ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
-          : zecHomeUsdUnitPriceProvider.overrideWith(
+          ? zecLiveUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
+          : zecLiveUsdUnitPriceProvider.overrideWith(
               (ref) => ref.watch(zecUsdPriceProvider),
             ),
       syncProvider.overrideWith(

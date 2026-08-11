@@ -57,7 +57,7 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
   void didUpdateWidget(covariant KeystoneScanHelpOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.visible) {
-      _hide();
+      _scheduleHide();
       return;
     }
     if (!oldWidget.visible) {
@@ -75,6 +75,13 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
         return;
       }
       _overlayController.show();
+    });
+  }
+
+  void _scheduleHide() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.visible) return;
+      _hide();
     });
   }
 

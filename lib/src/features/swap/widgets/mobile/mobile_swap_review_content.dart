@@ -27,6 +27,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     required this.accountLabel,
     required this.accountProfilePictureId,
     this.addressBookContacts = const [],
+    this.userExternalContactId,
     required this.expired,
     required this.amountWarning,
     required this.startError,
@@ -42,6 +43,7 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? accountLabel;
   final String accountProfilePictureId;
   final Iterable<AddressBookContact> addressBookContacts;
+  final String? userExternalContactId;
   final bool expired;
   final String? amountWarning;
   final String? startError;
@@ -59,6 +61,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       contacts: addressBookContacts,
       asset: sendsZec ? quote.receiveAsset : quote.sellAsset,
       address: externalAddress,
+      contactId: userExternalContactId,
     )?.label.trim();
     final externalCompact = compactSwapAddress(
       externalAddress,

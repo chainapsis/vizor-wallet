@@ -370,25 +370,19 @@ abstract interface class VotingRustApi {
 
   Future<List<int>> generateVotingHotkey({required String network});
 
-  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndices,
   });
 
-  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  });
-
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   });
 
   Future<List<rust_voting.KeystoneSignatureRecord>> getKeystoneSignatures({
@@ -654,47 +648,32 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndices,
   }) {
-    return rust_api.buildKeystoneDelegationRequest(
+    return rust_api.buildKeystoneDelegationRequests(
       ctx: ctx,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
+      bundleIndices: bundleIndices,
     );
   }
 
   @override
-  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  }) {
-    return rust_api.parseSignedVotingPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
-    );
-  }
-
-  @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) {
-    return rust_api.storeKeystoneSignature(
+    return rust_api.storeKeystoneSignaturesBatch(
       dbPath: dbPath,
       accountUuid: accountUuid,
       roundId: roundId,
-      bundleIndex: bundleIndex,
-      sig: sig,
-      sighash: sighash,
-      rk: rk,
+      signatures: signatures,
     );
   }
 

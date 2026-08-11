@@ -30,6 +30,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.recents,
     required this.busy,
     this.enabled = true,
+    this.selectedContactId,
     required this.externalAsset,
     required this.onAddressChanged,
     required this.onOpenScanner,
@@ -47,10 +48,11 @@ class MobilePayRecipientStep extends StatefulWidget {
   final List<PayRecentRecipient> recents;
   final bool busy;
   final bool enabled;
+  final String? selectedContactId;
   final SwapAsset externalAsset;
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
-  final ValueChanged<String> onChooseRecipient;
+  final ValueChanged<PayRecipientSelection> onChooseRecipient;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
 
@@ -78,19 +80,46 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final typed = widget.typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final valid = hasInput && widget.addressError == null;
-    final contactMatch = valid ? _contactForAddress(typed) : null;
-    final recentMatch = valid ? _recentForAddress(typed) : null;
-    final unknownAddress = valid && contactMatch == null && recentMatch == null;
+    final contactMatches = valid
+        ? payContactsForAddress(widget.contacts, typed)
+        : const <AddressBookContact>[];
+    final recentMatches = valid
+        ? _recentsForAddress(typed, widget.recents)
+        : const <PayRecentRecipient>[];
+    final unknownAddress =
+        valid && contactMatches.isEmpty && recentMatches.isEmpty;
     final visibleRecents = !hasInput
         ? widget.recents
-        : contactMatch == null && recentMatch != null
-        ? <PayRecentRecipient>[recentMatch]
+        : contactMatches.isEmpty
+        ? recentMatches
         : const <PayRecentRecipient>[];
     final visibleContacts = !hasInput
         ? widget.contacts
-        : contactMatch != null
-        ? <AddressBookContact>[contactMatch]
+        : contactMatches.isNotEmpty
+        ? contactMatches
         : const <AddressBookContact>[];
+
+    Widget buildRecentRow(PayRecentRecipient recent) {
+      final selection = payRecipientSelectionForRecent(widget.contacts, recent);
+      final contact = payContactForSelection(widget.contacts, selection);
+      final identityKey = recent.contactId == null
+          ? recent.address
+          : '${recent.address}_${recent.contactId}';
+      return _RecipientRow(
+        key: ValueKey('mobile_pay_recent_$identityKey'),
+        contact: contact,
+        address: recent.address,
+        amountText: recent.amountText,
+        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        selected:
+            selection.contactId != null &&
+            selection.contactId == widget.selectedContactId,
+        showSelectionIndicator: false,
+        onTap: widget.busy || !widget.enabled
+            ? null
+            : () => widget.onChooseRecipient(selection),
+      );
+    }
 
     return Column(
       key: const ValueKey('mobile_pay_recipient_step'),
@@ -121,22 +150,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           title: 'Recently sent',
                           children: [
                             for (final recent in visibleRecents)
-                              _RecipientRow(
-                                key: ValueKey(
-                                  'mobile_pay_recent_${recent.address}',
-                                ),
-                                contact: _contactForAddress(recent.address),
-                                address: recent.address,
-                                amountText: recent.amountText,
-                                timeLabel: payRecentTimeLabel(
-                                  recent.lastUsedAt,
-                                ),
-                                onTap: widget.busy
-                                    ? null
-                                    : () => widget.onChooseRecipient(
-                                        recent.address,
-                                      ),
-                              ),
+                              buildRecentRow(recent),
                           ],
                         ),
                       ],
@@ -155,10 +169,21 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                                 ),
                                 contact: contact,
                                 address: contact.address,
-                                onTap: widget.busy
+                                selected:
+                                    widget.selectedContactId == contact.id,
+                                showSelectionIndicator:
+                                    payContactsForAddress(
+                                      widget.contacts,
+                                      contact.address,
+                                    ).length >
+                                    1,
+                                onTap: widget.busy || !widget.enabled
                                     ? null
                                     : () => widget.onChooseRecipient(
-                                        contact.address,
+                                        PayRecipientSelection(
+                                          address: contact.address,
+                                          contactId: contact.id,
+                                        ),
                                       ),
                               ),
                           ],
@@ -207,7 +232,8 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                 AppButton(
                   key: const ValueKey('mobile_pay_recipient_continue_button'),
                   expand: true,
-                  leading: widget.busy ? const AppIcon(AppIcons.loader) : null,
+                  trailing: widget.busy ? const AppIcon(AppIcons.loader) : null,
+                  iconGap: AppSpacing.xxs,
                   onPressed: widget.busy || !widget.enabled
                       ? null
                       : widget.onSelectRecipient,
@@ -420,22 +446,16 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     );
   }
 
-  AddressBookContact? _contactForAddress(String address) {
+  List<PayRecentRecipient> _recentsForAddress(
+    String address,
+    Iterable<PayRecentRecipient> recents,
+  ) {
     final needle = _normalizedAddress(address);
-    if (needle.isEmpty) return null;
-    for (final contact in widget.contacts) {
-      if (_normalizedAddress(contact.address) == needle) return contact;
-    }
-    return null;
-  }
-
-  PayRecentRecipient? _recentForAddress(String address) {
-    final needle = _normalizedAddress(address);
-    if (needle.isEmpty) return null;
-    for (final recent in widget.recents) {
-      if (_normalizedAddress(recent.address) == needle) return recent;
-    }
-    return null;
+    if (needle.isEmpty) return const [];
+    return [
+      for (final recent in recents)
+        if (_normalizedAddress(recent.address) == needle) recent,
+    ];
   }
 
   String _normalizedAddress(String address) {
@@ -506,6 +526,8 @@ class _RecipientRow extends StatelessWidget {
     this.contact,
     this.amountText,
     this.timeLabel,
+    this.selected = false,
+    this.showSelectionIndicator = false,
     this.onTap,
     super.key,
   });
@@ -514,6 +536,8 @@ class _RecipientRow extends StatelessWidget {
   final String address;
   final String? amountText;
   final String? timeLabel;
+  final bool selected;
+  final bool showSelectionIndicator;
   final VoidCallback? onTap;
 
   @override
@@ -527,6 +551,9 @@ class _RecipientRow extends StatelessWidget {
     );
     final amount = _outgoingAmountText(amountText);
     final row = SizedBox(
+      key: contact == null
+          ? null
+          : ValueKey('mobile_pay_contact_row_surface_${contact!.id}'),
       height: _recipientRowHeight,
       child: Row(
         children: [
@@ -613,18 +640,52 @@ class _RecipientRow extends StatelessWidget {
               ],
             ),
           ],
+          if (showSelectionIndicator) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _ContactSelectionSlot(selected: selected, contactId: contact!.id),
+          ],
         ],
       ),
     );
 
-    if (onTap == null) return row;
+    if (onTap == null) return Semantics(selected: selected, child: row);
     return Semantics(
       button: true,
+      selected: selected,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: row,
       ),
+    );
+  }
+}
+
+class _ContactSelectionSlot extends StatelessWidget {
+  const _ContactSelectionSlot({
+    required this.selected,
+    required this.contactId,
+  });
+
+  final bool selected;
+  final String contactId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: ValueKey('mobile_pay_contact_selection_slot_$contactId'),
+      width: 18,
+      height: 18,
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 16,
+                color: context.colors.icon.accent,
+                semanticLabel: 'Selected contact',
+              ),
+            )
+          : null,
     );
   }
 }

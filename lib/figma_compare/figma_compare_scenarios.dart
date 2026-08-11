@@ -4,6 +4,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
+import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
@@ -43,6 +44,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'settings-secret-passphrase-reveal-without-bip39',
     description: 'Desktop secret passphrase recovery without BIP39 section',
     builder: buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-viewing-key-reveal',
+    description: 'Desktop viewing key reveal with privacy guidance',
+    builder: buildSettingsViewingKeyRevealUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-reveal',
+    description: 'Mobile viewing key reveal with privacy guidance',
+    builder: buildMobileSettingsViewingKeyRevealUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'import-secret-passphrase-empty',
@@ -103,6 +116,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-recipient-new-address',
     description: 'Pay recipient with a valid newly typed address',
     builder: buildPayRecipientNewAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-recipient',
+    description: 'Mobile Pay recipient selection with recent contacts',
+    builder: buildMobilePayRecipientUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'pay-in-progress',
@@ -197,6 +217,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-home-default',
     description: 'Mobile home with deterministic balance and activity',
     builder: buildMobileHomeDefaultUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-importing',
+    description: 'Mobile home while the initial wallet import is syncing',
+    builder: buildMobileHomeImportingResponsiveUseCase,
     desktop: false,
     mobile: true,
   ),

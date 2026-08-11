@@ -36,6 +36,7 @@ import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_zec_market_data_cache.dart';
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
@@ -1349,6 +1350,7 @@ Widget _appHarness(
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(priceChange24hPct),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
           initialLocation,

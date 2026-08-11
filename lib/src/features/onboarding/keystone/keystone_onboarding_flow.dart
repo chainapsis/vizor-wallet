@@ -272,7 +272,8 @@ class _SidebarIllustration extends StatelessWidget {
   final KeystoneOnboardingStep activeStep;
 
   static const _frameWidth = 256.0;
-  static const _frameHeight = 405.0;
+  static const _defaultFrameHeight = 405.0;
+  static const _customiseAccountFrameHeight = 430.0;
   static const _lightAsset =
       'assets/illustrations/onboarding_keystone_sidebar_light.png';
   static const _darkAsset =
@@ -294,12 +295,15 @@ class _SidebarIllustration extends StatelessWidget {
         'assets/illustrations/onboarding_customise_account_sidebar.png',
       _ => isDark ? _darkAsset : _lightAsset,
     };
+    final frameHeight = activeStep == KeystoneOnboardingStep.customiseAccount
+        ? _customiseAccountFrameHeight
+        : _defaultFrameHeight;
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
         child: SizedBox(
           width: _frameWidth,
-          height: _frameHeight,
+          height: frameHeight,
           child: Image.asset(
             asset,
             fit: BoxFit.cover,

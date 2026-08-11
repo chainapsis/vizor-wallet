@@ -1219,6 +1219,19 @@ pub fn get_unified_address(
     })
 }
 
+/// Export a single account's Unified Full Viewing Key (UFVK). Works for both
+/// software and hardware (Keystone) accounts.
+pub fn get_account_ufvk(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<String, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::get_account_ufvk(&db_path, network, &account_uuid)
+    })
+}
+
 /// Generate a new 24-word BIP-39 mnemonic phrase.
 #[flutter_rust_bridge::frb(sync)]
 pub fn generate_mnemonic() -> String {

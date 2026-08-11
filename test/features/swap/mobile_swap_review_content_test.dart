@@ -30,6 +30,7 @@ Widget _harness(Widget child) {
 
 MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
+  String? userExternalContactId,
   SwapDirection direction = SwapDirection.zecToExternal,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
@@ -53,6 +54,7 @@ MobileSwapReviewContent _content({
     accountLabel: 'Main account',
     accountProfilePictureId: 'default',
     addressBookContacts: addressBookContacts,
+    userExternalContactId: userExternalContactId,
     expired: false,
     amountWarning: null,
     startError: null,
@@ -127,6 +129,46 @@ void main() {
       separator: ' ... ',
     );
     expect(find.text('To: Treasury ($compactAddress)'), findsOneWidget);
+  });
+
+  testWidgets('header names the selected duplicate contact', (tester) async {
+    const address = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
+    await tester.pumpWidget(
+      _harness(
+        _content(
+          userExternalContactId: 'second',
+          addressBookContacts: const [
+            AddressBookContact(
+              id: 'first',
+              label: 'First',
+              network: AddressBookNetwork.ethereum,
+              address: address,
+              profilePictureId: 'default',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+            AddressBookContact(
+              id: 'second',
+              label: 'Second',
+              network: AddressBookNetwork.ethereum,
+              address: address,
+              profilePictureId: 'default',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final compactAddress = compactSwapAddress(
+      address,
+      prefixLength: 6,
+      suffixLength: 5,
+      separator: ' ... ',
+    );
+    expect(find.text('To: Second ($compactAddress)'), findsOneWidget);
+    expect(find.textContaining('First'), findsNothing);
   });
 
   testWidgets('review detail help icons use desktop tooltip copy', (

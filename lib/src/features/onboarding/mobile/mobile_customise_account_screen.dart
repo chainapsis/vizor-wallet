@@ -55,6 +55,9 @@ class _MobileCustomiseAccountScreenState
     extends ConsumerState<MobileCustomiseAccountScreen> {
   late final TextEditingController _nameController;
   final _nameFocusNode = FocusNode();
+  Animation<double>? _routeAnimation;
+  var _initialFocusMonitoringScheduled = false;
+  var _initialFocusRequested = false;
   late String _profilePictureId;
   var _submitPhase = _SubmitPhase.idle;
   String? _submitError;
@@ -76,34 +79,55 @@ class _MobileCustomiseAccountScreenState
   void initState() {
     super.initState();
     final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name);
+    _nameController = TextEditingController(text: suggestion.name)
+      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
     _profilePictureId = suggestion.profilePictureId;
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialFocusMonitoringScheduled) return;
+    _initialFocusMonitoringScheduled = true;
+    // iOS can discard a software-keyboard request while the Cupertino route
+    // is still entering, so defer the first focus until that transition ends.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialFocusRequested) return;
+      final routeAnimation = ModalRoute.of(context)?.animation;
+      if (routeAnimation == null ||
+          routeAnimation.status == AnimationStatus.completed) {
+        _requestInitialFocus();
+        return;
+      }
+      _routeAnimation = routeAnimation
+        ..addStatusListener(_handleRouteAnimationStatus);
+    });
+  }
+
+  void _handleRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _requestInitialFocus();
+    }
+  }
+
+  void _requestInitialFocus() {
+    if (_initialFocusRequested) return;
+    _initialFocusRequested = true;
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
+    _routeAnimation = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _nameFocusNode.canRequestFocus) {
+        _nameFocusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _nameController.dispose();
     _nameFocusNode.dispose();
     super.dispose();
-  }
-
-  Future<void> _goBack() async {
-    if (_isSubmitting) return;
-    final args = widget.args;
-    if (args.isDeriveFlow) return;
-    final router = GoRouter.maybeOf(context);
-    if (router != null) {
-      if (args.configuresPassword) {
-        router.go('/onboarding/set-passcode', extra: args.setupArgs);
-      } else {
-        router.go(
-          args.setupArgs.backRoutePath,
-          extra: args.setupArgs.backRouteExtra,
-        );
-      }
-    } else {
-      await Navigator.of(context).maybePop();
-    }
   }
 
   void _handleNameChanged(String _) {
@@ -225,7 +249,7 @@ class _MobileCustomiseAccountScreenState
           'Wallet Link does not use account customisation.',
         ),
       },
-      onBack: _isSubmitting || widget.args.isDeriveFlow ? null : _goBack,
+      showBackButton: false,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
@@ -259,7 +283,7 @@ class _MobileCustomiseAccountScreenState
         ],
       ),
     );
-    return PopScope<void>(canPop: !_isSubmitting, child: content);
+    return PopScope<void>(canPop: false, child: content);
   }
 }
 

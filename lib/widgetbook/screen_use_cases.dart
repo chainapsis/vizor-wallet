@@ -57,11 +57,13 @@ import '../src/features/settings/screens/settings_endpoint_screen.dart';
 import '../src/features/settings/screens/settings_screen.dart';
 import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
 import '../src/features/settings/screens/settings_uninstall_screen.dart';
+import '../src/features/settings/screens/settings_viewing_key_screen.dart';
 import '../src/features/wallet_link/models/wallet_link_models.dart';
 import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
+import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
@@ -84,6 +86,15 @@ const _previewLongWordMnemonic =
 final _previewImportWordList = _previewMnemonic.split(' ');
 
 bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
+
+/// Placeholder string only — long enough to exercise the viewing-key card's
+/// wrapping, but not a real bech32-encoded UFVK.
+const _previewUfvk =
+    'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'previewonly';
 
 const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
@@ -521,6 +532,14 @@ Widget buildMobileSecretPassphraseProtectedUseCase(BuildContext context) {
   return const _MobileSecretPassphraseProtectedPreview();
 }
 
+Widget buildMobileSettingsViewingKeyRevealUseCase(BuildContext context) {
+  return const _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobileViewingKeyRevealPreview(ufvk: _previewUfvk),
+    ),
+  );
+}
+
 Widget buildMobileSecretPassphraseScreenshotWarningUseCase(
   BuildContext context,
 ) {
@@ -743,6 +762,20 @@ Widget buildSettingsSecretPassphraseRevealWithoutBip39UseCase(
     const SettingsSeedPhraseRevealPreview(
       mnemonic: _previewImportReviewMnemonic,
     ),
+  );
+}
+
+Widget buildSettingsViewingKeyGateUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/viewing-key',
+    const SettingsViewingKeyScreen(),
+  );
+}
+
+Widget buildSettingsViewingKeyRevealUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/viewing-key',
+    const SettingsViewingKeyRevealPreview(ufvk: _previewUfvk),
   );
 }
 
@@ -1000,6 +1033,19 @@ Widget buildMobileHomeImportingUseCase(BuildContext context) {
       percentage: 0.34,
       displayPercentage: 0.34,
     ),
+  );
+}
+
+Widget buildMobileHomeImportingResponsiveUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      isSyncing: true,
+      percentage: 0.34,
+      displayPercentage: 0.34,
+    ),
+    constrainToPreviewFrame: false,
   );
 }
 
@@ -1805,7 +1851,12 @@ Widget _buildMobileHomeUseCase({
   ),
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
+  bool constrainToPreviewFrame = true,
 }) {
+  final harness = _MobileHomeHarness(
+    openAccountsSheet: openAccountsSheet,
+    showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
@@ -1838,10 +1889,8 @@ Widget _buildMobileHomeUseCase({
       }),
     ],
     child: _MobilePreviewFrame(
-      child: _MobileHomeHarness(
-        openAccountsSheet: openAccountsSheet,
-        showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
-      ),
+      constrainToDesignSize: constrainToPreviewFrame,
+      child: harness,
     ),
   );
 }
@@ -2429,6 +2478,14 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
           builder: (_, state) => _PreviewRoutePlaceholder(
             label:
                 '/settings/seed-phrase '
+                '(${state.extra as String? ?? 'active account'})',
+          ),
+        ),
+        GoRoute(
+          path: '/settings/viewing-key',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label:
+                '/settings/viewing-key '
                 '(${state.extra as String? ?? 'active account'})',
           ),
         ),
@@ -3190,9 +3247,13 @@ class _MobileSecretPassphraseProtectedPreviewState
 }
 
 class _MobilePreviewFrame extends StatelessWidget {
-  const _MobilePreviewFrame({required this.child});
+  const _MobilePreviewFrame({
+    required this.child,
+    this.constrainToDesignSize = true,
+  });
 
   final Widget child;
+  final bool constrainToDesignSize;
 
   static const size = Size(393, 852);
   static const safeAreaPadding = EdgeInsets.only(top: 55, bottom: 24);
@@ -3200,20 +3261,20 @@ class _MobilePreviewFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    return Center(
-      child: SizedBox.fromSize(
-        size: size,
-        child: ClipRect(
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              size: size,
-              padding: safeAreaPadding,
-              viewPadding: safeAreaPadding,
-            ),
-            child: child,
-          ),
+    final frameSize = constrainToDesignSize ? size : mediaQuery.size;
+    final frame = ClipRect(
+      child: MediaQuery(
+        data: mediaQuery.copyWith(
+          size: frameSize,
+          padding: safeAreaPadding,
+          viewPadding: safeAreaPadding,
         ),
+        child: child,
       ),
+    );
+    if (!constrainToDesignSize) return frame;
+    return Center(
+      child: SizedBox.fromSize(size: size, child: frame),
     );
   }
 }

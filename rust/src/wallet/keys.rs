@@ -1965,6 +1965,30 @@ pub fn get_address_from_db(
     current_receive_address(&db, network, account_id, ufvk)
 }
 
+/// Export a single account's Unified Full Viewing Key (UFVK), encoded for
+/// the given network. Works for every account source (`Derived`, software
+/// `Imported`, and hardware/Keystone `Imported`) — unlike
+/// `get_account_export_metadata`'s `hardware_ufvk` field, this is not gated
+/// on hardware detection, since any account's UFVK is safe to display back
+/// to the account's own owner regardless of how the key was derived.
+pub fn get_account_ufvk(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<String, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
+
+    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+
+    Ok(ufvk.encode(&network))
+}
+
 fn current_receive_address(
     db: &WalletDatabase,
     network: WalletNetwork,
@@ -2318,6 +2342,83 @@ mod tests {
         // Verify we can read the address back
         let address2 = get_address_from_db(db_path_str, WalletNetwork::Main, None).unwrap();
         assert_eq!(address, address2);
+    }
+
+    #[test]
+    fn test_get_account_ufvk_matches_derived_account() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let (uuid, _address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let ufvk = get_account_ufvk(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+
+        // Mainnet UFVKs use the "uview" HRP.
+        assert!(
+            ufvk.starts_with("uview"),
+            "Expected uview prefix, got: {ufvk}"
+        );
+
+        let expected = software_account_ufvk(WalletNetwork::Main, &seed, 0).unwrap();
+        assert_eq!(ufvk, expected.encode(&WalletNetwork::Main));
+    }
+
+    #[test]
+    fn test_get_account_ufvk_round_trips_hardware_account() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let ufvk_string = usk
+            .to_unified_full_viewing_key()
+            .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        let (uuid, _address) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .unwrap();
+
+        let exported = get_account_ufvk(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(exported, ufvk_string);
+    }
+
+    #[test]
+    fn test_get_account_ufvk_rejects_unknown_account() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test").unwrap();
+
+        let unknown_uuid = uuid::Uuid::new_v4().to_string();
+        let result = get_account_ufvk(db_path_str, WalletNetwork::Main, &unknown_uuid);
+        assert!(result.is_err());
     }
 
     #[test]

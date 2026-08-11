@@ -83,6 +83,11 @@ Widget _app(
         builder: (_, state) =>
             Text('seed phrase route ${state.extra as String?}'),
       ),
+      GoRoute(
+        path: '/settings/viewing-key',
+        builder: (_, state) =>
+            Text('viewing key route ${state.extra as String?}'),
+      ),
       GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
     ],
   );
@@ -501,7 +506,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(208, 207),
+      const Size(208, 241),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_copy'))),
@@ -518,7 +523,7 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(208, 173),
+      const Size(208, 207),
     );
   });
 
@@ -589,6 +594,42 @@ void main() {
       find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
       findsNothing,
     );
+    // Unlike the secret passphrase, a UFVK export never grants spend
+    // authority, so hardware accounts still get the viewing-key shortcut.
+    expect(find.text('View viewing key'), findsOneWidget);
+  });
+
+  testWidgets('account menu opens its viewing key export', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            _account('b', 'Keystone', isHardware: true),
+          ],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+
+    final icon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_account_menu_viewing_key')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    expect(icon.name, AppIcons.eye);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_menu_viewing_key')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('viewing key route b'), findsOneWidget);
   });
 
   testWidgets('the last remaining seed account resets the app on removal', (

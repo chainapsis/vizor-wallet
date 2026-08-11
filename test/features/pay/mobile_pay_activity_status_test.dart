@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -386,6 +387,59 @@ void main() {
     },
   );
 
+  testWidgets('mobile Pay Activity shows the selected duplicate contact', (
+    tester,
+  ) async {
+    final intent = _intent(
+      status: SwapIntentStatus.processing,
+      userExternalContactId: 'second',
+    ).copyWith(accountUuid: 'account-1');
+    final state = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [intent],
+      selectedIntentId: intent.id,
+      payMode: true,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_PayAccountNotifier.new),
+          addressBookProvider.overrideWith(_DuplicateAddressBookNotifier.new),
+          swapStateProvider.overrideWith(() => _PayStatusNotifier(state)),
+          syncProvider.overrideWith(FakeSyncNotifier.new),
+        ],
+        child: _harness(
+          SwapActivityDetailPagePanel(
+            state: state,
+            intent: intent,
+            layout: SwapActivityDetailLayout.mobile,
+            depositChecking: false,
+            depositCheckWarning: null,
+            onRefreshStatus: () {},
+            onMarkDeposited: () {},
+            onDepositTxHashChanged: (_) {},
+            onSubmitDepositTransaction: () {},
+            onReviewFreshQuote: () {},
+            onSignZecDeposit: (_) {},
+            intentIsHardware: false,
+          ),
+          scroll: false,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Second'), findsOneWidget);
+    expect(find.text('First'), findsNothing);
+  });
+
   test('mobile activity titles distinguish paying and paid from swap', () {
     expect(
       mobileSwapActivityTitle(
@@ -439,6 +493,7 @@ SwapIntent _intent({
   String? depositTxHash = 'zec-shielded-spend-txid',
   String? originChainTxHash,
   SwapProviderRefundInfo? providerRefundInfo,
+  String? userExternalContactId,
 }) {
   return SwapIntent(
     id: 'mobile-pay-status',
@@ -462,6 +517,7 @@ SwapIntent _intent({
         ? DateTime.utc(2026, 5, 20, 13, 21)
         : null,
     payMode: payMode,
+    userExternalContactId: userExternalContactId,
   );
 }
 
@@ -505,4 +561,30 @@ class _PayAccountNotifier extends AccountNotifier {
 class _EmptyAddressBookNotifier extends AddressBookNotifier {
   @override
   AddressBookState build() => const AddressBookState();
+}
+
+class _DuplicateAddressBookNotifier extends AddressBookNotifier {
+  @override
+  AddressBookState build() => const AddressBookState(
+    contacts: [
+      AddressBookContact(
+        id: 'first',
+        label: 'First',
+        network: AddressBookNetwork.ethereum,
+        address: _recipient,
+        profilePictureId: 'pfp-01',
+        createdAtMs: 0,
+        updatedAtMs: 0,
+      ),
+      AddressBookContact(
+        id: 'second',
+        label: 'Second',
+        network: AddressBookNetwork.ethereum,
+        address: _recipient,
+        profilePictureId: 'pfp-02',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      ),
+    ],
+  );
 }

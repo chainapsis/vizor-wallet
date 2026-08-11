@@ -12,10 +12,12 @@ use crate::wallet::{
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
 use rand::{rngs::OsRng, RngCore};
+use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
-    ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    ConfigSwitchKind, PirLayout, ResolveVotingConfigOptions, ResolvedVotingConfig,
+    ResolvedVotingConfigSummary,
 };
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
@@ -115,6 +117,8 @@ pub struct ApiVotingRoundContext {
     pub session_json: Option<String>,
     pub account_uuid: String,
     pub max_real_notes_per_bundle: Option<u32>,
+    /// Authenticated PIR geometry expected from the selected endpoint.
+    pub pir_layout: PirLayout,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,12 +130,19 @@ pub struct ApiVotingEligibility {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// Parsed fields from a Keystone-signed voting PCZT.
-pub struct ParsedSignedVotingPczt {
-    /// ZIP-244 sighash extracted from the signed PCZT.
+/// One Keystone delegation signature tuple to persist atomically.
+pub struct ApiKeystoneSignatureInput {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
     pub sighash: Vec<u8>,
-    /// Orchard SpendAuth signature extracted from the signed PCZT.
-    pub spend_auth_sig: Vec<u8>,
+    pub rk: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Outcome of an idempotent Keystone signature batch write.
+pub struct ApiKeystoneSignatureBatchResult {
+    pub inserted: u32,
+    pub already_present: u32,
 }
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -705,9 +716,14 @@ pub async fn precompute_delegation_pir(
     );
 
     // Warm the PIR path by precomputing/caching delegation bundle artifacts.
-    delegation::precompute_delegation_pir(&ctx.db_path, &pir_server_url, prepare_params)
-        .await
-        .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
+    delegation::precompute_delegation_pir(
+        &ctx.db_path,
+        &pir_server_url,
+        ctx.pir_layout,
+        prepare_params,
+    )
+    .await
+    .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
@@ -759,6 +775,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &seed,
         prepare_params,
         move |event| {
@@ -774,17 +791,30 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
-/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+/// Build and redact voting PCZTs that Keystone can sign in one or more batches.
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution fails or if PCZT construction and
-/// redaction for the requested bundle fails.
-pub async fn build_keystone_delegation_request(
+/// Returns an error if bundle indexes are empty or duplicated, round input
+/// resolution fails, or PCZT construction and redaction for any requested
+/// bundle fails.
+pub async fn build_keystone_delegation_requests(
     ctx: ApiVotingRoundContext,
     stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
+    bundle_indices: Vec<u32>,
+) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
+    if bundle_indices.is_empty() {
+        return Err("Keystone delegation bundle indexes must not be empty".to_string());
+    }
+    let unique_bundle_count = bundle_indices
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if unique_bundle_count != bundle_indices.len() {
+        return Err("Keystone delegation bundle indexes must be unique".to_string());
+    }
+
     // Resolve static round inputs and validate Keystone-provided hotkey bytes.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
@@ -799,44 +829,28 @@ pub async fn build_keystone_delegation_request(
         voting_network,
     )
     .await?;
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
+    let mut requests = Vec::with_capacity(bundle_indices.len());
+    for bundle_index in bundle_indices {
+        let prepare_params = prepare_delegation_bundle_params(
+            lwd.clone(),
+            ctx.session_json.as_deref(),
+            &ctx.account_uuid,
+            &voting_hotkey,
+            bundle_index,
+            bundle_policy,
+        );
 
-    // Build and redact the PCZT request that Keystone signs out of process.
-    delegation::build_keystone_delegation_request(&ctx.db_path, &ctx.account_uuid, prepare_params)
-        .await
-}
-
-/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
-///
-/// # Errors
-///
-/// Returns an error if the signed PCZT cannot be decoded, does not contain a
-/// spend authorization sighash, or does not contain a SpendAuth signature for
-/// the expected action.
-pub fn parse_signed_voting_pczt(
-    signed_pczt_bytes: Vec<u8>,
-    action_index: u32,
-) -> Result<ParsedSignedVotingPczt, String> {
-    catch(|| {
-        let action_index =
-            usize::try_from(action_index).map_err(|_| "action_index does not fit in usize")?;
-        let sighash = zcash_voting::delegate::pczt_sighash(&signed_pczt_bytes)
-            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))?;
-        let spend_auth_sig =
-            zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
-                .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))?;
-        Ok(ParsedSignedVotingPczt {
-            sighash: sighash.to_vec(),
-            spend_auth_sig: spend_auth_sig.to_vec(),
-        })
-    })
+        // Keep the full PCZT in Rust-side state and return its signer view.
+        requests.push(
+            delegation::build_keystone_delegation_request(
+                &ctx.db_path,
+                &ctx.account_uuid,
+                prepare_params,
+            )
+            .await?,
+        );
+    }
+    Ok(requests)
 }
 
 /// Persist a Keystone signature for one delegation bundle.
@@ -854,14 +868,108 @@ pub fn store_keystone_signature(
     sighash: Vec<u8>,
     rk: Vec<u8>,
 ) -> Result<(), String> {
+    store_keystone_signatures_batch(
+        db_path,
+        account_uuid,
+        round_id,
+        vec![ApiKeystoneSignatureInput {
+            bundle_index,
+            sig,
+            sighash,
+            rk,
+        }],
+    )
+    .map(|_| ())
+}
+
+/// Atomically persist a batch of Keystone delegation signatures.
+///
+/// Existing tuples for the same sighash and randomized key are accepted as
+/// idempotent retries, even when randomized signing produced different valid
+/// signature bytes. A tuple for a different signing context is a conflict, and
+/// any validation or database error rolls back the complete batch.
+pub fn store_keystone_signatures_batch(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    signatures: Vec<ApiKeystoneSignatureInput>,
+) -> Result<ApiKeystoneSignatureBatchResult, String> {
     catch(|| {
-        // Validate fixed-size fields before persisting the signature tuple.
-        require_len(&sig, KEYSTONE_SIG_LEN, "sig")?;
-        require_len(&sighash, KEYSTONE_SIGHASH_LEN, "sighash")?;
-        require_len(&rk, KEYSTONE_RK_LEN, "rk")?;
+        for signature in &signatures {
+            require_len(&signature.sig, KEYSTONE_SIG_LEN, "sig")?;
+            require_len(&signature.sighash, KEYSTONE_SIGHASH_LEN, "sighash")?;
+            require_len(&signature.rk, KEYSTONE_RK_LEN, "rk")?;
+        }
+
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.store_keystone_signature(&round_id, bundle_index, &sig, &sighash, &rk)
-            .map_err(|e| format!("store_keystone_signature failed: {e}"))
+        let wallet_id = db.wallet_id();
+        let mut conn = db.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("begin Keystone signature batch transaction failed: {e}"))?;
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("read system time for Keystone signature failed: {e}"))?
+            .as_secs() as i64;
+        let mut inserted = 0u32;
+        let mut already_present = 0u32;
+
+        for signature in &signatures {
+            let existing = tx
+                .query_row(
+                    "SELECT sighash, rk FROM keystone_signatures
+                     WHERE round_id = :round_id AND wallet_id = :wallet_id
+                       AND bundle_index = :bundle_index",
+                    rusqlite::named_params! {
+                        ":round_id": &round_id,
+                        ":wallet_id": &wallet_id,
+                        ":bundle_index": signature.bundle_index as i64,
+                    },
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| format!("read existing Keystone signature failed: {e}"))?;
+
+            if let Some((sighash, rk)) = existing {
+                if sighash == signature.sighash && rk == signature.rk {
+                    already_present += 1;
+                    continue;
+                }
+                return Err(format!(
+                    "Keystone signature conflict for bundle {}",
+                    signature.bundle_index
+                ));
+            }
+
+            tx.execute(
+                "INSERT INTO keystone_signatures
+                 (round_id, wallet_id, bundle_index, sig, sighash, rk, created_at)
+                 VALUES (:round_id, :wallet_id, :bundle_index, :sig, :sighash, :rk, :created_at)",
+                rusqlite::named_params! {
+                    ":round_id": &round_id,
+                    ":wallet_id": &wallet_id,
+                    ":bundle_index": signature.bundle_index as i64,
+                    ":sig": &signature.sig,
+                    ":sighash": &signature.sighash,
+                    ":rk": &signature.rk,
+                    ":created_at": created_at,
+                },
+            )
+            .map_err(|e| {
+                format!(
+                    "store Keystone signature for bundle {} failed: {e}",
+                    signature.bundle_index
+                )
+            })?;
+            inserted += 1;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("commit Keystone signature batch failed: {e}"))?;
+        Ok(ApiKeystoneSignatureBatchResult {
+            inserted,
+            already_present,
+        })
     })
 }
 
@@ -928,6 +1036,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
         &ctx.db_path,
         &pir_server_url,
+        ctx.pir_layout,
         &ctx.account_uuid,
         prepare_params,
         &keystone_sig,
@@ -1593,6 +1702,12 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
+    fn test_tx1_effects() -> Vec<u8> {
+        let mut effects = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
+        effects[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
+        effects
+    }
+
     fn tx_events_json(events: Vec<TxEvent>) -> String {
         serde_json::to_string(&events).unwrap()
     }
@@ -1643,6 +1758,15 @@ mod tests {
             session_json: None,
             account_uuid: account_uuid.to_string(),
             max_real_notes_per_bundle: None,
+            pir_layout: test_pir_layout(),
+        }
+    }
+
+    fn test_pir_layout() -> zcash_voting::wire::PirLayout {
+        zcash_voting::wire::PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
         }
     }
 
@@ -1689,6 +1813,7 @@ mod tests {
             dynamic_config_fingerprint: "dynamic".to_string(),
             vote_servers: vec![],
             pir_endpoints: vec![],
+            pir_layout: test_pir_layout(),
             supported_versions: zcash_voting::config::SupportedVersions {
                 pir: vec!["v0".to_string()],
                 vote_protocol: "v0".to_string(),
@@ -1746,6 +1871,7 @@ mod tests {
                     vote_round_id: "00010203".to_string(),
                     spend_auth_sig: [6; 64],
                     sighash: [7; 32],
+                    tx1_effects: test_tx1_effects(),
                 },
                 pczt_bytes: vec![1, 2, 3],
                 eligible_weight_zatoshi: 20,
@@ -1798,7 +1924,7 @@ mod tests {
                     proof: b64(vec![8; 96]),
                     rk: b64(vec![1; 32]),
                     spend_auth_sig: b64(vec![2; 64]),
-                    sighash: b64(vec![3; 32]),
+                    tx1_effects: b64(test_tx1_effects()),
                     nf_signed: b64(vec![4; 32]),
                     cmx_new: b64(vec![5; 32]),
                     gov_comm: b64(vec![6; 32]),
@@ -1815,6 +1941,8 @@ mod tests {
         let wire: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert!(wire.get("signed_note_nullifier").is_some());
         assert!(wire.get("van_cmx").is_some());
+        assert!(wire.get("sighash").is_none());
+        assert!(wire.get("tx1_effects").is_some());
         assert_eq!(
             wire["gov_nullifiers"].as_array().unwrap().len(),
             zcash_voting::BUNDLE_NOTE_SLOTS
@@ -1867,18 +1995,6 @@ mod tests {
                 },
                 share_index: 1,
                 vc_tree_position: 55,
-                all_encrypted_shares: vec![
-                    zcash_voting::wire::WireEncryptedShare {
-                        c1: vec![3],
-                        c2: vec![4],
-                        share_index: 1,
-                    },
-                    zcash_voting::wire::WireEncryptedShare {
-                        c1: vec![5],
-                        c2: vec![6],
-                        share_index: 2,
-                    },
-                ],
                 share_comms: vec!["Bw==".to_string(), "CA==".to_string()],
                 primary_blind: "CQ==".to_string(),
                 submit_at: 0,
@@ -1888,10 +2004,6 @@ mod tests {
         )
         .unwrap();
         let expected = serde_json::json!({
-            "all_enc_shares": [
-                {"c1":"Aw==","c2":"BA==","share_index":1},
-                {"c1":"BQ==","c2":"Bg==","share_index":2}
-            ],
             "enc_share": {"c1":"Aw==","c2":"BA==","share_index":1},
             "primary_blind":"CQ==",
             "proposal_id":7,
@@ -1951,7 +2063,7 @@ mod tests {
         assert_eq!(recovered["tree_position"], 99);
         assert_eq!(recovered["submit_at"], 0);
         assert_eq!(recovered["enc_share"]["c1"], "Aw==");
-        assert_eq!(recovered["all_enc_shares"].as_array().unwrap().len(), 2);
+        assert!(recovered.get("all_enc_shares").is_none());
         assert_eq!(
             base64::engine::general_purpose::STANDARD
                 .decode(recovered["shares_hash"].as_str().unwrap())
@@ -1986,7 +2098,6 @@ mod tests {
                 },
                 share_index: 1,
                 vc_tree_position: 0,
-                all_encrypted_shares: vec![],
                 share_comms: vec![],
                 primary_blind: "CQ==".to_string(),
                 submit_at: 0,
@@ -2121,7 +2232,7 @@ mod tests {
                 submission: zcash_voting::wire::DelegationSubmissionWire {
                     rk: "rk".to_string(),
                     spend_auth_sig: "sig".to_string(),
-                    sighash: "sighash".to_string(),
+                    tx1_effects: "tx1-effects".to_string(),
                     nf_signed: "nf".to_string(),
                     cmx_new: "cmx".to_string(),
                     gov_comm: "gov".to_string(),
@@ -2730,6 +2841,125 @@ mod tests {
     }
 
     #[test]
+    fn keystone_signature_batch_accepts_resigning_same_context_and_rejects_conflicts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        drop(db);
+
+        let signature = ApiKeystoneSignatureInput {
+            bundle_index: 0,
+            sig: vec![7; KEYSTONE_SIG_LEN],
+            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
+            rk: vec![9; KEYSTONE_RK_LEN],
+        };
+        let first = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![signature.clone()],
+        )
+        .unwrap();
+        assert_eq!(first.inserted, 1);
+        assert_eq!(first.already_present, 0);
+
+        let retry = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![signature.clone()],
+        )
+        .unwrap();
+        assert_eq!(retry.inserted, 0);
+        assert_eq!(retry.already_present, 1);
+
+        let resigned = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![ApiKeystoneSignatureInput {
+                sig: vec![10; KEYSTONE_SIG_LEN],
+                ..signature.clone()
+            }],
+        )
+        .unwrap();
+        assert_eq!(resigned.inserted, 0);
+        assert_eq!(resigned.already_present, 1);
+
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+
+        let err = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![ApiKeystoneSignatureInput {
+                sighash: vec![11; KEYSTONE_SIGHASH_LEN],
+                ..signature
+            }],
+        )
+        .unwrap_err();
+        assert!(err.contains("conflict for bundle 0"));
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+    }
+
+    #[test]
+    fn keystone_signature_batch_rolls_back_on_later_insert_failure() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        drop(db);
+
+        let input = |bundle_index| ApiKeystoneSignatureInput {
+            bundle_index,
+            sig: vec![7; KEYSTONE_SIG_LEN],
+            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
+            rk: vec![9; KEYSTONE_RK_LEN],
+        };
+        let err = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![input(0), input(99)],
+        )
+        .unwrap_err();
+        assert!(err.contains("bundle 99"));
+
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
     fn set_ballot_intent_persists_choice_and_skipped() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -2923,15 +3153,15 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_request_rejects_invalid_network_before_network_io() {
+    fn build_keystone_delegation_requests_reject_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_request(
+            .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "bogus", "wallet-1"),
                 vec![9; 64],
-                0,
+                vec![0],
             ))
             .unwrap_err();
 
@@ -2939,19 +3169,51 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_request_rejects_invalid_hotkey_before_network_io() {
+    fn build_keystone_delegation_requests_reject_invalid_hotkey_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_request(
+            .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 vec![9; 1],
-                0,
+                vec![0],
             ))
             .unwrap_err();
 
         assert!(err.contains("Voting hotkey reconstruction failed"));
+    }
+
+    #[test]
+    fn build_keystone_delegation_requests_rejects_empty_bundle_indexes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(build_keystone_delegation_requests(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                vec![9; 64],
+                vec![],
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("must not be empty"));
+    }
+
+    #[test]
+    fn build_keystone_delegation_requests_rejects_duplicate_bundle_indexes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(build_keystone_delegation_requests(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                vec![9; 64],
+                vec![1, 1],
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("must be unique"));
     }
 
     fn test_vote_recovery_json(

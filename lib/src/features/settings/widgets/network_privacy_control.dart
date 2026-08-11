@@ -16,6 +16,59 @@ const _toggleShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
 
+/// What activating a Tor control does from the state it is showing.
+///
+/// Shared by both form factors because the state machine behind them is one
+/// provider, and because the case that matters is the one a control is most
+/// tempted to disable itself for.
+enum NetworkPrivacyToggleAction {
+  enable,
+  disable,
+
+  /// A Tor connection is still being established and the user wants out of it.
+  ///
+  /// The bootstrap has a three-minute deadline and every policy-aware request
+  /// fails closed until it resolves, so a control that goes inert for the
+  /// duration strands the user on a network that blocks Tor — and force-quitting
+  /// does not help, because the saved route is Tor and the next launch starts
+  /// the same bootstrap. Switching to direct is what ends it, so this stays
+  /// available for exactly as long as the wait does.
+  cancelPendingTor,
+
+  /// A switch to the direct route is already under way. There is nothing to
+  /// cancel toward, and re-entering Tor mid-switch is a transition rather than
+  /// an escape.
+  none,
+}
+
+NetworkPrivacyToggleAction networkPrivacyToggleAction(
+  NetworkPrivacyState state,
+) {
+  if (!state.isBusy) {
+    return state.torEnabled
+        ? NetworkPrivacyToggleAction.disable
+        : NetworkPrivacyToggleAction.enable;
+  }
+  return (state.targetTorEnabled ?? state.torEnabled)
+      ? NetworkPrivacyToggleAction.cancelPendingTor
+      : NetworkPrivacyToggleAction.none;
+}
+
+extension NetworkPrivacyToggleActionX on NetworkPrivacyToggleAction {
+  bool get isInteractive => this != NetworkPrivacyToggleAction.none;
+
+  /// The route the action asks for. Cancelling a pending Tor connection asks
+  /// for the direct route, which is what supersedes the bootstrap.
+  bool get requestedTorEnabled => this == NetworkPrivacyToggleAction.enable;
+
+  /// Assistive-technology label. Turning "Use Tor" off mid-connect is an escape
+  /// from a wait, not a second transition, so it does not announce itself as
+  /// one.
+  String get semanticsLabel => this == NetworkPrivacyToggleAction.cancelPendingTor
+      ? 'Stop connecting to Tor'
+      : 'Use Tor';
+}
+
 /// Shared desktop Tor control used both before wallet creation and in Settings.
 ///
 /// The control presents the desired route separately from its connection
@@ -30,6 +83,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
+    final toggleAction = networkPrivacyToggleAction(state);
     final presentation = _presentationFor(
       state,
       platform: defaultTargetPlatform,
@@ -104,14 +158,14 @@ class NetworkPrivacyControl extends ConsumerWidget {
                 _NetworkPrivacyToggle(
                   key: const ValueKey('network_privacy_toggle'),
                   enabled: state.torEnabled,
-                  busy: state.isBusy,
-                  onToggle: state.isBusy
-                      ? null
-                      : () => unawaited(
+                  action: toggleAction,
+                  onToggle: toggleAction.isInteractive
+                      ? () => unawaited(
                           ref
                               .read(networkPrivacyProvider.notifier)
-                              .setTorEnabled(!state.torEnabled),
-                        ),
+                              .setTorEnabled(toggleAction.requestedTorEnabled),
+                        )
+                      : null,
                 ),
               ],
             ),
@@ -216,16 +270,14 @@ class NetworkPrivacyControl extends ConsumerWidget {
 class _NetworkPrivacyToggle extends StatefulWidget {
   const _NetworkPrivacyToggle({
     required this.enabled,
-    required this.busy,
+    required this.action,
     required this.onToggle,
     super.key,
   });
 
   final bool enabled;
 
-  /// The knob moves to the desired route as soon as the transition starts, so
-  /// the dimmed track is the only signal that the route is not effective yet.
-  final bool busy;
+  final NetworkPrivacyToggleAction action;
 
   final VoidCallback? onToggle;
 
@@ -274,7 +326,12 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
     final control = Stack(
       clipBehavior: Clip.none,
       children: [
-        Opacity(opacity: widget.busy ? 0.65 : 1, child: track),
+        // The knob moves to the desired route as soon as a transition starts,
+        // so dimming is the only signal that the route is not effective yet.
+        // A transition the user can still leave is not dimmed: the control has
+        // to look like something they may act on, because acting on it is the
+        // way out of the wait.
+        Opacity(opacity: interactive ? 1 : 0.65, child: track),
         if (_focused)
           Positioned(
             left: -3,
@@ -297,7 +354,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
       button: true,
       enabled: interactive,
       toggled: widget.enabled,
-      label: 'Use Tor',
+      label: widget.action.semanticsLabel,
       excludeSemantics: true,
       child: MouseRegion(
         cursor: interactive
@@ -396,11 +453,17 @@ _NetworkPrivacyPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Connecting…',
+        // Names the way out. On a network that blocks Tor the wait runs to the
+        // bootstrap deadline with every request failing closed, and restarting
+        // the app only starts the same wait again, so the escape has to be
+        // stated where the user is looking.
         description: isLinux
-            ? 'New requests wait until the Tor connection is ready. Update '
+            ? 'New requests wait until the Tor connection is ready. Turn Tor '
+                  'off to stop connecting and use a direct connection. Update '
                   'pages and downloads opened in another app use that '
                   'app’s connection.'
-            : 'New requests wait until the Tor connection is ready.',
+            : 'New requests wait until the Tor connection is ready. Turn Tor '
+                  'off to stop connecting and use a direct connection.',
         statusIconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.muted,

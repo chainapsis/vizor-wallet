@@ -1074,6 +1074,19 @@ class _MobileMigrationRedesignedStatusState
     rust_sync.MigrationStatus status, {
     required _MigrationProgressState state,
   }) {
+    // Stated exactly where the screen invites the user to background the app,
+    // and only to the user it concerns: on iOS, background migration
+    // transport is pinned direct by design, while foreground migration
+    // traffic rides the route policy like everything else — so the claim is
+    // scoped to "while Vizor is closed", or it would read as though the
+    // migration bypasses Tor even while the user watches it. Android has no
+    // background migration lane, so there is nothing to disclose there.
+    final torDisclosure =
+        defaultTargetPlatform == TargetPlatform.iOS &&
+            ref.watch(networkPrivacyProvider).torEnabled
+        ? '\nWhile Vizor is closed, migration continues over a direct '
+              'connection.'
+        : '';
     final currentHeight = _currentHeight();
     final nextHeight = status.nextActionHeight;
     final timing = nextHeight != null && currentHeight > 0
@@ -1100,7 +1113,7 @@ class _MobileMigrationRedesignedStatusState
       return switch (_notificationsAuthorized) {
         true =>
           '$expectation\nNotifications are on. You can leave Vizor and check '
-              'back later.',
+              'back later.$torDisclosure',
         false =>
           '$expectation\nNotifications are disabled. Open Vizor again to '
               'continue.',
@@ -1113,13 +1126,14 @@ class _MobileMigrationRedesignedStatusState
     }
     if (state == _MigrationProgressState.confirming) {
       return 'Confirmations are still arriving.\nYou can leave Vizor and '
-          'check again later.';
+          'check again later.$torDisclosure';
     }
     if (timing == 'ready now') {
       return 'The next migration step is ready. Keep Vizor open to continue.';
     }
     return '$timing until the next migration step.\n'
-        'Notifications are on; you can leave Vizor and check back later.';
+        'Notifications are on; you can leave Vizor and check back later.'
+        '$torDisclosure';
   }
 
   Future<void> _continuePreparation(String accountUuid) async {

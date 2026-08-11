@@ -308,6 +308,7 @@ class SwapNotifier extends Notifier<SwapState> {
           receiveFiatText: '',
           externalAsset: payAsset,
           destinationText: '',
+          clearUserExternalContactId: true,
           reviewVisible: false,
           depositTxHashText: '',
           payMode: true,
@@ -360,6 +361,7 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           destinationText: '',
+          clearUserExternalContactId: true,
           reviewVisible: false,
           depositTxHashText: '',
           payMode: false,
@@ -390,6 +392,20 @@ class SwapNotifier extends Notifier<SwapState> {
       destinationText: value,
       reviewVisible: false,
       clearMaxAmountError: true,
+      clearUserExternalContactId: true,
+    );
+  }
+
+  void selectDestinationContact({
+    required String address,
+    required String contactId,
+  }) {
+    _clearReviewState();
+    state = state.copyWith(
+      destinationText: address,
+      userExternalContactId: contactId,
+      reviewVisible: false,
+      clearMaxAmountError: true,
     );
   }
 
@@ -415,6 +431,7 @@ class SwapNotifier extends Notifier<SwapState> {
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
             payMode: false,
+            clearUserExternalContactId: chainChanged,
           ),
         ),
       ),
@@ -457,6 +474,8 @@ class SwapNotifier extends Notifier<SwapState> {
                 ? ''
                 : null,
             payMode: true,
+            clearUserExternalContactId:
+                clearDestinationOnChainChange && chainChanged,
           ),
         ),
       ),
@@ -794,6 +813,7 @@ class SwapNotifier extends Notifier<SwapState> {
       'deposit=${_shortSwapValue(quote.depositInstruction.address)}',
     );
     final startingPayMode = state.payMode;
+    final startingUserExternalContactId = state.userExternalContactId;
     state = state.copyWith(startSubmitting: true, clearStatusError: true);
     if (accountUuid == null) {
       log('Swap: start blocked; no active account');
@@ -847,6 +867,7 @@ class SwapNotifier extends Notifier<SwapState> {
       quote: quote,
       addressPlan: addressPlan,
       accountUuid: accountUuid,
+      userExternalContactId: startingUserExternalContactId,
       payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
@@ -870,6 +891,7 @@ class SwapNotifier extends Notifier<SwapState> {
         amountFiatText: '',
         receiveFiatText: '',
         destinationText: '',
+        clearUserExternalContactId: true,
         pendingKeystoneSigningIntent: intent,
         startSubmitting: false,
         quoteLoading: false,
@@ -900,6 +922,7 @@ class SwapNotifier extends Notifier<SwapState> {
       amountFiatText: '',
       receiveFiatText: '',
       destinationText: '',
+      clearUserExternalContactId: true,
       intents: [intent, ...state.intents],
       startSubmitting: false,
       quoteLoading: false,
@@ -1051,6 +1074,8 @@ class SwapNotifier extends Notifier<SwapState> {
       amountFiatText: '',
       receiveFiatText: '',
       destinationText: destinationText,
+      userExternalContactId: intent.userExternalContactId,
+      clearUserExternalContactId: intent.userExternalContactId == null,
       reviewVisible: false,
       quoteLoading: false,
       depositTxHashText: '',
@@ -1660,6 +1685,7 @@ class SwapNotifier extends Notifier<SwapState> {
       amountFiatText: '',
       receiveFiatText: '',
       destinationText: '',
+      clearUserExternalContactId: true,
       reviewVisible: false,
       quoteLoading: false,
       startSubmitting: false,

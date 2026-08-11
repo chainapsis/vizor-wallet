@@ -41,6 +41,7 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
     broadcastStatus: record.broadcastStatus,
     oneClickRecipient: record.oneClickRecipient,
     oneClickRefundTo: record.oneClickRefundTo,
+    userExternalContactId: record.userExternalContactId,
     depositDeadline: record.depositDeadline,
     accountUuid: record.accountUuid,
     payMode: record.payMode,
@@ -96,6 +97,7 @@ SwapIntent swapIntentFromSnapshot({
   required SwapQuote quote,
   required SwapAddressPlan addressPlan,
   required String accountUuid,
+  String? userExternalContactId,
   bool payMode = false,
   required DateTime now,
 }) {
@@ -137,6 +139,7 @@ SwapIntent swapIntentFromSnapshot({
     fiatValueBasis: snapshot.fiatValueBasis ?? quote.fiatValueBasis,
     oneClickRecipient: addressPlan.oneClickRecipient,
     oneClickRefundTo: addressPlan.oneClickRefundTo,
+    userExternalContactId: userExternalContactId,
     depositDeadline: depositDeadline,
     accountUuid: accountUuid,
     payMode: payMode,

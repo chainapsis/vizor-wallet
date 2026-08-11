@@ -49,7 +49,7 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
+      ref: b56cca07e09f377a33cd99ff1ea837b7a96a44f9
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
@@ -89,6 +89,8 @@ dependency_overrides:
   freezed: ^3.2.5
   build_runner: ^2.13.1
   freezed_annotation: ^3.1.0
+  flutter_secure_storage_windows:
+    path: third_party/flutter_secure_storage_windows
   json_annotation: ^4.11.0
   json_serializable: ^6.13.1
 

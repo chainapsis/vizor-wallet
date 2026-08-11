@@ -18,9 +18,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -7353,6 +7356,70 @@ void main() {
     );
   });
 
+  testWidgets('the backgrounding invitation discloses the direct route on Tor', (
+    tester,
+  ) async {
+    // The background transport is pinned direct by design, so the moment
+    // this screen invites a Tor user to background the app is the moment
+    // their coverage expectation and the wire part ways. iOS only: Android
+    // has no background migration lane to disclose.
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorRouteNetworkPrivacyNotifier.new,
+          ),
+        ],
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+          targetValues: List<int>.filled(9, 100_000_000),
+          parts: [
+            for (var index = 0; index < 9; index++)
+              rust_sync.MigrationPartStatus(
+                partIndex: index,
+                valueZatoshi: BigInt.from(100_000_000),
+                state: index < 8
+                    ? rust_sync.MigrationPartState.completed
+                    : rust_sync.MigrationPartState.scheduled,
+                txidHex: 'tx-$index',
+                scheduledHeight: 3_000_000 + index,
+                confirmationCount: index < 8 ? 3 : 0,
+                confirmationTarget: 3,
+              ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Next migration step expected in\n'
+        '~25 minutes.\n'
+        'Notifications are on. You can leave Vizor and check back later.\n'
+        'While Vizor is closed, migration continues over a direct '
+        'connection.',
+      ),
+      findsOneWidget,
+    );
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('keeps the actual batch number for Keystone broadcasting', (
     tester,
   ) async {
@@ -8554,4 +8621,13 @@ class _RecordingCompletionStore implements IronwoodMigrationCompletionStore {
   }) async {
     seen.add('$network:$accountUuid:$completionId');
   }
+}
+
+/// A connected Tor route, for surfaces that disclose what it does not cover.
+class _TorRouteNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState(
+    torEnabled: true,
+    status: NetworkPrivacyConnectionStatus.connected,
+  );
 }

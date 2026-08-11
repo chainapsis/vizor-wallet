@@ -124,6 +124,7 @@ class _KeystoneWalletBirthdayScreenState
           await ImportBirthdayEstimator.estimateBirthdayHeight(
             endpoint: endpoint,
             selectedDate: date,
+            metadata: _metadata,
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {

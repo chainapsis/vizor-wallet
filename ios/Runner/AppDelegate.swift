@@ -350,6 +350,59 @@ import UIKit
       }
     }
 
+    let networkPrivacyChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/network_privacy",
+      binaryMessenger: messenger
+    )
+    networkPrivacyChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "excludeFromBackup":
+        // Arti's directory records this wallet's guard choice. Restoring it
+        // onto another device would carry that choice across, so it is kept
+        // out of iCloud and finder backups; a restored install picks fresh
+        // guards at the cost of one bootstrap.
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let path = arguments["path"] as? String,
+          !path.isEmpty
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "excludeFromBackup requires a path.",
+              details: nil
+            )
+          )
+          return
+        }
+        var url = URL(fileURLWithPath: path)
+        do {
+          // Created here when it does not exist yet, so the mark can be set
+          // before the bootstrap rather than only after it: from the directory's
+          // first moment it holds guard state, and the process can be killed
+          // while that is being written.
+          try FileManager.default.createDirectory(
+            at: url,
+            withIntermediateDirectories: true
+          )
+          var values = URLResourceValues()
+          values.isExcludedFromBackup = true
+          try url.setResourceValues(values)
+          result(true)
+        } catch {
+          result(
+            FlutterError(
+              code: "exclude_failed",
+              message: error.localizedDescription,
+              details: nil
+            )
+          )
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let hapticsChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/haptics",
       binaryMessenger: messenger

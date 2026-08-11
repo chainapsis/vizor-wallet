@@ -828,12 +828,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
+      final recipientContactId = intent.direction == SwapDirection.externalToZec
+          ? null
+          : intent.userExternalContactId;
       final payStatus = presentation.payStatus;
       final recipientContact = hasRecipient
           ? addressBookContactForSwapAsset(
               contacts: addressBookContacts,
               asset: presentation.receiveAsset,
               address: recipient,
+              contactId: recipientContactId,
             )
           : null;
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
@@ -866,7 +870,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts)}'
+              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts, contactId: recipientContactId)}'
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -893,6 +897,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         contacts: addressBookContacts,
         asset: presentation.receiveAsset,
         address: recipientAddress,
+        contactId: intent.userExternalContactId,
       );
       final txIdUri = payStatus.txIdUri;
       return PayActivityStatusContent(
@@ -1002,11 +1007,13 @@ String _headerRecipientText(
   String recipient, {
   required SwapActivityStatusPresentation presentation,
   required Iterable<AddressBookContact> contacts,
+  String? contactId,
 }) {
   final label = addressBookContactForSwapAsset(
     contacts: contacts,
     asset: presentation.receiveAsset,
     address: recipient,
+    contactId: contactId,
   )?.label.trim();
   final compact = _truncateHeaderAddress(recipient);
   if (label == null || label.isEmpty) return compact;

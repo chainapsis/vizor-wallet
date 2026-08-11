@@ -73,6 +73,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
+  ApiKeystoneSignatureBatchResult
+  dco_decode_api_keystone_signature_batch_result(dynamic raw);
+
+  @protected
+  ApiKeystoneSignatureInput dco_decode_api_keystone_signature_input(
+    dynamic raw,
+  );
+
+  @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
@@ -282,6 +291,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
+  List<ApiKeystoneSignatureInput> dco_decode_list_api_keystone_signature_input(
+    dynamic raw,
+  );
+
+  @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
 
   @protected
@@ -334,6 +348,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<KeystoneSignedMigrationMessage>
   dco_decode_list_keystone_signed_migration_message(dynamic raw);
+
+  @protected
+  List<KeystoneSigningRequest> dco_decode_list_keystone_signing_request(
+    dynamic raw,
+  );
 
   @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
@@ -451,9 +470,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteShareWire> dco_decode_list_vote_share_wire(dynamic raw);
-
-  @protected
-  List<WireEncryptedShare> dco_decode_list_wire_encrypted_share(dynamic raw);
 
   @protected
   List<ZcashBatchMessageInput> dco_decode_list_zcash_batch_message_input(
@@ -600,7 +616,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
+  PirLayout dco_decode_pir_layout(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -830,6 +846,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiKeystoneSignatureBatchResult
+  sse_decode_api_keystone_signature_batch_result(SseDeserializer deserializer);
+
+  @protected
+  ApiKeystoneSignatureInput sse_decode_api_keystone_signature_input(
     SseDeserializer deserializer,
   );
 
@@ -1105,6 +1130,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
+  List<ApiKeystoneSignatureInput> sse_decode_list_api_keystone_signature_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
     SseDeserializer deserializer,
   );
@@ -1169,6 +1199,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<KeystoneSignedMigrationMessage>
   sse_decode_list_keystone_signed_migration_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<KeystoneSigningRequest> sse_decode_list_keystone_signing_request(
     SseDeserializer deserializer,
   );
 
@@ -1318,11 +1353,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteShareWire> sse_decode_list_vote_share_wire(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<WireEncryptedShare> sse_decode_list_wire_encrypted_share(
     SseDeserializer deserializer,
   );
 
@@ -1509,9 +1539,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
-    SseDeserializer deserializer,
-  );
+  PirLayout sse_decode_pir_layout(SseDeserializer deserializer);
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -1794,6 +1822,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_keystone_signature_batch_result(
+    ApiKeystoneSignatureBatchResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_keystone_signature_input(
+    ApiKeystoneSignatureInput self,
     SseSerializer serializer,
   );
 
@@ -2122,6 +2162,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_api_keystone_signature_input(
+    List<ApiKeystoneSignatureInput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_authenticated_round(
     List<AuthenticatedRound> self,
     SseSerializer serializer,
@@ -2202,6 +2248,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_keystone_signed_migration_message(
     List<KeystoneSignedMigrationMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_keystone_signing_request(
+    List<KeystoneSigningRequest> self,
     SseSerializer serializer,
   );
 
@@ -2391,12 +2443,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_vote_share_wire(
     List<VoteShareWire> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_wire_encrypted_share(
-    List<WireEncryptedShare> self,
     SseSerializer serializer,
   );
 
@@ -2611,10 +2657,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_parsed_signed_voting_pczt(
-    ParsedSignedVotingPczt self,
-    SseSerializer serializer,
-  );
+  void sse_encode_pir_layout(PirLayout self, SseSerializer serializer);
 
   @protected
   void sse_encode_proposal_result(
