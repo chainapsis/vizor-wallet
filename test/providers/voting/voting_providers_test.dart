@@ -1909,7 +1909,7 @@ void main() {
       rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
         bundleIndex: 0,
         sig: Uint8List.fromList(List.filled(64, 7)),
-        sighash: Uint8List.fromList(const [10, 0]),
+        sighash: Uint8List.fromList(const [99, 0]),
         rk: Uint8List.fromList(const [2, 0]),
       );
       await container
@@ -1924,7 +1924,7 @@ void main() {
   );
 
   test(
-    'hardware voting accepts an identical persisted Keystone signature retry',
+    'hardware voting resumes with a differently randomized persisted signature',
     () async {
       final rust = FakeVotingRustApi();
       final container = _sessionContainer(rust: rust, accountIsHardware: true);
@@ -1936,7 +1936,7 @@ void main() {
           .prepareKeystoneSigning();
       rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
         bundleIndex: 0,
-        sig: Uint8List.fromList(List.filled(64, 30)),
+        sig: Uint8List.fromList(List.filled(64, 7)),
         sighash: Uint8List.fromList(const [10, 0]),
         rk: Uint8List.fromList(const [2, 0]),
       );
@@ -6715,8 +6715,7 @@ class FakeVotingRustApi implements VotingRustApi {
     for (final signature in signatures) {
       final existing = next[signature.bundleIndex];
       if (existing != null) {
-        if (!listEquals(existing.sig, signature.sig) ||
-            !listEquals(existing.sighash, signature.sighash) ||
+        if (!listEquals(existing.sighash, signature.sighash) ||
             !listEquals(existing.rk, signature.rk)) {
           throw StateError(
             'Keystone signature conflict for bundle ${signature.bundleIndex}',

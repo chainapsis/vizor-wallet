@@ -884,9 +884,10 @@ pub fn store_keystone_signature(
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing byte-identical tuples are accepted as idempotent retries. A tuple
-/// for an already-signed bundle with different bytes is a conflict, and any
-/// validation or database error rolls back the complete batch.
+/// Existing tuples for the same sighash and randomized key are accepted as
+/// idempotent retries, even when randomized signing produced different valid
+/// signature bytes. A tuple for a different signing context is a conflict, and
+/// any validation or database error rolls back the complete batch.
 pub fn store_keystone_signatures_batch(
     db_path: String,
     account_uuid: String,
@@ -916,7 +917,7 @@ pub fn store_keystone_signatures_batch(
         for signature in &signatures {
             let existing = tx
                 .query_row(
-                    "SELECT sig, sighash, rk FROM keystone_signatures
+                    "SELECT sighash, rk FROM keystone_signatures
                      WHERE round_id = :round_id AND wallet_id = :wallet_id
                        AND bundle_index = :bundle_index",
                     rusqlite::named_params! {
@@ -924,19 +925,13 @@ pub fn store_keystone_signatures_batch(
                         ":wallet_id": &wallet_id,
                         ":bundle_index": signature.bundle_index as i64,
                     },
-                    |row| {
-                        Ok((
-                            row.get::<_, Vec<u8>>(0)?,
-                            row.get::<_, Vec<u8>>(1)?,
-                            row.get::<_, Vec<u8>>(2)?,
-                        ))
-                    },
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
                 )
                 .optional()
                 .map_err(|e| format!("read existing Keystone signature failed: {e}"))?;
 
-            if let Some((sig, sighash, rk)) = existing {
-                if sig == signature.sig && sighash == signature.sighash && rk == signature.rk {
+            if let Some((sighash, rk)) = existing {
+                if sighash == signature.sighash && rk == signature.rk {
                     already_present += 1;
                     continue;
                 }
@@ -2846,7 +2841,7 @@ mod tests {
     }
 
     #[test]
-    fn keystone_signature_batch_is_idempotent_and_rejects_conflicts() {
+    fn keystone_signature_batch_accepts_resigning_same_context_and_rejects_conflicts() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
@@ -2885,12 +2880,33 @@ mod tests {
         assert_eq!(retry.inserted, 0);
         assert_eq!(retry.already_present, 1);
 
-        let err = store_keystone_signatures_batch(
+        let resigned = store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
             vec![ApiKeystoneSignatureInput {
                 sig: vec![10; KEYSTONE_SIG_LEN],
+                ..signature.clone()
+            }],
+        )
+        .unwrap();
+        assert_eq!(resigned.inserted, 0);
+        assert_eq!(resigned.already_present, 1);
+
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+
+        let err = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![ApiKeystoneSignatureInput {
+                sighash: vec![11; KEYSTONE_SIGHASH_LEN],
                 ..signature
             }],
         )

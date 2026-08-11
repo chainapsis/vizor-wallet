@@ -297,9 +297,10 @@ Future<void> storeKeystoneSignature({
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing byte-identical tuples are accepted as idempotent retries. A tuple
-/// for an already-signed bundle with different bytes is a conflict, and any
-/// validation or database error rolls back the complete batch.
+/// Existing tuples for the same sighash and randomized key are accepted as
+/// idempotent retries, even when randomized signing produced different valid
+/// signature bytes. A tuple for a different signing context is a conflict, and
+/// any validation or database error rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,
