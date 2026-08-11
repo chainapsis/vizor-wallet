@@ -1993,7 +1993,7 @@ void main() {
   });
 
   test(
-    'hardware voting rejects an invalid compact batch before storing',
+    'hardware voting rejects an Orchard PCZT signature before storing',
     () async {
       final rust = FakeVotingRustApi(bundleCount: 2);
       final recoveryApi = FakeVotingRecoveryApi(

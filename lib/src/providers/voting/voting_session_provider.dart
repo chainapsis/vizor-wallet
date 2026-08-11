@@ -27,6 +27,12 @@ import 'voting_submission_guard_provider.dart';
 
 final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
+/// The PCZT value-pool tag for Ironwood actions.
+///
+/// Ironwood spend authorization uses a RedPallas key derived from the
+/// account's Orchard key, but the action remains in the PCZT's Ironwood bundle.
+const _ironwoodPcztPool = 1;
+
 /// Orchestrates one round's voting lifecycle for the UI.
 ///
 /// The notifier is intentionally recovery-first: every public action reloads
@@ -572,7 +578,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
           return;
         }
-        if (batchSignature.pool != 1 ||
+        if (batchSignature.pool != _ironwoodPcztPool ||
             batchSignature.actionIndex != request.actionIndex ||
             batchSignature.signature.length != 64) {
           reject(

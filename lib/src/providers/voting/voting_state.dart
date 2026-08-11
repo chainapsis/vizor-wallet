@@ -170,6 +170,8 @@ class VotingRoundDetails {
 /// One compact Keystone signature correlated to a pending voting bundle.
 class VotingKeystoneBatchSignature {
   final int bundleIndex;
+
+  /// PCZT value-pool tag. `0` is Orchard and `1` is Ironwood.
   final int pool;
   final int actionIndex;
   final List<int> signature;
