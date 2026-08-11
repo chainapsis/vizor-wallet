@@ -14,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -293,6 +293,23 @@ Future<void> storeKeystoneSignature({
   sig: sig,
   sighash: sighash,
   rk: rk,
+);
+
+/// Atomically persist a batch of Keystone delegation signatures.
+///
+/// Existing byte-identical tuples are accepted as idempotent retries. A tuple
+/// for an already-signed bundle with different bytes is a conflict, and any
+/// validation or database error rolls back the complete batch.
+Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required List<ApiKeystoneSignatureInput> signatures,
+}) => RustLib.instance.api.crateApiVotingStoreKeystoneSignaturesBatch(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  signatures: signatures,
 );
 
 /// Load persisted Keystone signatures for one voting round.
@@ -778,6 +795,57 @@ class ApiDelegationProofEvent {
           phase == other.phase &&
           proofProgress == other.proofProgress &&
           signedDelegationPayload == other.signedDelegationPayload;
+}
+
+/// Outcome of an idempotent Keystone signature batch write.
+class ApiKeystoneSignatureBatchResult {
+  final int inserted;
+  final int alreadyPresent;
+
+  const ApiKeystoneSignatureBatchResult({
+    required this.inserted,
+    required this.alreadyPresent,
+  });
+
+  @override
+  int get hashCode => inserted.hashCode ^ alreadyPresent.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiKeystoneSignatureBatchResult &&
+          runtimeType == other.runtimeType &&
+          inserted == other.inserted &&
+          alreadyPresent == other.alreadyPresent;
+}
+
+/// One Keystone delegation signature tuple to persist atomically.
+class ApiKeystoneSignatureInput {
+  final int bundleIndex;
+  final Uint8List sig;
+  final Uint8List sighash;
+  final Uint8List rk;
+
+  const ApiKeystoneSignatureInput({
+    required this.bundleIndex,
+    required this.sig,
+    required this.sighash,
+    required this.rk,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ sig.hashCode ^ sighash.hashCode ^ rk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiKeystoneSignatureInput &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          sig == other.sig &&
+          sighash == other.sighash &&
+          rk == other.rk;
 }
 
 /// Progress event emitted while building ZKP2 vote commitments.

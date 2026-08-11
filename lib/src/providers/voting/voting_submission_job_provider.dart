@@ -405,6 +405,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       final requests = session.keystoneSigningRequests;
       if (requests.isNotEmpty) {
+        // Validation and persistence failures are recoverable scan errors. Keep
+        // the current request ID and QR so the same Keystone response can be
+        // scanned again instead of replacing the active signing round.
+        if (session.keystoneScanError != null) return;
         await _updateKeystoneQr(
           key: key,
           generation: generation,

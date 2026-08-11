@@ -377,14 +377,12 @@ abstract interface class VotingRustApi {
     required List<int> bundleIndices,
   });
 
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   });
 
   Future<List<rust_voting.KeystoneSignatureRecord>> getKeystoneSignatures({
@@ -664,23 +662,18 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) {
-    return rust_api.storeKeystoneSignature(
+    return rust_api.storeKeystoneSignaturesBatch(
       dbPath: dbPath,
       accountUuid: accountUuid,
       roundId: roundId,
-      bundleIndex: bundleIndex,
-      sig: sig,
-      sighash: sighash,
-      rk: rk,
+      signatures: signatures,
     );
   }
 

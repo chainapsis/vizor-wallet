@@ -12,6 +12,7 @@ use crate::wallet::{
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
 use rand::{rngs::OsRng, RngCore};
+use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
@@ -126,6 +127,22 @@ pub struct ApiVotingEligibility {
     pub is_eligible: bool,
     pub distinct_note_count: u32,
     pub eligible_weight_zatoshi: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// One Keystone delegation signature tuple to persist atomically.
+pub struct ApiKeystoneSignatureInput {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
+    pub sighash: Vec<u8>,
+    pub rk: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Outcome of an idempotent Keystone signature batch write.
+pub struct ApiKeystoneSignatureBatchResult {
+    pub inserted: u32,
+    pub already_present: u32,
 }
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -851,14 +868,113 @@ pub fn store_keystone_signature(
     sighash: Vec<u8>,
     rk: Vec<u8>,
 ) -> Result<(), String> {
+    store_keystone_signatures_batch(
+        db_path,
+        account_uuid,
+        round_id,
+        vec![ApiKeystoneSignatureInput {
+            bundle_index,
+            sig,
+            sighash,
+            rk,
+        }],
+    )
+    .map(|_| ())
+}
+
+/// Atomically persist a batch of Keystone delegation signatures.
+///
+/// Existing byte-identical tuples are accepted as idempotent retries. A tuple
+/// for an already-signed bundle with different bytes is a conflict, and any
+/// validation or database error rolls back the complete batch.
+pub fn store_keystone_signatures_batch(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    signatures: Vec<ApiKeystoneSignatureInput>,
+) -> Result<ApiKeystoneSignatureBatchResult, String> {
     catch(|| {
-        // Validate fixed-size fields before persisting the signature tuple.
-        require_len(&sig, KEYSTONE_SIG_LEN, "sig")?;
-        require_len(&sighash, KEYSTONE_SIGHASH_LEN, "sighash")?;
-        require_len(&rk, KEYSTONE_RK_LEN, "rk")?;
+        for signature in &signatures {
+            require_len(&signature.sig, KEYSTONE_SIG_LEN, "sig")?;
+            require_len(&signature.sighash, KEYSTONE_SIGHASH_LEN, "sighash")?;
+            require_len(&signature.rk, KEYSTONE_RK_LEN, "rk")?;
+        }
+
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.store_keystone_signature(&round_id, bundle_index, &sig, &sighash, &rk)
-            .map_err(|e| format!("store_keystone_signature failed: {e}"))
+        let wallet_id = db.wallet_id();
+        let mut conn = db.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("begin Keystone signature batch transaction failed: {e}"))?;
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("read system time for Keystone signature failed: {e}"))?
+            .as_secs() as i64;
+        let mut inserted = 0u32;
+        let mut already_present = 0u32;
+
+        for signature in &signatures {
+            let existing = tx
+                .query_row(
+                    "SELECT sig, sighash, rk FROM keystone_signatures
+                     WHERE round_id = :round_id AND wallet_id = :wallet_id
+                       AND bundle_index = :bundle_index",
+                    rusqlite::named_params! {
+                        ":round_id": &round_id,
+                        ":wallet_id": &wallet_id,
+                        ":bundle_index": signature.bundle_index as i64,
+                    },
+                    |row| {
+                        Ok((
+                            row.get::<_, Vec<u8>>(0)?,
+                            row.get::<_, Vec<u8>>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|e| format!("read existing Keystone signature failed: {e}"))?;
+
+            if let Some((sig, sighash, rk)) = existing {
+                if sig == signature.sig && sighash == signature.sighash && rk == signature.rk {
+                    already_present += 1;
+                    continue;
+                }
+                return Err(format!(
+                    "Keystone signature conflict for bundle {}",
+                    signature.bundle_index
+                ));
+            }
+
+            tx.execute(
+                "INSERT INTO keystone_signatures
+                 (round_id, wallet_id, bundle_index, sig, sighash, rk, created_at)
+                 VALUES (:round_id, :wallet_id, :bundle_index, :sig, :sighash, :rk, :created_at)",
+                rusqlite::named_params! {
+                    ":round_id": &round_id,
+                    ":wallet_id": &wallet_id,
+                    ":bundle_index": signature.bundle_index as i64,
+                    ":sig": &signature.sig,
+                    ":sighash": &signature.sighash,
+                    ":rk": &signature.rk,
+                    ":created_at": created_at,
+                },
+            )
+            .map_err(|e| {
+                format!(
+                    "store Keystone signature for bundle {} failed: {e}",
+                    signature.bundle_index
+                )
+            })?;
+            inserted += 1;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("commit Keystone signature batch failed: {e}"))?;
+        Ok(ApiKeystoneSignatureBatchResult {
+            inserted,
+            already_present,
+        })
     })
 }
 
@@ -2727,6 +2843,104 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("sig must be exactly"));
+    }
+
+    #[test]
+    fn keystone_signature_batch_is_idempotent_and_rejects_conflicts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        drop(db);
+
+        let signature = ApiKeystoneSignatureInput {
+            bundle_index: 0,
+            sig: vec![7; KEYSTONE_SIG_LEN],
+            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
+            rk: vec![9; KEYSTONE_RK_LEN],
+        };
+        let first = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![signature.clone()],
+        )
+        .unwrap();
+        assert_eq!(first.inserted, 1);
+        assert_eq!(first.already_present, 0);
+
+        let retry = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![signature.clone()],
+        )
+        .unwrap();
+        assert_eq!(retry.inserted, 0);
+        assert_eq!(retry.already_present, 1);
+
+        let err = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![ApiKeystoneSignatureInput {
+                sig: vec![10; KEYSTONE_SIG_LEN],
+                ..signature
+            }],
+        )
+        .unwrap_err();
+        assert!(err.contains("conflict for bundle 0"));
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+    }
+
+    #[test]
+    fn keystone_signature_batch_rolls_back_on_later_insert_failure() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        drop(db);
+
+        let input = |bundle_index| ApiKeystoneSignatureInput {
+            bundle_index,
+            sig: vec![7; KEYSTONE_SIG_LEN],
+            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
+            rk: vec![9; KEYSTONE_RK_LEN],
+        };
+        let err = store_keystone_signatures_batch(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            vec![input(0), input(99)],
+        )
+        .unwrap_err();
+        assert!(err.contains("bundle 99"));
+
+        let records = get_keystone_signatures(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert!(records.is_empty());
     }
 
     #[test]

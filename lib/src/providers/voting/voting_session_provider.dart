@@ -534,12 +534,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final context = await _loadContext(_roundId);
       final rust = ref.read(votingRustApiProvider);
-      final storedSignatures = Map<int, rust_wire.KeystoneSignatureRecord>.from(
-        current.keystoneSignatures,
-      );
-      if (storedSignatures.isEmpty) {
-        storedSignatures.addAll(await _loadKeystoneSignatures(context));
-      }
+      // Always refresh this snapshot. Another attempt may have committed the
+      // batch even if Dart did not receive its successful return value.
+      final storedSignatures = await _loadKeystoneSignatures(context);
 
       void reject(String message) {
         _setStateForContext(
@@ -572,12 +569,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
           return;
         }
-        if (storedSignatures.containsKey(bundleIndex)) {
-          reject(
-            'This Keystone signature was already scanned. Open the next signing result on Keystone and scan again.',
-          );
-          return;
-        }
         if (batchSignature.pool != _ironwoodPcztPool ||
             batchSignature.actionIndex != request.actionIndex ||
             batchSignature.signature.length != 64) {
@@ -588,17 +579,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
 
-      for (final batchSignature in batchSignatures) {
-        final request = requestsByBundle[batchSignature.bundleIndex]!;
-        await rust.storeKeystoneSignature(
+      try {
+        await rust.storeKeystoneSignaturesBatch(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
-          bundleIndex: request.bundleIndex,
-          sig: batchSignature.signature,
-          sighash: request.pcztSighash,
-          rk: request.rk,
+          signatures: [
+            for (final batchSignature in batchSignatures)
+              rust_api.ApiKeystoneSignatureInput(
+                bundleIndex: batchSignature.bundleIndex,
+                sig: Uint8List.fromList(batchSignature.signature),
+                sighash: Uint8List.fromList(
+                  requestsByBundle[batchSignature.bundleIndex]!.pcztSighash,
+                ),
+                rk: Uint8List.fromList(
+                  requestsByBundle[batchSignature.bundleIndex]!.rk,
+                ),
+              ),
+          ],
         );
+      } catch (error) {
+        final isConflict = error.toString().contains(
+          'Keystone signature conflict',
+        );
+        reject(
+          isConflict
+              ? 'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.'
+              : 'Could not save the Keystone signatures. Scan the same Keystone result again.',
+        );
+        return;
       }
 
       final signedBundleIndexes = batchSignatures
