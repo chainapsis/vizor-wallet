@@ -1,3 +1,20 @@
+<#
+Build an isolated executable before running this destructive smoke test:
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File scripts/package-windows-velopack.ps1 `
+    -Network mainnet `
+    -PackId com.keplr.vizor.single-instance-smoke `
+    -PackTitle "Vizor Single Instance Smoke" `
+    -Channel win-x64-single-instance-smoke `
+    -OutputDir build\velopack\single-instance-smoke
+
+The PackTitle sets the executable's VERSIONINFO ProductName, which determines
+the Windows application-support directory used by the wallet database and
+flutter_secure_storage. Changing only VIZOR_WINDOWS_STORAGE_PREFIX does not
+isolate those files.
+#>
+
 param(
   [Parameter(Mandatory = $true)]
   [string]$ExecutablePath,
@@ -8,10 +25,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-
-if (-not $ConfirmIsolatedStorage) {
-  throw "This smoke test forcibly terminates Vizor. Run it only against a build with an isolated VIZOR_WINDOWS_STORAGE_PREFIX, then pass -ConfirmIsolatedStorage."
-}
+$requiredProductName = "Vizor Single Instance Smoke"
 
 function Wait-ForMainWindow {
   param(
@@ -44,6 +58,28 @@ function Stop-OwnedProcess {
 }
 
 $resolvedExecutable = (Resolve-Path -LiteralPath $ExecutablePath).Path
+$versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($resolvedExecutable)
+$actualProductName = $versionInfo.ProductName
+$productionProductNames = @("Vizor", "Vizor Testnet")
+
+if ([string]::IsNullOrWhiteSpace($actualProductName)) {
+  throw "The executable has no VERSIONINFO ProductName and cannot be verified as storage-isolated: $resolvedExecutable"
+}
+if ($productionProductNames -contains $actualProductName) {
+  throw "Refusing to run the destructive smoke test against production ProductName '$actualProductName'. Build with -PackTitle '$requiredProductName'."
+}
+if (-not [string]::Equals(
+    $actualProductName,
+    $requiredProductName,
+    [System.StringComparison]::Ordinal)) {
+  throw "Executable ProductName '$actualProductName' does not match required smoke ProductName '$requiredProductName'."
+}
+if (-not $ConfirmIsolatedStorage) {
+  throw "This smoke test forcibly terminates Vizor. ProductName '$actualProductName' is storage-isolated; pass -ConfirmIsolatedStorage to continue."
+}
+
+Write-Host "Verified isolated ProductName: $actualProductName"
+
 $primary = $null
 $secondary = $null
 $replacement = $null
