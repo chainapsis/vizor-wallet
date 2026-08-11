@@ -267,6 +267,20 @@ Future<void> finishSoftwareAccountDerivationLease({
   operationToken: operationToken,
 );
 
+/// Acquire the shared account-mutation gate for one account deletion. Native
+/// pending derivation recovery must be resolved before this succeeds.
+Future<String> beginAccountDeletionLease({required String dbPath}) => RustLib
+    .instance
+    .api
+    .crateApiWalletBeginAccountDeletionLease(dbPath: dbPath);
+
+/// Release the account-deletion lease acquired by
+/// [begin_account_deletion_lease].
+Future<void> finishAccountDeletionLease({required String operationToken}) =>
+    RustLib.instance.api.crateApiWalletFinishAccountDeletionLease(
+      operationToken: operationToken,
+    );
+
 /// Acquire the derivation gate for a full wallet reset. The returned token
 /// must remain held until both the wallet DB and secure storage have finished
 /// their coordinated cleanup.
@@ -301,6 +315,20 @@ Future<void> deleteAccountUnderSoftwareAccountDerivationLease({
       accountUuid: accountUuid,
       operationToken: operationToken,
     );
+
+/// Delete an account while Dart retains the shared mutation gate across its
+/// remaining secure-storage and account-state cleanup.
+Future<void> deleteAccountUnderAccountDeletionLease({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String operationToken,
+}) => RustLib.instance.api.crateApiWalletDeleteAccountUnderAccountDeletionLease(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  operationToken: operationToken,
+);
 
 Future<bool> isSoftwareWalletLinkAccountImported({
   required String mnemonic,

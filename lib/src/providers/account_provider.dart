@@ -1561,137 +1561,144 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     ];
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
-    if (await rust_wallet.isSoftwareAccountDerivationLocked(dbPath: dbPath)) {
-      throw StateError(
-        'Finish the in-progress software account creation before removing an account.',
-      );
-    }
-    // A crashed process releases its OS lease, but its durable fence can still
-    // need this source mnemonic and metadata to reconcile the Rust delta. A
-    // legacy fence has no source UUID, so fail closed for every removal.
-    final rawRecoveryFence = await _storage.readString(
-      _derivedAccountRecoveryKey,
+    final deletionLeaseToken = await rust_wallet.beginAccountDeletionLease(
+      dbPath: dbPath,
     );
-    if (rawRecoveryFence != null && rawRecoveryFence.isNotEmpty) {
-      final recoveryFence = _DerivedAccountRecoveryFence.decode(
-        rawRecoveryFence,
-      );
-      if (recoveryFence.isLegacy || recoveryFence.sourceAccountUuid == uuid) {
-        throw StateError(
-          'Resolve the pending software account recovery before removing its source account.',
-        );
-      }
-    }
-    final migrationRevocation = await IronwoodMigrationOperationRegistry
-        .instance
-        .revokeAndWait(network: network, accountUuid: uuid);
-    final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
-    final migrationQuiescenceManagedByCaller =
-        migrationLifecycle.isQuiescenceManagedByCaller;
     try {
-      if (!migrationQuiescenceManagedByCaller) {
-        await migrationLifecycle.quiesce();
-      }
-      await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
-      await migrationLifecycle.revokeAccount(
-        network: network,
-        accountUuid: uuid,
+      // A crashed process releases its OS lease, but its durable fence can still
+      // need this source mnemonic and metadata to reconcile the Rust delta. A
+      // legacy fence has no source UUID, so fail closed for every removal.
+      final rawRecoveryFence = await _storage.readString(
+        _derivedAccountRecoveryKey,
       );
-      final rustDeleteWatch = Stopwatch()..start();
-      await rust_wallet.deleteAccount(
-        dbPath: dbPath,
-        network: network,
-        accountUuid: uuid,
-      );
-      migrationRevocation.commit();
-      log(
-        'removeAccount: rust delete complete in '
-        '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
-      );
-    } catch (_) {
-      migrationRevocation.rollback();
-      if (!migrationQuiescenceManagedByCaller) {
-        try {
-          await migrationLifecycle.resumeAfterFailedMutation();
-        } catch (e, st) {
-          log(
-            'removeAccount: failed to resume migration after keeping '
-            '$uuid: $e\n$st',
+      if (rawRecoveryFence != null && rawRecoveryFence.isNotEmpty) {
+        final recoveryFence = _DerivedAccountRecoveryFence.decode(
+          rawRecoveryFence,
+        );
+        if (recoveryFence.isLegacy || recoveryFence.sourceAccountUuid == uuid) {
+          throw StateError(
+            'Resolve the pending software account recovery before removing its source account.',
           );
         }
       }
-      rethrow;
-    }
-    try {
-      await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
-    } catch (e, st) {
-      log(
-        'removeAccount: failed to delete durable voting state for '
-        '$uuid after wallet deletion: $e\n$st',
-      );
-    }
-    try {
-      await _storage.deleteAccountMnemonic(uuid);
-    } catch (e, st) {
-      log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
-    }
-    try {
-      await ref
-          .read(swapActivityStoreProvider)
-          .deleteForAccount(accountUuid: uuid);
-    } catch (_) {}
-    try {
-      await _storage.deleteVotingHotkeysForAccount(uuid);
-    } catch (e, st) {
-      log('removeAccount: failed to delete voting hotkeys for $uuid: $e\n$st');
-    }
-    try {
-      await ref.read(votingDraftPersistenceProvider).deleteForAccount(uuid);
-    } catch (e, st) {
-      log('removeAccount: failed to delete voting drafts for $uuid: $e\n$st');
-    }
-
-    final updated = [
-      for (var i = 0; i < remaining.length; i++)
-        remaining[i].copyWith(order: i),
-    ];
-    final nextActiveUuid = _nextActiveAccountUuid(
-      previousState: prev,
-      removedAccount: target,
-      remainingAccounts: updated,
-    );
-    final nextActiveAddress = await _nextActiveAddress(
-      prev,
-      nextActiveUuid,
-      dbPath,
-      network,
-    );
-
-    await _saveAccounts(updated);
-    if (nextActiveUuid == null) {
-      await _storage.delete(_activeAccountKey);
-    } else {
-      await _storage.writeString(_activeAccountKey, nextActiveUuid);
-    }
-
-    state = AsyncData(
-      AccountState(
-        accounts: updated,
-        activeAccountUuid: nextActiveUuid,
-        activeAddress: nextActiveAddress,
-      ),
-    );
-    if (!migrationQuiescenceManagedByCaller) {
+      final migrationRevocation = await IronwoodMigrationOperationRegistry
+          .instance
+          .revokeAndWait(network: network, accountUuid: uuid);
+      final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
+      final migrationQuiescenceManagedByCaller =
+          migrationLifecycle.isQuiescenceManagedByCaller;
       try {
-        await migrationLifecycle.resumeAfterMutation();
+        if (!migrationQuiescenceManagedByCaller) {
+          await migrationLifecycle.quiesce();
+        }
+        await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
+        await migrationLifecycle.revokeAccount(
+          network: network,
+          accountUuid: uuid,
+        );
+        final rustDeleteWatch = Stopwatch()..start();
+        await rust_wallet.deleteAccountUnderAccountDeletionLease(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: uuid,
+          operationToken: deletionLeaseToken,
+        );
+        migrationRevocation.commit();
+        log(
+          'removeAccount: rust delete complete in '
+          '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
+        );
+      } catch (_) {
+        migrationRevocation.rollback();
+        if (!migrationQuiescenceManagedByCaller) {
+          try {
+            await migrationLifecycle.resumeAfterFailedMutation();
+          } catch (e, st) {
+            log(
+              'removeAccount: failed to resume migration after keeping '
+              '$uuid: $e\n$st',
+            );
+          }
+        }
+        rethrow;
+      }
+      try {
+        await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
       } catch (e, st) {
         log(
-          'removeAccount: failed to resume migration for remaining '
-          'accounts: $e\n$st',
+          'removeAccount: failed to delete durable voting state for '
+          '$uuid after wallet deletion: $e\n$st',
         );
       }
+      try {
+        await _storage.deleteAccountMnemonic(uuid);
+      } catch (e, st) {
+        log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
+      }
+      try {
+        await ref
+            .read(swapActivityStoreProvider)
+            .deleteForAccount(accountUuid: uuid);
+      } catch (_) {}
+      try {
+        await _storage.deleteVotingHotkeysForAccount(uuid);
+      } catch (e, st) {
+        log(
+          'removeAccount: failed to delete voting hotkeys for $uuid: $e\n$st',
+        );
+      }
+      try {
+        await ref.read(votingDraftPersistenceProvider).deleteForAccount(uuid);
+      } catch (e, st) {
+        log('removeAccount: failed to delete voting drafts for $uuid: $e\n$st');
+      }
+
+      final updated = [
+        for (var i = 0; i < remaining.length; i++)
+          remaining[i].copyWith(order: i),
+      ];
+      final nextActiveUuid = _nextActiveAccountUuid(
+        previousState: prev,
+        removedAccount: target,
+        remainingAccounts: updated,
+      );
+      final nextActiveAddress = await _nextActiveAddress(
+        prev,
+        nextActiveUuid,
+        dbPath,
+        network,
+      );
+
+      await _saveAccounts(updated);
+      if (nextActiveUuid == null) {
+        await _storage.delete(_activeAccountKey);
+      } else {
+        await _storage.writeString(_activeAccountKey, nextActiveUuid);
+      }
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: nextActiveUuid,
+          activeAddress: nextActiveAddress,
+        ),
+      );
+      if (!migrationQuiescenceManagedByCaller) {
+        try {
+          await migrationLifecycle.resumeAfterMutation();
+        } catch (e, st) {
+          log(
+            'removeAccount: failed to resume migration for remaining '
+            'accounts: $e\n$st',
+          );
+        }
+      }
+      log('removeAccount: $uuid');
+    } finally {
+      await rust_wallet.finishAccountDeletionLease(
+        operationToken: deletionLeaseToken,
+      );
     }
-    log('removeAccount: $uuid');
   }
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.

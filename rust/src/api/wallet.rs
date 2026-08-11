@@ -706,6 +706,18 @@ pub fn finish_software_account_derivation_lease(operation_token: String) -> Resu
     catch(|| keys::finish_software_account_derivation_lease(&operation_token))
 }
 
+/// Acquire the shared account-mutation gate for one account deletion. Native
+/// pending derivation recovery must be resolved before this succeeds.
+pub fn begin_account_deletion_lease(db_path: String) -> Result<String, String> {
+    catch(|| keys::begin_account_deletion_lease(&db_path))
+}
+
+/// Release the account-deletion lease acquired by
+/// [begin_account_deletion_lease].
+pub fn finish_account_deletion_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finish_account_deletion_lease(&operation_token))
+}
+
 /// Acquire the derivation gate for a full wallet reset. The returned token
 /// must remain held until both the wallet DB and secure storage have finished
 /// their coordinated cleanup.
@@ -736,6 +748,34 @@ pub fn delete_account_under_software_account_derivation_lease(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         keys::delete_account_under_software_account_derivation_lease(
+            &db_path,
+            network,
+            &account_uuid,
+            &operation_token,
+        )?;
+        if let Err(error) = transparent_receive_cache::delete_account(&db_path, &account_uuid) {
+            log::warn!(
+                "transparent receive cache: failed to delete account {}: {}",
+                account_uuid,
+                error
+            );
+        }
+        Ok(())
+    })
+}
+
+/// Delete an account while Dart retains the shared mutation gate across its
+/// remaining secure-storage and account-state cleanup.
+pub fn delete_account_under_account_deletion_lease(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    operation_token: String,
+) -> Result<(), String> {
+    catch(|| {
+        keys::require_account_deletion_lease(&operation_token, &db_path)?;
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::delete_account_under_account_deletion_lease(
             &db_path,
             network,
             &account_uuid,

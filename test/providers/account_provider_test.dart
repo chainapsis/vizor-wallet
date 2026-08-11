@@ -503,6 +503,41 @@ void main() {
       await first;
     });
 
+    test(
+      'blocks derivation that starts after account removal begins',
+      () async {
+        rust.pauseAccountDeletion();
+        final removalContainer = _deriveAccountContainer(source);
+        final derivationContainer = _deriveAccountContainer(source);
+        addTearDown(removalContainer.dispose);
+        addTearDown(derivationContainer.dispose);
+        await removalContainer.read(accountProvider.future);
+        await derivationContainer.read(accountProvider.future);
+
+        final removal = removalContainer
+            .read(accountProvider.notifier)
+            .removeAccount(source.uuid);
+        await rust.waitForAccountDeletionStart();
+        try {
+          await expectLater(
+            derivationContainer
+                .read(accountProvider.notifier)
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+            throwsA(
+              predicate<Object>(
+                (error) => error.toString().contains('already in progress'),
+                'account removal retains the shared mutation gate',
+              ),
+            ),
+          );
+        } finally {
+          rust.resumeAccountDeletion();
+        }
+        await removal;
+        expect(rust.allocatedIndices, isEmpty);
+      },
+    );
+
     test('blocks full reset while a derivation lease is live', () async {
       rust.pauseDerivation();
       final firstContainer = _deriveAccountContainer(source);
@@ -1677,8 +1712,11 @@ class _DerivationRustApiFake implements RustLibApi {
   final _listedAccountsByUuid = <String, rust_wallet.AccountInfo>{};
   Completer<void>? _derivationGate;
   Completer<void>? _derivationStarted;
+  Completer<void>? _accountDeletionGate;
+  Completer<void>? _accountDeletionStarted;
   bool failNextDelete = false;
   String? _activeLeaseToken;
+  String? _activeAccountDeletionLeaseToken;
   String? _activeResetLeaseToken;
   String? _persistentLeaseToken;
   bool _persistentLeaseIsPending = false;
@@ -1701,7 +1739,10 @@ class _DerivationRustApiFake implements RustLibApi {
     allocatedIndices.clear();
     _derivationGate = null;
     _derivationStarted = null;
+    _accountDeletionGate = null;
+    _accountDeletionStarted = null;
     _activeLeaseToken = null;
+    _activeAccountDeletionLeaseToken = null;
     _activeResetLeaseToken = null;
     _persistentLeaseToken = null;
     _persistentLeaseIsPending = false;
@@ -1732,7 +1773,9 @@ class _DerivationRustApiFake implements RustLibApi {
     required String recoveryProfilePictureId,
     String? recoveryAccountGroupName,
   }) async {
-    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
+    if (_activeLeaseToken != null ||
+        _activeAccountDeletionLeaseToken != null ||
+        _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     if (_persistentLeaseIsPending) {
@@ -1763,7 +1806,9 @@ class _DerivationRustApiFake implements RustLibApi {
     required String dbPath,
     required String previousOperationToken,
   }) async {
-    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
+    if (_activeLeaseToken != null ||
+        _activeAccountDeletionLeaseToken != null ||
+        _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     // Existing round-three fixtures have only Dart state; materialize the
@@ -1800,7 +1845,9 @@ class _DerivationRustApiFake implements RustLibApi {
   crateApiWalletClaimPendingSoftwareAccountDerivationLease({
     required String dbPath,
   }) async {
-    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
+    if (_activeLeaseToken != null ||
+        _activeAccountDeletionLeaseToken != null ||
+        _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     if (!_persistentLeaseIsPending || _persistentLeaseToken == null) {
@@ -1845,13 +1892,47 @@ class _DerivationRustApiFake implements RustLibApi {
   @override
   Future<bool> crateApiWalletIsSoftwareAccountDerivationLocked({
     required String dbPath,
-  }) async => _activeLeaseToken != null || _activeResetLeaseToken != null;
+  }) async =>
+      _activeLeaseToken != null ||
+      _activeAccountDeletionLeaseToken != null ||
+      _activeResetLeaseToken != null;
+
+  @override
+  Future<String> crateApiWalletBeginAccountDeletionLease({
+    required String dbPath,
+  }) async {
+    if (_activeLeaseToken != null ||
+        _activeAccountDeletionLeaseToken != null ||
+        _activeResetLeaseToken != null) {
+      throw StateError(
+        'Finish the in-progress software account creation before removing an account.',
+      );
+    }
+    if (_persistentLeaseIsPending) {
+      throw StateError(
+        'A previous software account derivation needs recovery.',
+      );
+    }
+    return _activeAccountDeletionLeaseToken = 'account-deletion-lease';
+  }
+
+  @override
+  Future<void> crateApiWalletFinishAccountDeletionLease({
+    required String operationToken,
+  }) async {
+    if (_activeAccountDeletionLeaseToken != operationToken) {
+      throw StateError('Account deletion operation is no longer owned.');
+    }
+    _activeAccountDeletionLeaseToken = null;
+  }
 
   @override
   Future<String> crateApiWalletBeginWalletResetLease({
     required String dbPath,
   }) async {
-    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
+    if (_activeLeaseToken != null ||
+        _activeAccountDeletionLeaseToken != null ||
+        _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     return _activeResetLeaseToken = 'reset-lease';
@@ -1875,6 +1956,15 @@ class _DerivationRustApiFake implements RustLibApi {
   Future<void> waitForDerivationStart() => _derivationStarted!.future;
 
   void resumeDerivation() => _derivationGate?.complete();
+
+  void pauseAccountDeletion() {
+    _accountDeletionGate = Completer<void>();
+    _accountDeletionStarted = Completer<void>();
+  }
+
+  Future<void> waitForAccountDeletionStart() => _accountDeletionStarted!.future;
+
+  void resumeAccountDeletion() => _accountDeletionGate?.complete();
 
   void addListedAccount(AccountInfo account) {
     _listedAccountsByUuid[account.uuid] = rust_wallet.AccountInfo(
@@ -1946,6 +2036,23 @@ class _DerivationRustApiFake implements RustLibApi {
         'Finish the in-progress software account creation before removing an account.',
       );
     }
+    _accountDeletionStarted?.complete();
+    await _accountDeletionGate?.future;
+    await _deleteAccount(accountUuid);
+  }
+
+  @override
+  Future<void> crateApiWalletDeleteAccountUnderAccountDeletionLease({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String operationToken,
+  }) async {
+    if (_activeAccountDeletionLeaseToken != operationToken) {
+      throw StateError('Account deletion operation is no longer owned.');
+    }
+    _accountDeletionStarted?.complete();
+    await _accountDeletionGate?.future;
     await _deleteAccount(accountUuid);
   }
 

@@ -43,6 +43,8 @@ const MNEMONIC_WORD_COUNT_STEP: usize = 3;
 const TRANSPARENT_EXTERNAL_KEY_SCOPE: i64 = 0;
 const DERIVATION_LEASE_BUSY_MESSAGE: &str =
     "A software account derivation is already in progress. Finish it before trying again.";
+const ACCOUNT_DELETION_LEASE_BUSY_MESSAGE: &str =
+    "Finish the in-progress software account creation before removing an account.";
 const PENDING_DERIVATION_MESSAGE: &str =
     "A previous software account derivation needs recovery before accounts can be changed.";
 const PENDING_DERIVATION_TABLE: &str = "vizor_pending_software_account_derivation";
@@ -85,6 +87,7 @@ struct SoftwareAccountDerivationLease {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AccountMutationLeaseKind {
     SoftwareAccountDerivation,
+    AccountDeletion,
     WalletReset,
 }
 
@@ -572,11 +575,36 @@ pub fn finish_software_account_derivation_lease(token: &str) -> Result<(), Strin
 /// modify a persistent recovery record; it only prevents either operation
 /// from interleaving with the other's destructive DB and storage changes.
 pub fn begin_wallet_reset_lease(db_path: &str) -> Result<String, String> {
+    begin_non_derivation_account_mutation_lease(
+        db_path,
+        AccountMutationLeaseKind::WalletReset,
+        false,
+        DERIVATION_LEASE_BUSY_MESSAGE,
+    )
+}
+
+/// Hold the shared account-mutation gate for an account deletion and reject a
+/// crash-left native derivation record before any destructive work begins.
+pub fn begin_account_deletion_lease(db_path: &str) -> Result<String, String> {
+    begin_non_derivation_account_mutation_lease(
+        db_path,
+        AccountMutationLeaseKind::AccountDeletion,
+        true,
+        ACCOUNT_DELETION_LEASE_BUSY_MESSAGE,
+    )
+}
+
+fn begin_non_derivation_account_mutation_lease(
+    db_path: &str,
+    kind: AccountMutationLeaseKind,
+    reject_pending: bool,
+    busy_message: &str,
+) -> Result<String, String> {
     let mut leases = software_account_derivation_leases()
         .lock()
         .expect("software derivation lease mutex poisoned");
     if leases.values().any(|lease| lease.db_path == db_path) {
-        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+        return Err(busy_message.to_string());
     }
 
     let lock_file = OpenOptions::new()
@@ -587,14 +615,22 @@ pub fn begin_wallet_reset_lease(db_path: &str) -> Result<String, String> {
         .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
     lock_file
         .try_lock_exclusive()
-        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+        .map_err(|_| busy_message.to_string())?;
+
+    if reject_pending {
+        let conn = rusqlite::Connection::open(db_path)
+            .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+        conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+            .map_err(|error| format!("Failed to configure wallet DB busy timeout: {error}"))?;
+        reject_pending_derivation(&conn)?;
+    }
 
     let token = uuid::Uuid::new_v4().to_string();
     leases.insert(
         token.clone(),
         SoftwareAccountDerivationLease {
             db_path: db_path.to_string(),
-            kind: AccountMutationLeaseKind::WalletReset,
+            kind,
             lock_file,
         },
     );
@@ -607,6 +643,29 @@ pub fn finish_wallet_reset_lease(token: &str) -> Result<(), String> {
         AccountMutationLeaseKind::WalletReset,
         "Wallet reset operation is no longer owned by this process.",
     )
+}
+
+pub fn finish_account_deletion_lease(token: &str) -> Result<(), String> {
+    finish_account_mutation_lease(
+        token,
+        AccountMutationLeaseKind::AccountDeletion,
+        "Account deletion operation is no longer owned by this process.",
+    )
+}
+
+pub(crate) fn require_account_deletion_lease(token: &str, db_path: &str) -> Result<(), String> {
+    let leases = software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned");
+    match leases.get(token) {
+        Some(lease)
+            if lease.db_path == db_path
+                && lease.kind == AccountMutationLeaseKind::AccountDeletion =>
+        {
+            Ok(())
+        }
+        _ => Err("Account deletion operation is no longer owned by this process.".to_string()),
+    }
 }
 
 fn finish_account_mutation_lease(
@@ -1549,12 +1608,20 @@ pub fn delete_account(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<(), String> {
-    if is_software_account_derivation_locked(db_path)? {
-        return Err(
-            "Finish the in-progress software account creation before removing an account."
-                .to_string(),
-        );
-    }
+    with_no_pending_derivation(db_path, || {
+        delete_account_unchecked(db_path, network, account_uuid)
+    })
+}
+
+/// Delete an account while the caller retains the shared mutation gate across
+/// its native and secure-storage cleanup.
+pub fn delete_account_under_account_deletion_lease(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    operation_token: &str,
+) -> Result<(), String> {
+    require_account_deletion_lease(operation_token, db_path)?;
     delete_account_unchecked(db_path, network, account_uuid)
 }
 
@@ -3714,6 +3781,95 @@ mod tests {
         assert!(reset_during_derive.contains("already in progress"));
         resolve_software_account_derivation_lease(&derive_token, None).unwrap();
         finish_software_account_derivation_lease(&derive_token).unwrap();
+    }
+
+    #[test]
+    fn account_deletion_and_software_derivation_share_one_mutation_gate() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let source_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &source_seed, None, "Source")
+                .unwrap();
+        let second_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (second_uuid, _) =
+            add_account(db_path, WalletNetwork::Main, "Second", &second_seed, None).unwrap();
+
+        let deletion_token = begin_account_deletion_lease(db_path).unwrap();
+        let derive_during_deletion = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Blocked",
+            "pfp-01",
+            None,
+        )
+        .expect_err("derivation must not start while deletion owns the wallet");
+        assert!(derive_during_deletion.contains("already in progress"));
+        delete_account_under_account_deletion_lease(
+            db_path,
+            WalletNetwork::Main,
+            &second_uuid,
+            &deletion_token,
+        )
+        .unwrap();
+        finish_account_deletion_lease(&deletion_token).unwrap();
+        assert!(list_accounts(db_path, WalletNetwork::Main)
+            .unwrap()
+            .iter()
+            .all(|account| account.uuid != second_uuid));
+
+        let derive_token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Blocked deletion",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
+        let deletion_during_derive = begin_account_deletion_lease(db_path)
+            .expect_err("deletion must not start while derivation owns the wallet");
+        assert!(deletion_during_derive.contains("in-progress software"));
+        resolve_software_account_derivation_lease(&derive_token, None).unwrap();
+        finish_software_account_derivation_lease(&derive_token).unwrap();
+    }
+
+    #[test]
+    fn crash_left_pending_derivation_blocks_account_deletion_before_recovery() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+        let lease = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .unwrap();
+
+        // Model a crashed process: its OS lock is gone, but the native pending
+        // record still protects the source account needed for recovery.
+        finish_software_account_derivation_lease(&lease.operation_token).unwrap();
+
+        let error = delete_account(db_path, WalletNetwork::Main, &source_uuid)
+            .expect_err("pending derivation must block source-account deletion");
+        assert!(error.contains("needs recovery"), "got: {error}");
+        let lease_error = begin_account_deletion_lease(db_path)
+            .expect_err("pending derivation must block a long-lived deletion lease");
+        assert!(lease_error.contains("needs recovery"), "got: {lease_error}");
+        assert!(
+            list_accounts(db_path, WalletNetwork::Main)
+                .unwrap()
+                .iter()
+                .any(|account| account.uuid == source_uuid),
+            "the recovery source must remain in the wallet"
+        );
     }
 
     #[test]
