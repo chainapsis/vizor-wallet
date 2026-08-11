@@ -67,8 +67,8 @@ enum ConfigSwitchKind {
   /// There was no prior resolved config summary.
   initialLoad,
 
-  /// Same authenticated round set and protocol tuple, but endpoint or
-  /// trusted-signing-key material changed.
+  /// Same authenticated round set and protocol tuple, but endpoint, PIR
+  /// layout, or trusted-signing-key material changed.
   ///
   /// Wallets should restart endpoint caches, status polls, share tracking,
   /// and PIR/delegation precompute. They should keep round-id-indexed wallet
@@ -90,6 +90,36 @@ enum ConfigSwitchKind {
   protocolChanged,
 }
 
+/// PIR tree geometry selected by the dynamic voting config.
+///
+/// Fixed-width fields keep this DTO stable for generated wallet bindings.
+/// [`PirLayout::UNKNOWN`] is reserved for summaries persisted before layout
+/// identity was recorded and is never accepted from dynamic config.
+class PirLayout {
+  final int pirDepth;
+  final int tier0Layers;
+  final int tier1Layers;
+
+  const PirLayout({
+    required this.pirDepth,
+    required this.tier0Layers,
+    required this.tier1Layers,
+  });
+
+  @override
+  int get hashCode =>
+      pirDepth.hashCode ^ tier0Layers.hashCode ^ tier1Layers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PirLayout &&
+          runtimeType == other.runtimeType &&
+          pirDepth == other.pirDepth &&
+          tier0Layers == other.tier0Layers &&
+          tier1Layers == other.tier1Layers;
+}
+
 /// Resolved dynamic voting config, ready for wallet use.
 class ResolvedVotingConfig {
   final String sourceFingerprint;
@@ -97,6 +127,7 @@ class ResolvedVotingConfig {
   final String dynamicConfigFingerprint;
   final List<ServiceEndpoint> voteServers;
   final List<ServiceEndpoint> pirEndpoints;
+  final PirLayout pirLayout;
   final SupportedVersions supportedVersions;
   final List<AuthenticatedRound> authenticatedRounds;
   final List<String> skippedRoundIds;
@@ -108,6 +139,7 @@ class ResolvedVotingConfig {
     required this.dynamicConfigFingerprint,
     required this.voteServers,
     required this.pirEndpoints,
+    required this.pirLayout,
     required this.supportedVersions,
     required this.authenticatedRounds,
     required this.skippedRoundIds,
@@ -121,6 +153,7 @@ class ResolvedVotingConfig {
       dynamicConfigFingerprint.hashCode ^
       voteServers.hashCode ^
       pirEndpoints.hashCode ^
+      pirLayout.hashCode ^
       supportedVersions.hashCode ^
       authenticatedRounds.hashCode ^
       skippedRoundIds.hashCode ^
@@ -136,6 +169,7 @@ class ResolvedVotingConfig {
           dynamicConfigFingerprint == other.dynamicConfigFingerprint &&
           voteServers == other.voteServers &&
           pirEndpoints == other.pirEndpoints &&
+          pirLayout == other.pirLayout &&
           supportedVersions == other.supportedVersions &&
           authenticatedRounds == other.authenticatedRounds &&
           skippedRoundIds == other.skippedRoundIds &&

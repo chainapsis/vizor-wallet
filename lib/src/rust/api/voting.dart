@@ -14,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -254,35 +254,21 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
       bundleIndex: bundleIndex,
     );
 
-/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+/// Build and redact voting PCZTs that Keystone can sign in one or more batches.
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution fails or if PCZT construction and
-/// redaction for the requested bundle fails.
-Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
+/// Returns an error if bundle indexes are empty or duplicated, round input
+/// resolution fails, or PCZT construction and redaction for any requested
+/// bundle fails.
+Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
   required ApiVotingRoundContext ctx,
   required List<int> storedHotkeySecret,
-  required int bundleIndex,
-}) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
+  required List<int> bundleIndices,
+}) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequests(
   ctx: ctx,
   storedHotkeySecret: storedHotkeySecret,
-  bundleIndex: bundleIndex,
-);
-
-/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
-///
-/// # Errors
-///
-/// Returns an error if the signed PCZT cannot be decoded, does not contain a
-/// spend authorization sighash, or does not contain a SpendAuth signature for
-/// the expected action.
-Future<ParsedSignedVotingPczt> parseSignedVotingPczt({
-  required List<int> signedPcztBytes,
-  required int actionIndex,
-}) => RustLib.instance.api.crateApiVotingParseSignedVotingPczt(
-  signedPcztBytes: signedPcztBytes,
-  actionIndex: actionIndex,
+  bundleIndices: bundleIndices,
 );
 
 /// Persist a Keystone signature for one delegation bundle.
@@ -875,6 +861,9 @@ class ApiVotingRoundContext {
   final String accountUuid;
   final int? maxRealNotesPerBundle;
 
+  /// Authenticated PIR geometry expected from the selected endpoint.
+  final PirLayout pirLayout;
+
   const ApiVotingRoundContext({
     required this.dbPath,
     required this.lightwalletdUrl,
@@ -884,6 +873,7 @@ class ApiVotingRoundContext {
     this.sessionJson,
     required this.accountUuid,
     this.maxRealNotesPerBundle,
+    required this.pirLayout,
   });
 
   @override
@@ -895,7 +885,8 @@ class ApiVotingRoundContext {
       roundName.hashCode ^
       sessionJson.hashCode ^
       accountUuid.hashCode ^
-      maxRealNotesPerBundle.hashCode;
+      maxRealNotesPerBundle.hashCode ^
+      pirLayout.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -909,32 +900,8 @@ class ApiVotingRoundContext {
           roundName == other.roundName &&
           sessionJson == other.sessionJson &&
           accountUuid == other.accountUuid &&
-          maxRealNotesPerBundle == other.maxRealNotesPerBundle;
-}
-
-/// Parsed fields from a Keystone-signed voting PCZT.
-class ParsedSignedVotingPczt {
-  /// ZIP-244 sighash extracted from the signed PCZT.
-  final Uint8List sighash;
-
-  /// Orchard SpendAuth signature extracted from the signed PCZT.
-  final Uint8List spendAuthSig;
-
-  const ParsedSignedVotingPczt({
-    required this.sighash,
-    required this.spendAuthSig,
-  });
-
-  @override
-  int get hashCode => sighash.hashCode ^ spendAuthSig.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ParsedSignedVotingPczt &&
-          runtimeType == other.runtimeType &&
-          sighash == other.sighash &&
-          spendAuthSig == other.spendAuthSig;
+          maxRealNotesPerBundle == other.maxRealNotesPerBundle &&
+          pirLayout == other.pirLayout;
 }
 
 class VotingConfigResolution {
