@@ -58,6 +58,39 @@ void main() {
       find.byKey(const ValueKey('customise_account_finish_button')),
       findsOneWidget,
     );
+    final backTarget = tester
+        .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
+        .backTarget;
+    expect(backTarget?.label, 'Add account');
+  });
+
+  testWidgets('derive flow back link returns to add account', (tester) async {
+    await _setDesktopViewport(tester);
+    final router = GoRouter(
+      initialLocation: '/onboarding/customise-account',
+      routes: [
+        GoRoute(
+          path: '/onboarding/customise-account',
+          builder: (_, _) => CustomiseAccountScreen(
+            args: const CustomiseAccountArgs.derive(
+              deriveFromAccountUuid: 'software-account',
+            ),
+            onFinish: (_, _) async {},
+          ),
+        ),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => const Text('Add account route'),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_routerHarness(router));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add account route'), findsOneWidget);
   });
 
   testWidgets('derive flow submits only the source account uuid', (

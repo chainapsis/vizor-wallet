@@ -588,7 +588,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
       late rust_wallet.SoftwareAccountDerivationLease nativeLease;
       late _DerivedAccountRecoveryFence recoveryFence;
-      var sourceSeedFamilyPersistedBeforeLease = false;
       if (existingRawFence != null && existingRawFence.isNotEmpty) {
         final existingFence = _DerivedAccountRecoveryFence.decode(
           existingRawFence,
@@ -666,16 +665,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               'No recovery phrase available for account $sourceAccountUuid',
             );
           }
-          // Bootstrap can recover the opaque family identifier from Rust for
-          // an older wallet without writing it back to secure storage. Make
-          // that authenticated source metadata durable before native records
-          // an allocation intent, so crash recovery can prove the delta.
-          await _persistDurableSourceSeedFamilyMetadata(
-            dbPath: dbPath,
-            network: network,
-            sourceAccountUuid: sourceAccountUuid,
-          );
-          sourceSeedFamilyPersistedBeforeLease = true;
+          // Native acquires the shared reset/account-mutation gate before it
+          // opens or migrates the captured DB path. Source metadata backfill
+          // must happen only while that same lease remains held.
           nativeLease = await rust_wallet.beginSoftwareAccountDerivationLease(
             dbPath: dbPath,
             network: network,
@@ -693,13 +685,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // were introduced need not byte-match a fresh encode.
       final recoveryFenceRaw = existingRawFence ?? recoveryFence.encode();
       try {
-        if (!sourceSeedFamilyPersistedBeforeLease) {
-          await _persistDurableSourceSeedFamilyMetadata(
-            dbPath: dbPath,
-            network: network,
-            sourceAccountUuid: recoveryFence.sourceAccountUuid,
-          );
-        }
+        await _persistDurableSourceSeedFamilyMetadata(
+          dbPath: dbPath,
+          network: network,
+          sourceAccountUuid: recoveryFence.sourceAccountUuid,
+        );
         // Once source metadata is durable, this is the first persistent Dart
         // write after a no-fence native claim or begin. If it fails without
         // persisting, Rust proves the baseline still has no delta before
@@ -918,6 +908,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               operationToken: operationToken,
             );
             await _clearRecoveryFence(expectedRawFence: recoveryFenceRaw);
+            await rust_wallet.finalizeSoftwareAccountDerivationLease(
+              operationToken: operationToken,
+            );
           } catch (cleanupError) {
             Error.throwWithStackTrace(
               DerivedAccountCompensationException(
@@ -1045,6 +1038,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // after a crash between native resolution and Dart deletion.
       if (!nativeLease.isPending) {
         await _clearRecoveryFence(expectedRawFence: rawFence);
+        await rust_wallet.finalizeSoftwareAccountDerivationLease(
+          operationToken: nativeLease.operationToken,
+        );
         return _DerivedAccountRecoveryOutcome.clearedResolvedNoDeltaFence;
       }
       return _DerivedAccountRecoveryOutcome.pendingLease;
@@ -1268,6 +1264,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     }
     await _clearRecoveryFence(expectedRawFence: expectedRawFence);
+    await rust_wallet.finalizeSoftwareAccountDerivationLease(
+      operationToken: operationToken,
+    );
   }
 
   /// Clears only the exact journal inspected under the caller's native lease.

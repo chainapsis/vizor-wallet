@@ -222,8 +222,8 @@ fn account_uuids_for_persistent_derivation(
     account_uuids
 }
 
-fn reject_pending_derivation(conn: &rusqlite::Connection) -> Result<(), String> {
-    if read_persistent_derivation(conn)?.is_some_and(|record| record.is_pending) {
+fn reject_unfinalized_derivation(conn: &rusqlite::Connection) -> Result<(), String> {
+    if read_persistent_derivation(conn)?.is_some() {
         return Err(PENDING_DERIVATION_MESSAGE.to_string());
     }
     Ok(())
@@ -240,7 +240,7 @@ fn with_no_pending_derivation<T>(
         if Path::new(db_path).exists() {
             let conn = rusqlite::Connection::open(db_path)
                 .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
-            reject_pending_derivation(&conn)?;
+            reject_unfinalized_derivation(&conn)?;
         }
         operation()
     })
@@ -301,7 +301,7 @@ pub fn begin_software_account_derivation_lease(
     let transaction = conn
         .unchecked_transaction()
         .map_err(|error| format!("Failed to begin derivation recovery record: {error}"))?;
-    if read_persistent_derivation(&transaction)?.is_some_and(|record| record.is_pending) {
+    if read_persistent_derivation(&transaction)?.is_some() {
         return Err(PENDING_DERIVATION_MESSAGE.to_string());
     }
     let baseline_account_uuids = account_uuids_for_persistent_derivation(&transaction)?;
@@ -429,7 +429,9 @@ pub fn resume_software_account_derivation_lease(
 /// Claim a crashed pending operation when Dart has no fence at all. Unlike
 /// `resume_*`, this does not accept a Dart token: SQLite is the durable source
 /// of truth and returns its full persisted intent so Dart can immediately
-/// recreate the exact fence before reading or mutating account state.
+/// recreate the exact fence before reading or mutating account state. A
+/// resolved record at this no-fence entry point is the crash-safe finalize
+/// case and is deleted while the mutation gate remains held.
 pub fn claim_pending_software_account_derivation_lease(
     db_path: &str,
 ) -> Result<Option<SoftwareAccountDerivationLeaseInfo>, String> {
@@ -457,8 +459,7 @@ pub fn claim_pending_software_account_derivation_lease(
     let transaction = conn
         .unchecked_transaction()
         .map_err(|error| format!("Failed to inspect derivation recovery record: {error}"))?;
-    let Some(record) = read_persistent_derivation(&transaction)?.filter(|record| record.is_pending)
-    else {
+    let Some(record) = read_persistent_derivation(&transaction)? else {
         transaction
             .commit()
             .map_err(|error| format!("Failed to commit derivation recovery inspection: {error}"))?;
@@ -467,6 +468,29 @@ pub fn claim_pending_software_account_derivation_lease(
             .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
         return Ok(None);
     };
+    if !record.is_pending {
+        // Dart calls this no-fence recovery entry point only after observing
+        // that its journal is absent. A resolved native record therefore
+        // represents a crash after Dart cleared that journal but before the
+        // normal finalize call. Prune it while holding the shared mutation
+        // gate so ordinary constructors remain fenced throughout recovery.
+        transaction
+            .execute(
+                &format!(
+                    "DELETE FROM {PENDING_DERIVATION_TABLE} \
+                     WHERE singleton = 1 AND operation_token = ?1 AND state = 'resolved'"
+                ),
+                [&record.operation_token],
+            )
+            .map_err(|error| format!("Failed to finalize resolved derivation recovery: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("Failed to commit resolved derivation recovery: {error}"))?;
+        lock_file
+            .unlock()
+            .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
+        return Ok(None);
+    }
     transaction
         .commit()
         .map_err(|error| format!("Failed to commit derivation recovery inspection: {error}"))?;
@@ -551,6 +575,49 @@ pub fn resolve_software_account_derivation_lease(
     Ok(())
 }
 
+/// Delete a resolved recovery record only after Dart has durably cleared its
+/// matching journal. Until this succeeds, every ordinary account constructor
+/// continues to treat the native record as a mutation barrier.
+pub fn finalize_software_account_derivation_lease(token: &str) -> Result<(), String> {
+    let db_path = {
+        let leases = software_account_derivation_leases()
+            .lock()
+            .expect("software derivation lease mutex poisoned");
+        leases
+            .get(token)
+            .filter(|lease| lease.kind == AccountMutationLeaseKind::SoftwareAccountDerivation)
+            .ok_or_else(|| {
+                "Software account derivation operation is no longer owned by this process."
+                    .to_string()
+            })?
+            .db_path
+            .clone()
+    };
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    let transaction = conn
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to begin derivation recovery finalization: {error}"))?;
+    let record = read_persistent_derivation(&transaction)?
+        .filter(|record| !record.is_pending && record.operation_token == token)
+        .ok_or_else(|| {
+            "The native derivation recovery record is not resolved for this lease.".to_string()
+        })?;
+    transaction
+        .execute(
+            &format!(
+                "DELETE FROM {PENDING_DERIVATION_TABLE} \
+                 WHERE singleton = 1 AND operation_token = ?1 AND state = 'resolved'"
+            ),
+            [&record.operation_token],
+        )
+        .map_err(|error| format!("Failed to finalize derivation recovery record: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit derivation recovery finalization: {error}"))?;
+    Ok(())
+}
+
 fn require_software_account_derivation_lease(token: &str, db_path: &str) -> Result<(), String> {
     let leases = software_account_derivation_leases()
         .lock()
@@ -630,7 +697,7 @@ fn begin_non_derivation_account_mutation_lease(
             .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
         conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
             .map_err(|error| format!("Failed to configure wallet DB busy timeout: {error}"))?;
-        reject_pending_derivation(&conn)?;
+        reject_unfinalized_derivation(&conn)?;
     }
 
     let token = uuid::Uuid::new_v4().to_string();
@@ -3807,7 +3874,8 @@ mod tests {
     fn software_derivation_lease_rejects_interleaved_owner_and_stale_token() {
         // Rust-backed ownership contract for the A/B interleaving: while A
         // pauses with its native lease, B cannot acquire a lease or use A's
-        // journal token; only after A finishes can B become owner.
+        // journal token; only after A resolves and finalizes can B become
+        // owner.
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_str().unwrap();
@@ -3839,6 +3907,7 @@ mod tests {
         assert!(b_while_a_live.contains("already in progress"));
 
         resolve_software_account_derivation_lease(&a_token, None).unwrap();
+        finalize_software_account_derivation_lease(&a_token).unwrap();
         finish_software_account_derivation_lease(&a_token).unwrap();
         assert!(!is_software_account_derivation_locked(db_path).unwrap());
         let b_token = begin_software_account_derivation_lease(
@@ -3854,6 +3923,7 @@ mod tests {
         assert!(require_software_account_derivation_lease(&a_token, db_path).is_err());
         require_software_account_derivation_lease(&b_token, db_path).unwrap();
         resolve_software_account_derivation_lease(&b_token, None).unwrap();
+        finalize_software_account_derivation_lease(&b_token).unwrap();
         finish_software_account_derivation_lease(&b_token).unwrap();
     }
 
@@ -4043,6 +4113,7 @@ mod tests {
             Some("Exact group")
         );
         resolve_software_account_derivation_lease(&claimed.operation_token, None).unwrap();
+        finalize_software_account_derivation_lease(&claimed.operation_token).unwrap();
         finish_software_account_derivation_lease(&claimed.operation_token).unwrap();
         add_account_at_index(
             db_path,
@@ -4135,6 +4206,7 @@ mod tests {
 
         let recovered = resume_software_account_derivation_lease(db_path, &token).unwrap();
         resolve_software_account_derivation_lease(&recovered.operation_token, None).unwrap();
+        finalize_software_account_derivation_lease(&recovered.operation_token).unwrap();
         finish_software_account_derivation_lease(&recovered.operation_token).unwrap();
         let next = begin_software_account_derivation_lease(
             db_path,
@@ -4146,6 +4218,7 @@ mod tests {
         )
         .expect("a recovered record must no longer block a new operation");
         resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
+        finalize_software_account_derivation_lease(&next.operation_token).unwrap();
         finish_software_account_derivation_lease(&next.operation_token).unwrap();
     }
 
@@ -4181,6 +4254,24 @@ mod tests {
         assert_eq!(restarted.baseline_account_uuids, vec![source_uuid.clone()]);
         finish_software_account_derivation_lease(&restarted.operation_token).unwrap();
 
+        let blocked = begin_software_account_derivation_lease(
+            db_path,
+            WalletNetwork::Main,
+            &source_uuid,
+            "Next operation",
+            "pfp-01",
+            None,
+        )
+        .expect_err("a resolved record must fence constructors until Dart clears its journal");
+        assert!(blocked.contains("needs recovery"), "got: {blocked}");
+
+        // Model the next restart after Dart cleared its fence but crashed
+        // before native finalization. The no-fence claim prunes the resolved
+        // barrier while holding the same cross-process mutation gate.
+        assert!(claim_pending_software_account_derivation_lease(db_path)
+            .unwrap()
+            .is_none());
+
         let next = begin_software_account_derivation_lease(
             db_path,
             WalletNetwork::Main,
@@ -4189,8 +4280,9 @@ mod tests {
             "pfp-01",
             None,
         )
-        .expect("a resolved no-delta record must not block later derivation");
+        .expect("crash-safe finalization must allow the next derivation");
         resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
+        finalize_software_account_derivation_lease(&next.operation_token).unwrap();
         finish_software_account_derivation_lease(&next.operation_token).unwrap();
     }
 }

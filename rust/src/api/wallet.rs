@@ -670,7 +670,9 @@ pub fn resume_software_account_derivation_lease(
 
 /// Claim a native pending record when the Dart fence was never written (or was
 /// lost). The returned immutable intent lets Dart rebuild the exact fence
-/// before it reconciles any account delta.
+/// before it reconciles any account delta. If Dart already cleared its fence
+/// and crashed before finalization, this also prunes the resolved record and
+/// returns `None` while still holding the shared mutation gate.
 pub fn claim_pending_software_account_derivation_lease(
     db_path: String,
 ) -> Result<Option<SoftwareAccountDerivationLease>, String> {
@@ -698,6 +700,12 @@ pub fn resolve_software_account_derivation_lease(
     catch(|| {
         keys::resolve_software_account_derivation_lease(&operation_token, account_uuid.as_deref())
     })
+}
+
+/// Delete the resolved native recovery record after Dart has durably removed
+/// its matching recovery fence.
+pub fn finalize_software_account_derivation_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finalize_software_account_derivation_lease(&operation_token))
 }
 
 /// Release a derivation lease after the matching durable journal has been
@@ -1557,6 +1565,7 @@ mod tests {
             Some(second.account_uuid.clone()),
         )
         .unwrap();
+        finalize_software_account_derivation_lease(second_lease.clone()).unwrap();
         finish_software_account_derivation_lease(second_lease).unwrap();
         assert_eq!(second.zip32_account_index, 1);
         assert!(second.is_seed_anchor);
@@ -1577,6 +1586,7 @@ mod tests {
             Some(third.account_uuid.clone()),
         )
         .unwrap();
+        finalize_software_account_derivation_lease(third_lease.clone()).unwrap();
         finish_software_account_derivation_lease(third_lease).unwrap();
         assert_eq!(third.zip32_account_index, 2);
         assert_ne!(second.unified_address, third.unified_address);
@@ -1661,7 +1671,31 @@ mod tests {
         let resumed =
             resume_software_account_derivation_lease(db_path.clone(), operation_token).unwrap();
         resolve_software_account_derivation_lease(resumed.operation_token.clone(), None).unwrap();
-        finish_software_account_derivation_lease(resumed.operation_token).unwrap();
+        finish_software_account_derivation_lease(resumed.operation_token.clone()).unwrap();
+
+        let still_blocked = match import_software_account_at_index(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            "Still fenced".to_string(),
+            1,
+            false,
+        ) {
+            Ok(_) => panic!("resolved recovery must block constructors until finalization"),
+            Err(error) => error,
+        };
+        assert!(
+            still_blocked.contains("needs recovery"),
+            "got: {still_blocked}"
+        );
+
+        let finalizing =
+            resume_software_account_derivation_lease(db_path.clone(), resumed.operation_token)
+                .unwrap();
+        finalize_software_account_derivation_lease(finalizing.operation_token.clone()).unwrap();
+        finish_software_account_derivation_lease(finalizing.operation_token).unwrap();
         import_software_account_at_index(
             mnemonic,
             String::new(),
@@ -1719,6 +1753,7 @@ mod tests {
             Some(derived.account_uuid.clone()),
         )
         .unwrap();
+        finalize_software_account_derivation_lease(lease.clone()).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
 
@@ -1772,6 +1807,7 @@ mod tests {
             Err(error) => error,
         };
         resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
+        finalize_software_account_derivation_lease(lease.clone()).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
         assert!(
             error.contains("does not belong to this derivation source"),
@@ -1828,6 +1864,7 @@ mod tests {
             "got: {wrong_source_error}"
         );
         resolve_software_account_derivation_lease(wrong_source_lease.clone(), None).unwrap();
+        finalize_software_account_derivation_lease(wrong_source_lease.clone()).unwrap();
         finish_software_account_derivation_lease(wrong_source_lease).unwrap();
 
         let lease = test_derivation_lease_for(db_path_str, other.account_uuid);
@@ -1846,6 +1883,7 @@ mod tests {
             Some(derived.account_uuid.clone()),
         )
         .unwrap();
+        finalize_software_account_derivation_lease(lease.clone()).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
         assert!(!derived.is_seed_anchor);
@@ -1892,6 +1930,7 @@ mod tests {
             "source-provenance failures must happen before account mutation"
         );
         resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
+        finalize_software_account_derivation_lease(lease.clone()).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
     }
 
@@ -1932,6 +1971,7 @@ mod tests {
                 Some(derived.account_uuid.clone()),
             )
             .unwrap();
+            finalize_software_account_derivation_lease(lease.clone()).unwrap();
             finish_software_account_derivation_lease(lease).unwrap();
             indices.push(derived.zip32_account_index);
         }

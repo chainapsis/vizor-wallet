@@ -197,7 +197,12 @@ class _CustomiseAccountScreenState
 
   OnboardingBackTarget? get _backTarget {
     final args = widget.args;
-    if (args.isDeriveFlow) return null;
+    if (args.isDeriveFlow) {
+      return const OnboardingBackTarget.route(
+        label: 'Add account',
+        routePath: '/add-account',
+      );
+    }
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
         label: 'Set Password',

@@ -242,7 +242,9 @@ Future<SoftwareAccountDerivationLease> resumeSoftwareAccountDerivationLease({
 
 /// Claim a native pending record when the Dart fence was never written (or was
 /// lost). The returned immutable intent lets Dart rebuild the exact fence
-/// before it reconciles any account delta.
+/// before it reconciles any account delta. If Dart already cleared its fence
+/// and crashed before finalization, this also prunes the resolved record and
+/// returns `None` while still holding the shared mutation gate.
 Future<SoftwareAccountDerivationLease?>
 claimPendingSoftwareAccountDerivationLease({required String dbPath}) => RustLib
     .instance
@@ -257,6 +259,14 @@ Future<void> resolveSoftwareAccountDerivationLease({
 }) => RustLib.instance.api.crateApiWalletResolveSoftwareAccountDerivationLease(
   operationToken: operationToken,
   accountUuid: accountUuid,
+);
+
+/// Delete the resolved native recovery record after Dart has durably removed
+/// its matching recovery fence.
+Future<void> finalizeSoftwareAccountDerivationLease({
+  required String operationToken,
+}) => RustLib.instance.api.crateApiWalletFinalizeSoftwareAccountDerivationLease(
+  operationToken: operationToken,
 );
 
 /// Release a derivation lease after the matching durable journal has been

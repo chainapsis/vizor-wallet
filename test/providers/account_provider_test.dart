@@ -391,7 +391,7 @@ void main() {
     }
 
     test(
-      'persists a bootstrapped source seed family before native allocation',
+      'persists a bootstrapped source seed family under the native lease',
       () async {
         const legacySource = AccountInfo(
           uuid: 'source',
@@ -417,6 +417,7 @@ void main() {
               (jsonDecode(storage.values['zcash_accounts']!) as List).single
                   as Map<String, dynamic>;
           expect(stored['seedFamilyId'], 'software-family');
+          expect(rust.listAccountsWithoutDerivationLease, isFalse);
           expect(rust.allocatedIndices, isEmpty);
         } finally {
           rust.resumeDerivation();
@@ -1777,6 +1778,7 @@ class _DerivationRustApiFake implements RustLibApi {
   String? _persistentRecoveryProfilePictureId;
   String? _persistentRecoveryAccountGroupName;
   int _nextLease = 0;
+  bool listAccountsWithoutDerivationLease = false;
 
   int get beginCalls => _nextLease;
 
@@ -1803,6 +1805,7 @@ class _DerivationRustApiFake implements RustLibApi {
     _persistentRecoveryProfilePictureId = null;
     _persistentRecoveryAccountGroupName = null;
     _nextLease = 0;
+    listAccountsWithoutDerivationLease = false;
     _listedAccountsByUuid
       ..clear()
       ..['source'] = const rust_wallet.AccountInfo(
@@ -1831,7 +1834,7 @@ class _DerivationRustApiFake implements RustLibApi {
         _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
-    if (_persistentLeaseIsPending) {
+    if (_persistentLeaseToken != null) {
       throw StateError(
         'A previous software account derivation needs recovery.',
       );
@@ -1903,7 +1906,14 @@ class _DerivationRustApiFake implements RustLibApi {
         _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
-    if (!_persistentLeaseIsPending || _persistentLeaseToken == null) {
+    if (_persistentLeaseToken == null) {
+      return null;
+    }
+    if (!_persistentLeaseIsPending) {
+      _persistentLeaseToken = null;
+      _persistentRecoveryName = null;
+      _persistentRecoveryProfilePictureId = null;
+      _persistentRecoveryAccountGroupName = null;
       return null;
     }
     _activeLeaseToken = _persistentLeaseToken;
@@ -1928,6 +1938,21 @@ class _DerivationRustApiFake implements RustLibApi {
       throw StateError('native derivation recovery record cannot authenticate');
     }
     _persistentLeaseIsPending = false;
+  }
+
+  @override
+  Future<void> crateApiWalletFinalizeSoftwareAccountDerivationLease({
+    required String operationToken,
+  }) async {
+    if (_activeLeaseToken != operationToken ||
+        _persistentLeaseToken != operationToken ||
+        _persistentLeaseIsPending) {
+      throw StateError('native derivation recovery record is not resolved');
+    }
+    _persistentLeaseToken = null;
+    _persistentRecoveryName = null;
+    _persistentRecoveryProfilePictureId = null;
+    _persistentRecoveryAccountGroupName = null;
   }
 
   @override
@@ -1961,7 +1986,7 @@ class _DerivationRustApiFake implements RustLibApi {
         'Finish the in-progress software account creation before removing an account.',
       );
     }
-    if (_persistentLeaseIsPending) {
+    if (_persistentLeaseToken != null) {
       throw StateError(
         'A previous software account derivation needs recovery.',
       );
@@ -2076,7 +2101,12 @@ class _DerivationRustApiFake implements RustLibApi {
   Future<List<rust_wallet.AccountInfo>> crateApiWalletListAccounts({
     required String dbPath,
     required String network,
-  }) async => _listedAccountsByUuid.values.toList();
+  }) async {
+    if (_activeLeaseToken == null) {
+      listAccountsWithoutDerivationLease = true;
+    }
+    return _listedAccountsByUuid.values.toList();
+  }
 
   @override
   Future<void> crateApiWalletDeleteAccount({
