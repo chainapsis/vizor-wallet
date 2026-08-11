@@ -1019,6 +1019,59 @@ void main() {
     );
 
     test(
+      'direct retry after a resolved no-delta fence allocates a fresh account',
+      () async {
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'No delta',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: null,
+            );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: lease.operationToken,
+            name: 'No delta',
+            profilePictureId: 'pfp-02',
+            accountGroupName: null,
+          ),
+        );
+        // Model a crash after native resolution proves the baseline still has
+        // no delta, but before Dart can remove its matching fence.
+        await rust.crateApiWalletResolveSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+        await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(
+              sourceAccountUuid: source.uuid,
+              name: 'Fresh request',
+              profilePictureId: 'pfp-03',
+            );
+
+        expect(rust.allocatedIndices, [1]);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        final accountState = container.read(accountProvider).requireValue;
+        expect(accountState.activeAccountUuid, 'derived-1');
+        expect(accountState.accounts, hasLength(2));
+        expect(accountState.accounts.last.name, 'Fresh request');
+        expect(accountState.accounts.last.profilePictureId, 'pfp-03');
+      },
+    );
+
+    test(
       'legacy raw UUID fence never publishes or clears without provenance',
       () async {
         const derived = AccountInfo(

@@ -117,6 +117,12 @@ class DerivedAccountRecoveryRequiredException implements Exception {
   }
 }
 
+enum _DerivedAccountRecoveryOutcome {
+  pendingLease,
+  recoveredAccount,
+  clearedResolvedNoDeltaFence,
+}
+
 /// Persistent fence written before Rust can allocate a derived account.
 ///
 /// The baseline lets a later process identify the one Rust account added after
@@ -577,11 +583,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // Rust owns this OS-level lease until this method has either committed
       // the local metadata or retained its journal. A second process must not
       // inspect, clear, or replace this operation's recovery fence.
-      final existingRawFence = await _storage.readString(
+      var existingRawFence = await _storage.readString(
         _derivedAccountRecoveryKey,
       );
-      late final rust_wallet.SoftwareAccountDerivationLease nativeLease;
-      late final _DerivedAccountRecoveryFence recoveryFence;
+      late rust_wallet.SoftwareAccountDerivationLease nativeLease;
+      late _DerivedAccountRecoveryFence recoveryFence;
       var sourceSeedFamilyPersistedBeforeLease = false;
       if (existingRawFence != null && existingRawFence.isNotEmpty) {
         final existingFence = _DerivedAccountRecoveryFence.decode(
@@ -598,7 +604,38 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           previousOperationToken: existingFence.operationToken!,
         );
         recoveryFence = existingFence;
-      } else {
+        if (!nativeLease.isPending) {
+          try {
+            await _persistDurableSourceSeedFamilyMetadata(
+              dbPath: dbPath,
+              network: network,
+              sourceAccountUuid: recoveryFence.sourceAccountUuid,
+            );
+            final recoveryOutcome = await _recoverPendingDerivedAccount(
+              dbPath: dbPath,
+              network: network,
+              nativeLease: nativeLease,
+            );
+            if (recoveryOutcome ==
+                _DerivedAccountRecoveryOutcome.recoveredAccount) {
+              return;
+            }
+            if (recoveryOutcome !=
+                _DerivedAccountRecoveryOutcome.clearedResolvedNoDeltaFence) {
+              throw StateError(
+                'The resolved native derivation recovery record could not '
+                'be reconciled safely.',
+              );
+            }
+            existingRawFence = null;
+          } finally {
+            await rust_wallet.finishSoftwareAccountDerivationLease(
+              operationToken: nativeLease.operationToken,
+            );
+          }
+        }
+      }
+      if (existingRawFence == null || existingRawFence.isEmpty) {
         final claimed = await rust_wallet
             .claimPendingSoftwareAccountDerivationLease(dbPath: dbPath);
         if (claimed != null) {
@@ -687,14 +724,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           }
         }
         // A retry is a recovery opportunity, never a second blind allocation.
-        if (await _recoverPendingDerivedAccount(
+        final recoveryOutcome = await _recoverPendingDerivedAccount(
           dbPath: dbPath,
           network: network,
           nativeLease: nativeLease,
-        )) {
+        );
+        if (recoveryOutcome ==
+            _DerivedAccountRecoveryOutcome.recoveredAccount) {
           return;
         }
-
         if (!nativeLease.isPending) {
           throw StateError(
             'The native derivation recovery record is resolved but its Dart '
@@ -971,16 +1009,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Resolves the durable derivation fence before a retry can reach Rust.
-  /// Returns true when a retained account was recovered for the caller's
-  /// original derive action, so the UI can complete that action without
-  /// allocating a second account.
-  Future<bool> _recoverPendingDerivedAccount({
+  /// Distinguishes a recovered account from a resolved operation that never
+  /// changed Rust state. The latter lets a direct retry acquire a fresh lease
+  /// instead of reporting success without creating the requested account.
+  Future<_DerivedAccountRecoveryOutcome> _recoverPendingDerivedAccount({
     required String dbPath,
     required String network,
     required rust_wallet.SoftwareAccountDerivationLease nativeLease,
   }) async {
     final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
-    if (rawFence == null || rawFence.isEmpty) return false;
+    if (rawFence == null || rawFence.isEmpty) {
+      return _DerivedAccountRecoveryOutcome.pendingLease;
+    }
 
     final fence = _DerivedAccountRecoveryFence.decode(rawFence);
     if (fence.isLegacy) {
@@ -1005,9 +1045,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // after a crash between native resolution and Dart deletion.
       if (!nativeLease.isPending) {
         await _clearRecoveryFence(expectedRawFence: rawFence);
-        return true;
+        return _DerivedAccountRecoveryOutcome.clearedResolvedNoDeltaFence;
       }
-      return false;
+      return _DerivedAccountRecoveryOutcome.pendingLease;
     }
 
     await _clearRecoveryFenceAfterDurableValidation(
@@ -1018,7 +1058,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       operationToken: nativeLease.operationToken,
       nativeRecordIsPending: nativeLease.isPending,
     );
-    return true;
+    return _DerivedAccountRecoveryOutcome.recoveredAccount;
   }
 
   /// Reconstructs a Dart account from the Rust delta held behind [fence].
