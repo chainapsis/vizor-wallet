@@ -253,6 +253,7 @@ fn with_no_pending_derivation<T>(
 /// locks may be re-entrant within one process on some platforms.
 pub fn begin_software_account_derivation_lease(
     db_path: &str,
+    network: WalletNetwork,
     source_account_uuid: &str,
     recovery_name: &str,
     recovery_profile_picture_id: &str,
@@ -275,6 +276,13 @@ pub fn begin_software_account_derivation_lease(
     lock_file
         .try_lock_exclusive()
         .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+
+    // The shared mutation lease must precede every wallet DB open. In
+    // particular, reset can unlink the DB while holding this lock; migrating
+    // or validating the source before acquisition could recreate that path
+    // after reset has already considered deletion successful.
+    ensure_db_migrated_once(db_path, network)?;
+    require_software_derivation_source(db_path, network, source_account_uuid)?;
 
     // The contents are diagnostic only. Ownership comes from the held OS lock
     // and opaque token, never from this mutable sidecar data.
@@ -3810,6 +3818,7 @@ mod tests {
 
         let a_token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -3820,6 +3829,7 @@ mod tests {
         assert!(is_software_account_derivation_locked(db_path).unwrap());
         let b_while_a_live = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -3833,6 +3843,7 @@ mod tests {
         assert!(!is_software_account_derivation_locked(db_path).unwrap());
         let b_token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -3859,6 +3870,7 @@ mod tests {
         let reset_token = begin_wallet_reset_lease(db_path).unwrap();
         let derive_during_reset = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Blocked",
             "pfp-01",
@@ -3870,6 +3882,7 @@ mod tests {
 
         let derive_token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Blocked reset",
             "pfp-01",
@@ -3900,6 +3913,7 @@ mod tests {
         let deletion_token = begin_account_deletion_lease(db_path).unwrap();
         let derive_during_deletion = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Blocked",
             "pfp-01",
@@ -3922,6 +3936,7 @@ mod tests {
 
         let derive_token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Blocked deletion",
             "pfp-01",
@@ -3947,6 +3962,7 @@ mod tests {
                 .unwrap();
         let lease = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -3988,6 +4004,7 @@ mod tests {
                 .unwrap();
         let lease = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Exact crash intent",
             "pfp-02",
@@ -4049,6 +4066,7 @@ mod tests {
                 .unwrap();
         let lease = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Native exact name",
             "pfp-03",
@@ -4094,6 +4112,7 @@ mod tests {
                 .unwrap();
         let token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -4119,6 +4138,7 @@ mod tests {
         finish_software_account_derivation_lease(&recovered.operation_token).unwrap();
         let next = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Recovered",
             "pfp-01",
@@ -4145,6 +4165,7 @@ mod tests {
                 .unwrap();
         let token = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "No delta",
             "pfp-01",
@@ -4162,6 +4183,7 @@ mod tests {
 
         let next = begin_software_account_derivation_lease(
             db_path,
+            WalletNetwork::Main,
             &source_uuid,
             "Next operation",
             "pfp-01",

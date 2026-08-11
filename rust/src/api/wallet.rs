@@ -625,10 +625,10 @@ pub fn begin_software_account_derivation_lease(
     recovery_account_group_name: Option<String>,
 ) -> Result<SoftwareAccountDerivationLease, String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        keys::require_software_derivation_source(&db_path, network, &source_account_uuid)?;
+        let network = keys::parse_network(&network)?;
         let lease = keys::begin_software_account_derivation_lease(
             &db_path,
+            network,
             &source_account_uuid,
             &recovery_name,
             &recovery_profile_picture_id,
@@ -1386,6 +1386,45 @@ mod tests {
         )
         .unwrap()
         .operation_token
+    }
+
+    #[test]
+    fn derivation_begin_does_not_recreate_db_while_reset_owns_mutation_lease() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let (source_account_uuid, _) = keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Source",
+        )
+        .unwrap();
+
+        let reset_token = begin_wallet_reset_lease(db_path_str.to_string()).unwrap();
+        std::fs::remove_file(&db_path).unwrap();
+        assert!(!db_path.exists());
+
+        let error = match begin_software_account_derivation_lease(
+            db_path_str.to_string(),
+            "main".to_string(),
+            source_account_uuid,
+            "Blocked".to_string(),
+            "pfp-01".to_string(),
+            None,
+        ) {
+            Ok(_) => panic!("reset must block derivation before any wallet DB access"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("already in progress"), "got: {error}");
+        assert!(
+            !db_path.exists(),
+            "a rejected derivation must not recreate the reset wallet DB"
+        );
+        finish_wallet_reset_lease(reset_token).unwrap();
     }
 
     #[test]
