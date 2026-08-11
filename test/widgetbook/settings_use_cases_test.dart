@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -71,6 +72,34 @@ void main() {
     _expectNoCrash(errors);
     expect(find.text('Confirm access'), findsOneWidget);
     expect(find.text('To view the secret passphrase.'), findsOneWidget);
+  });
+
+  testWidgets('settings viewing key gate use case renders the gate', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsViewingKeyGateUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Confirm access'), findsOneWidget);
+    expect(find.text('To view the viewing key.'), findsOneWidget);
+  });
+
+  testWidgets('settings viewing key reveal use case renders the key', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsViewingKeyRevealUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Viewing Key'), findsOneWidget);
+    expect(find.text('Full Viewing Key'), findsOneWidget);
+    expect(find.text(viewingKeyExplanation), findsOneWidget);
+    expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
   });
 
   testWidgets('settings change password gate use case renders the gate', (

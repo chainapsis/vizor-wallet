@@ -16,10 +16,22 @@ AddressBookContact? addressBookContactForSwapAsset({
   required Iterable<AddressBookContact> contacts,
   required SwapAsset? asset,
   required String address,
+  String? contactId,
 }) {
   if (asset == null) return null;
   final network = AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
   if (network == null) return null;
+  final selectedId = contactId?.trim();
+  if (selectedId != null && selectedId.isNotEmpty) {
+    return addressBookContactFor(
+      contacts: [
+        for (final contact in contacts)
+          if (contact.id == selectedId) contact,
+      ],
+      network: network,
+      address: address,
+    );
+  }
   return addressBookContactFor(
     contacts: contacts,
     network: network,
@@ -33,12 +45,11 @@ AddressBookContact? swapDestinationContactFor(
   SwapState state,
   Iterable<AddressBookContact> contacts,
 ) {
-  final network = addressBookNetworkForSwapDestination(state);
-  if (network == null) return null;
-  return addressBookContactFor(
+  return addressBookContactForSwapAsset(
     contacts: contacts,
-    network: network,
+    asset: state.externalAsset,
     address: state.destinationText,
+    contactId: state.userExternalContactId,
   );
 }
 

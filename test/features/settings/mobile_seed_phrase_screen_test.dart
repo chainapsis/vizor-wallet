@@ -218,17 +218,7 @@ void main() {
     final title = tester.widget<Text>(find.text('Enter Passcode'));
     expect(title.style?.fontSize, AppTypography.displayLarge.fontSize);
     expect(find.byType(PasscodeNumpad), findsOneWidget);
-    expect(find.bySemanticsLabel('Passcode help'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Passcode help'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Forgot Passcode?'), findsOneWidget);
-    expect(find.text('Continue to reset Vizor'), findsOneWidget);
-
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Forgot Passcode?'), findsNothing);
+    expect(find.bySemanticsLabel('Passcode help'), findsNothing);
   });
 
   testWidgets('reveals the requested account without making it active', (

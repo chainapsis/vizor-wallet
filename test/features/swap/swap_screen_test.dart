@@ -287,6 +287,51 @@ void main() {
     );
   });
 
+  testWidgets('review summary names the selected duplicate contact', (
+    tester,
+  ) async {
+    const address = '0x52908400098527886e0f7030069857d2e4169ee7';
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          userExternalContactId: 'second',
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'first',
+              label: 'First',
+              network: AddressBookNetwork.ethereum,
+              address: address,
+            ),
+            _addressBookContact(
+              id: 'second',
+              label: 'Second',
+              network: AddressBookNetwork.ethereum,
+              address: address,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text('To: Second (0x5290840 ... 4169ee7) on Ethereum'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: receiveSide, matching: find.textContaining('First')),
+      findsNothing,
+    );
+  });
+
   testWidgets('review summary shows the refund address line with copy', (
     tester,
   ) async {
@@ -865,6 +910,106 @@ void main() {
     );
   });
 
+  testWidgets('Pay contact row selects the clicked duplicate before review', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    const address = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final router = GoRouter(initialLocation: '/pay', routes: [_payRoute()]);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          const AddressBookContact(
+            id: 'first',
+            label: 'First',
+            network: AddressBookNetwork.ethereum,
+            address: address,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+          const AddressBookContact(
+            id: 'second',
+            label: 'Second',
+            network: AddressBookNetwork.ethereum,
+            address: address,
+            profilePictureId: 'pfp-02',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('First'), findsOneWidget);
+    expect(find.text('Second'), findsOneWidget);
+    await tester.tap(find.text('Second'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pay_recipient_step')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_review_step')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pay_contact_second')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.check,
+        ),
+      ),
+      findsOneWidget,
+    );
+    final firstSelectionSlot = find.byKey(
+      const ValueKey('pay_contact_selection_slot_first'),
+    );
+    final secondSelectionSlot = find.byKey(
+      const ValueKey('pay_contact_selection_slot_second'),
+    );
+    expect(firstSelectionSlot, findsOneWidget);
+    expect(secondSelectionSlot, findsOneWidget);
+    expect(tester.getSize(firstSelectionSlot), const Size.square(18));
+    expect(tester.getSize(secondSelectionSlot), const Size.square(18));
+    expect(
+      tester.getRect(firstSelectionSlot).center.dx,
+      tester.getRect(secondSelectionSlot).center.dx,
+    );
+    expect(
+      find.descendant(
+        of: firstSelectionSlot,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.check,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.widget(
+        find.byKey(const ValueKey('pay_contact_row_surface_second')),
+      ),
+      isA<SizedBox>(),
+    );
+    expect(
+      tester.widget<Text>(find.text('Second')).style?.fontWeight,
+      tester.widget<Text>(find.text('First')).style?.fontWeight,
+    );
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+    expect(find.text('Second'), findsOneWidget);
+    expect(find.text('First'), findsNothing);
+  });
+
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
@@ -895,6 +1040,7 @@ void main() {
           receiveEstimate: '100 USDC',
           externalAsset: savedBaseUsdc,
           payMode: true,
+          userExternalContactId: 'second',
         );
     final sessionStore = _DelayedPayAssetLoadSwapPersistenceStore(
       initialIntents: [payIntent],
@@ -922,6 +1068,7 @@ void main() {
     expect(state.externalAsset, savedBaseUsdc);
     expect(state.receiveAmountText, '100');
     expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(state.userExternalContactId, 'second');
     expect(
       tester
           .widget<AppButton>(
@@ -938,6 +1085,7 @@ void main() {
     expect(state.externalAsset, liveBaseUsdc);
     expect(state.receiveAmountText, '100');
     expect(state.destinationText, '0x52908400098527886e0f7030069857d2e4169ee7');
+    expect(state.userExternalContactId, 'second');
     expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
     expect(
       tester
@@ -2585,6 +2733,12 @@ void main() {
             address: '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb',
           ),
           _addressBookContact(
+            id: 'usdc-second',
+            label: 'Second USDC Friend',
+            network: AddressBookNetwork.ethereum,
+            address: '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb',
+          ),
+          _addressBookContact(
             id: 'zcash',
             label: 'Zcash Friend',
             network: AddressBookNetwork.zcash,
@@ -2607,10 +2761,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('USDC Friend'), findsOneWidget);
+    expect(find.text('Second USDC Friend'), findsOneWidget);
     expect(find.text('Zcash Friend'), findsNothing);
 
     await tester.tap(
-      find.byKey(const ValueKey('address_book_contact_picker_contact_usdc')),
+      find.byKey(
+        const ValueKey('address_book_contact_picker_contact_usdc-second'),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -2619,7 +2776,7 @@ void main() {
       findsNothing,
     );
     // The chip shows the matched contact's name instead of the raw address.
-    expect(_destinationSummaryText(tester), 'USDC Friend');
+    expect(_destinationSummaryText(tester), 'Second USDC Friend');
   });
 
   testWidgets('swap contact picker cancel returns to address editor', (
@@ -8138,6 +8295,20 @@ void main() {
         swapProvider: swapProvider,
         depositSender: depositSender,
         sessionStore: sessionStore,
+        addressBookRepository: _FakeAddressBookRepository([
+          _addressBookContact(
+            id: 'first',
+            label: 'First',
+            network: AddressBookNetwork.ethereum,
+            address: '0x52908400098527886e0f7030069857d2e4169ee7',
+          ),
+          _addressBookContact(
+            id: 'second',
+            label: 'Second',
+            network: AddressBookNetwork.ethereum,
+            address: '0x52908400098527886e0f7030069857d2e4169ee7',
+          ),
+        ]),
       ),
     );
     await tester.pumpAndSettle();
@@ -8150,6 +8321,16 @@ void main() {
       tester,
       '0x52908400098527886e0f7030069857d2e4169ee7',
     );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    container
+        .read(swapStateProvider.notifier)
+        .selectDestinationContact(
+          address: '0x52908400098527886e0f7030069857d2e4169ee7',
+          contactId: 'second',
+        );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -8193,9 +8374,12 @@ void main() {
       sessionStore.savedIntents.single.oneClickRefundTo,
       'u1actualshieldedrecipient',
     );
+    expect(sessionStore.savedIntents.single.userExternalContactId, 'second');
     await _openSwapStatusDetails(tester, expand: true);
     expect(find.text('USDC recipient'), findsOneWidget);
-    expect(find.text('0x5290840 ... 4169ee7'), findsOneWidget);
+    expect(find.text('Second'), findsOneWidget);
+    expect(find.text('First'), findsNothing);
+    expect(find.text('0x52908…69ee7'), findsOneWidget);
     expect(find.text('t1live-deposit'), findsWidgets);
     expect(find.text('ZEC deposit tx hash'), findsNothing);
     expect(find.text('Submit ZEC deposit'), findsNothing);
@@ -9472,12 +9656,14 @@ Widget _reviewTestPage({
   required String receiveAmountText,
   ValueChanged<String>? onCopy,
   List<AddressBookContact> addressBookContacts = const [],
+  String? userExternalContactId,
   bool payMode = false,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
     onCopy: onCopy,
     addressBookContacts: addressBookContacts,
+    userExternalContactId: userExternalContactId,
     quote: SwapQuote(
       direction: direction,
       sellAsset: sellAsset,

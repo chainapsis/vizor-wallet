@@ -258,6 +258,18 @@ Future<String> getUnifiedAddress({
   accountUuid: accountUuid,
 );
 
+/// Export a single account's Unified Full Viewing Key (UFVK). Works for both
+/// software and hardware (Keystone) accounts.
+Future<String> getAccountUfvk({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetAccountUfvk(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Generate a new 24-word BIP-39 mnemonic phrase.
 String generateMnemonic() =>
     RustLib.instance.api.crateApiWalletGenerateMnemonic();
