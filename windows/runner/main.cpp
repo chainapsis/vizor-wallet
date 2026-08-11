@@ -14,6 +14,13 @@
 #include "utils.h"
 #include "velopack_uninstall.h"
 
+namespace {
+
+constexpr DWORD kNormalActivationRetryWindowMs = 2'000;
+constexpr DWORD kPaymentLinkActivationRetryWindowMs = 15'000;
+
+}  // namespace
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   RunVelopackHooks();
@@ -37,7 +44,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       if (relay_result == SingleInstanceAcquireResult::kSecondary) {
         delivered = ForwardPaymentLinksToRunningInstance(payment_links);
         if (!delivered &&
-            ActivateExistingInstance(relay_probe.activation_message())) {
+            ActivateExistingInstance(
+                relay_probe.activation_message(),
+                kPaymentLinkActivationRetryWindowMs)) {
           delivered = ForwardPaymentLinksToRunningInstance(payment_links);
         }
       } else if (relay_result == SingleInstanceAcquireResult::kPrimary) {
@@ -56,7 +65,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   SingleInstanceGuard single_instance;
   const SingleInstanceAcquireResult instance_result = single_instance.Acquire();
   if (instance_result == SingleInstanceAcquireResult::kSecondary) {
-    if (!ActivateExistingInstance(single_instance.activation_message())) {
+    if (!ActivateExistingInstance(single_instance.activation_message(),
+                                  kNormalActivationRetryWindowMs)) {
       ::MessageBoxW(
           nullptr,
           L"Vizor is already running. It may be starting, not responding, or "
