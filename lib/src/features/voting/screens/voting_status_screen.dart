@@ -8,6 +8,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -846,6 +847,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
   static const _transitionCueDuration = Duration(milliseconds: 1300);
 
   bool _showTransitionCue = false;
+  int _memoIndex = 0;
   int _cueGeneration = 0;
   Timer? _cueTimer;
 
@@ -853,6 +855,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
   void didUpdateWidget(covariant _KeystoneSigningPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.bundleIndex != widget.bundleIndex) {
+      _memoIndex = 0;
       _triggerTransitionCue();
     }
   }
@@ -891,6 +894,8 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
     final canSkipRemainingBundles = widget.canSkipRemainingBundles;
     final onSkipRemainingBundles = widget.onSkipRemainingBundles;
     final onScan = widget.onScan;
+    final memoIndex = _memoIndex < batchMemos.length ? _memoIndex : 0;
+    final selectedMemo = batchMemos.isEmpty ? null : batchMemos[memoIndex];
     final qrPhase = qrError != null
         ? KeystonePcztQrStagePhase.failed
         : urParts.isEmpty
@@ -1006,16 +1011,25 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                 ),
               ),
             ],
-            if (batchMemos.isNotEmpty) ...[
+            if (selectedMemo != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              for (var index = 0; index < batchMemos.length; index++) ...[
-                if (index > 0) const SizedBox(height: AppSpacing.xs),
-                _KeystoneSigningMemo(
-                  label:
-                      'Bundle ${batchMemos[index].bundleIndex + 1} of ${batchMemos[index].bundleCount} memo',
-                  displayMemo: batchMemos[index].displayMemo,
-                ),
-              ],
+              _KeystoneSigningMemo(
+                key: ValueKey<int>(selectedMemo.bundleIndex),
+                label:
+                    'Bundle ${selectedMemo.bundleIndex + 1} of ${selectedMemo.bundleCount} memo',
+                displayMemo: selectedMemo.displayMemo,
+                showNavigation: batchMemos.length > 1,
+                onPrevious: memoIndex > 0
+                    ? () => setState(() {
+                        _memoIndex = memoIndex - 1;
+                      })
+                    : null,
+                onNext: memoIndex + 1 < batchMemos.length
+                    ? () => setState(() {
+                        _memoIndex = memoIndex + 1;
+                      })
+                    : null,
+              ),
             ],
             const SizedBox(height: AppSpacing.sm),
             KeystoneScanHelpOverlay(
@@ -1053,10 +1067,20 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
 }
 
 class _KeystoneSigningMemo extends StatelessWidget {
-  const _KeystoneSigningMemo({required this.label, required this.displayMemo});
+  const _KeystoneSigningMemo({
+    required this.label,
+    required this.displayMemo,
+    required this.showNavigation,
+    required this.onPrevious,
+    required this.onNext,
+    super.key,
+  });
 
   final String label;
   final String displayMemo;
+  final bool showNavigation;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -1074,11 +1098,32 @@ class _KeystoneSigningMemo extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.text.secondary,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ),
+                  if (showNavigation) ...[
+                    _KeystoneMemoNavigationButton(
+                      key: const ValueKey('keystone_memo_previous'),
+                      tooltip: 'Previous bundle memo',
+                      iconName: AppIcons.chevronBackward,
+                      onPressed: onPrevious,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    _KeystoneMemoNavigationButton(
+                      key: const ValueKey('keystone_memo_next'),
+                      tooltip: 'Next bundle memo',
+                      iconName: AppIcons.chevronForward,
+                      onPressed: onNext,
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: AppSpacing.xxs),
               SelectableText(
@@ -1093,6 +1138,34 @@ class _KeystoneSigningMemo extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _KeystoneMemoNavigationButton extends StatelessWidget {
+  const _KeystoneMemoNavigationButton({
+    required this.tooltip,
+    required this.iconName,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String tooltip;
+  final String iconName;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      iconSize: 16,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      color: colors.button.ghost.label,
+      disabledColor: colors.icon.disabled,
+      icon: AppIcon(iconName, size: 16),
     );
   }
 }
