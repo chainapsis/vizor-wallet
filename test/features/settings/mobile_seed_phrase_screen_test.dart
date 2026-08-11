@@ -490,6 +490,37 @@ void main() {
   });
 
   testWidgets(
+    'dismisses the screenshot warning when hidden',
+    (tester) async {
+      final screenshots = StreamController<void>();
+      addTearDown(screenshots.close);
+      addTearDown(() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+
+      await tester.pumpWidget(_app(screenshotStream: screenshots.stream));
+      await _revealSecret(tester);
+      screenshots.add(null);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MobileSeedScreenshotWarningSheet), findsNothing);
+    },
+  );
+
+  testWidgets(
     'does not show screenshot warning when covered by another route',
     (tester) async {
       final screenshots = StreamController<void>();

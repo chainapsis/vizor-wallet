@@ -888,8 +888,18 @@ class _BirthdayRow extends StatelessWidget {
 }
 
 /// Screenshot warning — Figma `If they try to screenshot` (4494:92098).
-class MobileSeedScreenshotWarningSheet extends StatelessWidget {
+class MobileSeedScreenshotWarningSheet extends StatefulWidget {
   const MobileSeedScreenshotWarningSheet({super.key});
+
+  @override
+  State<MobileSeedScreenshotWarningSheet> createState() =>
+      _MobileSeedScreenshotWarningSheetState();
+}
+
+class _MobileSeedScreenshotWarningSheetState
+    extends State<MobileSeedScreenshotWarningSheet> {
+  late final AppLifecycleListener _lifecycleListener;
+  var _dismissed = false;
 
   static const _iconSize = 30.0;
   static const _titleMaxWidth = 253.0;
@@ -910,12 +920,33 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
   static const _buttonLabelStyle = AppTypography.labelLarge;
 
   @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onHide: _dismiss,
+      onPause: _dismiss,
+    );
+  }
+
+  void _dismiss() {
+    if (_dismissed || !mounted) return;
+    _dismissed = true;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('mobile_seed_screenshot_sheet'),
       title: '',
-      onClose: () => Navigator.of(context).pop(),
+      onClose: _dismiss,
       showTitle: false,
       showClose: false,
       bottomPadding: AppSpacing.base,
@@ -984,7 +1015,7 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
             key: const ValueKey('mobile_seed_screenshot_ack'),
             expand: true,
             height: AppButtonSizing.largeHeight,
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _dismiss,
             child: const Text('I understand', style: _buttonLabelStyle),
           ),
         ],
