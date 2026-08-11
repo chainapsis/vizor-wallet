@@ -111,7 +111,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-version = "=2.0.0-rc.4"
+version = "=2.0.0-rc.5"
 
 # Keep Orchard aligned with the released librustzcash and zcash_voting family
 # to avoid type conflicts.
@@ -140,11 +140,6 @@ rev = "c2119436f5246be05b1ba877a7e6b63f51c01339"
 package = "ur-registry"
 default-features = false
 features = ["std"]
-
-[patch.crates-io]
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting", rev = "e210d883a08a5c99a61f4f941b8ec04d07a07ee4" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }

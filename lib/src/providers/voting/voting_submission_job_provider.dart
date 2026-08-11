@@ -369,9 +369,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       for (var index = 0; index < signingRound.requests.length; index++) {
         final request = signingRound.requests[index];
         final result = decoded.results[index];
-        final expectedMessageId = signingRound.messageIds[index];
-        if (!listEquals(result.messageId, utf8.encode(expectedMessageId)) ||
-            result.sigs.length != 1) {
+        // Compact responses carry ordered signature lists without message IDs.
+        // Rust checks the request ID and count before restoring request order.
+        if (result.sigs.length != 1) {
           throw StateError(
             'Keystone returned signatures that do not match this voting request.',
           );
