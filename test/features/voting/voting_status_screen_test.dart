@@ -4611,20 +4611,32 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) async {
-    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
-      bundleIndex: bundleIndex,
-      sig: Uint8List.fromList(sig),
-      sighash: Uint8List.fromList(sighash),
-      rk: Uint8List.fromList(rk),
+    var inserted = 0;
+    var alreadyPresent = 0;
+    for (final signature in signatures) {
+      if (storedKeystoneSignatures.containsKey(signature.bundleIndex)) {
+        alreadyPresent++;
+        continue;
+      }
+      storedKeystoneSignatures[signature.bundleIndex] =
+          rust_wire.KeystoneSignatureRecord(
+            bundleIndex: signature.bundleIndex,
+            sig: Uint8List.fromList(signature.sig),
+            sighash: Uint8List.fromList(signature.sighash),
+            rk: Uint8List.fromList(signature.rk),
+          );
+      inserted++;
+    }
+    return rust_api.ApiKeystoneSignatureBatchResult(
+      inserted: inserted,
+      alreadyPresent: alreadyPresent,
     );
   }
 

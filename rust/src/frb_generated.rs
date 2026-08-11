@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 777043029;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1626111918;
 
 // Section: executor
 
@@ -6314,6 +6314,48 @@ fn wire__crate__api__voting__store_keystone_signature_impl(
         },
     )
 }
+fn wire__crate__api__voting__store_keystone_signatures_batch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "store_keystone_signatures_batch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_round_id = <String>::sse_decode(&mut deserializer);
+            let api_signatures =
+                <Vec<crate::api::voting::ApiKeystoneSignatureInput>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::voting::store_keystone_signatures_batch(
+                        api_db_path,
+                        api_account_uuid,
+                        api_round_id,
+                        api_signatures,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__sync__suggest_scan_ranges_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -7303,6 +7345,34 @@ impl SseDecode for crate::api::voting::ApiDelegationProofEvent {
     }
 }
 
+impl SseDecode for crate::api::voting::ApiKeystoneSignatureBatchResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_inserted = <u32>::sse_decode(deserializer);
+        let mut var_alreadyPresent = <u32>::sse_decode(deserializer);
+        return crate::api::voting::ApiKeystoneSignatureBatchResult {
+            inserted: var_inserted,
+            already_present: var_alreadyPresent,
+        };
+    }
+}
+
+impl SseDecode for crate::api::voting::ApiKeystoneSignatureInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_bundleIndex = <u32>::sse_decode(deserializer);
+        let mut var_sig = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_sighash = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_rk = <Vec<u8>>::sse_decode(deserializer);
+        return crate::api::voting::ApiKeystoneSignatureInput {
+            bundle_index: var_bundleIndex,
+            sig: var_sig,
+            sighash: var_sighash,
+            rk: var_rk,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::ApiMempoolTxEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7955,6 +8025,20 @@ impl SseDecode for Vec<crate::api::wallet::AccountInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::wallet::AccountInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::voting::ApiKeystoneSignatureInput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::voting::ApiKeystoneSignatureInput>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -10267,18 +10351,19 @@ fn pde_ffi_dispatcher_primary_impl(
 154 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
 156 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
 157 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
-158 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-159 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-160 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
-161 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
-162 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
-163 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-164 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-165 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-167 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
-168 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-170 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-171 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+158 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
+159 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+160 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+161 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
+162 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
+163 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
+164 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+165 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+166 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+168 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
+169 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+171 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+172 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -10325,8 +10410,8 @@ fn pde_ffi_dispatcher_sync_impl(
         ),
         146 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
         155 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        166 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        169 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        167 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        170 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -10440,6 +10525,50 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationProofEve
     for crate::api::voting::ApiDelegationProofEvent
 {
     fn into_into_dart(self) -> crate::api::voting::ApiDelegationProofEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiKeystoneSignatureBatchResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.inserted.into_into_dart().into_dart(),
+            self.already_present.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiKeystoneSignatureBatchResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiKeystoneSignatureBatchResult>
+    for crate::api::voting::ApiKeystoneSignatureBatchResult
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiKeystoneSignatureBatchResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiKeystoneSignatureInput {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.bundle_index.into_into_dart().into_dart(),
+            self.sig.into_into_dart().into_dart(),
+            self.sighash.into_into_dart().into_dart(),
+            self.rk.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiKeystoneSignatureInput
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiKeystoneSignatureInput>
+    for crate::api::voting::ApiKeystoneSignatureInput
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiKeystoneSignatureInput {
         self
     }
 }
@@ -13089,6 +13218,24 @@ impl SseEncode for crate::api::voting::ApiDelegationProofEvent {
     }
 }
 
+impl SseEncode for crate::api::voting::ApiKeystoneSignatureBatchResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.inserted, serializer);
+        <u32>::sse_encode(self.already_present, serializer);
+    }
+}
+
+impl SseEncode for crate::api::voting::ApiKeystoneSignatureInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.bundle_index, serializer);
+        <Vec<u8>>::sse_encode(self.sig, serializer);
+        <Vec<u8>>::sse_encode(self.sighash, serializer);
+        <Vec<u8>>::sse_encode(self.rk, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::ApiMempoolTxEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -13528,6 +13675,16 @@ impl SseEncode for Vec<crate::api::wallet::AccountInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::wallet::AccountInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::voting::ApiKeystoneSignatureInput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::voting::ApiKeystoneSignatureInput>::sse_encode(item, serializer);
         }
     }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
@@ -1895,7 +1896,35 @@ void main() {
   );
 
   test(
-    'hardware voting rejects duplicate Keystone signature without storing',
+    'hardware voting rejects a conflicting persisted Keystone signature',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust, accountIsHardware: true);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: 0,
+        sig: Uint8List.fromList(List.filled(64, 7)),
+        sighash: Uint8List.fromList(const [99, 0]),
+        rk: Uint8List.fromList(const [2, 0]),
+      );
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .handleKeystoneBatchSignatures([_keystoneBatchSignature(0)]);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.keystoneSigning);
+      expect(state.keystoneScanError, contains('conflicts'));
+      expect(rust.storedKeystoneSignatures[0]?.sig, List.filled(64, 7));
+    },
+  );
+
+  test(
+    'hardware voting resumes with a differently randomized persisted signature',
     () async {
       final rust = FakeVotingRustApi();
       final container = _sessionContainer(rust: rust, accountIsHardware: true);
@@ -1911,13 +1940,91 @@ void main() {
         sighash: Uint8List.fromList(const [10, 0]),
         rk: Uint8List.fromList(const [2, 0]),
       );
+
       await container
           .read(votingSessionProvider(kRoundId).notifier)
           .handleKeystoneBatchSignatures([_keystoneBatchSignature(0)]);
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.keystoneScanError, isNull);
+      expect(rust.storedKeystoneSignatures, hasLength(1));
+    },
+  );
+
+  test(
+    'hardware voting retries the same response after an atomic store failure',
+    () async {
+      final rust = FakeVotingRustApi(
+        keystoneSignatureBatchFailuresRemaining: 1,
+      );
+      final container = _sessionContainer(rust: rust, accountIsHardware: true);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      final response = [_keystoneBatchSignature(0)];
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .handleKeystoneBatchSignatures(response);
+      var state = container.read(votingSessionProvider(kRoundId)).value!;
       expect(state.phase, VotingSessionPhase.keystoneSigning);
-      expect(state.keystoneScanError, contains('already scanned'));
+      expect(
+        state.keystoneSigningRequests.map((request) => request.bundleIndex),
+        [0],
+      );
+      expect(state.keystoneScanError, contains('same Keystone result'));
+      expect(rust.storedKeystoneSignatures, isEmpty);
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .handleKeystoneBatchSignatures(response);
+      state = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.keystoneScanError, isNull);
+      expect(rust.storedKeystoneSignatures.keys, [0]);
+    },
+  );
+
+  test(
+    'hardware voting fills a missing suffix from a partially persisted batch',
+    () async {
+      final rust = FakeVotingRustApi(bundleCount: 2);
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 2),
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: recoveryApi,
+        accountIsHardware: true,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: 0,
+        sig: Uint8List.fromList(List.filled(64, 30)),
+        sighash: Uint8List.fromList(const [10, 0]),
+        rk: Uint8List.fromList(const [2, 0]),
+      );
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .handleKeystoneBatchSignatures([
+            _keystoneBatchSignature(0),
+            _keystoneBatchSignature(1),
+          ]);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(rust.storedKeystoneSignatures.keys, [0, 1]);
+      expect(rust.storedKeystoneSignatures[1]?.sig, List.filled(64, 31));
     },
   );
 
@@ -6347,6 +6454,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.onDeleteSkippedBundles,
     this.keystoneDelegationRequestFailuresByCall = const {},
     this.failingVoteTreeNodeUrls = const {},
+    this.keystoneSignatureBatchFailuresRemaining = 0,
   });
 
   final Duration setupDelay;
@@ -6369,6 +6477,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final void Function(int keepCount)? onDeleteSkippedBundles;
   final Map<int, Object> keystoneDelegationRequestFailuresByCall;
   final Set<String> failingVoteTreeNodeUrls;
+  int keystoneSignatureBatchFailuresRemaining;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -6587,20 +6696,48 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_api.ApiKeystoneSignatureBatchResult>
+  storeKeystoneSignaturesBatch({
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) async {
-    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
-      bundleIndex: bundleIndex,
-      sig: Uint8List.fromList(sig),
-      sighash: Uint8List.fromList(sighash),
-      rk: Uint8List.fromList(rk),
+    if (keystoneSignatureBatchFailuresRemaining > 0) {
+      keystoneSignatureBatchFailuresRemaining--;
+      throw StateError('injected Keystone signature batch failure');
+    }
+    var inserted = 0;
+    var alreadyPresent = 0;
+    final next = Map<int, rust_wire.KeystoneSignatureRecord>.from(
+      storedKeystoneSignatures,
+    );
+    for (final signature in signatures) {
+      final existing = next[signature.bundleIndex];
+      if (existing != null) {
+        if (!listEquals(existing.sighash, signature.sighash) ||
+            !listEquals(existing.rk, signature.rk)) {
+          throw StateError(
+            'Keystone signature conflict for bundle ${signature.bundleIndex}',
+          );
+        }
+        alreadyPresent++;
+        continue;
+      }
+      next[signature.bundleIndex] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: signature.bundleIndex,
+        sig: Uint8List.fromList(signature.sig),
+        sighash: Uint8List.fromList(signature.sighash),
+        rk: Uint8List.fromList(signature.rk),
+      );
+      inserted++;
+    }
+    storedKeystoneSignatures
+      ..clear()
+      ..addAll(next);
+    return rust_api.ApiKeystoneSignatureBatchResult(
+      inserted: inserted,
+      alreadyPresent: alreadyPresent,
     );
   }
 

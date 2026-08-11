@@ -71,6 +71,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
+  ApiKeystoneSignatureBatchResult
+  dco_decode_api_keystone_signature_batch_result(dynamic raw);
+
+  @protected
+  ApiKeystoneSignatureInput dco_decode_api_keystone_signature_input(
+    dynamic raw,
+  );
+
+  @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
@@ -274,6 +283,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<ApiKeystoneSignatureInput> dco_decode_list_api_keystone_signature_input(
+    dynamic raw,
+  );
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -821,6 +835,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiKeystoneSignatureBatchResult
+  sse_decode_api_keystone_signature_batch_result(SseDeserializer deserializer);
+
+  @protected
+  ApiKeystoneSignatureInput sse_decode_api_keystone_signature_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
     SseDeserializer deserializer,
   );
@@ -1084,6 +1107,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<ApiKeystoneSignatureInput> sse_decode_list_api_keystone_signature_input(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -1766,6 +1794,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_keystone_signature_batch_result(
+    ApiKeystoneSignatureBatchResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_keystone_signature_input(
+    ApiKeystoneSignatureInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
     SseSerializer serializer,
@@ -2080,6 +2120,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_keystone_signature_input(
+    List<ApiKeystoneSignatureInput> self,
     SseSerializer serializer,
   );
 
