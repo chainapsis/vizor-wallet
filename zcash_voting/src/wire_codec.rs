@@ -13,7 +13,11 @@ use crate::{
     delegate::{DelegationSubmission, PreparedDelegationReport, SignedDelegationBundle},
     phases::WorkflowPhase,
     recovery, session,
-    types::{NoteRef, SelectedNotes, SharePayload, VotingError},
+    types::{
+        validate_round_params, validate_vote_chain_id, validate_vote_round_id_hex, Network,
+        NoteRef, RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VotingError,
+        VotingHotkeyTarget,
+    },
     vote::{SignedVoteCommitment, SignedVoteCommitments},
     wire::{
         CompletedVoteChoiceView, CompletedVoteDisplayView, DelegationPirPrecomputeResultView,
@@ -21,12 +25,157 @@ use crate::{
         DelegationSubmissionWire, NextStepView, RoundPlanView, RoundRecoveryStateView,
         ShareDelegationRecordView, ShareWorkflowRecoveryView, SignedDelegationPayloadView,
         SignedVoteCommitmentView, SignedVoteCommitmentsView, VoteCommitmentWire, VoteRecoveryView,
-        VoteRecoveryWorkView, VoteShareWire, VotingNoteRefView, VotingNoteSelectionResultView,
+        VoteRecoveryWorkView, VoteShareWire, VotingHotkeyTargetV1, VotingNoteRefView,
+        VotingNoteSelectionResultView, VotingRoundParams,
     },
     BundlePolicy,
 };
 
 const MAX_SAFE_JSON_INTEGER: u64 = 0x1f_ffff_ffff_ffff;
+const VOTING_HOTKEY_TARGET_FORMAT_VERSION: u32 = 1;
+const MAX_VOTING_HOTKEY_TARGET_JSON_BYTES: usize = 2_048;
+
+impl VotingHotkeyTargetV1 {
+    /// Parses and validates a version 1 target from JSON.
+    ///
+    /// Object field order is ignored. Unknown fields, duplicate keys, and
+    /// noncanonical encodings are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when the JSON or any target field
+    /// violates the version 1 contract.
+    pub fn from_json(json: &str) -> Result<Self, VotingError> {
+        if json.len() > MAX_VOTING_HOTKEY_TARGET_JSON_BYTES {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "voting hotkey target JSON exceeds {} bytes",
+                    MAX_VOTING_HOTKEY_TARGET_JSON_BYTES
+                ),
+            });
+        }
+        let wire: Self = serde_json::from_str(json).map_err(|e| VotingError::InvalidInput {
+            message: format!("invalid voting hotkey target JSON: {e}"),
+        })?;
+        wire.validated_parts()?;
+        Ok(wire)
+    }
+
+    /// Serializes a valid version 1 target as compact JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when any public DTO field violates
+    /// the version 1 contract.
+    pub fn to_json(&self) -> Result<String, VotingError> {
+        self.validated_parts()?;
+        serde_json::to_string(self).map_err(|e| VotingError::Internal {
+            message: format!("serialize voting hotkey target JSON failed: {e}"),
+        })
+    }
+
+    /// Validates this public target against the caller's chain, network, and
+    /// round context.
+    ///
+    /// This is the only public constructor for
+    /// [`RoundBoundVotingHotkeyTarget`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when the DTO is malformed, the
+    /// expected context is invalid, or any bound value differs.
+    pub fn validate_for(
+        &self,
+        expected_chain_id: &str,
+        expected_network: Network,
+        expected_round_params: &VotingRoundParams,
+    ) -> Result<RoundBoundVotingHotkeyTarget, VotingError> {
+        let (target, vote_round_id) = self.validated_parts()?;
+        validate_vote_chain_id(expected_chain_id)?;
+        validate_round_params(expected_round_params)?;
+
+        if self.vote_chain_id != expected_chain_id {
+            return Err(VotingError::InvalidInput {
+                message: "vote_chain_id does not match the expected vote chain".to_string(),
+            });
+        }
+        if target.network() != expected_network {
+            return Err(VotingError::InvalidInput {
+                message: "network does not match the expected network".to_string(),
+            });
+        }
+        if self.vote_round_id != expected_round_params.vote_round_id {
+            return Err(VotingError::InvalidInput {
+                message: "vote_round_id does not match the expected round".to_string(),
+            });
+        }
+
+        Ok(RoundBoundVotingHotkeyTarget::from_validated_parts(
+            target,
+            self.vote_chain_id.clone(),
+            vote_round_id,
+        ))
+    }
+
+    pub(crate) fn validated_parts(&self) -> Result<(VotingHotkeyTarget, [u8; 32]), VotingError> {
+        if self.format_version != VOTING_HOTKEY_TARGET_FORMAT_VERSION {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "format_version must be {}, got {}",
+                    VOTING_HOTKEY_TARGET_FORMAT_VERSION, self.format_version
+                ),
+            });
+        }
+
+        validate_vote_chain_id(&self.vote_chain_id)?;
+        let network = parse_target_network(&self.network)?;
+        validate_vote_round_id_hex(&self.vote_round_id)?;
+        let vote_round_id: [u8; 32] = hex::decode(&self.vote_round_id)
+            .expect("validated lowercase hex must decode")
+            .try_into()
+            .expect("validated vote_round_id must contain 32 bytes");
+
+        if self.address_index != crate::hotkey::VOTING_HOTKEY_ADDRESS_INDEX {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "address_index must be {}, got {}",
+                    crate::hotkey::VOTING_HOTKEY_ADDRESS_INDEX,
+                    self.address_index
+                ),
+            });
+        }
+
+        if self.raw_orchard_address.len() != 60 || !self.raw_orchard_address.ends_with("==") {
+            return Err(VotingError::InvalidInput {
+                message: "raw_orchard_address must be canonical padded standard Base64".to_string(),
+            });
+        }
+        let raw_orchard_address = BASE64_STANDARD
+            .decode(self.raw_orchard_address.as_bytes())
+            .map_err(|e| VotingError::InvalidInput {
+                message: format!("raw_orchard_address is not valid standard Base64: {e}"),
+            })?;
+        if BASE64_STANDARD.encode(&raw_orchard_address) != self.raw_orchard_address {
+            return Err(VotingError::InvalidInput {
+                message: "raw_orchard_address must use its canonical Base64 encoding".to_string(),
+            });
+        }
+        let target = VotingHotkeyTarget::from_raw_orchard_address(&raw_orchard_address, network)?;
+
+        Ok((target, vote_round_id))
+    }
+}
+
+fn parse_target_network(network: &str) -> Result<Network, VotingError> {
+    match network {
+        "mainnet" => Ok(Network::Mainnet),
+        "testnet" => Ok(Network::Testnet),
+        "regtest" => Ok(Network::Regtest),
+        _ => Err(VotingError::InvalidInput {
+            message: "network must be exactly mainnet, testnet, or regtest".to_string(),
+        }),
+    }
+}
 
 impl DelegationSubmissionWire {
     pub fn to_json(&self) -> Result<String, VotingError> {
@@ -507,10 +656,185 @@ fn json_safe_u64(value: u64, field: &str) -> Result<u64, VotingError> {
 mod tests {
     use super::*;
     use crate::vote::SignedVoteCommitment;
+    use crate::VotingHotkey;
+    use ff::PrimeField;
+    use pasta_curves::pallas;
     use zcash_client_backend::proto::service::TreeState;
 
     fn decode_b64(value: &str) -> Vec<u8> {
         BASE64_STANDARD.decode(value).unwrap()
+    }
+
+    fn target_round_params(value: u64) -> VotingRoundParams {
+        VotingRoundParams {
+            vote_round_id: hex::encode(pallas::Base::from(value).to_repr()),
+            snapshot_height: 100,
+            ea_pk: vec![0xEA; 32],
+            nc_root: vec![0xAA; 32],
+            nullifier_imt_root: vec![0xBB; 32],
+        }
+    }
+
+    fn valid_voting_hotkey_target_wire() -> VotingHotkeyTargetV1 {
+        let hotkey = VotingHotkey::from_stored_secret(&[0xAB; 64], Network::Regtest).unwrap();
+        VotingHotkeyTargetV1 {
+            format_version: 1,
+            vote_chain_id: "vote-chain-1".to_string(),
+            network: "regtest".to_string(),
+            vote_round_id: target_round_params(7).vote_round_id,
+            address_index: 0,
+            raw_orchard_address: BASE64_STANDARD.encode(hotkey.raw_orchard_address()),
+        }
+    }
+
+    #[test]
+    fn voting_hotkey_target_json_roundtrip_validates_expected_context() {
+        let wire = valid_voting_hotkey_target_wire();
+        let json = wire.to_json().unwrap();
+        assert_eq!(
+            json,
+            format!(
+                "{{\"format_version\":1,\"vote_chain_id\":\"vote-chain-1\",\"network\":\"regtest\",\"vote_round_id\":\"{}\",\"address_index\":0,\"raw_orchard_address\":\"{}\"}}",
+                wire.vote_round_id, wire.raw_orchard_address
+            )
+        );
+
+        let reordered = format!(
+            "{{\"raw_orchard_address\":\"{}\",\"address_index\":0,\"vote_round_id\":\"{}\",\"network\":\"regtest\",\"vote_chain_id\":\"vote-chain-1\",\"format_version\":1}}",
+            wire.raw_orchard_address, wire.vote_round_id
+        );
+        let parsed = VotingHotkeyTargetV1::from_json(&reordered).unwrap();
+        assert_eq!(parsed, wire);
+
+        let round_params = target_round_params(7);
+        let bound = parsed
+            .validate_for("vote-chain-1", Network::Regtest, &round_params)
+            .unwrap();
+        let hotkey = VotingHotkey::from_stored_secret(&[0xAB; 64], Network::Regtest).unwrap();
+        assert_eq!(bound.target(), hotkey.delegation_target());
+        assert_eq!(bound.vote_chain_id(), "vote-chain-1");
+        assert_eq!(
+            bound.vote_round_id().as_slice(),
+            hex::decode(&wire.vote_round_id).unwrap()
+        );
+    }
+
+    #[test]
+    fn voting_hotkey_target_json_rejects_unknown_duplicate_and_wrong_types() {
+        let wire = valid_voting_hotkey_target_wire();
+        let json = wire.to_json().unwrap();
+
+        let unknown = format!("{},\"extra\":true}}", json.strip_suffix('}').unwrap());
+        assert!(VotingHotkeyTargetV1::from_json(&unknown).is_err());
+
+        let duplicate = format!(
+            "{},\"network\":\"regtest\"}}",
+            json.strip_suffix('}').unwrap()
+        );
+        assert!(VotingHotkeyTargetV1::from_json(&duplicate).is_err());
+
+        let wrong_type = json.replace("\"format_version\":1", "\"format_version\":\"1\"");
+        assert!(VotingHotkeyTargetV1::from_json(&wrong_type).is_err());
+
+        let oversized = format!("{json}{}", " ".repeat(MAX_VOTING_HOTKEY_TARGET_JSON_BYTES));
+        assert!(VotingHotkeyTargetV1::from_json(&oversized).is_err());
+    }
+
+    #[test]
+    fn voting_hotkey_target_wire_rejects_invalid_scalar_fields() {
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.format_version = 2;
+        assert!(wire.to_json().is_err());
+
+        for invalid_chain_id in ["", "chain id", "chain\n", "chaîn"] {
+            let mut wire = valid_voting_hotkey_target_wire();
+            wire.vote_chain_id = invalid_chain_id.to_string();
+            assert!(wire.to_json().is_err(), "{invalid_chain_id:?}");
+        }
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.vote_chain_id = "x".repeat(129);
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.network = "Regtest".to_string();
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.vote_round_id = "AA".repeat(32);
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.vote_round_id = "00".repeat(31);
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.vote_round_id = "ff".repeat(32);
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.address_index = 1;
+        assert!(wire.to_json().is_err());
+    }
+
+    #[test]
+    fn voting_hotkey_target_wire_rejects_noncanonical_or_invalid_address() {
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.raw_orchard_address = wire.raw_orchard_address.trim_end_matches('=').to_string();
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.raw_orchard_address = BASE64_STANDARD
+            .encode([0xFB; 43])
+            .replace('+', "-")
+            .replace('/', "_");
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        let mut noncanonical = wire.raw_orchard_address.into_bytes();
+        let trailing = noncanonical
+            .get_mut(57)
+            .expect("43-byte Base64 has a second data character before padding");
+        *trailing = match *trailing {
+            b'A' => b'B',
+            b'Q' => b'R',
+            b'g' => b'h',
+            b'w' => b'x',
+            value => panic!("unexpected canonical trailing Base64 character {value}"),
+        };
+        wire.raw_orchard_address = String::from_utf8(noncanonical).unwrap();
+        assert!(wire.to_json().is_err());
+
+        let mut wire = valid_voting_hotkey_target_wire();
+        wire.raw_orchard_address = BASE64_STANDARD.encode([0xFF; 43]);
+        let err = wire.to_json().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("raw_orchard_address is not a valid Orchard address"));
+    }
+
+    #[test]
+    fn voting_hotkey_target_validation_rejects_context_mismatches() {
+        let wire = valid_voting_hotkey_target_wire();
+        let round_params = target_round_params(7);
+
+        let chain_err = wire
+            .validate_for("other-chain", Network::Regtest, &round_params)
+            .unwrap_err();
+        assert!(chain_err
+            .to_string()
+            .contains("vote_chain_id does not match"));
+
+        let network_err = wire
+            .validate_for("vote-chain-1", Network::Testnet, &round_params)
+            .unwrap_err();
+        assert!(network_err.to_string().contains("network does not match"));
+
+        let round_err = wire
+            .validate_for("vote-chain-1", Network::Regtest, &target_round_params(8))
+            .unwrap_err();
+        assert!(round_err
+            .to_string()
+            .contains("vote_round_id does not match"));
     }
 
     fn test_tree_state(height: u64) -> TreeState {

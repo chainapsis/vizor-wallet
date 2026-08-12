@@ -169,6 +169,9 @@ pub struct CommittedVote {
 
 impl CommittedVote {
     /// Builds, signs, persists, and returns a committed cast-vote handle.
+    ///
+    /// Imported capability rounds require every delegation bundle to be
+    /// confirmed before the first vote is committed.
     pub fn commit(
         db: &VotingDb,
         round_id: &str,
@@ -366,7 +369,8 @@ impl CommittedVote {
 /// Builds signed vote commitments for every draft in one bundle.
 ///
 /// This validates the draft list and bundle index once, then commits each draft
-/// in order while reporting commit progress.
+/// in order while reporting commit progress. Imported capability rounds require
+/// every delegation bundle to be confirmed before the first vote is committed.
 #[allow(clippy::too_many_arguments)]
 pub fn commit_batch(
     db: &VotingDb,
@@ -558,6 +562,8 @@ struct EncryptedShareJson {
 ///
 /// Repeated calls for the same `(round_id, bundle_index, proposal_id)` return
 /// the persisted recovery bundle without rebuilding the proof.
+/// Fresh votes in an imported capability round require every delegation bundle
+/// to have a recorded confirmation.
 pub fn commit(
     db: &VotingDb,
     round_id: &str,
@@ -577,6 +583,7 @@ pub fn commit(
             return commit_from_recovery(&recovered);
         }
     }
+    db.require_capability_delegations_confirmed(round_id)?;
     ensure_vote_rebuild_allowed(db, round_id, bundle_index, draft.proposal_id)?;
 
     stages.on_stage(VoteCommitStage::ProofStarting {
@@ -741,6 +748,10 @@ pub fn record_submission(
 }
 
 /// Records the on-chain vote commitment tree position after confirmation.
+///
+/// This does not advance the bundle's current VAN position. Prefer
+/// `confirmation::confirm_vote_submission` when recording chain events so all
+/// confirmation fields are stored atomically.
 pub fn record_vc_position(
     db: &VotingDb,
     round_id: &str,

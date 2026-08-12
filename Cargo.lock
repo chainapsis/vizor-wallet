@@ -3176,6 +3176,7 @@ name = "zcash-voting-wallet-example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "bytes",
  "ff",
  "http",

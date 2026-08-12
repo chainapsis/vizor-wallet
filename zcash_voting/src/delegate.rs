@@ -13,18 +13,24 @@ use crate::note_bundling::BundlePolicy;
 pub use crate::selection::{
     gather_delegation_wallet_inputs, DelegationWalletInputs, GatherDelegationWalletParams,
 };
+use crate::selection::{
+    gather_delegation_wallet_inputs_for_target, GatherDelegationWalletForTargetParams,
+};
 use crate::{
     governance::BUNDLE_NOTE_SLOTS,
     precompute::PirPrecomputeReport,
     round::{BundleLayout, RoundParams, VotingDb},
-    types::{DelegationProgressReporter, Network, NoteInfo, VotingError, VotingHotkey},
+    types::{
+        DelegationProgressReporter, Network, NoteInfo, RoundBoundVotingHotkeyTarget, VotingError,
+        VotingHotkey, VotingHotkeyTarget,
+    },
 };
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, Account, WalletRead};
 use zcash_client_sqlite::{AccountUuid, WalletDb};
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
 /// Wallet-derived keys and chain parameters needed to build a delegation PCZT.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DelegationKeys {
     /// Orchard full viewing key bytes for the delegating account.
     pub(crate) fvk_bytes: Vec<u8>,
@@ -44,35 +50,41 @@ pub struct DelegationKeys {
     pub(crate) round_name: String,
 }
 
+impl std::fmt::Debug for DelegationKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DelegationKeys")
+            .field("fvk_bytes", &"<redacted>")
+            .field("hotkey_raw_address", &"<redacted>")
+            .field("seed_fingerprint", &"<redacted>")
+            .field("account_index", &self.account_index)
+            .field("address_index", &self.address_index)
+            .field("network", &self.network)
+            .field("coin_type", &self.coin_type)
+            .field("round_name", &"<redacted>")
+            .finish()
+    }
+}
+
 impl DelegationKeys {
-    /// Builds delegation keys while validating the raw Orchard hotkey address.
-    ///
-    /// The returned value is suitable for [`setup`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VotingError::InvalidInput`] when `hotkey_raw_address` is not
-    /// exactly 43 bytes.
+    /// Builds delegation keys from one already validated target.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn with_hotkey_bytes(
+    fn with_voting_target(
         fvk_bytes: Vec<u8>,
-        hotkey_raw_address: &[u8],
+        target: VotingHotkeyTarget,
         seed_fingerprint: [u8; 32],
         account_index: u32,
-        address_index: u32,
-        network: Network,
         round_name: String,
-    ) -> Result<Self, VotingError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             fvk_bytes,
-            hotkey_raw_address: array43("hotkey_raw_address", hotkey_raw_address)?,
+            hotkey_raw_address: *target.raw_orchard_address(),
             seed_fingerprint,
             account_index,
-            address_index,
-            network,
-            coin_type: network.network_type().coin_type(),
+            address_index: target.address_index(),
+            network: target.network(),
+            coin_type: target.network().network_type().coin_type(),
             round_name,
-        })
+        }
     }
 
     /// Builds delegation keys from a crate-derived voting hotkey.
@@ -88,15 +100,36 @@ impl DelegationKeys {
         account_index: u32,
         round_name: String,
     ) -> Result<Self, VotingError> {
-        Self::with_hotkey_bytes(
+        Ok(Self::with_voting_target(
             fvk_bytes,
-            hotkey.raw_orchard_address(),
+            hotkey.delegation_target(),
             seed_fingerprint,
             account_index,
-            hotkey.address_index(),
-            hotkey.network(),
             round_name,
-        )
+        ))
+    }
+
+    /// Builds delegation keys for a public target already bound to one vote
+    /// chain, network, and round.
+    ///
+    /// The target supplies only public recipient data. Account fingerprint and
+    /// account index still refer to the wallet account that owns the delegated
+    /// notes.
+    pub(crate) fn with_round_bound_voting_target(
+        fvk_bytes: Vec<u8>,
+        target: &RoundBoundVotingHotkeyTarget,
+        seed_fingerprint: [u8; 32],
+        account_index: u32,
+        round_name: String,
+    ) -> Result<Self, VotingError> {
+        let public_target = target.target();
+        Ok(Self::with_voting_target(
+            fvk_bytes,
+            public_target,
+            seed_fingerprint,
+            account_index,
+            round_name,
+        ))
     }
 }
 
@@ -239,6 +272,61 @@ pub struct PrepareDelegationBundleParams<'a> {
     pub bundle_policy: BundlePolicy,
 }
 
+/// Parameters for preparing one delegation bundle for a public target.
+///
+/// The funds controller must retain the validated target with its durable
+/// delegation job and use that same value when exporting the capability
+/// package.
+pub struct PrepareDelegationBundleForTargetParams<'a> {
+    pub lwd: DelegationLwdInputs,
+    pub session_json: Option<&'a str>,
+    pub account_uuid: &'a str,
+    pub voting_target: &'a RoundBoundVotingHotkeyTarget,
+    pub bundle_index: u32,
+    pub bundle_policy: BundlePolicy,
+}
+
+enum PrepareDelegationTarget<'a> {
+    Local(&'a VotingHotkey),
+    RoundBound(&'a RoundBoundVotingHotkeyTarget),
+}
+
+impl PrepareDelegationTarget<'_> {
+    fn network(&self) -> Network {
+        match self {
+            Self::Local(hotkey) => hotkey.network(),
+            Self::RoundBound(target) => target.target().network(),
+        }
+    }
+
+    fn network_mismatch_message(&self) -> &'static str {
+        match self {
+            Self::Local(_) => "delegation LWD network does not match voting hotkey network",
+            Self::RoundBound(_) => "delegation LWD network does not match voting target network",
+        }
+    }
+
+    fn validate_round(&self, round_params: &crate::VotingRoundParams) -> Result<(), VotingError> {
+        if let Self::RoundBound(target) = self {
+            if hex::encode(target.vote_round_id()) != round_params.vote_round_id {
+                return Err(VotingError::InvalidInput {
+                    message: "voting target round does not match delegation round".to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+struct PrepareDelegationBundleInnerParams<'a> {
+    lwd: DelegationLwdInputs,
+    session_json: Option<&'a str>,
+    account_uuid: &'a str,
+    target: PrepareDelegationTarget<'a>,
+    bundle_index: u32,
+    bundle_policy: BundlePolicy,
+}
+
 /// Plain delegation bundle state reused by precompute, signing, and submission.
 #[derive(Clone, Debug)]
 pub struct PreparedDelegationBundle {
@@ -300,13 +388,71 @@ where
     C: Borrow<rusqlite::Connection>,
     P: Parameters,
 {
+    prepare_delegation_bundle_inner(
+        voting_db,
+        wallet_db,
+        PrepareDelegationBundleInnerParams {
+            lwd: params.lwd,
+            session_json: params.session_json,
+            account_uuid: params.account_uuid,
+            target: PrepareDelegationTarget::Local(params.voting_hotkey),
+            bundle_index: params.bundle_index,
+            bundle_policy: params.bundle_policy,
+        },
+    )
+}
+
+/// Prepares one delegation bundle for a validated public voting target.
+///
+/// This performs the same round validation, note selection, bundle planning,
+/// and witness preparation as [`prepare_delegation_bundle`] without receiving
+/// the voting hotkey secret. The target is checked against the LWD network and
+/// round before any voting database state is created.
+///
+/// # Errors
+///
+/// Returns an error if the target context differs from the delegation context,
+/// or if the normal delegation preparation checks fail.
+pub fn prepare_delegation_bundle_for_target<C, P, CL, R>(
+    voting_db: &VotingDb,
+    wallet_db: &WalletDb<C, P, CL, R>,
+    params: PrepareDelegationBundleForTargetParams<'_>,
+) -> Result<PreparedDelegationBundle, VotingError>
+where
+    C: Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
+    prepare_delegation_bundle_inner(
+        voting_db,
+        wallet_db,
+        PrepareDelegationBundleInnerParams {
+            lwd: params.lwd,
+            session_json: params.session_json,
+            account_uuid: params.account_uuid,
+            target: PrepareDelegationTarget::RoundBound(params.voting_target),
+            bundle_index: params.bundle_index,
+            bundle_policy: params.bundle_policy,
+        },
+    )
+}
+
+fn prepare_delegation_bundle_inner<C, P, CL, R>(
+    voting_db: &VotingDb,
+    wallet_db: &WalletDb<C, P, CL, R>,
+    params: PrepareDelegationBundleInnerParams<'_>,
+) -> Result<PreparedDelegationBundle, VotingError>
+where
+    C: Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
     let lwd = params.lwd;
     let session_json = params.session_json;
-    if lwd.network != params.voting_hotkey.network() {
+    if lwd.network != params.target.network() {
         return Err(VotingError::InvalidInput {
-            message: "delegation LWD network does not match voting hotkey network".to_string(),
+            message: params.target.network_mismatch_message().to_string(),
         });
     }
+    params.target.validate_round(&lwd.round_params)?;
     // Ensure the round is present in the voting database.
     ensure_round_context(
         voting_db,
@@ -336,15 +482,30 @@ where
     };
 
     // Gather the wallet inputs.
-    let wallet_inputs = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
-        wallet_db,
-        account_uuid: params.account_uuid,
-        voting_hotkey: params.voting_hotkey,
-        snapshot_height: round_params.snapshot_height,
-        scanned_height,
-        anchor_tree_state_bytes,
-        resolved_round_name,
-    })?;
+    let wallet_inputs = match params.target {
+        PrepareDelegationTarget::Local(voting_hotkey) => {
+            gather_delegation_wallet_inputs(GatherDelegationWalletParams {
+                wallet_db,
+                account_uuid: params.account_uuid,
+                voting_hotkey,
+                snapshot_height: round_params.snapshot_height,
+                scanned_height,
+                anchor_tree_state_bytes,
+                resolved_round_name,
+            })?
+        }
+        PrepareDelegationTarget::RoundBound(voting_target) => {
+            gather_delegation_wallet_inputs_for_target(GatherDelegationWalletForTargetParams {
+                wallet_db,
+                account_uuid: params.account_uuid,
+                voting_target,
+                snapshot_height: round_params.snapshot_height,
+                scanned_height,
+                anchor_tree_state_bytes,
+                resolved_round_name,
+            })?
+        }
+    };
 
     // Ensure the round is present in the voting database.
     voting_db.ensure_round(network, &round_params, None)?;
@@ -949,6 +1110,9 @@ pub fn record_submission(
 }
 
 /// Records the confirmed VAN leaf position for a delegated bundle.
+///
+/// Cast-vote callers should use `confirmation::confirm_vote_submission` so the
+/// vote hash, successor VAN position, and VC position are stored atomically.
 pub fn record_van_position(
     db: &VotingDb,
     round_id: &str,
@@ -1103,12 +1267,6 @@ fn array32x_bundle_note_slots(
         })
 }
 
-fn array43(label: &str, value: &[u8]) -> Result<[u8; 43], VotingError> {
-    value.try_into().map_err(|_| VotingError::InvalidInput {
-        message: format!("{label} must be 43 bytes, got {}", value.len()),
-    })
-}
-
 fn array32_slice(label: &str, value: &[u8]) -> Result<[u8; 32], VotingError> {
     value.try_into().map_err(|_| VotingError::InvalidInput {
         message: format!("{label} must be 32 bytes, got {}", value.len()),
@@ -1125,6 +1283,7 @@ fn array64_slice(label: &str, value: &[u8]) -> Result<[u8; 64], VotingError> {
 mod tests {
     use super::*;
 
+    use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use orchard::{
         note::{NoteVersion, RandomSeed, Rho},
         value::NoteValue,
@@ -1181,6 +1340,83 @@ mod tests {
         assert_eq!(named.round_name, "Demo Round");
         assert_eq!(fallback.round_name, params.vote_round_id);
         assert_eq!(voting_db.list_rounds().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn public_target_prepare_rejects_context_mismatch_before_db_writes() {
+        let voting_db = VotingDb::open_in_memory().unwrap();
+        voting_db.set_wallet_id("target-context-mismatch");
+        let wallet_db = WalletDb::from_connection(
+            Connection::open_in_memory().unwrap(),
+            Network::Regtest,
+            SystemClock,
+            rand::rngs::OsRng,
+        );
+        let round_params = crate::VotingRoundParams {
+            vote_round_id: "01".repeat(32),
+            snapshot_height: REGTEST_NU6_3_SNAPSHOT_HEIGHT,
+            ea_pk: vec![1; 32],
+            nc_root: vec![2; 32],
+            nullifier_imt_root: vec![3; 32],
+        };
+        let hotkey = test_regtest_voting_hotkey();
+        let target_wire = |params: &crate::VotingRoundParams| crate::wire::VotingHotkeyTargetV1 {
+            format_version: 1,
+            vote_chain_id: "vote-chain-1".to_string(),
+            network: "regtest".to_string(),
+            vote_round_id: params.vote_round_id.clone(),
+            address_index: 0,
+            raw_orchard_address: BASE64_STANDARD.encode(hotkey.raw_orchard_address()),
+        };
+        let lwd = |network| DelegationLwdInputs {
+            network,
+            round_params: round_params.clone(),
+            resolved_round_name: "Demo Round".to_string(),
+            anchor_tree_state_bytes: vec![],
+            branch_id_provider: LightwalletdBranchIdProvider::resolved(u32::from(BranchId::Nu6_3)),
+        };
+
+        let mut other_round = round_params.clone();
+        other_round.vote_round_id = "02".repeat(32);
+        let wrong_round = target_wire(&other_round)
+            .validate_for("vote-chain-1", Network::Regtest, &other_round)
+            .unwrap();
+        let err = prepare_delegation_bundle_for_target(
+            &voting_db,
+            &wallet_db,
+            PrepareDelegationBundleForTargetParams {
+                lwd: lwd(Network::Regtest),
+                session_json: None,
+                account_uuid: "550e8400-e29b-41d4-a716-446655440000",
+                voting_target: &wrong_round,
+                bundle_index: 0,
+                bundle_policy: BundlePolicy::default(),
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("target round does not match"));
+        assert!(voting_db.list_rounds().unwrap().is_empty());
+
+        let target = target_wire(&round_params)
+            .validate_for("vote-chain-1", Network::Regtest, &round_params)
+            .unwrap();
+        let err = prepare_delegation_bundle_for_target(
+            &voting_db,
+            &wallet_db,
+            PrepareDelegationBundleForTargetParams {
+                lwd: lwd(Network::Mainnet),
+                session_json: None,
+                account_uuid: "550e8400-e29b-41d4-a716-446655440000",
+                voting_target: &target,
+                bundle_index: 0,
+                bundle_policy: BundlePolicy::default(),
+            },
+        )
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("LWD network does not match voting target"));
+        assert!(voting_db.list_rounds().unwrap().is_empty());
     }
 
     #[test]
@@ -1750,20 +1986,38 @@ mod tests {
     }
 
     #[test]
-    fn delegation_keys_validate_hotkey_address_length() {
-        let err = DelegationKeys::with_hotkey_bytes(
+    fn delegation_key_target_paths_have_identical_recipient_semantics() {
+        let hotkey = test_voting_hotkey();
+        let local = DelegationKeys::with_voting_hotkey(
             vec![8; 96],
-            &[7; 42],
+            &hotkey,
             [9; 32],
             0,
-            0,
-            Network::Testnet,
             "Demo Round".to_string(),
         )
-        .unwrap_err()
-        .to_string();
+        .unwrap();
+        let bound = RoundBoundVotingHotkeyTarget::from_validated_parts(
+            hotkey.delegation_target(),
+            "vote-chain-1".to_string(),
+            [1; 32],
+        );
+        let external = DelegationKeys::with_round_bound_voting_target(
+            vec![8; 96],
+            &bound,
+            [9; 32],
+            0,
+            "Demo Round".to_string(),
+        )
+        .unwrap();
 
-        assert!(err.contains("hotkey_raw_address must be 43 bytes"));
+        assert_eq!(external.hotkey_raw_address, local.hotkey_raw_address);
+        assert_eq!(external.address_index, local.address_index);
+        assert_eq!(external.network, local.network);
+        assert_eq!(external.coin_type, local.coin_type);
+        assert_eq!(
+            bound.target().raw_orchard_address(),
+            &local.hotkey_raw_address
+        );
     }
 
     #[test]

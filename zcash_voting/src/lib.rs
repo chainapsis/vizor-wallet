@@ -13,6 +13,7 @@ pub mod action;
 pub mod config;
 pub mod confirmation;
 pub mod delegate;
+pub mod delegation_capability;
 pub mod error;
 pub mod governance;
 pub mod hotkey;
@@ -51,6 +52,12 @@ pub use pir::{
     PirClient, PirClientBlocking, Transport, TransportFuture, TransportResponse,
 };
 
+pub use delegation_capability::{
+    export_delegation_capability, import_delegation_capability, DelegationCapabilityBundleV1,
+    DelegationCapabilityDigest, DelegationCapabilityV1, ExportedDelegationCapability,
+    ImportDelegationCapabilityParams, MAX_DELEGATION_CAPABILITY_BUNDLES,
+    MAX_DELEGATION_CAPABILITY_JSON_BYTES,
+};
 pub use governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
 pub use note_bundling::{
     minimum_voting_eligibility_for_notes, validate_minimum_voting_eligibility_for_notes,
@@ -67,10 +74,10 @@ pub use types::{
     CastVoteSignature, DelegationAction, DelegationPirPrecomputeResult, DelegationProgressBridge,
     DelegationProgressReporter, DelegationProofResult, DelegationSubmissionData, EncryptedShare,
     GovernancePczt, Network, NoopProgressReporter, NoteInfo, NoteRef, ProgressReporter,
-    SelectedNotes, ShareDelegationRecord, SharePayload, VoteCommitStageBridge,
-    VoteCommitStageReporter, VoteCommitmentBundle, VotingError, VotingHotkey, VotingRoundParams,
-    WireEncryptedShare, WitnessData, MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID,
-    MIN_VOTE_OPTIONS,
+    RoundBoundVotingHotkeyTarget, SelectedNotes, ShareDelegationRecord, SharePayload,
+    VoteCommitStageBridge, VoteCommitStageReporter, VoteCommitmentBundle, VotingError,
+    VotingHotkey, VotingHotkeyTarget, VotingRoundParams, WireEncryptedShare, WitnessData,
+    MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
 };
 
 /// Warm process-lifetime proving-key caches used by on-device voting proofs.

@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use ff::PrimeField;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_protocol::consensus::Parameters;
 use zcash_voting::delegate::ResolveDelegationLwdParams;
 use zcash_voting::prelude::{
-    gather_delegation_lwd_inputs, prepare_delegation_bundle as prepare_bundle_state,
-    spend_auth_signature, DelegationSigningRequest, DelegationSubmission, KeystoneSigningRequest,
-    Network, NoopProgressReporter, PrepareDelegationBundleParams, PreparedDelegationBundle,
-    PreparedDelegationReport, PreparedSigner, VotingDb, VotingHotkey,
+    export_delegation_capability, gather_delegation_lwd_inputs, import_delegation_capability,
+    prepare_delegation_bundle as prepare_bundle_state,
+    prepare_delegation_bundle_for_target as prepare_target_bundle_state, spend_auth_signature,
+    DelegationCapabilityDigest, DelegationSigningRequest, DelegationSubmission,
+    ExportedDelegationCapability, ImportDelegationCapabilityParams, KeystoneSigningRequest,
+    Network, NoopProgressReporter, PrepareDelegationBundleForTargetParams,
+    PrepareDelegationBundleParams, PreparedDelegationBundle, PreparedDelegationReport,
+    PreparedSigner, RoundBoundVotingHotkeyTarget, VotingDb, VotingHotkey, VotingHotkeyTargetV1,
 };
 use zcash_voting::wire::PirLayout;
 use zcash_voting::{
@@ -32,6 +37,69 @@ pub struct PrepareRequest<'a> {
     pub session_json: Option<&'a str>,
     pub bundle_index: u32,
     pub bundle_policy: BundlePolicy,
+}
+
+/// Funds controller inputs for preparing one bundle for a voter's public target.
+pub struct PrepareForTargetRequest<'a> {
+    pub account_uuid: &'a str,
+    pub lightwalletd_url: &'a str,
+    pub network: Network,
+    pub round_params: VotingRoundParams,
+    pub round_name: &'a str,
+    pub voting_target: &'a RoundBoundVotingHotkeyTarget,
+    pub session_json: Option<&'a str>,
+    pub bundle_index: u32,
+    pub bundle_policy: BundlePolicy,
+}
+
+/// Encodes the public target that the voter sends to the funds controller.
+///
+/// The voter retains the hotkey secret. Only these canonical, round-bound JSON
+/// bytes cross the boundary.
+pub fn encode_public_voting_target(
+    voting_hotkey: &VotingHotkey,
+    vote_chain_id: &str,
+    round_params: &VotingRoundParams,
+) -> Result<Vec<u8>> {
+    let target = voting_hotkey.delegation_target();
+    let network = match target.network() {
+        Network::Mainnet => "mainnet",
+        Network::Testnet => "testnet",
+        Network::Regtest => "regtest",
+    };
+    let target_v1 = VotingHotkeyTargetV1 {
+        format_version: 1,
+        vote_chain_id: vote_chain_id.to_string(),
+        network: network.to_string(),
+        vote_round_id: round_params.vote_round_id.clone(),
+        address_index: target.address_index(),
+        raw_orchard_address: BASE64_STANDARD.encode(target.raw_orchard_address()),
+    };
+
+    target_v1
+        .validate_for(vote_chain_id, target.network(), round_params)
+        .context("validate public voting target")?;
+    target_v1
+        .to_json()
+        .map(String::into_bytes)
+        .context("encode public voting target")
+}
+
+/// Parses and independently validates the target on the funds controller.
+///
+/// The returned opaque value is local to the controller and is the value passed
+/// to [`prepare_delegation_bundle_for_public_target`].
+pub fn validate_public_voting_target(
+    target_json: &[u8],
+    expected_chain_id: &str,
+    expected_network: Network,
+    expected_round_params: &VotingRoundParams,
+) -> Result<RoundBoundVotingHotkeyTarget> {
+    let target_json = std::str::from_utf8(target_json).context("decode public target UTF-8")?;
+    VotingHotkeyTargetV1::from_json(target_json)
+        .context("parse public voting target")?
+        .validate_for(expected_chain_id, expected_network, expected_round_params)
+        .context("validate public voting target context")
 }
 
 /// Resolves lightwalletd and wallet inputs for later delegation operations.
@@ -76,6 +144,87 @@ where
         },
     )
     .context("prepare delegation bundle with witnesses")
+}
+
+/// Prepares a funds controller delegation bundle for a voter-owned hotkey.
+///
+/// The request contains only the validated public target. The voter retains the
+/// voting hotkey secret, while the funds controller retains this target with
+/// its durable delegation job until the round closes.
+pub async fn prepare_delegation_bundle_for_public_target<C, P, CL, R>(
+    voting_db: &VotingDb,
+    wallet_db: &zcash_client_sqlite::WalletDb<C, P, CL, R>,
+    request: PrepareForTargetRequest<'_>,
+) -> Result<PreparedDelegationBundle>
+where
+    C: std::borrow::Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
+    let lwd_inputs = gather_delegation_lwd_inputs(ResolveDelegationLwdParams {
+        lightwalletd_url: request.lightwalletd_url,
+        network: request.network,
+        round_params: request.round_params,
+        round_name: request.round_name,
+    })
+    .await
+    .context("gather public target delegation lightwalletd inputs")?;
+
+    prepare_target_bundle_state(
+        voting_db,
+        wallet_db,
+        PrepareDelegationBundleForTargetParams {
+            lwd: lwd_inputs,
+            session_json: request.session_json,
+            account_uuid: request.account_uuid,
+            voting_target: request.voting_target,
+            bundle_index: request.bundle_index,
+            bundle_policy: request.bundle_policy,
+        },
+    )
+    .context("prepare delegation bundle for public target")
+}
+
+/// Exports the canonical package a funds controller stores before broadcast.
+///
+/// `signed_delegation_txs` are the exact vote-chain transaction bytes retained
+/// in the funds controller's durable outbox. It may deliver the package while
+/// broadcasting. The returned opaque value binds the canonical bytes to the
+/// typed digest used to verify the voter's delivery acknowledgement.
+pub fn export_delegation_capability_package(
+    voting_db: &VotingDb,
+    voting_target: &RoundBoundVotingHotkeyTarget,
+    signed_delegation_txs: &[Vec<u8>],
+) -> Result<ExportedDelegationCapability> {
+    export_delegation_capability(voting_db, voting_target, signed_delegation_txs)
+        .context("export delegation capability")
+}
+
+/// Validates and atomically imports a package for a voter hotkey.
+///
+/// Return this digest only after the call succeeds durably. The funds controller
+/// compares it to its outbox digest as a delivery receipt and keeps redelivering
+/// the same package through round close when needed.
+pub fn import_delegation_capability_package(
+    voting_db: &VotingDb,
+    capability_json: &[u8],
+    voting_hotkey: &VotingHotkey,
+    expected_chain_id: &str,
+    expected_network: Network,
+    expected_round_params: &VotingRoundParams,
+    session_json: Option<&str>,
+) -> Result<DelegationCapabilityDigest> {
+    import_delegation_capability(
+        voting_db,
+        capability_json,
+        ImportDelegationCapabilityParams {
+            voting_hotkey,
+            expected_chain_id,
+            expected_network,
+            expected_round_params,
+            session_json,
+        },
+    )
+    .context("import delegation capability")
 }
 
 /// Precomputes persistent artifacts needed to later prove one delegation bundle.

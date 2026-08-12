@@ -68,8 +68,9 @@ pub struct WalletVoteExecutionPayload<'a> {
 /// # Errors
 ///
 /// Returns an error if the vote tree cannot be synced from `vote_node_url`, the
-/// bundle is unknown, its VAN position is missing, or the witness cannot be
-/// generated at the synced height.
+/// bundle is unknown, its VAN position or initial commitment is missing, its
+/// confirmed position contains a different public leaf, or the witness cannot
+/// be generated at the synced height.
 pub fn derive_vote_van_witness(
     voting_db: &VotingDb,
     request: WalletVanWitnessRequest<'_>,

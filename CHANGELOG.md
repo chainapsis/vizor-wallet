@@ -4,6 +4,19 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Added secret-free, round-bound voting hotkey targets and a canonical
+  delegation capability handoff. A funds controller, such as a custody
+  provider, can prepare delegation for a voter's public target, durably store
+  the package before broadcasting, verify delivery by its digest, and let the
+  voter use the existing confirmation, tree-sync, and ZKP2 voting path without
+  sharing account viewing material or the voting hotkey secret. Imported
+  capability rounds keep their complete bundle batch atomic and wait for every
+  delegation bundle to confirm before creating fresh vote commitments, keeping
+  pre-vote package replacement recoverable.
+
 ## v2.0.0-rc.5
 
 ### Fixed

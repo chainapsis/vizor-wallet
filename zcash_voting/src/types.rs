@@ -96,6 +96,104 @@ pub fn ct_option_to_result<T>(opt: CtOption<T>, msg: &str) -> Result<T, VotingEr
     }
 }
 
+/// Validated, secret-free recipient for a delegation output.
+///
+/// Raw Orchard receiver bytes do not encode a network, so the explicit network
+/// is part of the target's application context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VotingHotkeyTarget {
+    raw_orchard_address: [u8; 43],
+    address_index: u32,
+    network: Network,
+}
+
+impl VotingHotkeyTarget {
+    /// Validates raw Orchard receiver bytes and binds them to a network.
+    ///
+    /// Version 1 targets always use address index zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when `bytes` is not exactly 43
+    /// bytes or is not a valid Orchard raw address encoding.
+    pub fn from_raw_orchard_address(bytes: &[u8], network: Network) -> Result<Self, VotingError> {
+        let raw_orchard_address: [u8; 43] =
+            bytes.try_into().map_err(|_| VotingError::InvalidInput {
+                message: format!(
+                    "raw_orchard_address must be exactly 43 bytes, got {}",
+                    bytes.len()
+                ),
+            })?;
+
+        orchard::Address::from_raw_address_bytes(&raw_orchard_address)
+            .into_option()
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: "raw_orchard_address is not a valid Orchard address".to_string(),
+            })?;
+
+        Ok(Self {
+            raw_orchard_address,
+            address_index: crate::hotkey::VOTING_HOTKEY_ADDRESS_INDEX,
+            network,
+        })
+    }
+
+    /// Returns the validated 43-byte Orchard raw address.
+    pub fn raw_orchard_address(&self) -> &[u8; 43] {
+        &self.raw_orchard_address
+    }
+
+    /// Returns the fixed version 1 address index.
+    pub fn address_index(&self) -> u32 {
+        self.address_index
+    }
+
+    /// Returns the network context bound to these network-neutral receiver bytes.
+    pub fn network(&self) -> Network {
+        self.network
+    }
+}
+
+/// Public delegation target validated for one vote chain and round.
+///
+/// The fields remain opaque so public secret-free delegation entry points can
+/// accept only a target produced by [`crate::wire::VotingHotkeyTargetV1::validate_for`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RoundBoundVotingHotkeyTarget {
+    target: VotingHotkeyTarget,
+    vote_chain_id: String,
+    vote_round_id: [u8; 32],
+}
+
+impl RoundBoundVotingHotkeyTarget {
+    pub(crate) fn from_validated_parts(
+        target: VotingHotkeyTarget,
+        vote_chain_id: String,
+        vote_round_id: [u8; 32],
+    ) -> Self {
+        Self {
+            target,
+            vote_chain_id,
+            vote_round_id,
+        }
+    }
+
+    /// Returns the validated secret-free Orchard target.
+    pub fn target(&self) -> VotingHotkeyTarget {
+        self.target
+    }
+
+    /// Returns the vote chain identifier bound during validation.
+    pub fn vote_chain_id(&self) -> &str {
+        &self.vote_chain_id
+    }
+
+    /// Returns the canonical 32-byte round identifier bound during validation.
+    pub fn vote_round_id(&self) -> &[u8; 32] {
+        &self.vote_round_id
+    }
+}
+
 /// Voting hotkey material used as the delegation output target and vote signer.
 #[derive(PartialEq, Eq)]
 pub struct VotingHotkey {
@@ -157,6 +255,17 @@ impl VotingHotkey {
     /// Returns the network used to derive this hotkey's Orchard address.
     pub fn network(&self) -> Network {
         self.network
+    }
+
+    /// Returns the validated public delegation target without exposing the
+    /// voting hotkey secret.
+    pub fn delegation_target(&self) -> VotingHotkeyTarget {
+        debug_assert_eq!(
+            self.address_index,
+            crate::hotkey::VOTING_HOTKEY_ADDRESS_INDEX
+        );
+        VotingHotkeyTarget::from_raw_orchard_address(&self.raw_orchard_address, self.network)
+            .expect("VotingHotkey stores a validated Orchard address")
     }
 }
 
@@ -849,6 +958,29 @@ pub fn validate_round_params(params: &VotingRoundParams) -> Result<(), VotingErr
     Ok(())
 }
 
+/// Validates a vote chain identifier used by public delegation handoffs.
+///
+/// Valid identifiers contain 1 to 128 printable non-whitespace ASCII bytes.
+pub(crate) fn validate_vote_chain_id(vote_chain_id: &str) -> Result<(), VotingError> {
+    if vote_chain_id.is_empty() || vote_chain_id.len() > 128 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "vote_chain_id must be 1 to 128 bytes, got {}",
+                vote_chain_id.len()
+            ),
+        });
+    }
+
+    if !vote_chain_id.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Err(VotingError::InvalidInput {
+            message: "vote_chain_id must contain only printable ASCII without whitespace"
+                .to_string(),
+        });
+    }
+
+    Ok(())
+}
+
 /// Validate a hex-encoded voting round id.
 ///
 /// A valid round id is exactly 32 bytes encoded as lowercase hex, and those
@@ -1123,6 +1255,74 @@ mod tests {
     #[test]
     fn validate_vote_round_id_rejects_uppercase_hex() {
         assert!(validate_vote_round_id_hex(&"AA".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn voting_hotkey_exposes_validated_secret_free_target() {
+        let hotkey = VotingHotkey::from_stored_secret(&[0xAB; 64], Network::Regtest).unwrap();
+
+        let target = hotkey.delegation_target();
+        let reconstructed = VotingHotkeyTarget::from_raw_orchard_address(
+            hotkey.raw_orchard_address(),
+            Network::Regtest,
+        )
+        .unwrap();
+
+        assert_eq!(target, reconstructed);
+        assert_eq!(target.raw_orchard_address(), hotkey.raw_orchard_address());
+        assert_eq!(target.address_index(), 0);
+        assert_eq!(target.network(), Network::Regtest);
+    }
+
+    #[test]
+    fn voting_hotkey_target_rejects_wrong_length_and_invalid_address() {
+        let short =
+            VotingHotkeyTarget::from_raw_orchard_address(&[0u8; 42], Network::Testnet).unwrap_err();
+        assert!(short
+            .to_string()
+            .contains("raw_orchard_address must be exactly 43 bytes"));
+
+        let long =
+            VotingHotkeyTarget::from_raw_orchard_address(&[0u8; 44], Network::Testnet).unwrap_err();
+        assert!(long
+            .to_string()
+            .contains("raw_orchard_address must be exactly 43 bytes"));
+
+        let invalid = VotingHotkeyTarget::from_raw_orchard_address(&[0xFF; 43], Network::Testnet)
+            .unwrap_err();
+        assert!(invalid
+            .to_string()
+            .contains("raw_orchard_address is not a valid Orchard address"));
+    }
+
+    #[test]
+    fn voting_hotkey_target_binds_explicit_network_context() {
+        let hotkey = VotingHotkey::from_stored_secret(&[0xAB; 64], Network::Testnet).unwrap();
+        let testnet = hotkey.delegation_target();
+        let mainnet = VotingHotkeyTarget::from_raw_orchard_address(
+            hotkey.raw_orchard_address(),
+            Network::Mainnet,
+        )
+        .unwrap();
+
+        assert_eq!(testnet.raw_orchard_address(), mainnet.raw_orchard_address());
+        assert_ne!(testnet, mainnet);
+    }
+
+    #[test]
+    fn vote_chain_id_requires_printable_non_whitespace_ascii() {
+        assert!(validate_vote_chain_id("!").is_ok());
+        assert!(validate_vote_chain_id(&"~".repeat(128)).is_ok());
+
+        for invalid in [
+            String::new(),
+            "x".repeat(129),
+            "chain id".to_string(),
+            "chain\n".to_string(),
+            "chaîn".to_string(),
+        ] {
+            assert!(validate_vote_chain_id(&invalid).is_err(), "{invalid:?}");
+        }
     }
 }
 

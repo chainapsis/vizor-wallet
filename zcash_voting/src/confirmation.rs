@@ -4,6 +4,7 @@
 //! clients. This module owns the common step that turns the confirmed tx events
 //! back into voting DB state.
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rusqlite::{named_params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
@@ -235,7 +236,7 @@ fn parse_delegation_confirmation_for_round(
     require_tx_hash(tx_hash)?;
     let event = required_event_for_round(events, DELEGATE_VOTE_EVENT, round_id)?;
     let raw_leaf_index = required_attribute(event, DELEGATE_VOTE_EVENT, LEAF_INDEX_ATTRIBUTE)?;
-    let van_leaf_position = parse_u32(raw_leaf_index.trim(), "delegate_vote leaf_index")?;
+    let van_leaf_position = parse_delegation_leaf_index(raw_leaf_index)?;
     Ok(DelegationConfirmation {
         tx_hash: tx_hash.to_string(),
         van_leaf_position,
@@ -286,7 +287,7 @@ fn required_event_for_round<'a>(
 
     for event in events.iter().filter(|event| event.event_type == event_type) {
         match round_attribute(event) {
-            Some(event_round_id) if event_round_id == round_id => {
+            Some(event_round_id) if event_round_id_matches(event_round_id, round_id) => {
                 if matching_event.is_some() {
                     return Err(VotingError::InvalidInput {
                         message: format!(
@@ -343,6 +344,29 @@ fn event_attribute<'a>(event: &'a TxEvent, key: &str) -> Option<&'a str> {
         .iter()
         .find(|attribute| attribute.key == key)
         .map(|attribute| attribute.value.as_str())
+}
+
+fn event_round_id_matches(event_round_id: &str, expected_round_id: &str) -> bool {
+    // Recover exact plain text that a compatibility client mistook for Base64.
+    event_round_id == expected_round_id
+        || BASE64_STANDARD.encode(event_round_id.as_bytes()) == expected_round_id
+}
+
+fn parse_delegation_leaf_index(raw: &str) -> Result<u32, VotingError> {
+    let raw = raw.trim();
+    if let Ok(position) = raw.parse::<u32>() {
+        return Ok(position);
+    }
+
+    // Some chain clients opportunistically Base64-decode CometBFT event text.
+    // Re-encoding restores a numeric position that was mistaken for Base64.
+    if !raw.is_ascii() {
+        if let Ok(position) = BASE64_STANDARD.encode(raw.as_bytes()).parse::<u32>() {
+            return Ok(position);
+        }
+    }
+
+    parse_u32(raw, "delegate_vote leaf_index")
 }
 
 fn require_tx_hash(tx_hash: &str) -> Result<(), VotingError> {
@@ -626,6 +650,30 @@ mod tests {
                 van_leaf_position: 42,
             }
         );
+    }
+
+    #[test]
+    fn parses_status_values_changed_by_legacy_base64_heuristic() {
+        let round_id = "0400".repeat(16);
+        let decoded_round_id =
+            String::from_utf8(BASE64_STANDARD.decode(&round_id).unwrap()).unwrap();
+        let decoded_leaf_index =
+            String::from_utf8(BASE64_STANDARD.decode("1400").unwrap()).unwrap();
+
+        let parsed = parse_delegation_confirmation_for_round(
+            "tx-1",
+            &round_id,
+            &[event_with_attrs(
+                DELEGATE_VOTE_EVENT,
+                &[
+                    ("vote_round_id", &decoded_round_id),
+                    (LEAF_INDEX_ATTRIBUTE, &decoded_leaf_index),
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(parsed.van_leaf_position, 1400);
     }
 
     #[test]

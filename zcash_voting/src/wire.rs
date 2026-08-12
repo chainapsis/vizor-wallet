@@ -133,6 +133,28 @@ pub struct VoteConfirmation {
     pub vc_tree_position: u64,
 }
 
+/// Version 1 public handoff for a round-bound voting hotkey target.
+///
+/// Use [`VotingHotkeyTargetV1::from_json`], [`VotingHotkeyTargetV1::to_json`],
+/// and [`VotingHotkeyTargetV1::validate_for`] rather than deserializing this
+/// DTO without validation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VotingHotkeyTargetV1 {
+    /// Wire-format version. Version 1 requires the JSON number `1`.
+    pub format_version: u32,
+    /// Configured vote chain identifier.
+    pub vote_chain_id: String,
+    /// Exact lowercase network name.
+    pub network: String,
+    /// Canonical 32-byte Pallas base-field encoding as lowercase hex.
+    pub vote_round_id: String,
+    /// Version 1 Orchard address index. This must be zero.
+    pub address_index: u32,
+    /// Canonical padded standard Base64 encoding of 43 raw Orchard address bytes.
+    pub raw_orchard_address: String,
+}
+
 /// Parameters for a voting round, sourced from vote chain.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VotingRoundParams {

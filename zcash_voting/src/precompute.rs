@@ -101,6 +101,9 @@ pub fn verify_witness(witness: &WitnessData) -> Result<(), VotingError> {
 }
 
 /// Syncs the vote commitment tree for one round and returns the latest height.
+///
+/// For each confirmed bundle that has not yet submitted a vote, this also
+/// verifies that the confirmed event position contains its delegation VAN.
 pub fn sync_vote_tree(db: &VotingDb, round_id: &str, node_url: &str) -> Result<u32, VotingError> {
     vote_tree_sync_for(db)?.sync(db, round_id, node_url)
 }
@@ -120,8 +123,9 @@ pub fn reset_vote_tree(db: &VotingDb, round_id: &str) -> Result<(), VotingError>
     vote_tree_sync_for(db)?.reset(round_id)
 }
 
-/// Drops cached vote tree state and, for round-scoped resets, clears unsigned
-/// delegation setup fields so interrupted Keystone requests can be rebuilt safely.
+/// Drops cached vote tree state and, for round-scoped resets, clears locally
+/// prepared unsigned delegation setup fields so interrupted Keystone requests
+/// can be rebuilt safely. Imported delegation capabilities are preserved.
 ///
 /// Round-scoped cleanup is mainly for the restart mid-signing case: if the app
 /// dies after `build_governance_pczt` persisted `pczt_sighash` (and related
@@ -342,6 +346,7 @@ mod pir_tests {
 #[cfg(test)]
 mod tree_sync_tests {
     use super::*;
+    use ff::PrimeField;
     use pasta_curves::Fp;
     use std::{
         io::{Read, Write},
@@ -361,6 +366,13 @@ mod tree_sync_tests {
             .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE bundles SET gov_comm = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = 0",
+                rusqlite::params![Fp::from(1).to_repr().as_slice(), ROUND_ID, WALLET_ID],
+            )
+            .unwrap();
         let server = start_tree_server(1, vec![1], 2);
 
         let height = sync_vote_tree(&db, ROUND_ID, &server).unwrap();
@@ -523,6 +535,8 @@ mod tree_sync_tests {
 mod session_reset_tests {
     use super::*;
     use crate::storage::queries;
+    use ff::PrimeField;
+    use pasta_curves::Fp;
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
     const OTHER_ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000002";
@@ -622,6 +636,82 @@ mod session_reset_tests {
 
         assert!(has_unsigned_setup_fields(&db, ROUND_ID, 0));
         assert!(!has_unsigned_setup_fields(&db, ROUND_ID, 1));
+    }
+
+    #[test]
+    fn confirmed_local_delegation_survives_recovery_and_session_cleanup() {
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id(WALLET_ID);
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, WALLET_ID, 0, &[0]).unwrap();
+        queries::insert_bundle(&conn, ROUND_ID, WALLET_ID, 1, &[1]).unwrap();
+        drop(conn);
+
+        for bundle_index in 0..=1 {
+            seed_unsigned_setup_fields(&db, ROUND_ID, bundle_index);
+            let rand = Fp::from(0x10 + u64::from(bundle_index)).to_repr();
+            let commitment = Fp::from(0x20 + u64::from(bundle_index)).to_repr();
+            db.conn()
+                .execute(
+                    "UPDATE bundles
+                     SET van_comm_rand = :rand,
+                         gov_comm = :commitment,
+                         total_note_value = :value,
+                         address_index = 0
+                     WHERE round_id = :round_id
+                       AND wallet_id = :wallet_id
+                       AND bundle_index = :bundle_index",
+                    rusqlite::named_params! {
+                        ":round_id": ROUND_ID,
+                        ":wallet_id": WALLET_ID,
+                        ":bundle_index": bundle_index,
+                        ":rand": &rand[..],
+                        ":commitment": &commitment[..],
+                        ":value": crate::governance::BALLOT_DIVISOR as i64,
+                    },
+                )
+                .unwrap();
+            db.store_van_position(ROUND_ID, bundle_index, 40 + bundle_index)
+                .unwrap();
+        }
+
+        // Bundle 0 is the canonical confirmed state. Bundle 1 exercises the
+        // position guard when a standalone confirmation write preceded its hash.
+        db.store_delegation_tx_hash(ROUND_ID, 0, "confirmed-delegation")
+            .unwrap();
+        db.clear_recovery_state(ROUND_ID).unwrap();
+        assert_eq!(
+            db.get_delegation_tx_hash(ROUND_ID, 0).unwrap().as_deref(),
+            Some("confirmed-delegation")
+        );
+
+        reset_voting_session_state(&db, ROUND_ID).unwrap();
+
+        for bundle_index in 0..=1 {
+            assert!(has_unsigned_setup_fields(&db, ROUND_ID, bundle_index));
+            let conn = db.conn();
+            let zkp2 = queries::load_zkp2_inputs(&conn, ROUND_ID, WALLET_ID, bundle_index).unwrap();
+            assert_eq!(
+                zkp2.gov_comm_rand,
+                Fp::from(0x10 + u64::from(bundle_index)).to_repr().to_vec()
+            );
+            assert_eq!(zkp2.total_note_value, crate::governance::BALLOT_DIVISOR);
+            assert_eq!(zkp2.address_index, 0);
+            let gov_comm: Vec<u8> = conn
+                .query_row(
+                    "SELECT gov_comm FROM bundles
+                     WHERE round_id = ?1 AND wallet_id = ?2 AND bundle_index = ?3",
+                    rusqlite::params![ROUND_ID, WALLET_ID, bundle_index],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                gov_comm,
+                Fp::from(0x20 + u64::from(bundle_index)).to_repr().to_vec()
+            );
+        }
     }
 
     #[test]

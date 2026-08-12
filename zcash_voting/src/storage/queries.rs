@@ -1,6 +1,6 @@
 use ff::PrimeField;
 use pasta_curves::pallas;
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{named_params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use voting_circuits::delegation::ImtProofData;
 
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
@@ -310,10 +310,9 @@ pub fn get_round_state(
         })?;
     let network = network_from_storage(&network)?;
 
-    // proof_generated is true only when ALL bundles have a successful proof
-    // AND all bundles have a VAN leaf position (delegation TX landed on chain).
-    // This prevents the UI from treating delegation as complete before the
-    // on-chain submission finishes.
+    // proof_generated is true only when ALL bundles are locally proven or
+    // capability-imported AND all bundles have a VAN leaf position. This keeps
+    // the legacy UI field false until every delegation transaction lands.
     let bundle_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM bundles WHERE round_id = :round_id AND wallet_id = :wallet_id",
@@ -327,14 +326,33 @@ pub fn get_round_state(
     let proof_generated = if bundle_count == 0 {
         false
     } else {
-        let proofs_count: i64 = conn
+        let proven_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM proofs WHERE round_id = :round_id AND wallet_id = :wallet_id AND success = 1",
+                "SELECT COUNT(*)
+                 FROM bundles b
+                 WHERE b.round_id = :round_id AND b.wallet_id = :wallet_id
+                   AND (
+                       EXISTS (
+                           SELECT 1 FROM proofs p
+                           WHERE p.round_id = b.round_id
+                             AND p.wallet_id = b.wallet_id
+                             AND p.bundle_index = b.bundle_index
+                             AND p.success = 1
+                       )
+                       OR (
+                           b.note_positions_blob IS NULL
+                           AND b.van_comm_rand IS NOT NULL
+                           AND b.gov_comm IS NOT NULL
+                           AND b.total_note_value IS NOT NULL
+                           AND b.address_index = 0
+                           AND b.delegation_tx_hash IS NOT NULL
+                       )
+                   )",
                 named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
                 |row| row.get(0),
             )
             .map_err(|e| VotingError::Internal {
-                message: format!("failed to count proofs: {}", e),
+                message: format!("failed to count completed delegations: {}", e),
             })?;
 
         let van_positions_count: i64 = conn
@@ -347,7 +365,7 @@ pub fn get_round_state(
                 message: format!("failed to count VAN positions: {}", e),
             })?;
 
-        proofs_count >= bundle_count && van_positions_count >= bundle_count
+        proven_count >= bundle_count && van_positions_count >= bundle_count
     };
 
     Ok(RoundState {
@@ -502,6 +520,69 @@ pub fn get_bundle_count(
     .map_err(|e| VotingError::Internal {
         message: format!("failed to get bundle count: {}", e),
     })
+}
+
+/// Imported bundles omit local note positions; local bundle insertion always stores them.
+fn round_has_imported_capability_bundles(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<bool, VotingError> {
+    conn.query_row(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM bundles
+             WHERE round_id = :round_id
+               AND wallet_id = :wallet_id
+               AND note_positions_blob IS NULL
+         )",
+        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to check for imported capability bundles: {e}"),
+    })
+}
+
+/// Require every delegation in an imported capability round to be confirmed
+/// before fresh vote state is created.
+///
+/// Locally prepared rounds retain their existing per-bundle voting behavior.
+pub(crate) fn require_capability_delegations_confirmed(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<(), VotingError> {
+    if !round_has_imported_capability_bundles(conn, round_id, wallet_id)? {
+        return Ok(());
+    }
+
+    let pending_bundle = conn
+        .query_row(
+            "SELECT pending.bundle_index
+             FROM bundles pending
+             WHERE pending.round_id = :round_id
+               AND pending.wallet_id = :wallet_id
+               AND pending.van_leaf_position IS NULL
+             ORDER BY pending.bundle_index
+             LIMIT 1",
+            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to check imported delegation confirmations: {e}"),
+        })?;
+
+    if let Some(bundle_index) = pending_bundle {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "imported capability round {round_id} cannot create votes until every delegation is confirmed; bundle {bundle_index} is still unconfirmed"
+            ),
+        });
+    }
+
+    Ok(())
 }
 
 /// Load the note positions for a specific bundle.
@@ -1258,6 +1339,10 @@ pub fn load_zkp2_inputs(
 // --- VAN leaf position ---
 
 /// Store the VAN leaf position after delegation TX is confirmed on chain.
+///
+/// Cast-vote confirmations should use `confirmation::confirm_vote_submission`
+/// so the vote hash, successor VAN position, and VC position are recorded
+/// atomically.
 pub fn store_van_position(
     conn: &Connection,
     round_id: &str,
@@ -1308,6 +1393,92 @@ pub fn load_van_position(
     .ok_or_else(|| VotingError::InvalidInput {
         message: format!("van_leaf_position not yet set for round={}, bundle={}", round_id, bundle_index),
     })
+}
+
+/// One confirmed VAN position that must be retained during vote-tree sync.
+pub(crate) struct VanTreeEntry {
+    pub bundle_index: u32,
+    pub position: u32,
+    /// Present only while the delegation VAN is still the bundle's current VAN.
+    pub expected_delegation_van: Option<pallas::Base>,
+}
+
+/// Loads confirmed VAN positions and expected delegation VANs that remain
+/// current.
+///
+/// A submitted vote replaces the delegation VAN with a successor commitment,
+/// so only bundles without a submitted vote can be checked against `gov_comm`.
+pub(crate) fn load_van_tree_entries(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<Vec<VanTreeEntry>, VotingError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT b.bundle_index, b.van_leaf_position, b.gov_comm,
+                    EXISTS (
+                        SELECT 1 FROM votes v
+                        WHERE v.round_id = b.round_id
+                          AND v.wallet_id = b.wallet_id
+                          AND v.bundle_index = b.bundle_index
+                          AND v.tx_hash IS NOT NULL
+                    )
+             FROM bundles b
+             WHERE b.round_id = :round_id
+               AND b.wallet_id = :wallet_id
+               AND b.van_leaf_position IS NOT NULL
+             ORDER BY b.bundle_index",
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to prepare VAN tree entries query: {e}"),
+        })?;
+    let rows = stmt
+        .query_map(
+            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<Vec<u8>>>(2)?,
+                    row.get::<_, i64>(3)? != 0,
+                ))
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to query VAN tree entries: {e}"),
+        })?;
+
+    rows.map(|row| {
+        let (bundle_index, position, commitment, has_submitted_vote) =
+            row.map_err(|e| VotingError::Internal {
+                message: format!("failed to read VAN tree entry: {e}"),
+            })?;
+        let bundle_index = u32::try_from(bundle_index).map_err(|_| VotingError::Internal {
+            message: "stored VAN bundle index does not fit in u32".to_string(),
+        })?;
+        let position = u32::try_from(position).map_err(|_| VotingError::Internal {
+            message: format!("stored VAN position for bundle {bundle_index} does not fit in u32"),
+        })?;
+        let expected_delegation_van = if has_submitted_vote {
+            None
+        } else {
+            let commitment = commitment.ok_or_else(|| VotingError::Internal {
+                message: format!(
+                    "confirmed delegation bundle {bundle_index} is missing its VAN commitment"
+                ),
+            })?;
+            Some(field_from_bytes(
+                &commitment,
+                &format!("bundle {bundle_index} VAN commitment"),
+            )?)
+        };
+        Ok(VanTreeEntry {
+            bundle_index,
+            position,
+            expected_delegation_van,
+        })
+    })
+    .collect()
 }
 
 // --- Delegation proof result fields ---
@@ -2195,17 +2366,31 @@ pub fn get_votes(
     Ok(votes)
 }
 
-/// Delete all bundles (and their cascaded witnesses/proofs) with index >= `from_index`.
+/// Delete all local bundles (and their cascaded witnesses/proofs) with index >= `from_index`.
 /// Used when the user skips remaining Keystone bundles — we remove the unsigned
 /// bundle rows so that `proof_generated` (which counts ALL DB bundles) reflects
-/// only the signed+proven bundles.
+/// only the signed+proven bundles. Imported capability batches are atomic and
+/// must instead be replaced with `clear_round` followed by a complete re-import.
 pub fn delete_bundles_from(
     conn: &Connection,
     round_id: &str,
     wallet_id: &str,
     from_index: u32,
 ) -> Result<u64, VotingError> {
-    let rows = conn
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(|e| {
+        VotingError::Internal {
+            message: format!("failed to begin bundle deletion: {e}"),
+        }
+    })?;
+    if round_has_imported_capability_bundles(&tx, round_id, wallet_id)? {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "imported capability round {round_id} cannot delete bundles independently; clear the round before importing a complete replacement capability"
+            ),
+        });
+    }
+
+    let rows = tx
         .execute(
             "DELETE FROM bundles WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index >= :from_index",
             named_params! {
@@ -2217,6 +2402,9 @@ pub fn delete_bundles_from(
         .map_err(|e| VotingError::Internal {
             message: format!("failed to delete bundles from index {}: {}", from_index, e),
         })?;
+    tx.commit().map_err(|e| VotingError::Internal {
+        message: format!("failed to commit bundle deletion: {e}"),
+    })?;
     Ok(rows as u64)
 }
 
@@ -2585,8 +2773,10 @@ pub fn get_keystone_signatures(
 
 // --- Session reset cleanup ---
 
-/// Clears unsigned delegation setup fields for one round while preserving
-/// submitted bundles and bundles with persisted Keystone signatures.
+/// Clears locally prepared unsigned delegation setup fields for one round.
+///
+/// Imported capability bundles have no local note selection, so their NULL
+/// `note_positions_blob` keeps their voting fields outside this cleanup.
 pub fn clear_unsigned_delegation_setup_fields(
     conn: &Connection,
     round_id: &str,
@@ -2613,7 +2803,9 @@ pub fn clear_unsigned_delegation_setup_fields(
              tx1_effects = NULL
          WHERE round_id = :round_id
            AND wallet_id = :wallet_id
+           AND note_positions_blob IS NOT NULL
            AND delegation_tx_hash IS NULL
+           AND van_leaf_position IS NULL
            AND bundle_index NOT IN (
                SELECT bundle_index
                FROM keystone_signatures
@@ -2629,6 +2821,8 @@ pub fn clear_unsigned_delegation_setup_fields(
 
 // --- Recovery state cleanup ---
 
+/// Clears retryable recovery state without erasing recorded confirmations or
+/// imported delegation capabilities.
 pub fn clear_recovery_state(
     conn: &Connection,
     round_id: &str,
@@ -2649,14 +2843,21 @@ pub fn clear_recovery_state(
         message: format!("failed to clear keystone signatures: {}", e),
     })?;
     conn.execute(
-        "UPDATE bundles SET delegation_tx_hash = NULL WHERE round_id = :round_id AND wallet_id = :wallet_id",
+        "UPDATE bundles SET delegation_tx_hash = NULL
+         WHERE round_id = :round_id
+           AND wallet_id = :wallet_id
+           AND note_positions_blob IS NOT NULL
+           AND van_leaf_position IS NULL",
         named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
     )
     .map_err(|e| VotingError::Internal {
         message: format!("failed to clear delegation tx hashes: {}", e),
     })?;
     conn.execute(
-        "UPDATE votes SET tx_hash = NULL, vc_tree_position = NULL, commitment_bundle_json = NULL WHERE round_id = :round_id AND wallet_id = :wallet_id",
+        "UPDATE votes SET tx_hash = NULL, commitment_bundle_json = NULL
+         WHERE round_id = :round_id
+           AND wallet_id = :wallet_id
+           AND vc_tree_position IS NULL",
         named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
     )
     .map_err(|e| VotingError::Internal {

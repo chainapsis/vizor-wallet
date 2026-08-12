@@ -19,7 +19,15 @@ pub use crate::delegate::{
     KeystoneSigningRequest, PreparedDelegationReport, PreparedSigner, SignedDelegationBundle,
 };
 pub use crate::delegate::{
-    prepare_delegation_bundle, PrepareDelegationBundleParams, PreparedDelegationBundle,
+    prepare_delegation_bundle, prepare_delegation_bundle_for_target,
+    PrepareDelegationBundleForTargetParams, PrepareDelegationBundleParams,
+    PreparedDelegationBundle,
+};
+pub use crate::delegation_capability::{
+    export_delegation_capability, import_delegation_capability, DelegationCapabilityBundleV1,
+    DelegationCapabilityDigest, DelegationCapabilityV1, ExportedDelegationCapability,
+    ImportDelegationCapabilityParams, MAX_DELEGATION_CAPABILITY_BUNDLES,
+    MAX_DELEGATION_CAPABILITY_JSON_BYTES,
 };
 pub use crate::error::VotingError;
 pub use crate::governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
@@ -66,8 +74,9 @@ pub use crate::share::{
 pub use crate::types::{
     validate_proposal_id, validate_vote_decision, validate_vote_options, DelegationProgressBridge,
     DelegationProgressReporter, Network, NoopProgressReporter, NoteInfo, NoteRef, ProgressReporter,
-    SelectedNotes, SharePayload, VoteCommitStageBridge, VoteCommitStageReporter, VotingHotkey,
-    WitnessData, MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
+    RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VoteCommitStageBridge,
+    VoteCommitStageReporter, VotingHotkey, VotingHotkeyTarget, WitnessData, MAX_PROPOSAL_ID,
+    MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
 };
 pub use crate::vote::{
     commit as commit_vote, commit_batch, parse_recovery,
@@ -78,7 +87,9 @@ pub use crate::vote::{
     VoteCommitStage, VoteRecoveryBundle, VoteSigner, VoteSubmission,
 };
 pub use crate::warm_proving_caches;
-pub use crate::wire::{DelegationSubmissionWire, VoteCommitmentWire, VoteShareWire};
+pub use crate::wire::{
+    DelegationSubmissionWire, VoteCommitmentWire, VoteShareWire, VotingHotkeyTargetV1,
+};
 
 pub use crate::precompute::delegation_pir;
 

@@ -6,7 +6,10 @@ use crate::shielded_protocol::VotingShieldedProtocol;
 use crate::storage::VotingDb;
 use crate::{
     delegate::{load_account_keys, DelegationKeys},
-    types::{Network, NoteInfo, NoteRef, SelectedNotes, VotingError, VotingHotkey},
+    types::{
+        Network, NoteInfo, NoteRef, RoundBoundVotingHotkeyTarget, SelectedNotes, VotingError,
+        VotingHotkey,
+    },
 };
 
 use zcash_client_backend::{
@@ -30,6 +33,17 @@ pub struct GatherDelegationWalletParams<'a, C, P, CL, R> {
     pub wallet_db: &'a WalletDb<C, P, CL, R>,
     pub account_uuid: &'a str,
     pub voting_hotkey: &'a VotingHotkey,
+    pub snapshot_height: u64,
+    pub scanned_height: u64,
+    pub anchor_tree_state_bytes: Vec<u8>,
+    pub resolved_round_name: String,
+}
+
+/// Parameters for gathering delegation inputs for a public round-bound target.
+pub(crate) struct GatherDelegationWalletForTargetParams<'a, C, P, CL, R> {
+    pub wallet_db: &'a WalletDb<C, P, CL, R>,
+    pub account_uuid: &'a str,
+    pub voting_target: &'a RoundBoundVotingHotkeyTarget,
     pub snapshot_height: u64,
     pub scanned_height: u64,
     pub anchor_tree_state_bytes: Vec<u8>,
@@ -156,6 +170,106 @@ where
     C: Borrow<rusqlite::Connection>,
     P: Parameters,
 {
+    gather_delegation_wallet_inputs_impl(GatherDelegationWalletCommonParams {
+        wallet_db: params.wallet_db,
+        account_uuid: params.account_uuid,
+        target: GatherDelegationTarget::Hotkey(params.voting_hotkey),
+        snapshot_height: params.snapshot_height,
+        scanned_height: params.scanned_height,
+        anchor_tree_state_bytes: params.anchor_tree_state_bytes,
+        resolved_round_name: params.resolved_round_name,
+    })
+}
+
+/// Reads snapshot-eligible notes and delegation keys for a public target.
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] for malformed account IDs, missing
+/// account/key material, a target for the wrong network, empty note selections,
+/// unsynced wallets, or unsupported snapshot heights. Wallet DB read failures
+/// are returned as [`VotingError::Internal`].
+pub(crate) fn gather_delegation_wallet_inputs_for_target<C, P, CL, R>(
+    params: GatherDelegationWalletForTargetParams<'_, C, P, CL, R>,
+) -> Result<DelegationWalletInputs, VotingError>
+where
+    C: Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
+    gather_delegation_wallet_inputs_impl(GatherDelegationWalletCommonParams {
+        wallet_db: params.wallet_db,
+        account_uuid: params.account_uuid,
+        target: GatherDelegationTarget::RoundBound(params.voting_target),
+        snapshot_height: params.snapshot_height,
+        scanned_height: params.scanned_height,
+        anchor_tree_state_bytes: params.anchor_tree_state_bytes,
+        resolved_round_name: params.resolved_round_name,
+    })
+}
+
+enum GatherDelegationTarget<'a> {
+    Hotkey(&'a VotingHotkey),
+    RoundBound(&'a RoundBoundVotingHotkeyTarget),
+}
+
+impl GatherDelegationTarget<'_> {
+    fn network(&self) -> Network {
+        match self {
+            Self::Hotkey(hotkey) => hotkey.network(),
+            Self::RoundBound(target) => target.target().network(),
+        }
+    }
+
+    fn network_mismatch_message(&self) -> &'static str {
+        match self {
+            Self::Hotkey(_) => "voting hotkey network does not match wallet DB network",
+            Self::RoundBound(_) => "voting target network does not match wallet DB network",
+        }
+    }
+
+    fn into_delegation_keys(
+        self,
+        fvk_bytes: Vec<u8>,
+        seed_fingerprint: [u8; 32],
+        account_index: u32,
+        round_name: String,
+    ) -> Result<DelegationKeys, VotingError> {
+        match self {
+            Self::Hotkey(hotkey) => DelegationKeys::with_voting_hotkey(
+                fvk_bytes,
+                hotkey,
+                seed_fingerprint,
+                account_index,
+                round_name,
+            ),
+            Self::RoundBound(target) => DelegationKeys::with_round_bound_voting_target(
+                fvk_bytes,
+                target,
+                seed_fingerprint,
+                account_index,
+                round_name,
+            ),
+        }
+    }
+}
+
+struct GatherDelegationWalletCommonParams<'a, C, P, CL, R> {
+    wallet_db: &'a WalletDb<C, P, CL, R>,
+    account_uuid: &'a str,
+    target: GatherDelegationTarget<'a>,
+    snapshot_height: u64,
+    scanned_height: u64,
+    anchor_tree_state_bytes: Vec<u8>,
+    resolved_round_name: String,
+}
+
+fn gather_delegation_wallet_inputs_impl<C, P, CL, R>(
+    params: GatherDelegationWalletCommonParams<'_, C, P, CL, R>,
+) -> Result<DelegationWalletInputs, VotingError>
+where
+    C: Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
     if params.scanned_height < params.snapshot_height {
         return Err(VotingError::InvalidInput {
             message: format!(
@@ -164,9 +278,9 @@ where
             ),
         });
     }
-    if params.wallet_db.params().network_type() != params.voting_hotkey.network().network_type() {
+    if params.wallet_db.params().network_type() != params.target.network().network_type() {
         return Err(VotingError::InvalidInput {
-            message: "voting hotkey network does not match wallet DB network".to_string(),
+            message: params.target.network_mismatch_message().to_string(),
         });
     }
 
@@ -176,9 +290,8 @@ where
         params.snapshot_height,
     )?;
     let account = load_account_keys(params.wallet_db, params.account_uuid)?;
-    let delegation_keys = DelegationKeys::with_voting_hotkey(
+    let delegation_keys = params.target.into_delegation_keys(
         account.orchard_fvk_bytes.to_vec(),
-        params.voting_hotkey,
         account.seed_fingerprint,
         account.account_index,
         params.resolved_round_name,
@@ -348,6 +461,7 @@ fn parse_account_uuid(account_uuid: &str) -> Result<AccountUuid, VotingError> {
 mod tests {
     use super::*;
 
+    use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use orchard::{
         note::{NoteVersion, RandomSeed, Rho},
         value::NoteValue,
@@ -613,6 +727,93 @@ mod tests {
         .to_string();
 
         assert!(err.contains("does not fit in u32"));
+    }
+
+    #[test]
+    fn public_target_gather_matches_local_hotkey_recipient() {
+        let network = crate::Network::Regtest;
+        let snapshot_height = u64::from(crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT);
+        let divisor = crate::governance::BALLOT_DIVISOR;
+        let mut conn = Connection::open_in_memory().unwrap();
+        let (account_uuid, orchard_fvk) = setup_test_account(&mut conn, network);
+        let account_ref = account_internal_id(&conn, &account_uuid);
+        insert_ironwood_note(&conn, account_ref, &orchard_fvk, 1, 8, divisor, 7);
+
+        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let account_uuid = account_uuid.expose_uuid().to_string();
+        let hotkey = VotingHotkey::from_stored_secret(&[0x77; 64], network).unwrap();
+        let round_params = crate::VotingRoundParams {
+            vote_round_id: "01".repeat(32),
+            snapshot_height,
+            ea_pk: vec![0xEA; 32],
+            nc_root: vec![0xAA; 32],
+            nullifier_imt_root: vec![0xBB; 32],
+        };
+        let voting_target = crate::wire::VotingHotkeyTargetV1 {
+            format_version: 1,
+            vote_chain_id: "vote-chain-1".to_string(),
+            network: "regtest".to_string(),
+            vote_round_id: round_params.vote_round_id.clone(),
+            address_index: 0,
+            raw_orchard_address: BASE64_STANDARD.encode(hotkey.raw_orchard_address()),
+        }
+        .validate_for("vote-chain-1", network, &round_params)
+        .unwrap();
+
+        let inputs =
+            gather_delegation_wallet_inputs_for_target(GatherDelegationWalletForTargetParams {
+                wallet_db: &db,
+                account_uuid: &account_uuid,
+                voting_target: &voting_target,
+                snapshot_height,
+                scanned_height: snapshot_height,
+                anchor_tree_state_bytes: vec![0xAA, 0xBB],
+                resolved_round_name: "Demo Round".to_string(),
+            })
+            .unwrap();
+
+        assert_eq!(inputs.round_note_infos.len(), 1);
+        assert_eq!(
+            inputs.delegation_keys.hotkey_raw_address,
+            *hotkey.raw_orchard_address()
+        );
+        assert_eq!(inputs.delegation_keys.address_index, 0);
+        assert_eq!(inputs.delegation_keys.network, network);
+        assert_eq!(
+            inputs.delegation_keys.hotkey_raw_address,
+            *voting_target.target().raw_orchard_address()
+        );
+    }
+
+    #[test]
+    fn public_target_gather_rejects_wallet_network_mismatch() {
+        let db = WalletDb::from_connection(
+            rusqlite::Connection::open_in_memory().unwrap(),
+            crate::Network::Regtest,
+            SystemClock,
+            rand::rngs::OsRng,
+        );
+        let hotkey = VotingHotkey::from_stored_secret(&[0x77; 64], Network::Mainnet).unwrap();
+        let target = RoundBoundVotingHotkeyTarget::from_validated_parts(
+            hotkey.delegation_target(),
+            "vote-chain-1".to_string(),
+            [1; 32],
+        );
+
+        let err =
+            gather_delegation_wallet_inputs_for_target(GatherDelegationWalletForTargetParams {
+                wallet_db: &db,
+                account_uuid: "550e8400-e29b-41d4-a716-446655440000",
+                voting_target: &target,
+                snapshot_height: 12,
+                scanned_height: 12,
+                anchor_tree_state_bytes: vec![],
+                resolved_round_name: "Demo Round".to_string(),
+            })
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("voting target network does not match wallet DB network"));
     }
 
     fn placeholder_tree_state(snapshot_height: u64) -> TreeState {
