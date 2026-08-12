@@ -123,7 +123,6 @@ pub struct ServiceEndpoint {
 /// PIR tree geometry selected by the dynamic voting config.
 ///
 /// Fixed-width fields keep this DTO stable for generated wallet bindings.
-/// [`PirLayout::DEPLOYED`] is the only live layout accepted by this release.
 /// [`PirLayout::UNKNOWN`] is reserved for summaries persisted before layout
 /// identity was recorded and is never accepted from dynamic config.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,13 +138,6 @@ impl PirLayout {
         pir_depth: 0,
         tier0_layers: 0,
         tier1_layers: 0,
-    };
-
-    /// Layout currently materialized by the production PIR snapshot tooling.
-    pub const DEPLOYED: Self = Self {
-        pir_depth: 19,
-        tier0_layers: 12,
-        tier1_layers: 7,
     };
 }
 
@@ -685,17 +677,6 @@ pub(crate) fn validate_and_convert_pir_layout(
         })?,
     };
     negotiated.validate_supported()?;
-    if layout != PirLayout::DEPLOYED {
-        return Err(format!(
-            "unsupported operational PIR layout {}/{}/{}; expected {}/{}/{}",
-            layout.pir_depth,
-            layout.tier0_layers,
-            layout.tier1_layers,
-            PirLayout::DEPLOYED.pir_depth,
-            PirLayout::DEPLOYED.tier0_layers,
-            PirLayout::DEPLOYED.tier1_layers,
-        ));
-    }
     Ok(negotiated)
 }
 
@@ -900,15 +881,22 @@ mod tests {
     }
 
     fn test_pir_layout() -> PirLayout {
-        PirLayout::DEPLOYED
+        PirLayout {
+            pir_depth: 19,
+            tier0_layers: 12,
+            tier1_layers: 7,
+        }
     }
 
-    fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {
+    fn dynamic_bytes_with_layout_and_round_signers(
+        layout: PirLayout,
+        round_signers: &[(&str, &SigningKey)],
+    ) -> Vec<u8> {
         let mut rounds = serde_json::Map::new();
         for (round_id, signing_key) in round_signers {
             let ea_pk = [7u8; 32];
             let sig = signing_key
-                .sign(&round_auth_v2_preimage(round_id, &ea_pk, test_pir_layout()))
+                .sign(&round_auth_v2_preimage(round_id, &ea_pk, layout))
                 .to_bytes();
             rounds.insert(
                 (*round_id).to_string(),
@@ -928,9 +916,9 @@ mod tests {
             "vote_servers": [{"url": "https://vote.example.com", "label": "vote"}],
             "pir_endpoints": [{"url": "https://pir.example.com", "label": "pir"}],
             "pir_layout": {
-                "pir_depth": 19,
-                "tier0_layers": 12,
-                "tier1_layers": 7
+                "pir_depth": layout.pir_depth,
+                "tier0_layers": layout.tier0_layers,
+                "tier1_layers": layout.tier1_layers
             },
             "supported_versions": {
                 "pir": ["v0"],
@@ -942,6 +930,10 @@ mod tests {
         })
         .to_string()
         .into_bytes()
+    }
+
+    fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {
+        dynamic_bytes_with_layout_and_round_signers(test_pir_layout(), round_signers)
     }
 
     fn dynamic_bytes(signing_key: &SigningKey) -> Vec<u8> {
@@ -1200,30 +1192,22 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_rejects_valid_but_unmaterialized_layouts() {
+    fn dynamic_resolution_accepts_layouts_supported_by_shared_predicate() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
         for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11), (11, 15)] {
-            let mut dynamic: serde_json::Value =
-                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
-            dynamic["pir_layout"] = serde_json::json!({
-                "pir_depth": tier0_layers + tier1_layers,
-                "tier0_layers": tier0_layers,
-                "tier1_layers": tier1_layers,
-            });
+            let layout = PirLayout {
+                pir_depth: tier0_layers + tier1_layers,
+                tier0_layers,
+                tier1_layers,
+            };
+            let dynamic =
+                dynamic_bytes_with_layout_and_round_signers(layout, &[(ROUND_ID, &signing_key)]);
 
-            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
-                .unwrap_err();
+            let resolved = resolve_test_dynamic(&signing_key, &dynamic).unwrap();
 
-            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
-            assert!(
-                err.to_string().contains(&format!(
-                    "unsupported operational PIR layout {}/{}/{}; expected 19/12/7",
-                    tier0_layers + tier1_layers,
-                    tier0_layers,
-                    tier1_layers,
-                )),
-                "{err}"
-            );
+            assert_eq!(resolved.pir_layout, layout);
+            assert_eq!(resolved.authenticated_rounds.len(), 1);
+            assert!(resolved.skipped_round_ids.is_empty());
         }
     }
 
@@ -1388,24 +1372,17 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_skips_rounds_signed_for_a_different_pir_layout() {
+    fn dynamic_resolution_skips_rounds_when_pir_layout_changed_after_signing() {
         let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
         let mut dynamic: serde_json::Value =
             serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
-        let ea_pk = [7u8; 32];
-        let signature = trusted_key
-            .sign(&round_auth_v2_preimage(
-                ROUND_ID,
-                &ea_pk,
-                PirLayout {
-                    pir_depth: 19,
-                    tier0_layers: 11,
-                    tier1_layers: 8,
-                },
-            ))
-            .to_bytes();
-        dynamic["rounds"][ROUND_ID]["signatures"][0]["sig"] =
-            serde_json::json!(BASE64.encode(signature));
+        // Entries were signed over layout 19/12/7. A config host swapping the
+        // advertised layout must invalidate every round signature.
+        dynamic["pir_layout"] = serde_json::json!({
+            "pir_depth": 19,
+            "tier0_layers": 11,
+            "tier1_layers": 8,
+        });
 
         let resolved =
             resolve_test_dynamic(&trusted_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();

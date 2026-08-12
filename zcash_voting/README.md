@@ -98,10 +98,16 @@ New clients that resolve config without `pir_layout`, or that connect to a PIR
 server that does not advertise matching `/root.pir_layout`, fail closed at
 connect time before any private query.
 
+This validation describes layouts the compiled client can consume. Snapshot
+tooling and fleet deployment determine which of those layouts is currently
+available. Wallets intentionally do not require equality with a compiled
+production default, so a consistently advertised service layout can change
+without requiring a wallet release.
+
 After resolution, wallets typically connect PIR through
 `pir::connect_pir_blocking` (or `pir::connect_pir`) with the resolved config's
 `pir_layout` and a caller-chosen endpoint URL. The helpers run the
-config/server/compiled-client layout handshake and fail closed before any
+config/server layout handshake and fail closed before any
 private query (`VotingError::InvalidInput` on layout mismatch); they do not
 re-check advertised-endpoint membership. Do not pass a compiled-client layout
 constant in place of `resolved.pir_layout`.
