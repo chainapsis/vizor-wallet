@@ -6,6 +6,17 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.0.0-rc.2
+
+### Fixed
+- Restored negotiated PIR layout support after `v3.0.0-rc.1` inadvertently
+  restricted wallets to the current production default. Dynamic config and
+  direct PIR connection again accept layouts supported by the shared client
+  capability predicate while requiring an exact config/server match before any
+  private query. Snapshot tooling and fleet deployment remain responsible for
+  advertising only layouts they can materialize, so compatible service layout
+  changes do not require a wallet release.
+
 ## v3.0.0-rc.1
 
 ### Added
