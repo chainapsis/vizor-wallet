@@ -33,7 +33,7 @@ http-body-util = { version = "0.1", optional = true }
 hyper = { version = "1", features = ["client", "http1", "http2"], optional = true }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"], optional = true }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"], optional = true }
-tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "time"], optional = true }
 base64 = "0.22"
 hex = "0.4"
 thiserror = "2"
