@@ -65,18 +65,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::types::validate_vote_round_id_hex;
+use crate::{
+    round_auth::{RoundAuthPayloadV2, ROUND_AUTH_VERSION_V2},
+    types::validate_vote_round_id_hex,
+};
 
 const STATIC_CONFIG_VERSION: u32 = 1;
 const DYNAMIC_CONFIG_VERSION: u32 = 1;
-const ROUND_AUTH_VERSION_V2: u32 = 2;
-// Domain-separation tag for round-auth v2 signatures. The signed preimage is
-// `ROUND_AUTH_DOMAIN_TAG_V2 || round_id (32 raw bytes) || ea_pk (32 bytes)
-//  || pir_depth (u32 LE) || tier0_layers (u32 LE) || tier1_layers (u32 LE)`,
-// binding each attestation to its round (no cross-round ea_pk replay) and to
-// the advertised PIR layout (no layout swap under attested rounds). Must
-// match the vote-sdk signer verbatim.
-const ROUND_AUTH_DOMAIN_TAG_V2: &[u8] = b"zcash-shielded-vote:round-auth:v2";
 const ALG_ED25519: &str = "ed25519";
 const CHECKSUM_QUERY_NAME: &str = "checksum";
 const SHA256_CHECKSUM_PREFIX: &str = "sha256:";
@@ -767,17 +762,13 @@ fn verify_round_entry(
     let Ok(round_id_bytes) = hex::decode(round_id) else {
         return false;
     };
-    if round_id_bytes.len() != ROUND_PARAM_BYTE_LEN {
+    let Ok(round_id_bytes) = <[u8; 32]>::try_from(round_id_bytes.as_slice()) else {
         return false;
-    }
-    let mut preimage =
-        Vec::with_capacity(ROUND_AUTH_DOMAIN_TAG_V2.len() + round_id_bytes.len() + 32 + 12);
-    preimage.extend_from_slice(ROUND_AUTH_DOMAIN_TAG_V2);
-    preimage.extend_from_slice(&round_id_bytes);
-    preimage.extend_from_slice(&entry.ea_pk);
-    preimage.extend_from_slice(&pir_layout.pir_depth.to_le_bytes());
-    preimage.extend_from_slice(&pir_layout.tier0_layers.to_le_bytes());
-    preimage.extend_from_slice(&pir_layout.tier1_layers.to_le_bytes());
+    };
+    let Ok(ea_pk) = <[u8; 32]>::try_from(entry.ea_pk.as_slice()) else {
+        return false;
+    };
+    let payload = RoundAuthPayloadV2::new(round_id_bytes, ea_pk, pir_layout).to_bytes();
 
     for signature in &entry.signatures {
         let Some(key) = trusted_keys
@@ -800,7 +791,7 @@ fn verify_round_entry(
             continue;
         };
         let sig = Signature::from_bytes(&sig_bytes);
-        if verifying_key.verify(&preimage, &sig).is_ok() {
+        if verifying_key.verify(&payload, &sig).is_ok() {
             return true;
         }
     }
@@ -920,13 +911,9 @@ mod tests {
     }
 
     fn round_auth_v2_preimage(round_id: &str, ea_pk: &[u8], layout: PirLayout) -> Vec<u8> {
-        let mut preimage = ROUND_AUTH_DOMAIN_TAG_V2.to_vec();
-        preimage.extend_from_slice(&hex::decode(round_id).unwrap());
-        preimage.extend_from_slice(ea_pk);
-        preimage.extend_from_slice(&layout.pir_depth.to_le_bytes());
-        preimage.extend_from_slice(&layout.tier0_layers.to_le_bytes());
-        preimage.extend_from_slice(&layout.tier1_layers.to_le_bytes());
-        preimage
+        let round_id = hex::decode(round_id).unwrap().try_into().unwrap();
+        let ea_pk = ea_pk.try_into().unwrap();
+        RoundAuthPayloadV2::new(round_id, ea_pk, layout).to_bytes()
     }
 
     fn test_pir_layout() -> PirLayout {

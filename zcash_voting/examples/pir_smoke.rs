@@ -24,6 +24,7 @@ use std::sync::Arc;
 use zcash_voting::config::{
     resolve_dynamic_voting_config, resolve_static_voting_config, PinnedConfigSource, PirLayout,
 };
+use zcash_voting::round_auth::RoundAuthPayloadV2;
 use zcash_voting::wire::ResolveVotingConfigOptions;
 use zcash_voting::{connect_pir, HyperTransport};
 
@@ -33,7 +34,6 @@ type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
 const PREPARE_SEED: [u8; 32] = [3u8; 32];
 const TRUSTED_KEY_ID: &str = "pir-smoke-k1";
 const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-const ROUND_AUTH_V2_DOMAIN_TAG: &[u8] = b"zcash-shielded-vote:round-auth:v2";
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -92,16 +92,17 @@ fn prepare(args: Vec<String>) -> Result<()> {
     let signing_key = SigningKey::from_bytes(&PREPARE_SEED);
     let pubkey = signing_key.verifying_key().to_bytes();
     let ea_pk = [7u8; 32];
-    // Round-auth v2 preimage: domain tag || round_id bytes || ea_pk
-    // || pir_depth (u32 LE) || tier0_layers (u32 LE) || tier1_layers (u32 LE).
-    // Layout values must match the pir_layout advertised below.
-    let mut preimage = ROUND_AUTH_V2_DOMAIN_TAG.to_vec();
-    preimage.extend_from_slice(&hex::decode(ROUND_ID).expect("round id hex"));
-    preimage.extend_from_slice(&ea_pk);
-    preimage.extend_from_slice(&19u32.to_le_bytes());
-    preimage.extend_from_slice(&12u32.to_le_bytes());
-    preimage.extend_from_slice(&7u32.to_le_bytes());
-    let sig = signing_key.sign(&preimage).to_bytes();
+    let pir_layout = PirLayout {
+        pir_depth: 19,
+        tier0_layers: 12,
+        tier1_layers: 7,
+    };
+    let round_id = hex::decode(ROUND_ID)
+        .expect("round id hex")
+        .try_into()
+        .expect("32-byte round id");
+    let payload = RoundAuthPayloadV2::new(round_id, ea_pk, pir_layout).to_bytes();
+    let sig = signing_key.sign(&payload).to_bytes();
 
     let static_json = serde_json::json!({
         "static_config_version": 1,
