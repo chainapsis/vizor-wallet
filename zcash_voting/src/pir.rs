@@ -2,10 +2,11 @@
 //!
 //! Wallets use this module to select an exact-height PIR snapshot endpoint
 //! before delegation PIR precomputation. [`connect_pir_blocking`] /
-//! [`connect_pir`] bind a caller-chosen URL to an explicit [`PirLayout`] for
-//! the config/server layout handshake. Neither path hardcodes depth or
-//! tier-split constants, and neither checks whether the URL appears in a
-//! resolved config's advertised endpoint list.
+//! [`connect_pir`] bind a caller-chosen URL to the explicit [`PirLayout`] from
+//! config for the config/server layout handshake. The current release accepts
+//! only [`PirLayout::DEPLOYED`], matching the production snapshot tooling, and
+//! does not check whether the URL appears in a resolved config's advertised
+//! endpoint list.
 
 use std::sync::Arc;
 
@@ -40,7 +41,8 @@ pub use pir_types::PirLayout as NegotiatedPirLayout;
 /// Converts a wallet-config [`PirLayout`] into the PIR client's negotiated layout.
 ///
 /// Rejects the legacy summary sentinel [`PirLayout::UNKNOWN`], inconsistent
-/// geometry, and layouts below the YPIR row or item-size minima.
+/// geometry, layouts below the YPIR row or item-size minima, and layouts other
+/// than [`PirLayout::DEPLOYED`].
 pub fn negotiated_pir_layout(layout: PirLayout) -> Result<NegotiatedPirLayout, VotingError> {
     if layout == PirLayout::UNKNOWN {
         return Err(VotingError::InvalidInput {
@@ -338,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn connect_rejects_config_layout_mismatch_before_query() {
+    fn connect_rejects_unmaterialized_config_layout_before_transport() {
         let layout = PirLayout {
             pir_depth: 18,
             tier0_layers: 11,
@@ -353,7 +355,12 @@ mod tests {
         ));
 
         assert!(matches!(err, VotingError::InvalidInput { .. }), "{err}");
-        assert!(err.to_string().contains("PIR layout mismatch"), "{err}");
+        assert!(
+            err.to_string()
+                .contains("unsupported operational PIR layout 18/11/7; expected 19/12/7"),
+            "{err}"
+        );
+        assert_eq!(transport.count_hits("/root"), 0);
         assert_eq!(transport.post_count(), 0);
     }
 

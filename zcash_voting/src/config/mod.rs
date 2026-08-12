@@ -139,6 +139,13 @@ impl PirLayout {
         tier0_layers: 0,
         tier1_layers: 0,
     };
+
+    /// Layout currently materialized by the production PIR snapshot tooling.
+    pub const DEPLOYED: Self = Self {
+        pir_depth: 19,
+        tier0_layers: 12,
+        tier1_layers: 7,
+    };
 }
 
 impl Default for PirLayout {
@@ -677,6 +684,17 @@ pub(crate) fn validate_and_convert_pir_layout(
         })?,
     };
     negotiated.validate_supported()?;
+    if layout != PirLayout::DEPLOYED {
+        return Err(format!(
+            "unsupported operational PIR layout {}/{}/{}; expected {}/{}/{}",
+            layout.pir_depth,
+            layout.tier0_layers,
+            layout.tier1_layers,
+            PirLayout::DEPLOYED.pir_depth,
+            PirLayout::DEPLOYED.tier0_layers,
+            PirLayout::DEPLOYED.tier1_layers,
+        ));
+    }
     Ok(negotiated)
 }
 
@@ -1185,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_accepts_layouts_supported_by_shared_predicate() {
+    fn dynamic_resolution_rejects_valid_but_unmaterialized_layouts() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
         for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11), (11, 15)] {
             let mut dynamic: serde_json::Value =
@@ -1196,7 +1214,19 @@ mod tests {
                 "tier1_layers": tier1_layers,
             });
 
-            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
+            let err = resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap())
+                .unwrap_err();
+
+            assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+            assert!(
+                err.to_string().contains(&format!(
+                    "unsupported operational PIR layout {}/{}/{}; expected 19/12/7",
+                    tier0_layers + tier1_layers,
+                    tier0_layers,
+                    tier1_layers,
+                )),
+                "{err}"
+            );
         }
     }
 
@@ -1361,17 +1391,24 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_resolution_skips_rounds_when_pir_layout_changed_after_signing() {
+    fn dynamic_resolution_skips_rounds_signed_for_a_different_pir_layout() {
         let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
         let mut dynamic: serde_json::Value =
             serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
-        // Entries were signed over layout 19/12/7. A config host swapping the
-        // advertised layout must invalidate every round signature.
-        dynamic["pir_layout"] = serde_json::json!({
-            "pir_depth": 19,
-            "tier0_layers": 11,
-            "tier1_layers": 8,
-        });
+        let ea_pk = [7u8; 32];
+        let signature = trusted_key
+            .sign(&round_auth_v2_preimage(
+                ROUND_ID,
+                &ea_pk,
+                PirLayout {
+                    pir_depth: 19,
+                    tier0_layers: 11,
+                    tier1_layers: 8,
+                },
+            ))
+            .to_bytes();
+        dynamic["rounds"][ROUND_ID]["signatures"][0]["sig"] =
+            serde_json::json!(BASE64.encode(signature));
 
         let resolved =
             resolve_test_dynamic(&trusted_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
