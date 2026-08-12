@@ -3224,7 +3224,7 @@ void main() {
     expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
-  testWidgets('hardware status screen shows each memo in a short window', (
+  testWidgets('hardware status screen pages one memo for a large batch', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -3233,7 +3233,7 @@ void main() {
     });
 
     final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(bundleCount: 4);
+      ..state = _recoveryState(bundleCount: 50);
     final container = _statusContainer(
       accountOverride: _HardwareAccountNotifier.new,
       activeAccountUuid: () async => 'hardware-1',
@@ -3242,12 +3242,11 @@ void main() {
       recoveryApi: recoveryApi,
       rust: _VotingStatusRustApi(
         recoveryApi,
-        bundleCount: 4,
+        bundleCount: 50,
         keystoneMemoZecByBundle: const {
           0: '0.00000100',
           1: '0.00000200',
-          2: '0.00000300',
-          3: '0.00000400',
+          39: '0.00004000',
         },
       ),
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
@@ -3267,20 +3266,48 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    await _pumpUntilFound(tester, find.text('Sign 4 voting bundles'));
+    await _pumpUntilFound(tester, find.text('Sign 40 voting bundles'));
 
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.text('Sign 4 voting bundles'), findsOneWidget);
-    expect(find.text('One Keystone approval'), findsOneWidget);
-    expect(_RustApiFake.lastEncodedBatchMessageCount, 4);
-    for (var bundle = 1; bundle <= 4; bundle++) {
-      expect(find.text('Bundle $bundle of 4 memo'), findsOneWidget);
-      expect(
-        find.textContaining('Amount: 0.00000${bundle}00 ZEC'),
-        findsOneWidget,
-      );
+    expect(find.text('Sign 40 voting bundles'), findsOneWidget);
+    expect(
+      find.text('This QR signs 40 of 50 remaining bundles'),
+      findsOneWidget,
+    );
+    expect(find.text('One Keystone approval'), findsNothing);
+    expect(_RustApiFake.lastEncodedBatchMessageCount, 40);
+    expect(find.text('Bundle 1 of 50 memo'), findsOneWidget);
+    expect(find.text('Bundle 2 of 50 memo'), findsNothing);
+    expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
+    expect(find.textContaining('Amount: 0.00000200 ZEC'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('keystone_memo_previous')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('keystone_memo_next')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('keystone_memo_previous')));
+    await tester.pump();
+    expect(find.text('Bundle 1 of 50 memo'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('keystone_memo_next')));
+    await tester.pump();
+    expect(find.text('Bundle 1 of 50 memo'), findsNothing);
+    expect(find.text('Bundle 2 of 50 memo'), findsOneWidget);
+    expect(find.textContaining('Amount: 0.00000100 ZEC'), findsNothing);
+    expect(find.textContaining('Amount: 0.00000200 ZEC'), findsOneWidget);
+
+    for (var index = 2; index < 40; index++) {
+      await tester.tap(find.byKey(const ValueKey('keystone_memo_next')));
+      await tester.pump();
     }
+    expect(find.text('Bundle 40 of 50 memo'), findsOneWidget);
+    expect(find.textContaining('Amount: 0.00004000 ZEC'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('keystone_memo_next')));
+    await tester.pump();
+    expect(find.text('Bundle 40 of 50 memo'), findsOneWidget);
   });
 
   testWidgets('hardware status screen shows retry when Keystone QR fails', (
