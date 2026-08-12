@@ -26,6 +26,7 @@ pub mod precompute;
 pub mod prelude;
 pub mod recovery;
 pub mod round;
+pub mod round_auth;
 pub mod selection;
 pub mod session;
 pub mod share;

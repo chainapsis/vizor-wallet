@@ -10,6 +10,23 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Keystone signing requests now mark deliberate zero-value hotkey outputs with
   their user-facing address so signer devices display the bundle memo.
 
+## Unreleased
+
+### Changed
+- **Breaking:** dynamic voting config round authentication now requires
+  `auth_version: 2`. The trusted-key Ed25519 signature covers the canonical
+  fixed-width encoding of `RoundAuthPayloadV2`, whose fields encode as
+  `"zcash-shielded-vote:round-auth:v2" || round_id (32 raw bytes decoded from
+  the rounds-map key) || ea_pk (32 bytes) || pir_depth (u32 LE) ||
+  tier0_layers (u32 LE) || tier1_layers (u32 LE)` instead of the bare `ea_pk`.
+  This binds each attestation to its round and to the advertised PIR layout, so
+  a compromised config host can neither replay a signed `ea_pk` under a
+  different round id nor swap the `pir_layout` under attested rounds (a layout
+  change requires re-signing every active round).
+  `auth_version: 1` entries are no longer authenticated and are reported in
+  `skipped_round_ids`; round entries must be re-signed with vote-sdk tooling
+  that emits v2 before wallets adopt this release.
+
 ## v2.0.0-rc.4
 
 ### Changed

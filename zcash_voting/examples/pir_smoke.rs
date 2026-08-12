@@ -24,6 +24,7 @@ use std::sync::Arc;
 use zcash_voting::config::{
     resolve_dynamic_voting_config, resolve_static_voting_config, PinnedConfigSource, PirLayout,
 };
+use zcash_voting::round_auth::RoundAuthPayloadV2;
 use zcash_voting::wire::ResolveVotingConfigOptions;
 use zcash_voting::{connect_pir, HyperTransport};
 
@@ -91,7 +92,17 @@ fn prepare(args: Vec<String>) -> Result<()> {
     let signing_key = SigningKey::from_bytes(&PREPARE_SEED);
     let pubkey = signing_key.verifying_key().to_bytes();
     let ea_pk = [7u8; 32];
-    let sig = signing_key.sign(&ea_pk).to_bytes();
+    let pir_layout = PirLayout {
+        pir_depth: 19,
+        tier0_layers: 12,
+        tier1_layers: 7,
+    };
+    let round_id = hex::decode(ROUND_ID)
+        .expect("round id hex")
+        .try_into()
+        .expect("32-byte round id");
+    let payload = RoundAuthPayloadV2::new(round_id, ea_pk, pir_layout).to_bytes();
+    let sig = signing_key.sign(&payload).to_bytes();
 
     let static_json = serde_json::json!({
         "static_config_version": 1,
@@ -126,7 +137,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
         },
         "rounds": {
             ROUND_ID: {
-                "auth_version": 1,
+                "auth_version": 2,
                 "ea_pk": BASE64.encode(ea_pk),
                 "signatures": [{
                     "key_id": TRUSTED_KEY_ID,
