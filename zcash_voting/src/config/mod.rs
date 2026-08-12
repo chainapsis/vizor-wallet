@@ -123,6 +123,7 @@ pub struct ServiceEndpoint {
 /// PIR tree geometry selected by the dynamic voting config.
 ///
 /// Fixed-width fields keep this DTO stable for generated wallet bindings.
+/// [`PirLayout::DEPLOYED`] is the only live layout accepted by this release.
 /// [`PirLayout::UNKNOWN`] is reserved for summaries persisted before layout
 /// identity was recorded and is never accepted from dynamic config.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -899,11 +900,7 @@ mod tests {
     }
 
     fn test_pir_layout() -> PirLayout {
-        PirLayout {
-            pir_depth: 19,
-            tier0_layers: 12,
-            tier1_layers: 7,
-        }
+        PirLayout::DEPLOYED
     }
 
     fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {

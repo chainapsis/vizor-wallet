@@ -6,6 +6,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.0.0-rc.1
+
 ### Added
 - Added secret-free, round-bound voting hotkey targets and a canonical
   delegation capability handoff. A funds controller, such as a custody
@@ -16,14 +18,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   capability rounds keep their complete bundle batch atomic and wait for every
   delegation bundle to confirm before creating fresh vote commitments, keeping
   pre-vote package replacement recoverable.
-
-## v2.0.0-rc.5
-
-### Fixed
-- Keystone signing requests now mark deliberate zero-value hotkey outputs with
-  their user-facing address so signer devices display the bundle memo.
-
-## Unreleased
 
 ### Changed
 - **Breaking:** dynamic voting config round authentication now requires
@@ -39,6 +33,36 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   `auth_version: 1` entries are no longer authenticated and are reported in
   `skipped_round_ids`; round entries must be re-signed with vote-sdk tooling
   that emits v2 before wallets adopt this release.
+- **Breaking:** config resolution and direct PIR connection now accept only the
+  deployed 19/12/7 layout currently produced by the production snapshot
+  tooling, exposed as `PirLayout::DEPLOYED`. Negotiated geometry is still
+  validated first with the shared `pir-types` supported-layout predicate so
+  malformed layouts retain detailed validation errors.
+- Aligned the prerelease family on `voting-circuits 0.10.0-rc.1`,
+  `vote-commitment-tree 0.5.0-rc.1`, and
+  `vote-commitment-tree-client 0.7.0-rc.1`.
+
+### Fixed
+- Vote commitment tree sync now exposes `SyncLimits` and
+  `TreeClient::sync_with_limits`, with defaults of 4,096 pages and five minutes
+  per complete sync. The built-in wallet and `vote-tree-cli` transports bound
+  each HTTP response to 8 MiB and each request to 60 seconds. Per-round client
+  locks prevent a stalled node from blocking tree operations for unrelated
+  rounds in the same wallet.
+
+## v2.0.0
+
+### Changed
+- Released the exact `v2.0.0-rc.5` implementation as `v2.0.0` without
+  implementation changes. Its supporting production snapshots were released
+  as `voting-circuits 0.9.0`, `vote-commitment-tree 0.4.0`, and
+  `vote-commitment-tree-client 0.6.0`.
+
+## v2.0.0-rc.5
+
+### Fixed
+- Keystone signing requests now mark deliberate zero-value hotkey outputs with
+  their user-facing address so signer devices display the bundle memo.
 
 ## v2.0.0-rc.4
 
@@ -56,9 +80,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Dynamic voting config now requires top-level `pir_layout` (`pir_depth`,
   `tier0_layers`, `tier1_layers`). `ResolvedVotingConfig` and its wire exports
   expose it; layout changes are same-chain service updates.
-- Dynamic voting config now validates negotiated PIR layouts with the shared
-  `pir-types` supported-layout predicate, keeping wallet, client, and server
-  acceptance rules aligned.
 - Delegation submissions now carry compact, versioned Ironwood transaction
   effects so verifiers derive the signing digest directly instead of receiving
   it as a separate field. The payload excludes PCZT signer metadata, and
@@ -66,12 +87,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   signing PCZTs also leave their unused V6 anchor and spend witness unset.
 - Changed vote-share wire JSON to include only the encrypted share assigned to
   the receiving helper. The `all_enc_shares` field is no longer serialized.
-
-### Fixed
-- Vote commitment tree sync now bounds each HTTP response to 8 MiB and each
-  request to 60 seconds, and limits complete syncs to 4,096 pages and five
-  minutes. Per-round client locks prevent a stalled node from blocking tree
-  operations for unrelated rounds in the same wallet.
 
 ## v2.0.0-rc.3
 
