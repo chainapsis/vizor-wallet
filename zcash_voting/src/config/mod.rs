@@ -130,6 +130,8 @@ pub struct PirLayout {
     pub pir_depth: u32,
     pub tier0_layers: u32,
     pub tier1_layers: u32,
+    /// YPIR RLWE polynomial degree (2048 or 4096).
+    pub poly_len: u32,
 }
 
 impl PirLayout {
@@ -138,6 +140,7 @@ impl PirLayout {
         pir_depth: 0,
         tier0_layers: 0,
         tier1_layers: 0,
+        poly_len: 0,
     };
 }
 
@@ -147,6 +150,28 @@ impl Default for PirLayout {
     fn default() -> Self {
         Self::UNKNOWN
     }
+}
+
+fn deserialize_summary_pir_layout<'de, D>(deserializer: D) -> Result<PirLayout, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct PersistedPirLayout {
+        pir_depth: u32,
+        tier0_layers: u32,
+        tier1_layers: u32,
+        #[serde(default)]
+        poly_len: u32,
+    }
+
+    let layout = PersistedPirLayout::deserialize(deserializer)?;
+    Ok(PirLayout {
+        pir_depth: layout.pir_depth,
+        tier0_layers: layout.tier0_layers,
+        tier1_layers: layout.tier1_layers,
+        poly_len: layout.poly_len,
+    })
 }
 
 /// Protocol component versions advertised by the dynamic config.
@@ -272,7 +297,7 @@ pub struct ResolvedVotingConfigSummary {
     pub pir_endpoint_fingerprint: String,
     /// Defaults to [`PirLayout::UNKNOWN`] for summaries persisted by older
     /// versions so the next known layout is treated as a service update.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_summary_pir_layout")]
     pub pir_layout: PirLayout,
     pub authenticated_round_set_fingerprint: String,
     pub protocol_versions: SupportedVersions,
@@ -675,6 +700,8 @@ pub(crate) fn validate_and_convert_pir_layout(
                 layout.tier1_layers
             )
         })?,
+        poly_len: usize::try_from(layout.poly_len)
+            .map_err(|_| format!("pir_layout.poly_len {} does not fit usize", layout.poly_len))?,
     };
     negotiated.validate_supported()?;
     Ok(negotiated)
@@ -885,6 +912,7 @@ mod tests {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
+            poly_len: 4096,
         }
     }
 
@@ -918,7 +946,8 @@ mod tests {
             "pir_layout": {
                 "pir_depth": layout.pir_depth,
                 "tier0_layers": layout.tier0_layers,
-                "tier1_layers": layout.tier1_layers
+                "tier1_layers": layout.tier1_layers,
+                "poly_len": layout.poly_len
             },
             "supported_versions": {
                 "pir": ["v0"],
@@ -1021,6 +1050,7 @@ mod tests {
                 pir_depth: 19,
                 tier0_layers: 12,
                 tier1_layers: 7,
+                poly_len: 4096,
             }
         );
         assert_eq!(
@@ -1029,6 +1059,7 @@ mod tests {
                 "pir_depth": 19,
                 "tier0_layers": 12,
                 "tier1_layers": 7,
+                "poly_len": 4096,
             })
         );
     }
@@ -1086,6 +1117,7 @@ mod tests {
             "pir_depth": 29,
             "tier0_layers": 17,
             "tier1_layers": 12,
+        "poly_len": 4096
         });
 
         let err =
@@ -1106,6 +1138,7 @@ mod tests {
             "pir_depth": 30,
             "tier0_layers": 15,
             "tier1_layers": 15,
+        "poly_len": 4096
         });
 
         let err =
@@ -1126,6 +1159,7 @@ mod tests {
                     "pir_depth": 19,
                     "tier0_layers": 10,
                     "tier1_layers": 9,
+                "poly_len": 4096
                 }),
                 "Tier 1 rows 1024 below YPIR minimum 2048",
             ),
@@ -1134,6 +1168,7 @@ mod tests {
                     "pir_depth": 19,
                     "tier0_layers": 14,
                     "tier1_layers": 5,
+                "poly_len": 4096
                 }),
                 "Tier 1 item bits 24576 below YPIR minimum 28672",
             ),
@@ -1142,6 +1177,7 @@ mod tests {
                     "pir_depth": 19,
                     "tier0_layers": 0,
                     "tier1_layers": 19,
+                "poly_len": 4096
                 }),
                 "PIR layout tiers must be non-zero",
             ),
@@ -1167,6 +1203,7 @@ mod tests {
                     "pir_depth": 29,
                     "tier0_layers": 23,
                     "tier1_layers": 6,
+                "poly_len": 4096
                 }),
                 "PIR layout Tier 0 layers 23 exceeds maximum 16",
             ),
@@ -1175,6 +1212,7 @@ mod tests {
                     "pir_depth": 29,
                     "tier0_layers": 11,
                     "tier1_layers": 18,
+                "poly_len": 4096
                 }),
                 "PIR layout Tier 1 layers 18 exceeds maximum 15",
             ),
@@ -1194,11 +1232,14 @@ mod tests {
     #[test]
     fn dynamic_resolution_accepts_layouts_supported_by_shared_predicate() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
-        for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11), (11, 15)] {
+        for (tier0_layers, tier1_layers, poly_len) in
+            [(11, 8, 2048), (13, 6, 4096), (16, 11, 2048), (11, 15, 4096)]
+        {
             let layout = PirLayout {
                 pir_depth: tier0_layers + tier1_layers,
                 tier0_layers,
                 tier1_layers,
+                poly_len,
             };
             let dynamic =
                 dynamic_bytes_with_layout_and_round_signers(layout, &[(ROUND_ID, &signing_key)]);
@@ -1231,12 +1272,9 @@ mod tests {
 
     #[test]
     fn dynamic_resolution_accepts_vote_sdk_signed_round_entry() {
-        // Golden cross-implementation vector produced by the vote-sdk CLI:
-        //   voting-config sign --round-id <ROUND_ID> --ea-pk base64([7u8;32])
-        //     --pir-depth 19 --tier0-layers 12 --tier1-layers 7
-        // with the Ed25519 seed [3u8;32] (the same trusted key as static_bytes).
-        // Proves byte-level preimage agreement between the Go signer and this
-        // verifier, including the layout binding.
+        // Golden vector for the layout-bound v2 preimage including poly_len
+        // 4096 (tag || round_id || ea_pk || 19/12/7/4096), signed with Ed25519
+        // seed [3u8;32] (the same trusted key as static_bytes).
         let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
         let mut dynamic: serde_json::Value =
             serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
@@ -1246,7 +1284,7 @@ mod tests {
             "signatures": [{
                 "key_id": "k1",
                 "alg": "ed25519",
-                "sig": "KhB4irUNAqKDdYtP8jY7K2XTnXCRxCqc1vqMrqEiZN5fczmViOSjluIMNSIK23yYhVsmhFAQ2HS9NC0yhPnoBA=="
+                "sig": "IJHHSQaV6x0PVgLL+NBZiOGjDtVdt+A298LVLwqiarhWbEIFUJUGH6qfozLwypuo+3+YFn6HfRG/LM4WXM1MBg=="
             }]
         });
 
@@ -1265,22 +1303,22 @@ mod tests {
 
     #[test]
     fn dynamic_resolution_accepts_vote_sdk_ui_signed_round_entry() {
-        // Golden vector produced by the vote-sdk UI using its
-        // Keplr-derived Ed25519 key, signed over the layout-bound v2 preimage
-        // (tag || round_id || ea_pk || pir_layout 19/12/7). Exercise the
-        // complete static + dynamic config path so key lookup, base64
-        // decoding, preimage construction, and Ed25519 verification all use
-        // the bytes emitted by the UI.
+        // Golden from vote-sdk admin UI / Keplr-derived key over the
+        // poly_len-bound v2 preimage (tag || round_id || ea_pk || 19/12/7/4096).
         const UI_ROUND_ID: &str =
-            "3fda6c83b054e77c637cdb40f77448289742460ff16f0202229af3c00894d71b";
+            "06aae723e42cf615d174f338e8f30a72d2bf3275eb9d9e835cc894f197904b20";
         const UI_KEY_ID: &str = "keplr:sv1mqts0klc9768rns9h2ykeaka5tve6ts39c2zu3";
+        const UI_EA_PK: &str = "GpYa1sCGIMe2bp1O9UgrThrwkCdxu6oHDmhoBTw6EZ8=";
+        const UI_SIG: &str =
+            "RHbpnj2a1VA+wadIQT3JM/r6ADH11VeA8UgT5dhwhixMcS5Bw5ispndM/ZYH/d2vxNBxTRtZwnLyXZjxcVD+Dg==";
+        const UI_PUBKEY: &str = "NDygCpG+Y4T4uu8M1Sb/YG+74lUVj9XgYypUoMQMXT8=";
         let static_config = serde_json::json!({
             "static_config_version": 1,
             "dynamic_config_url": "https://example.com/dynamic.json",
             "trusted_keys": [{
                 "key_id": UI_KEY_ID,
                 "alg": "ed25519",
-                "pubkey": "NDygCpG+Y4T4uu8M1Sb/YG+74lUVj9XgYypUoMQMXT8=",
+                "pubkey": UI_PUBKEY,
                 "notes": "derived key for sv1mqts0klc9768rns9h2ykeaka5tve6ts39c2zu3"
             }]
         })
@@ -1294,11 +1332,11 @@ mod tests {
         dynamic["rounds"] = serde_json::json!({
             UI_ROUND_ID: {
                 "auth_version": 2,
-                "ea_pk": "vLZJEsvRcqLUY9D1NP+B2AUJbwzucbqa/RFZrgxX248=",
+                "ea_pk": UI_EA_PK,
                 "signatures": [{
                     "key_id": UI_KEY_ID,
                     "alg": "ed25519",
-                    "sig": "iTN3ZDQTLrrbgyil6slshUrpdKuuqAtNGDSSXfGUChJFBs3ISftFPDGTkw2/b91IjBBjXEk971Zt6KgeQZxtDQ=="
+                    "sig": UI_SIG
                 }]
             }
         });
@@ -1314,9 +1352,7 @@ mod tests {
             resolved.authenticated_rounds,
             vec![AuthenticatedRound {
                 round_id: UI_ROUND_ID.to_string(),
-                ea_pk: BASE64
-                    .decode("vLZJEsvRcqLUY9D1NP+B2AUJbwzucbqa/RFZrgxX248=")
-                    .unwrap(),
+                ea_pk: BASE64.decode(UI_EA_PK).unwrap(),
             }]
         );
         assert!(resolved.skipped_round_ids.is_empty());
@@ -1382,7 +1418,58 @@ mod tests {
             "pir_depth": 19,
             "tier0_layers": 11,
             "tier1_layers": 8,
+        "poly_len": 4096
         });
+
+        let resolved =
+            resolve_test_dynamic(&trusted_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
+
+        assert!(resolved.authenticated_rounds.is_empty());
+        assert_eq!(resolved.skipped_round_ids, vec![ROUND_ID.to_string()]);
+    }
+
+    #[test]
+    fn dynamic_resolution_requires_poly_len() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"]
+            .as_object_mut()
+            .unwrap()
+            .remove("poly_len");
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(err.to_string().contains("missing field `poly_len`"));
+    }
+
+    #[test]
+    fn dynamic_resolution_rejects_unsupported_poly_len() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        dynamic["pir_layout"]["poly_len"] = serde_json::json!(1024);
+
+        let err =
+            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap_err();
+
+        assert!(matches!(err, VotingConfigError::DecodeFailed { .. }));
+        assert!(
+            err.to_string()
+                .contains("unsupported PIR layout poly_len 1024"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn dynamic_resolution_skips_rounds_when_poly_len_changed_after_signing() {
+        let trusted_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut dynamic: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&trusted_key)).unwrap();
+        // Entries were signed over poly_len 4096.
+        dynamic["pir_layout"]["poly_len"] = serde_json::json!(2048);
 
         let resolved =
             resolve_test_dynamic(&trusted_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
@@ -1433,6 +1520,7 @@ mod tests {
                 pir_depth: 19,
                 tier0_layers: 12,
                 tier1_layers: 7,
+                poly_len: 4096,
             },
             supported_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],
@@ -1469,6 +1557,7 @@ mod tests {
                 pir_depth: 19,
                 tier0_layers: 12,
                 tier1_layers: 7,
+                poly_len: 4096,
             },
             supported_versions: SupportedVersions {
                 pir: vec!["v0".to_string()],
@@ -1626,7 +1715,47 @@ mod tests {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
+            poly_len: 4096,
         };
+
+        let decision = decide_config_switch(Some(current), next);
+
+        assert_eq!(decision.kind, ConfigSwitchKind::SameChainServiceUpdate);
+    }
+
+    #[test]
+    fn pre_poly_len_summary_deserializes_and_known_layout_is_service_update() {
+        let legacy_json = serde_json::json!({
+            "trusted_key_fingerprint": "same-keys",
+            "vote_server_fingerprint": "same-vote-servers",
+            "pir_endpoint_fingerprint": "same-pir-endpoints",
+            "pir_layout": {
+                "pir_depth": 19,
+                "tier0_layers": 12,
+                "tier1_layers": 7,
+            },
+            "authenticated_round_set_fingerprint": "same-rounds",
+            "protocol_versions": {
+                "pir": ["v0"],
+                "vote_protocol": "v0",
+                "tally": "v0",
+                "vote_server": "v1",
+            },
+        });
+        let current: ResolvedVotingConfigSummary =
+            serde_json::from_value(legacy_json).expect("pre-poly_len summary remains readable");
+        assert_eq!(
+            current.pir_layout,
+            PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+                poly_len: 0,
+            }
+        );
+
+        let mut next = current.clone();
+        next.pir_layout.poly_len = 4096;
 
         let decision = decide_config_switch(Some(current), next);
 
@@ -1643,6 +1772,7 @@ mod tests {
                 pir_depth: 19,
                 tier0_layers: 12,
                 tier1_layers: 7,
+                poly_len: 4096,
             },
             authenticated_round_set_fingerprint: "same-rounds".to_string(),
             protocol_versions: SupportedVersions {
@@ -1657,6 +1787,7 @@ mod tests {
             pir_depth: 20,
             tier0_layers: 13,
             tier1_layers: 7,
+            poly_len: 4096,
         };
 
         let decision = decide_config_switch(Some(current), next);

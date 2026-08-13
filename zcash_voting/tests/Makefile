@@ -14,6 +14,7 @@ CONFIG_PORT       ?= 18080
 PIR_HOST          ?= 127.0.0.1
 PIR_PORT          ?= 13000
 ZCASH_NETWORK     ?= main
+PIR_POLY_LEN      ?= 4096
 
 # Logical HTTPS identities embedded in the dummy config documents. The smoke
 # driver fetches the corresponding paths from the local HTTP config server.
@@ -40,6 +41,7 @@ pir-smoke: ## Resolve dummy config, serve local PIR, fetch present+absent nullif
 		PIR_HOST="$(PIR_HOST)" \
 		PIR_PORT="$(PIR_PORT)" \
 		ZCASH_NETWORK="$(ZCASH_NETWORK)" \
+		PIR_POLY_LEN="$(PIR_POLY_LEN)" \
 		STATIC_IDENTITY_URL="$(STATIC_IDENTITY_URL)" \
 		DYNAMIC_IDENTITY_URL="$(DYNAMIC_IDENTITY_URL)" \
 		PIR_IDENTITY_URL="$(PIR_IDENTITY_URL)" \

@@ -8,6 +8,18 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## v3.0.0-rc.2
 
+### Changed
+- **Breaking:** extended the still-prerelease `auth_version: 2` round-auth
+  payload to append `pir_layout.poly_len` as a `u32` in little-endian order.
+  This binds the YPIR polynomial degree into each round attestation. Any v2
+  signatures produced for `v3.0.0-rc.1` used the shorter preimage and must be
+  regenerated before wallets adopt this release.
+- Updated the PIR client stack to `pir-types 0.3.0-rc.6`,
+  `pir-client 0.4.0-rc.7`, and `valar-ypir 0.2.0`. Dynamic voting config
+  `pir_layout` now includes `poly_len` (`2048` or `4096`), and PIR connection
+  passes the full layout into the server handshake. It fails closed before any
+  private query when `/root.pir_layout` or `GET /params/tier1` disagrees.
+
 ### Fixed
 - Restored negotiated PIR layout support after `v3.0.0-rc.1` inadvertently
   restricted wallets to the current production default. Dynamic config and

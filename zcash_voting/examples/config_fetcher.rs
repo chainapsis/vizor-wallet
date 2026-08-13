@@ -113,10 +113,11 @@ fn print_resolved_config(resolved: &ResolvedVotingConfig) {
     println!("vote servers: {}", resolved.vote_servers.len());
     println!("PIR endpoints: {}", resolved.pir_endpoints.len());
     println!(
-        "PIR layout: depth={} tier0={} tier1={}",
+        "PIR layout: depth={} tier0={} tier1={} poly_len={}",
         resolved.pir_layout.pir_depth,
         resolved.pir_layout.tier0_layers,
-        resolved.pir_layout.tier1_layers
+        resolved.pir_layout.tier1_layers,
+        resolved.pir_layout.poly_len
     );
     println!(
         "authenticated rounds: {}",
