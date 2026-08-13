@@ -250,18 +250,15 @@ class VotingApiClient {
 
   /// Posts one encrypted share directly to a helper server.
   ///
-  /// The share map is expected to already use the service JSON field names
-  /// produced by the voting pipeline. We only add the round id required by the
-  /// helper API.
+  /// The share map is expected to be the complete service JSON body produced
+  /// by the voting pipeline.
   Future<VotingShareSubmissionResult> submitShare({
-    required String roundId,
     required Uri serverUrl,
     required Map<String, dynamic> share,
   }) async {
-    final body = {...share, 'vote_round_id': normalizeVotingRoundId(roundId)};
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
-      body,
+      share,
       timeout: _helperTimeout,
       retryPolicy: _helperRetryPolicy,
     );
@@ -292,15 +289,13 @@ class VotingApiClient {
   /// key nearby, but the current helper endpoint accepts the same body as the
   /// initial submission.
   Future<VotingShareSubmissionResult> resubmitShare({
-    required String roundId,
     required Uri serverUrl,
     required String shareId,
     required Map<String, dynamic> share,
   }) async {
-    final body = {...share, 'vote_round_id': normalizeVotingRoundId(roundId)};
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
-      body,
+      share,
       timeout: _helperTimeout,
       retryPolicy: _helperRetryPolicy,
     );

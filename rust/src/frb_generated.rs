@@ -7179,6 +7179,7 @@ const _: fn() = || {
     }
     {
         let VoteShareWire = None::<zcash_voting::wire::VoteShareWire>.unwrap();
+        let _: String = VoteShareWire.vote_round_id;
         let _: String = VoteShareWire.shares_hash;
         let _: u32 = VoteShareWire.proposal_id;
         let _: u32 = VoteShareWire.vote_decision;
@@ -10005,6 +10006,7 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryWorkView {
 impl SseDecode for zcash_voting::wire::VoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_voteRoundId = <String>::sse_decode(deserializer);
         let mut var_sharesHash = <String>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_voteDecision = <u32>::sse_decode(deserializer);
@@ -10016,6 +10018,7 @@ impl SseDecode for zcash_voting::wire::VoteShareWire {
         let mut var_primaryBlind = <String>::sse_decode(deserializer);
         let mut var_submitAt = <u64>::sse_decode(deserializer);
         return zcash_voting::wire::VoteShareWire {
+            vote_round_id: var_voteRoundId,
             shares_hash: var_sharesHash,
             proposal_id: var_proposalId,
             vote_decision: var_voteDecision,
@@ -12847,6 +12850,7 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteRecove
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteShareWire> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.0.vote_round_id.into_into_dart().into_dart(),
             self.0.shares_hash.into_into_dart().into_dart(),
             self.0.proposal_id.into_into_dart().into_dart(),
             self.0.vote_decision.into_into_dart().into_dart(),
@@ -15102,6 +15106,7 @@ impl SseEncode for zcash_voting::wire::VoteRecoveryWorkView {
 impl SseEncode for zcash_voting::wire::VoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.vote_round_id, serializer);
         <String>::sse_encode(self.shares_hash, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.vote_decision, serializer);

@@ -51,9 +51,8 @@ void main() {
       submission: {'vote_round_id': encodedRoundId, 'proof': 'AQ=='},
     );
     await client.submitShare(
-      roundId: encodedRoundId,
       serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0},
+      share: {'share_index': 0, 'vote_round_id': hexRoundId},
     );
     await client.getShareStatus(
       roundId: encodedRoundId,
@@ -61,10 +60,9 @@ void main() {
       shareId: 'share-1',
     );
     await client.resubmitShare(
-      roundId: encodedRoundId,
       serverUrl: Uri.parse('https://helper.example'),
       shareId: 'share-1',
-      share: {'share_index': 0},
+      share: {'share_index': 0, 'vote_round_id': hexRoundId},
     );
 
     expect(http.requests.map((request) => request.uri.path), [
@@ -770,7 +768,7 @@ void main() {
     },
   );
 
-  test('share request payloads preserve service JSON field names', () async {
+  test('share request payloads forward crate wire JSON unchanged', () async {
     final http = FakeVotingHttpClient(
       responses: {
         'https://helper.example/shielded-vote/v1/shares': {'status': 'queued'},
@@ -782,9 +780,8 @@ void main() {
     );
 
     final result = await client.submitShare(
-      roundId: encodedRoundId,
       serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 7, 'vote_round_id': 'bad-override'},
+      share: {'share_index': 7, 'vote_round_id': hexRoundId},
     );
 
     expect(result.status, 'queued');
@@ -817,9 +814,8 @@ void main() {
     );
 
     final result = await client.submitShare(
-      roundId: encodedRoundId,
       serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0},
+      share: {'share_index': 0, 'vote_round_id': hexRoundId},
     );
 
     expect(result.status, 'queued');
@@ -842,9 +838,8 @@ void main() {
     );
 
     final submitted = await acceptedClient.submitShare(
-      roundId: hexRoundId,
       serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0},
+      share: {'share_index': 0, 'vote_round_id': hexRoundId},
     );
     final status = await acceptedClient.getShareStatus(
       roundId: hexRoundId,
@@ -867,9 +862,8 @@ void main() {
     );
     await expectLater(
       rejectedSubmitClient.submitShare(
-        roundId: hexRoundId,
         serverUrl: Uri.parse('https://helper.example'),
-        share: {'share_index': 0},
+        share: {'share_index': 0, 'vote_round_id': hexRoundId},
       ),
       throwsA(isA<FormatException>()),
     );

@@ -836,6 +836,8 @@ class VoteRecoveryWorkView {
 }
 
 class VoteShareWire {
+  /// Voting round ID as 32 bytes encoded in lowercase hex.
+  final String voteRoundId;
   final String sharesHash;
   final int proposalId;
   final int voteDecision;
@@ -847,6 +849,7 @@ class VoteShareWire {
   final BigInt submitAt;
 
   const VoteShareWire({
+    required this.voteRoundId,
     required this.sharesHash,
     required this.proposalId,
     required this.voteDecision,
@@ -860,6 +863,7 @@ class VoteShareWire {
 
   @override
   int get hashCode =>
+      voteRoundId.hashCode ^
       sharesHash.hashCode ^
       proposalId.hashCode ^
       voteDecision.hashCode ^
@@ -875,6 +879,7 @@ class VoteShareWire {
       identical(this, other) ||
       other is VoteShareWire &&
           runtimeType == other.runtimeType &&
+          voteRoundId == other.voteRoundId &&
           sharesHash == other.sharesHash &&
           proposalId == other.proposalId &&
           voteDecision == other.voteDecision &&
