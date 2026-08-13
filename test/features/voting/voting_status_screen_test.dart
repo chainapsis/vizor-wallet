@@ -4856,6 +4856,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt submitAt,
   }) async {
     return jsonEncode({
+      'vote_round_id': share.voteRoundId,
       'shares_hash': share.sharesHash,
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
@@ -5178,6 +5179,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         ),
         shares: [
           rust_wire.VoteShareWire(
+            voteRoundId: roundId,
             sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
             proposalId: proposalId,
             voteDecision: choice,

@@ -111,7 +111,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-version = "=3.0.0-rc.2"
+version = "=3.0.0-rc.3"
 
 # Keep Orchard aligned with the released librustzcash and zcash_voting family
 # to avoid type conflicts.
