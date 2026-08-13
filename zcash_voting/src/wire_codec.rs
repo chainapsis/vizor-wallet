@@ -218,6 +218,7 @@ impl VoteShareWire {
     }
 
     pub fn to_json(&self) -> Result<String, VotingError> {
+        crate::types::validate_vote_round_id_hex(&self.vote_round_id)?;
         serde_json::to_string(self).map_err(|e| VotingError::Internal {
             message: format!("serialize vote share wire JSON failed: {e}"),
         })
@@ -1027,6 +1028,36 @@ mod tests {
         let err = payload
             .to_wire_json(None, 10)
             .expect_err("non-canonical vote round ID should fail");
+        assert!(err.to_string().contains("vote_round_id"), "{err}");
+    }
+
+    #[test]
+    fn vote_share_wire_to_json_rejects_noncanonical_vote_round_id() {
+        let mut wire = VoteShareWire::from_payload(
+            &SharePayload {
+                vote_round_id: "01".repeat(32),
+                shares_hash: vec![0x21; 32],
+                proposal_id: 1,
+                vote_decision: 1,
+                enc_share: crate::WireEncryptedShare {
+                    c1: vec![0x22; 32],
+                    c2: vec![0x23; 32],
+                    share_index: 0,
+                },
+                tree_position: 1,
+                all_enc_shares: vec![],
+                share_comms: vec![],
+                primary_blind: vec![0x27; 32],
+            },
+            None,
+            10,
+        )
+        .unwrap();
+        wire.vote_round_id = "AA".repeat(32);
+
+        let err = wire
+            .to_json()
+            .expect_err("non-canonical vote round ID should fail at serialization");
         assert!(err.to_string().contains("vote_round_id"), "{err}");
     }
 
