@@ -1,0 +1,21 @@
+[package]
+name = "voting-proof-benchmark"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "voting-proof-benchmark"
+path = "../src/main.rs"
+
+[dependencies]
+ff = "0.13"
+group = "0.13"
+halo2_proofs = "=0.3.2"
+incrementalmerkletree = "0.8.1"
+orchard = { version = "=0.15.4", features = ["circuit", "unstable-voting-circuits"] }
+pasta_curves = "0.5"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+voting-circuits = "=0.10.0-rc.1"

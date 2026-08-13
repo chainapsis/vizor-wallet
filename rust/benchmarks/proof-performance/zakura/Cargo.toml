@@ -1,0 +1,31 @@
+[package]
+name = "voting-proof-benchmark"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "voting-proof-benchmark"
+path = "../src/main.rs"
+
+[dependencies]
+ff = "0.13"
+group = "0.13"
+halo2_proofs = "=0.3.5"
+incrementalmerkletree = "0.8.1"
+orchard = { version = "=0.15.5", features = ["circuit", "unstable-voting-circuits"] }
+pasta_curves = "0.5"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+voting-circuits = "=0.10.0-rc.1"
+
+[patch.crates-io]
+halo2_gadgets = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_legacy_pdqsort = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_poseidon = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_proofs = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+orchard = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+pasta_curves = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+reddsa = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+sinsemilla = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }

@@ -158,6 +158,21 @@ zcash_note_encryption = "0.4"
 [dev-dependencies.vote-commitment-tree]
 version = "=0.5.0-rc.1"
 
+[patch.crates-io]
+halo2_gadgets = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_legacy_pdqsort = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_poseidon = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+halo2_proofs = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+orchard = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+pasta_curves = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+reddsa = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+redjubjub = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+sapling-crypto = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+sinsemilla = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+zcash_keys = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+zcash_primitives = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+zcash_proofs = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
