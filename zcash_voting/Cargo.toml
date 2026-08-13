@@ -8,6 +8,9 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/valargroup/zcash_voting"
 readme = "README.md"
 
+[features]
+test-fixtures = []
+
 [dependencies]
 # Curves (same as Orchard/Zcash)
 pasta_curves = "0.5"

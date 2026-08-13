@@ -10,6 +10,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test --workspace
         run: cargo test --workspace --locked
+      - name: cargo test --features test-fixtures
+        run: cargo test -p zcash_voting --features test-fixtures --locked
 
   proofs:
     name: Halo2 proof tests

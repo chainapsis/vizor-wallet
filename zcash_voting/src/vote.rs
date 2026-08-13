@@ -908,6 +908,159 @@ pub fn parse_recovery(json: &str) -> Result<VoteRecoveryBundle, VotingError> {
     VoteRecoveryBundle::try_from(parsed)
 }
 
+/// Persists the state produced by a successful vote commit for downstream tests.
+///
+/// This helper is available only in this crate's tests or with the
+/// `test-fixtures` feature. The caller must create the round and its bundles
+/// first. It stores the vote and recovery bundle and advances the round to
+/// [`crate::storage::RoundPhase::VoteReady`], while leaving submission and
+/// confirmation fields unset.
+///
+/// Exact reinsertions are idempotent. If recovery material changes before vote
+/// submission or confirmation, matching helper-share tracking is cleared in
+/// the same transaction. A vote with a submission hash or commitment-tree
+/// position is never replaced.
+///
+/// Unlike [`commit`], this does not run any commit-time verification gates,
+/// including capability, signer network, witness, proof, or signature checks.
+/// Only use trusted fixture data. Cargo features are additive and are not a
+/// security boundary; production builds should not enable `test-fixtures`.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub fn insert_recovery_fixture(
+    db: &VotingDb,
+    bundle: &VoteRecoveryBundle,
+) -> Result<(), VotingError> {
+    let recovery_json = serialize_recovery(bundle)?;
+    let commitment = stored_vote_commitment_bytes(bundle)?;
+    let wallet_id = db.wallet_id();
+    let mut conn = db.conn();
+    let tx = conn.transaction().map_err(|e| VotingError::Internal {
+        message: format!("begin vote recovery fixture transaction failed: {e}"),
+    })?;
+
+    let bundle_exists = tx
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM bundles
+                WHERE round_id = :round_id AND wallet_id = :wallet_id
+                  AND bundle_index = :bundle_index
+            )",
+            rusqlite::named_params! {
+                ":round_id": &bundle.vote_round_id,
+                ":wallet_id": &wallet_id,
+                ":bundle_index": bundle.bundle_index as i64,
+            },
+            |row| Ok(row.get::<_, i64>(0)? != 0),
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to validate vote recovery fixture bundle: {e}"),
+        })?;
+    if !bundle_exists {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "bundle not found for vote recovery fixture: round={}, bundle={}",
+                bundle.vote_round_id, bundle.bundle_index
+            ),
+        });
+    }
+
+    let existing_state = tx
+        .query_row(
+            "SELECT tx_hash IS NOT NULL, vc_tree_position IS NOT NULL,
+                    commitment_bundle_json
+             FROM votes
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            rusqlite::named_params! {
+                ":round_id": &bundle.vote_round_id,
+                ":wallet_id": &wallet_id,
+                ":bundle_index": bundle.bundle_index as i64,
+                ":proposal_id": bundle.proposal_id as i64,
+            },
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? != 0,
+                    row.get::<_, i64>(1)? != 0,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to check vote recovery fixture lifecycle state: {e}"),
+        })?;
+    if let Some((submitted, confirmed, _)) = &existing_state {
+        if *submitted {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "cannot replace submitted vote with recovery fixture for round={}, bundle={}, proposal={}",
+                    bundle.vote_round_id, bundle.bundle_index, bundle.proposal_id
+                ),
+            });
+        }
+        if *confirmed {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "cannot replace confirmed vote with recovery fixture for round={}, bundle={}, proposal={}",
+                    bundle.vote_round_id, bundle.bundle_index, bundle.proposal_id
+                ),
+            });
+        }
+    }
+    let recovery_changed = existing_state
+        .as_ref()
+        .map(|(_, _, stored_json)| stored_json.as_deref() != Some(recovery_json.as_str()))
+        .unwrap_or(true);
+
+    crate::storage::queries::store_vote(
+        &tx,
+        &bundle.vote_round_id,
+        &wallet_id,
+        bundle.bundle_index,
+        bundle.proposal_id,
+        bundle.vote_decision,
+        &commitment,
+    )?;
+    if recovery_changed {
+        tx.execute(
+            "DELETE FROM share_delegations
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            rusqlite::named_params! {
+                ":round_id": &bundle.vote_round_id,
+                ":wallet_id": &wallet_id,
+                ":bundle_index": bundle.bundle_index as i64,
+                ":proposal_id": bundle.proposal_id as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to clear stale vote recovery fixture shares: {e}"),
+        })?;
+    }
+    crate::storage::queries::advance_round_phase(
+        &tx,
+        &bundle.vote_round_id,
+        &wallet_id,
+        crate::storage::RoundPhase::VoteReady,
+    )?;
+    store_recovery_json_for_vote_with_conn(
+        &tx,
+        VoteRecoveryStorageIdentity {
+            round_id: &bundle.vote_round_id,
+            wallet_id: &wallet_id,
+            bundle_index: bundle.bundle_index,
+            proposal_id: bundle.proposal_id,
+            choice: bundle.vote_decision,
+            commitment: Some(&commitment),
+        },
+        &recovery_json,
+    )?;
+
+    tx.commit().map_err(|e| VotingError::Internal {
+        message: format!("commit vote recovery fixture transaction failed: {e}"),
+    })
+}
+
 fn store_recovery_json_for_vote(
     db: &VotingDb,
     round_id: &str,
@@ -919,6 +1072,42 @@ fn store_recovery_json_for_vote(
 ) -> Result<(), VotingError> {
     let conn = db.conn();
     let wallet_id = db.wallet_id();
+    store_recovery_json_for_vote_with_conn(
+        &conn,
+        VoteRecoveryStorageIdentity {
+            round_id,
+            wallet_id: &wallet_id,
+            bundle_index,
+            proposal_id,
+            choice,
+            commitment,
+        },
+        json,
+    )
+}
+
+struct VoteRecoveryStorageIdentity<'a> {
+    round_id: &'a str,
+    wallet_id: &'a str,
+    bundle_index: u32,
+    proposal_id: u32,
+    choice: u32,
+    commitment: Option<&'a [u8]>,
+}
+
+fn store_recovery_json_for_vote_with_conn(
+    conn: &rusqlite::Connection,
+    identity: VoteRecoveryStorageIdentity<'_>,
+    json: &str,
+) -> Result<(), VotingError> {
+    let VoteRecoveryStorageIdentity {
+        round_id,
+        wallet_id,
+        bundle_index,
+        proposal_id,
+        choice,
+        commitment,
+    } = identity;
     let rows = conn
         .execute(
             "UPDATE votes SET commitment_bundle_json = :json
@@ -941,9 +1130,9 @@ fn store_recovery_json_for_vote(
         })?;
     if rows == 0 {
         return handle_vote_identity_update_miss(
-            &conn,
+            conn,
             round_id,
-            &wallet_id,
+            wallet_id,
             bundle_index,
             proposal_id,
             choice as i64,

@@ -6,6 +6,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+### Added
+- Added a non-default `test-fixtures` feature exposing an atomic vote recovery
+  fixture for downstream integration tests that should not build ZKP2.
+
 ## v3.0.0-rc.3
 
 ### Changed

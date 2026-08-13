@@ -267,6 +267,22 @@ This release line requires Rust 1.88 or newer.
   `zcash_primitives 0.30.0`, and `zcash_protocol 0.10.4`** from published
   librustzcash releases.
 
+## Downstream test fixtures
+
+Downstream integration and FFI tests can enable the non-default
+`test-fixtures` feature as a development dependency when they need committed
+vote recovery state without building ZKP2. Use the same source and version as
+the runtime dependency and add `features = ["test-fixtures"]` to the crate's
+development dependency entry.
+
+Create the round and its bundles through the normal public setup APIs, then use
+`zcash_voting::vote::insert_recovery_fixture`. The helper atomically stores the
+resulting post-commit state but deliberately skips every commit-time
+verification gate. It leaves transaction and confirmation fields unset so
+tests can exercise the public submission and confirmation APIs. Only pass
+trusted fixture data. Cargo features are additive and are not a security
+boundary, so production builds should not enable this feature.
+
 ## Migrating from 0.10
 
 - PIR and tree-sync APIs are now always compiled; no feature flags are required.

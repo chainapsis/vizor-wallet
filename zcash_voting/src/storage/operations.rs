@@ -387,11 +387,11 @@ impl VotingDb {
         queries::get_votes(&conn, round_id, &wallet_id)
     }
 
-    /// Test-fixture helper for inserting a stored vote without running the
-    /// full vote proof builder.
+    /// Crate-internal test helper for inserting a plain stored vote.
     ///
-    /// This is intended for downstream FFI tests that need recovery-state rows
-    /// backed by a vote. It is only compiled for this crate's tests.
+    /// This does not attach recovery state. Downstream tests that need a
+    /// committed vote should enable `test-fixtures` and use
+    /// [`crate::vote::insert_recovery_fixture`].
     #[cfg(test)]
     pub fn insert_vote_fixture(
         &self,
