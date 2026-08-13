@@ -7008,6 +7008,7 @@ const _: fn() = || {
         let _: u32 = PirLayout.pir_depth;
         let _: u32 = PirLayout.tier0_layers;
         let _: u32 = PirLayout.tier1_layers;
+        let _: u32 = PirLayout.poly_len;
     }
     {
         let RecoverableCommitmentBundle =
@@ -9290,10 +9291,12 @@ impl SseDecode for zcash_voting::config::PirLayout {
         let mut var_pirDepth = <u32>::sse_decode(deserializer);
         let mut var_tier0Layers = <u32>::sse_decode(deserializer);
         let mut var_tier1Layers = <u32>::sse_decode(deserializer);
+        let mut var_polyLen = <u32>::sse_decode(deserializer);
         return zcash_voting::config::PirLayout {
             pir_depth: var_pirDepth,
             tier0_layers: var_tier0Layers,
             tier1_layers: var_tier1Layers,
+            poly_len: var_polyLen,
         };
     }
 }
@@ -11961,6 +11964,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::PirLayou
             self.0.pir_depth.into_into_dart().into_dart(),
             self.0.tier0_layers.into_into_dart().into_dart(),
             self.0.tier1_layers.into_into_dart().into_dart(),
+            self.0.poly_len.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -14622,6 +14626,7 @@ impl SseEncode for zcash_voting::config::PirLayout {
         <u32>::sse_encode(self.pir_depth, serializer);
         <u32>::sse_encode(self.tier0_layers, serializer);
         <u32>::sse_encode(self.tier1_layers, serializer);
+        <u32>::sse_encode(self.poly_len, serializer);
     }
 }
 

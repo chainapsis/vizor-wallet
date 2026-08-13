@@ -100,15 +100,22 @@ class PirLayout {
   final int tier0Layers;
   final int tier1Layers;
 
+  /// YPIR RLWE polynomial degree (2048 or 4096).
+  final int polyLen;
+
   const PirLayout({
     required this.pirDepth,
     required this.tier0Layers,
     required this.tier1Layers,
+    required this.polyLen,
   });
 
   @override
   int get hashCode =>
-      pirDepth.hashCode ^ tier0Layers.hashCode ^ tier1Layers.hashCode;
+      pirDepth.hashCode ^
+      tier0Layers.hashCode ^
+      tier1Layers.hashCode ^
+      polyLen.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -117,7 +124,8 @@ class PirLayout {
           runtimeType == other.runtimeType &&
           pirDepth == other.pirDepth &&
           tier0Layers == other.tier0Layers &&
-          tier1Layers == other.tier1Layers;
+          tier1Layers == other.tier1Layers &&
+          polyLen == other.polyLen;
 }
 
 /// Resolved dynamic voting config, ready for wallet use.

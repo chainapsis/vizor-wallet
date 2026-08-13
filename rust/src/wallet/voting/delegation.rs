@@ -510,6 +510,7 @@ mod tests {
                     pir_depth: 19,
                     tier0_layers: 12,
                     tier1_layers: 7,
+                    poly_len: 4096,
                 },
                 &seed,
                 PrepareDelegationBundleParams {

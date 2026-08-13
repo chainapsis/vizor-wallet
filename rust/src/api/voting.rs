@@ -1767,6 +1767,7 @@ mod tests {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
+            poly_len: 4096,
         }
     }
 
@@ -2420,7 +2421,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -2461,7 +2462,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -2509,10 +2510,10 @@ mod tests {
         db.init_round(zcash_voting::Network::Regtest, &other_round_params, None)
             .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         db.ensure_bundles(OTHER_ROUND_ID, &[test_note_info(0)])
             .unwrap();
-        db.store_van_position(OTHER_ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, OTHER_ROUND_ID, 0, 0);
 
         let server_round_one = start_tree_server(1, vec![fp_one_base64()], 3);
         let round_one_height = sync_vote_tree(
@@ -2573,7 +2574,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -3448,5 +3449,32 @@ mod tests {
 
     fn fp_one_base64() -> String {
         "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string()
+    }
+
+    /// Seeds the commitment and leaf position that a real confirmed delegation
+    /// persists in separate proof-generation and confirmation steps.
+    fn store_test_confirmed_van(
+        db: &zcash_voting::storage::VotingDb,
+        round_id: &str,
+        bundle_index: u32,
+        position: u32,
+    ) {
+        let commitment = base64::engine::general_purpose::STANDARD
+            .decode(fp_one_base64())
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE bundles SET gov_comm = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+                rusqlite::params![
+                    commitment,
+                    round_id,
+                    db.wallet_id(),
+                    i64::from(bundle_index)
+                ],
+            )
+            .unwrap();
+        db.store_van_position(round_id, bundle_index, position)
+            .unwrap();
     }
 }

@@ -10163,12 +10163,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PirLayout dco_decode_pir_layout(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return PirLayout(
       pirDepth: dco_decode_u_32(arr[0]),
       tier0Layers: dco_decode_u_32(arr[1]),
       tier1Layers: dco_decode_u_32(arr[2]),
+      polyLen: dco_decode_u_32(arr[3]),
     );
   }
 
@@ -13178,10 +13179,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pirDepth = sse_decode_u_32(deserializer);
     var var_tier0Layers = sse_decode_u_32(deserializer);
     var var_tier1Layers = sse_decode_u_32(deserializer);
+    var var_polyLen = sse_decode_u_32(deserializer);
     return PirLayout(
       pirDepth: var_pirDepth,
       tier0Layers: var_tier0Layers,
       tier1Layers: var_tier1Layers,
+      polyLen: var_polyLen,
     );
   }
 
@@ -15959,6 +15962,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.pirDepth, serializer);
     sse_encode_u_32(self.tier0Layers, serializer);
     sse_encode_u_32(self.tier1Layers, serializer);
+    sse_encode_u_32(self.polyLen, serializer);
   }
 
   @protected

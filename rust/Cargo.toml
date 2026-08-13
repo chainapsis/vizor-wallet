@@ -111,7 +111,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-version = "=2.0.0-rc.5"
+version = "=3.0.0-rc.2"
 
 # Keep Orchard aligned with the released librustzcash and zcash_voting family
 # to avoid type conflicts.
@@ -156,7 +156,7 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.4.0-rc.2"
+version = "=0.5.0-rc.1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

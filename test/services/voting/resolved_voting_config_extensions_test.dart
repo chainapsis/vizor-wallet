@@ -130,6 +130,7 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
       pirDepth: 19,
       tier0Layers: 12,
       tier1Layers: 7,
+      polyLen: 4096,
     ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],

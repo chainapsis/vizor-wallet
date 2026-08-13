@@ -1378,6 +1378,7 @@ void main() {
               'pir_depth': 18,
               'tier0_layers': 11,
               'tier1_layers': 7,
+              'poly_len': 2048,
             },
           ),
         ),
@@ -1423,6 +1424,7 @@ void main() {
           pirDepth: 18,
           tier0Layers: 11,
           tier1Layers: 7,
+          polyLen: 2048,
         ),
       );
       expect(state.phase, VotingSessionPhase.readyToDelegate);
@@ -5626,6 +5628,7 @@ rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
       pirDepth: 19,
       tier0Layers: 12,
       tier1Layers: 7,
+      polyLen: 4096,
     ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],
@@ -5816,6 +5819,7 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
       pirDepth: (pirLayout['pir_depth'] as num).toInt(),
       tier0Layers: (pirLayout['tier0_layers'] as num).toInt(),
       tier1Layers: (pirLayout['tier1_layers'] as num).toInt(),
+      polyLen: (pirLayout['poly_len'] as num).toInt(),
     ),
     supportedVersions: rust_config.SupportedVersions(
       pir: (versions['pir'] as List<dynamic>)
@@ -5856,6 +5860,7 @@ Map<String, dynamic> dynamicConfigJson({
     'pir_depth': 19,
     'tier0_layers': 12,
     'tier1_layers': 7,
+    'poly_len': 4096,
   },
 }) => {
   'config_version': 1,
