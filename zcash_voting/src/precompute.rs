@@ -235,6 +235,7 @@ mod pir_tests {
                             serde_json::to_vec(&pir_types::YpirScenario {
                                 num_items: pir_types::TIER1_ROWS,
                                 item_size_bits: pir_types::TIER1_ITEM_BITS,
+                                poly_len: pir_types::DEFAULT_YPIR_POLY_LEN,
                             })
                             .unwrap(),
                         )),

@@ -17,6 +17,17 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   delegation bundle to confirm before creating fresh vote commitments, keeping
   pre-vote package replacement recoverable.
 
+### Changed
+- Bumped the PIR client stack to `pir-types 0.3.0-rc.6`, `pir-client 0.4.0-rc.7`,
+  and `valar-ypir 0.2.0`, temporarily resolved via a workspace
+  `[patch.crates-io]` against
+  [vote-nullifier-pir#136](https://github.com/valargroup/vote-nullifier-pir/pull/136)
+  until those crates are published. Dynamic voting config `pir_layout` now
+  includes `poly_len` (`2048` or `4096`). `connect_pir` /
+  `connect_pir_blocking` pass the full layout (including degree) into the PIR
+  handshake and fail closed when `/root.pir_layout` or `GET /params/tier1`
+  disagree (`VotingError::InvalidInput`).
+
 ## v2.0.0-rc.5
 
 ### Fixed
@@ -31,11 +42,12 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   fixed-width encoding of `RoundAuthPayloadV2`, whose fields encode as
   `"zcash-shielded-vote:round-auth:v2" || round_id (32 raw bytes decoded from
   the rounds-map key) || ea_pk (32 bytes) || pir_depth (u32 LE) ||
-  tier0_layers (u32 LE) || tier1_layers (u32 LE)` instead of the bare `ea_pk`.
-  This binds each attestation to its round and to the advertised PIR layout, so
-  a compromised config host can neither replay a signed `ea_pk` under a
-  different round id nor swap the `pir_layout` under attested rounds (a layout
-  change requires re-signing every active round).
+  tier0_layers (u32 LE) || tier1_layers (u32 LE) || poly_len (u32 LE)` instead
+  of the bare `ea_pk`. This binds each attestation to its round, the advertised
+  PIR layout, and the YPIR polynomial degree, so a compromised config host can
+  neither replay a signed `ea_pk` under a different round id nor swap the
+  advertised `pir_layout` (including `poly_len`) under attested rounds (a
+  layout change requires re-signing every active round).
   `auth_version: 1` entries are no longer authenticated and are reported in
   `skipped_round_ids`; round entries must be re-signed with vote-sdk tooling
   that emits v2 before wallets adopt this release.

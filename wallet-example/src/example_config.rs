@@ -181,8 +181,8 @@ pub fn write_config_state(state_path: &Path, state: &StoredConfigState) -> Resul
 /// Connects a blocking PIR client using the resolved dynamic config's layout.
 ///
 /// Threads `resolved.pir_layout` and the caller-chosen `pir_server_url` into the
-/// PIR handshake so example callers never hardcode depth or tier-split
-/// constants. Endpoint selection (advertised list / snapshot probing) is the
+/// PIR handshake so example callers never hardcode depth, tier-split, or YPIR
+/// degree constants. Endpoint selection (advertised list / snapshot probing) is the
 /// caller's responsibility.
 ///
 /// # Errors

@@ -83,28 +83,30 @@ by the selected service:
   "pir_layout": {
     "pir_depth": 19,
     "tier0_layers": 12,
-    "tier1_layers": 7
+    "tier1_layers": 7,
+    "poly_len": 4096
   }
 }
 ```
 
 Resolution fails closed when the field is missing or malformed, the tier-layer
-sum does not equal `pir_depth`, or the depth is outside the voting circuit's
-supported range of 1 through 29.
+sum does not equal `pir_depth`, the depth is outside the voting circuit's
+supported range of 1 through 29, or `poly_len` is not `2048` or `4096`.
 
-Roll out the additive `pir_layout` field in published dynamic config before
-shipping wallet builds that require it. Older wallets ignore the unknown field.
-New clients that resolve config without `pir_layout`, or that connect to a PIR
-server that does not advertise matching `/root.pir_layout`, fail closed at
-connect time before any private query.
+Roll out the additive `pir_layout` object (including `poly_len`) in published
+dynamic config before shipping wallet builds that require it. Older wallets
+ignore unknown fields. New clients that resolve config without it, or that
+connect to a PIR server that does not advertise matching `/root.pir_layout`
+and `/params/tier1.poly_len`, fail closed at connect time before any private
+query.
 
 After resolution, wallets typically connect PIR through
 `pir::connect_pir_blocking` (or `pir::connect_pir`) with the resolved config's
 `pir_layout` and a caller-chosen endpoint URL. The helpers run the
-config/server/compiled-client layout handshake and fail closed before any
-private query (`VotingError::InvalidInput` on layout mismatch); they do not
-re-check advertised-endpoint membership. Do not pass a compiled-client layout
-constant in place of `resolved.pir_layout`.
+config/server layout and YPIR-degree handshake and fail closed before any
+private query (`VotingError::InvalidInput` on mismatch); they do not re-check
+advertised-endpoint membership. Do not pass a compiled-client layout constant
+in place of `resolved.pir_layout`.
 
 ```rust
 use std::sync::Arc;

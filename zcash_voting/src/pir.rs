@@ -3,9 +3,9 @@
 //! Wallets use this module to select an exact-height PIR snapshot endpoint
 //! before delegation PIR precomputation. [`connect_pir_blocking`] /
 //! [`connect_pir`] bind a caller-chosen URL to an explicit [`PirLayout`] for
-//! the config/server layout handshake. Neither path hardcodes depth or
-//! tier-split constants, and neither checks whether the URL appears in a
-//! resolved config's advertised endpoint list.
+//! the config/server handshake (tree split and YPIR degree). Neither path
+//! hardcodes depth, tier-split, or YPIR degree constants, and neither checks
+//! whether the URL appears in a resolved config's advertised endpoint list.
 
 use std::sync::Arc;
 
@@ -58,8 +58,8 @@ pub fn negotiated_pir_layout(layout: PirLayout) -> Result<NegotiatedPirLayout, V
 /// Does not check whether `endpoint_url` appears in a resolved config's
 /// advertised endpoint list; callers pass a layout and URL they already chose
 /// (for example after exact-height snapshot probing). Fails closed before any
-/// private query when the layout is unknown or the config/server layout
-/// handshake rejects the server. Layout mismatches surface as
+/// private query when the layout is unknown or the config/server handshake
+/// rejects the server. Layout mismatches (including `poly_len`) surface as
 /// [`VotingError::InvalidInput`]; other connect failures remain
 /// [`VotingError::Internal`].
 pub fn connect_pir_blocking(
@@ -105,9 +105,9 @@ fn normalize_endpoint_url(url: &str) -> String {
 fn map_pir_connect_error(err: impl std::fmt::Display) -> VotingError {
     let detail = err.to_string();
     let message = format!("PIR connect failed: {detail}");
-    // Config/server layout disagreement is a caller/config
+    // Config/server layout or poly_len disagreement is a caller/config
     // incompatibility, not an unexpected internal failure.
-    if detail.contains("PIR layout mismatch") {
+    if detail.contains("PIR layout mismatch") || detail.contains("PIR poly_len mismatch") {
         VotingError::InvalidInput { message }
     } else {
         VotingError::Internal { message }
@@ -123,14 +123,15 @@ mod tests {
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
     use ed25519_dalek::{Signer, SigningKey};
     use pir_types::{
-        RootInfo, YpirScenario, COMPILED_PIR_LAYOUT, DATASET_VERSION, NULLIFIER_POOL, PIR_DEPTH,
-        TIER0_LAYERS,
+        RootInfo, YpirScenario, COMPILED_PIR_LAYOUT, DATASET_VERSION, DEFAULT_YPIR_POLY_LEN,
+        NULLIFIER_POOL, PIR_DEPTH, TIER0_LAYERS,
     };
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+    const TEST_POLY_LEN: u32 = DEFAULT_YPIR_POLY_LEN as u32;
 
     #[derive(Default)]
     struct RecordingTransport {
@@ -142,17 +143,17 @@ mod tests {
     impl RecordingTransport {
         fn matching_root() -> Self {
             let transport = Self::default();
-            transport.insert_matching_assets(COMPILED_PIR_LAYOUT);
+            transport.insert_matching_assets(COMPILED_PIR_LAYOUT, DEFAULT_YPIR_POLY_LEN);
             transport
         }
 
         fn with_root_layout(layout: NegotiatedPirLayout) -> Self {
             let transport = Self::default();
-            transport.insert_matching_assets(layout);
+            transport.insert_matching_assets(layout, layout.poly_len);
             transport
         }
 
-        fn insert_matching_assets(&self, layout: NegotiatedPirLayout) {
+        fn insert_matching_assets(&self, layout: NegotiatedPirLayout, poly_len: usize) {
             let rows = layout.tier1_rows().unwrap();
             let row_bytes = layout.tier1_row_bytes().unwrap();
             let item_bits = layout.tier1_item_bits().unwrap();
@@ -173,6 +174,7 @@ mod tests {
             let tier1 = YpirScenario {
                 num_items: rows,
                 item_size_bits: item_bits,
+                poly_len,
             };
             let mut gets = self.gets.lock().unwrap();
             gets.insert("/tier0".to_string(), response(vec![0; tier0_bytes]));
@@ -254,6 +256,7 @@ mod tests {
             pir_depth: u32::try_from(COMPILED_PIR_LAYOUT.pir_depth).unwrap(),
             tier0_layers: u32::try_from(COMPILED_PIR_LAYOUT.tier0_layers).unwrap(),
             tier1_layers: u32::try_from(COMPILED_PIR_LAYOUT.tier1_layers).unwrap(),
+            poly_len: TEST_POLY_LEN,
         }
     }
 
@@ -281,6 +284,7 @@ mod tests {
                     pir_depth: 19,
                     tier0_layers: 10,
                     tier1_layers: 9,
+                    poly_len: 4096,
                 },
                 "Tier 1 rows 1024 below YPIR minimum 2048",
             ),
@@ -289,6 +293,7 @@ mod tests {
                     pir_depth: 19,
                     tier0_layers: 14,
                     tier1_layers: 5,
+                    poly_len: 4096,
                 },
                 "Tier 1 item bits 24576 below YPIR minimum 28672",
             ),
@@ -297,6 +302,7 @@ mod tests {
                     pir_depth: 19,
                     tier0_layers: 0,
                     tier1_layers: 19,
+                    poly_len: 4096,
                 },
                 "PIR layout tiers must be non-zero",
             ),
@@ -323,6 +329,7 @@ mod tests {
             pir_depth: PIR_DEPTH,
             tier0_layers: TIER0_LAYERS - 1,
             tier1_layers: COMPILED_PIR_LAYOUT.tier1_layers + 1,
+            poly_len: DEFAULT_YPIR_POLY_LEN,
         };
         let transport = Arc::new(RecordingTransport::with_root_layout(mismatched));
 
@@ -343,6 +350,7 @@ mod tests {
             pir_depth: 18,
             tier0_layers: 11,
             tier1_layers: 7,
+            poly_len: 4096,
         };
         let transport = Arc::new(RecordingTransport::matching_root());
 
@@ -354,6 +362,27 @@ mod tests {
 
         assert!(matches!(err, VotingError::InvalidInput { .. }), "{err}");
         assert!(err.to_string().contains("PIR layout mismatch"), "{err}");
+        assert_eq!(transport.post_count(), 0);
+    }
+
+    #[test]
+    fn connect_rejects_poly_len_mismatch_before_query() {
+        // poly_len is part of PirLayout, so /root rejects before /params/tier1.
+        let transport = Arc::new(RecordingTransport::matching_root());
+
+        let err = expect_connect_err(connect_pir_blocking(
+            PirLayout {
+                poly_len: 2048,
+                ..compiled_wallet_layout()
+            },
+            "https://pir.example.com",
+            transport.clone(),
+        ));
+
+        assert!(matches!(err, VotingError::InvalidInput { .. }), "{err}");
+        assert!(err.to_string().contains("PIR layout mismatch"), "{err}");
+        assert_eq!(transport.count_hits("/root"), 1);
+        assert_eq!(transport.count_hits("/params/tier1"), 0);
         assert_eq!(transport.post_count(), 0);
     }
 
@@ -430,6 +459,7 @@ mod tests {
         preimage.extend_from_slice(&wallet_layout.pir_depth.to_le_bytes());
         preimage.extend_from_slice(&wallet_layout.tier0_layers.to_le_bytes());
         preimage.extend_from_slice(&wallet_layout.tier1_layers.to_le_bytes());
+        preimage.extend_from_slice(&TEST_POLY_LEN.to_le_bytes());
         let sig = signing_key.sign(&preimage).to_bytes();
         let dynamic_bytes = json!({
             "config_version": 1,
@@ -438,7 +468,8 @@ mod tests {
             "pir_layout": {
                 "pir_depth": COMPILED_PIR_LAYOUT.pir_depth,
                 "tier0_layers": COMPILED_PIR_LAYOUT.tier0_layers,
-                "tier1_layers": COMPILED_PIR_LAYOUT.tier1_layers
+                "tier1_layers": COMPILED_PIR_LAYOUT.tier1_layers,
+                "poly_len": TEST_POLY_LEN
             },
             "supported_versions": {
                 "pir": ["v0"],
@@ -483,6 +514,7 @@ mod tests {
             pir_depth: 18,
             tier0_layers: 11,
             tier1_layers: 7,
+            poly_len: DEFAULT_YPIR_POLY_LEN,
         }));
         let err = expect_connect_err(connect_pir_blocking(
             resolved.pir_layout,

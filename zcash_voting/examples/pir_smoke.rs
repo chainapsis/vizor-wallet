@@ -96,6 +96,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
         pir_depth: 19,
         tier0_layers: 12,
         tier1_layers: 7,
+        poly_len: 4096,
     };
     let round_id = hex::decode(ROUND_ID)
         .expect("round id hex")
@@ -127,7 +128,8 @@ fn prepare(args: Vec<String>) -> Result<()> {
         "pir_layout": {
             "pir_depth": 19,
             "tier0_layers": 12,
-            "tier1_layers": 7
+            "tier1_layers": 7,
+            "poly_len": 4096
         },
         "supported_versions": {
             "pir": ["v0"],
@@ -246,6 +248,7 @@ async fn run(args: Vec<String>) -> Result<()> {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
+            poly_len: 4096,
         }
     );
 
