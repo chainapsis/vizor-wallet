@@ -916,12 +916,15 @@ mod tests {
         }
     }
 
-    fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {
+    fn dynamic_bytes_with_layout_and_round_signers(
+        layout: PirLayout,
+        round_signers: &[(&str, &SigningKey)],
+    ) -> Vec<u8> {
         let mut rounds = serde_json::Map::new();
         for (round_id, signing_key) in round_signers {
             let ea_pk = [7u8; 32];
             let sig = signing_key
-                .sign(&round_auth_v2_preimage(round_id, &ea_pk, test_pir_layout()))
+                .sign(&round_auth_v2_preimage(round_id, &ea_pk, layout))
                 .to_bytes();
             rounds.insert(
                 (*round_id).to_string(),
@@ -941,10 +944,10 @@ mod tests {
             "vote_servers": [{"url": "https://vote.example.com", "label": "vote"}],
             "pir_endpoints": [{"url": "https://pir.example.com", "label": "pir"}],
             "pir_layout": {
-                "pir_depth": 19,
-                "tier0_layers": 12,
-                "tier1_layers": 7,
-            "poly_len": 4096
+                "pir_depth": layout.pir_depth,
+                "tier0_layers": layout.tier0_layers,
+                "tier1_layers": layout.tier1_layers,
+                "poly_len": layout.poly_len
             },
             "supported_versions": {
                 "pir": ["v0"],
@@ -956,6 +959,10 @@ mod tests {
         })
         .to_string()
         .into_bytes()
+    }
+
+    fn dynamic_bytes_with_round_signers(round_signers: &[(&str, &SigningKey)]) -> Vec<u8> {
+        dynamic_bytes_with_layout_and_round_signers(test_pir_layout(), round_signers)
     }
 
     fn dynamic_bytes(signing_key: &SigningKey) -> Vec<u8> {
@@ -1225,17 +1232,23 @@ mod tests {
     #[test]
     fn dynamic_resolution_accepts_layouts_supported_by_shared_predicate() {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
-        for (tier0_layers, tier1_layers) in [(11, 8), (13, 6), (16, 11), (11, 15)] {
-            let mut dynamic: serde_json::Value =
-                serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
-            dynamic["pir_layout"] = serde_json::json!({
-                "pir_depth": tier0_layers + tier1_layers,
-                "tier0_layers": tier0_layers,
-                "tier1_layers": tier1_layers,
-            "poly_len": 4096
-            });
+        for (tier0_layers, tier1_layers, poly_len) in
+            [(11, 8, 2048), (13, 6, 4096), (16, 11, 2048), (11, 15, 4096)]
+        {
+            let layout = PirLayout {
+                pir_depth: tier0_layers + tier1_layers,
+                tier0_layers,
+                tier1_layers,
+                poly_len,
+            };
+            let dynamic =
+                dynamic_bytes_with_layout_and_round_signers(layout, &[(ROUND_ID, &signing_key)]);
 
-            resolve_test_dynamic(&signing_key, &serde_json::to_vec(&dynamic).unwrap()).unwrap();
+            let resolved = resolve_test_dynamic(&signing_key, &dynamic).unwrap();
+
+            assert_eq!(resolved.pir_layout, layout);
+            assert_eq!(resolved.authenticated_rounds.len(), 1);
+            assert!(resolved.skipped_round_ids.is_empty());
         }
     }
 

@@ -6,7 +6,7 @@
 //! - `verify`  — Verify a witness against a root and leaf
 //! - `status`  — Fetch and display the chain's current tree state
 
-use std::{process, sync::Arc};
+use std::{process, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
@@ -133,6 +133,25 @@ fn fp_hex(fp: &Fp) -> String {
 
 type RequestBody = Empty<Bytes>;
 type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
+const MAX_RESPONSE_BYTES: usize = 8 * 1_024 * 1_024;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn append_response_chunk(
+    body: &mut Vec<u8>,
+    chunk: &[u8],
+    max_bytes: usize,
+) -> Result<(), TransportError> {
+    let response_bytes = body.len().checked_add(chunk.len()).ok_or_else(|| {
+        TransportError::Request(format!("response exceeded {max_bytes} byte limit"))
+    })?;
+    if response_bytes > max_bytes {
+        return Err(TransportError::Request(format!(
+            "response exceeded {max_bytes} byte limit"
+        )));
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
 
 struct CliHyperTransport {
     runtime: tokio::runtime::Runtime,
@@ -162,27 +181,57 @@ impl CliHyperTransport {
 impl Transport for CliHyperTransport {
     fn get(&self, url: &str) -> Result<TransportResponse, TransportError> {
         self.runtime.block_on(async {
-            let request = Request::builder()
-                .method("GET")
-                .uri(url)
-                .body(Empty::<Bytes>::new())
-                .map_err(|e| TransportError::Request(e.to_string()))?;
-            let response = self
-                .client
-                .request(request)
-                .await
-                .map_err(|e| TransportError::Request(e.to_string()))?;
-            let status = response.status().as_u16();
-            let body = response
-                .into_body()
-                .collect()
-                .await
-                .map_err(|e| TransportError::Request(e.to_string()))?
-                .to_bytes()
-                .to_vec();
+            tokio::time::timeout(REQUEST_TIMEOUT, async {
+                let request = Request::builder()
+                    .method("GET")
+                    .uri(url)
+                    .body(Empty::<Bytes>::new())
+                    .map_err(|e| TransportError::Request(e.to_string()))?;
+                let response = self
+                    .client
+                    .request(request)
+                    .await
+                    .map_err(|e| TransportError::Request(e.to_string()))?;
+                let status = response.status().as_u16();
+                let mut response_body = response.into_body();
+                let mut body = Vec::new();
+                while let Some(frame) = response_body.frame().await {
+                    let frame = frame.map_err(|e| TransportError::Request(e.to_string()))?;
+                    if let Ok(data) = frame.into_data() {
+                        append_response_chunk(&mut body, &data, MAX_RESPONSE_BYTES)?;
+                    }
+                }
 
-            Ok(TransportResponse { status, body })
+                Ok(TransportResponse { status, body })
+            })
+            .await
+            .map_err(|_| {
+                TransportError::Request(format!(
+                    "request timed out after {} seconds",
+                    REQUEST_TIMEOUT.as_secs()
+                ))
+            })?
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_response_chunk;
+
+    #[test]
+    fn response_body_accepts_exact_limit() {
+        let mut body = vec![1, 2];
+        append_response_chunk(&mut body, &[3, 4], 4).unwrap();
+        assert_eq!(body, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn response_body_rejects_chunk_past_limit_without_appending() {
+        let mut body = vec![1, 2];
+        let err = append_response_chunk(&mut body, &[3, 4, 5], 4).unwrap_err();
+        assert_eq!(body, vec![1, 2]);
+        assert!(err.to_string().contains("response exceeded 4 byte limit"));
     }
 }
 

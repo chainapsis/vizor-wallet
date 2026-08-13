@@ -100,6 +100,12 @@ connect to a PIR server that does not advertise matching `/root.pir_layout`
 and `/params/tier1.poly_len`, fail closed at connect time before any private
 query.
 
+This validation describes layouts the compiled client can consume. Snapshot
+tooling and fleet deployment determine which of those layouts is currently
+available. Wallets intentionally do not require equality with a compiled
+production default, so a consistently advertised service layout can change
+without requiring a wallet release.
+
 After resolution, wallets typically connect PIR through
 `pir::connect_pir_blocking` (or `pir::connect_pir`) with the resolved config's
 `pir_layout` and a caller-chosen endpoint URL. The helpers run the
@@ -251,10 +257,10 @@ This release line requires Rust 1.88 or newer.
 
 - **`orchard 0.15`** from [zcash/orchard](https://github.com/zcash/orchard),
   with `unstable-voting-circuits` enabled for the governance proof paths.
-- **`voting-circuits 0.9.0-rc.3`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+- **`voting-circuits 0.10.0-rc.1`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
-- **`vote-commitment-tree 0.4.0-rc.1`** and
-  **`vote-commitment-tree-client 0.6.0-rc.1`** for vote commitment tree state
+- **`vote-commitment-tree 0.5.0-rc.1`** and
+  **`vote-commitment-tree-client 0.7.0-rc.1`** for vote commitment tree state
   and optional HTTP sync.
 - **`pczt 0.9.2`, `zcash_client_backend 0.24.0-rc.7`,
   `zcash_client_sqlite 0.22.0-rc.7`, `zcash_keys 0.16.1`,

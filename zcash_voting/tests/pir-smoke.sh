@@ -9,6 +9,7 @@ CONFIG_PORT="${CONFIG_PORT:-18080}"
 PIR_HOST="${PIR_HOST:-127.0.0.1}"
 PIR_PORT="${PIR_PORT:-13000}"
 ZCASH_NETWORK="${ZCASH_NETWORK:-main}"
+PIR_POLY_LEN="${PIR_POLY_LEN:-4096}"
 STATIC_IDENTITY_URL="${STATIC_IDENTITY_URL:-https://config.smoke.test/static-voting-config.json}"
 DYNAMIC_IDENTITY_URL="${DYNAMIC_IDENTITY_URL:-https://config.smoke.test/dynamic-voting-config.json}"
 PIR_IDENTITY_URL="${PIR_IDENTITY_URL:-https://pir.smoke.test}"
@@ -59,6 +60,14 @@ require_cmd cargo
 require_cmd python3
 require_cmd curl
 
+case "${PIR_POLY_LEN}" in
+  2048|4096) ;;
+  *)
+    echo "PIR_POLY_LEN must be 2048 or 4096, got ${PIR_POLY_LEN}" >&2
+    exit 1
+    ;;
+esac
+
 if [[ ! -d "${PIR_REPO}" ]]; then
   echo "PIR_REPO does not exist: ${PIR_REPO}" >&2
   exit 1
@@ -71,6 +80,7 @@ fi
 PIR_REPO="$(cd "${PIR_REPO}" && pwd)"
 log "work dir: ${WORKDIR}"
 log "PIR repo: ${PIR_REPO}"
+log "PIR poly_len: ${PIR_POLY_LEN}"
 mkdir -p "${PIR_DATA_DIR}" "${CONFIG_DIR}"
 cp "${ROOT}/Cargo.lock" "${CARGO_LOCK_BAK}"
 
@@ -130,7 +140,7 @@ print(f"wrote {path} height={height}")
 PY
 
 # Point this workspace at the sibling PIR checkout without rewriting Cargo.toml.
-# Cargo --config path keys override the git [patch.crates-io] entries.
+# Cargo --config path keys override the registry dependencies for this run.
 run_pir_smoke() {
   cargo run --manifest-path "${ROOT}/Cargo.toml" \
     --config "patch.crates-io.pir-client.path=\"${PIR_REPO}/pir/client\"" \
@@ -157,6 +167,7 @@ STATIC_SHA="$(
     --static-identity-url "${STATIC_IDENTITY_URL}" \
     --dynamic-identity-url "${DYNAMIC_IDENTITY_URL}" \
     --pir-identity-url "${PIR_IDENTITY_URL}" \
+    --poly-len "${PIR_POLY_LEN}" \
     --print-static-sha256
 )"
 log "static sha256: ${STATIC_SHA}"
@@ -173,9 +184,13 @@ log "starting PIR server on ${PIR_HOST}:${PIR_PORT}"
 (
   cd "${PIR_REPO}"
   SVOTE_ZCASH_NETWORK="${ZCASH_NETWORK}" \
-    cargo run --release -p pir-server -- \
-      "${PIR_DATA_DIR}" \
-      "${PIR_PORT}"
+  SVOTE_PIR_DATA_DIR="${PIR_DATA_DIR}" \
+  SVOTE_PIR_PORT="${PIR_PORT}" \
+  SVOTE_PIR_POLY_LEN="${PIR_POLY_LEN}" \
+  SVOTE_PIR_CONFIG_URL="" \
+  SVOTE_PIR_PRECOMPUTED_BASE_URL="" \
+  SVOTE_PIR_STALE_THRESHOLD_SECS=0 \
+    cargo run --release -p nf-server --features serve -- serve
 ) >"${WORKDIR}/pir-server.log" 2>&1 &
 PIR_PID=$!
 
@@ -183,7 +198,7 @@ wait_http() {
   local url="$1"
   local name="$2"
   local i
-  for i in $(seq 1 120); do
+  for i in $(seq 1 600); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       log "${name} ready: ${url}"
       return 0
@@ -209,7 +224,7 @@ wait_http() {
 }
 
 wait_http "http://${CONFIG_HOST}:${CONFIG_PORT}/static-voting-config.json" "config server"
-wait_http "http://${PIR_HOST}:${PIR_PORT}/health" "PIR server"
+wait_http "http://${PIR_HOST}:${PIR_PORT}/ready" "PIR server"
 
 PINNED_SOURCE="${STATIC_IDENTITY_URL}?checksum=sha256:${STATIC_SHA}"
 log "running smoke driver"
@@ -218,6 +233,7 @@ run_pir_smoke run \
   --static-source "${PINNED_SOURCE}" \
   --pir-url "http://${PIR_HOST}:${PIR_PORT}" \
   --present-nf "${PRESENT_NF_HEX}" \
-  --absent-nf "${ABSENT_NF_HEX}"
+  --absent-nf "${ABSENT_NF_HEX}" \
+  --expected-poly-len "${PIR_POLY_LEN}"
 
-log "PASS"
+log "PASS (poly_len=${PIR_POLY_LEN})"

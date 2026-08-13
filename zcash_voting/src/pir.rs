@@ -362,7 +362,47 @@ mod tests {
 
         assert!(matches!(err, VotingError::InvalidInput { .. }), "{err}");
         assert!(err.to_string().contains("PIR layout mismatch"), "{err}");
+        assert_eq!(transport.count_hits("/root"), 1);
+        assert_eq!(transport.count_hits("/tier0"), 0);
+        assert_eq!(transport.count_hits("/params/tier1"), 0);
         assert_eq!(transport.post_count(), 0);
+    }
+
+    #[test]
+    fn connect_succeeds_for_matching_alternate_layouts() {
+        for (pir_depth, tier0_layers, tier1_layers, poly_len) in
+            [(19, 11, 8, 2048), (19, 13, 6, 4096), (20, 12, 8, 4096)]
+        {
+            let negotiated = NegotiatedPirLayout {
+                pir_depth,
+                tier0_layers,
+                tier1_layers,
+                poly_len,
+            };
+            let wallet_layout = PirLayout {
+                pir_depth: u32::try_from(negotiated.pir_depth).unwrap(),
+                tier0_layers: u32::try_from(negotiated.tier0_layers).unwrap(),
+                tier1_layers: u32::try_from(negotiated.tier1_layers).unwrap(),
+                poly_len: u32::try_from(negotiated.poly_len).unwrap(),
+            };
+            let transport = Arc::new(RecordingTransport::with_root_layout(negotiated));
+
+            let _client = connect_pir_blocking(
+                wallet_layout,
+                "https://pir.example.com/",
+                transport.clone(),
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "matching layout {pir_depth}/{tier0_layers}/{tier1_layers}/{poly_len} failed: {err}"
+                )
+            });
+
+            assert_eq!(transport.count_hits("/tier0"), 1);
+            assert_eq!(transport.count_hits("/params/tier1"), 1);
+            assert_eq!(transport.count_hits("/root"), 1);
+            assert_eq!(transport.post_count(), 0);
+        }
     }
 
     #[test]

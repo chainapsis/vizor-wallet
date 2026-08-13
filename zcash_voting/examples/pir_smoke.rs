@@ -59,6 +59,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
     let mut static_identity_url = None;
     let mut dynamic_identity_url = None;
     let mut pir_identity_url = None;
+    let mut poly_len = 4096;
     let mut print_static_sha256 = false;
 
     let mut iter = args.into_iter();
@@ -73,6 +74,11 @@ fn prepare(args: Vec<String>) -> Result<()> {
             }
             "--pir-identity-url" => {
                 pir_identity_url = Some(required_value("--pir-identity-url", iter.next())?)
+            }
+            "--poly-len" => {
+                poly_len = required_value("--poly-len", iter.next())?
+                    .parse()
+                    .context("parse --poly-len as u32")?
             }
             "--print-static-sha256" => print_static_sha256 = true,
             other => bail!("unknown prepare arg: {other}"),
@@ -96,7 +102,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
         pir_depth: 19,
         tier0_layers: 12,
         tier1_layers: 7,
-        poly_len: 4096,
+        poly_len,
     };
     let round_id = hex::decode(ROUND_ID)
         .expect("round id hex")
@@ -129,7 +135,7 @@ fn prepare(args: Vec<String>) -> Result<()> {
             "pir_depth": 19,
             "tier0_layers": 12,
             "tier1_layers": 7,
-            "poly_len": 4096
+            "poly_len": poly_len
         },
         "supported_versions": {
             "pir": ["v0"],
@@ -171,10 +177,11 @@ fn prepare(args: Vec<String>) -> Result<()> {
     )
     .map_err(|e| anyhow!("prepare dynamic resolve failed: {e}"))?;
     eprintln!(
-        "prepared config: layout={} / {} / {}, authenticated_rounds={}",
+        "prepared config: layout={} / {} / {} / {}, authenticated_rounds={}",
         resolved.pir_layout.pir_depth,
         resolved.pir_layout.tier0_layers,
         resolved.pir_layout.tier1_layers,
+        resolved.pir_layout.poly_len,
         resolved.authenticated_rounds.len()
     );
 
@@ -190,6 +197,7 @@ async fn run(args: Vec<String>) -> Result<()> {
     let mut pir_url = None;
     let mut present_nf = None;
     let mut absent_nf = None;
+    let mut expected_poly_len = None;
 
     let mut iter = args.into_iter();
     while let Some(arg) = iter.next() {
@@ -201,6 +209,13 @@ async fn run(args: Vec<String>) -> Result<()> {
             "--pir-url" => pir_url = Some(required_value("--pir-url", iter.next())?),
             "--present-nf" => present_nf = Some(required_value("--present-nf", iter.next())?),
             "--absent-nf" => absent_nf = Some(required_value("--absent-nf", iter.next())?),
+            "--expected-poly-len" => {
+                expected_poly_len = Some(
+                    required_value("--expected-poly-len", iter.next())?
+                        .parse()
+                        .context("parse --expected-poly-len as u32")?,
+                )
+            }
             other => bail!("unknown run arg: {other}"),
         }
     }
@@ -210,6 +225,8 @@ async fn run(args: Vec<String>) -> Result<()> {
     let pir_url = pir_url.ok_or_else(|| anyhow!("run requires --pir-url"))?;
     let present_nf = parse_nf(&present_nf.ok_or_else(|| anyhow!("run requires --present-nf"))?)?;
     let absent_nf = parse_nf(&absent_nf.ok_or_else(|| anyhow!("run requires --absent-nf"))?)?;
+    let expected_poly_len =
+        expected_poly_len.ok_or_else(|| anyhow!("run requires --expected-poly-len"))?;
 
     let fetcher = LoopbackHttpsIdentityFetcher::new(fetch_base.trim_end_matches('/').to_string());
     let pinned = PinnedConfigSource::parse(&static_source)
@@ -228,10 +245,11 @@ async fn run(args: Vec<String>) -> Result<()> {
     .map_err(|e| anyhow!("resolve dynamic config failed: {e}"))?;
 
     println!(
-        "resolved pir_layout: depth={} tier0={} tier1={}",
+        "resolved pir_layout: depth={} tier0={} tier1={} poly_len={}",
         resolved.pir_layout.pir_depth,
         resolved.pir_layout.tier0_layers,
-        resolved.pir_layout.tier1_layers
+        resolved.pir_layout.tier1_layers,
+        resolved.pir_layout.poly_len
     );
     println!(
         "resolved pir_endpoints: {}",
@@ -248,7 +266,7 @@ async fn run(args: Vec<String>) -> Result<()> {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
-            poly_len: 4096,
+            poly_len: expected_poly_len,
         }
     );
 
