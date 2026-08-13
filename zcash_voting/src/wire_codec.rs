@@ -199,7 +199,9 @@ impl VoteShareWire {
         vc_tree_position: Option<u64>,
         submit_at: u64,
     ) -> Result<Self, VotingError> {
+        crate::types::validate_vote_round_id_hex(&payload.vote_round_id)?;
         Ok(Self {
+            vote_round_id: payload.vote_round_id.clone(),
             shares_hash: b64(&payload.shares_hash),
             proposal_id: payload.proposal_id,
             vote_decision: payload.vote_decision,
@@ -940,6 +942,7 @@ mod tests {
     #[test]
     fn vote_share_wire_json_contains_only_assigned_encrypted_share() {
         let payload = SharePayload {
+            vote_round_id: "01".repeat(32),
             shares_hash: vec![0x21; 32],
             proposal_id: 9,
             vote_decision: 2,
@@ -969,6 +972,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value.get("tree_position").unwrap().as_u64().unwrap(), 99);
         assert_eq!(value.get("submit_at").unwrap().as_u64().unwrap(), 123);
+        assert_eq!(value["vote_round_id"], "01".repeat(32));
         assert_eq!(value["enc_share"]["share_index"].as_u64().unwrap(), 1);
         assert_eq!(value["enc_share"]["c1"], b64(&payload.enc_share.c1));
         assert_eq!(value["enc_share"]["c2"], b64(&payload.enc_share.c2));
@@ -981,6 +985,7 @@ mod tests {
     #[test]
     fn vote_share_wire_json_rejects_large_json_integer() {
         let payload = SharePayload {
+            vote_round_id: "01".repeat(32),
             shares_hash: vec![0x21; 32],
             proposal_id: 1,
             vote_decision: 1,
@@ -999,6 +1004,30 @@ mod tests {
         assert!(err
             .to_string()
             .contains("field tree_position is too large to encode as JSON integer"));
+    }
+
+    #[test]
+    fn vote_share_wire_json_rejects_noncanonical_vote_round_id() {
+        let payload = SharePayload {
+            vote_round_id: "AA".repeat(32),
+            shares_hash: vec![0x21; 32],
+            proposal_id: 1,
+            vote_decision: 1,
+            enc_share: crate::WireEncryptedShare {
+                c1: vec![0x22; 32],
+                c2: vec![0x23; 32],
+                share_index: 0,
+            },
+            tree_position: 1,
+            all_enc_shares: vec![],
+            share_comms: vec![],
+            primary_blind: vec![0x27; 32],
+        };
+
+        let err = payload
+            .to_wire_json(None, 10)
+            .expect_err("non-canonical vote round ID should fail");
+        assert!(err.to_string().contains("vote_round_id"), "{err}");
     }
 
     #[test]
@@ -1168,6 +1197,7 @@ mod tests {
                     share_index: 0,
                 }],
                 share_payloads: vec![crate::SharePayload {
+                    vote_round_id: "00".repeat(32),
                     shares_hash: vec![7; 32],
                     proposal_id: 2,
                     vote_decision: 1,
@@ -1193,6 +1223,7 @@ mod tests {
         assert_eq!(view.bundle_index, 1);
         assert_eq!(view.commitments[0].proposal_id, 2);
         assert_eq!(view.commitments[0].wire.proposal_id, 2);
+        assert_eq!(view.commitments[0].shares[0].vote_round_id, "00".repeat(32));
         assert_eq!(
             view.commitments[0].shares[0].encrypted_share.c1,
             vec![5; 32]

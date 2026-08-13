@@ -569,7 +569,8 @@ pub struct VoteCommitmentBundle {
     pub enc_shares: Vec<EncryptedShare>,
     /// Tree anchor height used for the proof.
     pub anchor_height: u32,
-    /// Voting round ID (hex string).
+    /// Voting round ID as a canonical Pallas field element encoded in 64
+    /// lowercase hex characters.
     pub vote_round_id: String,
     /// Poseidon hash of encrypted share coordinates (32 bytes).
     /// Intermediate value: vote_commitment = H(DOMAIN_VC, voting_round_id, shares_hash, proposal_id, vote_decision).
@@ -622,6 +623,8 @@ impl From<EncryptedShare> for WireEncryptedShare {
 /// Payload sent to helper server for delegated share submission.
 #[derive(Clone, Debug)]
 pub struct SharePayload {
+    /// Voting round ID as 32 bytes encoded in lowercase hex.
+    pub vote_round_id: String,
     pub shares_hash: Vec<u8>,
     pub proposal_id: u32,
     pub vote_decision: u32,

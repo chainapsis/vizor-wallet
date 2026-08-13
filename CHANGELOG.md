@@ -6,6 +6,12 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+### Changed
+- **Breaking:** `SharePayload` and `VoteShareWire` now carry the authoritative
+  lowercase-hex `vote_round_id` from the vote commitment or recovery bundle.
+  Wallets can submit the crate-produced helper-share JSON directly instead of
+  injecting round context at the transport boundary.
+
 ## v3.0.0-rc.2
 
 ### Changed

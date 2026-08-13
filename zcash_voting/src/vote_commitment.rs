@@ -1,16 +1,19 @@
 use crate::types::{
-    validate_encrypted_shares, validate_proposal_id, validate_vote_decision, CastVoteSignature,
-    Network, SharePayload, VoteCommitmentBundle, VotingError, WireEncryptedShare,
+    validate_encrypted_shares, validate_proposal_id, validate_vote_decision,
+    validate_vote_round_id_hex, CastVoteSignature, Network, SharePayload, VoteCommitmentBundle,
+    VotingError, WireEncryptedShare,
 };
 
 /// Build payloads for helper server (one per share).
 ///
 /// Each payload contains the encrypted share data plus metadata the helper
 /// needs to construct `MsgRevealShare`: the shares_hash (from the vote
-/// commitment), proposal_id, vote_decision, and the VC tree position.
+/// commitment), vote_round_id, proposal_id, vote_decision, and the VC tree
+/// position.
 ///
 /// - `enc_shares`: Encrypted shares from `VoteCommitmentBundle.enc_shares`.
-/// - `commitment`: The vote commitment bundle (provides shares_hash + proposal_id).
+/// - `commitment`: The vote commitment bundle (provides the canonical
+///   lowercase-hex vote_round_id, shares_hash, and proposal_id).
 /// - `vote_decision`: The voter's choice (0-indexed into the proposal's options).
 /// - `num_options`: Number of options declared for this proposal (2-8).
 /// - `vc_tree_position`: Position of the Vote Commitment leaf in the VC tree,
@@ -26,6 +29,7 @@ pub fn build_share_payloads(
     validate_encrypted_shares(enc_shares)?;
     validate_proposal_id(commitment.proposal_id)?;
     validate_vote_decision(vote_decision, num_options)?;
+    validate_vote_round_id_hex(&commitment.vote_round_id)?;
 
     let all_enc_shares: Vec<WireEncryptedShare> = enc_shares.to_vec();
 
@@ -49,6 +53,7 @@ pub fn build_share_payloads(
                     message: format!("missing primary blind for encrypted share index {i}"),
                 })?;
         payloads.push(SharePayload {
+            vote_round_id: commitment.vote_round_id.clone(),
             shares_hash: commitment.shares_hash.clone(),
             proposal_id: commitment.proposal_id,
             vote_decision,
@@ -188,6 +193,8 @@ fn extend_padded32(out: &mut Vec<u8>, b: &[u8]) {
 mod tests {
     use super::*;
 
+    const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+
     fn mock_enc_shares() -> Vec<WireEncryptedShare> {
         vec![
             WireEncryptedShare {
@@ -212,7 +219,7 @@ mod tests {
             proof: vec![0xAB; 256],
             enc_shares: vec![],
             anchor_height: 0,
-            vote_round_id: String::new(),
+            vote_round_id: ROUND_ID.to_string(),
             shares_hash: vec![0xDD; 32],
             share_blinds: (0..5).map(|_| vec![0x11; 32]).collect(),
             share_comms: (0..5).map(|_| vec![0x22; 32]).collect(),
@@ -230,6 +237,7 @@ mod tests {
         assert_eq!(result[0].proposal_id, 1);
         assert_eq!(result[0].vote_decision, 1);
         assert_eq!(result[0].tree_position, 42);
+        assert_eq!(result[0].vote_round_id, ROUND_ID);
         assert_eq!(result[0].shares_hash, commitment.shares_hash);
         assert_eq!(result[0].enc_share.share_index, 0);
         assert_eq!(result[1].enc_share.share_index, 1);
@@ -284,5 +292,16 @@ mod tests {
         let mut commitment = mock_commitment();
         commitment.proposal_id = 16;
         assert!(build_share_payloads(&mock_enc_shares(), &commitment, 0, 2, 42, false).is_err());
+    }
+
+    #[test]
+    fn test_build_share_payloads_rejects_invalid_vote_round_id() {
+        let mut commitment = mock_commitment();
+        commitment.vote_round_id = "AA".repeat(32);
+
+        let err = build_share_payloads(&mock_enc_shares(), &commitment, 0, 2, 42, false)
+            .expect_err("non-canonical vote round ID should fail");
+
+        assert!(err.to_string().contains("vote_round_id"), "{err}");
     }
 }

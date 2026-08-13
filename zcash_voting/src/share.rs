@@ -170,6 +170,7 @@ pub fn recover_payloads(bundle: &VoteRecoveryBundle) -> Result<Vec<SharePayload>
                         message: format!("missing primary blind for encrypted share index {idx}"),
                     })?;
             Ok(SharePayload {
+                vote_round_id: bundle.vote_round_id.clone(),
                 shares_hash: bundle.shares_hash.to_vec(),
                 proposal_id: bundle.proposal_id,
                 vote_decision: bundle.vote_decision,
@@ -326,6 +327,7 @@ mod tests {
         let nullifier = compute_nullifier(&bundle.vote_commitment, 1, &field_bytes(2)).unwrap();
 
         assert_eq!(payloads.len(), 2);
+        assert_eq!(payload.vote_round_id, ROUND_ID);
         assert_eq!(payload.enc_share.share_index, 1);
         assert_eq!(payload.all_enc_shares.len(), 2);
         assert_eq!(payload.share_comms[1], vec![0x52; 32]);
@@ -343,6 +345,7 @@ mod tests {
         assert_eq!(value["share_index"].as_u64().unwrap(), 1);
         assert_eq!(value["tree_position"].as_u64().unwrap(), 999);
         assert_eq!(value["submit_at"].as_u64().unwrap(), 123);
+        assert_eq!(value["vote_round_id"].as_str().unwrap(), ROUND_ID);
         assert_eq!(value["enc_share"]["share_index"].as_u64().unwrap(), 1);
         assert!(
             value.get("all_enc_shares").is_none(),
@@ -358,6 +361,10 @@ mod tests {
 
         let mut bundle = recovery_bundle_fixture();
         bundle.vote_decision = bundle.num_options;
+        assert!(recover_payloads(&bundle).is_err());
+
+        let mut bundle = recovery_bundle_fixture();
+        bundle.vote_round_id = "AA".repeat(32);
         assert!(recover_payloads(&bundle).is_err());
     }
 
