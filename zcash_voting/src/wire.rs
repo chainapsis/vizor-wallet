@@ -100,6 +100,8 @@ pub struct VoteCommitmentWire {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoteShareWire {
+    /// Voting round ID as 32 bytes encoded in lowercase hex.
+    pub vote_round_id: String,
     pub shares_hash: String,
     pub proposal_id: u32,
     pub vote_decision: u32,
