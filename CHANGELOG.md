@@ -6,6 +6,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.0.0-rc.3
+
 ### Changed
 - **Breaking:** `SharePayload` and `VoteShareWire` now carry the authoritative
   lowercase-hex `vote_round_id` from the vote commitment or recovery bundle.
