@@ -158,6 +158,12 @@ zcash_note_encryption = "0.4"
 [dev-dependencies.vote-commitment-tree]
 version = "=0.5.0-rc.1"
 
+[patch.crates-io]
+# Exercise the unreleased initial share target spreading policy.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "940a0c35c47d284a24d31e46df58f3e9572957bd" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "940a0c35c47d284a24d31e46df58f3e9572957bd" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "940a0c35c47d284a24d31e46df58f3e9572957bd" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
