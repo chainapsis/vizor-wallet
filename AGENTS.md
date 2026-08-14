@@ -362,6 +362,12 @@ SyncProvider (sync_provider.dart)
   ├── Polling pauses on app background (onHide), resumes on foreground (onResume)
   ├── refreshAfterSend() called after account switch for immediate update
   └── refreshAfterUnlock() refreshes balances/history before foreground sync recovery
+
+SyncDisplayPercentageProvider (sync_display_progress_provider.dart)
+  ├── Owns the 20 ms UI-only interpolation timer between Rust progress events
+  ├── Watches only authoritative progress targets from SyncProvider
+  ├── Exposes raw interpolated progress only to smooth progress indicators
+  └── Exposes whole percentages to labels so unrelated UI does not rebuild per tick
 ```
 
 ### App Bootstrap

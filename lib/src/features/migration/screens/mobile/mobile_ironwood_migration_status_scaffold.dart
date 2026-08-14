@@ -23,19 +23,25 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final sync = ref.watch(syncProvider).value ?? SyncState();
-    final syncLabel = SyncStatusLabel.from(sync).label;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
         child: Column(
           children: [
             if (showAccountNav) ...[
-              MobileTopNav.account(
-                accountName: data.accountName,
-                syncLabel: syncLabel,
-                avatar: AppProfilePicture(
-                  profilePictureId: data.profilePictureId,
-                  size: AppProfilePictureSize.navLarge,
+              Consumer(
+                builder: (context, ref, _) => MobileTopNav.account(
+                  accountName: data.accountName,
+                  syncLabel: SyncStatusLabel.from(
+                    sync,
+                    displayWholePercentage: ref.watch(
+                      syncDisplayWholePercentageProvider,
+                    ),
+                  ).label,
+                  avatar: AppProfilePicture(
+                    profilePictureId: data.profilePictureId,
+                    size: AppProfilePictureSize.navLarge,
+                  ),
                 ),
               ),
             ],

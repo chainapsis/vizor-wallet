@@ -14,7 +14,8 @@ void main() {
 
   test('syncing state carries whole-percent progress capped below 100', () {
     final status = SyncStatusLabel.from(
-      SyncState(isSyncing: true, percentage: 0.5, displayPercentage: 0.997),
+      SyncState(isSyncing: true, percentage: 0.5),
+      displayWholePercentage: 99,
     );
     expect(status.kind, SyncStatusKind.syncing);
     expect(status.label, '99% Syncing...');

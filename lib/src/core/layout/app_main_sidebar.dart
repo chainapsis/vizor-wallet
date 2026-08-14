@@ -12,6 +12,7 @@ import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
+import '../../providers/sync_display_progress_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
@@ -1479,16 +1480,16 @@ class _SidebarPopoverHoverTargetState
 /// added. (The mobile top-nav has the same effect with its own colors; the
 /// small shimmer/motion helpers are intentionally duplicated rather than
 /// shared so the two surfaces ship as independent changes.)
-class _SidebarSyncStatus extends StatefulWidget {
+class _SidebarSyncStatus extends ConsumerStatefulWidget {
   const _SidebarSyncStatus({required this.sync});
 
   final SyncState sync;
 
   @override
-  State<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
+  ConsumerState<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
 }
 
-class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
+class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
     with SingleTickerProviderStateMixin {
   static const _height = 32.0;
   static const _indicatorWidth = 5.0;
@@ -1551,7 +1552,10 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final status = SyncStatusLabel.from(widget.sync);
+    final status = SyncStatusLabel.from(
+      widget.sync,
+      displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
+    );
     final syncedHeight =
         status.kind == SyncStatusKind.synced &&
             widget.sync.isSyncComplete &&

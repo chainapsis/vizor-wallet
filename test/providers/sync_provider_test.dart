@@ -186,6 +186,42 @@ void main() {
     await expectLater(handling, completes);
   });
 
+  test('batch progress publishes one authoritative state', () async {
+    late _LifecycleTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => notifier = _LifecycleTestSyncNotifier(() async => 'wallet.db'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    var updates = 0;
+    container.listen(syncProvider, (_, _) => updates++);
+
+    await notifier.handleSyncProgressForTesting(
+      const SyncProgressEvent(
+        scannedHeight: 10,
+        chainTipHeight: 100,
+        percentage: 0.1,
+        displayTargetPercentage: 0.2,
+        displayTargetBlocks: 100,
+        isSyncing: true,
+        isComplete: false,
+        hasNewTx: false,
+      ),
+    );
+    expect(updates, 1);
+
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(updates, 1);
+    expect(container.read(syncProvider).requireValue.percentage, 0.1);
+  });
+
   test('in-flight progress cannot replace a newer sync failure', () async {
     final resolverStarted = Completer<void>();
     final dbPath = Completer<String>();

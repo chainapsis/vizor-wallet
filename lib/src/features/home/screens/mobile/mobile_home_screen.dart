@@ -26,6 +26,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
+import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -98,7 +99,7 @@ class MobileHomeScreen extends ConsumerWidget {
                   // with a soft eased fade instead of a hard clip line.
                   child: MobileTopScrollFade(
                     child: isImporting
-                        ? _ImportingView(progress: sync.displayPercentage)
+                        ? const _MobileHomeImportingProgress()
                         : _HomeContent(
                             sync: sync,
                             activeAccountUuid: activeAccountUuid,
@@ -781,6 +782,15 @@ class _ImportingBackground extends StatelessWidget {
         alignment: Alignment.topCenter,
       ),
     );
+  }
+}
+
+class _MobileHomeImportingProgress extends ConsumerWidget {
+  const _MobileHomeImportingProgress();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _ImportingView(progress: ref.watch(syncDisplayPercentageProvider));
   }
 }
 

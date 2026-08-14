@@ -362,7 +362,6 @@ SyncState _syncedState({
   accountUuid: 'account-1',
   hasAccountScopedData: true,
   percentage: 1.0,
-  displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
   orchardLockedBalance: orchardLockedBalance ?? BigInt.zero,
   ironwoodBalance: ironwoodBalance ?? BigInt.zero,
@@ -591,7 +590,6 @@ void main() {
           hasAccountScopedData: true,
           isSyncing: true,
           percentage: 0.25,
-          displayPercentage: 0.25,
           scannedHeight: 50,
           chainTipHeight: 200,
           lastSyncStartedAt: DateTime.now().subtract(
@@ -640,11 +638,7 @@ void main() {
 
     await tester.pumpWidget(
       _app(
-        SyncState(
-          accountUuid: 'account-1',
-          isSyncing: true,
-          displayPercentage: 0.32,
-        ),
+        SyncState(accountUuid: 'account-1', isSyncing: true, percentage: 0.32),
       ),
     );
     await tester.pump();
@@ -2424,5 +2418,41 @@ void main() {
       seeAllText.style?.color,
       AppThemeData.dark.colors.button.ghost.label,
     );
+  });
+
+  testWidgets('display progress ticks do not rebuild mobile Home content', (
+    tester,
+  ) async {
+    final initial = _syncedState(
+      orchardBalance: BigInt.from(100000000),
+    ).copyWith(recentTransactions: [_tx(1)]);
+    final notifier = FakeSyncNotifier(initial);
+
+    await tester.pumpWidget(_app(initial, syncNotifier: notifier));
+    await tester.pumpAndSettle();
+
+    notifier.emit(
+      initial.copyWith(
+        isSyncing: true,
+        percentage: 0.4,
+        displayTargetPercentage: 0.5,
+        displayTargetBlocks: 10,
+      ),
+    );
+    await tester.pump();
+
+    final balanceFinder = find.byKey(
+      const ValueKey('mobile_home_shielded_balance'),
+    );
+    final activityFinder = find.byKey(
+      const ValueKey('mobile_home_activity_row_0'),
+    );
+    final balanceBeforeTicks = tester.widget(balanceFinder);
+    final activityBeforeTicks = tester.widget(activityFinder);
+
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(tester.widget(balanceFinder), same(balanceBeforeTicks));
+    expect(tester.widget(activityFinder), same(activityBeforeTicks));
   });
 }

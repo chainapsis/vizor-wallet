@@ -448,32 +448,6 @@ void main() {
     },
   );
 
-  test('displayPercentage defaults to actual percentage', () {
-    final state = SyncState(percentage: 0.25);
-
-    expect(state.percentage, 0.25);
-    expect(state.displayPercentage, 0.25);
-  });
-
-  test(
-    'displayPercentage can advance independently from actual percentage',
-    () {
-      final state = SyncState(percentage: 0.25);
-      final displayed = state.copyWith(displayPercentage: 0.30);
-
-      expect(displayed.percentage, 0.25);
-      expect(displayed.displayPercentage, 0.30);
-    },
-  );
-
-  test('displayPercentage can be reset below a previous display value', () {
-    final state = SyncState(percentage: 0.30, displayPercentage: 0.50);
-    final reset = state.copyWith(percentage: 0.25, displayPercentage: 0.25);
-
-    expect(reset.percentage, 0.25);
-    expect(reset.displayPercentage, 0.25);
-  });
-
   test('display target defaults to actual percentage', () {
     final state = SyncState(percentage: 0.25);
 
@@ -525,7 +499,6 @@ void main() {
       hasAccountScopedData: true,
       isSyncing: true,
       percentage: 0.75,
-      displayPercentage: 0.50,
       displayTargetPercentage: 0.80,
       displayTargetBlocks: 120,
       scannedHeight: 10,
@@ -546,7 +519,6 @@ void main() {
     expect(scoped.recentTransactions, isEmpty);
     expect(scoped.isSyncing, isTrue);
     expect(scoped.percentage, 0.75);
-    expect(scoped.displayPercentage, 0.50);
     expect(scoped.displayTargetPercentage, 0.80);
     expect(scoped.displayTargetBlocks, 120);
     expect(scoped.scannedHeight, 10);

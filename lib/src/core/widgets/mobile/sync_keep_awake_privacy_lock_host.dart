@@ -9,8 +9,8 @@ import '../../../features/onboarding/mobile/passcode_widgets.dart';
 import '../../../features/onboarding/shared/onboarding_welcome_art.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
+import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import '../../feedback/app_haptics.dart';
 import '../../formatting/sync_status_label.dart';
@@ -360,15 +360,9 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final done = mode == SyncKeepAwakePrivacyLockMode.done;
-    final interrupted = mode == SyncKeepAwakePrivacyLockMode.interrupted;
-    final sync = done || interrupted
-        ? null
-        : ref.watch(syncProvider).asData?.value;
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
-    final progress = sync?.displayPercentage ?? sync?.percentage ?? 0.0;
     final main = switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeStatusLockup(
         iconName: AppIcons.checkCircle,
@@ -386,9 +380,8 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
           success: false,
         ),
       SyncKeepAwakePrivacyLockMode.hidden ||
-      SyncKeepAwakePrivacyLockMode.syncing => _SyncKeepAwakeProgressLockup(
-        progress: progress,
-      ),
+      SyncKeepAwakePrivacyLockMode.syncing =>
+        const _SyncKeepAwakeDisplayProgressLockup(),
     };
     final semanticsLabel = switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => 'Vizor is synced',
@@ -493,6 +486,17 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
   }
 }
 
+class _SyncKeepAwakeDisplayProgressLockup extends ConsumerWidget {
+  const _SyncKeepAwakeDisplayProgressLockup();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _SyncKeepAwakeProgressLockup(
+      progress: ref.watch(syncDisplayPercentageProvider),
+    );
+  }
+}
+
 class _SyncKeepAwakeLayoutSpec {
   const _SyncKeepAwakeLayoutSpec({
     required this.logoToMainGap,
@@ -576,7 +580,7 @@ class _SyncKeepAwakeVerticalLayout {
   final double mainToButtonGap;
 }
 
-class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
+class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
   const _SyncKeepAwakePasscodeConfirmScreen({
     required this.mode,
     required this.entryLength,
@@ -598,10 +602,8 @@ class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
   static const _topNavHeight = 74.0;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.colors;
-    final sync = ref.watch(syncProvider).asData?.value;
-    final progress = sync?.displayPercentage ?? sync?.percentage ?? 0.0;
     return Material(
       key: const ValueKey('sync_keep_awake_privacy_passcode_screen'),
       color: colors.background.window,
@@ -613,13 +615,17 @@ class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
         child: SafeArea(
           child: Column(
             children: [
-              MobileTopNav.back(
-                title: _titleForMode(progress),
-                titleStyle: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
+              Consumer(
+                builder: (context, ref, _) => MobileTopNav.back(
+                  title: _titleForMode(
+                    ref.watch(syncDisplayWholePercentageProvider),
+                  ),
+                  titleStyle: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  height: _topNavHeight,
+                  onBack: submitting ? null : onBack,
                 ),
-                height: _topNavHeight,
-                onBack: submitting ? null : onBack,
               ),
               Expanded(
                 child: LayoutBuilder(
@@ -685,13 +691,13 @@ class _SyncKeepAwakePasscodeConfirmScreen extends ConsumerWidget {
     );
   }
 
-  String _titleForMode(double progress) {
+  String _titleForMode(int displayWholePercentage) {
     return switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => 'Synced',
       SyncKeepAwakePrivacyLockMode.interrupted => 'Sync paused',
       SyncKeepAwakePrivacyLockMode.hidden ||
       SyncKeepAwakePrivacyLockMode.syncing =>
-        '${formatSyncStatusPercentage(progress)}% Syncing...',
+        '$displayWholePercentage% Syncing...',
     };
   }
 

@@ -660,7 +660,6 @@ SyncState _syncedStateFor(AccountState accountState) {
     accountUuid: accountState.activeAccountUuid,
     hasAccountScopedData: true,
     percentage: 1,
-    displayPercentage: 1,
   );
 }
 

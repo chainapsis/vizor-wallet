@@ -765,7 +765,6 @@ void main() {
     syncNotifier.emit(
       syncState.copyWith(
         percentage: 0.35,
-        displayPercentage: 0.35,
         displayTargetPercentage: 0.36,
         displayTargetBlocks: 25,
         scannedHeight: 3_499_800,
@@ -838,7 +837,6 @@ void main() {
           hasAccountScopedData: true,
           isSyncComplete: false,
           percentage: 0.99,
-          displayPercentage: 0.99,
           scannedHeight: 3_499_990,
           chainTipHeight: 3_500_000,
           totalBalance: BigInt.zero,
@@ -1021,7 +1019,6 @@ void main() {
     syncNotifier.emit(
       syncState.copyWith(
         percentage: 0.35,
-        displayPercentage: 0.35,
         displayTargetPercentage: 0.36,
         displayTargetBlocks: 25,
         scannedHeight: 3_499_800,
@@ -1209,7 +1206,6 @@ SyncState _syncingReadyState() {
     hasAccountScopedData: true,
     isSyncing: true,
     percentage: 0.34,
-    displayPercentage: 0.34,
     displayTargetPercentage: 0.34,
     scannedHeight: 3_499_700,
     chainTipHeight: 3_500_000,

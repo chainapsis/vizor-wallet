@@ -507,7 +507,6 @@ void main() {
       _sync(
         isSyncing: false,
         percentage: 1,
-        displayPercentage: 1,
         scannedHeight: 200,
         chainTipHeight: 200,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12),
@@ -554,7 +553,6 @@ void main() {
       _sync(
         isSyncing: false,
         percentage: 1,
-        displayPercentage: 1,
         scannedHeight: 200,
         chainTipHeight: 200,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12),
@@ -567,7 +565,6 @@ void main() {
     syncNotifier.emit(
       _sync(
         percentage: 0,
-        displayPercentage: 0,
         scannedHeight: 200,
         chainTipHeight: 202,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
@@ -588,7 +585,6 @@ void main() {
       _sync(
         isSyncing: false,
         percentage: 1,
-        displayPercentage: 1,
         scannedHeight: 202,
         chainTipHeight: 202,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
@@ -633,7 +629,6 @@ void main() {
         _sync(
           isSyncing: false,
           percentage: 0.5,
-          displayPercentage: 0.5,
           scannedHeight: 150,
           chainTipHeight: 200,
           lastSyncStartedAt: DateTime(2026, 7, 9, 12),
@@ -722,11 +717,7 @@ void main() {
   testWidgets('animates display sync percentage changes', (tester) async {
     _setMobileViewport(tester);
     final syncNotifier = FakeSyncNotifier(
-      _sync(
-        percentage: 0.05,
-        displayPercentage: 0.05,
-        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
-      ),
+      _sync(percentage: 0.05, lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
     );
 
     await tester.pumpWidget(
@@ -750,11 +741,7 @@ void main() {
     expect(find.text('5%'), findsOneWidget);
 
     syncNotifier.emit(
-      _sync(
-        percentage: 0.10,
-        displayPercentage: 0.10,
-        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
-      ),
+      _sync(percentage: 0.10, lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
     );
     await tester.pump();
 
@@ -968,7 +955,6 @@ SyncState _sync({
   bool isSyncing = true,
   bool isBackgroundMode = false,
   double percentage = 0.25,
-  double? displayPercentage,
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
@@ -977,7 +963,6 @@ SyncState _sync({
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,
-    displayPercentage: displayPercentage,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
