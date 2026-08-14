@@ -23,6 +23,7 @@ pub const SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS: u64 = 30;
 pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
 /// Random bytes needed to sample an initial delayed share submission time.
 pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
+const VOTE_COMMITMENT_SHARE_COUNT: usize = 16;
 /// Numerator for the last-moment share window fraction.
 pub const LAST_MOMENT_BUFFER_FRACTION_NUMERATOR: u64 = 2;
 /// Denominator for the last-moment share window fraction.
@@ -565,15 +566,7 @@ pub fn plan_share_submission(
         submit_at_random_bytes,
     )?;
 
-    Ok(ShareSubmissionPlan {
-        submit_at,
-        target_count: BoundedU32::try_from(target_count)
-            .map_err(|_| VotingError::InvalidInput {
-                message: format!("target_count {target_count} does not fit u32"),
-            })?
-            .0,
-        target_servers,
-    })
+    build_share_submission_plan(target_count, target_servers, submit_at)
 }
 
 /// Plan independent timing and initial helper targets for multiple shares.
@@ -583,6 +576,19 @@ pub fn plan_share_submission(
 /// cannot accidentally reuse one `submit_at` or helper target order for every
 /// share. Use `share_submission_random_bytes_required` to size the two entropy
 /// inputs.
+///
+/// For a complete normal 16-share commitment with multiple helpers, initial
+/// targets are spread so that no helper receives every share by default. Each
+/// returned plan already contains its final initial target list. This guarantee
+/// applies only to initial submission. Fallback and recovery may send an
+/// initially omitted share to any configured helper, including one that
+/// ultimately receives all 16 shares, when needed to preserve liveness.
+///
+/// `server_urls` must contain distinct, valid helper endpoint URLs. This
+/// function checks only that the list is non-empty and has no duplicates; it
+/// does not parse URLs or probe helper health. Callers are responsible for
+/// validating endpoints and assessing health before planning, because
+/// unavailable helpers can prevent reaching the returned `target_count`.
 pub fn plan_share_submissions(
     share_count: usize,
     server_urls: &[String],
@@ -627,20 +633,34 @@ pub fn plan_share_submissions(
         });
     }
 
+    let target_count = share_submission_target_count(server_urls.len());
+    let spread_initial_targets =
+        !single_share && share_count == VOTE_COMMITMENT_SHARE_COUNT && server_urls.len() > 1;
+
     let mut plans = Vec::with_capacity(share_count);
     for share_index in 0..share_count {
         let submit_at_start = share_index * submit_at_bytes_per_share;
         let submit_at_end = submit_at_start + submit_at_bytes_per_share;
         let server_start = share_index * server_bytes_per_share;
         let server_end = server_start + server_bytes_per_share;
-        plans.push(plan_share_submission(
+        let target_servers = select_batch_share_submission_targets(
+            share_index,
             server_urls,
+            target_count,
+            spread_initial_targets,
+            &server_random_bytes[server_start..server_end],
+        )?;
+        let submit_at = scheduled_share_submit_at_from_entropy(
             now_seconds,
             vote_end_time_seconds,
             last_moment_buffer_seconds,
             single_share,
             &submit_at_random_bytes[submit_at_start..submit_at_end],
-            &server_random_bytes[server_start..server_end],
+        )?;
+        plans.push(build_share_submission_plan(
+            target_count,
+            target_servers,
+            submit_at,
         )?);
     }
 
@@ -696,6 +716,14 @@ fn plan_share_submission_with_targets(
         random_unit,
     )?;
 
+    build_share_submission_plan(target_count, target_servers, submit_at)
+}
+
+fn build_share_submission_plan(
+    target_count: usize,
+    target_servers: Vec<String>,
+    submit_at: u64,
+) -> Result<ShareSubmissionPlan, VotingError> {
     Ok(ShareSubmissionPlan {
         submit_at,
         target_count: BoundedU32::try_from(target_count)
@@ -728,6 +756,36 @@ fn require_unique_share_servers(server_urls: &[String]) -> Result<(), VotingErro
     }
 
     Ok(())
+}
+
+/// Select the final targets for one share before its batch plan is constructed.
+///
+/// For a complete commitment, every helper is assigned to one share index that
+/// must omit it. The remaining targets keep that share's randomized order.
+fn select_batch_share_submission_targets(
+    share_index: usize,
+    server_urls: &[String],
+    target_count: usize,
+    spread_initial_targets: bool,
+    server_random_bytes: &[u8],
+) -> Result<Vec<String>, VotingError> {
+    let randomized_order = shuffled_share_server_order(server_urls, server_random_bytes)?;
+    let required_omissions: HashSet<&str> = server_urls
+        .iter()
+        .enumerate()
+        .filter_map(|(server_index, server_url)| {
+            (spread_initial_targets && server_index % VOTE_COMMITMENT_SHARE_COUNT == share_index)
+                .then_some(server_url.as_str())
+        })
+        .collect();
+    let target_servers: Vec<String> = randomized_order
+        .into_iter()
+        .filter(|server_url| !required_omissions.contains(server_url.as_str()))
+        .take(target_count)
+        .collect();
+
+    debug_assert_eq!(target_servers.len(), target_count);
+    Ok(target_servers)
 }
 
 fn checked_random_bytes_required(
@@ -1331,6 +1389,128 @@ mod tests {
                 "https://two.example.com".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn share_submission_batch_plan_selects_spread_targets_before_returning_plans() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+            "https://three.example.com".to_string(),
+        ];
+        let repeated_shuffle = vec![0u64; 16 * 2];
+
+        let plans = plan_share_submissions(
+            16,
+            &servers,
+            1_000,
+            2_000,
+            None,
+            false,
+            &[],
+            &random_bytes(&repeated_shuffle),
+        )
+        .unwrap();
+
+        assert!(plans.iter().all(|plan| plan.target_servers.len() == 2));
+        assert_eq!(
+            plans[0].target_servers,
+            vec![servers[1].clone(), servers[2].clone()]
+        );
+        assert_eq!(
+            plans[1].target_servers,
+            vec![servers[2].clone(), servers[0].clone()]
+        );
+        assert_eq!(
+            plans[2].target_servers,
+            vec![servers[1].clone(), servers[0].clone()]
+        );
+        assert!(plans[3..]
+            .iter()
+            .all(|plan| plan.target_servers == vec![servers[1].clone(), servers[2].clone()]));
+        for server in &servers {
+            assert!(
+                plans
+                    .iter()
+                    .any(|plan| !plan.target_servers.contains(server)),
+                "{server} must be omitted from at least one share"
+            );
+        }
+    }
+
+    #[test]
+    fn share_submission_batch_plan_spreads_more_helpers_than_shares() {
+        let servers: Vec<String> = (0..33)
+            .map(|index| format!("https://helper-{index}.example.com"))
+            .collect();
+        let server_random_bytes = vec![
+            0;
+            VOTE_COMMITMENT_SHARE_COUNT
+                * share_server_order_random_bytes_required(servers.len())
+        ];
+
+        let plans = plan_share_submissions(
+            VOTE_COMMITMENT_SHARE_COUNT,
+            &servers,
+            1_000,
+            2_000,
+            None,
+            false,
+            &[],
+            &server_random_bytes,
+        )
+        .unwrap();
+
+        assert!(plans.iter().all(|plan| plan.target_servers.len() == 17));
+        for server in &servers {
+            assert!(
+                plans
+                    .iter()
+                    .any(|plan| !plan.target_servers.contains(server)),
+                "{server} must be omitted from at least one share"
+            );
+        }
+    }
+
+    #[test]
+    fn share_submission_batch_plan_spreads_two_helpers() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+        ];
+        let repeated_shuffle = vec![0u64; 16];
+
+        let plans = plan_share_submissions(
+            16,
+            &servers,
+            1_000,
+            2_000,
+            None,
+            false,
+            &[],
+            &random_bytes(&repeated_shuffle),
+        )
+        .unwrap();
+
+        assert!(plans.iter().all(|plan| plan.target_servers.len() == 1));
+        for server in &servers {
+            assert!(
+                plans
+                    .iter()
+                    .any(|plan| !plan.target_servers.contains(server)),
+                "{server} must be omitted from at least one share"
+            );
+        }
+    }
+
+    #[test]
+    fn share_submission_batch_plan_allows_one_helper_when_no_alternative_exists() {
+        let servers = vec!["https://only.example.com".to_string()];
+
+        let plans =
+            plan_share_submissions(16, &servers, 1_000, 2_000, None, false, &[], &[]).unwrap();
+
+        assert!(plans.iter().all(|plan| plan.target_servers == servers));
     }
 
     #[test]

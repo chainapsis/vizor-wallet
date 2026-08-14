@@ -10,6 +10,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Added a non-default `test-fixtures` feature exposing an atomic vote recovery
   fixture for downstream integration tests that should not build ZKP2.
 
+### Changed
+- Complete 16-share batch planning now spreads initial targets so that, when
+  multiple helpers are configured, no helper is selected for every share.
+  Fallback and recovery remain liveness first and may use any available helper.
+
 ## v3.0.0-rc.3
 
 ### Changed
