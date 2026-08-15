@@ -25,12 +25,16 @@ use tonic::{
 use tower_service::Service;
 use zcash_client_backend::{
     data_api::{chain::CommitmentTreeRoot, WalletCommitmentTrees},
-    proto::service::{
-        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
-        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+    proto::{
+        compact_formats::CompactBlock,
+        service::{
+            self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange,
+            ChainSpec, Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg,
+            RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+        },
     },
 };
+use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
@@ -292,6 +296,51 @@ pub(crate) async fn get_latest_block(
     )
     .await
     .map_err(|e| status_to_network_error("get_latest_block", e))
+}
+
+/// Fetch and validate the hash of one compact block.
+///
+/// This is the fallback for conforming lightwalletd servers that omit the
+/// optional hash in a `GetLatestBlock` response. A server that also omits
+/// [`CompactBlock::hash`] cannot safely prove tip continuity, so this helper
+/// returns an incompatibility error.
+pub(super) async fn get_compact_block_hash(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: u64,
+) -> Result<BlockHash, SyncError> {
+    let block = await_tonic_response(
+        "get_block",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.get_block(timed_request(
+            BlockId {
+                height,
+                hash: vec![],
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_block", e))?;
+
+    validate_compact_block_hash(height, &block)
+}
+
+fn validate_compact_block_hash(
+    requested_height: u64,
+    block: &CompactBlock,
+) -> Result<BlockHash, SyncError> {
+    if block.height != requested_height {
+        return Err(SyncError::net(format!(
+            "get_block returned height {} while requesting {requested_height}",
+            block.height,
+        )));
+    }
+    BlockHash::try_from_slice(&block.hash).ok_or_else(|| {
+        SyncError::net(format!(
+            "get_block returned a {}-byte hash at height {requested_height}",
+            block.hash.len(),
+        ))
+    })
 }
 
 /// Return the note commitment tree state for a block with a bounded
@@ -697,6 +746,57 @@ pub(super) async fn download_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_block_hash_response_must_match_the_request() {
+        let requested_height = 100;
+        let valid = CompactBlock {
+            height: requested_height,
+            hash: vec![0x11; 32],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            validate_compact_block_hash(requested_height, &valid).unwrap(),
+            BlockHash([0x11; 32]),
+        );
+
+        for (label, block) in [
+            (
+                "wrong height",
+                CompactBlock {
+                    height: requested_height + 1,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "missing hash",
+                CompactBlock {
+                    hash: vec![],
+                    ..valid.clone()
+                },
+            ),
+            (
+                "short hash",
+                CompactBlock {
+                    hash: vec![0x11; 31],
+                    ..valid.clone()
+                },
+            ),
+            (
+                "long hash",
+                CompactBlock {
+                    hash: vec![0x11; 33],
+                    ..valid.clone()
+                },
+            ),
+        ] {
+            assert!(
+                validate_compact_block_hash(requested_height, &block).is_err(),
+                "{label} should fail validation",
+            );
+        }
+    }
 
     #[test]
     fn onion_lightwalletd_hosts_enable_onion_service_connections() {
