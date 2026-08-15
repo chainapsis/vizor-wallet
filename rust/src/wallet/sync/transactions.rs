@@ -1849,6 +1849,31 @@ pub(crate) struct ResubmittableTx {
     pub expiry_height: u32,
 }
 
+/// Returns whether the wallet has any unmined raw transaction that
+/// could still be resubmitted at `current_height`.
+///
+/// This deliberately checks only the small `transactions` table. The
+/// account-level outbound predicate lives in [`get_resubmittable_txs`]
+/// and is evaluated only after the caller has refreshed the chain tip.
+pub(super) fn has_pending_raw_transaction(
+    conn: &rusqlite::Connection,
+    current_height: u32,
+) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT EXISTS ( \
+             SELECT 1 \
+             FROM transactions \
+             WHERE mined_height IS NULL \
+               AND (expiry_height = 0 OR expiry_height > ?1) \
+               AND raw IS NOT NULL \
+         )",
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+    stmt.query_row([current_height], |row| row.get(0))
+        .map_err(|e| format!("Query error: {e}"))
+}
+
 /// Return every wallet transaction that is eligible for automatic
 /// resubmit at `current_height`.
 ///
@@ -1872,10 +1897,12 @@ pub(crate) struct ResubmittableTx {
 ///     broadcast. Defense-in-depth on top of the delta filter.
 ///
 /// A transaction that touches more than one of the wallet's own
-/// accounts shows up as more than one row in `v_transactions`; we
-/// `SELECT DISTINCT` on `(txid, raw, expiry_height)` to collapse
-/// that into a single broadcast instead of double-sending the same
-/// bytes.
+/// accounts shows up as more than one row in `v_transactions`. The
+/// unique `transactions` row is therefore the outer query, and the
+/// account-level outbound test is an `EXISTS` predicate. Starting from
+/// `transactions` also avoids evaluating the comparatively expensive
+/// wallet view when there are no unmined raw transactions, which is the
+/// normal case for automatic sync.
 pub(crate) fn get_resubmittable_txs(
     db_path: &str,
     current_height: u32,
@@ -1884,12 +1911,17 @@ pub(crate) fn get_resubmittable_txs(
 
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT txid, raw, expiry_height \
-             FROM v_transactions \
-             WHERE mined_height IS NULL \
-               AND (expiry_height = 0 OR expiry_height > ?1) \
-               AND account_balance_delta < 0 \
-               AND raw IS NOT NULL",
+            "SELECT t.txid, t.raw, t.expiry_height \
+             FROM transactions t \
+             WHERE t.mined_height IS NULL \
+               AND (t.expiry_height = 0 OR t.expiry_height > ?1) \
+               AND t.raw IS NOT NULL \
+               AND EXISTS ( \
+                   SELECT 1 \
+                   FROM v_transactions vt \
+                   WHERE vt.txid = t.txid \
+                     AND vt.account_balance_delta < 0 \
+               )",
         )
         .map_err(|e| format!("SQL error: {e}"))?;
 
@@ -1975,23 +2007,21 @@ pub(crate) fn get_resubmittable_txs_excluding(
 mod tests {
     //! SQL-predicate regression tests for `get_resubmittable_txs`.
     //!
-    //! `get_resubmittable_txs` is a thin wrapper around a `v_transactions`
-    //! SELECT, but the SELECT is the entire contract: it's the piece that
-    //! encodes the four resubmit invariants we copied from
+    //! `get_resubmittable_txs` is a thin wrapper around a `transactions`
+    //! query with a `v_transactions` existence check. The SELECT is the
+    //! entire contract: it encodes the four resubmit invariants copied from
     //! `zcash-android-wallet-sdk`'s `SELECTION_TRX_RESUBMISSION`.
     //!
-    //! We test against a stand-in schema: a real SQLite DB with a plain
-    //! `v_transactions` table mirroring the columns the production view
-    //! exposes. That's enough for the WHERE clause to exercise each
-    //! filter independently without standing up the whole
-    //! `zcash_client_sqlite` migration stack.
+    //! We test against a stand-in schema: a real SQLite DB with a minimal
+    //! `transactions` table and a plain `v_transactions` table mirroring
+    //! the columns the production view exposes. That's enough for the
+    //! predicates to exercise each filter independently without standing
+    //! up the whole `zcash_client_sqlite` migration stack.
     //!
-    //! If the production `v_transactions` view ever gains (or loses)
-    //! one of the columns we query here (`txid`, `raw`, `mined_height`,
-    //! `expiry_height`, `account_balance_delta`), the real build breaks
-    //! loudly at the first real query — but these unit tests still
-    //! exercise the logic, so a regression in the SQL text shows up here
-    //! first.
+    //! If the production `v_transactions` view ever loses `txid` or
+    //! `account_balance_delta`, the real query breaks loudly. The base-table
+    //! columns are represented separately here so these tests also catch a
+    //! regression in either side of the existence predicate.
     use super::*;
     use tempfile::NamedTempFile;
 
@@ -2015,17 +2045,18 @@ mod tests {
         }
     }
 
-    /// Build a throwaway SQLite database with a minimal
-    /// `v_transactions` table and return its `NamedTempFile`
-    /// handle. Tests keep the handle alive for the duration of the
-    /// test so the file isn't auto-deleted under them.
+    /// Build a throwaway SQLite database with minimal transaction tables
+    /// and return its `NamedTempFile` handle. Tests keep the handle alive
+    /// for the duration of the test so the file isn't auto-deleted.
     fn fresh_db() -> NamedTempFile {
         let file = NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
             "CREATE TABLE transactions (
                  txid BLOB PRIMARY KEY,
-                 raw BLOB
+                 raw BLOB,
+                 mined_height INTEGER,
+                 expiry_height INTEGER
              );
              CREATE TABLE v_transactions (
                  txid BLOB NOT NULL,
@@ -2078,9 +2109,10 @@ mod tests {
     ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         conn.execute(
-            "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)
-             ON CONFLICT(txid) DO UPDATE SET raw = excluded.raw",
-            rusqlite::params![txid, raw],
+            "INSERT OR IGNORE INTO transactions \
+             (txid, raw, mined_height, expiry_height) \
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![txid, raw, mined_height, expiry_height],
         )
         .unwrap();
         conn.execute(
@@ -5618,9 +5650,8 @@ mod tests {
     #[test]
     fn resubmit_dedupes_multi_account_rows() {
         // A tx that touches two of the wallet's own accounts shows up as
-        // two rows in `v_transactions`. `SELECT DISTINCT txid, raw,
-        // expiry_height` should collapse that to one broadcast — double-
-        // sending identical bytes would be a regression.
+        // two rows in `v_transactions`. Selecting from the unique base-table
+        // row with an `EXISTS` predicate must still produce one broadcast.
         let db = fresh_db();
         let txid = fake_txid(0x06);
         let raw = fake_raw();
@@ -5647,5 +5678,39 @@ mod tests {
         let db = fresh_db();
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn pending_raw_preflight_skips_wallets_without_candidates() {
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x07),
+            Some(&fake_raw()),
+            Some(999_999),
+            Some(1_000_100),
+            -5_000,
+        );
+
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        assert!(!has_pending_raw_transaction(&conn, 1_000_000).unwrap());
+    }
+
+    #[test]
+    fn pending_raw_preflight_detects_a_possible_candidate() {
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x08),
+            Some(&fake_raw()),
+            None,
+            Some(1_000_100),
+            5_000,
+        );
+
+        // The cheap preflight intentionally allows this false positive;
+        // the account-level outbound filter runs after the fresh tip RPC.
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        assert!(has_pending_raw_transaction(&conn, 1_000_000).unwrap());
     }
 }

@@ -4,8 +4,8 @@
 //! Everything in this module is an `async` call that talks to the
 //! lightwalletd backend via tonic: opening the gRPC channel (TLS for
 //! `https://`, plaintext for local `http://` regtest), pulling down the
-//! sapling + orchard subtree roots, and streaming compact blocks for
-//! one scan batch. The orchestration loop in `sync_engine::mod`
+//! Sapling, Orchard, and Ironwood subtree roots, and streaming compact
+//! blocks for one scan batch. The orchestration loop in `sync_engine::mod`
 //! treats this module as its network edge — it calls the helpers
 //! here, hands their outputs to librustzcash (`put_*_subtree_roots`,
 //! `scan_cached_blocks`), and never talks to tonic itself.
@@ -31,6 +31,7 @@ use zcash_client_backend::{
         SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
+use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
@@ -294,6 +295,46 @@ pub(crate) async fn get_latest_block(
     .map_err(|e| status_to_network_error("get_latest_block", e))
 }
 
+/// Fetch and validate the hash of one compact block.
+///
+/// This is the fallback for conforming lightwalletd servers that omit the
+/// optional hash in a `GetLatestBlock` response. A server that also omits the
+/// optional
+/// [`zcash_client_backend::proto::compact_formats::CompactBlock::hash`] cannot
+/// safely prove tip continuity, so this helper returns an incompatibility
+/// error.
+pub(super) async fn get_compact_block_hash(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: u64,
+) -> Result<BlockHash, SyncError> {
+    let block = await_tonic_response(
+        "get_block",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.get_block(timed_request(
+            BlockId {
+                height,
+                hash: vec![],
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_block", e))?;
+
+    if block.height != height {
+        return Err(SyncError::net(format!(
+            "get_block returned height {} while requesting {height}",
+            block.height,
+        )));
+    }
+    BlockHash::try_from_slice(&block.hash).ok_or_else(|| {
+        SyncError::net(format!(
+            "get_block returned a {}-byte hash at height {height}",
+            block.hash.len(),
+        ))
+    })
+}
+
 /// Return the note commitment tree state for a block with a bounded
 /// response wait.
 pub(super) async fn get_tree_state(
@@ -444,6 +485,112 @@ pub(crate) async fn next_stream_message<T>(
     await_stream_message(label, LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await
 }
 
+async fn fetch_sapling_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
+    start_index: u64,
+) -> Result<Vec<CommitmentTreeRoot<sapling_crypto::Node>>, SyncError> {
+    let mut stream = await_tonic_stream(
+        "sapling subtree roots",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
+            start_index: start_index as u32,
+            shielded_protocol: service::ShieldedProtocol::Sapling.into(),
+            max_entries: 0,
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("sapling subtree roots", e))?;
+
+    let mut roots = Vec::new();
+    while let Some(root) = next_stream_message(&mut stream, "sapling subtree roots stream").await? {
+        // `SubtreeRoot::root_hash` is `bytes = "vec"` in the proto,
+        // not a fixed-length field. A slice expression like
+        // `root_hash[..32]` would panic before `try_into()` runs if
+        // the server sent fewer than 32 bytes, so convert from the
+        // full buffer via `as_slice` and let `try_into` reject both
+        // short and long payloads.
+        let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
+            SyncError::parse(format!(
+                "sapling subtree root: expected 32 bytes, got {}",
+                root.root_hash.len()
+            ))
+        })?;
+        let node = Option::from(sapling_crypto::Node::from_bytes(bytes))
+            .ok_or_else(|| SyncError::parse("sapling subtree root: bad node bytes"))?;
+        roots.push(CommitmentTreeRoot::from_parts(
+            BlockHeight::from_u32(root.completing_block_height as u32),
+            node,
+        ));
+    }
+
+    Ok(roots)
+}
+
+async fn fetch_orchard_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
+    start_index: u64,
+) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
+    fetch_orchard_family_subtree_roots(
+        &mut client,
+        start_index,
+        service::ShieldedProtocol::Orchard,
+        "orchard",
+    )
+    .await
+}
+
+async fn fetch_ironwood_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
+    start_index: u64,
+) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
+    fetch_orchard_family_subtree_roots(
+        &mut client,
+        start_index,
+        service::ShieldedProtocol::Ironwood,
+        "ironwood",
+    )
+    .await
+}
+
+async fn fetch_orchard_family_subtree_roots(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start_index: u64,
+    protocol: service::ShieldedProtocol,
+    label: &'static str,
+) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
+    let rpc_label = format!("{label} subtree roots");
+    let stream_label = format!("{label} subtree roots stream");
+    let mut stream = await_tonic_stream(
+        &rpc_label,
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
+            start_index: start_index as u32,
+            shielded_protocol: protocol.into(),
+            max_entries: 0,
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error(&rpc_label, e))?;
+
+    let mut roots = Vec::new();
+    while let Some(root) = next_stream_message(&mut stream, &stream_label).await? {
+        let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
+            SyncError::parse(format!(
+                "{label} subtree root: expected 32 bytes, got {}",
+                root.root_hash.len()
+            ))
+        })?;
+        let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
+            .ok_or_else(|| SyncError::parse(format!("{label} subtree root: bad node bytes")))?;
+        roots.push(CommitmentTreeRoot::from_parts(
+            BlockHeight::from_u32(root.completing_block_height as u32),
+            node,
+        ));
+    }
+
+    Ok(roots)
+}
+
 /// Pulls the latest shielded subtree roots from lightwalletd
 /// and writes them into `db` via `put_*_subtree_roots`. The starting
 /// index for each protocol comes from `db`'s wallet summary, so a
@@ -493,132 +640,55 @@ pub(super) async fn download_subtree_roots(
         );
     }
 
-    // Sapling
-    let mut stream = await_tonic_stream(
-        "sapling subtree roots",
-        LIGHTWALLETD_STREAM_START_TIMEOUT,
-        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-            start_index: sap_start as u32,
-            shielded_protocol: service::ShieldedProtocol::Sapling.into(),
-            max_entries: 0,
-        })),
-    )
-    .await
-    .map_err(|e| status_to_network_error("sapling subtree roots", e))?;
+    // Finish all network streams before mutating any tree. If one protocol
+    // fails, the next retry starts from the same set of indices instead of
+    // persisting a partial subtree-root refresh.
+    let ironwood = async {
+        if ironwood_enabled {
+            fetch_ironwood_subtree_roots(client.clone(), ironwood_start).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
+    let (sapling_roots, orchard_roots, ironwood_roots) = tokio::try_join!(
+        fetch_sapling_subtree_roots(client.clone(), sap_start),
+        fetch_orchard_subtree_roots(client.clone(), orch_start),
+        ironwood,
+    )?;
 
-    let mut roots = Vec::new();
-    while let Some(root) = next_stream_message(&mut stream, "sapling subtree roots stream").await? {
-        // `SubtreeRoot::root_hash` is `bytes = "vec"` in the proto,
-        // not a fixed-length field. A slice expression like
-        // `root_hash[..32]` would panic before `try_into()` runs if
-        // the server sent fewer than 32 bytes, so convert from the
-        // full buffer via `as_slice` and let `try_into` reject both
-        // short and long payloads.
-        let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
-            SyncError::parse(format!(
-                "sapling subtree root: expected 32 bytes, got {}",
-                root.root_hash.len()
-            ))
-        })?;
-        let node = Option::from(sapling_crypto::Node::from_bytes(bytes))
-            .ok_or_else(|| SyncError::parse("sapling subtree root: bad node bytes".to_string()))?;
-        roots.push(CommitmentTreeRoot::from_parts(
-            BlockHeight::from_u32(root.completing_block_height as u32),
-            node,
-        ));
-    }
     log::info!(
         "[{}] sync: downloaded {} sapling subtree roots",
         elapsed(),
-        roots.len()
+        sapling_roots.len()
     );
-    if !roots.is_empty() {
+    if !sapling_roots.is_empty() {
         with_wallet_db_write_lock("sync_engine.put_sapling_subtree_roots", || {
-            db.put_sapling_subtree_roots(sap_start, roots.as_slice())
+            db.put_sapling_subtree_roots(sap_start, sapling_roots.as_slice())
                 .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))
         })?;
     }
 
-    // Orchard
-    let mut stream = await_tonic_stream(
-        "orchard subtree roots",
-        LIGHTWALLETD_STREAM_START_TIMEOUT,
-        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-            start_index: orch_start as u32,
-            shielded_protocol: service::ShieldedProtocol::Orchard.into(),
-            max_entries: 0,
-        })),
-    )
-    .await
-    .map_err(|e| status_to_network_error("orchard subtree roots", e))?;
-
-    let mut roots = Vec::new();
-    while let Some(root) = next_stream_message(&mut stream, "orchard subtree roots stream").await? {
-        let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
-            SyncError::parse(format!(
-                "orchard subtree root: expected 32 bytes, got {}",
-                root.root_hash.len()
-            ))
-        })?;
-        let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
-            .ok_or_else(|| SyncError::parse("orchard subtree root: bad node bytes".to_string()))?;
-        roots.push(CommitmentTreeRoot::from_parts(
-            BlockHeight::from_u32(root.completing_block_height as u32),
-            node,
-        ));
-    }
     log::info!(
         "[{}] sync: downloaded {} orchard subtree roots",
         elapsed(),
-        roots.len()
+        orchard_roots.len()
     );
-    if !roots.is_empty() {
+    if !orchard_roots.is_empty() {
         with_wallet_db_write_lock("sync_engine.put_orchard_subtree_roots", || {
-            db.put_orchard_subtree_roots(orch_start, roots.as_slice())
+            db.put_orchard_subtree_roots(orch_start, orchard_roots.as_slice())
                 .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))
         })?;
     }
 
     if ironwood_enabled {
-        let mut stream = await_tonic_stream(
-            "ironwood subtree roots",
-            LIGHTWALLETD_STREAM_START_TIMEOUT,
-            client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-                start_index: ironwood_start as u32,
-                shielded_protocol: service::ShieldedProtocol::Ironwood.into(),
-                max_entries: 0,
-            })),
-        )
-        .await
-        .map_err(|e| status_to_network_error("ironwood subtree roots", e))?;
-
-        let mut roots = Vec::new();
-        while let Some(root) =
-            next_stream_message(&mut stream, "ironwood subtree roots stream").await?
-        {
-            let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
-                SyncError::parse(format!(
-                    "ironwood subtree root: expected 32 bytes, got {}",
-                    root.root_hash.len()
-                ))
-            })?;
-            let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
-                .ok_or_else(|| {
-                    SyncError::parse("ironwood subtree root: bad node bytes".to_string())
-                })?;
-            roots.push(CommitmentTreeRoot::from_parts(
-                BlockHeight::from_u32(root.completing_block_height as u32),
-                node,
-            ));
-        }
         log::info!(
             "[{}] sync: downloaded {} ironwood subtree roots",
             elapsed(),
-            roots.len()
+            ironwood_roots.len()
         );
-        if !roots.is_empty() {
+        if !ironwood_roots.is_empty() {
             with_wallet_db_write_lock("sync_engine.put_ironwood_subtree_roots", || {
-                db.put_ironwood_subtree_roots(ironwood_start, roots.as_slice())
+                db.put_ironwood_subtree_roots(ironwood_start, ironwood_roots.as_slice())
                     .map_err(|e| SyncError::db(format!("put_ironwood_subtree_roots: {e}")))
             })?;
         }
@@ -661,13 +731,20 @@ pub(crate) async fn start_mempool_stream(
 /// lightwalletd into an in-memory [`MemoryBlockSource`] that the scan
 /// loop can hand straight to `scan_cached_blocks`. No file I/O — the
 /// batch lives in RAM for exactly one scan call and is dropped
-/// immediately after.
+/// immediately after. Short or out-of-order responses are rejected so
+/// a lagging server cannot make the scanner repeatedly accept an empty
+/// batch.
 pub(super) async fn download_blocks(
     client: &mut CompactTxStreamerClient<Channel>,
     start: BlockHeight,
     end: BlockHeight,
     network: WalletNetwork,
 ) -> Result<MemoryBlockSource, SyncError> {
+    let start_height = u32::from(start) as u64;
+    let end_height = u32::from(end) as u64;
+    let expected_count = expected_block_count(start_height, end_height)?;
+    let capacity = usize::try_from(expected_count)
+        .map_err(|_| SyncError::other("get_block_range request is too large"))?;
     let mut stream = await_tonic_stream(
         "get_block_range",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
@@ -687,11 +764,71 @@ pub(super) async fn download_blocks(
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
     let mut blocks = Vec::new();
+    blocks
+        .try_reserve_exact(capacity)
+        .map_err(|_| SyncError::other("get_block_range request is too large"))?;
     while let Some(block) = next_stream_message(&mut stream, "get_block_range stream").await? {
+        if blocks.len() as u64 >= expected_count {
+            return Err(SyncError::net(format!(
+                "get_block_range returned more than {expected_count} blocks for request \
+                 {start_height}..={end_height}"
+            )));
+        }
+        let expected_height = start_height + blocks.len() as u64;
+        if block.height != expected_height {
+            return Err(SyncError::net(format!(
+                "get_block_range returned height {} while expecting {expected_height} \
+                 for request {start_height}..={end_height}",
+                block.height,
+            )));
+        }
         blocks.push(block);
     }
+    validate_downloaded_block_heights(
+        start_height,
+        end_height,
+        blocks.iter().map(|block| block.height),
+    )?;
 
     Ok(MemoryBlockSource::new(blocks))
+}
+
+fn expected_block_count(start_height: u64, end_height: u64) -> Result<u64, SyncError> {
+    end_height
+        .checked_sub(start_height)
+        .and_then(|distance| distance.checked_add(1))
+        .ok_or_else(|| {
+            SyncError::other(format!(
+                "get_block_range received a reversed request {start_height}..={end_height}"
+            ))
+        })
+}
+
+fn validate_downloaded_block_heights(
+    start_height: u64,
+    end_height: u64,
+    heights: impl IntoIterator<Item = u64>,
+) -> Result<(), SyncError> {
+    let expected_count = expected_block_count(start_height, end_height)?;
+    let mut actual_count = 0u64;
+    for height in heights {
+        let expected_height = start_height + actual_count;
+        if height != expected_height {
+            return Err(SyncError::net(format!(
+                "get_block_range returned height {height} while expecting \
+                 {expected_height} for request {start_height}..={end_height}"
+            )));
+        }
+        actual_count += 1;
+    }
+    if actual_count != expected_count {
+        return Err(SyncError::net(format!(
+            "get_block_range returned {actual_count} of {expected_count} blocks for \
+             request {start_height}..={end_height}"
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -822,5 +959,15 @@ mod tests {
                 all_shielded_pools,
             );
         }
+    }
+
+    #[test]
+    fn downloaded_block_range_must_be_complete_and_ordered() {
+        assert!(validate_downloaded_block_heights(10, 12, [10, 11, 12]).is_ok());
+        assert!(validate_downloaded_block_heights(10, 12, [10, 12]).is_err());
+        assert!(validate_downloaded_block_heights(10, 12, [10, 11]).is_err());
+        assert!(validate_downloaded_block_heights(10, 12, [10, 11, 12, 13]).is_err());
+        assert!(validate_downloaded_block_heights(10, 12, []).is_err());
+        assert!(validate_downloaded_block_heights(12, 10, []).is_err());
     }
 }

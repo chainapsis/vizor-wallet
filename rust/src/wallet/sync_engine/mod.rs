@@ -51,11 +51,14 @@ pub(crate) mod mempool;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
+use lwd::{
+    download_blocks, download_subtree_roots, get_address_utxos_stream, get_compact_block_hash,
+    get_tree_state,
+};
 pub(crate) use lwd::{
-    open_background_direct_lwd_channel,
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
-    open_isolated_lwd_channel, open_lwd_channel, send_transaction, send_transaction_with_status,
+    open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
+    send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -84,6 +87,8 @@ const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
+const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+const FINAL_TIP_REFRESH_MIN_AGE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -805,22 +810,27 @@ fn ensure_complete_scan_state(
         )));
     };
 
-    if db_tip_height < current_tip_height {
+    if db_tip_height != current_tip_height {
+        let relation = if db_tip_height < current_tip_height {
+            "lags"
+        } else {
+            "is ahead of"
+        };
         return Err(SyncError::continuity(
             current_tip_height,
             format!(
                 "sync completion blocked: wallet DB chain tip {db_tip_height} \
-                 lags lightwalletd tip {current_tip_height}"
+                 {relation} lightwalletd tip {current_tip_height}"
             ),
         ));
     }
 
-    if fully_scanned_height < db_tip_height {
+    if fully_scanned_height != db_tip_height {
         return Err(SyncError::continuity(
             db_tip_height,
             format!(
                 "sync completion blocked: fully scanned height {fully_scanned_height} \
-                 below wallet DB chain tip {db_tip_height}"
+                 does not match wallet DB chain tip {db_tip_height}"
             ),
         ));
     }
@@ -1145,6 +1155,24 @@ fn transparent_address_for_query(
         .map_err(|e| format!("decode transparent address {address}: {e}"))
 }
 
+struct TransparentRefresh {
+    addresses: Vec<String>,
+    start_height: BlockHeight,
+    label: String,
+    account_uuid: String,
+    completion: Option<TransparentRefreshCompletion>,
+}
+
+struct TransparentRefreshCompletion {
+    child_indices: Vec<u32>,
+    next_sweep_offset: Option<usize>,
+}
+
+struct DownloadedTransparentRefresh {
+    refresh: TransparentRefresh,
+    outputs: Vec<WalletTransparentOutput<AccountUuid>>,
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
@@ -1153,6 +1181,7 @@ async fn refresh_utxos(
     tip_height: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
+    let mut refreshes = Vec::new();
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
@@ -1229,33 +1258,16 @@ async fn refresh_utxos(
             } else {
                 "transparent external UTXOs recent batch".to_string()
             };
-            refresh_transparent_addresses(
-                client,
-                db,
-                batch.addresses,
+            refreshes.push(TransparentRefresh {
+                addresses: batch.addresses,
                 start_height,
-                &label,
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
-            if should_exit() {
-                return Ok(());
-            }
-            if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
-                db_data_path,
-                network,
-                &account_uuid,
-                &batch.child_indices,
-                u64::from(u32::from(tip_height)) + 1,
-                batch.next_sweep_offset,
-            ) {
-                log::warn!(
-                    "transparent receive cache: failed to mark UTXO batch complete for account {}: {}",
-                    account_uuid,
-                    e
-                );
-            }
+                label,
+                account_uuid: account_uuid.clone(),
+                completion: Some(TransparentRefreshCompletion {
+                    child_indices: batch.child_indices,
+                    next_sweep_offset: batch.next_sweep_offset,
+                }),
+            });
         }
 
         let external_selected = external_addresses
@@ -1272,16 +1284,71 @@ async fn refresh_utxos(
             .collect();
 
         if !non_external_addresses.is_empty() {
-            refresh_transparent_addresses(
-                client,
-                db,
-                non_external_addresses,
-                safety_start_height,
-                "transparent non-external UTXOs",
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
+            refreshes.push(TransparentRefresh {
+                addresses: non_external_addresses,
+                start_height: safety_start_height,
+                label: "transparent non-external UTXOs".to_string(),
+                account_uuid,
+                completion: None,
+            });
+        }
+    }
+
+    let mut refreshes = refreshes.into_iter();
+    loop {
+        let refresh_1 = refreshes.next();
+        if refresh_1.is_none() {
+            break;
+        }
+        let refresh_2 = refreshes.next();
+        let refresh_3 = refreshes.next();
+        let refresh_4 = refreshes.next();
+        // Keep at most four lightwalletd streams active at once.
+        let outputs_result = tokio::try_join!(
+            download_optional_transparent_outputs(client.clone(), refresh_1, should_exit),
+            download_optional_transparent_outputs(client.clone(), refresh_2, should_exit),
+            download_optional_transparent_outputs(client.clone(), refresh_3, should_exit),
+            download_optional_transparent_outputs(client.clone(), refresh_4, should_exit),
+        );
+        if should_exit() {
+            log::info!(
+                "[{}] sync: exiting before transparent UTXO database update",
+                elapsed(),
+            );
+            return Ok(());
+        }
+        let (outputs_1, outputs_2, outputs_3, outputs_4) = outputs_result?;
+
+        let chunk_outputs = [outputs_1, outputs_2, outputs_3, outputs_4];
+        if chunk_outputs.iter().any(Option::is_none) {
+            return Ok(());
+        }
+        let downloaded = chunk_outputs.into_iter().flatten().collect::<Vec<_>>();
+        store_transparent_outputs(db, &downloaded)?;
+        for downloaded in downloaded {
+            if !downloaded.outputs.is_empty() {
+                mark_transparent_receive_cache_dirty(
+                    db_data_path,
+                    &downloaded.refresh.account_uuid,
+                );
+            }
+            if let Some(completion) = downloaded.refresh.completion {
+                if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
+                    db_data_path,
+                    network,
+                    &downloaded.refresh.account_uuid,
+                    &completion.child_indices,
+                    u64::from(u32::from(tip_height)) + 1,
+                    completion.next_sweep_offset,
+                ) {
+                    log::warn!(
+                        "transparent receive cache: failed to mark UTXO batch complete for \
+                         account {}: {}",
+                        downloaded.refresh.account_uuid,
+                        e,
+                    );
+                }
+            }
         }
     }
 
@@ -1318,41 +1385,89 @@ fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncEr
     Ok(BlockHeight::from_u32(height))
 }
 
-async fn refresh_transparent_addresses(
-    client: &mut CompactTxStreamerClient<Channel>,
+fn store_transparent_outputs(
     db: &mut WalletDatabase,
-    addresses: Vec<String>,
-    start_height: BlockHeight,
-    label: &str,
-    mut mark_cache_dirty: impl FnMut(),
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<(), SyncError> {
+    if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
+        return Ok(());
+    }
+
+    with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
+        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+            for batch in downloaded {
+                for output in &batch.outputs {
+                    tx_db.put_received_transparent_utxo(output)?;
+                }
+            }
+            Ok(())
+        })
+        .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
+    })
+}
+
+async fn download_optional_transparent_outputs(
+    client: CompactTxStreamerClient<Channel>,
+    refresh: Option<TransparentRefresh>,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    if addresses.is_empty() || should_exit() {
-        return Ok(false);
+) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
+    match refresh {
+        Some(refresh) => download_transparent_outputs(client, refresh, should_exit).await,
+        None => Ok(Some(DownloadedTransparentRefresh {
+            refresh: TransparentRefresh {
+                addresses: Vec::new(),
+                start_height: BlockHeight::from_u32(0),
+                label: String::new(),
+                account_uuid: String::new(),
+                completion: None,
+            },
+            outputs: Vec::new(),
+        })),
+    }
+}
+
+async fn download_transparent_outputs(
+    mut client: CompactTxStreamerClient<Channel>,
+    mut refresh: TransparentRefresh,
+    should_exit: &impl Fn() -> bool,
+) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
+    if should_exit() {
+        return Ok(None);
+    }
+    if refresh.addresses.is_empty() {
+        return Ok(Some(DownloadedTransparentRefresh {
+            refresh,
+            outputs: Vec::new(),
+        }));
     }
 
     log::info!(
         "[{}] sync: refreshing {} from height {} ({} addresses)",
         elapsed(),
-        label,
-        u32::from(start_height),
-        addresses.len(),
+        refresh.label,
+        u32::from(refresh.start_height),
+        refresh.addresses.len(),
     );
 
+    let addresses = std::mem::take(&mut refresh.addresses);
     let mut stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
             log::info!(
                 "[{}] sync: exiting during {} transparent UTXO stream start",
                 elapsed(),
-                label,
+                refresh.label,
             );
-            return Ok(false);
+            return Ok(None);
         }
-        result = get_address_utxos_stream(client, addresses, start_height) => result?,
+        result = get_address_utxos_stream(
+            &mut client,
+            addresses,
+            refresh.start_height,
+        ) => result?,
     };
 
-    let mut received_any = false;
+    let mut outputs = Vec::new();
     loop {
         let reply = tokio::select! {
             biased;
@@ -1360,9 +1475,9 @@ async fn refresh_transparent_addresses(
                 log::info!(
                     "[{}] sync: exiting during {} transparent UTXO refresh",
                     elapsed(),
-                    label,
+                    refresh.label,
                 );
-                return Ok(received_any);
+                return Ok(None);
             }
             result = next_stream_message(&mut stream, "get_address_utxos_stream") => result?,
         };
@@ -1386,35 +1501,241 @@ async fn refresh_transparent_addresses(
             ))
         })?;
 
-        let output = WalletTransparentOutput::from_parts(
-            OutPoint::new(txid, index),
-            TxOut::new(value, Script(script::Code(reply.script))),
-            Some(BlockHeight::from_u32(height)),
-            None,
-            None,
-            None,
-        )
-        .ok_or_else(|| {
-            SyncError::parse("transparent UTXO script did not decode to a wallet address")
-        })?;
-
-        with_wallet_db_write_lock("sync_engine.put_received_transparent_utxo", || {
-            db.put_received_transparent_utxo(&output)
-                .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
-        })?;
-        if !received_any {
-            mark_cache_dirty();
-        }
-        received_any = true;
+        outputs.push(
+            WalletTransparentOutput::from_parts(
+                OutPoint::new(txid, index),
+                TxOut::new(value, Script(script::Code(reply.script))),
+                Some(BlockHeight::from_u32(height)),
+                None,
+                None,
+                None,
+            )
+            .ok_or_else(|| {
+                SyncError::parse("transparent UTXO script did not decode to a wallet address")
+            })?,
+        );
     }
 
-    Ok(received_any)
+    Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
 }
 
 async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     while !should_exit() {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+}
+
+/// Downloads one compact-block batch and its preceding chain state in
+/// parallel. The two lightwalletd requests are independent and tonic
+/// clients cloned from the same channel can share the HTTP/2 connection.
+async fn download_scan_batch(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: BlockHeight,
+    end: BlockHeight,
+    network: WalletNetwork,
+) -> Result<(block_source::MemoryBlockSource, chain::ChainState), SyncError> {
+    let mut tree_state_client = client.clone();
+    let use_empty_state = should_use_empty_chain_state(&network, start)?;
+    let tree_state = async move {
+        if use_empty_state {
+            Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
+        } else {
+            let state = get_tree_state(&mut tree_state_client, u32::from(start - 1) as u64).await?;
+            state
+                .to_chain_state()
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
+        }
+    };
+
+    tokio::try_join!(download_blocks(client, start, end, network), tree_state)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RefreshedTipRelation {
+    Unchanged,
+    Advanced,
+    Reorg,
+    ServerBehind,
+}
+
+fn classify_refreshed_tip(
+    current_height: u64,
+    stored_hash: Option<BlockHash>,
+    fresh_height: u64,
+    fresh_hash: &[u8],
+) -> Result<RefreshedTipRelation, SyncError> {
+    // `BlockID.hash` is optional in the lightwalletd protocol. Preserve
+    // height-only compatibility when the server omits it, but reject a
+    // non-empty malformed value instead of silently treating it as absent.
+    let fresh_hash = if fresh_hash.is_empty() {
+        None
+    } else {
+        Some(BlockHash::try_from_slice(fresh_hash).ok_or_else(|| {
+            SyncError::net(format!(
+                "get_latest_block returned a {}-byte hash at height {fresh_height}",
+                fresh_hash.len(),
+            ))
+        })?)
+    };
+
+    if fresh_height > current_height {
+        return Ok(RefreshedTipRelation::Advanced);
+    }
+
+    if fresh_height < current_height {
+        // A lower response can be a lagging replica rather than a reorg.
+        // Rewind only when the server proves divergence at the lower height.
+        return Ok(match (stored_hash, fresh_hash) {
+            (Some(stored_hash), Some(fresh_hash)) if stored_hash != fresh_hash => {
+                RefreshedTipRelation::Reorg
+            }
+            _ => RefreshedTipRelation::ServerBehind,
+        });
+    }
+
+    if stored_hash.is_some() && fresh_hash.is_none() {
+        return Err(SyncError::net(format!(
+            "a block hash is required to validate the stored tip at height {fresh_height}"
+        )));
+    }
+
+    Ok(match (stored_hash, fresh_hash) {
+        (Some(stored_hash), Some(fresh_hash)) if stored_hash != fresh_hash => {
+            RefreshedTipRelation::Reorg
+        }
+        _ => RefreshedTipRelation::Unchanged,
+    })
+}
+
+async fn classify_refreshed_tip_with_fallback(
+    client: &mut CompactTxStreamerClient<Channel>,
+    current_height: u64,
+    stored_hash: Option<BlockHash>,
+    fresh_height: u64,
+    fresh_hash: &[u8],
+) -> Result<RefreshedTipRelation, SyncError> {
+    if fresh_height <= current_height && stored_hash.is_some() && fresh_hash.is_empty() {
+        let compact_block_hash = get_compact_block_hash(client, fresh_height).await?;
+        classify_refreshed_tip(
+            current_height,
+            stored_hash,
+            fresh_height,
+            &compact_block_hash.0,
+        )
+    } else {
+        classify_refreshed_tip(current_height, stored_hash, fresh_height, fresh_hash)
+    }
+}
+
+fn stored_hash_for_refreshed_tip(
+    db: &WalletDatabase,
+    current_height: u64,
+    fresh_height: u64,
+) -> Result<Option<BlockHash>, SyncError> {
+    if fresh_height > current_height {
+        return Ok(None);
+    }
+
+    db.get_block_hash(BlockHeight::from_u32(fresh_height as u32))
+        .map_err(|e| SyncError::db(format!("get_block_hash({fresh_height}): {e}")))
+}
+
+fn lagging_lightwalletd_tip(current_height: u64, fresh_height: u64) -> SyncError {
+    SyncError::net(format!(
+        "lightwalletd tip {fresh_height} is behind wallet DB tip {current_height} \
+         without evidence of a reorg"
+    ))
+}
+
+fn truncate_wallet_to_height(
+    db: &mut WalletDatabase,
+    requested_height: BlockHeight,
+    operation: &'static str,
+) -> Result<BlockHeight, SyncError> {
+    with_wallet_db_write_lock(operation, || {
+        match db.truncate_to_height(requested_height) {
+            Ok(height) => Ok(height),
+            Err(SqliteClientError::RequestedRewindInvalid {
+                safe_rewind_height: Some(safe_height),
+                ..
+            }) => {
+                log::warn!(
+                    "[{}] sync: rewind target {requested_height} is below the earliest \
+                 checkpoint; retrying at {safe_height}",
+                    elapsed(),
+                );
+                db.truncate_to_height(safe_height).map_err(|e| {
+                    if is_sqlite_lock_contention(&e) {
+                        SyncError::other(format!(
+                            "truncate_to_height({safe_height}): SQLite lock contention: {e}"
+                        ))
+                    } else {
+                        SyncError::db(format!("truncate_to_height({safe_height}): {e}"))
+                    }
+                })
+            }
+            Err(SqliteClientError::RequestedRewindInvalid {
+                safe_rewind_height: None,
+                ..
+            }) => Err(SyncError::db(format!(
+                "truncate_to_height({requested_height}): no safe rewind height"
+            ))),
+            Err(e) if is_sqlite_lock_contention(&e) => Err(SyncError::other(format!(
+                "truncate_to_height({requested_height}): SQLite lock contention: {e}"
+            ))),
+            Err(e) => Err(SyncError::db(format!(
+                "truncate_to_height({requested_height}): {e}"
+            ))),
+        }
+    })
+}
+
+fn rewind_for_confirmed_tip_reorg(
+    db: &mut WalletDatabase,
+    fresh_tip_height: u64,
+) -> Result<(BlockHeight, Vec<ScanRange>, u64), SyncError> {
+    let fresh_height = BlockHeight::from_u32(fresh_tip_height as u32);
+    let requested_height = BlockHeight::from_u32((fresh_tip_height as u32).saturating_sub(1));
+    let actual_height = truncate_wallet_to_height(
+        db,
+        requested_height,
+        "sync_engine.truncate_to_height.tip_reorg",
+    )?;
+    let ranges = with_wallet_db_write_lock(
+        "sync_engine.update_chain_tip.tip_reorg",
+        || -> Result<Vec<ScanRange>, SyncError> {
+            db.update_chain_tip(fresh_height).map_err(|e| {
+                SyncError::db(format!(
+                    "update_chain_tip({fresh_height}) after confirmed reorg: {e}"
+                ))
+            })?;
+            db.suggest_scan_ranges().map_err(|e| {
+                SyncError::db(format!("suggest_scan_ranges after confirmed reorg: {e}"))
+            })
+        },
+    )?;
+    let pending_blocks = pending_scan_blocks(&ranges);
+
+    if u32::from(actual_height) >= u32::from(fresh_height) {
+        return Err(SyncError::continuity(
+            fresh_tip_height,
+            format!(
+                "confirmed reorg could not rewind below tip {fresh_height}; \
+                 landed at {actual_height}"
+            ),
+        ));
+    }
+    if pending_blocks == 0 {
+        return Err(SyncError::continuity(
+            fresh_tip_height,
+            format!(
+                "confirmed reorg rewind to {actual_height} produced no pending \
+                 scan ranges"
+            ),
+        ));
+    }
+
+    Ok((actual_height, ranges, pending_blocks))
 }
 
 // ==================== Main sync ====================
@@ -1560,29 +1881,101 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    // Keep one cheap read connection for resubmit preflight checks. This avoids
+    // opening SQLite and compiling the same base-table query for every batch.
+    // Failure is non-fatal: resubmission falls back to its original full query.
+    let resubmit_preflight_conn = match crate::wallet::sync::open_readonly_conn(db_data_path) {
+        Ok(conn) => Some(conn),
+        Err(e) => {
+            log::warn!(
+                "[{}] sync: resubmit preflight connection unavailable: {e}",
+                elapsed(),
+            );
+            None
+        }
+    };
 
-    // 2. Get chain tip. `current_tip_height` is updated by the
-    // periodic refresh (TIP_REFRESH_INTERVAL) so that progress
-    // events always reflect the latest known chain height, not the
-    // one captured at sync start. The initial `tip` response is
-    // also kept around for its other fields but `current_tip_height`
-    // is the authoritative value for emitted events.
-    let tip = get_latest_block(&mut client).await?;
-    let mut current_tip_height: u64 = tip.height;
-    let tip_height = BlockHeight::from_u32(tip.height as u32);
-    log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
+    // The main-phase rewind budget also covers a reorg detected by the
+    // initial tip response, before the scan queue has been created.
+    let mut main_rewinds_this_run: u32 = 0;
 
-    with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
-        db.update_chain_tip(tip_height).map_err(|e| {
-            if is_sqlite_lock_contention(&e) {
-                SyncError::other(format!(
-                    "update_chain_tip: transient SQLite lock contention: {e}"
-                ))
-            } else {
-                SyncError::db(format!("update_chain_tip: {e}"))
+    // 2. Get the chain tip. Reconcile it with the DB before treating it as
+    // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
+    // height below the maximum scanned block, so assigning the server height
+    // first could later report completion above a lagging endpoint.
+    let tip_result = get_latest_block(&mut client).await;
+    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
+        return Ok(());
+    }
+    let tip = tip_result?;
+    let initial_tip_observed_at = std::time::Instant::now();
+
+    let tip_height = block_height_from_u64(tip.height, "lightwalletd chain tip")?;
+    let db_tip_height = sync::wallet_scan_heights(&mut db)
+        .map_err(SyncError::db)?
+        .map(|(_, db_tip)| db_tip);
+    let initial_tip_relation = if let Some(db_tip) = db_tip_height {
+        let stored_hash = stored_hash_for_refreshed_tip(&db, db_tip, tip.height)?;
+        let relation = classify_refreshed_tip_with_fallback(
+            &mut client,
+            db_tip,
+            stored_hash,
+            tip.height,
+            &tip.hash,
+        )
+        .await;
+        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+            log::info!("[{}] sync: exiting after initial tip validation", elapsed());
+            return Ok(());
+        }
+        Some((db_tip, relation?))
+    } else {
+        None
+    };
+
+    match initial_tip_relation {
+        Some((db_tip_height, RefreshedTipRelation::ServerBehind)) => {
+            return Err(lagging_lightwalletd_tip(db_tip_height, tip.height));
+        }
+        Some((_, RefreshedTipRelation::Reorg)) => {
+            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                return Err(SyncError::continuity(
+                    tip.height,
+                    "initial tip reorg rewind budget exhausted",
+                ));
             }
-        })
-    })?;
+            main_rewinds_this_run += 1;
+            let (actual_height, _, pending_blocks) =
+                rewind_for_confirmed_tip_reorg(&mut db, tip.height)?;
+            log::warn!(
+                "[{}] sync: initial tip proved a reorg; rewound to {} and \
+                 queued {} block(s) toward tip {}",
+                elapsed(),
+                actual_height,
+                pending_blocks,
+                tip.height,
+            );
+        }
+        Some((_, RefreshedTipRelation::Unchanged))
+        | Some((_, RefreshedTipRelation::Advanced))
+        | None => {
+            with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
+                db.update_chain_tip(tip_height).map_err(|e| {
+                    if is_sqlite_lock_contention(&e) {
+                        SyncError::other(format!(
+                            "update_chain_tip: transient SQLite lock contention: {e}"
+                        ))
+                    } else {
+                        SyncError::db(format!("update_chain_tip: {e}"))
+                    }
+                })
+            })?;
+        }
+    }
+
+    let mut current_tip_height: u64 = tip.height;
+    log::info!("[{}] sync: chain tip = {}", elapsed(), current_tip_height);
 
     // Retained send-lock expiry requires a usable target height.
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
@@ -1638,23 +2031,39 @@ async fn run_sync_impl(
             elapsed(),
         );
     } else {
-        let startup_ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let startup_resubmit_exclusions =
-            recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
-        let _ = crate::wallet::sync::resubmit_pending_transactions(
-            db_data_path,
-            lightwalletd_url,
-            &mut client,
-            tip.height as u32,
-            &startup_resubmit_exclusions,
-            || {
-                cancel.load(Ordering::Relaxed)
-                    || desired_mode.load(Ordering::SeqCst) != running_mode
-            },
-        )
-        .await;
+        let should_resubmit = resubmit_preflight_conn
+            .as_ref()
+            .map(|conn| {
+                crate::wallet::sync::has_pending_raw_transaction(conn, u32::from(tip_height))
+            })
+            .transpose()
+            .map(|candidate| candidate.unwrap_or(true))
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "[{}] sync: startup resubmit preflight failed: {e}",
+                    elapsed(),
+                );
+                true
+            });
+        if should_resubmit {
+            let startup_ranges = db
+                .suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+            let startup_resubmit_exclusions =
+                recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
+            let _ = crate::wallet::sync::resubmit_pending_transactions(
+                db_data_path,
+                lightwalletd_url,
+                &mut client,
+                u32::from(tip_height),
+                &startup_resubmit_exclusions,
+                || {
+                    cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                },
+            )
+            .await;
+        }
     }
 
     // 3. Download subtree roots (incremental)
@@ -1713,18 +2122,17 @@ async fn run_sync_impl(
     let mut initial_total = pending_scan_blocks(&initial_ranges);
     let initial_window_start_height =
         earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
+    let mut queued_ranges = Some(initial_ranges);
     let mut prev_remaining = initial_total;
     let mut progress_display_mode = ProgressDisplayMode::Work;
     let mut last_progress_percentage: f64 = 0.0;
     log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
 
-    // Bounded counters for reorg-triggered rewinds inside this one sync run,
-    // split between the verify phase and the main scan phase. Separate
-    // budgets match zcash-android-wallet-sdk's pattern of running a
-    // dedicated verify-first loop before the main scan, so a flapping
-    // verify range can't eat the main scan's rewind budget.
+    // Reorg-triggered rewinds are split between the verify and main scan
+    // phases. The main budget was initialized before tip reconciliation;
+    // this verify budget is independent so a flapping verify range cannot
+    // consume the main scan's recovery allowance.
     let mut verify_rewinds_this_run: u32 = 0;
-    let mut main_rewinds_this_run: u32 = 0;
     let mut witness_repair_passes_this_run: u32 = 0;
     let mut anchor_root_repair_passes_this_run: u32 = 0;
     let mut force_witness_check_this_run = false;
@@ -1737,36 +2145,35 @@ async fn run_sync_impl(
     let mut verify_phase_announced = false;
     let mut main_phase_announced = false;
 
-    /// If the scan loop has been running longer than this without
-    /// refreshing the chain tip from lightwalletd, we re-fetch
-    /// the tip and call `update_chain_tip` so that
-    /// `suggest_scan_ranges` incorporates any new blocks that
-    /// appeared while the wallet was catching up.
-    ///
-    /// Matches zcash-android-wallet-sdk's
-    /// `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
-    /// (CompactBlockProcessor.kt:1197). We don't restart the
-    /// whole sync like the SDK does — just refreshing the tip is
-    /// enough because our `suggest_scan_ranges` call at the top
-    /// of each loop iteration already reflects the new tip once
-    /// `update_chain_tip` has written it to the DB.
-    const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
-    let mut last_tip_refresh = std::time::Instant::now();
+    // If the scan loop has been running longer than this without
+    // refreshing the chain tip from lightwalletd, we re-fetch
+    // the tip and call `update_chain_tip` so that
+    // `suggest_scan_ranges` incorporates any new blocks that
+    // appeared while the wallet was catching up.
+    //
+    // Matches zcash-android-wallet-sdk's
+    // `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
+    // (CompactBlockProcessor.kt:1197). We don't restart the
+    // whole sync like the SDK does — just refreshing the tip is
+    // enough because our `suggest_scan_ranges` call at the top
+    // of each loop iteration already reflects the new tip once
+    // `update_chain_tip` has written it to the DB.
+    let mut last_completion_tip_validation = initial_tip_observed_at;
+    let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
-    // Prefetched block source from the previous iteration.
+    // Prefetched scan batch from the previous iteration.
     // When the scan loop processes a range that spans multiple batches,
-    // we kick off a background download of the next batch while running
-    // enhancement / resubmit / progress reporting for the current
-    // batch. This overlaps network I/O (download) with CPU-bound
-    // work (enhancement) and unrelated gRPC calls (resubmit), matching
-    // the SDK's `.buffer(1)` pipelining pattern in
+    // we kick off a background download of the next batch before scanning
+    // the current batch. This overlaps network I/O with the CPU-bound scan
+    // on multithread runtimes, and with later async enhancement/resubmit
+    // work on the iOS current-thread runtime. It matches the SDK's
+    // `.buffer(1)` pipelining pattern in
     // `CompactBlockProcessor.kt:1666`.
     //
     // `None` on the first iteration and whenever the previous batch
     // was the last in its range (so there's nothing to prefetch until
     // `suggest_scan_ranges` runs again).
-    type PrefetchResult =
-        Result<crate::wallet::sync_engine::block_source::MemoryBlockSource, SyncError>;
+    type PrefetchResult = Result<(block_source::MemoryBlockSource, chain::ChainState), SyncError>;
     /// Prefetched block download state. Implements `Drop` to
     /// abort the spawned tokio task when the loop exits for any
     /// reason (cancel, mode change, error, break, reorg
@@ -1801,29 +2208,100 @@ async fn run_sync_impl(
         // than TIP_REFRESH_INTERVAL, re-fetch the chain tip so
         // new blocks that arrived during a long catch-up are
         // picked up by the next suggest_scan_ranges() call.
-        // Errors are logged and skipped — we just keep the old
-        // tip and try again next period.
-        if last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL {
-            match get_latest_block(&mut client).await {
+        // Transport errors are logged and skipped so scanning can continue
+        // against the last validated tip. A lower, non-divergent response is
+        // returned as a transient error to avoid repeatedly requesting an
+        // empty range from a lagging replica.
+        if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
+            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+            let fresh_tip_result = get_latest_block(&mut client).await;
+            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+            {
+                log::info!("[{}] sync: exiting after periodic tip fetch", elapsed());
+                return Ok(());
+            }
+            match fresh_tip_result {
                 Ok(fresh_tip) => {
-                    let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
-                    if let Err(e) =
-                        with_wallet_db_write_lock("sync_engine.update_chain_tip.periodic", || {
-                            db.update_chain_tip(fresh_height)
-                        })
+                    let fresh_tip_height =
+                        block_height_from_u64(fresh_tip.height, "periodic lightwalletd chain tip")?;
+
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = classify_refreshed_tip_with_fallback(
+                        &mut client,
+                        current_tip_height,
+                        stored_hash,
+                        fresh_tip.height,
+                        &fresh_tip.hash,
+                    )
+                    .await;
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
                     {
-                        log::warn!(
-                            "[{}] sync: periodic tip refresh update_chain_tip failed: {e}",
-                            elapsed(),
-                        );
-                    } else {
                         log::info!(
-                            "[{}] sync: periodic tip refresh {} → {}",
-                            elapsed(),
-                            current_tip_height,
-                            fresh_tip.height,
+                            "[{}] sync: exiting after periodic tip validation",
+                            elapsed()
                         );
-                        current_tip_height = fresh_tip.height;
+                        return Ok(());
+                    }
+                    let relation = relation?;
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = std::time::Instant::now();
+                        }
+                        RefreshedTipRelation::Advanced => {
+                            if let Err(e) = with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.periodic",
+                                || db.update_chain_tip(fresh_tip_height),
+                            ) {
+                                log::warn!(
+                                    "[{}] sync: periodic tip refresh update_chain_tip \
+                                     failed: {e}",
+                                    elapsed(),
+                                );
+                            } else {
+                                log::info!(
+                                    "[{}] sync: periodic tip refresh {} → {}",
+                                    elapsed(),
+                                    current_tip_height,
+                                    fresh_tip.height,
+                                );
+                                current_tip_height = fresh_tip.height;
+                                last_completion_tip_validation = std::time::Instant::now();
+                            }
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "periodic tip reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch = None;
+                            let (actual_height, repair_ranges, pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                            log::warn!(
+                                "[{}] sync: periodic tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
+                                elapsed(),
+                                actual_height,
+                                pending_blocks,
+                                fresh_tip.height,
+                            );
+                            current_tip_height = fresh_tip.height;
+                            initial_total = pending_blocks;
+                            prev_remaining = pending_blocks;
+                            queued_ranges = Some(repair_ranges);
+                            last_completion_tip_validation = std::time::Instant::now();
+                            continue;
+                        }
                     }
                 }
                 Err(e) => {
@@ -1833,16 +2311,107 @@ async fn run_sync_impl(
                     );
                 }
             }
-            last_tip_refresh = std::time::Instant::now();
         }
 
-        let ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let ranges = if let Some(ranges) = queued_ranges.take() {
+            ranges
+        } else {
+            db.suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+        };
 
         let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
             Some(r) => r.clone(),
             None => {
+                // A long catch-up can outlive the tip captured at startup.
+                // Refresh once when the queue drains, but avoid duplicating
+                // the startup RPC for a sync that completed within a few
+                // seconds. If the tip advanced, queue its ranges before
+                // running completion repair checks.
+                if last_completion_tip_validation.elapsed() >= FINAL_TIP_REFRESH_MIN_AGE {
+                    let fresh_tip_result = get_latest_block(&mut client).await;
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                    {
+                        log::info!("[{}] sync: exiting after final tip fetch", elapsed());
+                        return Ok(());
+                    }
+                    let fresh_tip = fresh_tip_result?;
+                    last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                    let fresh_tip_height =
+                        block_height_from_u64(fresh_tip.height, "final lightwalletd chain tip")?;
+
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = classify_refreshed_tip_with_fallback(
+                        &mut client,
+                        current_tip_height,
+                        stored_hash,
+                        fresh_tip.height,
+                        &fresh_tip.hash,
+                    )
+                    .await;
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                    {
+                        log::info!("[{}] sync: exiting after final tip validation", elapsed());
+                        return Ok(());
+                    }
+                    let relation = relation?;
+
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = std::time::Instant::now();
+                        }
+                        RefreshedTipRelation::Advanced => {
+                            with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.queue_drain",
+                                || db.update_chain_tip(fresh_tip_height),
+                            )
+                            .map_err(|e| {
+                                SyncError::db(format!(
+                                    "queue-drain update_chain_tip({fresh_tip_height}): {e}"
+                                ))
+                            })?;
+                            current_tip_height = fresh_tip.height;
+                            last_completion_tip_validation = std::time::Instant::now();
+                            continue;
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "queue-drain reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch = None;
+                            let (actual_height, repair_ranges, repair_pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                            log::warn!(
+                                "[{}] sync: final tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
+                                elapsed(),
+                                actual_height,
+                                repair_pending_blocks,
+                                fresh_tip.height,
+                            );
+                            current_tip_height = fresh_tip.height;
+                            initial_total = repair_pending_blocks;
+                            prev_remaining = repair_pending_blocks;
+                            queued_ranges = Some(repair_ranges);
+                            last_completion_tip_validation = std::time::Instant::now();
+                            continue;
+                        }
+                    }
+                }
+
                 if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
                     db_data_path,
                     &mut db,
@@ -1980,43 +2549,51 @@ async fn run_sync_impl(
             batch_size,
         );
 
-        // Download blocks into memory — or use the prefetched data
-        // from the previous iteration if it matches this batch.
-        let block_source = if let Some(mut pf) = prefetch.take() {
+        // Download blocks and the preceding tree state — or use the
+        // prefetched data from the previous iteration if it matches.
+        let batch_result = if let Some(mut pf) = prefetch.take() {
             if pf.start == start && pf.end == end {
                 // Prefetch matches. Take the handle out of the
-                // Option so Drop doesn't abort a completed task.
-                let handle = pf.handle.take().expect("prefetch handle present");
-                match handle.await {
-                    Ok(Ok(bs)) => {
+                // option only after awaiting it. If this sync future is dropped
+                // while suspended, `Prefetch::drop` still owns and aborts the
+                // background task.
+                let prefetched = pf.handle.as_mut().expect("prefetch handle present").await;
+                let _completed_handle = pf.handle.take().expect("prefetch handle present");
+                if should_exit() {
+                    log::info!("[{}] sync: exiting after prefetch wait", elapsed());
+                    return Ok(());
+                }
+                match prefetched {
+                    Ok(Ok(batch)) => {
                         log::debug!(
-                            "[{}] sync: using prefetched blocks for {}-{}",
+                            "[{}] sync: using prefetched scan batch for {}-{}",
                             elapsed(),
                             u32::from(start),
                             u32::from(end) - 1,
                         );
-                        bs
+                        Ok(batch)
                     }
                     _ => {
-                        // Prefetch failed — download synchronously.
+                        // Prefetch failed — download both inputs again.
                         log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1, network).await?
+                        download_scan_batch(&mut client, start, end - 1, network).await
                     }
                 }
             } else {
                 // Range changed (reorg, priority switch, etc.) —
                 // Drop the Prefetch, which aborts the background task.
                 drop(pf);
-                download_blocks(&mut client, start, end - 1, network).await?
+                download_scan_batch(&mut client, start, end - 1, network).await
             }
         } else {
-            download_blocks(&mut client, start, end - 1, network).await?
+            download_scan_batch(&mut client, start, end - 1, network).await
         };
 
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
         }
+        let (block_source, from_state) = batch_result?;
 
         if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
             return Err(SyncError::other(format!(
@@ -2026,16 +2603,9 @@ async fn run_sync_impl(
             )));
         }
 
-        // Fetch and validate the frontier before projecting the checkpoints
-        // this batch will create. `update_tree` inserts this exact height as a
-        // checkpoint before any compact-block commitments.
-        let from_state = if should_use_empty_chain_state(&network, start)? {
-            chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
-        } else {
-            let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
-            ts.to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
-        };
+        // Validate the concurrently downloaded frontier before projecting the
+        // checkpoints this batch will create. `update_tree` inserts this exact
+        // height as a checkpoint before any compact-block commitments.
         if u32::from(from_state.block_height()) != frontier_height {
             return Err(SyncError::other(format!(
                 "downloaded tree state height {} does not match scan frontier {frontier_height}",
@@ -2045,6 +2615,33 @@ async fn run_sync_impl(
 
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
+
+        // Start the next download before scanning this batch. On the
+        // foreground multithread runtime this overlaps network I/O with
+        // `scan_cached_blocks`; on the iOS current-thread runtime it still
+        // overlaps the async enhancement and resubmit stages that follow.
+        if end < range_end && !should_exit() {
+            let pf_start = end;
+            if let Some((_, pf_end)) =
+                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
+            {
+                let mut pf_client = client.clone();
+                prefetch = Some(Prefetch {
+                    start: pf_start,
+                    end: pf_end,
+                    handle: Some(tokio::spawn(async move {
+                        download_scan_batch(&mut pf_client, pf_start, pf_end - 1, network).await
+                    })),
+                });
+            } else {
+                log::debug!(
+                    "[{}] sync: skipping prefetch from {} past current tip {}",
+                    elapsed(),
+                    u32::from(pf_start),
+                    current_tip_height,
+                );
+            }
+        }
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -2341,34 +2938,16 @@ async fn run_sync_impl(
             return Ok(());
         }
 
-        // Truncation can temporarily clear a transaction's mined height while
-        // retaining note positions that prove compact scanning found it mined.
-        // Exclude those transactions from recovery resubmission while scanning
-        // can still restore their mined heights.
-        let post_scan_ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
-
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
-        // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
-        // lines 593/701 call sites (end of verify batch / end of
-        // regular batch).
-        //
-        // We deliberately re-fetch the chain tip via
-        // `get_latest_block` before each pass instead of reusing
-        // `tip.height` captured once at the top of `run_sync_impl`.
-        // `get_resubmittable_txs` decides "still inside expiry
-        // window" with `expiry_height > current_height`; using the
-        // stale top-of-sync tip meant a long catch-up session
-        // (several thousand blocks) could keep rebroadcasting txs
-        // whose expiry had already passed against the real chain
-        // tip. Refreshing here is one extra unary gRPC per batch,
-        // which is cheap compared to the batch download itself and
-        // closes the "resubmit expired tx forever" regression
-        // caught by Codex 2nd-round review finding 2.
+        // Post-batch auto-resubmit. First query the small base
+        // transaction table. Most wallets have no pending raw
+        // transaction, so this avoids one tip RPC and an expensive
+        // account-level transaction-view query after every scan batch.
+        // A possible candidate still gets a fresh tip immediately
+        // before filtering and broadcasting, preserving the expiry
+        // check against current chain state.
         //
         // Pre-flight guard matches the one at the startup resubmit
         // call site — if cancel or mode-change landed during
@@ -2379,11 +2958,9 @@ async fn run_sync_impl(
         // a cancel arriving mid-pass stops initiating further
         // broadcasts.
         //
-        // Best-effort: helper swallows per-tx failures, we ignore
-        // the return value, and if the tip refresh itself fails we
-        // log and skip the pass rather than falling back to the
-        // stale height (the whole point of the refresh is to avoid
-        // rebroadcasting against a stale expiry window).
+        // Best-effort: query and per-transaction failures must not
+        // abort scanning. A failed preflight falls back to the old
+        // path so an unexpected DB error cannot suppress resubmission.
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
@@ -2391,50 +2968,136 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        match get_latest_block(&mut client)
-            .await
-            .map(|tip| tip.height as u32)
-        {
-            Ok(fresh_tip_height) => {
-                // Promote the fresh tip to the authoritative value
-                // so progress events and the final completion event
-                // use the latest chain height, not the one from
-                // sync startup. Also update the DB so
-                // suggest_scan_ranges picks up any new blocks that
-                // appeared since the initial (or last periodic) tip
-                // fetch.
-                //
-                // IMPORTANT: update_chain_tip MUST succeed before
-                // we bump current_tip_height. If the DB write fails,
-                // suggest_scan_ranges still operates on the old tip
-                // and the loop may break with isComplete=true —
-                // bumping current_tip_height prematurely would make
-                // the completion event claim a height the wallet
-                // never actually scanned. (Codex 3rd-round finding.)
-                if (fresh_tip_height as u64) > current_tip_height {
-                    let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
-                    match with_wallet_db_write_lock(
-                        "sync_engine.update_chain_tip.post_batch",
-                        || db.update_chain_tip(fresh_bh),
-                    ) {
-                        Ok(_) => {
-                            current_tip_height = fresh_tip_height as u64;
+        let should_resubmit = allow_resubmit
+            && resubmit_preflight_conn
+                .as_ref()
+                .map(|conn| {
+                    crate::wallet::sync::has_pending_raw_transaction(
+                        conn,
+                        current_tip_height as u32,
+                    )
+                })
+                .transpose()
+                .map(|candidate| candidate.unwrap_or(true))
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "[{}] sync: pending resubmit preflight failed: {e}",
+                        elapsed(),
+                    );
+                    true
+                });
+        if should_resubmit {
+            let fresh_tip_result = get_latest_block(&mut client).await;
+            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+            {
+                log::info!("[{}] sync: exiting after resubmit tip fetch", elapsed());
+                return Ok(());
+            }
+            match fresh_tip_result {
+                Ok(fresh_tip) => {
+                    let fresh_tip_height = block_height_from_u64(
+                        fresh_tip.height,
+                        "post-batch lightwalletd chain tip",
+                    )?;
+
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = classify_refreshed_tip_with_fallback(
+                        &mut client,
+                        current_tip_height,
+                        stored_hash,
+                        fresh_tip.height,
+                        &fresh_tip.hash,
+                    )
+                    .await;
+                    if cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                    {
+                        log::info!(
+                            "[{}] sync: exiting after resubmit tip validation",
+                            elapsed()
+                        );
+                        return Ok(());
+                    }
+                    let relation = relation?;
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = std::time::Instant::now();
+                            last_periodic_tip_refresh_attempt = std::time::Instant::now();
                         }
-                        Err(e) => {
+                        RefreshedTipRelation::Advanced => {
+                            match with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.post_batch",
+                                || db.update_chain_tip(fresh_tip_height),
+                            ) {
+                                Ok(_) => {
+                                    current_tip_height = fresh_tip.height;
+                                    last_completion_tip_validation = std::time::Instant::now();
+                                    last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "[{}] sync: post-batch update_chain_tip({}) \
+                                         failed, keeping tip at {current_tip_height}: {e}",
+                                        elapsed(),
+                                        fresh_tip.height,
+                                    );
+                                }
+                            }
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "resubmit tip reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch = None;
+                            let (actual_height, repair_ranges, pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
                             log::warn!(
-                                "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
-                                 failed, keeping tip at {current_tip_height}: {e}",
+                                "[{}] sync: resubmit tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
                                 elapsed(),
+                                actual_height,
+                                pending_blocks,
+                                fresh_tip.height,
                             );
+                            current_tip_height = fresh_tip.height;
+                            initial_total = pending_blocks;
+                            prev_remaining = pending_blocks;
+                            queued_ranges = Some(repair_ranges);
+                            last_completion_tip_validation = std::time::Instant::now();
+                            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                            continue;
                         }
                     }
-                }
-                if allow_resubmit {
+
+                    // Use the just-observed network height for the expiry
+                    // filter. The authoritative progress tip was promoted
+                    // above only when its DB update succeeded; lower or
+                    // divergent responses cannot reach this broadcast path.
+                    // Truncation can temporarily clear a transaction's mined
+                    // height while retaining note positions that prove compact
+                    // scanning found it mined. Exclude those transactions while
+                    // pending ranges can still restore their mined heights.
+                    let post_scan_ranges = db
+                        .suggest_scan_ranges()
+                        .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+                    let resubmit_exclusions =
+                        recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         lightwalletd_url,
                         &mut client,
-                        fresh_tip_height,
+                        u32::from(fresh_tip_height),
                         &resubmit_exclusions,
                         || {
                             cancel.load(Ordering::Relaxed)
@@ -2443,12 +3106,12 @@ async fn run_sync_impl(
                     )
                     .await;
                 }
-            }
-            Err(e) => {
-                log::warn!(
-                    "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
-                    elapsed(),
-                );
+                Err(e) => {
+                    log::warn!(
+                        "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
+                        elapsed(),
+                    );
+                }
             }
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
@@ -2550,43 +3213,6 @@ async fn run_sync_impl(
         progress_fn(progress);
         #[cfg(debug_assertions)]
         maybe_sleep_for_e2e_sync_batch_delay().await;
-
-        // Prefetch: if the current range still has blocks beyond
-        // `end`, kick off a background download of the next batch
-        // now, while the next loop iteration does suggest_scan_ranges
-        // + phase bookkeeping + (potentially) enhancement for the
-        // batch we just finished. The download runs on a cloned
-        // gRPC client so it doesn't conflict with the main client's
-        // unary RPCs (tree_state, get_latest_block, etc.).
-        //
-        // When the range is exhausted (end == range.end), we skip
-        // the prefetch — the next range comes from
-        // suggest_scan_ranges() which needs the DB state the current
-        // scan just committed, and we can't predict it in advance.
-        if end < range_end && !cancel.load(Ordering::Relaxed) {
-            let pf_start = end;
-            // Recompute batch_size for the prefetch range in case
-            // it crosses a sandblasting boundary differently.
-            if let Some((_, pf_end)) =
-                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
-            {
-                let mut pf_client = client.clone();
-                prefetch = Some(Prefetch {
-                    start: pf_start,
-                    end: pf_end,
-                    handle: Some(tokio::spawn(async move {
-                        download_blocks(&mut pf_client, pf_start, pf_end - 1, network).await
-                    })),
-                });
-            } else {
-                log::debug!(
-                    "[{}] sync: skipping prefetch from {} past current tip {}",
-                    elapsed(),
-                    u32::from(pf_start),
-                    current_tip_height,
-                );
-            }
-        }
     }
 
     let (final_scanned_height, final_tip_height) =
@@ -2761,11 +3387,8 @@ fn should_use_empty_chain_state(
 
 // ==================== Tests ====================
 //
-// Error-taxonomy tests now live alongside their types in `error.rs`. The
-// only test that has to stay here is `sqlite_lock_contention_is_recognised`,
-// because it exercises the `is_sqlite_lock_contention` helper that still
-// lives in this module. A follow-up refactor commit moves the helper (and
-// this test) into the lwd submodule.
+// Error-taxonomy tests live alongside their types in `error.rs`. Tests here
+// cover the small orchestration helpers that remain in this module.
 
 #[cfg(test)]
 mod tests {
@@ -3059,6 +3682,53 @@ mod tests {
             read_sync_completion_meta(active_sync_path).unwrap(),
             (Some(SYNC_COMPLETION_POLICY_VERSION), Some(100), Some(true)),
         );
+    }
+
+    #[test]
+    fn refreshed_tip_classifies_height_and_hash_changes() {
+        let stored_hash = BlockHash([0x11; 32]);
+
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 101, &[]).unwrap(),
+            RefreshedTipRelation::Advanced,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[0x11; 32]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::Reorg,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, None, 99, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 100, &[0x11; 32]).unwrap(),
+            RefreshedTipRelation::Unchanged,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 100, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::Reorg,
+        );
+        assert!(classify_refreshed_tip(100, Some(stored_hash), 100, &[]).is_err());
+        assert_eq!(
+            classify_refreshed_tip(100, None, 100, &[]).unwrap(),
+            RefreshedTipRelation::Unchanged,
+        );
+    }
+
+    #[test]
+    fn refreshed_tip_rejects_a_nonempty_malformed_hash() {
+        assert!(
+            classify_refreshed_tip(100, Some(BlockHash([0x11; 32])), 100, &[0x11; 31]).is_err()
+        );
+        assert!(classify_refreshed_tip(100, None, 101, &[0x11; 31]).is_err());
     }
 
     #[test]
