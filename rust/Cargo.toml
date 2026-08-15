@@ -161,6 +161,23 @@ version = "=0.4.0-rc.2"
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
+# Keep Vizor on the complete Zakura fork closure. Pinning the exact revision
+# makes dependency-source changes explicit and reproducible.
+[patch.crates-io]
+sapling-crypto = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+halo2_gadgets = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+halo2_legacy_pdqsort = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+halo2_poseidon = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+halo2_proofs = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+orchard = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+pasta_curves = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+reddsa = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+redjubjub = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+sinsemilla = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+zcash_keys = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+zcash_primitives = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+zcash_proofs = { git = "https://github.com/zakura-core/libraries", rev = "bcf22f33cc78b5bcd50f0a103f54fca4976aefe4" }
+
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
 # debug opt-level=0, so keep debug assertions and symbols while making local
