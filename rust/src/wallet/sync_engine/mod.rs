@@ -379,6 +379,25 @@ fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
 }
 
+/// Returns whether a resubmit pass should run after its cheap preflight.
+///
+/// Missing connections and query failures deliberately fail open so an
+/// optimization failure cannot suppress a valid transaction. Cancellation or
+/// a mode change always wins, including when it arrives while SQLite is
+/// waiting on its busy timeout.
+fn should_attempt_resubmit(
+    allow_resubmit: bool,
+    should_exit: bool,
+    preflight: Option<&Result<bool, String>>,
+) -> bool {
+    allow_resubmit
+        && !should_exit
+        && match preflight {
+            Some(Ok(candidate)) => *candidate,
+            Some(Err(_)) | None => true,
+        }
+}
+
 fn recovery_resubmit_exclusions(
     db_path: &str,
     ranges: &[ScanRange],
@@ -1848,6 +1867,23 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    // Keep one read connection so the small resubmit preflight can reuse its
+    // prepared statement across batches. Opening or querying it is only an
+    // optimization: either failure falls back to the existing full path.
+    let resubmit_preflight_conn = if allow_resubmit {
+        match crate::wallet::sync::open_readonly_conn(db_data_path) {
+            Ok(conn) => Some(conn),
+            Err(e) => {
+                log::warn!(
+                    "[{}] sync: resubmit preflight connection unavailable: {e}",
+                    elapsed(),
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -1975,7 +2011,7 @@ async fn run_sync_impl(
     //
     // We reuse the same `client` instead of opening a fresh channel.
     //
-    // Pre-flight cancel/mode check: `update_chain_tip` and
+    // Preflight cancel/mode check: `update_chain_tip` and
     // `open_lwd_channel` can take a couple of seconds under a
     // slow connection, which is long enough for the user to hit
     // stop. Skip the whole pass in that case instead of sending
@@ -1989,23 +2025,43 @@ async fn run_sync_impl(
             elapsed(),
         );
     } else {
-        let startup_ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let startup_resubmit_exclusions =
-            recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
-        let _ = crate::wallet::sync::resubmit_pending_transactions(
-            db_data_path,
-            lightwalletd_url,
-            &mut client,
-            u32::from(tip_height),
-            &startup_resubmit_exclusions,
-            || {
-                cancel.load(Ordering::Relaxed)
-                    || desired_mode.load(Ordering::SeqCst) != running_mode
-            },
-        )
-        .await;
+        let preflight = resubmit_preflight_conn.as_ref().map(|conn| {
+            crate::wallet::sync::has_pending_raw_transaction(conn, u32::from(tip_height))
+        });
+        if let Some(Err(e)) = preflight.as_ref() {
+            log::warn!(
+                "[{}] sync: startup resubmit preflight failed: {e}",
+                elapsed(),
+            );
+        }
+        let exit_after_preflight = should_exit();
+        if exit_after_preflight {
+            log::info!(
+                "[{}] sync: cancel/mode observed after startup resubmit preflight",
+                elapsed(),
+            );
+            return Ok(());
+        }
+
+        if should_attempt_resubmit(true, exit_after_preflight, preflight.as_ref()) {
+            let startup_ranges = db
+                .suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+            let startup_resubmit_exclusions =
+                recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
+            let _ = crate::wallet::sync::resubmit_pending_transactions(
+                db_data_path,
+                lightwalletd_url,
+                &mut client,
+                u32::from(tip_height),
+                &startup_resubmit_exclusions,
+                || {
+                    cancel.load(Ordering::Relaxed)
+                        || desired_mode.load(Ordering::SeqCst) != running_mode
+                },
+            )
+            .await;
+        }
     }
 
     // 3. Download subtree roots (incremental)
@@ -2871,36 +2927,20 @@ async fn run_sync_impl(
             return Ok(());
         }
 
-        // Truncation can temporarily clear a transaction's mined height while
-        // retaining note positions that prove compact scanning found it mined.
-        // Exclude those transactions from recovery resubmission while scanning
-        // can still restore their mined heights.
-        let post_scan_ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
-
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
-        // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
-        // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
-        // verify batch / end of a regular batch).
+        // Post-batch auto-resubmit. First query the small base transaction
+        // table. Most wallets have no pending raw transaction, so this avoids
+        // one candidate-triggered tip RPC and the account-level transaction
+        // view after every scan batch. The independent queue-drain check still
+        // validates tip identity before completion.
         //
-        // We deliberately re-fetch the chain tip via
-        // `get_latest_block` before each pass instead of reusing
-        // `tip.height` captured once at the top of `run_sync_impl`.
-        // `get_resubmittable_txs` decides "still inside expiry
-        // window" with `expiry_height > current_height`; using the
-        // stale top-of-sync tip meant a long catch-up session
-        // (several thousand blocks) could keep rebroadcasting txs
-        // whose expiry had already passed against the real chain
-        // tip. Refreshing here is one extra unary gRPC per batch,
-        // which is cheap compared to the batch download itself and
-        // closes the "resubmit expired tx forever" regression
-        // caught by Codex 2nd-round review finding 2.
+        // A possible candidate gets a fresh tip immediately before filtering
+        // and broadcasting. This keeps the expiry test tied to current chain
+        // state instead of the tip captured at sync startup.
         //
-        // Pre-flight guard matches the one at the startup resubmit
+        // Preflight guard matches the one at the startup resubmit
         // call site — if cancel or mode-change landed during
         // `run_enhancement` (which can spend a second or two on a
         // transparent-address scan), bail before opening a single
@@ -2909,11 +2949,9 @@ async fn run_sync_impl(
         // a cancel arriving mid-pass stops initiating further
         // broadcasts.
         //
-        // Best-effort: helper swallows per-tx failures, we ignore
-        // the return value, and if the tip refresh itself fails we
-        // log and skip the pass rather than falling back to the
-        // stale height (the whole point of the refresh is to avoid
-        // rebroadcasting against a stale expiry window).
+        // Best-effort: a failed preflight falls back to the old path so a
+        // local optimization failure cannot suppress resubmission. A failed
+        // tip refresh skips the pass instead of using a stale expiry window.
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
@@ -2921,14 +2959,48 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result = get_latest_block(&mut client).await;
-        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
-        else {
-            log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
+        let resubmit_tip_height = u32::from(block_height_from_u64(
+            current_tip_height,
+            "resubmit lightwalletd chain tip",
+        )?);
+        let preflight = if allow_resubmit {
+            resubmit_preflight_conn.as_ref().map(|conn| {
+                crate::wallet::sync::has_pending_raw_transaction(conn, resubmit_tip_height)
+            })
+        } else {
+            None
+        };
+        if let Some(Err(e)) = preflight.as_ref() {
+            log::warn!(
+                "[{}] sync: post-batch resubmit preflight failed: {e}",
+                elapsed(),
+            );
+        }
+        let exit_after_preflight = should_exit();
+        if exit_after_preflight {
+            log::info!(
+                "[{}] sync: cancel/mode observed after post-batch resubmit preflight",
+                elapsed(),
+            );
             return Ok(());
+        }
+        let should_resubmit =
+            should_attempt_resubmit(allow_resubmit, exit_after_preflight, preflight.as_ref());
+
+        let fresh_tip_result = if should_resubmit {
+            let fresh_tip_result = get_latest_block(&mut client).await;
+            let Some(fresh_tip_result) =
+                tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+            else {
+                log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
+                return Ok(());
+            };
+            Some(fresh_tip_result)
+        } else {
+            None
         };
         match fresh_tip_result {
-            Ok(fresh_tip) => {
+            Some(Ok(fresh_tip)) => {
                 let fresh_tip_height =
                     block_height_from_u64(fresh_tip.height, "post-batch lightwalletd chain tip")?;
 
@@ -3020,28 +3092,42 @@ async fn run_sync_impl(
                 // filter. The authoritative progress tip was promoted
                 // above only when its DB update succeeded; lower or
                 // divergent responses cannot reach this broadcast path.
-                if allow_resubmit {
-                    let _ = crate::wallet::sync::resubmit_pending_transactions(
-                        db_data_path,
-                        lightwalletd_url,
-                        &mut client,
-                        u32::from(fresh_tip_height),
-                        &resubmit_exclusions,
-                        || {
-                            cancel.load(Ordering::Relaxed)
-                                || desired_mode.load(Ordering::SeqCst) != running_mode
-                        },
-                    )
-                    .await;
-                }
+                // Truncation can temporarily clear a transaction's mined
+                // height while retaining note positions that prove compact
+                // scanning found it mined. Exclude those transactions while
+                // pending ranges can still restore their mined heights.
+                let post_scan_ranges = db
+                    .suggest_scan_ranges()
+                    .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+                let resubmit_exclusions =
+                    recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
+                let _ = crate::wallet::sync::resubmit_pending_transactions(
+                    db_data_path,
+                    lightwalletd_url,
+                    &mut client,
+                    u32::from(fresh_tip_height),
+                    &resubmit_exclusions,
+                    || {
+                        cancel.load(Ordering::Relaxed)
+                            || desired_mode.load(Ordering::SeqCst) != running_mode
+                    },
+                )
+                .await;
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 completion_tip_validation_required = true;
                 log::warn!(
                     "[{}] sync: post-batch tip refresh failed; skipping \
                      tip promotion and resubmit pass: {e}",
                     elapsed(),
                 );
+            }
+            None => {
+                // Suppressing the per-batch RPC must not suppress the chain-tip
+                // identity guarantee. Force one queue-drain validation even
+                // when the last successful check is still inside its normal
+                // grace period.
+                completion_tip_validation_required = true;
             }
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
@@ -3366,6 +3452,35 @@ mod tests {
             (actual - expected).abs() < 0.000_001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn resubmit_preflight_fails_open_but_cancel_and_policy_win() {
+        let candidate = Ok(true);
+        let empty = Ok(false);
+        let failed = Err("synthetic preflight failure".to_owned());
+
+        assert!(should_attempt_resubmit(true, false, Some(&candidate)));
+        assert!(!should_attempt_resubmit(true, false, Some(&empty)));
+        assert!(should_attempt_resubmit(true, false, Some(&failed)));
+        assert!(should_attempt_resubmit(true, false, None));
+
+        assert!(!should_attempt_resubmit(true, true, Some(&candidate)));
+        assert!(!should_attempt_resubmit(true, true, Some(&failed)));
+        assert!(!should_attempt_resubmit(true, true, None));
+        assert!(!should_attempt_resubmit(false, false, Some(&candidate)));
+        assert!(!should_attempt_resubmit(false, false, Some(&failed)));
+        assert!(!should_attempt_resubmit(false, false, None));
+    }
+
+    #[test]
+    fn empty_resubmit_preflight_avoids_candidate_tip_refreshes_across_batches() {
+        let empty = Ok(false);
+        let candidate_tip_refreshes = (0..100)
+            .filter(|_| should_attempt_resubmit(true, false, Some(&empty)))
+            .count();
+
+        assert_eq!(candidate_tip_refreshes, 0);
     }
 
     #[test]
