@@ -3718,9 +3718,9 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pir-client"
-version = "0.4.0-rc.7"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf6547ec35c8d4af154bc73d60fe2773be50f7c089e79414983d721d0dbc13db"
+checksum = "350efadb12ec2d11c8966cd376d9677c9e0038e3bb4aa2acfc69a8edc25700c9"
 dependencies = [
  "anyhow",
  "ff",
@@ -3737,9 +3737,9 @@ dependencies = [
 
 [[package]]
 name = "pir-types"
-version = "0.3.0-rc.6"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24f3dd9f975f28591b07af57cca89804650c38fa66051cf12f34d664f7ea2ac6"
+checksum = "635f27cfabeca929f821a0f1c934a15f27fd2922a61c487ecf1daa43b20dfd3e"
 dependencies = [
  "anyhow",
  "ff",
@@ -6943,9 +6943,9 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.5.0-rc.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fac7b20bee99168197ecdb760181d6d731ec7fb2428ff380a4772f2f1abfae9"
+checksum = "22d1048977b2b16cd9ec141fd4521266565a970d41df67d446a6d2dbefe329bd"
 dependencies = [
  "anyhow",
  "ff",
@@ -6960,9 +6960,9 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.7.0-rc.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d3a7fd4c1a40672a2f13c625999b8fefeb44d517230b4db1d4947c473d4e4a"
+checksum = "e818193fc3f7755ccd8d4ea713804a12f9743804737a4ef50a69dc26150b49e8"
 dependencies = [
  "base64",
  "ff",
@@ -6976,9 +6976,9 @@ dependencies = [
 
 [[package]]
 name = "voting-circuits"
-version = "0.10.0-rc.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "416ad7678c8b74d03267410a49f509bb78346b5cc8d5aef04c18bd5184a193cb"
+checksum = "014def2d1738ecc42253d0cd0f6e74847bc51ccde55ad992abadede7fade76d5"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -7990,9 +7990,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "3.0.0-rc.3"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efbea3bf21e9185e6e49ec7632a1f2a4ada26542197a6e7cf9d35114eb999a70"
+checksum = "1c184a75b485d9d9d2c37dbf098306de7a33b4705d82ad0ca2b57361443966ab"
 dependencies = [
  "anyhow",
  "base64",
