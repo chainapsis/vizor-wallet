@@ -388,6 +388,7 @@ void main() {
   test('wallet DB name lookup queues behind an in-flight deleteAll', () async {
     final storage = _BlockingWriteStorage(blockKey: kWalletDbNameKey)
       ..blockNextWrite = true;
+    addTearDown(storage.release);
     store = AppSecureStore.testing(storage: storage);
 
     final firstLookup = store.ensureWalletDbName();
