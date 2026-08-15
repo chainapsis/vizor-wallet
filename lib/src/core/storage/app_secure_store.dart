@@ -143,6 +143,8 @@ class AppSecureStore {
   final FlutterSecureStorage _storage;
   final FlutterSecureStorage _mnemonicStorage;
   final _secretMutationLock = _AsyncLock();
+  final _walletDbNameLock = _AsyncLock();
+  Future<String>? _walletDbNameFuture;
   String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;
@@ -155,7 +157,25 @@ class AppSecureStore {
     return password;
   }
 
-  Future<String> ensureWalletDbName() async {
+  Future<String> ensureWalletDbName() {
+    final cached = _walletDbNameFuture;
+    if (cached != null) return cached;
+
+    late final Future<String> pending;
+    pending = _walletDbNameLock.run(_loadOrCreateWalletDbName).onError((
+      error,
+      stackTrace,
+    ) {
+      if (identical(_walletDbNameFuture, pending)) {
+        _walletDbNameFuture = null;
+      }
+      Error.throwWithStackTrace(error!, stackTrace);
+    });
+    _walletDbNameFuture = pending;
+    return pending;
+  }
+
+  Future<String> _loadOrCreateWalletDbName() async {
     final existing = await readPlain(kWalletDbNameKey);
     if (existing != null && existing.isNotEmpty) {
       return existing;
@@ -404,15 +424,20 @@ class AppSecureStore {
   }
 
   Future<void> deleteAll() {
-    return _secretMutationLock.run(() async {
-      await _runStorageOperation('delete all', _storage.deleteAll);
-      if (!identical(_mnemonicStorage, _storage)) {
-        await _runStorageOperation(
-          'delete all account mnemonics',
-          _mnemonicStorage.deleteAll,
-        );
-      }
-      _sessionPassword = null;
+    // Invalidate synchronously before queueing the reset. A concurrent lookup
+    // will then queue behind this delete instead of returning the old name.
+    _walletDbNameFuture = null;
+    return _walletDbNameLock.run(() {
+      return _secretMutationLock.run(() async {
+        await _runStorageOperation('delete all', _storage.deleteAll);
+        if (!identical(_mnemonicStorage, _storage)) {
+          await _runStorageOperation(
+            'delete all account mnemonics',
+            _mnemonicStorage.deleteAll,
+          );
+        }
+        _sessionPassword = null;
+      });
     });
   }
 
@@ -447,8 +472,12 @@ class AppSecureStore {
   }
 
   Future<bool> isPasswordConfigured() async {
-    final verifier = await readPlain(_passwordVerifierKey);
-    final salt = await readPlain(_passwordVerifierSaltKey);
+    final passwordConfiguration = await Future.wait<String?>([
+      readPlain(_passwordVerifierKey),
+      readPlain(_passwordVerifierSaltKey),
+    ]);
+    final verifier = passwordConfiguration[0];
+    final salt = passwordConfiguration[1];
     return verifier != null &&
         verifier.isNotEmpty &&
         salt != null &&

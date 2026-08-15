@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
@@ -216,7 +217,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   try {
     log('bootstrap: loading startup snapshot');
     await ensureIosSecureStoreAccessibilityMigrated();
-    await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;
     try {
@@ -231,29 +231,73 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     } catch (e) {
       log('bootstrap: failed to recover password rotation: $e');
     }
-    final network = resolveStoredOrDefaultZcashNetworkName(
-      await storage.readString(_networkKey),
+
+    final networkFuture = storage
+        .readString(_networkKey)
+        .then(resolveStoredOrDefaultZcashNetworkName);
+    final rpcEndpointConfigFuture = networkFuture.then(
+      (network) => _readRpcEndpointConfig(storage, network),
     );
-    final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
-    final themeMode = await _readThemeMode(storage);
-    final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
-    final swapEnabledOverrideCachedForRelease =
-        await _readSwapEnabledOverrideCachedForRelease();
-    final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
-    final syncKeepAwakeEnabled = await _readPlainBool(
-      storage,
-      key: kSyncKeepAwakeEnabledKey,
-      label: 'sync keep-awake enabled flag',
+    final rpcEndpointConfigRead = _captureBootstrapRead(
+      rpcEndpointConfigFuture,
     );
-    final syncKeepAwakePromptSeen = await _readPlainBool(
-      storage,
-      key: kSyncKeepAwakePromptSeenKey,
-      label: 'sync keep-awake prompt seen flag',
+    final themeModeRead = _captureBootstrapRead(_readThemeMode(storage));
+    final privacyModeEnabledRead = _captureBootstrapRead(
+      _readPrivacyModeEnabled(storage),
     );
-    final isPasswordConfigured = await storage.isPasswordConfigured();
-    final isUnlocked = storage.hasSessionPassword;
-    final dbPath = await _getDbPath();
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    final swapEnabledOverrideCachedForReleaseRead = _captureBootstrapRead(
+      _readSwapEnabledOverrideCachedForRelease(),
+    );
+    final biometricUnlockEnabledRead = _captureBootstrapRead(
+      _readBiometricUnlockEnabled(storage),
+    );
+    final syncKeepAwakeEnabledRead = _captureBootstrapRead(
+      _readPlainBool(
+        storage,
+        key: kSyncKeepAwakeEnabledKey,
+        label: 'sync keep-awake enabled flag',
+      ),
+    );
+    final syncKeepAwakePromptSeenRead = _captureBootstrapRead(
+      _readPlainBool(
+        storage,
+        key: kSyncKeepAwakePromptSeenKey,
+        label: 'sync keep-awake prompt seen flag',
+      ),
+    );
+    final isPasswordConfiguredRead = _captureBootstrapRead(
+      storage.isPasswordConfigured(),
+    );
+    final storedAccountsRead = _captureBootstrapRead(
+      _readStoredAccounts(storage),
+    );
+    final storedActiveUuidRead = _captureBootstrapRead(
+      storage.readString(_activeAccountKey),
+    );
+    final settingsResultsFuture = (
+      rpcEndpointConfigRead,
+      themeModeRead,
+      privacyModeEnabledRead,
+      swapEnabledOverrideCachedForReleaseRead,
+      biometricUnlockEnabledRead,
+      syncKeepAwakeEnabledRead,
+      syncKeepAwakePromptSeenRead,
+    ).wait;
+    final walletStateResultsFuture = (
+      isPasswordConfiguredRead,
+      storedAccountsRead,
+      storedActiveUuidRead,
+    ).wait;
+    final dbPathFuture = _getDbPath();
+    final networkAndDbPath = await Future.wait<String>([
+      networkFuture,
+      dbPathFuture,
+    ]);
+    final network = networkAndDbPath[0];
+    final dbPath = networkAndDbPath[1];
+
+    final walletExists = rust_wallet.walletExists(dbPath: dbPath);
+    if (walletExists) {
       try {
         log('bootstrap: ensuring wallet DB migrations before startup snapshot');
         await rust_wallet.ensureWalletDbMigrated(
@@ -268,15 +312,52 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         );
       }
     }
-    final storedAccounts = await _readStoredAccounts(storage);
+    final (settingsResults, walletStateResults) = await (
+      settingsResultsFuture,
+      walletStateResultsFuture,
+    ).wait;
+    final (
+      rpcEndpointConfigResult,
+      themeModeResult,
+      privacyModeEnabledResult,
+      swapEnabledOverrideCachedForReleaseResult,
+      biometricUnlockEnabledResult,
+      syncKeepAwakeEnabledResult,
+      syncKeepAwakePromptSeenResult,
+    ) = settingsResults;
+    final (
+      isPasswordConfiguredResult,
+      storedAccountsResult,
+      storedActiveUuidResult,
+    ) = walletStateResults;
+    final rpcEndpointConfig = _unwrapBootstrapRead(rpcEndpointConfigResult);
+    final themeMode = _unwrapBootstrapRead(themeModeResult);
+    final privacyModeEnabled = _unwrapBootstrapRead(privacyModeEnabledResult);
+    final swapEnabledOverrideCachedForRelease = _unwrapBootstrapRead(
+      swapEnabledOverrideCachedForReleaseResult,
+    );
+    final biometricUnlockEnabled = _unwrapBootstrapRead(
+      biometricUnlockEnabledResult,
+    );
+    final syncKeepAwakeEnabled = _unwrapBootstrapRead(
+      syncKeepAwakeEnabledResult,
+    );
+    final syncKeepAwakePromptSeen = _unwrapBootstrapRead(
+      syncKeepAwakePromptSeenResult,
+    );
+    final isPasswordConfigured = _unwrapBootstrapRead(
+      isPasswordConfiguredResult,
+    );
+    final storedAccounts = _unwrapBootstrapRead(storedAccountsResult);
+    final storedActiveUuid = _unwrapBootstrapRead(storedActiveUuidResult);
+    final isUnlocked = storage.hasSessionPassword;
     final storedAccountsByUuid = {
       for (final account in storedAccounts) account.uuid: account,
     };
-    final storedActiveUuid = await storage.readString(_activeAccountKey);
 
     var rustAccounts = <AccountInfo>[];
     final rustAddressesByUuid = <String, String>{};
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    if (walletExists) {
       try {
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
@@ -312,10 +393,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final hasWallet = accounts.isNotEmpty;
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
-    if (isUnlocked &&
-        hasWallet &&
-        activeAccountUuid != null &&
-        rust_wallet.walletExists(dbPath: dbPath)) {
+    if (isUnlocked && hasWallet && activeAccountUuid != null && walletExists) {
       initialSyncSnapshot = await _loadInitialSyncSnapshot(
         dbPath: dbPath,
         network: network,
@@ -368,6 +446,24 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       failureMessage: 'Vizor could not load its startup state.',
     );
   }
+}
+
+typedef _BootstrapRead<T> = ({T? value, Object? error, StackTrace? stackTrace});
+
+Future<_BootstrapRead<T>> _captureBootstrapRead<T>(Future<T> future) async {
+  try {
+    return (value: await future, error: null, stackTrace: null);
+  } catch (error, stackTrace) {
+    return (value: null, error: error, stackTrace: stackTrace);
+  }
+}
+
+T _unwrapBootstrapRead<T>(_BootstrapRead<T> result) {
+  final error = result.error;
+  if (error != null) {
+    Error.throwWithStackTrace(error, result.stackTrace!);
+  }
+  return result.value as T;
 }
 
 String _walletDbMigrationFailureMessage(Object error) {
@@ -434,8 +530,12 @@ Future<RpcEndpointConfig> _readRpcEndpointConfig(
   String network,
 ) async {
   try {
-    final storedUrl = await storage.readString(kRpcEndpointUrlKey);
-    final storedPreset = await storage.readString(kRpcEndpointPresetKey);
+    final storedEndpoint = await Future.wait<String?>([
+      storage.readString(kRpcEndpointUrlKey),
+      storage.readString(kRpcEndpointPresetKey),
+    ]);
+    final storedUrl = storedEndpoint[0];
+    final storedPreset = storedEndpoint[1];
     return resolveStoredRpcEndpointConfig(
       networkName: zcashNetworkFromName(network).name,
       storedUrl: storedUrl,
@@ -547,27 +647,26 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String accountUuid,
 }) async {
   try {
-    final syncStatus = await rust_sync.getSyncStatus(
-      dbPath: dbPath,
-      network: network,
-    );
-    final balance = await rust_sync.getBalance(
-      dbPath: dbPath,
-      network: network,
-      accountUuid: accountUuid,
-    );
+    final (syncStatus, balance, recentTransactions) = await (
+      rust_sync.getSyncStatus(dbPath: dbPath, network: network),
+      rust_sync.getBalance(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      ),
+      rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: network,
+        limit: 10,
+        accountUuid: accountUuid,
+      ),
+    ).wait;
     if (balance.availability != rust_sync.WalletBalanceAvailability.available) {
       throw StateError(
         'Wallet balance unavailable during bootstrap: '
         '${balance.availability.name}',
       );
     }
-    final recentTransactions = await rust_sync.getTransactionHistory(
-      dbPath: dbPath,
-      network: network,
-      limit: 10,
-      accountUuid: accountUuid,
-    );
     var canShieldTransparentBalance = false;
     var shieldTransparentFee = BigInt.zero;
     var shieldTransparentAmount = BigInt.zero;

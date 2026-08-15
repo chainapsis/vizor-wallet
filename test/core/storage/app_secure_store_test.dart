@@ -320,6 +320,118 @@ void main() {
     );
   });
 
+  test(
+    'parallel password configuration reads preserve storage failure type',
+    () async {
+      store = AppSecureStore.testing(storage: _PlatformFailingReadStorage());
+
+      await expectLater(
+        store.isPasswordConfigured(),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+    },
+  );
+
+  test(
+    'wallet DB name lookups share one in-flight storage operation',
+    () async {
+      final storage = _MapStorage('primary');
+      store = AppSecureStore.testing(storage: storage);
+
+      final names = await Future.wait([
+        store.ensureWalletDbName(),
+        store.ensureWalletDbName(),
+        store.ensureWalletDbName(),
+      ]);
+      final cachedName = await store.ensureWalletDbName();
+
+      expect(names.toSet(), hasLength(1));
+      expect(cachedName, names.first);
+      expect(
+        storage.operations.where(
+          (operation) => operation == 'primary.read $kWalletDbNameKey',
+        ),
+        hasLength(1),
+      );
+      expect(
+        storage.operations.where(
+          (operation) => operation == 'primary.write $kWalletDbNameKey',
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('deleteAll invalidates the cached wallet DB name', () async {
+    final storage = _MapStorage('primary');
+    store = AppSecureStore.testing(storage: storage);
+
+    final firstName = await store.ensureWalletDbName();
+    await store.deleteAll();
+    final secondName = await store.ensureWalletDbName();
+
+    expect(secondName, isNot(firstName));
+    expect(
+      storage.operations.where(
+        (operation) => operation == 'primary.read $kWalletDbNameKey',
+      ),
+      hasLength(2),
+    );
+    expect(
+      storage.operations.where(
+        (operation) => operation == 'primary.write $kWalletDbNameKey',
+      ),
+      hasLength(2),
+    );
+  });
+
+  test('wallet DB name lookup queues behind an in-flight deleteAll', () async {
+    final storage = _BlockingWriteStorage(blockKey: kWalletDbNameKey)
+      ..blockNextWrite = true;
+    store = AppSecureStore.testing(storage: storage);
+
+    final firstLookup = store.ensureWalletDbName();
+    await storage.writeStarted.future;
+
+    final reset = store.deleteAll();
+    final lookupAfterReset = store.ensureWalletDbName();
+    var lookupAfterResetCompleted = false;
+    unawaited(
+      lookupAfterReset.then((_) {
+        lookupAfterResetCompleted = true;
+      }),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(lookupAfterResetCompleted, isFalse);
+
+    storage.release();
+    final firstName = await firstLookup;
+    await reset;
+    final secondName = await lookupAfterReset;
+
+    expect(secondName, isNot(firstName));
+    expect(await store.readPlain(kWalletDbNameKey), secondName);
+  });
+
+  test('wallet DB name lookup retries after a storage failure', () async {
+    final storage = _FailingMapStorage('primary')
+      ..failNextWriteFor(kWalletDbNameKey);
+    store = AppSecureStore.testing(storage: storage);
+
+    await expectLater(store.ensureWalletDbName(), throwsStateError);
+    final name = await store.ensureWalletDbName();
+
+    expect(name, startsWith('zcash_wallet_'));
+    expect(await store.ensureWalletDbName(), name);
+    expect(
+      storage.operations.where(
+        (operation) => operation == 'primary.read $kWalletDbNameKey',
+      ),
+      hasLength(2),
+    );
+  });
+
   test('changePassword journal stores only roll-forward data', () async {
     final blockingStorage = _BlockingDeleteStorage(
       blockKey: _rotationInProgressKey,
