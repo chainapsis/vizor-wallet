@@ -870,6 +870,31 @@ void main() {
     expect(find.text('Shielded → Transparent'), findsNothing);
     expect(rustApi.proposeSendCalls, 0);
   });
+
+  testWidgets('explains the external receive confirmation policy', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    final tooltip = tester.widget<Tooltip>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            widget.richMessage?.toPlainText().contains(
+                  'Your spendable balance may be lower',
+                ) ==
+                true,
+      ),
+    );
+
+    expect(
+      tooltip.richMessage?.toPlainText(),
+      contains('6 for funds received from others'),
+    );
+  });
 }
 
 const _figmaModalSurfaceShadows = [

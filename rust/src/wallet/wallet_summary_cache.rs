@@ -12,10 +12,11 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletSummary};
+use zcash_client_backend::data_api::{WalletRead, WalletSummary};
 use zcash_client_sqlite::AccountUuid;
 
 use crate::wallet::{
+    confirmations_policy,
     db::{open_wallet_db_for_read_with_timeout, wallet_db_write_epoch, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
 };
@@ -68,14 +69,14 @@ pub(crate) fn evict_db(db_path: &str) {
     map.retain(|key, _| key.db_path != db_path);
 }
 
-/// Cached `get_wallet_summary` for the default confirmation policy.
+/// Cached `get_wallet_summary` for the wallet confirmation policy.
 pub(crate) fn get_wallet_summary_cached(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<CachedSummary, String> {
     get_or_load_with(db_path, network, || {
         let db = open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
-        db.get_wallet_summary(ConfirmationsPolicy::default())
+        db.get_wallet_summary(confirmations_policy())
             .map_err(|e| format!("{e}"))
     })
 }
@@ -157,6 +158,7 @@ mod tests {
         thread,
         time::Duration,
     };
+    use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 
     use zcash_client_backend::data_api::{Progress, Ratio, WalletSummary};
     use zcash_protocol::consensus::BlockHeight;

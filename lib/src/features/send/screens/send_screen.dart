@@ -1496,7 +1496,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
       'Your spendable balance may be lower than your total balance.';
   static const _tooltipBody =
       'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 10 for funds received from others. Shielded notes also '
+      'your own wallet, 6 for funds received from others. Shielded notes also '
       "need to be fully scanned. They'll become available shortly.";
 
   final String spendableText;
