@@ -1459,6 +1459,16 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+/// Discard a completed tip RPC result when cancellation or a mode handoff won
+/// the race. Callers must apply this before interpreting the result or mutating
+/// the wallet DB.
+fn tip_rpc_result_unless_exiting<T>(
+    result: Result<T, SyncError>,
+    should_exit: bool,
+) -> Option<Result<T, SyncError>> {
+    (!should_exit).then_some(result)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RefreshedTipRelation {
     Unchanged,
@@ -1841,16 +1851,18 @@ async fn run_sync_impl(
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
+    let should_exit =
+        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
 
     // 2. Get the chain tip. Reconcile it with the DB before treating it as
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
     // height below the maximum scanned block, so assigning the server height
     // first could later report completion above a lagging endpoint.
     let tip_result = get_latest_block(&mut client).await;
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+    let Some(tip_result) = tip_rpc_result_unless_exiting(tip_result, should_exit()) else {
         log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
         return Ok(());
-    }
+    };
     let tip = tip_result?;
     let initial_tip_observed_at = std::time::Instant::now();
 
@@ -1868,10 +1880,10 @@ async fn run_sync_impl(
             &tip.hash,
         )
         .await;
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
             log::info!("[{}] sync: exiting after initial tip validation", elapsed());
             return Ok(());
-        }
+        };
         Some((db_tip, relation?))
     } else {
         None
@@ -1937,8 +1949,6 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    let should_exit =
-        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
     refresh_utxos(
         &mut client,
         db_data_path,
@@ -2149,11 +2159,12 @@ async fn run_sync_impl(
         if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
             let fresh_tip_result = get_latest_block(&mut client).await;
-            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
-            {
+            let Some(fresh_tip_result) =
+                tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+            else {
                 log::info!("[{}] sync: exiting after periodic tip fetch", elapsed());
                 return Ok(());
-            }
+            };
             match fresh_tip_result {
                 Ok(fresh_tip) => {
                     let fresh_tip_height =
@@ -2169,15 +2180,14 @@ async fn run_sync_impl(
                         &fresh_tip.hash,
                     )
                     .await;
-                    if cancel.load(Ordering::Relaxed)
-                        || desired_mode.load(Ordering::SeqCst) != running_mode
-                    {
+                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    else {
                         log::info!(
                             "[{}] sync: exiting after periodic tip validation",
                             elapsed()
                         );
                         return Ok(());
-                    }
+                    };
                     let relation = relation?;
                     match relation {
                         RefreshedTipRelation::Unchanged => {
@@ -2274,12 +2284,12 @@ async fn run_sync_impl(
                     last_completion_tip_validation.elapsed(),
                 ) {
                     let fresh_tip_result = get_latest_block(&mut client).await;
-                    if cancel.load(Ordering::Relaxed)
-                        || desired_mode.load(Ordering::SeqCst) != running_mode
-                    {
+                    let Some(fresh_tip_result) =
+                        tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+                    else {
                         log::info!("[{}] sync: exiting after final tip fetch", elapsed());
                         return Ok(());
-                    }
+                    };
                     let fresh_tip = fresh_tip_result?;
                     last_periodic_tip_refresh_attempt = std::time::Instant::now();
                     let fresh_tip_height =
@@ -2295,12 +2305,11 @@ async fn run_sync_impl(
                         &fresh_tip.hash,
                     )
                     .await;
-                    if cancel.load(Ordering::Relaxed)
-                        || desired_mode.load(Ordering::SeqCst) != running_mode
-                    {
+                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    else {
                         log::info!("[{}] sync: exiting after final tip validation", elapsed());
                         return Ok(());
-                    }
+                    };
                     let relation = relation?;
 
                     match relation {
@@ -2913,10 +2922,11 @@ async fn run_sync_impl(
             return Ok(());
         }
         let fresh_tip_result = get_latest_block(&mut client).await;
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+        else {
             log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
             return Ok(());
-        }
+        };
         match fresh_tip_result {
             Ok(fresh_tip) => {
                 let fresh_tip_height =
@@ -2932,15 +2942,13 @@ async fn run_sync_impl(
                     &fresh_tip.hash,
                 )
                 .await;
-                if cancel.load(Ordering::Relaxed)
-                    || desired_mode.load(Ordering::SeqCst) != running_mode
-                {
+                let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
                     log::info!(
                         "[{}] sync: exiting after post-batch tip validation",
                         elapsed()
                     );
                     return Ok(());
-                }
+                };
                 let relation = relation?;
                 match relation {
                     RefreshedTipRelation::Unchanged => {
@@ -3705,6 +3713,155 @@ mod tests {
             false,
             FINAL_TIP_REFRESH_MIN_AGE,
         ));
+    }
+
+    #[test]
+    fn partial_catch_up_validates_target_identity_before_completion() {
+        let target_hash = BlockHash([0x22; 32]);
+
+        // The target is ahead of the scanned DB, so its hash is not stored yet.
+        // This is valid catch-up work, but it cannot count as identity proof.
+        let initial_relation = classify_refreshed_tip(90, None, 100, &target_hash.0).unwrap();
+        assert_eq!(initial_relation, RefreshedTipRelation::Advanced);
+        let mut validation_required = initial_relation != RefreshedTipRelation::Unchanged;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+
+        // A refresh during partial scanning still cannot compare the target
+        // identity. The sync remains live and preserves the final check.
+        let partial_relation = classify_refreshed_tip(100, None, 100, &target_hash.0).unwrap();
+        assert_eq!(partial_relation, RefreshedTipRelation::UnchangedUnverified,);
+        validation_required = partial_relation != RefreshedTipRelation::Unchanged;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert!(validate_complete_tip_hash(100, None).is_err());
+
+        // Once scanning stores the target block, the queue-drain refresh can
+        // prove identity and the exact-height completion checks can pass.
+        let final_relation =
+            classify_refreshed_tip(100, Some(target_hash), 100, &target_hash.0).unwrap();
+        assert_eq!(final_relation, RefreshedTipRelation::Unchanged);
+        validation_required = final_relation != RefreshedTipRelation::Unchanged;
+        assert!(!should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert_eq!(
+            validate_complete_scan_heights(100, Some((100, 100))).unwrap(),
+            (100, 100),
+        );
+        validate_complete_tip_hash(100, Some(target_hash)).unwrap();
+    }
+
+    #[test]
+    fn same_height_fork_requires_rewind_rescan_and_identity_revalidation() {
+        let old_tip_hash = BlockHash([0x11; 32]);
+        let fork_tip_hash = BlockHash([0x22; 32]);
+
+        let fork_relation =
+            classify_refreshed_tip(100, Some(old_tip_hash), 100, &fork_tip_hash.0).unwrap();
+        assert_eq!(fork_relation, RefreshedTipRelation::Reorg);
+        let mut validation_required = true;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+
+        let requested = confirmed_reorg_rewind_target(BlockHeight::from_u32(100)).unwrap();
+        let mut rewind_calls = Vec::new();
+        let actual = truncate_wallet_with(requested, BlockHeight::from_u32(100), |height| {
+            rewind_calls.push(height);
+            Ok(height)
+        })
+        .unwrap();
+        assert_eq!(actual, BlockHeight::from_u32(99));
+        assert_eq!(rewind_calls, vec![BlockHeight::from_u32(99)]);
+        assert!(validate_complete_scan_heights(100, Some((99, 100))).is_err());
+
+        // Rescanning the replacement block stores the fork identity. A fresh
+        // same-height observation can then authorize completion.
+        let final_relation =
+            classify_refreshed_tip(100, Some(fork_tip_hash), 100, &fork_tip_hash.0).unwrap();
+        validation_required = final_relation != RefreshedTipRelation::Unchanged;
+        assert!(!should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert_eq!(
+            validate_complete_scan_heights(100, Some((100, 100))).unwrap(),
+            (100, 100),
+        );
+        validate_complete_tip_hash(100, Some(fork_tip_hash)).unwrap();
+    }
+
+    #[test]
+    fn lower_same_chain_server_is_rejected_without_a_database_action() {
+        let shared_hash = BlockHash([0x11; 32]);
+        let relation = classify_refreshed_tip(100, Some(shared_hash), 99, &shared_hash.0).unwrap();
+
+        assert_eq!(relation, RefreshedTipRelation::ServerBehind);
+        let mut database_mutations = 0;
+        let result = match relation {
+            RefreshedTipRelation::ServerBehind => Err(lagging_lightwalletd_tip(100, 99)),
+            RefreshedTipRelation::Advanced | RefreshedTipRelation::Reorg => {
+                database_mutations += 1;
+                Ok(())
+            }
+            RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => Ok(()),
+        };
+
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert_eq!(database_mutations, 0);
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_latest_tip_rpc_wins_over_error_and_mutation() {
+        let cancel = AtomicBool::new(false);
+        let desired_mode = AtomicU8::new(1);
+        let should_exit =
+            || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != 1;
+
+        let rpc_result = async {
+            tokio::task::yield_now().await;
+            cancel.store(true, Ordering::Relaxed);
+            Err::<(), _>(SyncError::net("get_latest_block failed"))
+        }
+        .await;
+        let outcome = tip_rpc_result_unless_exiting(rpc_result, should_exit());
+
+        let mut database_mutations = 0;
+        if let Some(result) = outcome {
+            result.unwrap();
+            database_mutations += 1;
+        }
+        assert_eq!(database_mutations, 0);
+    }
+
+    #[tokio::test]
+    async fn mode_change_during_tip_hash_fallback_wins_over_error_and_mutation() {
+        let cancel = AtomicBool::new(false);
+        let desired_mode = AtomicU8::new(1);
+        let should_exit =
+            || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != 1;
+
+        let rpc_result = async {
+            tokio::task::yield_now().await;
+            desired_mode.store(2, Ordering::SeqCst);
+            Err::<RefreshedTipRelation, _>(SyncError::net("get_block failed"))
+        }
+        .await;
+        let outcome = tip_rpc_result_unless_exiting(rpc_result, should_exit());
+
+        let mut database_mutations = 0;
+        if let Some(result) = outcome {
+            result.unwrap();
+            database_mutations += 1;
+        }
+        assert_eq!(database_mutations, 0);
     }
 
     #[test]
