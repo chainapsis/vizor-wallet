@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "3.0.0-rc.3"
+version = "3.0.0"
 edition = "2021"
 rust-version = "1.88"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
@@ -36,11 +36,11 @@ sha2 = "0.10"
 ed25519-dalek = "2"
 
 # PIR (private nullifier exclusion proofs).
-pir-client = { version = "=0.4.0-rc.7", default-features = false }
+pir-client = { version = "=0.4.0", default-features = false }
 # Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
 # direct dependencies constrain the versions Cargo may resolve, but they do not
 # change whether upstream build scripts execute.
-pir-types = { version = "=0.3.0-rc.6", default-features = false }
+pir-types = { version = "=0.3.0", default-features = false }
 valar-spiral-rs = { version = "=0.5.2", default-features = false }
 valar-ypir = { version = "=0.2.0", default-features = false }
 imt-tree = { version = "=0.2.1" }
@@ -55,8 +55,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0-rc.1" }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.0-rc.1", features = ["http"] }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0" }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.0", features = ["http"] }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }

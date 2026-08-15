@@ -6,11 +6,24 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.0.0
+
+### Changed
+- Released the exact `v3.0.0-rc.4` implementation as `v3.0.0` without
+  implementation changes. Its supporting production snapshots were released
+  as `pir-types 0.3.0`, `pir-client 0.4.0`, `voting-circuits 0.10.0`,
+  `vote-commitment-tree 0.5.0`, and `vote-commitment-tree-client 0.7.0`.
+
+## v3.0.0-rc.4
+
 ### Added
 - Added a non-default `test-fixtures` feature exposing an atomic vote recovery
   fixture for downstream integration tests that should not build ZKP2.
 
 ### Changed
+- Aligned the release line on stable `pir-types 0.3.0`, `pir-client 0.4.0`,
+  `voting-circuits 0.10.0`, `vote-commitment-tree 0.5.0`, and
+  `vote-commitment-tree-client 0.7.0` releases.
 - Complete 16-share batch planning now spreads initial targets so that, when
   multiple helpers are configured, no helper is selected for every share.
   Fallback and recovery remain liveness first and may use any available helper.
