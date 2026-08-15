@@ -3,6 +3,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
+use futures::{stream, StreamExt, TryStreamExt};
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
@@ -85,6 +86,7 @@ const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
+const MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS: usize = 4;
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -1146,6 +1148,30 @@ fn transparent_address_for_query(
         .map_err(|e| format!("decode transparent address {address}: {e}"))
 }
 
+struct TransparentRefresh {
+    addresses: Vec<String>,
+    start_height: BlockHeight,
+    label: String,
+    account_uuid: String,
+    completion: Option<TransparentRefreshCompletion>,
+}
+
+struct TransparentRefreshCompletion {
+    child_indices: Vec<u32>,
+    next_sweep_offset: Option<usize>,
+}
+
+struct DownloadedTransparentRefresh {
+    refresh: TransparentRefresh,
+    outputs: Vec<WalletTransparentOutput<AccountUuid>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransparentRefreshOutcome {
+    Completed,
+    Cancelled,
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
@@ -1154,6 +1180,7 @@ async fn refresh_utxos(
     tip_height: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
+    let mut refreshes = Vec::new();
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
@@ -1230,33 +1257,16 @@ async fn refresh_utxos(
             } else {
                 "transparent external UTXOs recent batch".to_string()
             };
-            refresh_transparent_addresses(
-                client,
-                db,
-                batch.addresses,
+            refreshes.push(TransparentRefresh {
+                addresses: batch.addresses,
                 start_height,
-                &label,
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
-            if should_exit() {
-                return Ok(());
-            }
-            if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
-                db_data_path,
-                network,
-                &account_uuid,
-                &batch.child_indices,
-                u64::from(u32::from(tip_height)) + 1,
-                batch.next_sweep_offset,
-            ) {
-                log::warn!(
-                    "transparent receive cache: failed to mark UTXO batch complete for account {}: {}",
-                    account_uuid,
-                    e
-                );
-            }
+                label,
+                account_uuid: account_uuid.clone(),
+                completion: Some(TransparentRefreshCompletion {
+                    child_indices: batch.child_indices,
+                    next_sweep_offset: batch.next_sweep_offset,
+                }),
+            });
         }
 
         let external_selected = external_addresses
@@ -1273,20 +1283,73 @@ async fn refresh_utxos(
             .collect();
 
         if !non_external_addresses.is_empty() {
-            refresh_transparent_addresses(
-                client,
-                db,
-                non_external_addresses,
-                safety_start_height,
-                "transparent non-external UTXOs",
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
+            refreshes.push(TransparentRefresh {
+                addresses: non_external_addresses,
+                start_height: safety_start_height,
+                label: "transparent non-external UTXOs".to_string(),
+                account_uuid,
+                completion: None,
+            });
         }
     }
 
+    let download_client = client.clone();
+    let outcome = process_bounded_transparent_refreshes(
+        refreshes,
+        move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
+        |downloaded| {
+            store_then_mark_transparent_refreshes(
+                downloaded,
+                |downloaded| store_transparent_outputs(db, downloaded),
+                |downloaded| {
+                    update_transparent_refresh_cache_metadata(
+                        db_data_path,
+                        network,
+                        tip_height,
+                        downloaded,
+                    )
+                },
+            )
+        },
+        should_exit,
+    )
+    .await?;
+    if outcome == TransparentRefreshOutcome::Cancelled {
+        log::info!(
+            "[{}] sync: exiting before transparent UTXO database update",
+            elapsed(),
+        );
+    }
+
     Ok(())
+}
+
+fn update_transparent_refresh_cache_metadata(
+    db_data_path: &str,
+    network: WalletNetwork,
+    tip_height: BlockHeight,
+    downloaded: &DownloadedTransparentRefresh,
+) {
+    if !downloaded.outputs.is_empty() {
+        mark_transparent_receive_cache_dirty(db_data_path, &downloaded.refresh.account_uuid);
+    }
+    if let Some(completion) = downloaded.refresh.completion.as_ref() {
+        if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
+            db_data_path,
+            network,
+            &downloaded.refresh.account_uuid,
+            &completion.child_indices,
+            u64::from(u32::from(tip_height)) + 1,
+            completion.next_sweep_offset,
+        ) {
+            log::warn!(
+                "transparent receive cache: failed to mark UTXO batch complete for \
+                 account {}: {}",
+                downloaded.refresh.account_uuid,
+                e,
+            );
+        }
+    }
 }
 
 fn mark_transparent_receive_cache_dirty(db_data_path: &str, account_uuid: &str) {
@@ -1319,41 +1382,145 @@ fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncEr
     Ok(BlockHeight::from_u32(height))
 }
 
-async fn refresh_transparent_addresses(
-    client: &mut CompactTxStreamerClient<Channel>,
+async fn process_bounded_transparent_refreshes<R, D, E, Download, DownloadFuture, Persist, Exit>(
+    refreshes: Vec<R>,
+    download: Download,
+    mut persist: Persist,
+    should_exit: &Exit,
+) -> Result<TransparentRefreshOutcome, E>
+where
+    Download: Fn(R) -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<Option<D>, E>>,
+    Persist: FnMut(Vec<D>) -> Result<(), E>,
+    Exit: Fn() -> bool,
+{
+    let mut refreshes = refreshes.into_iter();
+    loop {
+        if should_exit() {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        }
+
+        let group = refreshes
+            .by_ref()
+            .take(MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+            .collect::<Vec<_>>();
+        if group.is_empty() {
+            return Ok(TransparentRefreshOutcome::Completed);
+        }
+
+        let downloaded_result = download_transparent_refresh_group(group, &download).await;
+        // Cancellation and mode handoff win if they race a network error.
+        // No database or cache mutation is allowed after either signal.
+        if should_exit() {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        }
+        let downloaded = downloaded_result?;
+        let Some(downloaded) = downloaded.into_iter().collect::<Option<Vec<_>>>() else {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        };
+
+        persist(downloaded)?;
+    }
+}
+
+async fn download_transparent_refresh_group<R, D, E, Download, DownloadFuture>(
+    refreshes: Vec<R>,
+    download: &Download,
+) -> Result<Vec<Option<D>>, E>
+where
+    Download: Fn(R) -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<Option<D>, E>>,
+{
+    let mut downloaded = stream::iter(refreshes.into_iter().enumerate())
+        .map(|(position, refresh)| {
+            let future = download(refresh);
+            async move { future.await.map(|downloaded| (position, downloaded)) }
+        })
+        .buffer_unordered(MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+        .try_collect::<Vec<_>>()
+        .await?;
+    downloaded.sort_unstable_by_key(|(position, _)| *position);
+    Ok(downloaded
+        .into_iter()
+        .map(|(_, downloaded)| downloaded)
+        .collect())
+}
+
+fn store_then_mark_transparent_refreshes<T, E>(
+    downloaded: Vec<T>,
+    store: impl FnOnce(&[T]) -> Result<(), E>,
+    mut mark_cache_metadata: impl FnMut(&T),
+) -> Result<(), E> {
+    store(&downloaded)?;
+    for item in &downloaded {
+        mark_cache_metadata(item);
+    }
+    Ok(())
+}
+
+fn store_transparent_outputs(
     db: &mut WalletDatabase,
-    addresses: Vec<String>,
-    start_height: BlockHeight,
-    label: &str,
-    mut mark_cache_dirty: impl FnMut(),
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<(), SyncError> {
+    if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
+        return Ok(());
+    }
+
+    with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
+        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+            for batch in downloaded {
+                for output in &batch.outputs {
+                    tx_db.put_received_transparent_utxo(output)?;
+                }
+            }
+            Ok(())
+        })
+        .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
+    })
+}
+
+async fn download_transparent_outputs(
+    mut client: CompactTxStreamerClient<Channel>,
+    mut refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    if addresses.is_empty() || should_exit() {
-        return Ok(false);
+) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
+    if should_exit() {
+        return Ok(None);
+    }
+    if refresh.addresses.is_empty() {
+        return Ok(Some(DownloadedTransparentRefresh {
+            refresh,
+            outputs: Vec::new(),
+        }));
     }
 
     log::info!(
         "[{}] sync: refreshing {} from height {} ({} addresses)",
         elapsed(),
-        label,
-        u32::from(start_height),
-        addresses.len(),
+        refresh.label,
+        u32::from(refresh.start_height),
+        refresh.addresses.len(),
     );
 
+    let addresses = std::mem::take(&mut refresh.addresses);
     let mut stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
             log::info!(
                 "[{}] sync: exiting during {} transparent UTXO stream start",
                 elapsed(),
-                label,
+                refresh.label,
             );
-            return Ok(false);
+            return Ok(None);
         }
-        result = get_address_utxos_stream(client, addresses, start_height) => result?,
+        result = get_address_utxos_stream(
+            &mut client,
+            addresses,
+            refresh.start_height,
+        ) => result?,
     };
 
-    let mut received_any = false;
+    let mut outputs = Vec::new();
     loop {
         let reply = tokio::select! {
             biased;
@@ -1361,9 +1528,9 @@ async fn refresh_transparent_addresses(
                 log::info!(
                     "[{}] sync: exiting during {} transparent UTXO refresh",
                     elapsed(),
-                    label,
+                    refresh.label,
                 );
-                return Ok(received_any);
+                return Ok(None);
             }
             result = next_stream_message(&mut stream, "get_address_utxos_stream") => result?,
         };
@@ -1387,29 +1554,22 @@ async fn refresh_transparent_addresses(
             ))
         })?;
 
-        let output = WalletTransparentOutput::from_parts(
-            OutPoint::new(txid, index),
-            TxOut::new(value, Script(script::Code(reply.script))),
-            Some(BlockHeight::from_u32(height)),
-            None,
-            None,
-            None,
-        )
-        .ok_or_else(|| {
-            SyncError::parse("transparent UTXO script did not decode to a wallet address")
-        })?;
-
-        with_wallet_db_write_lock("sync_engine.put_received_transparent_utxo", || {
-            db.put_received_transparent_utxo(&output)
-                .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
-        })?;
-        if !received_any {
-            mark_cache_dirty();
-        }
-        received_any = true;
+        outputs.push(
+            WalletTransparentOutput::from_parts(
+                OutPoint::new(txid, index),
+                TxOut::new(value, Script(script::Code(reply.script))),
+                Some(BlockHeight::from_u32(height)),
+                None,
+                None,
+                None,
+            )
+            .ok_or_else(|| {
+                SyncError::parse("transparent UTXO script did not decode to a wallet address")
+            })?,
+        );
     }
 
-    Ok(received_any)
+    Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
 }
 
 async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
@@ -2866,7 +3026,9 @@ fn should_use_empty_chain_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
     use std::time::Duration;
     use tokio::sync::{Barrier, Notify};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
@@ -2905,6 +3067,204 @@ mod tests {
         })
         .await
         .expect("prefetch task was not dropped");
+    }
+
+    #[tokio::test]
+    async fn transparent_refreshes_limit_concurrency_to_four() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let commit_count = Arc::new(AtomicUsize::new(0));
+
+        let download_active = active.clone();
+        let download_peak = peak.clone();
+        let persist_count = commit_count.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..12).collect(),
+            move |refresh| {
+                let active = download_active.clone();
+                let peak = download_peak.clone();
+                async move {
+                    let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(concurrent, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, &'static str>(Some(refresh))
+                }
+            },
+            move |group| {
+                assert!(group.len() <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
+                persist_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(peak.load(Ordering::SeqCst), 4);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(commit_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_downloads_actually_overlap() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(4));
+        let started = Arc::new(AtomicUsize::new(0));
+
+        let download_barrier = barrier.clone();
+        let download_started = started.clone();
+        let refresh = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            move |refresh| {
+                let barrier = download_barrier.clone();
+                let started = download_started.clone();
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    barrier.wait().await;
+                    Ok::<_, &'static str>(Some(refresh))
+                }
+            },
+            |_| Ok(()),
+            &|| false,
+        );
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(1), refresh)
+            .await
+            .expect("four downloads did not overlap")
+            .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(started.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_cancellation_wins_over_racing_error() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let commits = Arc::new(AtomicUsize::new(0));
+        let download_cancelled = cancelled.clone();
+        let persist_commits = commits.clone();
+        let exit_cancelled = cancelled.clone();
+        let should_exit = move || exit_cancelled.load(Ordering::SeqCst);
+
+        let outcome = process_bounded_transparent_refreshes(
+            vec![0],
+            move |_| {
+                let cancelled = download_cancelled.clone();
+                async move {
+                    cancelled.store(true, Ordering::SeqCst);
+                    Err::<Option<usize>, _>("network error")
+                }
+            },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &should_exit,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Cancelled);
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_transparent_stream_prevents_group_commit() {
+        let commits = Arc::new(AtomicUsize::new(0));
+        let persist_commits = commits.clone();
+        let result = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            |refresh| async move {
+                if refresh == 2 {
+                    Err("stream failed")
+                } else {
+                    tokio::task::yield_now().await;
+                    Ok(Some(refresh))
+                }
+            },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|| false,
+        )
+        .await;
+
+        assert_eq!(result, Err("stream failed"));
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn cancelled_transparent_stream_prevents_group_commit() {
+        let commits = Arc::new(AtomicUsize::new(0));
+        let persist_commits = commits.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            |refresh| async move { Ok::<_, &'static str>((refresh != 2).then_some(refresh)) },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Cancelled);
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_groups_restore_request_order_before_commit() {
+        let commits = Arc::new(Mutex::new(Vec::new()));
+        let persist_commits = commits.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..6).collect(),
+            |refresh| async move {
+                let delay = 5 * (4 - (refresh % 4));
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                Ok::<_, &'static str>(Some(refresh))
+            },
+            move |group| {
+                persist_commits.lock().unwrap().push(group);
+                Ok(())
+            },
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![4, 5]]);
+    }
+
+    #[test]
+    fn transparent_cache_metadata_is_marked_only_after_commit() {
+        let events = RefCell::new(Vec::new());
+        store_then_mark_transparent_refreshes(
+            vec![1, 2],
+            |_| {
+                events.borrow_mut().push("commit".to_string());
+                Ok::<_, &'static str>(())
+            },
+            |refresh| events.borrow_mut().push(format!("mark {refresh}")),
+        )
+        .unwrap();
+
+        assert_eq!(events.into_inner(), ["commit", "mark 1", "mark 2"]);
+    }
+
+    #[test]
+    fn failed_transparent_commit_does_not_advance_cache_metadata() {
+        let marked = Cell::new(0);
+        let result = store_then_mark_transparent_refreshes(
+            vec![1, 2],
+            |_| Err("commit failed"),
+            |_| marked.set(marked.get() + 1),
+        );
+
+        assert_eq!(result, Err("commit failed"));
+        assert_eq!(marked.get(), 0);
     }
 
     fn assert_pct(actual: f64, expected: f64) {
