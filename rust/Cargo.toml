@@ -111,7 +111,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-version = "=3.0.0-rc.3"
+version = "=3.0.0"
 
 # Keep Orchard aligned with the released librustzcash and zcash_voting family
 # to avoid type conflicts.
@@ -156,7 +156,7 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.5.0-rc.1"
+version = "=0.5.0"
 
 [patch.crates-io]
 halo2_gadgets = { git = "https://github.com/zakura-core/libraries", rev = "7490b608930de93ee69ade037c7aea4bf8b29f32" }
