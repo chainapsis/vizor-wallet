@@ -1850,14 +1850,14 @@ pub(crate) struct ResubmittableTx {
 }
 
 /// Returns whether the wallet has any unmined raw transaction that
-/// could still be resubmitted at `current_height`.
+/// could still be resubmitted after `chain_tip_height`.
 ///
 /// This deliberately checks only the small `transactions` table. The
 /// account-level outbound predicate lives in [`get_resubmittable_txs`]
 /// and is evaluated only after the caller has refreshed the chain tip.
 pub(super) fn has_pending_raw_transaction(
     conn: &rusqlite::Connection,
-    current_height: u32,
+    chain_tip_height: u32,
 ) -> Result<bool, String> {
     let mut stmt = conn
         .prepare_cached(
@@ -1870,12 +1870,12 @@ pub(super) fn has_pending_raw_transaction(
          )",
         )
         .map_err(|e| format!("SQL error: {e}"))?;
-    stmt.query_row([current_height], |row| row.get(0))
+    stmt.query_row([chain_tip_height], |row| row.get(0))
         .map_err(|e| format!("Query error: {e}"))
 }
 
 /// Return every wallet transaction that is eligible for automatic
-/// resubmit at `current_height`.
+/// resubmit after `chain_tip_height`.
 ///
 /// Mirrors zcash-android-wallet-sdk's `SELECTION_TRX_RESUBMISSION`
 /// predicate — see the Phase 3 design notes for why we follow the
@@ -1883,11 +1883,11 @@ pub(super) fn has_pending_raw_transaction(
 ///
 ///   * `mined_height IS NULL` — the transaction has not yet been
 ///     confirmed in a block.
-///   * `expiry_height = 0 OR expiry_height > ?current_height` — the
-///     transaction is still valid to relay. A zero expiry height means
-///     no expiry; otherwise, once the current tip passes
-///     `expiry_height`, the network will drop it and there is nothing
-///     we can do by resubmitting.
+///   * `expiry_height = 0 OR expiry_height > ?chain_tip_height` — the
+///     transaction can still be mined in the block after the current
+///     tip. A zero expiry height means no expiry; otherwise, when the
+///     current tip reaches `expiry_height`, the next block is already
+///     too late and there is nothing we can do by resubmitting.
 ///   * `account_balance_delta < 0` — the net balance change for the
 ///     account is negative, i.e. this is an outbound transaction
 ///     the wallet originated. Inbound transactions the sync loop
@@ -1905,7 +1905,7 @@ pub(super) fn has_pending_raw_transaction(
 /// normal case for automatic sync.
 pub(crate) fn get_resubmittable_txs(
     db_path: &str,
-    current_height: u32,
+    chain_tip_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
     let conn = open_readonly_conn(db_path)?;
 
@@ -1926,7 +1926,7 @@ pub(crate) fn get_resubmittable_txs(
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
-        .query_map([current_height], |row| {
+        .query_map([chain_tip_height], |row| {
             let txid_bytes: Vec<u8> = row.get(0)?;
             let raw_tx: Vec<u8> = row.get(1)?;
             // The WHERE clause rejects NULL expiry heights but still
@@ -1951,11 +1951,11 @@ pub(crate) fn get_resubmittable_txs(
 /// loading raw transaction bytes.
 pub(crate) fn get_resubmittable_txs_excluding(
     db_path: &str,
-    current_height: u32,
+    chain_tip_height: u32,
     excluded_txids: &HashSet<Vec<u8>>,
 ) -> Result<Vec<ResubmittableTx>, String> {
     if excluded_txids.is_empty() {
-        return get_resubmittable_txs(db_path, current_height);
+        return get_resubmittable_txs(db_path, chain_tip_height);
     }
 
     let conn = open_readonly_conn(db_path)?;
@@ -1971,7 +1971,7 @@ pub(crate) fn get_resubmittable_txs_excluding(
             )
             .map_err(|e| format!("SQL error: {e}"))?;
         let rows = stmt
-            .query_map([current_height], |row| {
+            .query_map([chain_tip_height], |row| {
                 let txid_bytes: Vec<u8> = row.get(0)?;
                 let expiry_height = row
                     .get::<_, Option<i64>>(1)?
@@ -5490,22 +5490,22 @@ mod tests {
 
     #[test]
     fn resubmit_excludes_expired_txs() {
-        // `expiry_height > current_height` is the network's
-        // still-relayable check for expiring transactions. A tx whose
-        // expiry equals the current height is already past the window.
+        // `expiry_height > chain_tip_height` means the transaction can
+        // still be mined in the next block. A transaction whose expiry
+        // equals the chain tip is already past that window.
         let db = fresh_db();
         insert_row(
             &db,
             &fake_txid(0x02),
             Some(&fake_raw()),
             None,
-            Some(1_000_000), // expiry == current → expired
+            Some(1_000_000), // expiry == chain tip → expired
             -5_000,
         );
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
-        assert!(got.is_empty(), "tx with expiry==current must be excluded");
+        assert!(got.is_empty(), "tx with expiry==tip must be excluded");
 
-        // Walk the boundary: one block below current is definitely expired.
+        // Walk the boundary: one block below the tip is definitely expired.
         let db2 = fresh_db();
         insert_row(
             &db2,
@@ -5516,7 +5516,7 @@ mod tests {
             -5_000,
         );
         let got2 = get_resubmittable_txs(db2.path().to_str().unwrap(), 1_000_000).unwrap();
-        assert!(got2.is_empty(), "tx with expiry<current must be excluded");
+        assert!(got2.is_empty(), "tx with expiry<tip must be excluded");
     }
 
     #[test]

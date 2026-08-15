@@ -110,9 +110,9 @@ pub(crate) use transactions::{
 
 pub(super) fn has_pending_raw_transaction(
     conn: &rusqlite::Connection,
-    current_height: u32,
+    chain_tip_height: u32,
 ) -> Result<bool, String> {
-    transactions::has_pending_raw_transaction(conn, current_height)
+    transactions::has_pending_raw_transaction(conn, chain_tip_height)
 }
 
 pub(super) fn open_wallet_db(

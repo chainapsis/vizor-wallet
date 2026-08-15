@@ -489,11 +489,12 @@ async fn fetch_sapling_subtree_roots(
     mut client: CompactTxStreamerClient<Channel>,
     start_index: u64,
 ) -> Result<Vec<CommitmentTreeRoot<sapling_crypto::Node>>, SyncError> {
+    let start_index = parse_subtree_index(start_index, "sapling")?;
     let mut stream = await_tonic_stream(
         "sapling subtree roots",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
         client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-            start_index: start_index as u32,
+            start_index,
             shielded_protocol: service::ShieldedProtocol::Sapling.into(),
             max_entries: 0,
         })),
@@ -517,10 +518,8 @@ async fn fetch_sapling_subtree_roots(
         })?;
         let node = Option::from(sapling_crypto::Node::from_bytes(bytes))
             .ok_or_else(|| SyncError::parse("sapling subtree root: bad node bytes"))?;
-        roots.push(CommitmentTreeRoot::from_parts(
-            BlockHeight::from_u32(root.completing_block_height as u32),
-            node,
-        ));
+        let completing_height = parse_subtree_root_height(root.completing_block_height, "sapling")?;
+        roots.push(CommitmentTreeRoot::from_parts(completing_height, node));
     }
 
     Ok(roots)
@@ -555,17 +554,18 @@ async fn fetch_ironwood_subtree_roots(
 async fn fetch_orchard_family_subtree_roots(
     client: &mut CompactTxStreamerClient<Channel>,
     start_index: u64,
-    protocol: service::ShieldedProtocol,
+    shielded_protocol: service::ShieldedProtocol,
     label: &'static str,
 ) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
+    let start_index = parse_subtree_index(start_index, label)?;
     let rpc_label = format!("{label} subtree roots");
     let stream_label = format!("{label} subtree roots stream");
     let mut stream = await_tonic_stream(
         &rpc_label,
         LIGHTWALLETD_STREAM_START_TIMEOUT,
         client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-            start_index: start_index as u32,
-            shielded_protocol: protocol.into(),
+            start_index,
+            shielded_protocol: shielded_protocol.into(),
             max_entries: 0,
         })),
     )
@@ -582,13 +582,26 @@ async fn fetch_orchard_family_subtree_roots(
         })?;
         let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
             .ok_or_else(|| SyncError::parse(format!("{label} subtree root: bad node bytes")))?;
-        roots.push(CommitmentTreeRoot::from_parts(
-            BlockHeight::from_u32(root.completing_block_height as u32),
-            node,
-        ));
+        let completing_height = parse_subtree_root_height(root.completing_block_height, label)?;
+        roots.push(CommitmentTreeRoot::from_parts(completing_height, node));
     }
 
     Ok(roots)
+}
+
+fn parse_subtree_index(index: u64, label: &str) -> Result<u32, SyncError> {
+    u32::try_from(index)
+        .map_err(|_| SyncError::parse(format!("{label} subtree start index exceeded u32: {index}")))
+}
+
+fn parse_subtree_root_height(height: u64, label: &str) -> Result<BlockHeight, SyncError> {
+    u32::try_from(height)
+        .map(BlockHeight::from_u32)
+        .map_err(|_| {
+            SyncError::parse(format!(
+                "{label} subtree root height exceeded u32: {height}"
+            ))
+        })
 }
 
 /// Pulls the latest shielded subtree roots from lightwalletd
@@ -740,8 +753,8 @@ pub(super) async fn download_blocks(
     end: BlockHeight,
     network: WalletNetwork,
 ) -> Result<MemoryBlockSource, SyncError> {
-    let start_height = u32::from(start) as u64;
-    let end_height = u32::from(end) as u64;
+    let start_height = u64::from(u32::from(start));
+    let end_height = u64::from(u32::from(end));
     let expected_count = expected_block_count(start_height, end_height)?;
     let capacity = usize::try_from(expected_count)
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
@@ -750,11 +763,11 @@ pub(super) async fn download_blocks(
         LIGHTWALLETD_STREAM_START_TIMEOUT,
         client.get_block_range(Request::new(BlockRange {
             start: Some(BlockId {
-                height: u32::from(start) as u64,
+                height: start_height,
                 hash: vec![],
             }),
             end: Some(BlockId {
-                height: u32::from(end) as u64,
+                height: end_height,
                 hash: vec![],
             }),
             pool_types: compact_block_pool_types(network, end),
@@ -768,13 +781,17 @@ pub(super) async fn download_blocks(
         .try_reserve_exact(capacity)
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
     while let Some(block) = next_stream_message(&mut stream, "get_block_range stream").await? {
-        if blocks.len() as u64 >= expected_count {
+        if blocks.len() >= capacity {
             return Err(SyncError::net(format!(
                 "get_block_range returned more than {expected_count} blocks for request \
                  {start_height}..={end_height}"
             )));
         }
-        let expected_height = start_height + blocks.len() as u64;
+        let block_offset = u64::try_from(blocks.len())
+            .map_err(|_| SyncError::other("get_block_range response is too large"))?;
+        let expected_height = start_height
+            .checked_add(block_offset)
+            .ok_or_else(|| SyncError::other("get_block_range response height overflowed"))?;
         if block.height != expected_height {
             return Err(SyncError::net(format!(
                 "get_block_range returned height {} while expecting {expected_height} \
@@ -794,14 +811,16 @@ pub(super) async fn download_blocks(
 }
 
 fn expected_block_count(start_height: u64, end_height: u64) -> Result<u64, SyncError> {
-    end_height
-        .checked_sub(start_height)
-        .and_then(|distance| distance.checked_add(1))
-        .ok_or_else(|| {
-            SyncError::other(format!(
-                "get_block_range received a reversed request {start_height}..={end_height}"
-            ))
-        })
+    let distance = end_height.checked_sub(start_height).ok_or_else(|| {
+        SyncError::other(format!(
+            "get_block_range received a reversed request {start_height}..={end_height}"
+        ))
+    })?;
+    distance.checked_add(1).ok_or_else(|| {
+        SyncError::other(format!(
+            "get_block_range request {start_height}..={end_height} is too large"
+        ))
+    })
 }
 
 fn validate_downloaded_block_heights(
@@ -812,14 +831,18 @@ fn validate_downloaded_block_heights(
     let expected_count = expected_block_count(start_height, end_height)?;
     let mut actual_count = 0u64;
     for height in heights {
-        let expected_height = start_height + actual_count;
+        let expected_height = start_height
+            .checked_add(actual_count)
+            .ok_or_else(|| SyncError::other("get_block_range response height overflowed"))?;
         if height != expected_height {
             return Err(SyncError::net(format!(
                 "get_block_range returned height {height} while expecting \
                  {expected_height} for request {start_height}..={end_height}"
             )));
         }
-        actual_count += 1;
+        actual_count = actual_count
+            .checked_add(1)
+            .ok_or_else(|| SyncError::other("get_block_range response count overflowed"))?;
     }
     if actual_count != expected_count {
         return Err(SyncError::net(format!(
@@ -969,5 +992,13 @@ mod tests {
         assert!(validate_downloaded_block_heights(10, 12, [10, 11, 12, 13]).is_err());
         assert!(validate_downloaded_block_heights(10, 12, []).is_err());
         assert!(validate_downloaded_block_heights(12, 10, []).is_err());
+        assert!(expected_block_count(0, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn subtree_metadata_must_fit_the_wallet_types() {
+        let above_u32 = u64::from(u32::MAX) + 1;
+        assert!(parse_subtree_index(above_u32, "sapling").is_err());
+        assert!(parse_subtree_root_height(above_u32, "sapling").is_err());
     }
 }

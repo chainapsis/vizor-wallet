@@ -1052,7 +1052,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             canonical_ironwood,
         );
 
-        let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+        let current_tip =
+            block_height_from_u64(current_tip_height, "current lightwalletd chain tip")?;
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
@@ -1540,7 +1541,8 @@ async fn download_scan_batch(
         if use_empty_state {
             Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
         } else {
-            let state = get_tree_state(&mut tree_state_client, u32::from(start - 1) as u64).await?;
+            let state =
+                get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1))).await?;
             state
                 .to_chain_state()
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
@@ -1636,7 +1638,8 @@ fn stored_hash_for_refreshed_tip(
         return Ok(None);
     }
 
-    db.get_block_hash(BlockHeight::from_u32(fresh_height as u32))
+    let fresh_height = block_height_from_u64(fresh_height, "refreshed lightwalletd chain tip")?;
+    db.get_block_hash(fresh_height)
         .map_err(|e| SyncError::db(format!("get_block_hash({fresh_height}): {e}")))
 }
 
@@ -1694,8 +1697,8 @@ fn rewind_for_confirmed_tip_reorg(
     db: &mut WalletDatabase,
     fresh_tip_height: u64,
 ) -> Result<(BlockHeight, Vec<ScanRange>, u64), SyncError> {
-    let fresh_height = BlockHeight::from_u32(fresh_tip_height as u32);
-    let requested_height = BlockHeight::from_u32((fresh_tip_height as u32).saturating_sub(1));
+    let fresh_height = block_height_from_u64(fresh_tip_height, "reorg lightwalletd chain tip")?;
+    let requested_height = BlockHeight::from_u32(u32::from(fresh_height).saturating_sub(1));
     let actual_height = truncate_wallet_to_height(
         db,
         requested_height,
@@ -2779,7 +2782,8 @@ async fn run_sync_impl(
                     // recovers. When it's `None` there is genuinely
                     // nowhere safe to rewind to, and we surface the
                     // failure as fatal.
-                    let target = BlockHeight::from_u32(requested_rewind_height as u32);
+                    let target =
+                        block_height_from_u64(requested_rewind_height, "scan rewind target")?;
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
@@ -2836,7 +2840,10 @@ async fn run_sync_impl(
                             }
                         },
                     )?;
-                    let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+                    let current_tip = block_height_from_u64(
+                        current_tip_height,
+                        "current lightwalletd chain tip",
+                    )?;
                     let post_rewind_ranges = with_wallet_db_write_lock(
                         "sync_engine.update_chain_tip.after_rewind",
                         || -> Result<Vec<ScanRange>, SyncError> {
@@ -2968,14 +2975,15 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
+        let resubmit_tip_height = u32::from(block_height_from_u64(
+            current_tip_height,
+            "resubmit lightwalletd chain tip",
+        )?);
         let should_resubmit = allow_resubmit
             && resubmit_preflight_conn
                 .as_ref()
                 .map(|conn| {
-                    crate::wallet::sync::has_pending_raw_transaction(
-                        conn,
-                        current_tip_height as u32,
-                    )
+                    crate::wallet::sync::has_pending_raw_transaction(conn, resubmit_tip_height)
                 })
                 .transpose()
                 .map(|candidate| candidate.unwrap_or(true))
