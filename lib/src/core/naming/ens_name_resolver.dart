@@ -122,6 +122,9 @@ class EnsNameResolver {
     }
   }
 
+  /// Maximum number of EIP-3668 CCIP-Read redirect hops before giving up.
+  static const _maxCcipRedirectHops = 4;
+
   Future<List<int>> _fetchRecordPayload({
     required List<int> dnsName,
     required List<int> node,
@@ -130,12 +133,28 @@ class EnsNameResolver {
     final innerCall = encodeAddrCoinCall(node, coinType);
     final data = encodeUniversalResolve(dnsName, innerCall);
 
+    final resultBytes = await _resolveWithCcipRead(
+      to: universalResolver,
+      data: data,
+      hopsRemaining: _maxCcipRedirectHops,
+    );
+
+    final outer = decodeUniversalResolveResult(resultBytes);
+    return decodeBytesResult(outer);
+  }
+
+  /// Calls [to] with [data] and, on an EIP-3668 `OffchainLookup` revert,
+  /// fetches from the gateway URLs and re-calls the callback, up to
+  /// [hopsRemaining] redirect hops. Returns the raw success return bytes
+  /// (still `(bytes,address)`-encoded, as with the direct success path).
+  Future<List<int>> _resolveWithCcipRead({
+    required String to,
+    required List<int> data,
+    required int hopsRemaining,
+  }) async {
     final String result;
     try {
-      result = await _transport.ethCall(
-        to: universalResolver,
-        data: hexEncode(data),
-      );
+      result = await _transport.ethCall(to: to, data: hexEncode(data));
     } on EnsRpcException catch (e) {
       final revertData = e.revertData;
       if (revertData == null) {
@@ -145,10 +164,29 @@ class EnsNameResolver {
         );
       }
       if (revertData.toLowerCase().startsWith(_offchainLookupSelector)) {
-        // TODO(Task 6): CCIP-Read OffchainLookup handling
-        throw const EnsResolutionException(
-          EnsResolutionFailure.network,
-          'Could not resolve name',
+        if (hopsRemaining <= 0) {
+          throw const EnsResolutionException(
+            EnsResolutionFailure.network,
+            'Could not resolve name',
+          );
+        }
+        final lookup = decodeOffchainLookup(hexDecode(revertData));
+        if (lookup == null) {
+          throw const EnsResolutionException(
+            EnsResolutionFailure.network,
+            'Could not resolve name',
+          );
+        }
+        final response = await _fetchFromGateways(lookup);
+        final callbackData = encodeCcipCallback(
+          hexDecode(lookup.callbackSelector),
+          hexDecode(response),
+          hexDecode(lookup.extraData),
+        );
+        return _resolveWithCcipRead(
+          to: lookup.sender,
+          data: callbackData,
+          hopsRemaining: hopsRemaining - 1,
         );
       }
       throw const EnsResolutionException(
@@ -157,9 +195,28 @@ class EnsNameResolver {
       );
     }
 
-    final resultBytes = hexDecode(result);
-    final outer = decodeUniversalResolveResult(resultBytes);
-    return decodeBytesResult(outer);
+    return hexDecode(result);
+  }
+
+  /// Tries each gateway URL in order via [EnsRpcTransport.ccipFetch],
+  /// returning the first successful response. Throws
+  /// [EnsResolutionFailure.network] when every gateway fails.
+  Future<String> _fetchFromGateways(OffchainLookupData lookup) async {
+    for (final url in lookup.urls) {
+      try {
+        return await _transport.ccipFetch(
+          url: url,
+          sender: lookup.sender,
+          data: lookup.callData,
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+    throw const EnsResolutionException(
+      EnsResolutionFailure.network,
+      'Could not resolve name',
+    );
   }
 }
 

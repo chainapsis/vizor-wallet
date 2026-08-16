@@ -116,3 +116,107 @@ String decodeAddressWord(List<int> word) {
 BigInt evmCoinType(int chainId) => chainId == 1
     ? BigInt.from(60)
     : BigInt.from(0x80000000 | chainId);
+
+// EIP-3668 CCIP-Read (OffchainLookup)
+
+const _offchainLookupSelectorBytes = [0x55, 0x6f, 0x18, 0x30];
+
+/// Decoded EIP-3668 `OffchainLookup` revert:
+/// `(address sender, string[] urls, bytes callData, bytes4 callbackFunction, bytes extraData)`.
+class OffchainLookupData {
+  const OffchainLookupData({
+    required this.sender,
+    required this.urls,
+    required this.callData,
+    required this.callbackSelector,
+    required this.extraData,
+  });
+
+  /// EIP-55 checksummed 0x address of the resolver contract to call back.
+  final String sender;
+
+  /// Gateway URL templates (may contain `{sender}`/`{data}` placeholders).
+  final List<String> urls;
+
+  /// 0x-hex bytes to pass as `data` to the gateway.
+  final String callData;
+
+  /// 0x-hex 4-byte selector of the callback function on [sender].
+  final String callbackSelector;
+
+  /// 0x-hex bytes to pass back to the callback call unmodified.
+  final String extraData;
+}
+
+/// Decodes an EIP-3668 `OffchainLookup` revert. [revertData] is the full
+/// revert payload (selector + ABI-encoded tuple). Returns null when the
+/// selector doesn't match `0x556f1830` or the tuple is malformed.
+OffchainLookupData? decodeOffchainLookup(List<int> revertData) {
+  if (revertData.length < 4) return null;
+  for (var i = 0; i < 4; i++) {
+    if (revertData[i] != _offchainLookupSelectorBytes[i]) return null;
+  }
+  final d = revertData.sublist(4);
+  if (d.length < 32 * 5) return null;
+  try {
+    final sender = decodeAddressWord(d.sublist(0, 32));
+    final urlsOffset = _readWord(d, 32).toInt();
+    final callDataOffset = _readWord(d, 64).toInt();
+    final callbackSelector = hexEncode(d.sublist(96, 100));
+    final extraDataOffset = _readWord(d, 128).toInt();
+
+    final urls = _decodeStringArray(d, urlsOffset);
+    final callData = hexEncode(_decodeDynamicBytes(d, callDataOffset));
+    final extraData = hexEncode(_decodeDynamicBytes(d, extraDataOffset));
+
+    return OffchainLookupData(
+      sender: sender,
+      urls: urls,
+      callData: callData,
+      callbackSelector: callbackSelector,
+      extraData: extraData,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+List<int> _decodeDynamicBytes(List<int> d, int offset) {
+  final len = _readWord(d, offset).toInt();
+  return d.sublist(offset + 32, offset + 32 + len);
+}
+
+List<String> _decodeStringArray(List<int> d, int offset) {
+  final count = _readWord(d, offset).toInt();
+  final arrayDataStart = offset + 32;
+  final result = <String>[];
+  for (var i = 0; i < count; i++) {
+    final elemOffset = _readWord(d, arrayDataStart + i * 32).toInt();
+    final absOffset = arrayDataStart + elemOffset;
+    final len = _readWord(d, absOffset).toInt();
+    final bytes = d.sublist(absOffset + 32, absOffset + 32 + len);
+    result.add(utf8.decode(bytes));
+  }
+  return result;
+}
+
+/// Encodes a CCIP-Read callback call: `callbackSelector ++
+/// abi.encode(bytes response, bytes extraData)`, mirroring the two-dynamic-
+/// `bytes`-args layout used by [encodeUniversalResolve].
+List<int> encodeCcipCallback(
+  List<int> callbackSelector,
+  List<int> response,
+  List<int> extraData,
+) {
+  final head1 = _word(BigInt.from(0x40));
+  final tail1 = [
+    ..._word(BigInt.from(response.length)),
+    ..._padRight32(response),
+  ];
+  final head2 = _word(BigInt.from(0x40 + tail1.length));
+  final tail2 = [
+    ..._word(BigInt.from(extraData.length)),
+    ..._padRight32(extraData),
+  ];
+  return [...callbackSelector, ...head1, ...head2, ...tail1, ...tail2];
+}
