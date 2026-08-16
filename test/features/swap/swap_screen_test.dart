@@ -2204,7 +2204,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ethereum address or account'), findsOneWidget);
+    expect(find.text('Ethereum address or .eth'), findsOneWidget);
     expect(find.text('NEAR or Ethereum address'), findsNothing);
 
     final modalRect = tester.getRect(
