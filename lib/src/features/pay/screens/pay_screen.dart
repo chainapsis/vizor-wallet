@@ -447,6 +447,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                           ),
                           onConfirm: _startIntent,
                           onReviewAgain: () => unawaited(_openReview()),
+                          ensName: swapState.destinationEnsName,
                         ),
               },
             ),

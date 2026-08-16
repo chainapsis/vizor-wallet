@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 const _recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -64,6 +65,7 @@ Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
 MobilePayReviewContent _content({
   AddressBookContact? contact = _contact,
   bool expired = false,
+  String? ensName,
 }) {
   return MobilePayReviewContent(
     quote: _quote,
@@ -73,6 +75,7 @@ MobilePayReviewContent _content({
     convertedFiatText: r'$250.12',
     expiresInText: '1:30',
     expired: expired,
+    ensName: ensName,
   );
 }
 
@@ -105,6 +108,33 @@ void main() {
     expect(dividerRect.height, 38);
     expect(convertedRect.size, const Size(361, 138));
     expect(convertedRect.top - summaryRect.bottom, 86);
+  });
+
+  testWidgets(
+    'ENS-resolved recipient shows the name with the pinned resolved address',
+    (tester) async {
+      await tester.pumpWidget(
+        _harness(_content(contact: null, ensName: 'vitalik.eth')),
+      );
+
+      final compactRecipient = compactSwapAddress(
+        _recipientAddress,
+        prefixLength: 6,
+        suffixLength: 5,
+        separator: ' ... ',
+      );
+      expect(find.text('vitalik.eth ($compactRecipient)'), findsOneWidget);
+      expect(find.text('Unknown address'), findsNothing);
+    },
+  );
+
+  testWidgets('a matched contact keeps the saved label over an ENS name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(_content(ensName: 'vitalik.eth')));
+
+    expect(find.text('Mike'), findsOneWidget);
+    expect(find.textContaining('vitalik.eth'), findsNothing);
   });
 
   testWidgets('opens the shared full-address sheet for an unknown recipient', (

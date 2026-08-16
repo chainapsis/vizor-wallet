@@ -286,6 +286,74 @@ void main() {
     );
   });
 
+  testWidgets(
+    'review summary shows the ENS name with the resolved address in the To: line',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '0.251 ZEC',
+            receiveAmountText: '999.99 USDC',
+            onCopy: (_) {},
+            ensName: 'vitalik.eth',
+          ),
+        ),
+      );
+
+      final receiveSide = find.byKey(
+        const ValueKey('swap_review_info_receive'),
+      );
+      expect(
+        find.descendant(
+          of: receiveSide,
+          matching: find.text(
+            'To: vitalik.eth (0x5290840 ... 4169ee7) on Ethereum',
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('review summary keeps a matched contact label over an ENS name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          onCopy: (_) {},
+          ensName: 'vitalik.eth',
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('vitalik.eth'), findsNothing);
+  });
+
   testWidgets('review summary shows the refund address line with copy', (
     tester,
   ) async {
@@ -356,6 +424,51 @@ void main() {
     expect(find.text('Guaranteed minimum'), findsNothing);
     expect(find.text('Swap fee'), findsNothing);
   });
+
+  testWidgets(
+    'pay review recipient pill shows the ENS name with the resolved address',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '4.0000 ZEC',
+            receiveAmountText: '100.00 USDC',
+            payMode: true,
+            ensName: 'vitalik.eth',
+          ),
+        ),
+      );
+
+      expect(
+        find.text('Ethereum · vitalik.eth (0x5290840 ... 4169ee7)'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'pay review recipient pill shows the bare address when no ENS name is set',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '4.0000 ZEC',
+            receiveAmountText: '100.00 USDC',
+            payMode: true,
+          ),
+        ),
+      );
+
+      expect(find.text('Ethereum · 0x5290840 ... 4169ee7'), findsOneWidget);
+      expect(find.textContaining('vitalik.eth'), findsNothing);
+    },
+  );
 
   testWidgets('pay review action uses the output asset amount', (tester) async {
     await tester.pumpWidget(
@@ -9265,11 +9378,13 @@ Widget _reviewTestPage({
   ValueChanged<String>? onCopy,
   List<AddressBookContact> addressBookContacts = const [],
   bool payMode = false,
+  String? ensName,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
     onCopy: onCopy,
     addressBookContacts: addressBookContacts,
+    ensName: ensName,
     quote: SwapQuote(
       direction: direction,
       sellAsset: sellAsset,

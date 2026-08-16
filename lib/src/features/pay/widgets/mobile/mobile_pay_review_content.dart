@@ -24,6 +24,7 @@ class MobilePayReviewContent extends StatefulWidget {
     required this.convertedFiatText,
     required this.expiresInText,
     required this.expired,
+    this.ensName,
     super.key,
   });
 
@@ -34,6 +35,11 @@ class MobilePayReviewContent extends StatefulWidget {
   final String? convertedFiatText;
   final String? expiresInText;
   final bool expired;
+
+  /// The `.eth` name [recipientAddress] was resolved from, if any. When set
+  /// (and no saved contact takes priority) the "To" row shows
+  /// `name (short address)` instead of the bare compact address.
+  final String? ensName;
 
   @override
   State<MobilePayReviewContent> createState() => _MobilePayReviewContentState();
@@ -51,6 +57,11 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
       suffixLength: 5,
       separator: ' ... ',
     );
+    final ens = widget.ensName?.trim();
+    final hasEns = contact == null && ens != null && ens.isNotEmpty;
+    final recipientValueText =
+        contact?.label ??
+        (hasEns ? '$ens ($compactRecipient)' : compactRecipient);
 
     return Column(
       key: const ValueKey('mobile_pay_review_content'),
@@ -86,16 +97,18 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_recipient_row'),
                 label: 'To',
-                value: contact?.label ?? compactRecipient,
+                value: recipientValueText,
                 leading: contact == null
                     ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
                     : AppProfilePicture(
                         profilePictureId: contact.profilePictureId,
                         size: AppProfilePictureSize.navLarge,
                       ),
-                bottomLeftText: contact == null
-                    ? 'Unknown address'
-                    : compactRecipient,
+                bottomLeftText: contact != null
+                    ? compactRecipient
+                    : hasEns
+                    ? null
+                    : 'Unknown address',
                 trailingActionLabel: 'Full address',
                 trailingActionKey: const ValueKey(
                   'mobile_pay_review_full_address_button',

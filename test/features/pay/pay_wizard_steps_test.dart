@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_review_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_page.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -127,10 +128,9 @@ void main() {
     );
 
     expect(
-      payRecipientContactForAddress(
-        [contact],
-        _solanaAddress.replaceFirst('N', 'n'),
-      ),
+      payRecipientContactForAddress([
+        contact,
+      ], _solanaAddress.replaceFirst('N', 'n')),
       isNull,
     );
   });
@@ -848,6 +848,7 @@ void main() {
       String? startBlockedReason,
       VoidCallback? onConfirm,
       VoidCallback? onReviewAgain,
+      String? ensName,
     }) {
       return PayReviewStep(
         quote: _payQuote(),
@@ -863,6 +864,7 @@ void main() {
         onShowFullAddress: () {},
         onConfirm: onConfirm ?? () {},
         onReviewAgain: onReviewAgain ?? () {},
+        ensName: ensName,
       );
     }
 
@@ -888,6 +890,34 @@ void main() {
     ) async {
       await tester.pumpWidget(_harness(reviewStep()));
       expect(find.text('Unknown address'), findsOneWidget);
+    });
+
+    testWidgets(
+      'ENS-resolved recipient shows the name with the pinned resolved address',
+      (tester) async {
+        await tester.pumpWidget(_harness(reviewStep(ensName: 'vitalik.eth')));
+
+        final compactRecipient = compactSwapAddress(
+          _contactAddress,
+          prefixLength: 8,
+          suffixLength: 8,
+          separator: '...',
+          maxLength: 19,
+        );
+        expect(find.text('vitalik.eth ($compactRecipient)'), findsOneWidget);
+        expect(find.text('Unknown address'), findsNothing);
+      },
+    );
+
+    testWidgets('a matched contact keeps the saved label over an ENS name', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(reviewStep(contact: _contact, ensName: 'vitalik.eth')),
+      );
+
+      expect(find.text('Mike'), findsOneWidget);
+      expect(find.textContaining('vitalik.eth'), findsNothing);
     });
 
     testWidgets('show full address delegates to the screen overlay', (

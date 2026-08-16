@@ -189,6 +189,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                         amount: quote.receiveAmount,
                       ),
                       payMode: widget.payMode,
+                      ensName: swapState.destinationEnsName,
                       onCopy: _copyAddress,
                     ),
                     const SizedBox(height: AppSpacing.base),

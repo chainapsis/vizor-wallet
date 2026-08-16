@@ -34,6 +34,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.showTitle = true,
     this.addressBookContacts = const [],
     this.payMode = false,
+    this.ensName,
     super.key,
   });
 
@@ -61,6 +62,14 @@ class SwapReviewPageContent extends StatelessWidget {
   final bool showTitle;
   final bool payMode;
 
+  /// The `.eth` name the committed destination/recipient address (on
+  /// [addressPlan]) was resolved from, if any. When set (and no saved
+  /// contact label takes priority) the destination/refund/recipient line
+  /// shows `name (short address)` instead of the bare compact address, so
+  /// the pinned resolved address stays verifiable next to the name the user
+  /// actually typed.
+  final String? ensName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -87,6 +96,7 @@ class SwapReviewPageContent extends StatelessWidget {
               quote: quote,
               addressPlan: addressPlan,
               onCopy: onCopy,
+              ensName: ensName,
             )
           else ...[
             SwapReviewInfo(
@@ -176,7 +186,8 @@ class SwapReviewPageContent extends StatelessWidget {
   }
 
   /// Compact address, prefixed by the saved contact's name when the address
-  /// matches an address-book entry on [asset]'s chain.
+  /// matches an address-book entry on [asset]'s chain, else by [ensName]
+  /// when the address was resolved from an ENS name.
   String _contactAwareAddressText(String address, SwapAsset asset) {
     final label = addressBookContactForSwapAsset(
       contacts: addressBookContacts,
@@ -184,8 +195,14 @@ class SwapReviewPageContent extends StatelessWidget {
       address: address,
     )?.label.trim();
     final compact = compactSwapAddress(address);
-    if (label == null || label.isEmpty) return compact;
-    return contactAddressDisplayText(label: label, compactAddress: compact);
+    if (label != null && label.isNotEmpty) {
+      return contactAddressDisplayText(label: label, compactAddress: compact);
+    }
+    final ens = ensName?.trim();
+    if (ens != null && ens.isNotEmpty) {
+      return '$ens ($compact)';
+    }
+    return compact;
   }
 }
 
@@ -194,11 +211,15 @@ class _PayReviewCard extends StatelessWidget {
     required this.quote,
     required this.addressPlan,
     required this.onCopy,
+    this.ensName,
   });
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
   final ValueChanged<String>? onCopy;
+
+  /// The `.eth` name the recipient address was resolved from, if any.
+  final String? ensName;
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +255,7 @@ class _PayReviewCard extends StatelessWidget {
             _PayRecipientPill(
               asset: quote.receiveAsset,
               address: recipientAddress,
+              ensName: ensName,
               onCopy: onCopy,
             ),
           ],
@@ -313,16 +335,25 @@ class _PayRecipientPill extends StatelessWidget {
     required this.asset,
     required this.address,
     required this.onCopy,
+    this.ensName,
   });
 
   final SwapAsset asset;
   final String address;
   final ValueChanged<String>? onCopy;
 
+  /// The `.eth` name [address] was resolved from, if any.
+  final String? ensName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final copyable = address.isNotEmpty && onCopy != null;
+    final compact = compactSwapAddress(address);
+    final ens = ensName?.trim();
+    final addressText = ens != null && ens.isNotEmpty
+        ? '$ens ($compact)'
+        : compact;
     return Center(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -342,7 +373,7 @@ class _PayRecipientPill extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  '${asset.chainLabel} · ${compactSwapAddress(address)}',
+                  '${asset.chainLabel} · $addressText',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelSmall.copyWith(
