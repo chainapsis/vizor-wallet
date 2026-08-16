@@ -359,6 +359,11 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_customise_account_continue'),
+    timeout: const Duration(minutes: 1),
+  );
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),
@@ -784,10 +789,10 @@ Finder _mobileActivityTransactionRows() => find.byWidgetPredicate((widget) {
 
 // ── Account/state inspection and chain control ──────────────────────
 
-Future<String> accountUuidAtOrder(int order) async {
+Future<List<AccountInfo>> storedAccountsByOrder() async {
   final rawAccounts = await AppSecureStore.instance.readString(_accountsKey);
   if (rawAccounts == null || rawAccounts.trim().isEmpty) {
-    fail('Expected stored accounts before reading account order $order.');
+    fail('Expected stored accounts before reading account state.');
   }
 
   final decoded = jsonDecode(rawAccounts);
@@ -803,11 +808,27 @@ Future<String> accountUuidAtOrder(int order) async {
     accounts.add(AccountInfo.fromJson(Map<String, dynamic>.from(entry)));
   }
   accounts.sort((a, b) => a.order.compareTo(b.order));
+  return accounts;
+}
+
+Future<AccountInfo> accountInfoAtOrder(int order) async {
+  final accounts = await storedAccountsByOrder();
 
   if (order >= accounts.length) {
     fail('Expected account order $order, got ${accounts.length} accounts.');
   }
-  return accounts[order].uuid;
+  return accounts[order];
+}
+
+Future<String> accountUuidAtOrder(int order) async =>
+    (await accountInfoAtOrder(order)).uuid;
+
+Future<String> unifiedAddressForAccount(String accountUuid) async {
+  return rust_wallet.getUnifiedAddress(
+    dbPath: await getWalletDbPath(),
+    network: mobileE2eNetwork,
+    accountUuid: accountUuid,
+  );
 }
 
 Future<rust_sync.MigrationStatus> mobileRegtestMigrationStatus(

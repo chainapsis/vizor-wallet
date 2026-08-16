@@ -9,8 +9,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
 void main() {
@@ -110,9 +113,163 @@ void main() {
     );
   });
 
-  testWidgets('uses the darker modal layer in dark mode', (
+  testWidgets('hides derive option when wallet has no accounts', (
     tester,
   ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('welcome_create_wallet_button')),
+          )
+          .variant,
+      AppButtonVariant.primary,
+    );
+  });
+
+  testWidgets('shows derive option when a software account exists', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _welcomeScreen(accountState: _softwareAccountState),
+    );
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_create_wallet_button')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('welcome_create_wallet_button')),
+          )
+          .variant,
+      AppButtonVariant.secondary,
+    );
+  });
+
+  testWidgets('derive option routes to customise with derive args', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    CustomiseAccountArgs? routedArgs;
+    final router = GoRouter(
+      initialLocation: '/add-account',
+      routes: [
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => const WelcomeScreen(showBackButton: true),
+        ),
+        GoRoute(
+          path: '/onboarding/customise-account',
+          builder: (_, state) {
+            routedArgs = state.extra! as CustomiseAccountArgs;
+            return const Text('Customise destination');
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _welcomeRouter(router, accountState: _softwareAccountState),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Customise destination'), findsOneWidget);
+    expect(routedArgs?.isDeriveFlow, isTrue);
+    expect(routedArgs?.deriveFromAccountUuid, 'software-account');
+    expect(routedArgs?.mnemonic, isEmpty);
+  });
+
+  testWidgets('hides derive option for a hardware-only wallet', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _welcomeScreen(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'derives from the first software account when hardware is active',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      CustomiseAccountArgs? routedArgs;
+      final router = GoRouter(
+        initialLocation: '/add-account',
+        routes: [
+          GoRoute(
+            path: '/add-account',
+            builder: (_, _) => const WelcomeScreen(showBackButton: true),
+          ),
+          GoRoute(
+            path: '/onboarding/customise-account',
+            builder: (_, state) {
+              routedArgs = state.extra! as CustomiseAccountArgs;
+              return const Text('Customise destination');
+            },
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _welcomeRouter(
+          router,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(uuid: 'software', name: 'Software', order: 0),
+              AccountInfo(
+                uuid: 'keystone',
+                name: 'Keystone',
+                order: 1,
+                isHardware: true,
+              ),
+            ],
+            activeAccountUuid: 'keystone',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('welcome_derive_account_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(routedArgs?.deriveFromAccountUuid, 'software');
+      expect(routedArgs?.mnemonic, isEmpty);
+    },
+  );
+
+  testWidgets('uses the darker modal layer in dark mode', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_welcomeScreen(theme: AppThemeData.dark));
 
@@ -131,10 +288,7 @@ void main() {
       find.byKey(const ValueKey('network_privacy_surface')),
     );
     final privacyDecoration = privacySurface.decoration as BoxDecoration;
-    expect(
-      privacyDecoration.color,
-      AppThemeData.dark.colors.background.ground,
-    );
+    expect(privacyDecoration.color, AppThemeData.dark.colors.background.ground);
     expect(privacyDecoration.border, isNull);
   });
 
@@ -177,11 +331,10 @@ void main() {
         GoRoute(path: '/home', builder: (_, _) => const Text('Home')),
         GoRoute(
           path: '/accounts',
-          builder:
-              (context, _) => TextButton(
-                onPressed: () => context.push('/add-account'),
-                child: const Text('Open add account'),
-              ),
+          builder: (context, _) => TextButton(
+            onPressed: () => context.push('/add-account'),
+            child: const Text('Open add account'),
+          ),
         ),
         GoRoute(
           path: '/add-account',
@@ -204,10 +357,9 @@ void main() {
 Future<void> _loadAppFonts() async {
   final youngSerif = FontLoader('Young Serif')
     ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
-  final geist =
-      FontLoader('Geist')
-        ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-        ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
 
   await Future.wait([youngSerif.load(), geist.load()]);
 }
@@ -221,12 +373,14 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 
 Widget _welcomeScreen({
   bool showBackButton = false,
+  AccountState accountState = const AccountState(),
   List<bool>? networkPrivacyCalls,
   AppThemeData theme = AppThemeData.light,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
       ),
@@ -254,10 +408,18 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   }
 }
 
-Widget _welcomeRouter(GoRouter router) {
+Widget _welcomeRouter(
+  GoRouter router, {
+  AccountState accountState = const AccountState(),
+  List<bool>? networkPrivacyCalls,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -265,3 +427,24 @@ Widget _welcomeRouter(GoRouter router) {
     ),
   );
 }
+
+class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier(this.fixedState);
+
+  final AccountState fixedState;
+
+  @override
+  AccountState build() => fixedState;
+}
+
+const _softwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'software-account',
+      name: 'Primary',
+      order: 0,
+      isSeedAnchor: true,
+    ),
+  ],
+  activeAccountUuid: 'software-account',
+);

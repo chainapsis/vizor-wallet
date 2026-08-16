@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 
 import 'support/mobile_regtest_flow.dart';
 
@@ -34,31 +35,36 @@ void main() {
 
       await createWalletWithPasscode(tester);
 
-      // ── Add a second account through the create flow ─────────────
+      final sourceBefore = await accountInfoAtOrder(0);
+      final sourceSecret = await AppSecureStore.instance
+          .readAccountSoftwareWalletSecret(sourceBefore.uuid);
+      expect(sourceSecret, isNotNull);
+      final sourceAddress = await unifiedAddressForAccount(sourceBefore.uuid);
+
+      // Add a second ZIP-32 account from the existing software secret.
       await openAddAccountFlow(tester);
       await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-      await tapWidget(tester, const ValueKey('mobile_welcome_create'));
-      await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_derive_account'));
       await tapAppButton(
         tester,
-        const ValueKey('mobile_address_types_continue'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_things_to_know_continue'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_secret_passphrase_primary'),
-      );
-      // Second tap creates the account directly (passcode exists).
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_secret_passphrase_primary'),
+        const ValueKey('mobile_customise_account_continue'),
       );
       await waitForHome(tester);
-      final addedUuid = await accountUuidAtOrder(1);
-      logE2e('second account added: $addedUuid');
+
+      final source = await accountInfoAtOrder(0);
+      final added = await accountInfoAtOrder(1);
+      final addedSecret = await AppSecureStore.instance
+          .readAccountSoftwareWalletSecret(added.uuid);
+      final addedAddress = await unifiedAddressForAccount(added.uuid);
+
+      expect(added.uuid, isNot(source.uuid));
+      expect(addedAddress, isNot(sourceAddress));
+      expect(source.seedFamilyId, isNotEmpty);
+      expect(added.seedFamilyId, source.seedFamilyId);
+      expect(addedSecret?.mnemonic, sourceSecret?.mnemonic);
+      expect(addedSecret?.bip39Passphrase, sourceSecret?.bip39Passphrase);
+      final addedUuid = added.uuid;
+      logE2e('same-seed account added: $addedUuid');
 
       // ── Manage accounts: rename, then remove ─────────────────────
       await openAccountsSheet(tester);
@@ -68,6 +74,49 @@ void main() {
         outcome: find.byKey(ValueKey('mobile_accounts_menu_$addedUuid')),
         description: 'accounts management screen',
       );
+
+      final familyCard = find.byKey(
+        ValueKey('mobile_accounts_family_${source.uuid}'),
+      );
+      expect(familyCard, findsOneWidget);
+      expect(
+        find.descendant(
+          of: familyCard,
+          matching: find.byKey(ValueKey('mobile_accounts_row_${source.uuid}')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: familyCard,
+          matching: find.byKey(ValueKey('mobile_accounts_row_$addedUuid')),
+        ),
+        findsOneWidget,
+      );
+
+      await tapWidget(
+        tester,
+        ValueKey('mobile_accounts_edit_group_${source.uuid}'),
+      );
+      await enterText(
+        tester,
+        const ValueKey('mobile_account_group_edit_name'),
+        'Everyday wallet',
+      );
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_account_group_edit_save'),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Everyday wallet')),
+        description: 'renamed account group',
+      );
+
+      final groupedAccounts = await storedAccountsByOrder();
+      expect(groupedAccounts[0].accountGroupName, 'Everyday wallet');
+      expect(groupedAccounts[1].accountGroupName, 'Everyday wallet');
+
       await tapWidget(tester, ValueKey('mobile_accounts_menu_$addedUuid'));
       await tapWidget(tester, const ValueKey('mobile_account_menu_edit'));
       await enterText(

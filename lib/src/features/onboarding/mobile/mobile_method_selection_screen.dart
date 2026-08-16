@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/account_provider.dart';
+import '../shared/onboarding_flow_args.dart';
 
 const double _methodCardHeight = 90;
 const double _methodSelectionProgress = 60 / 196;
@@ -19,12 +22,16 @@ const double _methodSelectionProgress = 60 / 196;
 /// 24px below the steps nav, then lays out the title block, a 32px gap, and
 /// four method cards. The legal line in the Figma frame is intentionally not
 /// rendered until the legal documents are ready.
-class MobileMethodSelectionScreen extends StatelessWidget {
+class MobileMethodSelectionScreen extends ConsumerWidget {
   const MobileMethodSelectionScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final accountState = ref.watch(accountProvider).value;
+    final deriveFromAccountUuid = accountState == null
+        ? null
+        : defaultDeriveSourceAccountUuid(accountState);
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
@@ -65,6 +72,24 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.base),
+                    if (deriveFromAccountUuid != null) ...[
+                      _MethodCard(
+                        buttonKey: const ValueKey(
+                          'mobile_welcome_derive_account',
+                        ),
+                        iconName: AppIcons.addNew,
+                        label: 'Add account',
+                        illustration:
+                            'assets/illustrations/method_create_card_bg.png',
+                        onTap: () => context.push(
+                          '/onboarding/customise-account',
+                          extra: CustomiseAccountArgs.derive(
+                            deriveFromAccountUuid: deriveFromAccountUuid,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
                     _MethodCard(
                       buttonKey: const ValueKey('mobile_welcome_create'),
                       iconName: AppIcons.addNew,

@@ -1441,4 +1441,3 @@ Future<void> _sendAppLifecycleState(AppLifecycleState state) async {
         (_) {},
       );
 }
-

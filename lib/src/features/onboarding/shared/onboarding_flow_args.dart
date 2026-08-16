@@ -15,14 +15,24 @@ class CreateSecretPassphraseArgs {
 /// setup has been persisted. It stays in route memory and is intentionally not
 /// carried when the user navigates back to the password screen.
 class CustomiseAccountArgs {
-  const CustomiseAccountArgs({required this.setupArgs, this.pendingPassword});
+  const CustomiseAccountArgs({required this.setupArgs, this.pendingPassword})
+    : deriveFromAccountUuid = null;
+
+  /// A derived account has no onboarding secret draft. Its create-flow setup
+  /// args provide the existing customisation shell while the source UUID keeps
+  /// the actual mutation secret-free.
+  const CustomiseAccountArgs.derive({required this.deriveFromAccountUuid})
+    : setupArgs = const SetPasswordScreenArgs.create(mnemonic: ''),
+      pendingPassword = null;
 
   final SetPasswordScreenArgs setupArgs;
   final String? pendingPassword;
+  final String? deriveFromAccountUuid;
 
   String get mnemonic => setupArgs.requiredMnemonic;
   SetPasswordFlow get flow => setupArgs.flow;
   bool get configuresPassword => pendingPassword != null;
+  bool get isDeriveFlow => deriveFromAccountUuid != null;
 
   String get routePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/customise-account',

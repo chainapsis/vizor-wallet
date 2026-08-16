@@ -293,6 +293,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               order: index,
               isHardware: account.isHardware,
               isSeedAnchor: account.isSeedAnchor,
+              seedFamilyId: account.seedFamilyId,
             ),
             storedAccount: stored,
             order: index,
@@ -426,6 +427,8 @@ AccountInfo mergeBootstrappedAccountInfo({
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
     ),
     walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
+    seedFamilyId: rustAccount.seedFamilyId,
+    accountGroupName: storedAccount?.accountGroupName,
   );
 }
 

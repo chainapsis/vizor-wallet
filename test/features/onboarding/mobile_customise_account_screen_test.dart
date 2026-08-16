@@ -463,6 +463,51 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
+  testWidgets('derives an account without passing a mnemonic through the UI', (
+    tester,
+  ) async {
+    final accountNotifier = _RecordingAccountNotifier();
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs.derive(
+              deriveFromAccountUuid: 'software-account',
+            ),
+            random: _SequenceRandom([0, 1, 2]),
+          ),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(() => accountNotifier),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.derivedSourceAccountUuid, 'software-account');
+    expect(accountNotifier.createdMnemonic, isNull);
+    expect(accountNotifier.createdName, 'Windborne Wardbearer');
+    expect(accountNotifier.createdProfilePictureId, 'pfp-03');
+    expect(find.text('home route'), findsOneWidget);
+  });
+
   testWidgets('imports a software draft with the selected persona', (
     tester,
   ) async {
@@ -615,6 +660,7 @@ class _SequenceRandom implements Random {
 
 class _RecordingAccountNotifier extends AccountNotifier {
   String? createdMnemonic;
+  String? derivedSourceAccountUuid;
   String? createdName;
   String? createdProfilePictureId;
   String? importedMnemonic;
@@ -638,6 +684,17 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String profilePictureId = 'pfp-01',
   }) async {
     createdMnemonic = mnemonic;
+    createdName = name;
+    createdProfilePictureId = profilePictureId;
+  }
+
+  @override
+  Future<void> deriveAccountFromExistingSeed({
+    required String sourceAccountUuid,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    derivedSourceAccountUuid = sourceAccountUuid;
     createdName = name;
     createdProfilePictureId = profilePictureId;
   }

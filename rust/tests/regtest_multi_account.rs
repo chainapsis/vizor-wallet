@@ -4,9 +4,10 @@ use common::{
     add_account_with_birthday, create_wallet, create_wallet_with_birthday, current_tip_height,
     ensure_regtest_up, exclusive_regtest, fund_wallet, get_balance, get_transaction_history,
     has_pending_scan_below, history_txids, inject_orphaned_historic_below,
-    inject_orphaned_scanned_below, list_accounts, min_account_birthday, mine_blocks,
-    positive_history_count, sync_wallet, unique_account_uuids,
+    inject_orphaned_scanned_below, list_accounts, min_account_birthday, mine_blocks, path_str,
+    positive_history_count, sync_wallet, unique_account_uuids, REGTEST_NETWORK,
 };
+use rust_lib_zcash_wallet::api::wallet as wallet_api;
 
 /// VZR-89 rescue path: a wallet already stuck by a PRE-FIX account deletion
 /// (an orphaned pending Historic range left below the surviving birthday) must
@@ -405,6 +406,83 @@ fn multi_account_sync_keeps_balances_isolated_per_account() {
         positive_history_count(&second_history),
         1,
         "second account should record exactly one inbound transaction"
+    );
+}
+
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    let (main_dir, first_wallet) = create_wallet("Primary");
+    let main_db = main_dir.path().join("zcash_wallet.db");
+    let birthday = current_tip_height();
+    let derivation_lease = wallet_api::begin_software_account_derivation_lease(
+        path_str(&main_db),
+        REGTEST_NETWORK.into(),
+        first_wallet.account_uuid.clone(),
+        "Secondary".into(),
+        "pfp-01".into(),
+        None,
+    )
+    .expect("begin derivation lease");
+
+    let second_account = wallet_api::derive_next_software_account(
+        first_wallet.mnemonic.clone(),
+        String::new(),
+        Some(birthday),
+        REGTEST_NETWORK.into(),
+        path_str(&main_db),
+        "Secondary".into(),
+        derivation_lease.operation_token.clone(),
+    )
+    .expect("derive_next_software_account");
+    wallet_api::resolve_software_account_derivation_lease(
+        derivation_lease.operation_token.clone(),
+        Some(second_account.account_uuid.clone()),
+    )
+    .expect("resolve derivation lease");
+    wallet_api::finish_software_account_derivation_lease(derivation_lease.operation_token)
+        .expect("finish derivation lease");
+    assert_eq!(
+        second_account.zip32_account_index, 1,
+        "the first same-seed account should use ZIP 32 index 1"
+    );
+    assert_eq!(
+        list_accounts(&main_db).len(),
+        2,
+        "wallet should contain both same-seed accounts"
+    );
+
+    fund_wallet(&first_wallet.unified_address, "0.55");
+    fund_wallet(&second_account.unified_address, "0.85");
+    sync_wallet(&main_db);
+
+    let first_balance = get_balance(&main_db, &first_wallet.account_uuid);
+    let second_balance = get_balance(&main_db, &second_account.account_uuid);
+    assert!(
+        first_balance.spendable >= 55_000_000 && first_balance.spendable < 85_000_000,
+        "first account balance should reflect only index-0 funding, got {}",
+        first_balance.spendable
+    );
+    assert!(
+        second_balance.spendable >= 85_000_000,
+        "second account balance should reflect only index-1 funding, got {}",
+        second_balance.spendable
+    );
+
+    let first_history = get_transaction_history(&main_db, &first_wallet.account_uuid);
+    let second_history = get_transaction_history(&main_db, &second_account.account_uuid);
+    assert_eq!(
+        positive_history_count(&first_history),
+        1,
+        "index-0 account should record exactly one inbound transaction"
+    );
+    assert_eq!(
+        positive_history_count(&second_history),
+        1,
+        "index-1 account should record exactly one inbound transaction"
     );
 }
 

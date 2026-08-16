@@ -11,18 +11,24 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
   AppThemeData theme = AppThemeData.light,
+  AccountState accountState = const AccountState(),
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: mobileOnboardingRoutes(),
   );
   return ProviderScope(
+    overrides: [
+      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
@@ -135,6 +141,147 @@ void main() {
       expect(find.textContaining('you agree to our'), findsNothing);
       expect(find.text('Terms'), findsNothing);
       expect(find.text('Privacy'), findsNothing);
+    },
+  );
+
+  testWidgets('method selection hides derive for an empty wallet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(initialLocation: '/onboarding/method'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('method selection shows derive for a software account', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/onboarding/method',
+        accountState: _softwareAccountState,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      findsOneWidget,
+    );
+    expect(find.text('Add account'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_welcome_create')), findsOneWidget);
+  });
+
+  testWidgets('derive pushes customise with the source account uuid', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/onboarding/method',
+        accountState: _softwareAccountState,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+    );
+    await tester.pumpAndSettle();
+
+    final screen = tester.widget<MobileCustomiseAccountScreen>(
+      find.byType(MobileCustomiseAccountScreen),
+    );
+    expect(screen.args.isDeriveFlow, isTrue);
+    expect(screen.args.deriveFromAccountUuid, 'software-account');
+    expect(screen.args.mnemonic, isEmpty);
+  });
+
+  testWidgets('derive survives the add-account welcome route stack', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/add-account',
+        accountState: _softwareAccountState,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openMethodSelection(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final screen = tester.widget<MobileCustomiseAccountScreen>(
+      find.byType(MobileCustomiseAccountScreen),
+    );
+    expect(screen.args.isDeriveFlow, isTrue);
+    expect(screen.args.deriveFromAccountUuid, 'software-account');
+  });
+
+  testWidgets('method selection hides derive for a hardware-only wallet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/onboarding/method',
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'derive uses the first software account when hardware is active',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          initialLocation: '/onboarding/method',
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(uuid: 'software', name: 'Software', order: 0),
+              AccountInfo(
+                uuid: 'keystone',
+                name: 'Keystone',
+                order: 1,
+                isHardware: true,
+              ),
+            ],
+            activeAccountUuid: 'keystone',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_welcome_derive_account')),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<MobileCustomiseAccountScreen>(
+        find.byType(MobileCustomiseAccountScreen),
+      );
+      expect(screen.args.deriveFromAccountUuid, 'software');
+      expect(screen.args.mnemonic, isEmpty);
     },
   );
 
@@ -381,3 +528,24 @@ void main() {
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
   });
 }
+
+class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier(this.fixedState);
+
+  final AccountState fixedState;
+
+  @override
+  AccountState build() => fixedState;
+}
+
+const _softwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'software-account',
+      name: 'Software account',
+      order: 0,
+      isSeedAnchor: true,
+    ),
+  ],
+  activeAccountUuid: 'software-account',
+);

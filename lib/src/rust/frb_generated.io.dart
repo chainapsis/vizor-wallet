@@ -155,6 +155,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SoftwareAccountDerivationLease
+  dco_decode_box_autoadd_software_account_derivation_lease(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -580,6 +584,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_signed_vote_commitments_view(dynamic raw);
 
   @protected
+  SoftwareAccountDerivationLease?
+  dco_decode_opt_box_autoadd_software_account_derivation_lease(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -671,6 +679,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
+    dynamic raw,
+  );
+
+  @protected
+  SoftwareAccountDerivationLease dco_decode_software_account_derivation_lease(
     dynamic raw,
   );
 
@@ -935,6 +948,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView sse_decode_box_autoadd_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareAccountDerivationLease
+  sse_decode_box_autoadd_software_account_derivation_lease(
     SseDeserializer deserializer,
   );
 
@@ -1482,6 +1501,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SoftwareAccountDerivationLease?
+  sse_decode_opt_box_autoadd_software_account_derivation_lease(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -1591,6 +1616,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareAccountDerivationLease sse_decode_software_account_derivation_lease(
     SseDeserializer deserializer,
   );
 
@@ -1910,6 +1940,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_software_account_derivation_lease(
+    SoftwareAccountDerivationLease self,
     SseSerializer serializer,
   );
 
@@ -2577,6 +2613,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_software_account_derivation_lease(
+    SoftwareAccountDerivationLease? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
@@ -2711,6 +2753,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_account_derivation_lease(
+    SoftwareAccountDerivationLease self,
     SseSerializer serializer,
   );
 

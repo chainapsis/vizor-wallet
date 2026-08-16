@@ -43,6 +43,7 @@ void main() {
       isSeedAnchor: false,
       profilePictureId: 'pfp-04',
       walletLinkSourceAccountUuid: 'desktop-account-1',
+      accountGroupName: 'Everyday wallet',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -58,6 +59,7 @@ void main() {
     expect(merged.isSeedAnchor, isTrue);
     expect(merged.profilePictureId, 'pfp-04');
     expect(merged.walletLinkSourceAccountUuid, 'desktop-account-1');
+    expect(merged.accountGroupName, 'Everyday wallet');
   });
 
   test(
@@ -126,6 +128,29 @@ void main() {
 
     expect(merged.isHardware, isTrue);
     expect(merged.name, 'Stored Keystone');
+  });
+
+  test('mergeBootstrappedAccountInfo uses Rust seed family metadata', () {
+    const rustAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Rust Account',
+      order: 0,
+      seedFamilyId: 'rust-family',
+    );
+    const storedAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Stored Account',
+      order: 0,
+      seedFamilyId: 'stale-family',
+    );
+
+    final merged = mergeBootstrappedAccountInfo(
+      rustAccount: rustAccount,
+      storedAccount: storedAccount,
+      order: 0,
+    );
+
+    expect(merged.seedFamilyId, 'rust-family');
   });
 
   test('empty bootstrap has no password rotation recovery failure', () {

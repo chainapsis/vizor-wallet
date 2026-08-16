@@ -121,6 +121,7 @@ class _CustomiseAccountScreenState
       setupArgs: args.setupArgs,
       accountName: _normalizedName,
       profilePictureId: _profilePictureId,
+      deriveFromAccountUuid: args.deriveFromAccountUuid,
       onStoppingSync: () {
         if (!mounted) return;
         setState(() => _finishPhase = _FinishPhase.stoppingSync);
@@ -131,15 +132,22 @@ class _CustomiseAccountScreenState
       },
     );
 
+    final routerRefresh = ref.read(routerRefreshProvider);
     if (pendingPassword == null) {
-      await createAccount();
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
+      // Account creation notifies router dependencies before the explicit
+      // home navigation below. Preserve this extra-backed route until both
+      // operations complete, including the derive-account path.
+      await routerRefresh.pauseWhile(() async {
+        await createAccount();
+        if (!args.isDeriveFlow) {
+          clearCustomisedAccountDraft(ref, args.flow);
+        }
+        router.go('/home');
+      });
       return;
     }
 
     final securityNotifier = ref.read(appSecurityProvider.notifier);
-    final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
     try {
@@ -189,6 +197,12 @@ class _CustomiseAccountScreenState
 
   OnboardingBackTarget? get _backTarget {
     final args = widget.args;
+    if (args.isDeriveFlow) {
+      return const OnboardingBackTarget.route(
+        label: 'Add account',
+        routePath: '/add-account',
+      );
+    }
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
         label: 'Set Password',
