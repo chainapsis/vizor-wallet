@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/material.dart'
+    show CircularProgressIndicator, InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/naming/ens_name.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -10,9 +12,14 @@ import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_models.dart';
+import '../providers/swap_state_provider.dart' show evmChainIdFor;
 import 'swap_modal_controls.dart';
 
-typedef SwapAddressSubmitCallback = void Function(String value, bool remember);
+/// Returns `true` when [value] was accepted (the modal should close);
+/// `false` keeps the modal open so the caller can surface a resolve error
+/// via [SwapState.destinationResolveStatus]/[SwapState.destinationResolveError].
+typedef SwapAddressSubmitCallback =
+    Future<bool> Function(String value, bool remember);
 
 class SwapAddressEditModal extends StatefulWidget {
   const SwapAddressEditModal({
@@ -76,12 +83,18 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     super.dispose();
   }
 
-  void _submit() {
+  // A void-returning slot (VoidCallback for the action button, and the
+  // TextField's onSubmitted-string callback below) accepts a function
+  // returning Future<void>: the call site simply discards the result, so
+  // this can still await widget.onSubmitted without changing its own
+  // signature.
+  Future<void> _submit() async {
     // Guard the keyboard "done"/enter path the same way the primary button
     // is gated, so a malformed address cannot be committed by pressing
-    // enter.
+    // enter. The modal does not pop itself on submit — the caller awaits
+    // onSubmitted and only closes the modal when it resolves `true`.
     if (!_canSubmit) return;
-    widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+    await widget.onSubmitted(_controller.text.trim(), _rememberAddress);
   }
 
   void _toggleRemember() {
@@ -90,7 +103,20 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     });
   }
 
-  bool get _canSubmit => _formatError == null;
+  bool get _canSubmit =>
+      _formatError == null &&
+      widget.state.destinationResolveStatus !=
+          SwapDestinationResolveStatus.resolving;
+
+  /// True when the destination chain both is EVM and is one Vizor can
+  /// actually resolve ENS names against (see [evmChainIdFor]), so a `.eth`
+  /// name typed here is submittable rather than a format error.
+  bool get _isEvmDestination {
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    return network != null && network.isEvm && evmChainIdFor(network) != null;
+  }
 
   AddressFormatFinding? get _formatFinding {
     final trimmed = _controller.text.trim();
@@ -99,6 +125,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
       widget.state.externalAsset.chainTicker,
     );
     if (network == null) return null;
+    // A name is never a format error on a chain it can actually resolve on;
+    // on every other chain (including EVM chains Vizor can't resolve against)
+    // it keeps failing the normal address-format check.
+    if (isEnsName(trimmed) && _isEvmDestination) return null;
     return addressFormatCheck(network, trimmed);
   }
 
@@ -108,6 +138,16 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final finding = _formatFinding;
     return finding?.severity == AddressFormatSeverity.error
         ? finding!.message
+        : null;
+  }
+
+  /// The last resolve attempt's error, shown in the same message slot as
+  /// [_formatError] but taking priority over it — surfaced only while
+  /// [SwapState.destinationResolveStatus] is [SwapDestinationResolveStatus.failed].
+  String? get _resolveError {
+    return widget.state.destinationResolveStatus ==
+            SwapDestinationResolveStatus.failed
+        ? widget.state.destinationResolveError
         : null;
   }
 
@@ -145,6 +185,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
         : 'Remember this address for refunds';
     final formatFinding = _formatFinding;
     final matchedContact = _matchedContact;
+    final resolveError = _resolveError;
+    final isResolving =
+        widget.state.destinationResolveStatus ==
+        SwapDestinationResolveStatus.resolving;
 
     return AppModalCard(
       key: const ValueKey('swap_address_modal'),
@@ -188,16 +232,29 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   onChanged: (_) => setState(() {}),
                   onScan: widget.onScan,
                   onOpenContacts: widget.onOpenContacts,
+                  isResolving: isResolving,
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 // The design reserves a 16dp message line under the field even
                 // while it is empty, so the field→description gap stays put
                 // when a format error (destructive), advisory warning
                 // (secondary), or matched-contact confirmation appears.
-                // Findings take priority over the contact match.
+                // A resolve failure takes priority over a format finding,
+                // which in turn takes priority over the contact match.
                 SizedBox(
                   height: 16,
-                  child: formatFinding != null
+                  child: resolveError != null
+                      ? Text(
+                          resolveError,
+                          key: const ValueKey('swap_destination_resolve_error'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: colors.text.destructive,
+                          ),
+                        )
+                      : formatFinding != null
                       ? Text(
                           formatFinding.message,
                           key:
@@ -274,6 +331,7 @@ class _AddressInputField extends StatelessWidget {
     required this.onChanged,
     required this.onScan,
     required this.onOpenContacts,
+    this.isResolving = false,
   });
 
   final TextEditingController controller;
@@ -283,6 +341,10 @@ class _AddressInputField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
+
+  /// True while an ENS name typed into this field is being resolved; shows a
+  /// small spinner ahead of the scan/contacts icons.
+  final bool isResolving;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +388,18 @@ class _AddressInputField extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (isResolving) ...[
+                  SizedBox(
+                    key: const ValueKey('swap_destination_resolving_indicator'),
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colors.icon.accent,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
                 SwapInlineIconButton(
                   key: const ValueKey('swap_address_scan_button'),
                   iconName: AppIcons.qr,

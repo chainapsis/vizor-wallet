@@ -331,12 +331,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         contacts:
                             ref.watch(addressBookProvider).value?.contacts ??
                             const [],
-                        onSubmitted: (value, remember) {
+                        onSubmitted: (value, remember) async {
                           if (remember) {
                             unawaited(_rememberSwapAddress(value, swapState));
                           }
-                          swapNotifier.updateDestination(value);
-                          _closeSwapModal();
+                          final ok = await swapNotifier.submitDestinationAddress(
+                            value,
+                          );
+                          if (ok) _closeSwapModal();
+                          return ok;
                         },
                         onScan: _openAddressScanner,
                         onOpenContacts: _openAddressContactPicker,
