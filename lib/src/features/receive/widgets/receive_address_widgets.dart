@@ -354,7 +354,11 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
       final image = await qrImage.toImage(
         size: _CachedQrBitmap._bitmapSize,
         decoration: PrettyQrDecoration(
-          quietZone: PrettyQrQuietZone.zero,
+          // QR decoders require four clear modules on every side. The
+          // receive card's 16x24px padding is less than four modules
+          // horizontally for dense addresses, which made detection depend on
+          // the camera's orientation.
+          quietZone: const PrettyQrQuietZone.modules(4),
           image: PrettyQrDecorationImage(
             image: AssetImage(widget.embeddedImageAsset),
             scale: widget.embeddedImageScale,
