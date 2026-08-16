@@ -10,6 +10,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../swap/models/swap_address_formatting.dart';
 import '../../../swap/models/swap_models.dart';
+import '../../models/pay_address_resolution.dart';
 import '../../models/pay_recent_recipients.dart';
 
 const _recipientFieldGroupHeight = 81.0;
@@ -284,6 +285,12 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
   Widget _buildRecipientField(BuildContext context) {
     final colors = context.colors;
     final hasError = widget.addressError != null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.externalAsset.chainTicker,
+    );
+    final hint = payChainSupportsEns(network)
+        ? '${widget.externalAsset.chainLabel} address or .eth'
+        : '${widget.externalAsset.chainLabel} address';
     return SizedBox(
       key: const ValueKey('mobile_pay_recipient_field_group'),
       height: _recipientFieldGroupHeight,
@@ -296,7 +303,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
             controller: widget.controller,
             focusNode: _focusNode,
             enabled: !widget.busy,
-            hintText: '${widget.externalAsset.chainLabel} address',
+            hintText: hint,
             keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
             textStyle: AppTypography.labelLarge.copyWith(

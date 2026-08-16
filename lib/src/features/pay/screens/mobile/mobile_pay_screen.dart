@@ -25,6 +25,7 @@ import '../../../swap/providers/swap_activity_store.dart'
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../../swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../models/pay_address_resolution.dart';
 import '../../models/pay_recent_recipients.dart';
 import '../../widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../../widgets/mobile/mobile_pay_amount_step.dart';
@@ -247,6 +248,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     }
   }
 
+  /// Recipient-step CONTINUE: resolves a typed `.eth` name (pinning the
+  /// resolved 0x into `destinationText`) before opening the review, so no
+  /// name ever reaches a quote. A plain address flows through unchanged. A
+  /// failed resolve keeps the wizard on the recipient step; the failure
+  /// surfaces via `destinationResolveStatus`/`destinationResolveError`.
+  Future<void> _resolveThenReview() async {
+    final notifier = ref.read(swapStateProvider.notifier);
+    final ok = await notifier.submitDestinationAddress(
+      ref.read(swapStateProvider).destinationText,
+    );
+    if (!ok || !mounted) return;
+    await _openReview();
+  }
+
   @override
   Widget build(BuildContext context) {
     final swapState = ref.watch(swapStateProvider);
@@ -280,6 +295,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             intents: swapIntentsFromRecords(records),
             network: network,
           );
+    final effectiveAddressError = payEffectiveAddressError(swapState, network);
+    final recipientBusy =
+        swapState.quoteLoading ||
+        swapState.destinationResolveStatus ==
+            SwapDestinationResolveStatus.resolving;
 
     void back() {
       if (_step == _MobilePayStep.recipient) {
@@ -336,20 +356,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                   _MobilePayStep.recipient => MobilePayRecipientStep(
                     controller: _recipientController,
                     typedAddress: swapState.destinationText,
-                    addressError: swapState.destinationAddressFormatError,
+                    addressError: effectiveAddressError,
                     quoteError:
                         swapState.externalAssetSupportError ??
                         swapState.quoteError,
                     contacts: contacts,
                     recents: recents,
-                    busy: swapState.quoteLoading,
+                    busy: recipientBusy,
                     enabled: swapState.externalAssetIsSupported,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: swapNotifier.updateDestination,
                     onOpenScanner: () =>
                         _openModal(_PayModalSurface.addressScanner),
                     onChooseRecipient: swapNotifier.updateDestination,
-                    onSelectRecipient: () => unawaited(_openReview()),
+                    onSelectRecipient: () => unawaited(_resolveThenReview()),
                     onAddToContacts: () =>
                         _openModal(_PayModalSurface.addContact),
                   ),

@@ -89,7 +89,7 @@ class PayRecipientStep extends StatelessWidget {
           label: 'Recipient address',
           showLabel: false,
           controller: controller,
-          hintText: 'Paste an address or scan QR code',
+          hintText: 'Paste an address, .eth, or scan QR code',
           leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.regular),
           leadingSlotWidth: 32,
           trailing: AppIconHoverButton(

@@ -28,6 +28,7 @@ import '../../swap/screens/swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/swap_asset_selector_modal.dart';
 import '../../swap/widgets/swap_slippage_modal.dart';
+import '../models/pay_address_resolution.dart';
 import '../models/pay_recent_recipients.dart';
 import '../widgets/pay_add_contact_modal.dart';
 import '../widgets/pay_amount_step.dart';
@@ -139,6 +140,20 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         next.reviewAddressPlan != null) {
       setState(() => _wizardStep = _PayWizardStep.review);
     }
+  }
+
+  /// Recipient-step CONTINUE: resolves a typed `.eth` name (pinning the
+  /// resolved 0x into `destinationText`) before opening the review, so no
+  /// name ever reaches a quote. A plain address flows through unchanged. A
+  /// failed resolve keeps the wizard on the recipient step; the failure
+  /// surfaces via `destinationResolveStatus`/`destinationResolveError`.
+  Future<void> _resolveThenReview() async {
+    final notifier = ref.read(swapStateProvider.notifier);
+    final ok = await notifier.submitDestinationAddress(
+      ref.read(swapStateProvider).destinationText,
+    );
+    if (!ok || !mounted) return;
+    await _openReview();
   }
 
   void _startIntent() {
@@ -282,6 +297,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final recipientContact = network == null
         ? null
         : payContactForAddress(allContacts, network, recipientAddress);
+    final effectiveAddressError = payEffectiveAddressError(swapState, network);
+    final recipientBusy =
+        swapState.quoteLoading ||
+        swapState.destinationResolveStatus ==
+            SwapDestinationResolveStatus.resolving;
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
@@ -303,12 +323,12 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     };
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
-      addressError: swapState.destinationAddressFormatError,
+      addressError: effectiveAddressError,
       contacts: contacts,
-      busy: swapState.quoteLoading,
+      busy: recipientBusy,
       enabled: swapState.externalAssetIsSupported,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
-      onSelectRecipient: () => unawaited(_openReview()),
+      onSelectRecipient: () => unawaited(_resolveThenReview()),
       onAddToContacts: network == null
           ? () {}
           : () => setState(() => _payModal = _PayModalSurface.addContact),
@@ -387,10 +407,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 _PayWizardStep.recipient => PayRecipientStep(
                   controller: _recipientController,
                   typedAddress: swapState.destinationText,
-                  addressError: swapState.destinationAddressFormatError,
+                  addressError: effectiveAddressError,
                   contacts: contacts,
                   recents: recents,
-                  busy: swapState.quoteLoading,
+                  busy: recipientBusy,
                   onAddressChanged: swapNotifier.updateDestination,
                   onOpenScanner: () => setState(
                     () => _payModal = _PayModalSurface.addressScanner,
