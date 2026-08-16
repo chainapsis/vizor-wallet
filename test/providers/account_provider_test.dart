@@ -1020,6 +1020,86 @@ void main() {
     );
 
     test(
+      'acknowledgement backfills a null durable source seed family before reconciling',
+      () async {
+        // Pre-existing wallets predate seed-family metadata, so the durable
+        // source record has a null seedFamilyId. Model a crash after Rust
+        // committed the derived account but before Dart persisted it.
+        // Acknowledgement must backfill the source family from authenticated
+        // Rust metadata and recover the delta instead of permanently
+        // rejecting it because the durable source family is still null.
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              network: 'main',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'Recovered',
+              recoveryProfilePictureId: 'pfp-01',
+              recoveryAccountGroupName: null,
+            );
+        await rust.crateApiWalletDeriveNextSoftwareAccount(
+          mnemonic: 'source recovery phrase',
+          bip39Passphrase: '',
+          network: 'main',
+          dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+          name: 'Recovered',
+          operationToken: lease.operationToken,
+        );
+        await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+
+        // Durable Dart state: source only, with a legacy null seed family.
+        await AppSecureStore.instance.writeString(
+          'zcash_accounts',
+          jsonEncode([
+            const AccountInfo(
+              uuid: 'source',
+              name: 'Source',
+              order: 0,
+              isSeedAnchor: true,
+            ).toJson(),
+          ]),
+        );
+        await AppSecureStore.instance.writeAccountMnemonic(
+          source.uuid,
+          'source recovery phrase',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _v3RecoveryFenceJson(
+            sourceAccountUuid: source.uuid,
+            operationToken: lease.operationToken,
+            name: 'Recovered',
+            profilePictureId: 'pfp-01',
+            accountGroupName: null,
+          ),
+        );
+
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await container
+            .read(accountProvider.notifier)
+            .acknowledgeDerivedAccountRecovery();
+
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        final durable =
+            jsonDecode(storage.values['zcash_accounts']!) as List;
+        expect(durable, hasLength(2));
+        final sourceRow = durable.firstWhere(
+          (account) => (account as Map)['uuid'] == source.uuid,
+        );
+        expect(sourceRow['seedFamilyId'], 'software-family');
+        final derivedRow = durable.firstWhere(
+          (account) => (account as Map)['uuid'] == 'derived-1',
+        );
+        expect(derivedRow['seedFamilyId'], 'software-family');
+      },
+    );
+
+    test(
       'direct retry after a resolved no-delta fence allocates a fresh account',
       () async {
         final lease = await rust

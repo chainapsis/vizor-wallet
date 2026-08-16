@@ -371,12 +371,16 @@ pub fn resume_software_account_derivation_lease(
     db_path: &str,
     previous_operation_token: &str,
 ) -> Result<SoftwareAccountDerivationLeaseInfo, String> {
-    if software_account_derivation_leases()
+    // Hold the registry mutex across the busy check, file-lock acquisition, and
+    // final insert, exactly as the begin path does. Releasing it between the
+    // check and the insert lets two isolates in the same process both pass the
+    // check and both authenticate the same token where advisory file locks are
+    // re-entrant per process, producing two derivers whose deltas cannot be
+    // reconciled.
+    let mut leases = software_account_derivation_leases()
         .lock()
-        .expect("software derivation lease mutex poisoned")
-        .values()
-        .any(|lease| lease.db_path == db_path)
-    {
+        .expect("software derivation lease mutex poisoned");
+    if leases.values().any(|lease| lease.db_path == db_path) {
         return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
     }
     let lock_path = derivation_lock_path(db_path);
@@ -404,17 +408,14 @@ pub fn resume_software_account_derivation_lease(
     transaction
         .commit()
         .map_err(|error| format!("Failed to commit derivation recovery record: {error}"))?;
-    software_account_derivation_leases()
-        .lock()
-        .expect("software derivation lease mutex poisoned")
-        .insert(
-            previous_operation_token.to_string(),
-            SoftwareAccountDerivationLease {
-                db_path: db_path.to_string(),
-                kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
-                lock_file,
-            },
-        );
+    leases.insert(
+        previous_operation_token.to_string(),
+        SoftwareAccountDerivationLease {
+            db_path: db_path.to_string(),
+            kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
+            lock_file,
+        },
+    );
     Ok(SoftwareAccountDerivationLeaseInfo {
         operation_token: previous_operation_token.to_string(),
         source_account_uuid: record.source_account_uuid,
@@ -435,12 +436,15 @@ pub fn resume_software_account_derivation_lease(
 pub fn claim_pending_software_account_derivation_lease(
     db_path: &str,
 ) -> Result<Option<SoftwareAccountDerivationLeaseInfo>, String> {
-    if software_account_derivation_leases()
+    // Hold the registry mutex across the busy check, file-lock acquisition, and
+    // final insert, exactly as the begin path does. Releasing it between the
+    // check and the insert lets two isolates in the same process both pass the
+    // check and both authenticate the same crash-left record where advisory
+    // file locks are re-entrant per process.
+    let mut leases = software_account_derivation_leases()
         .lock()
-        .expect("software derivation lease mutex poisoned")
-        .values()
-        .any(|lease| lease.db_path == db_path)
-    {
+        .expect("software derivation lease mutex poisoned");
+    if leases.values().any(|lease| lease.db_path == db_path) {
         return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
     }
     let lock_file = OpenOptions::new()
@@ -503,17 +507,14 @@ pub fn claim_pending_software_account_derivation_lease(
         recovery_account_group_name: record.recovery_account_group_name.clone(),
         is_pending: true,
     };
-    software_account_derivation_leases()
-        .lock()
-        .expect("software derivation lease mutex poisoned")
-        .insert(
-            record.operation_token,
-            SoftwareAccountDerivationLease {
-                db_path: db_path.to_string(),
-                kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
-                lock_file,
-            },
-        );
+    leases.insert(
+        record.operation_token,
+        SoftwareAccountDerivationLease {
+            db_path: db_path.to_string(),
+            kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
+            lock_file,
+        },
+    );
     Ok(Some(info))
 }
 
@@ -3925,6 +3926,53 @@ mod tests {
         resolve_software_account_derivation_lease(&b_token, None).unwrap();
         finalize_software_account_derivation_lease(&b_token).unwrap();
         finish_software_account_derivation_lease(&b_token).unwrap();
+    }
+
+    #[test]
+    fn resume_and_claim_reject_a_second_in_process_lease() {
+        // The registry busy-check, file-lock acquisition, and insertion must be
+        // atomic in resume/claim, exactly as in begin. Otherwise two isolates
+        // in one process could both pass the check and both authenticate the
+        // same crash-left record on a platform where advisory file locks are
+        // re-entrant per process, producing two derivers whose deltas cannot
+        // be reconciled.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+
+        let token = begin_software_account_derivation_lease(
+            db_path,
+            WalletNetwork::Main,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
+
+        // A second in-process caller must be denied even with the correct token
+        // while this process already owns the lease.
+        let resume_err = resume_software_account_derivation_lease(db_path, &token)
+            .expect_err("resume must not grant a second in-process lease");
+        assert!(resume_err.contains("already in progress"));
+        let claim_err = claim_pending_software_account_derivation_lease(db_path)
+            .expect_err("claim must not grant a second in-process lease");
+        assert!(claim_err.contains("already in progress"));
+
+        // After the first owner fully releases its OS lock, resume re-acquires
+        // the still-pending record.
+        finish_software_account_derivation_lease(&token).unwrap();
+        let resumed = resume_software_account_derivation_lease(db_path, &token).unwrap();
+        assert_eq!(resumed.operation_token, token);
+        assert!(resumed.is_pending);
+        resolve_software_account_derivation_lease(&token, None).unwrap();
+        finalize_software_account_derivation_lease(&token).unwrap();
+        finish_software_account_derivation_lease(&token).unwrap();
     }
 
     #[test]

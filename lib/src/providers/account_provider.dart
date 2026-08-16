@@ -706,7 +706,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               _derivedAccountRecoveryKey,
             );
             if (persistedFence != recoveryFenceRaw) {
+              // The fence never became durable, so no later operation can
+              // claim this native record. Resolve the verified no-delta
+              // baseline and finalize (delete) the SQLite record before
+              // propagating the error. Leaving it merely resolved would keep
+              // `reject_unfinalized_derivation` blocking every subsequent
+              // create/import/hardware constructor until the user happened to
+              // retry this exact derive flow.
               await rust_wallet.resolveSoftwareAccountDerivationLease(
+                operationToken: operationToken,
+              );
+              await rust_wallet.finalizeSoftwareAccountDerivationLease(
                 operationToken: operationToken,
               );
             }
@@ -989,6 +999,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       previousOperationToken: fence.operationToken!,
     );
     try {
+      // Pre-existing wallets may hold a durable source record with no
+      // seedFamilyId (bootstrap only merges the Rust value into memory).
+      // Backfill it from authenticated Rust metadata before reconciliation so
+      // recovery cannot permanently reject a valid delta whose durable source
+      // family is still null.
+      await _persistDurableSourceSeedFamilyMetadata(
+        dbPath: dbPath,
+        network: network,
+        sourceAccountUuid: fence.sourceAccountUuid,
+      );
       await _recoverPendingDerivedAccount(
         dbPath: dbPath,
         network: network,
