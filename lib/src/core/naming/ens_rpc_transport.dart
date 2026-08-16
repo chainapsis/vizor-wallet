@@ -78,7 +78,13 @@ class HttpEnsRpcTransport implements EnsRpcTransport {
         continue;
       }
 
-      final decoded = jsonDecode(responseBody);
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(responseBody);
+      } on FormatException catch (e) {
+        lastError = e;
+        continue;
+      }
       if (decoded is! Map<String, dynamic>) {
         lastError = EnsRpcException(
           'Unexpected JSON-RPC response shape from $endpoint',
@@ -133,7 +139,14 @@ class HttpEnsRpcTransport implements EnsRpcTransport {
       responseBody = await _fetchCcip('POST', uri, body);
     }
 
-    final decoded = jsonDecode(responseBody);
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(responseBody);
+    } on FormatException catch (e) {
+      throw EnsRpcException(
+        'CCIP-Read gateway response was not valid JSON: $e',
+      );
+    }
     if (decoded is Map<String, dynamic>) {
       final result = decoded['data'];
       if (result is String) {

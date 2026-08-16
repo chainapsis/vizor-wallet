@@ -120,6 +120,48 @@ void main() {
       );
     });
 
+    test(
+      'falls through to second endpoint when first returns non-JSON body',
+      () async {
+        final calls = <Uri>[];
+        final transport = HttpEnsRpcTransport(
+          postJson: (uri, body) async {
+            calls.add(uri);
+            if (calls.length == 1) {
+              return '<html>rate limited</html>';
+            }
+            return jsonEncode({
+              'jsonrpc': '2.0',
+              'id': 1,
+              'result': '0xsecondendpoint',
+            });
+          },
+        );
+
+        final result = await transport.ethCall(to: '0xabc', data: '0x123');
+
+        expect(result, '0xsecondendpoint');
+        expect(calls, hasLength(2));
+        expect(calls[0], Uri.parse('https://eth.llamarpc.com'));
+        expect(calls[1], Uri.parse('https://ethereum-rpc.publicnode.com'));
+      },
+    );
+
+    test(
+      'throws EnsRpcException (not FormatException) when all endpoints '
+      'return non-JSON bodies',
+      () async {
+        final transport = HttpEnsRpcTransport(
+          postJson: (uri, body) async => '<html>rate limited</html>',
+        );
+
+        await expectLater(
+          transport.ethCall(to: '0xabc', data: '0x123'),
+          throwsA(isA<EnsRpcException>()),
+        );
+      },
+    );
+
     test('uses injected endpoint list instead of default', () async {
       final calls = <Uri>[];
       final transport = HttpEnsRpcTransport(
@@ -192,5 +234,26 @@ void main() {
       expect(decoded['sender'], '0xsender');
       expect(decoded['data'], '0xdatavalue');
     });
+
+    test(
+      'throws EnsRpcException (not FormatException) when gateway returns '
+      'non-JSON body',
+      () async {
+        final transport = HttpEnsRpcTransport(
+          postJson: (uri, body) async =>
+              jsonEncode({'jsonrpc': '2.0', 'id': 1, 'result': '0x01'}),
+          fetchCcip: (method, uri, body) async => '<html>not json</html>',
+        );
+
+        await expectLater(
+          transport.ccipFetch(
+            url: 'https://gateway.example.com/{sender}/{data}.json',
+            sender: '0xsender',
+            data: '0xdatavalue',
+          ),
+          throwsA(isA<EnsRpcException>()),
+        );
+      },
+    );
   });
 }
