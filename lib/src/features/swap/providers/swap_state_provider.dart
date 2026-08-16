@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/naming/ens_name.dart';
+import '../../../core/naming/ens_name_resolver.dart';
+import '../../../providers/ens_resolver_provider.dart';
+import '../../address_book/models/address_book_contact.dart';
 import '../models/swap_amount_input_mapper.dart';
 import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
@@ -61,6 +65,22 @@ final class SwapStartedKeystoneSigning extends SwapStartResult {
 
 SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
     direction.sendsZec ? SwapQuoteMode.exactInput : SwapQuoteMode.flexInput;
+
+/// ENSIP-11 chain ids for the chains Vizor can resolve ENS names against.
+/// Returns null for any chain not in this set (including non-EVM chains),
+/// which callers treat as "names unsupported here".
+int? evmChainIdFor(AddressBookNetwork network) => switch (network) {
+  AddressBookNetwork.ethereum => 1,
+  AddressBookNetwork.base => 8453,
+  AddressBookNetwork.arbitrum => 42161,
+  AddressBookNetwork.optimism => 10,
+  AddressBookNetwork.polygon => 137,
+  AddressBookNetwork.binanceSmartChain => 56,
+  AddressBookNetwork.avalanche => 43114,
+  AddressBookNetwork.gnosis => 100,
+  AddressBookNetwork.scroll => 534352,
+  _ => null,
+};
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
@@ -298,6 +318,9 @@ class SwapNotifier extends Notifier<SwapState> {
           clearQuoteError: true,
           clearStatusError: true,
           clearMaxAmountError: true,
+          destinationResolveStatus: SwapDestinationResolveStatus.idle,
+          clearDestinationEnsName: true,
+          clearDestinationResolveError: true,
         ),
       ),
     );
@@ -350,6 +373,9 @@ class SwapNotifier extends Notifier<SwapState> {
           clearQuoteError: true,
           clearStatusError: true,
           clearMaxAmountError: true,
+          destinationResolveStatus: SwapDestinationResolveStatus.idle,
+          clearDestinationEnsName: true,
+          clearDestinationResolveError: true,
         ),
       ),
     );
@@ -373,7 +399,101 @@ class SwapNotifier extends Notifier<SwapState> {
       destinationText: value,
       reviewVisible: false,
       clearMaxAmountError: true,
+      // Typing is never a resolved name, so any name/error carried from a
+      // prior resolution can no longer describe this text.
+      destinationResolveStatus: SwapDestinationResolveStatus.idle,
+      clearDestinationEnsName: true,
+      clearDestinationResolveError: true,
     );
+  }
+
+  /// Shared resolve-and-commit path for the destination field. When [input]
+  /// is a `.eth` name on an EVM destination chain, resolves it once and pins
+  /// the returned address into [SwapState.destinationText] so no name ever
+  /// reaches a quote; the display name is kept separately in
+  /// [SwapState.destinationEnsName]. A plain address commits unchanged.
+  ///
+  /// Fails closed: every failure path leaves [SwapState.destinationText]
+  /// untouched and reports [SwapDestinationResolveStatus.failed] with an
+  /// explanatory [SwapState.destinationResolveError].
+  Future<bool> submitDestinationAddress(
+    String input, {
+    bool remember = false,
+  }) async {
+    final trimmed = input.trim();
+    _clearReviewState();
+
+    if (!isEnsName(trimmed)) {
+      state = state.copyWith(
+        destinationText: trimmed,
+        reviewVisible: false,
+        clearMaxAmountError: true,
+        destinationResolveStatus: SwapDestinationResolveStatus.idle,
+        clearDestinationEnsName: true,
+        clearDestinationResolveError: true,
+      );
+      return true;
+    }
+
+    final network = AddressBookNetwork.tryFromChainTicker(
+      state.externalAsset.chainTicker,
+    );
+    final chainId = (network != null && network.isEvm)
+        ? evmChainIdFor(network)
+        : null;
+    if (chainId == null) {
+      state = state.copyWith(
+        destinationResolveStatus: SwapDestinationResolveStatus.failed,
+        destinationResolveError: 'Names are not supported on this chain',
+      );
+      return false;
+    }
+
+    final String normalized;
+    try {
+      normalized = normalizeEnsName(trimmed);
+    } on EnsNameException catch (e) {
+      state = state.copyWith(
+        destinationResolveStatus: SwapDestinationResolveStatus.failed,
+        destinationResolveError: e.message,
+      );
+      return false;
+    }
+
+    // Emit the resolving status before awaiting so callers (and widget
+    // tests) can observe in-flight resolution.
+    state = state.copyWith(
+      destinationResolveStatus: SwapDestinationResolveStatus.resolving,
+      clearDestinationResolveError: true,
+    );
+
+    try {
+      final resolved = await ref
+          .read(ensResolverProvider)
+          .resolveEvmAddress(normalized, chainId: chainId);
+      state = state.copyWith(
+        destinationText: resolved,
+        destinationEnsName: normalized,
+        destinationResolveStatus: SwapDestinationResolveStatus.idle,
+        clearDestinationResolveError: true,
+        reviewVisible: false,
+        clearMaxAmountError: true,
+      );
+      return true;
+    } on EnsResolutionException catch (e) {
+      final message = switch (e.kind) {
+        EnsResolutionFailure.notRegistered ||
+        EnsResolutionFailure.noRecord =>
+          'Name has no address for this chain',
+        EnsResolutionFailure.network => 'Could not resolve name',
+        EnsResolutionFailure.invalidName => e.message,
+      };
+      state = state.copyWith(
+        destinationResolveStatus: SwapDestinationResolveStatus.failed,
+        destinationResolveError: message,
+      );
+      return false;
+    }
   }
 
   void selectExternalAsset(SwapAsset asset) {
@@ -398,6 +518,14 @@ class SwapNotifier extends Notifier<SwapState> {
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
             payMode: false,
+            // A stale ENS name/error can never describe a different or
+            // cleared address, so it only survives when the address itself
+            // survives (chain unchanged).
+            destinationResolveStatus: chainChanged
+                ? SwapDestinationResolveStatus.idle
+                : null,
+            clearDestinationEnsName: chainChanged,
+            clearDestinationResolveError: chainChanged,
           ),
         ),
       ),
@@ -440,6 +568,14 @@ class SwapNotifier extends Notifier<SwapState> {
                 ? ''
                 : null,
             payMode: true,
+            destinationResolveStatus:
+                clearDestinationOnChainChange && chainChanged
+                ? SwapDestinationResolveStatus.idle
+                : null,
+            clearDestinationEnsName:
+                clearDestinationOnChainChange && chainChanged,
+            clearDestinationResolveError:
+                clearDestinationOnChainChange && chainChanged,
           ),
         ),
       ),
@@ -840,6 +976,9 @@ class SwapNotifier extends Notifier<SwapState> {
         clearQuoteError: true,
         clearStatusError: true,
         clearSelectedIntent: true,
+        destinationResolveStatus: SwapDestinationResolveStatus.idle,
+        clearDestinationEnsName: true,
+        clearDestinationResolveError: true,
       );
       log(
         'Swap: hardware ZEC deposit waiting for Keystone signing '
@@ -871,6 +1010,9 @@ class SwapNotifier extends Notifier<SwapState> {
       clearQuoteError: true,
       clearStatusError: true,
       clearPendingKeystoneSigningIntent: true,
+      destinationResolveStatus: SwapDestinationResolveStatus.idle,
+      clearDestinationEnsName: true,
+      clearDestinationResolveError: true,
     );
     await _persistCurrentIntents();
 
@@ -1020,6 +1162,12 @@ class SwapNotifier extends Notifier<SwapState> {
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
+      // The retried intent only ever recorded a resolved address, never a
+      // name, so any previous ENS name/error can no longer describe this
+      // destination.
+      destinationResolveStatus: SwapDestinationResolveStatus.idle,
+      clearDestinationEnsName: true,
+      clearDestinationResolveError: true,
     );
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(state),
@@ -1623,6 +1771,9 @@ class SwapNotifier extends Notifier<SwapState> {
       clearMaxAmountError: true,
       clearSelectedIntent: true,
       clearPendingKeystoneSigningIntent: true,
+      destinationResolveStatus: SwapDestinationResolveStatus.idle,
+      clearDestinationEnsName: true,
+      clearDestinationResolveError: true,
     );
   }
 
