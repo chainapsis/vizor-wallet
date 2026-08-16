@@ -229,5 +229,46 @@ void main() {
       );
       expect(transport.calls, hasLength(1));
     });
+
+    test(
+      'throws noRecord (fail-closed) for valid UTF-8 text that is not a '
+      'valid Zcash address',
+      () async {
+        final payload = 'not a zcash address'.codeUnits;
+        final transport = _FakeTransport([_resolveResultHex(payload)]);
+        final resolver = EnsNameResolver(transport);
+
+        await expectLater(
+          resolver.resolveZcashAddress('vitalik.eth'),
+          throwsA(
+            isA<EnsResolutionException>().having(
+              (e) => e.kind,
+              'kind',
+              EnsResolutionFailure.noRecord,
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws invalidName for a non-.eth input without calling transport',
+      () async {
+        final transport = _FakeTransport([]);
+        final resolver = EnsNameResolver(transport);
+
+        await expectLater(
+          resolver.resolveZcashAddress('not a name'),
+          throwsA(
+            isA<EnsResolutionException>().having(
+              (e) => e.kind,
+              'kind',
+              EnsResolutionFailure.invalidName,
+            ),
+          ),
+        );
+        expect(transport.calls, isEmpty);
+      },
+    );
   });
 }

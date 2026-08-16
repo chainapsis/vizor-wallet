@@ -23,7 +23,7 @@ class EnsResolutionException implements Exception {
 }
 
 const _offchainLookupSelector = '0x556f1830';
-final _zeroCoinType = BigInt.from(60);
+final _ethCoinType = BigInt.from(60);
 final _zecCoinType = BigInt.from(133);
 
 /// Resolves ENS names to EVM addresses (ENSIP-11 chain-specific records,
@@ -56,7 +56,7 @@ class EnsNameResolver {
       payload = await _fetchRecordPayload(
         dnsName: dnsName,
         node: node,
-        coinType: _zeroCoinType,
+        coinType: _ethCoinType,
       );
     }
 
