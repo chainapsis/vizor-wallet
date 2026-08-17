@@ -954,8 +954,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      final memo = _effectiveMemo;
-
       // Step 1: Propose transfer
       log('Send: proposing transfer');
       final accountUuid = widget.activeAccountUuid;
@@ -1022,6 +1020,32 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         sendAddress = resolved;
         sendAddressType = validation.addressType;
       }
+
+      // Re-evaluate the hardware-TEX and shielded-only-memo guards against the
+      // RESOLVED address type. Before resolution the type is 'ens', so the
+      // earlier checks passed vacuously; a name resolving to a TEX/transparent
+      // address must be blocked or handled exactly as if that address had been
+      // typed directly (task-14 funds-safety review, finding 1). `_addressType`
+      // now reflects the resolved type, so these getters re-check correctly.
+      if (_isHardwareTexSend) {
+        setState(() {
+          _error = _hardwareTexUnsupportedText;
+          _isSending = false;
+        });
+        return;
+      }
+      if (_memoError != null) {
+        setState(() {
+          _error = _memoError;
+          _isSending = false;
+        });
+        return;
+      }
+
+      // Recompute the effective memo now that `_addressType` reflects the
+      // resolved type: a transparent-like recipient drops the memo exactly as a
+      // directly-typed transparent address would.
+      final memo = _effectiveMemo;
 
       final reviewArgs = await proposeSendTransfer(
         ref: ref,

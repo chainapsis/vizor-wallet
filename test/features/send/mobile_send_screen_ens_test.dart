@@ -25,10 +25,17 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _resolvedShielded =
     'u1resolvedzcashaddress0000000000000000000000000000000000000000000000000';
+const _resolvedShielded2 =
+    'u1resolvedzcashaddress2222222222222222222222222222222222222222222222222';
+// Resolved TEX address the fake resolver returns for the hardware-guard test.
+const _resolvedTex = 'tex1resolvedtexaddress00000000000000000000';
 const _ensName = 'alice.eth';
+const _hardwareTexUnsupportedText = 'Keystone does not support TEX sends yet.';
 
 int _proposeSendCalls = 0;
 String? _lastProposeToAddress;
+// Address type the fake validateAddress reports for a resolved address.
+String _nextAddressType = 'unified';
 
 void main() {
   setUpAll(() {
@@ -39,6 +46,7 @@ void main() {
   setUp(() {
     _proposeSendCalls = 0;
     _lastProposeToAddress = null;
+    _nextAddressType = 'unified';
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -90,6 +98,86 @@ void main() {
     expect(_lastProposeToAddress, isNot(_ensName));
   });
 
+  testWidgets(
+    'editing the recipient after a successful resolve clears the pin',
+    (tester) async {
+      final resolver = _FakeEnsResolver(result: _resolvedShielded);
+      await tester.pumpWidget(_app(resolver: resolver));
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, _ensName);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(resolver.calls, 1);
+
+      // Go back to the recipient step and edit the field. The onChanged clear
+      // must drop the pinned ENS name so a subsequent Continue re-resolves and
+      // propose does not reuse the stale resolved address.
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+
+      resolver.result = _resolvedShielded2;
+      await _enterAddress(tester, 'bob.eth');
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      expect(resolver.calls, 2);
+      expect(resolver.lastName, 'bob.eth');
+
+      await _enterAmount(tester, '1.5');
+      await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      // The freshly resolved address — never the stale first pin — reaches
+      // propose.
+      expect(_proposeSendCalls, 1);
+      expect(_lastProposeToAddress, _resolvedShielded2);
+      expect(_lastProposeToAddress, isNot(_resolvedShielded));
+    },
+  );
+
+  testWidgets(
+    'a .eth name resolving to TEX on a hardware account is blocked at Continue '
+    'and never reaches propose',
+    (tester) async {
+      final resolver = _FakeEnsResolver(result: _resolvedTex);
+      _nextAddressType = 'tex';
+      await tester.pumpWidget(
+        _app(resolver: resolver, bootstrap: _hardwareBootstrap()),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, _ensName);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      // The name resolved, but the re-evaluated hardware-TEX guard blocks the
+      // send: it stays on the recipient step, shows the unsupported message,
+      // and nothing reaches propose.
+      expect(resolver.calls, 1);
+      expect(_proposeSendCalls, 0);
+      expect(
+        find.byKey(const ValueKey('mobile_send_review_button')),
+        findsNothing,
+      );
+      expect(find.text(_hardwareTexUnsupportedText), findsOneWidget);
+    },
+  );
+
   testWidgets('resolve failure keeps the recipient step and shows a message', (
     tester,
   ) async {
@@ -138,7 +226,10 @@ Future<void> _enterAmount(WidgetTester tester, String amount) async {
   await tester.pumpAndSettle();
 }
 
-Widget _app({required EnsNameResolver resolver}) {
+Widget _app({
+  required EnsNameResolver resolver,
+  AppBootstrapState? bootstrap,
+}) {
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
@@ -158,7 +249,7 @@ Widget _app({required EnsNameResolver resolver}) {
   );
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       ensResolverProvider.overrideWithValue(resolver),
       zecHomeUsdUnitPriceProvider.overrideWithValue(70),
@@ -181,6 +272,30 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState: const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+AppBootstrapState _hardwareBootstrap() => AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone 1',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
     activeAccountUuid: 'account-1',
     activeAddress: 'u1activeaddress',
   ),
@@ -258,7 +373,7 @@ class _RustApiFake implements RustLibApi {
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
   }) async {
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return AddressValidationResult(isValid: true, addressType: _nextAddressType);
   }
 
   @override

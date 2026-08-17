@@ -729,6 +729,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       });
     }
 
+    // Re-evaluate the hardware-TEX guard against the RESOLVED type: the entry
+    // guard above ran while the type was still 'ens'. A name resolving to a TEX
+    // address on a hardware account must be blocked exactly as a typed TEX
+    // address (task-14 funds-safety review, finding 1). `_addressType` is now
+    // the resolved type, so the address-step UI already surfaces
+    // `_hardwareTexUnsupportedText` and disables Continue; here we just stop this
+    // call from advancing. The shielded-only memo guard needs no re-check:
+    // `_effectiveMemo` drops the memo for a transparent-like `_addressType`,
+    // matching a typed transparent send, and the memo is entered on a later step.
+    if (_isHardwareTexRecipient) {
+      return;
+    }
+
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
@@ -1410,6 +1423,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        recipientEnsName: _recipientEnsName,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');

@@ -20,7 +20,10 @@ const _resolvedShielded =
     'u1resolvedzcashaddress0000000000000000000000000000000000000000000000000';
 const _resolvedShielded2 =
     'u1resolvedzcashaddress2222222222222222222222222222222222222222222222222';
+// Resolved TEX address the fake resolver returns for the hardware-guard test.
+const _resolvedTex = 'tex1resolvedtexaddress00000000000000000000';
 const _ensName = 'alice.eth';
+const _hardwareTexUnsupportedText = 'Keystone does not support TEX sends yet.';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -116,6 +119,40 @@ void main() {
     );
   });
 
+  testWidgets(
+    'a .eth name resolving to TEX on a hardware account is blocked at Review '
+    'and never reaches propose',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      // The name resolves; the resolved address validates as a TEX address.
+      final resolver = _FakeEnsResolver(result: _resolvedTex);
+      rustApi.nextAddressType = 'tex';
+      await tester.pumpWidget(
+        _harness(resolver: resolver, bootstrap: _hardwareBootstrap),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_editableIn('send_address_field'), _ensName);
+      await tester.pumpAndSettle();
+      await tester.enterText(_editableIn('send_amount_field'), '1.25');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Review'));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // The name resolved, but the re-evaluated hardware-TEX guard blocks the
+      // send exactly as a directly-typed TEX address on a hardware account
+      // would — nothing reaches propose.
+      expect(resolver.calls, 1);
+      expect(rustApi.proposeSendCalls, 0);
+      expect(find.text(_hardwareTexUnsupportedText), findsOneWidget);
+    },
+  );
+
   testWidgets('editing the recipient after a resolve clears the pin', (
     tester,
   ) async {
@@ -192,7 +229,10 @@ class _FakeEnsResolver extends EnsNameResolver {
 
 GoRouter? _router;
 
-Widget _harness({required EnsNameResolver resolver}) {
+Widget _harness({
+  required EnsNameResolver resolver,
+  AppBootstrapState? bootstrap,
+}) {
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
@@ -204,7 +244,7 @@ Widget _harness({required EnsNameResolver resolver}) {
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
       ensResolverProvider.overrideWithValue(resolver),
       zecHomeUsdUnitPriceProvider.overrideWithValue(70),
@@ -248,6 +288,30 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final _hardwareBootstrap = AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone 1',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 class _FakeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState(
@@ -261,19 +325,23 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
   String? lastProposeToAddress;
+  // Address type the fake validateAddress reports for a resolved address.
+  String nextAddressType = 'unified';
 
   void reset() {
     proposeSendCalls = 0;
     lastProposeToAddress = null;
+    nextAddressType = 'unified';
   }
 
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
   }) async {
-    // Any resolved Zcash string validates as a unified address here; a .eth
-    // name should never reach this call.
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    // Any resolved Zcash string validates; the reported type is configurable so
+    // tests can exercise transparent/TEX resolutions. A .eth name should never
+    // reach this call.
+    return AddressValidationResult(isValid: true, addressType: nextAddressType);
   }
 
   @override
