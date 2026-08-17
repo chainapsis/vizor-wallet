@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/naming/ens_chains.dart';
 import '../../../core/naming/ens_name.dart';
 import '../../../core/naming/ens_name_resolver.dart';
 import '../../../providers/ens_resolver_provider.dart';
@@ -66,22 +67,6 @@ final class SwapStartedKeystoneSigning extends SwapStartResult {
 
 SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
     direction.sendsZec ? SwapQuoteMode.exactInput : SwapQuoteMode.flexInput;
-
-/// ENSIP-11 chain ids for the chains Vizor can resolve ENS names against.
-/// Returns null for any chain not in this set (including non-EVM chains),
-/// which callers treat as "names unsupported here".
-int? evmChainIdFor(AddressBookNetwork network) => switch (network) {
-  AddressBookNetwork.ethereum => 1,
-  AddressBookNetwork.base => 8453,
-  AddressBookNetwork.arbitrum => 42161,
-  AddressBookNetwork.optimism => 10,
-  AddressBookNetwork.polygon => 137,
-  AddressBookNetwork.binanceSmartChain => 56,
-  AddressBookNetwork.avalanche => 43114,
-  AddressBookNetwork.gnosis => 100,
-  AddressBookNetwork.scroll => 534352,
-  _ => null,
-};
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;

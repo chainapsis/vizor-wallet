@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/naming/ens_name_resolver.dart';
 import 'package:zcash_wallet/src/core/naming/ens_rpc_transport.dart';
-import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -14,26 +13,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/ens_resolver_provider.dart';
 
 void main() {
-  group('evmChainIdFor', () {
-    test('maps supported EVM chains to ENSIP-11 chain ids', () {
-      expect(evmChainIdFor(AddressBookNetwork.ethereum), 1);
-      expect(evmChainIdFor(AddressBookNetwork.base), 8453);
-      expect(evmChainIdFor(AddressBookNetwork.arbitrum), 42161);
-      expect(evmChainIdFor(AddressBookNetwork.optimism), 10);
-      expect(evmChainIdFor(AddressBookNetwork.polygon), 137);
-      expect(evmChainIdFor(AddressBookNetwork.binanceSmartChain), 56);
-      expect(evmChainIdFor(AddressBookNetwork.avalanche), 43114);
-      expect(evmChainIdFor(AddressBookNetwork.gnosis), 100);
-      expect(evmChainIdFor(AddressBookNetwork.scroll), 534352);
-    });
-
-    test('returns null for non-EVM or unmapped chains', () {
-      expect(evmChainIdFor(AddressBookNetwork.solana), isNull);
-      expect(evmChainIdFor(AddressBookNetwork.zcash), isNull);
-      expect(evmChainIdFor(AddressBookNetwork.bitcoin), isNull);
-    });
-  });
-
+  // evmChainIdFor / chainSupportsEnsNames now live in
+  // lib/src/core/naming/ens_chains.dart and are covered by
+  // test/core/naming/ens_chains_test.dart.
   group('submitDestinationAddress', () {
     late ProviderContainer container;
     late _FakeEnsNameResolver resolver;
@@ -85,6 +67,27 @@ void main() {
       final plan = state.draftAddressPlan!;
       expect(plan.oneClickRecipient, resolver.nextResult);
     });
+
+    test(
+      'EVM→ZEC direction: the resolved address (not the name) lands in the '
+      'refund role of the address plan',
+      () async {
+        resolver.nextResult = '0x00000000219ab540356cbb839cbe05303d7705fa';
+
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.selectDirection(SwapDirection.externalToZec);
+        final ok = await notifier.submitDestinationAddress('vitalik.eth');
+
+        expect(ok, isTrue);
+        final state = container.read(swapStateProvider);
+        expect(state.destinationText, resolver.nextResult);
+        expect(state.destinationEnsName, 'vitalik.eth');
+
+        final plan = state.draftAddressPlan!;
+        expect(plan.oneClickRefundTo, resolver.nextResult);
+        expect(plan.oneClickRefundTo.contains('.eth'), isFalse);
+      },
+    );
 
     test('a plain address commits unchanged with no ENS name', () async {
       final notifier = container.read(swapStateProvider.notifier);

@@ -12,7 +12,7 @@ import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_models.dart';
-import '../providers/swap_state_provider.dart' show evmChainIdFor;
+import '../../../core/naming/ens_chains.dart';
 import 'swap_modal_controls.dart';
 
 /// Returns `true` when [value] was accepted (the modal should close);
@@ -109,13 +109,13 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
           SwapDestinationResolveStatus.resolving;
 
   /// True when the destination chain both is EVM and is one Vizor can
-  /// actually resolve ENS names against (see [evmChainIdFor]), so a `.eth`
-  /// name typed here is submittable rather than a format error.
+  /// actually resolve ENS names against (see [chainSupportsEnsNames]), so a
+  /// `.eth` name typed here is submittable rather than a format error.
   bool get _isEvmDestination {
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
-    return network != null && network.isEvm && evmChainIdFor(network) != null;
+    return chainSupportsEnsNames(network);
   }
 
   AddressFormatFinding? get _formatFinding {

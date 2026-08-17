@@ -1,14 +1,13 @@
+import '../../../core/naming/ens_chains.dart';
 import '../../../core/naming/ens_name.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../swap/models/swap_models.dart';
-import '../../swap/providers/swap_state_provider.dart' show evmChainIdFor;
 
 /// True when [network] is both EVM and a chain Vizor can actually resolve
-/// ENS names against (see [evmChainIdFor]). `null` (unrecognized chain
-/// ticker) and non-resolvable EVM chains both resolve to false.
-bool payChainSupportsEns(AddressBookNetwork? network) {
-  return network != null && network.isEvm && evmChainIdFor(network) != null;
-}
+/// ENS names against (see [chainSupportsEnsNames]). `null` (unrecognized
+/// chain ticker) and non-resolvable EVM chains both resolve to false.
+bool payChainSupportsEns(AddressBookNetwork? network) =>
+    chainSupportsEnsNames(network);
 
 /// The address-format error to surface on the pay recipient field for
 /// [network], shared by the desktop and mobile pay wizards.
