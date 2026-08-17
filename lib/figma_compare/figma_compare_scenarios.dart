@@ -4,9 +4,11 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
+import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
+import '../widgetbook/swap_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -44,6 +46,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-viewing-key-reveal',
+    description: 'Desktop viewing key reveal with privacy guidance',
+    builder: buildSettingsViewingKeyRevealUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-reveal',
+    description: 'Mobile viewing key reveal with privacy guidance',
+    builder: buildMobileSettingsViewingKeyRevealUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'import-secret-passphrase-empty',
     description: 'Desktop wallet import with empty mnemonic fields',
     builder: buildImportSecretPassphraseUseCase,
@@ -52,6 +66,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'import-secret-passphrase-populated',
     description: 'Desktop wallet import with mnemonic and BIP39 passphrase',
     builder: buildImportSecretPassphrasePopulatedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'import-secret-passphrase-invalid-word',
+    description: 'Desktop wallet import with an invalid mnemonic word',
+    builder: buildImportSecretPassphraseInvalidWordUseCase,
   ),
   FigmaCompareScenario(
     id: 'import-secret-passphrase-modal',
@@ -99,6 +118,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayRecipientNewAddressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-pay-recipient',
+    description: 'Mobile Pay recipient selection with recent contacts',
+    builder: buildMobilePayRecipientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'pay-in-progress',
     description: 'Pay activity in-progress state',
     builder: buildPayInProgressUseCase,
@@ -114,6 +140,61 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'import-customise-account',
+    description: 'Desktop imported-account personalisation screen',
+    builder: buildImportCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-main',
+    description: 'Desktop settings with Tor privacy control',
+    builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-connecting',
+    description: 'Desktop settings while Tor is connecting',
+    builder: buildSettingsTorConnectingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-connected',
+    description: 'Desktop settings with Tor connected',
+    builder: buildSettingsTorConnectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-switching-direct',
+    description: 'Desktop settings while switching from Tor to direct',
+    builder: buildSettingsTorSwitchingToDirectUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-updates-unavailable',
+    description: 'Desktop settings when Tor updates are unavailable',
+    builder: buildSettingsTorUpdatesUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-failed',
+    description: 'Desktop settings after Tor connection failure',
+    builder: buildSettingsTorFailedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-large',
+    description: 'Desktop first-wallet welcome screen',
+    builder: buildWelcomeLargeUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-network-settings',
+    description: 'Desktop first-wallet network settings with Tor control',
+    builder: buildWelcomeNetworkSettingsUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-network-settings-tor-connected',
+    description: 'Desktop first-wallet network settings with Tor connected',
+    builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-tor-blocked',
+    description: 'Desktop swap when the provider blocks a Tor exit',
+    builder: buildSwapPageTorBlockedUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,
@@ -124,6 +205,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-home-default',
     description: 'Mobile home with deterministic balance and activity',
     builder: buildMobileHomeDefaultUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-importing',
+    description: 'Mobile home while the initial wallet import is syncing',
+    builder: buildMobileHomeImportingResponsiveUseCase,
     desktop: false,
     mobile: true,
   ),

@@ -8,10 +8,8 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../import/import_birthday_calendar_overlay.dart';
 import '../import/import_birthday_estimator.dart';
 import '../import/import_birthday_unknown_height_modal.dart';
@@ -126,6 +124,7 @@ class _KeystoneWalletBirthdayScreenState
           await ImportBirthdayEstimator.estimateBirthdayHeight(
             endpoint: endpoint,
             selectedDate: date,
+            metadata: _metadata,
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
@@ -275,33 +274,17 @@ class _KeystoneWalletBirthdayScreenState
         return;
       }
 
-      final accountNotifier = ref.read(accountProvider.notifier);
-      final router = GoRouter.of(context);
-      await runWithSyncPausedForAccountMutation(
-        ref,
-        () => accountNotifier.importKeystoneAccount(
-          name: account.name,
-          ufvk: account.ufvk,
-          seedFingerprint: account.seedFingerprint.toList(),
-          zip32Index: account.index,
-          birthdayHeight: birthdayHeight,
-        ),
-        onStoppingSync: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _KeystoneBirthdaySubmitPhase.stoppingSync;
-          });
-        },
-        onSyncPaused: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _KeystoneBirthdaySubmitPhase.importing;
-          });
-        },
+      final setupArgs = SetPasswordScreenArgs.importKeystone(
+        name: account.name,
+        ufvk: account.ufvk,
+        seedFingerprint: account.seedFingerprint.toList(),
+        zip32Index: account.index,
+        birthdayHeight: birthdayHeight,
       );
-
-      ref.read(keystoneOnboardingProvider.notifier).resetScan();
-      router.go('/home');
+      context.go(
+        KeystoneOnboardingStep.customiseAccount.routePath,
+        extra: CustomiseAccountArgs(setupArgs: setupArgs),
+      );
     } catch (e, st) {
       log('KeystoneWalletBirthdayScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;

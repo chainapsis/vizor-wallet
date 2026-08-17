@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/naming/ens_name_resolver.dart';
 import 'package:zcash_wallet/src/core/naming/ens_rpc_transport.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -52,6 +53,40 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+class _EmptyAddressBookNotifier extends AddressBookNotifier {
+  @override
+  AddressBookState build() => const AddressBookState();
+}
+
+class _FakeSwapProvider implements SwapProvider {
+  @override
+  String get providerLabel => 'Fake';
+
+  @override
+  Future<List<SwapAsset>> listSupportedExternalAssets() async =>
+      swapExternalAssets;
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> startSwap(SwapQuote quote) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(String intentId, {String? depositMemo}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> submitDepositTransaction({
+    required String depositAddress,
+    required String txHash,
+    String? depositMemo,
+    String? nearSenderAccount,
+  }) => throw UnimplementedError();
+}
+
 Widget _pumpStep(Widget child) {
   return MaterialApp(
     home: AppTheme(
@@ -80,6 +115,11 @@ Widget _payApp({required EnsNameResolver resolver}) {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       ensResolverProvider.overrideWithValue(resolver),
+      // Load supported assets successfully and resolve the address book so the
+      // recipient CONTINUE (gated on externalAssetIsAvailable &&
+      // !addressBookInitialLoading) is enabled in this FFI-less widget test.
+      swapIntentProvider.overrideWithValue(_FakeSwapProvider()),
+      addressBookProvider.overrideWith(_EmptyAddressBookNotifier.new),
       // The recipient CONTINUE routes through the real showReview(), which
       // otherwise reaches into Rust FFI for a shielded staging address; fail
       // it fast so quoteLoading settles instead of spinning forever in this

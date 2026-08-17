@@ -19,12 +19,13 @@ AddressBookContact _contact({
   );
 }
 
-SwapState _state({String destinationText = ''}) {
+SwapState _state({String destinationText = '', String? userExternalContactId}) {
   return SwapState(
     direction: SwapDirection.zecToExternal,
     amountText: '',
     receiveAmountText: '',
     destinationText: destinationText,
+    userExternalContactId: userExternalContactId,
     externalAsset: SwapAsset.usdc,
     reviewVisible: false,
     intents: const [],
@@ -84,5 +85,37 @@ void main() {
       'Treasury',
     );
     expect(swapDestinationContactFor(_state(), contacts), isNull);
+  });
+
+  test('contact id distinguishes contacts that share an address', () {
+    final duplicateContacts = [
+      ...contacts,
+      _contact(
+        label: 'Operations',
+        network: AddressBookNetwork.ethereum,
+        address: evmAddress,
+      ),
+    ];
+
+    expect(
+      swapDestinationContactFor(
+        _state(
+          destinationText: evmAddress,
+          userExternalContactId: 'contact_Operations',
+        ),
+        duplicateContacts,
+      )?.label,
+      'Operations',
+    );
+  });
+
+  test('stale contact id does not rebind another duplicate', () {
+    expect(
+      swapDestinationContactFor(
+        _state(destinationText: evmAddress, userExternalContactId: 'missing'),
+        contacts,
+      ),
+      isNull,
+    );
   });
 }

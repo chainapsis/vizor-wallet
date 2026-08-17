@@ -303,6 +303,23 @@ void main() {
     );
   });
 
+  test('direct storage exceptions surface as storage unavailable', () async {
+    store = AppSecureStore.testing(storage: _DirectFailingReadStorage());
+
+    await expectLater(
+      () => store.readString('zcash_accounts'),
+      throwsA(
+        isA<SecureStorageUnavailableException>()
+            .having(
+              (error) => error.operation,
+              'operation',
+              'read "zcash_accounts"',
+            )
+            .having((error) => error.cause, 'cause', isA<FormatException>()),
+      ),
+    );
+  });
+
   test('changePassword journal stores only roll-forward data', () async {
     final blockingStorage = _BlockingDeleteStorage(
       blockKey: _rotationInProgressKey,
@@ -951,6 +968,21 @@ class _PlatformFailingReadStorage extends FlutterSecureStorage {
       code: 'Libsecret error',
       message: 'Failed to unlock the keyring',
     );
+  }
+}
+
+class _DirectFailingReadStorage extends FlutterSecureStorage {
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    throw const FormatException('Encrypted storage is malformed.');
   }
 }
 

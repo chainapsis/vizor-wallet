@@ -15,8 +15,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../providers/router_refresh_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
 import '../import/import_birthday_calendar_overlay.dart'
@@ -251,6 +249,7 @@ class _MobileImportBirthdayScreenState
           final height = await ImportBirthdayEstimator.estimateBirthdayHeight(
             endpoint: endpoint,
             selectedDate: _selectedDate!,
+            metadata: _metadata,
           );
           if (!mounted) return;
           await _submit(height);
@@ -351,56 +350,23 @@ class _MobileImportBirthdayScreenState
       _submitPhase = _MobileImportSubmitPhase.importing;
       _error = null;
     });
-    final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
     try {
-      final routerRefresh = ref.read(routerRefreshProvider);
-      await routerRefresh.pauseWhile(() async {
-        final imported = await runWithSyncPausedForAccountMutation(
-          ref,
-          () async {
-            final selectedAdditionalAccountIndices =
-                await _resolveAdditionalAccountIndices(
-                  mnemonic: widget.args.mnemonic,
-                  birthdayHeight: height,
-                );
-            if (selectedAdditionalAccountIndices == null) return false;
-            if (!mounted) return false;
-            setState(() {
-              _submitPhase = _MobileImportSubmitPhase.importing;
-            });
-            await accountNotifier.importAccount(
-              mnemonic: widget.args.mnemonic,
-              bip39Passphrase: widget.args.bip39Passphrase,
-              birthdayHeight: height,
-              additionalAccountIndices: selectedAdditionalAccountIndices,
-            );
-            return true;
-          },
-          onStoppingSync: () {
-            if (!mounted) return;
-            setState(() {
-              _submitPhase = _MobileImportSubmitPhase.stoppingSync;
-            });
-          },
-          onSyncPaused: () {
-            if (!mounted) return;
-            setState(() {
-              _submitPhase = _MobileImportSubmitPhase.importing;
-            });
-          },
-        );
-        if (!imported) {
-          if (mounted) {
-            setState(() {
-              _submitPhase = _MobileImportSubmitPhase.idle;
-            });
-          }
-          return;
-        }
-        if (!mounted) return;
-        router.go('/home');
-      });
+      final selectedAdditionalAccountIndices =
+          await _resolveAdditionalAccountIndices(
+            mnemonic: widget.args.mnemonic,
+            birthdayHeight: height,
+          );
+      if (selectedAdditionalAccountIndices == null || !mounted) return;
+      final setupArgs = SetPasswordScreenArgs.importWallet(
+        mnemonic: widget.args.mnemonic,
+        bip39Passphrase: widget.args.bip39Passphrase,
+        birthdayHeight: height,
+        selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
+      );
+      context.push(
+        '/onboarding/customise-account',
+        extra: CustomiseAccountArgs(setupArgs: setupArgs),
+      );
     } catch (e, st) {
       log('MobileImportBirthday: import failed: $e\n$st');
       if (!mounted) return;

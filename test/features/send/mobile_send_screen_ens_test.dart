@@ -253,6 +253,10 @@ Widget _app({
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       ensResolverProvider.overrideWithValue(resolver),
       zecHomeUsdUnitPriceProvider.overrideWithValue(70),
+      // Pin the live price too: the amount step listens to
+      // zecLiveUsdUnitPriceProvider, which otherwise activates the live
+      // market-data refresh timer and makes pumpAndSettle never settle.
+      zecLiveUsdUnitPriceProvider.overrideWithValue(70),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         const IronwoodHomeMigrationCtaState.hidden(),
       ),

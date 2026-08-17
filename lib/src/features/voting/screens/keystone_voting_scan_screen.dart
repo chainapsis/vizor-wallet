@@ -1,17 +1,12 @@
-import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
@@ -37,28 +32,15 @@ class _KeystoneVotingScanScreenState
     });
   }
 
-  Future<void> _handleScanComplete(ScanResult result) async {
+  void _handleScanComplete(ScanResult result) {
     if (_decoding) return;
     setState(() {
       _decoding = true;
       _error = null;
     });
 
-    try {
-      final pcztBytes = await rust_keystone.decodePcztFromCbor(
-        cbor: result.data,
-      );
-      if (!mounted) return;
-      context.pop(Uint8List.fromList(pcztBytes));
-    } catch (e, st) {
-      log('KeystoneVotingScanScreen: signed PCZT decode error: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _decoding = false;
-        _error =
-            'This QR code could not be decoded as a Keystone voting signature.';
-      });
-    }
+    if (!mounted) return;
+    context.pop(result.data);
   }
 
   void _handleDecodeError(Object error) {
@@ -126,7 +108,7 @@ class _KeystoneVotingScanScreenState
                       ),
                       const SizedBox(height: AppSpacing.base),
                       KeystoneQrScannerCard(
-                        expectedUrType: 'zcash-pczt',
+                        expectedUrType: 'zcash-batch-sig-result',
                         decoding: _decoding,
                         error: _error,
                         onProgress: (progress) {
@@ -136,8 +118,7 @@ class _KeystoneVotingScanScreenState
                           });
                         },
                         onDecodeError: _handleDecodeError,
-                        onComplete: (result) =>
-                            unawaited(_handleScanComplete(result)),
+                        onComplete: _handleScanComplete,
                         decodingLabel: 'Reading signature...',
                         unavailableMessage:
                             'Keystone voting uses camera QR scanning only. Connect a camera and try again.',

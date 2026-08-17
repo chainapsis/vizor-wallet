@@ -3,13 +3,38 @@
 #include <roapi.h>
 #include <windows.h>
 
+#include <string>
+
 #include "flutter_window.h"
+#include "single_instance.h"
 #include "utils.h"
 #include "velopack_uninstall.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   RunVelopackHooks();
+
+  SingleInstanceGuard single_instance;
+  const SingleInstanceAcquireResult instance_result = single_instance.Acquire();
+  if (instance_result == SingleInstanceAcquireResult::kSecondary) {
+    if (!ActivateExistingInstance(single_instance.activation_message())) {
+      ::MessageBoxW(
+          nullptr,
+          L"Vizor is already running. It may be starting, not responding, or "
+          L"running in another Windows session.",
+          L"Vizor", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+    }
+    return EXIT_SUCCESS;
+  }
+  if (instance_result == SingleInstanceAcquireResult::kError) {
+    const std::wstring error_message =
+        L"Vizor could not establish its single-instance lock and will close "
+        L"to protect wallet data.\n\nWindows error: " +
+        std::to_wstring(single_instance.last_error());
+    ::MessageBoxW(nullptr, error_message.c_str(), L"Vizor",
+                  MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+    return EXIT_FAILURE;
+  }
 
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
@@ -29,7 +54,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project);
+  FlutterWindow window(project, single_instance.activation_message());
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1095, 726);
   if (!window.Create(L"Vizor", origin, size)) {

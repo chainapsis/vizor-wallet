@@ -26,6 +26,8 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../../fakes/fake_zec_market_data_cache.dart';
+
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
@@ -139,6 +141,15 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
   @override
   Future<ZecMarketData?> fetchMarketData() async {
     return const ZecMarketData(usdPrice: 70);
+  }
+}
+
+class _TestZecUsdPriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 70;
+
+  void setPrice(double? price) {
+    state = price;
   }
 }
 
@@ -268,6 +279,7 @@ Widget _app({
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
   SyncNotifier Function()? syncNotifier,
+  NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
 }) {
@@ -296,6 +308,11 @@ Widget _app({
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
+      if (zecUsdPriceProvider != null)
+        zecLiveUsdUnitPriceProvider.overrideWith(
+          (ref) => ref.watch(zecUsdPriceProvider),
+        ),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(contacts),
       ),
@@ -321,7 +338,7 @@ Widget _amountStepWithPriceLoadingApp() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
-      zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+      zecLiveUsdUnitPriceProvider.overrideWithValue(null),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
@@ -356,6 +373,7 @@ Widget _reviewApp({
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
@@ -463,6 +481,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
+      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(const []),
       ),
@@ -1667,6 +1686,61 @@ void main() {
 
     expect(find.text('Review Send'), findsOneWidget);
     expect(find.text('1.50 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('USD input waits for a live price again after expiry', (
+    tester,
+  ) async {
+    final zecUsdPriceProvider =
+        NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+          _TestZecUsdPriceNotifier.new,
+        );
+    await tester.pumpWidget(_app(zecUsdPriceProvider: zecUsdPriceProvider));
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+      '105',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1.5 ZEC'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+      listen: false,
+    );
+    container.read(zecUsdPriceProvider.notifier).setPrice(null);
+    await tester.pumpAndSettle();
+
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput.controller?.text, '105');
+    expect(find.text('0 ZEC'), findsOneWidget);
+    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Enter amount to continue'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_send_review_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    container.read(zecUsdPriceProvider.notifier).setPrice(210);
+    await tester.pumpAndSettle();
+
+    expect(amountInput.controller?.text, '105');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('USD mode clears ZEC amounts that round to zero cents', (

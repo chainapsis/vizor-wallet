@@ -85,6 +85,18 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Large',
                       builder: buildWelcomeLargeUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Network settings',
+                      builder: buildWelcomeNetworkSettingsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Network settings - Tor connecting',
+                      builder: buildWelcomeNetworkSettingsTorConnectingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Network settings - Tor connected',
+                      builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -623,6 +635,26 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsMainUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Tor connecting',
+                      builder: buildSettingsTorConnectingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor connected',
+                      builder: buildSettingsTorConnectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Switching to direct',
+                      builder: buildSettingsTorSwitchingToDirectUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor updates unavailable',
+                      builder: buildSettingsTorUpdatesUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor failed',
+                      builder: buildSettingsTorFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Endpoint',
                       builder: buildSettingsEndpointUseCase,
                     ),
@@ -638,6 +670,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Secret passphrase reveal without BIP39',
                       builder:
                           buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Viewing key gate',
+                      builder: buildSettingsViewingKeyGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Viewing key reveal',
+                      builder: buildSettingsViewingKeyRevealUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Change password gate',
@@ -878,6 +918,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Unsupported fiat price',
                       builder: buildSwapPageUnsupportedFiatUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor connection blocked',
+                      builder: buildSwapPageTorBlockedUseCase,
                     ),
                   ],
                 ),

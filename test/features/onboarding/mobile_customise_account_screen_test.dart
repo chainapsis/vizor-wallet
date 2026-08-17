@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +14,6 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -21,12 +21,132 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic = 'stub mnemonic words';
 
+const _setupArgsByFlow = <SetPasswordScreenArgs>[
+  SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+  SetPasswordScreenArgs.importWallet(
+    mnemonic: _mnemonic,
+    birthdayHeight: 2500000,
+  ),
+  SetPasswordScreenArgs.importKeystone(
+    name: 'Keystone account',
+    ufvk: 'uview-test',
+    seedFingerprint: [1, 2, 3, 4],
+    zip32Index: 0,
+    birthdayHeight: 2500000,
+  ),
+];
+
 void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(393, 852)
       ..devicePixelRatio = 1.0;
+  });
+
+  for (final setupArgs in _setupArgsByFlow) {
+    testWidgets('autofocuses the account name and opens text input for '
+        '${setupArgs.flow.name}', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          MobileCustomiseAccountScreen(
+            args: CustomiseAccountArgs(setupArgs: setupArgs),
+            random: _SequenceRandom([0, 1, 2]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+      );
+
+      expect(field.focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(
+        field.controller!.selection,
+        TextSelection.collapsed(offset: field.controller!.text.length),
+      );
+    });
+  }
+
+  for (final setupArgs in _setupArgsByFlow) {
+    for (final pendingPassword in const <String?>[null, '123456']) {
+      final securityState = pendingPassword == null ? 'configured' : 'new';
+      testWidgets(
+        'hides and blocks back for ${setupArgs.flow.name} with $securityState '
+        'security',
+        (tester) async {
+          await tester.pumpWidget(
+            _harness(
+              MobileCustomiseAccountScreen(
+                args: CustomiseAccountArgs(
+                  setupArgs: setupArgs,
+                  pendingPassword: pendingPassword,
+                ),
+                onFinish: (_, _) async {},
+              ),
+            ),
+          );
+
+          expect(find.bySemanticsLabel('Back'), findsNothing);
+          expect(
+            tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+            isFalse,
+          );
+        },
+      );
+    }
+  }
+
+  testWidgets('keeps account name focused after the route transition', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const SizedBox.shrink(),
+          ),
+        ),
+        GoRoute(
+          path: '/customise',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: MobileCustomiseAccountScreen(
+              args: const CustomiseAccountArgs(
+                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              ),
+              random: _SequenceRandom([0, 1, 2]),
+              onFinish: (_, _) async {},
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routerHarness(router));
+    router.push('/customise');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    var field = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+    );
+    expect(field.focusNode!.hasFocus, isFalse);
+
+    await tester.pumpAndSettle();
+
+    field = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+    );
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
   });
 
   testWidgets('keeps its random persona stable and uses the eighth progress', (
@@ -39,7 +159,9 @@ void main() {
     await tester.pumpWidget(
       _harness(
         MobileCustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           random: random,
           onFinish: (name, profilePictureId) async {
             submittedName = name;
@@ -106,7 +228,9 @@ void main() {
     await tester.pumpWidget(
       _harness(
         MobileCustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (_, _) async => submitCount += 1,
         ),
       ),
@@ -138,7 +262,9 @@ void main() {
     await tester.pumpWidget(
       _harness(
         MobileCustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (_, profilePictureId) async {
             submittedProfilePictureId = profilePictureId;
           },
@@ -165,14 +291,16 @@ void main() {
     expect(submittedProfilePictureId, 'pfp-02');
   });
 
-  testWidgets('blocks route pops while account creation is in flight', (
+  testWidgets('blocks route pops throughout account customisation', (
     tester,
   ) async {
     final finish = Completer<void>();
     await tester.pumpWidget(
       _harness(
         MobileCustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (_, _) => finish.future,
         ),
       ),
@@ -191,66 +319,50 @@ void main() {
     finish.complete();
     await tester.pump();
 
-    expect(tester.widget<PopScope<void>>(popScope).canPop, isTrue);
+    expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
   });
 
-  testWidgets('back is safe in the router-free Widgetbook preview', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _harness(
-        const MobileCustomiseAccountScreen(
-          args: CustomiseAccountArgs(
-            mnemonic: _mnemonic,
-            pendingPassword: '123456',
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.bySemanticsLabel('Back'));
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Customise Account'), findsOneWidget);
-  });
-
-  testWidgets('returning to passcode does not reopen the phrase back stack', (
+  testWidgets('blocks platform back after a pushed passcode flow', (
     tester,
   ) async {
     final router = GoRouter(
+      initialLocation: '/',
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, _) => const MobileCustomiseAccountScreen(
-            args: CustomiseAccountArgs(
-              mnemonic: _mnemonic,
-              pendingPassword: '123456',
-            ),
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const Text('passcode route'),
           ),
         ),
         GoRoute(
-          path: '/onboarding/set-passcode',
-          builder: (_, state) =>
-              MobilePasscodeScreen(args: state.extra! as SetPasswordScreenArgs),
+          path: '/customise',
+          pageBuilder: (_, state) => CupertinoPage<void>(
+            key: state.pageKey,
+            child: const MobileCustomiseAccountScreen(
+              args: CustomiseAccountArgs(
+                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+                pendingPassword: '123456',
+              ),
+            ),
+          ),
         ),
       ],
     );
+    addTearDown(router.dispose);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp.router(
-          routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
-        ),
-      ),
-    );
-
-    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpWidget(_routerHarness(router));
+    router.push('/customise');
     await tester.pumpAndSettle();
 
-    expect(find.text('Create Passcode'), findsOneWidget);
     expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.text('Customise Account'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Customise Account'), findsOneWidget);
+    expect(find.text('passcode route'), findsNothing);
   });
 
   testWidgets('creates the initial account with the selected persona', (
@@ -264,7 +376,7 @@ void main() {
           path: '/',
           builder: (_, _) => MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
-              mnemonic: _mnemonic,
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
               pendingPassword: '123456',
             ),
             random: _SequenceRandom([0, 1, 2]),
@@ -317,7 +429,9 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => MobileCustomiseAccountScreen(
-            args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
             random: _SequenceRandom([0, 1, 2]),
           ),
         ),
@@ -348,6 +462,105 @@ void main() {
     expect(accountNotifier.createdProfilePictureId, 'pfp-03');
     expect(find.text('home route'), findsOneWidget);
   });
+
+  testWidgets('imports a software draft with the selected persona', (
+    tester,
+  ) async {
+    final accountNotifier = _RecordingAccountNotifier();
+    const setupArgs = SetPasswordScreenArgs.importWallet(
+      mnemonic: _mnemonic,
+      bip39Passphrase: 'extra words',
+      birthdayHeight: 2500000,
+      selectedAdditionalAccountIndices: [2],
+    );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(setupArgs: setupArgs),
+            random: _SequenceRandom([0, 1, 2]),
+          ),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(() => accountNotifier),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.importedMnemonic, _mnemonic);
+    expect(accountNotifier.importedBip39Passphrase, 'extra words');
+    expect(accountNotifier.importedBirthdayHeight, 2500000);
+    expect(accountNotifier.importedAdditionalAccountIndices, [2]);
+    expect(accountNotifier.importedName, 'Windborne Wardbearer');
+    expect(accountNotifier.importedProfilePictureId, 'pfp-03');
+    expect(find.text('home route'), findsOneWidget);
+  });
+
+  testWidgets('imports a Keystone draft with the selected persona', (
+    tester,
+  ) async {
+    final accountNotifier = _RecordingAccountNotifier();
+    const setupArgs = SetPasswordScreenArgs.importKeystone(
+      name: 'Keystone account',
+      ufvk: 'uview-test',
+      seedFingerprint: [1, 2, 3, 4],
+      zip32Index: 7,
+      birthdayHeight: 2500000,
+    );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(setupArgs: setupArgs),
+            random: _SequenceRandom([0, 1, 2]),
+          ),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(() => accountNotifier),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.keystoneName, 'Windborne Wardbearer');
+    expect(accountNotifier.keystoneProfilePictureId, 'pfp-03');
+    expect(accountNotifier.keystoneUfvk, 'uview-test');
+    expect(accountNotifier.keystoneZip32Index, 7);
+    expect(find.text('home route'), findsOneWidget);
+  });
 }
 
 double _stepsProgress(WidgetTester tester) {
@@ -366,6 +579,15 @@ Widget _harness(Widget child) {
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
       home: child,
+    ),
+  );
+}
+
+Widget _routerHarness(GoRouter router) {
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     ),
   );
 }
@@ -395,6 +617,16 @@ class _RecordingAccountNotifier extends AccountNotifier {
   String? createdMnemonic;
   String? createdName;
   String? createdProfilePictureId;
+  String? importedMnemonic;
+  String? importedBip39Passphrase;
+  int? importedBirthdayHeight;
+  List<int>? importedAdditionalAccountIndices;
+  String? importedName;
+  String? importedProfilePictureId;
+  String? keystoneName;
+  String? keystoneProfilePictureId;
+  String? keystoneUfvk;
+  int? keystoneZip32Index;
 
   @override
   FutureOr<AccountState> build() => const AccountState();
@@ -408,6 +640,38 @@ class _RecordingAccountNotifier extends AccountNotifier {
     createdMnemonic = mnemonic;
     createdName = name;
     createdProfilePictureId = profilePictureId;
+  }
+
+  @override
+  Future<void> importAccount({
+    required String mnemonic,
+    String bip39Passphrase = '',
+    int? birthdayHeight,
+    String? name,
+    String profilePictureId = 'pfp-01',
+    List<int> additionalAccountIndices = const [],
+  }) async {
+    importedMnemonic = mnemonic;
+    importedBip39Passphrase = bip39Passphrase;
+    importedBirthdayHeight = birthdayHeight;
+    importedAdditionalAccountIndices = additionalAccountIndices;
+    importedName = name;
+    importedProfilePictureId = profilePictureId;
+  }
+
+  @override
+  Future<void> importKeystoneAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    keystoneName = name;
+    keystoneProfilePictureId = profilePictureId;
+    keystoneUfvk = ufvk;
+    keystoneZip32Index = zip32Index;
   }
 }
 

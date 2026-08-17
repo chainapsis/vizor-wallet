@@ -21,7 +21,6 @@ import '../src/features/swap/models/swap_models.dart';
 import '../src/features/swap/providers/swap_state_provider.dart';
 
 const _mikeAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
-const _aliceAddress = '0xde709f2102306220921060314715629080e2fb77';
 const _newAddress = '0x1111111111111111111111111111111111111111';
 
 const _payContacts = [
@@ -38,7 +37,7 @@ const _payContacts = [
     id: 'widgetbook-pay-alice',
     label: 'Alice',
     network: AddressBookNetwork.ethereum,
-    address: _aliceAddress,
+    address: _mikeAddress,
     profilePictureId: 'pfp-02',
     createdAtMs: 0,
     updatedAtMs: 0,
@@ -48,11 +47,13 @@ const _payContacts = [
 final _payRecents = [
   PayRecentRecipient(
     address: _mikeAddress,
+    contactId: 'widgetbook-pay-mike',
     amountText: '990 USDC',
     lastUsedAt: DateTime(2026, 7, 8),
   ),
   PayRecentRecipient(
-    address: _aliceAddress,
+    address: _mikeAddress,
+    contactId: 'widgetbook-pay-alice',
     amountText: '125 USDC',
     lastUsedAt: DateTime(2026, 4, 27),
   ),
@@ -419,7 +420,8 @@ class _MobilePayRecipientPreviewViewState
     );
   }
 
-  void _selectRecipient(String address) {
+  void _selectRecipient(PayRecipientSelection selection) {
+    final address = selection.address;
     setState(() {
       _typedAddress = address;
       _controller.text = address;

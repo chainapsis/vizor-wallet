@@ -1147,11 +1147,13 @@ const _migrationPreviewPartsPerBatch = 8;
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
     required this.state,
+    this.isHardware = false,
     this.showPreparationCompleteModal = false,
     this.completedParts,
     this.totalParts = 24,
     this.completedBatches,
     this.totalBatches,
+    this.currentBatchNumber = 1,
     this.completedRingSegments,
     this.awaitingRingSegments,
     this.currentSigningPartIndices = const {},
@@ -1176,11 +1178,13 @@ class _MigrationProgressPreview extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+  final bool isHardware;
   final bool showPreparationCompleteModal;
   final int? completedParts;
   final int totalParts;
   final int? completedBatches;
   final int? totalBatches;
+  final int currentBatchNumber;
   final Set<int>? completedRingSegments;
   final Set<int>? awaitingRingSegments;
   final Set<int> currentSigningPartIndices;
@@ -1307,6 +1311,8 @@ class _MigrationProgressPreview extends StatelessWidget {
                 else
                   _MigrationProgressStatus(
                     state: state,
+                    isHardware: isHardware,
+                    currentBatchNumber: currentBatchNumber,
                     bodyOverride: nextActionText,
                   ),
               ],
@@ -1819,8 +1825,7 @@ class _MigrationProgressSummary extends StatelessWidget {
             completionEstimateText ??
             switch (state) {
               _MigrationProgressState.syncing => 'Syncing',
-              _MigrationProgressState.broadcasting =>
-                'All is well. Broadcasting notes…',
+              _MigrationProgressState.broadcasting => 'Migration in progress',
               _MigrationProgressState.confirming => 'Waiting for confirmations',
               _MigrationProgressState.needsInput =>
                 'Waiting for your confirmation',
@@ -1855,9 +1860,16 @@ class _MigrationSummaryRows extends StatelessWidget {
 }
 
 class _MigrationProgressStatus extends StatelessWidget {
-  const _MigrationProgressStatus({required this.state, this.bodyOverride});
+  const _MigrationProgressStatus({
+    required this.state,
+    required this.isHardware,
+    required this.currentBatchNumber,
+    this.bodyOverride,
+  });
 
   final _MigrationProgressState state;
+  final bool isHardware;
+  final int currentBatchNumber;
   final String? bodyOverride;
 
   @override
@@ -1889,7 +1901,9 @@ class _MigrationProgressStatus extends StatelessWidget {
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
-        'All is well. Broadcasting notes…',
+        isHardware
+            ? 'All clear. Processing batch #$currentBatchNumber'
+            : 'All clear. Migration is in progress',
         'Next migration step expected in\n'
             '~2 hrs 15 mins.\n'
             'Notifications are on. You can leave Vizor and check back later.',
@@ -1897,7 +1911,7 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
         'Waiting for confirmations',
-        'Confirmations are still arriving. You can leave Vizor and check '
+        'Confirmations are still arriving.\nYou can leave Vizor and check '
             'again later.',
       ),
       _MigrationProgressState.needsInput => (
@@ -1951,15 +1965,23 @@ class _MigrationProgressStatus extends StatelessWidget {
                 color: context.colors.text.accent,
               ),
             )
-          else if (broadcasting)
+          else if (broadcasting) ...[
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               bodyOverride ?? body,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,
               ),
-            )
-          else ...[
+            ),
+          ] else ...[
             Text(
               title,
               textAlign: TextAlign.center,
@@ -2088,9 +2110,10 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'What’s Next?',
+            'Preparation is complete. Check your migration status for '
+            'progress and any action needed.',
             textAlign: TextAlign.center,
-            style: AppTypography.headlineSmall.copyWith(
+            style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
             ),
           ),

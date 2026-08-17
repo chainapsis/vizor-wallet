@@ -167,6 +167,23 @@ class VotingRoundDetails {
   DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
 }
 
+/// One compact Keystone signature correlated to a pending voting bundle.
+class VotingKeystoneBatchSignature {
+  final int bundleIndex;
+
+  /// PCZT value-pool tag. `0` is Orchard and `1` is Ironwood.
+  final int pool;
+  final int actionIndex;
+  final List<int> signature;
+
+  const VotingKeystoneBatchSignature({
+    required this.bundleIndex,
+    required this.pool,
+    required this.actionIndex,
+    required this.signature,
+  });
+}
+
 /// Immutable state for a single `votingSessionProvider(roundId)` instance.
 ///
 /// State keeps bundle-indexed delegation progress and bundle/proposal-indexed
@@ -203,7 +220,8 @@ class VotingSessionState {
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
   final UnmodifiableMapView<int, rust_wire.KeystoneSignatureRecord>
   keystoneSignatures;
-  final rust_delegate.KeystoneSigningRequest? keystoneSigningRequest;
+  final UnmodifiableListView<rust_delegate.KeystoneSigningRequest>
+  keystoneSigningRequests;
   final String? keystoneScanError;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
@@ -230,7 +248,8 @@ class VotingSessionState {
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
     Map<int, rust_wire.KeystoneSignatureRecord> keystoneSignatures = const {},
-    this.keystoneSigningRequest,
+    List<rust_delegate.KeystoneSigningRequest> keystoneSigningRequests =
+        const [],
     this.keystoneScanError,
     this.currentBundleIndex,
     this.currentVoteKey,
@@ -241,7 +260,8 @@ class VotingSessionState {
   }) : pirDiagnostics = UnmodifiableListView(pirDiagnostics),
        delegationProgress = UnmodifiableMapView(delegationProgress),
        voteProgress = UnmodifiableMapView(voteProgress),
-       keystoneSignatures = UnmodifiableMapView(keystoneSignatures);
+       keystoneSignatures = UnmodifiableMapView(keystoneSignatures),
+       keystoneSigningRequests = UnmodifiableListView(keystoneSigningRequests);
 
   bool get hasError => phase == VotingSessionPhase.error;
 
@@ -256,6 +276,9 @@ class VotingSessionState {
         plan: resumePlan,
         signatures: keystoneSignatures,
       );
+
+  rust_delegate.KeystoneSigningRequest? get keystoneSigningRequest =>
+      keystoneSigningRequests.isEmpty ? null : keystoneSigningRequests.first;
 
   bool get canSkipRemainingKeystoneBundles {
     final request = keystoneSigningRequest;
@@ -288,7 +311,7 @@ class VotingSessionState {
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
     Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
-    rust_delegate.KeystoneSigningRequest? keystoneSigningRequest,
+    List<rust_delegate.KeystoneSigningRequest>? keystoneSigningRequests,
     bool clearKeystoneSigningRequest = false,
     String? keystoneScanError,
     bool clearKeystoneScanError = false,
@@ -328,9 +351,9 @@ class VotingSessionState {
       delegationProgress: delegationProgress ?? this.delegationProgress,
       voteProgress: voteProgress ?? this.voteProgress,
       keystoneSignatures: keystoneSignatures ?? this.keystoneSignatures,
-      keystoneSigningRequest: clearKeystoneSigningRequest
-          ? null
-          : keystoneSigningRequest ?? this.keystoneSigningRequest,
+      keystoneSigningRequests: clearKeystoneSigningRequest
+          ? const []
+          : keystoneSigningRequests ?? this.keystoneSigningRequests,
       keystoneScanError: clearKeystoneScanError
           ? null
           : keystoneScanError ?? this.keystoneScanError,

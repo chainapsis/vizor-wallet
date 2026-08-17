@@ -12,10 +12,11 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
+import '../import/import_split_view.dart';
+import '../keystone/keystone_onboarding_flow.dart';
+import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'account_persona_generator.dart';
@@ -73,7 +74,8 @@ class _CustomiseAccountScreenState
   void initState() {
     super.initState();
     final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name);
+    _nameController = TextEditingController(text: suggestion.name)
+      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
     _profilePictureId = suggestion.profilePictureId;
   }
 
@@ -112,16 +114,13 @@ class _CustomiseAccountScreenState
   Future<void> _finishSetup() async {
     final args = widget.args;
     final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
     final pendingPassword = args.pendingPassword;
 
-    Future<void> createAccount() => runWithSyncPausedForAccountMutation(
+    Future<void> createAccount() => runCustomisedAccountMutation(
       ref,
-      () => accountNotifier.createAccountFromMnemonic(
-        mnemonic: args.mnemonic,
-        name: _normalizedName,
-        profilePictureId: _profilePictureId,
-      ),
+      setupArgs: args.setupArgs,
+      accountName: _normalizedName,
+      profilePictureId: _profilePictureId,
       onStoppingSync: () {
         if (!mounted) return;
         setState(() => _finishPhase = _FinishPhase.stoppingSync);
@@ -134,7 +133,7 @@ class _CustomiseAccountScreenState
 
     if (pendingPassword == null) {
       await createAccount();
-      clearCreateOnboardingSecretState(ref.read);
+      clearCustomisedAccountDraft(ref, args.flow);
       router.go('/home');
       return;
     }
@@ -150,7 +149,7 @@ class _CustomiseAccountScreenState
         await createAccount();
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
-        clearCreateOnboardingSecretState(ref.read);
+        clearCustomisedAccountDraft(ref, args.flow);
         router.go('/home');
       });
     } catch (_) {
@@ -192,48 +191,86 @@ class _CustomiseAccountScreenState
     final args = widget.args;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
-        label: OnboardingStep.setPassword.label,
-        routePath: OnboardingStep.setPassword.routePath,
-        routeExtra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
+        label: 'Set Password',
+        routePath: switch (args.flow) {
+          SetPasswordFlow.create => OnboardingStep.setPassword.routePath,
+          SetPasswordFlow.importWallet => '/import/set-password',
+          SetPasswordFlow.importKeystone =>
+            KeystoneOnboardingStep.setPassword.routePath,
+          SetPasswordFlow.importWalletLink => throw StateError(
+            'Wallet Link does not use account customisation.',
+          ),
+        },
+        routeExtra: args.setupArgs,
       );
     }
-    return null;
+    return OnboardingBackTarget.route(
+      label: switch (args.flow) {
+        SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
+        SetPasswordFlow.importWallet =>
+          ImportOnboardingStep.walletBirthdayHeight.label,
+        SetPasswordFlow.importKeystone =>
+          KeystoneOnboardingStep.walletBirthdayHeight.label,
+        SetPasswordFlow.importWalletLink => throw StateError(
+          'Wallet Link does not use account customisation.',
+        ),
+      },
+      routePath: args.setupArgs.backRoutePath,
+      routeExtra: args.setupArgs.backRouteExtra,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final profilePictureOverlay =
-        _showProfilePicturePicker
-            ? AppPaneModalOverlay(
-              borderRadius: const BorderRadius.all(Radius.circular(20)),
-              onDismiss: _closeProfilePicturePicker,
-              child: AppProfilePicturePickerModal(
-                title: 'Select profile picture',
-                currentProfilePictureId: _profilePictureId,
-                optionKeyPrefix: 'customise_account_pfp_option_',
-                cancelKey: const ValueKey('customise_account_pfp_cancel'),
-                actionKey: const ValueKey('customise_account_pfp_update'),
-                onCancel: _closeProfilePicturePicker,
-                onUpdate: _selectProfilePicture,
-              ),
-            )
-            : null;
+    final profilePictureOverlay = _showProfilePicturePicker
+        ? AppPaneModalOverlay(
+            borderRadius: const BorderRadius.all(Radius.circular(20)),
+            onDismiss: _closeProfilePicturePicker,
+            child: AppProfilePicturePickerModal(
+              title: 'Select profile picture',
+              currentProfilePictureId: _profilePictureId,
+              optionKeyPrefix: 'customise_account_pfp_option_',
+              cancelKey: const ValueKey('customise_account_pfp_cancel'),
+              actionKey: const ValueKey('customise_account_pfp_update'),
+              onCancel: _closeProfilePicturePicker,
+              onUpdate: _selectProfilePicture,
+            ),
+          )
+        : null;
 
-    return OnboardingTrailingPane(
-      backTarget: _isSubmitting ? null : _backTarget,
-      overlay: profilePictureOverlay,
-      child: _CustomiseAccountContent(
-        nameController: _nameController,
-        profilePictureId: _profilePictureId,
-        nameMessage: _nameMessage,
-        finishPhase: _finishPhase,
-        canFinish: _canFinish,
-        onNameChanged: _handleNameChanged,
-        onEditProfilePicture: _openProfilePicturePicker,
-        onFinish: _submit,
+    final pane = switch (widget.args.flow) {
+      SetPasswordFlow.create => OnboardingTrailingPane(
+        backTarget: _isSubmitting ? null : _backTarget,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
       ),
-    );
+      SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
+        backTarget: _isSubmitting ? null : _backTarget,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      ),
+      SetPasswordFlow.importKeystone => KeystoneOnboardingTrailingPane(
+        backTarget: _isSubmitting ? null : _backTarget,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      ),
+      SetPasswordFlow.importWalletLink => throw StateError(
+        'Wallet Link does not use account customisation.',
+      ),
+    };
+    return pane;
   }
+
+  Widget _buildContent() => _CustomiseAccountContent(
+    nameController: _nameController,
+    profilePictureId: _profilePictureId,
+    nameMessage: _nameMessage,
+    finishPhase: _finishPhase,
+    canFinish: _canFinish,
+    onNameChanged: _handleNameChanged,
+    onEditProfilePicture: _openProfilePicturePicker,
+    onFinish: _submit,
+  );
 }
 
 class _CustomiseAccountContent extends StatelessWidget {
@@ -404,6 +441,7 @@ class _AccountProfileCard extends StatelessWidget {
                         child: TextField(
                           key: const ValueKey('customise_account_name_field'),
                           controller: nameController,
+                          autofocus: true,
                           enabled: enabled,
                           maxLines: 1,
                           textInputAction: TextInputAction.done,

@@ -18,6 +18,8 @@ import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import '../../features/swap/models/swap_activity_navigation.dart';
+import '../../features/swap/providers/swap_state_provider.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/number_format.dart';
@@ -153,6 +155,38 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   void _openSettings() {
     if (_matchedLocation == '/settings') return;
     context.go('/settings');
+  }
+
+  Future<void> _openPay() async {
+    if (_matches('/pay')) return;
+
+    final accountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid
+        ?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return;
+
+    final router = GoRouter.of(context);
+    final entryPath = router.routerDelegate.currentConfiguration.uri.path;
+    final swapNotifier = ref.read(swapStateProvider.notifier);
+    final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
+      accountUuid: accountUuid,
+    );
+    if (!mounted ||
+        selectedAsset == null ||
+        router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+      return;
+    }
+    final prepared = swapNotifier.preparePayFromShieldedZec(
+      preferredAsset: selectedAsset,
+      expectedAccountUuid: accountUuid,
+    );
+    if (!prepared) return;
+    router.go(
+      '/pay',
+      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+    );
   }
 
   void _toggleAccountMenu({
@@ -398,6 +432,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         ironwoodPostMigrationState?.locksNavigation ??
         (ironwoodHomeMigrationPresentation.mode ==
             IronwoodHomeMigrationCtaMode.start);
+    final payNavigationLocked =
+        ironwoodMigrationNavigationLocked ||
+        (ironwoodHomeMigrationPresentation.mode ==
+                IronwoodHomeMigrationCtaMode.resume &&
+            accountSync.ironwoodBalance <= BigInt.zero);
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );
@@ -493,6 +532,19 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                                 ironwoodMigrationNavigationLocked
                             ? null
                             : () => _navigateTo('/swap'),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      AppSidebarItem(
+                        key: const ValueKey('sidebar_pay_button'),
+                        label: 'Pay',
+                        iconName: AppIcons.paid,
+                        active: _matches('/pay'),
+                        onTap:
+                            isImporting ||
+                                widget.disabledRoutePaths.contains('/pay') ||
+                                payNavigationLocked
+                            ? null
+                            : () => unawaited(_openPay()),
                       ),
                     ],
                     const SizedBox(height: AppSpacing.xs),

@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/naming/ens_rpc_transport.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_address_resolution.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_recipient_step.dart';
@@ -84,6 +85,15 @@ Widget _payApp({required EnsNameResolver resolver}) {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       ensResolverProvider.overrideWithValue(resolver),
+      // Load supported assets successfully so `supportedAssetsError` stays
+      // null and the recipient CONTINUE (gated on externalAssetIsAvailable)
+      // is enabled — otherwise the real notifier's FFI-less asset refresh
+      // fails and disables the button under test.
+      swapIntentProvider.overrideWithValue(_FakeSwapProvider()),
+      // Resolve the address book to an empty loaded state so
+      // `addressBookInitialLoading` is false and the recipient CONTINUE (also
+      // gated on it) is enabled in this storage-less widget test.
+      addressBookProvider.overrideWith(_EmptyAddressBookNotifier.new),
       // The recipient CONTINUE routes through the real showReview(), which
       // otherwise reaches into Rust FFI for a shielded staging address; fail
       // it fast so quoteLoading settles instead of depending on incidental
@@ -123,6 +133,40 @@ Future<void> _goToRecipientStep(WidgetTester tester) async {
   await tester.pump();
   await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
   await tester.pumpAndSettle();
+}
+
+class _EmptyAddressBookNotifier extends AddressBookNotifier {
+  @override
+  AddressBookState build() => const AddressBookState();
+}
+
+class _FakeSwapProvider implements SwapProvider {
+  @override
+  String get providerLabel => 'Fake';
+
+  @override
+  Future<List<SwapAsset>> listSupportedExternalAssets() async =>
+      swapExternalAssets;
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> startSwap(SwapQuote quote) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(String intentId, {String? depositMemo}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SwapIntentSnapshot> submitDepositTransaction({
+    required String depositAddress,
+    required String txHash,
+    String? depositMemo,
+    String? nearSenderAccount,
+  }) => throw UnimplementedError();
 }
 
 void main() {

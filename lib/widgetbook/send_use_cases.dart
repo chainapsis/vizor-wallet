@@ -358,9 +358,7 @@ class _MobileSendHarness extends StatelessWidget {
       overrides: [
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
         syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
-        zecMarketDataSourceProvider.overrideWithValue(
-          const _WidgetbookSendMarketDataSource(),
-        ),
+        zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(
           _WidgetbookAddressBookRepository(contacts),
         ),
@@ -590,15 +588,6 @@ class _WidgetbookAddressBookRepository implements AddressBookRepository {
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
-class _WidgetbookSendMarketDataSource implements ZecMarketDataSource {
-  const _WidgetbookSendMarketDataSource();
-
-  @override
-  Future<ZecMarketData?> fetchMarketData() async {
-    return const ZecMarketData(usdPrice: 70);
-  }
-}
-
 /// Preview sidebar with Home active — mirrors the live desktop nav so the
 /// Send page renders in a realistic shell.
 class _PreviewSendSidebar extends StatelessWidget {
@@ -639,6 +628,12 @@ class _PreviewSendSidebar extends StatelessWidget {
                   AppSidebarItem(
                     label: 'Swap',
                     iconName: AppIcons.swapArrows,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    label: 'Pay',
+                    iconName: AppIcons.paid,
                     onTap: () {},
                   ),
                   const SizedBox(height: AppSpacing.xs),

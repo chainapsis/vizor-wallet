@@ -796,7 +796,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final nextMode = _amountInputIsUsd
         ? MobileSendAmountInputMode.zec
         : MobileSendAmountInputMode.usd;
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     if (nextMode == MobileSendAmountInputMode.usd && zecUsdUnitPrice == null) {
       return;
     }
@@ -927,7 +927,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleFiatAmountChanged(String value) {
-    final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
     final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
     setState(() {
       _fiatAmountText = value.trim();
@@ -940,6 +940,53 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       }
     });
     unawaited(_validateAmount());
+  }
+
+  void _handleZecUsdPriceChanged(double? zecUsdUnitPrice) {
+    if (!_amountInputIsUsd) return;
+
+    if (_isMaxMode) {
+      _refreshMaxFiatAmountText(zecUsdUnitPrice);
+      return;
+    }
+
+    final fiatText = _fiatAmountText.trim();
+    if (fiatText.isEmpty) return;
+
+    final zatoshi = sendZatoshiFromUsdText(fiatText, zecUsdUnitPrice);
+    final nextAmountText = zatoshi == null
+        ? ''
+        : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    if (nextAmountText == _amountText) return;
+
+    setState(() {
+      _amountText = nextAmountText;
+      _invalidateReviewFeeQuote();
+      if (nextAmountText.isEmpty) {
+        _amountError = '';
+      }
+    });
+    unawaited(_validateAmount());
+  }
+
+  void _refreshMaxFiatAmountText(double? zecUsdUnitPrice) {
+    final zatoshi = parseZecAmount(_amountText.trim());
+    if (zatoshi == null ||
+        zatoshi <= BigInt.zero ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return;
+    }
+
+    final fiatText = sendSendableUsdInputTextForZatoshi(
+      zatoshi,
+      zecUsdUnitPrice,
+    );
+    if (fiatText.isEmpty || fiatText == _fiatAmountText) return;
+
+    setState(() => _fiatAmountText = fiatText);
+    _setAmountControllerText(fiatText);
   }
 
   void _activateMaxMode() {
@@ -1019,7 +1066,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final amountText = ZecAmount.fromZatoshi(
         estimate.amountZatoshi,
       ).pretty().amountText;
-      final zecUsdUnitPrice = ref.read(zecHomeUsdUnitPriceProvider);
+      final zecUsdUnitPrice = ref.read(zecLiveUsdUnitPriceProvider);
       final fiatText = zecUsdUnitPrice == null
           ? ''
           : sendSendableUsdInputTextForZatoshi(
@@ -1173,6 +1220,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   bool get _amountReady =>
       !_isResolvingMax &&
       _amountError == null &&
+      (!_amountInputIsUsd || ref.read(zecLiveUsdUnitPriceProvider) != null) &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
 
@@ -1639,6 +1687,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
+      if (previous == next || !mounted) return;
+      _handleZecUsdPriceChanged(next);
+    });
+
     final accountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
@@ -2126,7 +2179,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
-    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
@@ -2624,7 +2677,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ? null
         : fiatTextForZatoshi(
             amountZatoshi,
-            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+            zecUsdUnitPrice: ref.watch(zecLiveUsdUnitPriceProvider),
           );
     final feeText = _feeZatoshi == null
         ? '—'

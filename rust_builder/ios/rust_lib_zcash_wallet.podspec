@@ -20,6 +20,9 @@ A new Flutter FFI plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
+  # Keep the native dependencies of the shared Rust static library aligned
+  # with macOS. Arti's directory compression support calls system liblzma.
+  s.libraries = 'lzma'
   s.platform = :ios, '15.0'
 
   # Flutter.framework does not contain a i386 slice.

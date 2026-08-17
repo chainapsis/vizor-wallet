@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/network_privacy_provider.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
@@ -13,6 +14,7 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
     swapProvider: ref.read(swapIntentProvider),
+    isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     onRecordsChanged: () {
       ref.read(swapActivityRecordsRevisionProvider.notifier).bump();
     },
@@ -148,13 +150,19 @@ class SwapActivityTracker {
   const SwapActivityTracker({
     required SwapActivityStore activityStore,
     required SwapProvider swapProvider,
+    bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
+       _isTorEnabled = isTorEnabled,
        _onRecordsChanged = onRecordsChanged;
 
   final SwapActivityStore _activityStore;
   final SwapProvider _swapProvider;
+
+  /// Read per refresh, not captured once: Tor can be toggled while an intent is
+  /// still open, and the exit-block classification only applies while it is on.
+  final bool Function()? _isTorEnabled;
   final void Function()? _onRecordsChanged;
 
   static String? normalizeAccountUuid(String? accountUuid) {
@@ -269,6 +277,7 @@ class SwapActivityTracker {
         final message = swapFailureMessage(
           SwapFailureOperation.refreshStatus,
           e,
+          torEnabled: _isTorEnabled?.call() ?? false,
         );
         refreshError ??= message;
         updatedIntents = updatedIntents.replaceSwapIntent(

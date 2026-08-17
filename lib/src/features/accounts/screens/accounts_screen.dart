@@ -984,6 +984,10 @@ class _AccountRowState extends State<_AccountRow> {
                       '/settings/secret-passphrase',
                       extra: widget.account.uuid,
                     ),
+              onViewViewingKey: () => context.push(
+                '/settings/viewing-key',
+                extra: widget.account.uuid,
+              ),
               onCopyAddress: () => widget.onCopyAddress(widget.account),
               onSendZec: () => widget.onSendZec(widget.account),
               onEditAccount: () => widget.onEditAccount(widget.account),
@@ -1074,6 +1078,7 @@ class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
     required this.showSendZec,
     required this.onViewSecretPassphrase,
+    required this.onViewViewingKey,
     required this.onCopyAddress,
     required this.onSendZec,
     required this.onEditAccount,
@@ -1085,6 +1090,7 @@ class _AccountRowMenuButton extends StatefulWidget {
 
   final bool showSendZec;
   final VoidCallback? onViewSecretPassphrase;
+  final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
   final VoidCallback onEditAccount;
@@ -1154,6 +1160,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
                   onViewSecretPassphrase: widget.onViewSecretPassphrase == null
                       ? null
                       : _handleViewSecretPassphrase,
+                  onViewViewingKey: _handleViewViewingKey,
                   onCopyAddress: _handleCopyAddress,
                   onSendZec: _handleSendZec,
                   onEditAccount: _handleEditAccount,
@@ -1187,6 +1194,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleViewSecretPassphrase() {
     _hideMenu();
     widget.onViewSecretPassphrase?.call();
+  }
+
+  void _handleViewViewingKey() {
+    _hideMenu();
+    widget.onViewViewingKey();
   }
 
   void _handleCopyAddress() {
@@ -1259,6 +1271,7 @@ class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.showSendZec,
     required this.onViewSecretPassphrase,
+    required this.onViewViewingKey,
     required this.onCopyAddress,
     required this.onSendZec,
     required this.onEditAccount,
@@ -1271,6 +1284,7 @@ class _AccountContextMenu extends StatelessWidget {
 
   final bool showSendZec;
   final VoidCallback? onViewSecretPassphrase;
+  final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
   final VoidCallback onEditAccount;
@@ -1280,7 +1294,9 @@ class _AccountContextMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Every software account starts with the secret-passphrase shortcut.
+    // Every software account starts with the secret-passphrase shortcut;
+    // every account (software and hardware alike) gets the viewing-key
+    // export right after it, since a UFVK never grants spend authority.
     // The remaining order follows Figma: current accounts get Edit account /
     // Copy address; other accounts get Copy address / Send ZEC / Edit account.
     // Remove is shown for every account and becomes reset for the last one.
@@ -1295,6 +1311,12 @@ class _AccountContextMenu extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxs),
         ],
+        AppContextMenuItem(
+          iconName: AppIcons.eye,
+          label: 'View viewing key',
+          onTap: onViewViewingKey,
+        ),
+        const SizedBox(height: AppSpacing.xxs),
         if (!showSendZec) ...[
           AppContextMenuItem(
             iconName: AppIcons.edit,

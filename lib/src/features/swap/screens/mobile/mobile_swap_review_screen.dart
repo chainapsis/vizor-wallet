@@ -10,13 +10,14 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../address_book/models/address_book_contact.dart';
 import '../../../pay/widgets/mobile/mobile_pay_review_content.dart';
+import '../../../pay/models/pay_recent_recipients.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../domain/swap_quote.dart';
 import '../../models/swap_activity_navigation.dart';
-import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_state.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
@@ -30,9 +31,14 @@ const _keystoneSigningReviewInactiveDelay = Duration(milliseconds: 500);
 /// surface that fits the phone; smaller devices scale down) with the
 /// same quote/start orchestration as the desktop review screen.
 class MobileSwapReviewScreen extends ConsumerStatefulWidget {
-  const MobileSwapReviewScreen({this.payMode = false, super.key});
+  const MobileSwapReviewScreen({
+    this.payMode = false,
+    this.recipientSelection,
+    super.key,
+  });
 
   final bool payMode;
+  final PayRecipientSelection? recipientSelection;
 
   @override
   ConsumerState<MobileSwapReviewScreen> createState() =>
@@ -301,12 +307,17 @@ class _MobileSwapReviewScreenState
         swapState.quoteExpired ||
         (_expiryRemaining != null && _expiryRemaining! <= Duration.zero);
     final recipientAddress = addressPlan.userExternalAddress.trim();
+    final recipientNetwork = AddressBookNetwork.tryFromChainTicker(
+      quote.receiveAsset.chainTicker,
+    );
+    final recipientContacts = recipientNetwork == null
+        ? const <AddressBookContact>[]
+        : payCompatibleContacts(addressBookContacts, recipientNetwork);
+    final recipientSelection =
+        widget.recipientSelection ??
+        payRecipientSelectionForAddress(recipientContacts, recipientAddress);
     final recipientContact = widget.payMode
-        ? addressBookContactForSwapAsset(
-            contacts: addressBookContacts,
-            asset: quote.receiveAsset,
-            address: recipientAddress,
-          )
+        ? payContactForSelection(recipientContacts, recipientSelection)
         : null;
     final payingFiatText = widget.payMode
         ? swapReviewFiatTextForAsset(
@@ -379,6 +390,7 @@ class _MobileSwapReviewScreenState
                         quote: quote,
                         addressPlan: addressPlan,
                         addressBookContacts: addressBookContacts,
+                        userExternalContactId: swapState.userExternalContactId,
                         accountLabel: accountLabel,
                         accountProfilePictureId: accountProfilePictureId,
                         expired: widget.payMode

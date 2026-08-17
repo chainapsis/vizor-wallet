@@ -57,7 +57,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _remotePackageId = null;
     _activeKeyBytes = null;
     if (previousPackageId != null) {
-      unawaited(_deletePackage(previousPackageId));
+      unawaited(_revokePackage(previousPackageId));
     }
 
     state = const WalletLinkState(phase: WalletLinkPhase.preparing);
@@ -99,7 +99,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   Future<void> regenerate() => start();
 
   void expire() {
-    _expire(deleteRemote: false);
+    _expire(revokeRemote: false);
   }
 
   void markLinkedForPreview({required int accounts, required int contacts}) {
@@ -264,7 +264,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       if (epoch != _epoch) return;
       final remaining = expiresAt.difference(DateTime.now());
       if (remaining <= Duration.zero) {
-        _expire(deleteRemote: true);
+        _expire(revokeRemote: true);
         return;
       }
       state = state.copyWith(remaining: remaining);
@@ -299,7 +299,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     } on WalletLinkApiException catch (error) {
       if (epoch != _epoch) return;
       if (error.statusCode == 404 || error.statusCode == 410) {
-        _expire(deleteRemote: false);
+        _expire(revokeRemote: false);
       } else {
         _logStatusPollError(error);
       }
@@ -312,7 +312,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     }
   }
 
-  void _expire({required bool deleteRemote}) {
+  void _expire({required bool revokeRemote}) {
     _timer?.cancel();
     _epoch++;
     _statusPollEpoch = null;
@@ -320,8 +320,8 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     final packageId = _remotePackageId;
     _remotePackageId = null;
     _activeKeyBytes = null;
-    if (deleteRemote && packageId != null) {
-      unawaited(_deletePackage(packageId));
+    if (revokeRemote && packageId != null) {
+      unawaited(_revokePackage(packageId));
     }
     state = WalletLinkState(
       phase: WalletLinkPhase.expired,
@@ -330,11 +330,11 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     );
   }
 
-  Future<void> _deletePackage(String packageId) async {
+  Future<void> _revokePackage(String packageId) async {
     try {
-      await ref.read(walletLinkApiClientProvider).deletePackage(packageId);
+      await ref.read(walletLinkApiClientProvider).revokePackage(packageId);
     } catch (error, stackTrace) {
-      log('WalletLinkController.deletePackage: ERROR: $error\n$stackTrace');
+      log('WalletLinkController.revokePackage: ERROR: $error\n$stackTrace');
       // Explicit cleanup is best-effort. Backend TTL remains the fallback
       // if this cleanup cannot reach Lambda/DynamoDB.
     }

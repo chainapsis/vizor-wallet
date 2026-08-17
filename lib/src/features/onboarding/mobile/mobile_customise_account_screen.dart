@@ -10,15 +10,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
 import '../create/account_persona_generator.dart';
-import '../create/onboarding_split_view.dart'
-    show clearCreateOnboardingSecretState;
+import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
@@ -27,7 +24,8 @@ import 'mobile_onboarding_scaffold.dart';
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
 
-/// Mobile create-account personalisation — Figma light/dark default frames
+/// Mobile account personalisation shared by create, import, and Keystone.
+/// The original create design is captured by Figma light/dark default frames
 /// 6125:117635 / 6132:117807 and keyboard/error frames 6125:117233 /
 /// 6132:117773.
 class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
@@ -57,6 +55,9 @@ class _MobileCustomiseAccountScreenState
     extends ConsumerState<MobileCustomiseAccountScreen> {
   late final TextEditingController _nameController;
   final _nameFocusNode = FocusNode();
+  Animation<double>? _routeAnimation;
+  var _initialFocusMonitoringScheduled = false;
+  var _initialFocusRequested = false;
   late String _profilePictureId;
   var _submitPhase = _SubmitPhase.idle;
   String? _submitError;
@@ -78,30 +79,55 @@ class _MobileCustomiseAccountScreenState
   void initState() {
     super.initState();
     final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name);
+    _nameController = TextEditingController(text: suggestion.name)
+      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
     _profilePictureId = suggestion.profilePictureId;
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialFocusMonitoringScheduled) return;
+    _initialFocusMonitoringScheduled = true;
+    // iOS can discard a software-keyboard request while the Cupertino route
+    // is still entering, so defer the first focus until that transition ends.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialFocusRequested) return;
+      final routeAnimation = ModalRoute.of(context)?.animation;
+      if (routeAnimation == null ||
+          routeAnimation.status == AnimationStatus.completed) {
+        _requestInitialFocus();
+        return;
+      }
+      _routeAnimation = routeAnimation
+        ..addStatusListener(_handleRouteAnimationStatus);
+    });
+  }
+
+  void _handleRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _requestInitialFocus();
+    }
+  }
+
+  void _requestInitialFocus() {
+    if (_initialFocusRequested) return;
+    _initialFocusRequested = true;
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
+    _routeAnimation = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _nameFocusNode.canRequestFocus) {
+        _nameFocusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _nameController.dispose();
     _nameFocusNode.dispose();
     super.dispose();
-  }
-
-  Future<void> _goBack() async {
-    if (_isSubmitting) return;
-    final args = widget.args;
-    if (!args.configuresPassword) return;
-    final router = GoRouter.maybeOf(context);
-    if (router != null) {
-      router.go(
-        '/onboarding/set-passcode',
-        extra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
-      );
-    } else {
-      await Navigator.of(context).maybePop();
-    }
   }
 
   void _handleNameChanged(String _) {
@@ -149,15 +175,11 @@ class _MobileCustomiseAccountScreenState
   Future<void> _finishSetup() async {
     final args = widget.args;
     final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
-
-    Future<void> createAccount() => runWithSyncPausedForAccountMutation(
+    Future<void> createAccount() => runCustomisedAccountMutation(
       ref,
-      () => accountNotifier.createAccountFromMnemonic(
-        mnemonic: args.mnemonic,
-        name: _normalizedName,
-        profilePictureId: _profilePictureId,
-      ),
+      setupArgs: args.setupArgs,
+      accountName: _normalizedName,
+      profilePictureId: _profilePictureId,
       onStoppingSync: () {
         if (mounted) {
           setState(() => _submitPhase = _SubmitPhase.stoppingSync);
@@ -173,7 +195,7 @@ class _MobileCustomiseAccountScreenState
     final pendingPassword = args.pendingPassword;
     if (pendingPassword == null) {
       await createAccount();
-      clearCreateOnboardingSecretState(ref.read);
+      clearCustomisedAccountDraft(ref, args.flow);
       router.go('/home');
       return;
     }
@@ -189,7 +211,7 @@ class _MobileCustomiseAccountScreenState
         await createAccount();
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
-        clearCreateOnboardingSecretState(ref.read);
+        clearCustomisedAccountDraft(ref, args.flow);
         router.go('/onboarding/biometrics');
       });
     } catch (_) {
@@ -210,8 +232,15 @@ class _MobileCustomiseAccountScreenState
   @override
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(8),
-      onBack: _isSubmitting || !widget.args.configuresPassword ? null : _goBack,
+      progress: switch (widget.args.flow) {
+        SetPasswordFlow.create => mobileCreateProgress(8),
+        SetPasswordFlow.importWallet => mobileImportProgress(5),
+        SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
+        SetPasswordFlow.importWalletLink => throw StateError(
+          'Wallet Link does not use account customisation.',
+        ),
+      },
+      showBackButton: false,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
@@ -245,7 +274,7 @@ class _MobileCustomiseAccountScreenState
         ],
       ),
     );
-    return PopScope<void>(canPop: !_isSubmitting, child: content);
+    return PopScope<void>(canPop: false, child: content);
   }
 }
 

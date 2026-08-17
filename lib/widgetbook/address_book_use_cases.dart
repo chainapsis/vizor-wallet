@@ -1364,6 +1364,12 @@ class _AddressBookSidebar extends StatelessWidget {
                     onTap: () {},
                   ),
                   const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    label: 'Pay',
+                    iconName: AppIcons.paid,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
                   const AppSidebarItem(
                     label: 'Contacts',
                     iconName: AppIcons.users,

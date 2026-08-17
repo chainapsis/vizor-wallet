@@ -81,14 +81,12 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     });
 
     final router = GoRouter.of(context);
-    if (args.flow == SetPasswordFlow.create) {
-      router.go(
-        OnboardingStep.customiseAccount.routePath,
-        extra: CustomiseAccountArgs(
-          mnemonic: args.requiredMnemonic,
-          pendingPassword: password,
-        ),
+    if (args.flow != SetPasswordFlow.importWalletLink) {
+      final customiseArgs = CustomiseAccountArgs(
+        setupArgs: args,
+        pendingPassword: password,
       );
+      router.go(customiseArgs.routePath, extra: customiseArgs);
       return;
     }
 
@@ -213,9 +211,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitError = null;
       }),
       onSubmit: _submit,
-      idleSubmitLabel: args.flow == SetPasswordFlow.create
-          ? 'Set password & continue'
-          : 'Set password & finish',
+      idleSubmitLabel: args.flow == SetPasswordFlow.importWalletLink
+          ? 'Set password & finish'
+          : 'Set password & continue',
     );
     final backTarget = args.flow == SetPasswordFlow.create
         ? null

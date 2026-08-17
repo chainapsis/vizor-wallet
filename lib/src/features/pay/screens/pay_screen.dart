@@ -120,8 +120,39 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   void _handleAddressScanned(String value) {
-    ref.read(swapStateProvider.notifier).updateDestination(value);
+    _handleAddressChanged(value);
     _closePayModal();
+  }
+
+  void _handleAddressChanged(String value) {
+    ref.read(swapStateProvider.notifier).updateDestination(value);
+  }
+
+  void _chooseRecipient(PayRecipientSelection selection) {
+    final notifier = ref.read(swapStateProvider.notifier);
+    final contactId = selection.contactId;
+    if (contactId == null) {
+      notifier.updateDestination(selection.address);
+    } else {
+      notifier.selectDestinationContact(
+        address: selection.address,
+        contactId: contactId,
+      );
+    }
+  }
+
+  Future<void> _reviewRecipient(PayRecipientSelection selection) async {
+    _chooseRecipient(selection);
+    // Resolve a `.eth` recipient to its pinned Zcash/0x address before
+    // reviewing so no name ever reaches a quote; a plain address or a picked
+    // contact passes through unchanged. A failed resolve keeps the wizard on
+    // the recipient step (surfaced via destinationResolveStatus/error).
+    final notifier = ref.read(swapStateProvider.notifier);
+    final ok = await notifier.submitDestinationAddress(
+      ref.read(swapStateProvider).destinationText,
+    );
+    if (!ok || !mounted) return;
+    await _openReview();
   }
 
   Future<void> _openReview() async {
@@ -140,20 +171,6 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         next.reviewAddressPlan != null) {
       setState(() => _wizardStep = _PayWizardStep.review);
     }
-  }
-
-  /// Recipient-step CONTINUE: resolves a typed `.eth` name (pinning the
-  /// resolved 0x into `destinationText`) before opening the review, so no
-  /// name ever reaches a quote. A plain address flows through unchanged. A
-  /// failed resolve keeps the wizard on the recipient step; the failure
-  /// surfaces via `destinationResolveStatus`/`destinationResolveError`.
-  Future<void> _resolveThenReview() async {
-    final notifier = ref.read(swapStateProvider.notifier);
-    final ok = await notifier.submitDestinationAddress(
-      ref.read(swapStateProvider).destinationText,
-    );
-    if (!ok || !mounted) return;
-    await _openReview();
   }
 
   void _startIntent() {
@@ -259,9 +276,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
     );
+    final addressBook = ref.watch(addressBookProvider);
+    final addressBookInitialLoading =
+        addressBook.isLoading && !addressBook.hasValue;
     final allContacts =
-        ref.watch(addressBookProvider).value?.contacts ??
-        const <AddressBookContact>[];
+        addressBook.value?.contacts ?? const <AddressBookContact>[];
     final contacts = network == null
         ? const <AddressBookContact>[]
         : payCompatibleContacts(allContacts, network);
@@ -274,6 +293,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         : payRecentRecipients(
             intents: swapIntentsFromRecords(records),
             network: network,
+            contacts: contacts,
           );
 
     final quote = swapState.reviewQuote;
@@ -294,9 +314,20 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     }
 
     final recipientAddress = swapState.destinationText.trim();
-    final recipientContact = network == null
-        ? null
-        : payContactForAddress(allContacts, network, recipientAddress);
+    final effectiveSelection = resolvePayRecipientSelection(
+      contacts,
+      recipientAddress,
+      explicitSelection: swapState.userExternalContactId == null
+          ? null
+          : PayRecipientSelection(
+              address: recipientAddress,
+              contactId: swapState.userExternalContactId,
+            ),
+    );
+    final recipientContact = payContactForSelection(
+      contacts,
+      effectiveSelection,
+    );
     final effectiveAddressError = payEffectiveAddressError(swapState, network);
     final recipientBusy =
         swapState.quoteLoading ||
@@ -326,9 +357,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       addressError: effectiveAddressError,
       contacts: contacts,
       busy: recipientBusy,
-      enabled: swapState.externalAssetIsSupported,
+      enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
-      onSelectRecipient: () => unawaited(_resolveThenReview()),
+      onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
       onAddToContacts: network == null
           ? () {}
           : () => setState(() => _payModal = _PayModalSurface.addContact),
@@ -411,11 +442,15 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   contacts: contacts,
                   recents: recents,
                   busy: recipientBusy,
-                  onAddressChanged: swapNotifier.updateDestination,
+                  enabled:
+                      swapState.externalAssetIsAvailable &&
+                      !addressBookInitialLoading,
+                  selectedContactId: swapState.userExternalContactId,
+                  onAddressChanged: _handleAddressChanged,
                   onOpenScanner: () => setState(
                     () => _payModal = _PayModalSurface.addressScanner,
                   ),
-                  onChooseRecipient: swapNotifier.updateDestination,
+                  onChooseRecipient: _chooseRecipient,
                 ),
                 _PayWizardStep.review =>
                   quote == null

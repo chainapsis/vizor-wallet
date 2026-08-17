@@ -16,10 +16,13 @@
 
 use std::{future::Future, time::Duration};
 
+use http::Uri;
+use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::{
     transport::{Channel, ClientTlsConfig, Endpoint},
     Request, Response, Status,
 };
+use tower_service::Service;
 use zcash_client_backend::{
     data_api::{chain::CommitmentTreeRoot, WalletCommitmentTrees},
     proto::service::{
@@ -127,6 +130,36 @@ where
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, false).await
+}
+
+/// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
+/// normal direct transport. Use this for transaction broadcasts that must not
+/// share a Tor circuit with other wallet activity.
+pub(crate) async fn open_isolated_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, true).await
+}
+
+/// Opens a lightwalletd channel that is always direct, bypassing the
+/// process-wide route policy entirely.
+///
+/// This is the transport for iOS background migration work, and it is pinned
+/// direct as a product decision: Tor covers the app's foreground traffic, and
+/// a background pass never brings Tor up or borrows the foreground's client —
+/// a launch where Dart never ran has no client, and a warm process may drop
+/// its client at any moment. Routing background work through the policy would
+/// therefore only convert it into failures whenever Tor is on. It uses a
+/// plain connector rather than the leased one, so a foreground toggle to Tor
+/// does not abort a background broadcast already in flight.
+///
+/// Nothing in the foreground may use this: every foreground path goes through
+/// [`open_lwd_channel`] or [`open_isolated_lwd_channel`], which respect the
+/// user's chosen route and fail closed while Tor is starting or broken.
+pub(crate) async fn open_background_direct_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -135,20 +168,114 @@ pub(crate) async fn open_lwd_channel(
     let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
-    let channel = if lightwalletd_url.starts_with("https://") {
+    let endpoint = if lightwalletd_url.starts_with("https://") {
         endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())
             .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
-            .connect()
-            .await
-            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?
     } else {
         endpoint
-            .connect()
-            .await
-            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?
     };
+    let channel = endpoint
+        .connect()
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
     Ok(CompactTxStreamerClient::new(channel))
+}
+
+async fn open_lwd_channel_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+    RUSTLS_INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+
+    let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+        .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
+    if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated)
+        .map_err(|e| SyncError::net(format!("network privacy blocked lightwalletd: {e}")))?
+    {
+        let allow_onion_services = endpoint_allows_onion_services(&endpoint);
+        return tor_client
+            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .await
+            .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
+    }
+    let endpoint = if lightwalletd_url.starts_with("https://") {
+        endpoint
+            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
+    } else {
+        endpoint
+    };
+    let channel = endpoint
+        .connect_with_connector(DirectRouteConnector::new())
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
+    Ok(CompactTxStreamerClient::new(channel))
+}
+
+#[derive(Clone)]
+struct DirectRouteConnector {
+    inner: HttpConnector,
+}
+
+impl DirectRouteConnector {
+    fn new() -> Self {
+        let mut inner = HttpConnector::new();
+        inner.enforce_http(false);
+        // Tonic applies the endpoint's `tcp_nodelay` (enabled by default) only
+        // to its own connector, while hyper-util defaults to Nagle enabled.
+        // Direct mode must keep the transport behaviour it had before the
+        // route lease was interposed.
+        inner.set_nodelay(true);
+        Self { inner }
+    }
+}
+
+impl Service<Uri> for DirectRouteConnector {
+    type Response =
+        crate::network_privacy::DirectRouteIo<hyper_util::rt::TokioIo<tokio::net::TcpStream>>;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Future =
+        std::pin::Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner
+            .poll_ready(cx)
+            .map(|result| result.map_err(|error| Box::new(error) as Self::Error))
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        let future = self.inner.call(uri);
+        let route = crate::network_privacy::DirectRouteLease::new();
+        Box::pin(async move {
+            let mut future = Box::pin(future);
+            let connected = std::future::poll_fn(|cx| {
+                route.poll(cx, |cx| match future.as_mut().poll(cx) {
+                    std::task::Poll::Ready(Ok(connected)) => std::task::Poll::Ready(Ok(connected)),
+                    std::task::Poll::Ready(Err(error)) => {
+                        std::task::Poll::Ready(Err(Box::new(error) as Self::Error))
+                    }
+                    std::task::Poll::Pending => std::task::Poll::Pending,
+                })
+            })
+            .await?;
+            Ok(route.into_io(connected))
+        })
+    }
+}
+
+fn endpoint_allows_onion_services(endpoint: &Endpoint) -> bool {
+    endpoint
+        .uri()
+        .host()
+        .is_some_and(|host| host.to_ascii_lowercase().ends_with(".onion"))
 }
 
 /// Return the current chain tip with a bounded response wait.
@@ -571,6 +698,18 @@ pub(super) async fn download_blocks(
 mod tests {
     use super::*;
 
+    #[test]
+    fn onion_lightwalletd_hosts_enable_onion_service_connections() {
+        for (url, expected) in [
+            ("https://example.com", false),
+            ("https://lightwalletd.example.onion", true),
+            ("https://LIGHTWALLETD.EXAMPLE.ONION", true),
+        ] {
+            let endpoint = Endpoint::from_shared(url.to_string()).expect("valid endpoint");
+            assert_eq!(endpoint_allows_onion_services(&endpoint), expected, "{url}");
+        }
+    }
+
     #[tokio::test]
     async fn stalled_address_utxo_stream_start_is_bounded() {
         let result = tokio::time::timeout(
@@ -610,6 +749,58 @@ mod tests {
                 if message.contains("get_address_utxos_stream")
                     && message.contains("timed out")
         ));
+    }
+
+    #[tokio::test]
+    async fn background_transport_stays_direct_while_tor_is_desired() {
+        // The background lane is pinned direct as a product decision: Tor
+        // covers foreground traffic, and a background pass never brings Tor
+        // up or borrows the foreground's client. Routed through the policy,
+        // this call would be refused the moment Tor was desired; pinned, it
+        // reaches the socket and fails only because nothing is listening.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+
+        let error = open_background_direct_lwd_channel("http://127.0.0.1:1")
+            .await
+            .expect_err("nothing listens on port 1");
+
+        let message = error.to_string();
+        assert!(
+            message.contains("gRPC connect failed"),
+            "expected a transport failure, got a policy refusal: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_connections_keep_tcp_nodelay_enabled() {
+        // A direct-route lease aborts itself whenever the process-wide route is
+        // Tor, so this has to hold the policy even though it never writes it.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let accepted =
+            tokio::spawn(async move { listener.accept().await.map(|(stream, _)| stream) });
+
+        let uri: Uri = format!("http://127.0.0.1:{port}")
+            .parse()
+            .expect("valid loopback URI");
+        let connection = DirectRouteConnector::new()
+            .call(uri)
+            .await
+            .expect("direct loopback connection");
+
+        assert!(connection
+            .inner()
+            .inner()
+            .nodelay()
+            .expect("read TCP_NODELAY"));
+        accepted
+            .await
+            .expect("accept task")
+            .expect("accepted connection");
     }
 
     #[test]

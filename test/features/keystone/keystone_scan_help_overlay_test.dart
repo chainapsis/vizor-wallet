@@ -119,6 +119,20 @@ void main() {
     expect(find.text('Scanning issues?'), findsOneWidget);
   });
 
+  testWidgets('hides safely when the QR leaves the ready state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(visible: true));
+    await tester.pump();
+    expect(find.text('Scanning issues?'), findsOneWidget);
+
+    await tester.pumpWidget(_app(visible: false));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Scanning issues?'), findsNothing);
+  });
+
   testWidgets('close action supports keyboard focus and activation', (
     tester,
   ) async {

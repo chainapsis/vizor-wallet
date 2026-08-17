@@ -172,6 +172,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                       addressBookContacts:
                           ref.watch(addressBookProvider).value?.contacts ??
                           const [],
+                      userExternalContactId: swapState.userExternalContactId,
                       expired: swapState.quoteExpired,
                       amountWarning: swapState.reviewAmountDifferenceWarning,
                       startError: swapState.statusError,

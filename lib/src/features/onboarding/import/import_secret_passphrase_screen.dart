@@ -11,6 +11,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
@@ -27,9 +28,9 @@ import 'import_split_view.dart';
 
 const _kBip39PassphraseMaxCharacters = 100;
 
-bool _isValidBip39Passphrase(String value) {
+bool _isValidBip39Passphrase(String value, {bool allowEmpty = false}) {
   final length = value.characters.length;
-  return length > 0 && length <= _kBip39PassphraseMaxCharacters;
+  return (allowEmpty || length > 0) && length <= _kBip39PassphraseMaxCharacters;
 }
 
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
@@ -483,7 +484,12 @@ class _ImportSecretPassphraseScreenState
 
   void _saveBip39Passphrase() {
     final passphrase = _bip39PassphraseController.text;
-    if (!_isValidBip39Passphrase(passphrase)) return;
+    if (!_isValidBip39Passphrase(
+      passphrase,
+      allowEmpty: _bip39Passphrase.isNotEmpty,
+    )) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _bip39Passphrase = passphrase;
@@ -843,6 +849,12 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                       height: 32,
                       child: Row(
                         children: [
+                          AppIcon(
+                            AppIcons.key,
+                            size: AppIconSize.medium,
+                            color: colors.text.homeCard,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
                           Expanded(
                             child: Text(
                               'Secret Passphrase',
@@ -923,7 +935,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                 bottomLeft: Radius.circular(AppRadii.large),
                 bottomRight: Radius.circular(AppRadii.large),
               ),
-              boxShadow: appModalShadow,
+              boxShadow: appSurfaceShadow(colors),
             ),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.sm),
@@ -943,12 +955,6 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
-                    AppIcon(
-                      AppIcons.edit,
-                      size: AppIconSize.medium,
-                      color: colors.icon.accent,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
                     Text(
                       'Edit',
                       style: AppTypography.labelLarge.copyWith(
@@ -973,22 +979,20 @@ class _ClearMnemonicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppButton(
-      key: const ValueKey('import_mnemonic_clear_button'),
-      onPressed: onPressed,
-      variant: AppButtonVariant.ghost,
-      size: AppButtonSize.small,
+    return SizedBox(
+      width: 52,
       height: 24,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      iconGap: 4,
-      enabledBackgroundColor: colors.text.homeCard.withValues(alpha: 0.12),
-      pressedBackgroundColor: colors.text.homeCard.withValues(alpha: 0.18),
-      enabledLabelColor: colors.text.homeCard,
-      pressedLabelColor: colors.text.homeCard,
-      focusRingColor: colors.text.homeCard,
-      leading: AppIcon(AppIcons.trash, size: 14, color: colors.text.homeCard),
-      child: const Text('Clear'),
+      child: AppButton(
+        key: const ValueKey('import_mnemonic_clear_button'),
+        onPressed: onPressed,
+        variant: AppButtonVariant.secondary,
+        size: AppButtonSize.mediumLarge,
+        height: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        expand: true,
+        constrainContent: true,
+        child: const Text('Clear'),
+      ),
     );
   }
 }
@@ -1010,7 +1014,10 @@ class _Bip39PassphraseModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canSave = _isValidBip39Passphrase(controller.text);
+    final canSave = _isValidBip39Passphrase(
+      controller.text,
+      allowEmpty: isEditing,
+    );
     return AppModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1145,6 +1152,14 @@ class _MnemonicWordCell extends StatefulWidget {
 class _MnemonicWordCellState extends State<_MnemonicWordCell> {
   static const _fieldWidth = 116.0;
   static const _fieldHeight = 33.0;
+  static const _straightUnderlineLeft = 22.5;
+  static const _straightUnderlineBottom = 1.5;
+  static const _straightUnderlineWidth = 87.0;
+  static const _straightUnderlineHeight = 1.0;
+  static const _invalidUnderlineLeft = 22.25;
+  static const _invalidUnderlineBottom = 1.25;
+  static const _invalidUnderlineWidth = 87.5002;
+  static const _invalidUnderlineHeight = 3.16039;
   static const _suggestionWidth = 172.0;
   static const _maxSuggestionCount = 64;
 
@@ -1365,13 +1380,11 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     final hintStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.homeCard.withValues(alpha: 0.2),
     );
-    final borderColor = isInvalidUnfocused
-        ? colors.text.destructive
-        : isFocused
+    final underlineColor = isFocused
         ? colors.text.homeCard
         : _hovered
         ? colors.text.homeCard.withValues(alpha: 0.45)
-        : colors.text.homeCard.withValues(alpha: 0.22);
+        : colors.text.homeCard.withValues(alpha: 0.2);
 
     final numberColor = isInvalidUnfocused
         ? colors.text.destructive
@@ -1396,15 +1409,39 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
             height: _fieldHeight,
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      height: isFocused || isInvalidUnfocused ? 1.5 : 1,
-                      color: borderColor,
+                if (isInvalidUnfocused)
+                  Positioned(
+                    left: _invalidUnderlineLeft,
+                    bottom: _invalidUnderlineBottom,
+                    width: _invalidUnderlineWidth,
+                    height: _invalidUnderlineHeight,
+                    child: IgnorePointer(
+                      child: SvgPicture.asset(
+                        'assets/illustrations/mnemonic_invalid_underline.svg',
+                        key: ValueKey(
+                          'import_mnemonic_invalid_underline_${widget.index}',
+                        ),
+                        fit: BoxFit.fill,
+                        colorFilter: ColorFilter.mode(
+                          colors.text.destructive,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Positioned(
+                    key: ValueKey(
+                      'import_mnemonic_straight_underline_${widget.index}',
+                    ),
+                    left: _straightUnderlineLeft,
+                    bottom: _straightUnderlineBottom,
+                    width: _straightUnderlineWidth,
+                    height: _straightUnderlineHeight,
+                    child: IgnorePointer(
+                      child: ColoredBox(color: underlineColor),
                     ),
                   ),
-                ),
                 Positioned.fill(
                   child: Row(
                     children: [

@@ -34,3 +34,8 @@ Uri walletLinkPackageCompleteUri(Uri baseUri, {required String packageId}) {
   final packageUri = walletLinkPackagesUri(baseUri, packageId: packageId);
   return packageUri.replace(path: '${packageUri.path}/complete');
 }
+
+Uri walletLinkPackageRevokeUri(Uri baseUri, {required String packageId}) {
+  final packageUri = walletLinkPackagesUri(baseUri, packageId: packageId);
+  return packageUri.replace(path: '${packageUri.path}/revoke');
+}

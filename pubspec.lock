@@ -341,13 +341,12 @@ packages:
     source: hosted
     version: "2.1.0"
   flutter_secure_storage_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_secure_storage_windows
-      sha256: "3b7c8e068875dfd46719ff57c90d8c459c87f2302ed6b00ff006b3c9fcad1613"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.1.0"
+      path: "third_party/flutter_secure_storage_windows"
+      relative: true
+    source: path
+    version: "4.1.0+vizor.1"
   flutter_svg:
     dependency: "direct main"
     description:
@@ -596,8 +595,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
-      resolved-ref: f6c91fef5dbfed89188c1c4509ebda325427e68b
+      ref: b56cca07e09f377a33cd99ff1ea837b7a96a44f9
+      resolved-ref: b56cca07e09f377a33cd99ff1ea837b7a96a44f9
       url: "https://github.com/chainapsis/mobile_scanner.git"
     source: git
     version: "7.2.0"

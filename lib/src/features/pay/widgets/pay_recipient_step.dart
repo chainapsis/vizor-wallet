@@ -7,7 +7,6 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/models/address_book_label_lookup.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
 import 'pay_wizard_page.dart';
@@ -22,6 +21,8 @@ class PayRecipientStep extends StatelessWidget {
     required this.contacts,
     required this.recents,
     required this.busy,
+    this.enabled = true,
+    this.selectedContactId,
     required this.onAddressChanged,
     required this.onOpenScanner,
     required this.onChooseRecipient,
@@ -41,13 +42,15 @@ class PayRecipientStep extends StatelessWidget {
 
   /// True while the review quote is being fetched — disables the CTA.
   final bool busy;
+  final bool enabled;
+  final String? selectedContactId;
 
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
 
-  /// Row tap: commit this address as the selected recipient. Quote/review
-  /// starts only from the explicit "Select recipient" action.
-  final ValueChanged<String> onChooseRecipient;
+  /// Row tap: select this exact recipient. The screen owns quote/review
+  /// orchestration so the same selection contract works on desktop and mobile.
+  final ValueChanged<PayRecipientSelection> onChooseRecipient;
 
   @override
   Widget build(BuildContext context) {
@@ -55,30 +58,43 @@ class PayRecipientStep extends StatelessWidget {
     final typed = typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final validDestination = hasInput && addressError == null;
-    final matchedRecents = !hasInput
-        ? recents
-        : [
-            for (final recent in recents)
-              if (_payRecentMatchesQuery(
-                recent,
-                payRecipientContactForAddress(contacts, recent.address),
-                typed,
-              ))
-                recent,
-          ];
     final matchedContacts = !hasInput
         ? contacts
         : [
             for (final contact in contacts)
-              if (_payContactMatchesQuery(contact, typed) &&
-                  !matchedRecents.any(
-                    (recent) => _payContactHasAddress(contact, recent.address),
-                  ))
-                contact,
+              if (_payContactMatchesQuery(contact, typed)) contact,
           ];
+    final matchedRecents = !hasInput
+        ? recents
+        : matchedContacts.isEmpty
+        ? [
+            for (final recent in recents)
+              if (_payRecentMatchesQuery(recent, typed)) recent,
+          ]
+        : const <PayRecentRecipient>[];
     final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
     final unknownAddress = validDestination && !hasMatches;
     final showAddressError = hasInput && addressError != null && !hasMatches;
+
+    Widget buildRecentRow(PayRecentRecipient recent) {
+      final selection = payRecipientSelectionForRecent(contacts, recent);
+      final contact = payContactForSelection(contacts, selection);
+      final identityKey = recent.contactId == null
+          ? recent.address
+          : '${recent.address}_${recent.contactId}';
+      return _PayRecipientRow(
+        key: ValueKey('pay_recent_$identityKey'),
+        contact: contact,
+        address: recent.address,
+        amountText: recent.amountText,
+        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        selected:
+            selection.contactId != null &&
+            selection.contactId == selectedContactId,
+        showSelectionIndicator: false,
+        onTap: busy || !enabled ? null : () => onChooseRecipient(selection),
+      );
+    }
 
     return Column(
       key: const ValueKey('pay_recipient_step'),
@@ -149,20 +165,7 @@ class PayRecipientStep extends StatelessWidget {
               key: const ValueKey('pay_recent_recipients_card'),
               title: 'Recently sent',
               children: [
-                for (final recent in matchedRecents)
-                  _PayRecipientRow(
-                    key: ValueKey('pay_recent_${recent.address}'),
-                    contact: payRecipientContactForAddress(
-                      contacts,
-                      recent.address,
-                    ),
-                    address: recent.address,
-                    amountText: recent.amountText,
-                    timeLabel: payRecentTimeLabel(recent.lastUsedAt),
-                    onTap: busy
-                        ? null
-                        : () => onChooseRecipient(recent.address),
-                  ),
+                for (final recent in matchedRecents) buildRecentRow(recent),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -179,9 +182,21 @@ class PayRecipientStep extends StatelessWidget {
                     address: contact.address,
                     amountText: null,
                     timeLabel: null,
-                    onTap: busy
+                    selected: selectedContactId == contact.id,
+                    showSelectionIndicator:
+                        payContactsForAddress(
+                          contacts,
+                          contact.address,
+                        ).length >
+                        1,
+                    onTap: busy || !enabled
                         ? null
-                        : () => onChooseRecipient(contact.address),
+                        : () => onChooseRecipient(
+                            PayRecipientSelection(
+                              address: contact.address,
+                              contactId: contact.id,
+                            ),
+                          ),
                   ),
               ],
             ),
@@ -198,33 +213,10 @@ bool _payContactMatchesQuery(AddressBookContact contact, String query) {
       contact.label.trim().toLowerCase().contains(needle);
 }
 
-bool _payRecentMatchesQuery(
-  PayRecentRecipient recent,
-  AddressBookContact? contact,
-  String query,
-) {
+bool _payRecentMatchesQuery(PayRecentRecipient recent, String query) {
   final needle = query.trim().toLowerCase();
   if (needle.isEmpty) return true;
-  return recent.address.trim().toLowerCase().contains(needle) ||
-      (contact?.label.trim().toLowerCase().contains(needle) ?? false);
-}
-
-/// Contacts arrive pre-filtered to compatible networks, so address equality
-/// is the only remaining check.
-AddressBookContact? payRecipientContactForAddress(
-  Iterable<AddressBookContact> contacts,
-  String address,
-) {
-  for (final contact in contacts) {
-    if (_payContactHasAddress(contact, address)) return contact;
-  }
-  return null;
-}
-
-bool _payContactHasAddress(AddressBookContact contact, String address) {
-  final needle = normalizedAddressBookAddress(contact.network, address);
-  return needle.isNotEmpty &&
-      normalizedAddressBookAddress(contact.network, contact.address) == needle;
+  return recent.address.trim().toLowerCase().contains(needle);
 }
 
 /// Bottom-pinned actions for a valid Recipient selection.
@@ -258,8 +250,7 @@ class PayRecipientActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final typed = typedAddress.trim();
-    final contact = payRecipientContactForAddress(contacts, typed);
-    final canAddContact = contact == null;
+    final canAddContact = payContactsForAddress(contacts, typed).isEmpty;
 
     return Column(
       key: const ValueKey('pay_recipient_actions'),
@@ -300,6 +291,8 @@ class PayRecipientActions extends StatelessWidget {
           variant: AppButtonVariant.primary,
           size: AppButtonSize.large,
           minWidth: PayWizardActionMetrics.width,
+          trailing: busy ? const AppIcon(AppIcons.loader) : null,
+          iconGap: AppSpacing.xxs,
           onPressed: busy || !enabled ? null : onSelectRecipient,
           child: Text(busy ? 'Fetching quote' : 'Select recipient'),
         ),
@@ -361,6 +354,8 @@ class _PayRecipientRow extends StatelessWidget {
     required this.address,
     required this.amountText,
     required this.timeLabel,
+    required this.selected,
+    required this.showSelectionIndicator,
     required this.onTap,
     super.key,
   });
@@ -369,6 +364,8 @@ class _PayRecipientRow extends StatelessWidget {
   final String address;
   final String? amountText;
   final String? timeLabel;
+  final bool selected;
+  final bool showSelectionIndicator;
   final VoidCallback? onTap;
 
   @override
@@ -381,6 +378,9 @@ class _PayRecipientRow extends StatelessWidget {
       suffixLength: 5,
     );
     final row = SizedBox(
+      key: contact == null
+          ? null
+          : ValueKey('pay_contact_row_surface_${contact!.id}'),
       height: 44,
       child: Row(
         children: [
@@ -461,17 +461,54 @@ class _PayRecipientRow extends StatelessWidget {
               ],
             ),
           ],
+          if (showSelectionIndicator) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _ContactSelectionSlot(selected: selected, contactId: contact!.id),
+          ],
         ],
       ),
     );
-    if (onTap == null) return row;
+    if (onTap == null) return Semantics(selected: selected, child: row);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: row,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: row,
+        ),
       ),
+    );
+  }
+}
+
+class _ContactSelectionSlot extends StatelessWidget {
+  const _ContactSelectionSlot({
+    required this.selected,
+    required this.contactId,
+  });
+
+  final bool selected;
+  final String contactId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: ValueKey('pay_contact_selection_slot_$contactId'),
+      width: 18,
+      height: 18,
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 16,
+                color: context.colors.icon.accent,
+                semanticLabel: 'Selected contact',
+              ),
+            )
+          : null,
     );
   }
 }

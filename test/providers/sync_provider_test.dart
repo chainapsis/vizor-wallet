@@ -10,6 +10,30 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('a busy network only aborts a restart that changes the route', () {
+    // Switching to Tor with a direct channel still up would leak.
+    expect(
+      shouldAbortRestartForBusyNetwork(
+        quiescent: false,
+        changesTransport: true,
+      ),
+      isTrue,
+    );
+    // An endpoint change or post-broadcast refresh keeps the same transport,
+    // so a slow teardown must not cost the session its sync and polling.
+    expect(
+      shouldAbortRestartForBusyNetwork(
+        quiescent: false,
+        changesTransport: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAbortRestartForBusyNetwork(quiescent: true, changesTransport: true),
+      isFalse,
+    );
+  });
+
   test('migration entry restarts a sync from an older foreground epoch', () {
     expect(
       shouldRestartSyncForMigrationEntry(

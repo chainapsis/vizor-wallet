@@ -11,7 +11,11 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
@@ -236,10 +240,41 @@ class _RefreshFailPayReviewNotifier extends SwapNotifier {
   }
 }
 
-Widget _routedPayApp(GoRouter router, SwapNotifier notifier) {
+const _torBlockedPayMessage =
+    'Pay is unavailable over Tor because the service blocked this '
+    'connection.\nTurn off Tor in Settings to pay.';
+
+class _TorBlockablePayNotifier extends SwapNotifier {
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '0.025',
+    receiveAmountText: '10',
+    destinationText: '0x1111111111111111111111111111111111111111',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
+  );
+
+  void blockTokenListOverTor() {
+    state = state.copyWith(supportedAssetsError: _torBlockedPayMessage);
+  }
+}
+
+Widget _routedPayApp(
+  GoRouter router,
+  SwapNotifier notifier, {
+  List<AddressBookContact> contacts = const [],
+  AddressBookRepository? addressBookRepository,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      addressBookRepositoryProvider.overrideWithValue(
+        addressBookRepository ?? _FakeAddressBookRepository(contacts),
+      ),
       swapStateProvider.overrideWith(() => notifier),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
@@ -261,6 +296,32 @@ Widget _routedPayApp(GoRouter router, SwapNotifier notifier) {
       ),
     ),
   );
+}
+
+class _FakeAddressBookRepository implements AddressBookRepository {
+  _FakeAddressBookRepository(this.contacts);
+
+  final List<AddressBookContact> contacts;
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+}
+
+class _DelayedAddressBookRepository implements AddressBookRepository {
+  final _contacts = Completer<List<AddressBookContact>>();
+
+  void complete(List<AddressBookContact> contacts) {
+    _contacts.complete(contacts);
+  }
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() => _contacts.future;
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
 Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
@@ -437,6 +498,169 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_amount_input')),
     );
     expect(amountInput.controller?.text, '10');
+  });
+
+  testWidgets('contact row selects the clicked identity before review', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    const address = '0x1111111111111111111111111111111111111111';
+    const contacts = [
+      AddressBookContact(
+        id: 'first',
+        label: 'First',
+        network: AddressBookNetwork.ethereum,
+        address: address,
+        profilePictureId: 'pfp-01',
+        createdAtMs: 0,
+        updatedAtMs: 0,
+      ),
+      AddressBookContact(
+        id: 'second',
+        label: 'Second',
+        network: AddressBookNetwork.ethereum,
+        address: address,
+        profilePictureId: 'pfp-02',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      ),
+    ];
+    Object? reviewExtra;
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, state) {
+            reviewExtra = state.extra;
+            return const Text('Review route');
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      _routedPayApp(
+        router,
+        _RefreshFailPayReviewNotifier(),
+        contacts: contacts,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 contacts'), findsOneWidget);
+    await tester.tap(find.text('Second'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review route'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_pay_contact_second')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.check,
+        ),
+      ),
+      findsOneWidget,
+    );
+    final firstSelectionSlot = find.byKey(
+      const ValueKey('mobile_pay_contact_selection_slot_first'),
+    );
+    final secondSelectionSlot = find.byKey(
+      const ValueKey('mobile_pay_contact_selection_slot_second'),
+    );
+    expect(firstSelectionSlot, findsOneWidget);
+    expect(secondSelectionSlot, findsOneWidget);
+    expect(tester.getSize(firstSelectionSlot), const Size.square(18));
+    expect(tester.getSize(secondSelectionSlot), const Size.square(18));
+    expect(
+      tester.getRect(firstSelectionSlot).center.dx,
+      tester.getRect(secondSelectionSlot).center.dx,
+    );
+    expect(
+      find.descendant(
+        of: firstSelectionSlot,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.check,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.widget(
+        find.byKey(const ValueKey('mobile_pay_contact_row_surface_second')),
+      ),
+      isA<SizedBox>(),
+    );
+    expect(
+      tester.widget<Text>(find.text('Second')).style?.fontWeight,
+      tester.widget<Text>(find.text('First')).style?.fontWeight,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review route'), findsOneWidget);
+    expect(reviewExtra, isA<PayRecipientSelection>());
+    expect((reviewExtra! as PayRecipientSelection).contactId, 'second');
+  });
+
+  testWidgets('recipient actions wait for the initial address book load', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final repository = _DelayedAddressBookRepository();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      _routedPayApp(
+        router,
+        _RefreshFailPayReviewNotifier(),
+        addressBookRepository: repository,
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pump();
+
+    var continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+    );
+    expect(continueButton.onPressed, isNull);
+
+    repository.complete(const []);
+    await tester.pumpAndSettle();
+
+    continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+    );
+    expect(continueButton.onPressed, isNotNull);
   });
 
   testWidgets(
@@ -696,5 +920,52 @@ void main() {
     expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Pay review route'), findsNothing);
+  });
+
+  testWidgets('a Tor-blocked token list closes the recipient CTA', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _TorBlockablePayNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    notifier.blockTokenListOverTor();
+    await tester.pumpAndSettle();
+
+    expect(find.text(_torBlockedPayMessage), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
+          )
+          .onPressed,
+      isNull,
+    );
   });
 }

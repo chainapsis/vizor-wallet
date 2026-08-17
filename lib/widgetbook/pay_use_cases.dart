@@ -207,7 +207,8 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
     super.dispose();
   }
 
-  void _selectAddress(String address) {
+  void _selectAddress(PayRecipientSelection selection) {
+    final address = selection.address;
     setState(() {
       _typedAddress = address;
       _controller.value = TextEditingValue(
@@ -421,16 +422,18 @@ class _PayPreviewSidebar extends StatelessWidget {
           children: [
             const _PreviewAccountHeader(),
             const SizedBox(height: AppSpacing.md),
-            const AppSidebarItem(
-              label: 'Home',
-              iconName: AppIcons.home,
-              active: true,
-            ),
+            const AppSidebarItem(label: 'Home', iconName: AppIcons.home),
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(
               label: 'Swap',
               iconName: AppIcons.swapArrows,
               onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const AppSidebarItem(
+              label: 'Pay',
+              iconName: AppIcons.paid,
+              active: true,
             ),
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(
@@ -545,7 +548,7 @@ final _previewContacts = [
     id: 'contact-label',
     label: 'Contact label',
     network: AddressBookNetwork.ethereum,
-    address: '0x1111111111111111111111111111111111111111',
+    address: _contactAddress,
     profilePictureId: 'pfp-02',
     createdAtMs: 0,
     updatedAtMs: 0,
@@ -555,11 +558,13 @@ final _previewContacts = [
 final _previewRecents = [
   PayRecentRecipient(
     address: _contactAddress,
+    contactId: 'mike',
     amountText: '-24 USDC',
     lastUsedAt: DateTime.now().subtract(const Duration(days: 2)),
   ),
   PayRecentRecipient(
-    address: '0x2222222222222222222222222222222222222222',
+    address: _contactAddress,
+    contactId: 'contact-label',
     amountText: '-18.50 USDC',
     lastUsedAt: DateTime.now().subtract(const Duration(days: 3)),
   ),

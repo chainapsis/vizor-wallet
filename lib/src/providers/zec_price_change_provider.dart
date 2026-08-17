@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
 import '../core/config/swap_feature_config.dart';
 import '../core/formatting/zec_amount.dart';
+import '../core/network/network_http_client.dart';
 import '../features/swap/models/swap_fiat_value_formatting.dart';
 
 const kVizorCoinGeckoPriceBaseUrlEnvKey = 'VIZOR_COINGECKO_PRICE_BASE_URL';
@@ -15,12 +17,88 @@ const kVizorCoinGeckoPriceBaseUrl = String.fromEnvironment(
   kVizorCoinGeckoPriceBaseUrlEnvKey,
   defaultValue: kVizorCoinGeckoDefaultPriceBaseUrl,
 );
+const zecMarketDataRefreshInterval = Duration(minutes: 3);
+const zecMarketDataCacheTtl = Duration(hours: 1);
+const zecMarketDataCacheStorageKey = 'vizor_zec_market_data_v1';
 
 class ZecMarketData {
   const ZecMarketData({required this.usdPrice, this.change24hPct});
 
   final double usdPrice;
   final double? change24hPct;
+}
+
+class CachedZecMarketData {
+  const CachedZecMarketData({required this.data, required this.fetchedAt});
+
+  final ZecMarketData data;
+  final DateTime fetchedAt;
+
+  bool isFreshAt(DateTime now) {
+    final age = now.toUtc().difference(fetchedAt.toUtc());
+    return !age.isNegative && age < zecMarketDataCacheTtl;
+  }
+}
+
+abstract interface class ZecMarketDataCache {
+  Future<CachedZecMarketData?> read();
+
+  Future<void> write(CachedZecMarketData value);
+}
+
+class SharedPreferencesZecMarketDataCache implements ZecMarketDataCache {
+  const SharedPreferencesZecMarketDataCache();
+
+  @override
+  Future<CachedZecMarketData?> read() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(zecMarketDataCacheStorageKey);
+    if (raw == null || raw.isEmpty) return null;
+    return decodeCachedZecMarketData(raw);
+  }
+
+  @override
+  Future<void> write(CachedZecMarketData value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = await prefs.setString(
+      zecMarketDataCacheStorageKey,
+      encodeCachedZecMarketData(value),
+    );
+    if (!saved) throw StateError('Could not persist ZEC market data.');
+  }
+}
+
+String encodeCachedZecMarketData(CachedZecMarketData value) {
+  return jsonEncode({
+    'version': 1,
+    'usdPrice': value.data.usdPrice,
+    'change24hPct': value.data.change24hPct,
+    'fetchedAtMs': value.fetchedAt.toUtc().millisecondsSinceEpoch,
+  });
+}
+
+CachedZecMarketData? decodeCachedZecMarketData(String raw) {
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic> || decoded['version'] != 1) {
+      return null;
+    }
+    final usdRaw = decoded['usdPrice'];
+    final changeRaw = decoded['change24hPct'];
+    final fetchedAtRaw = decoded['fetchedAtMs'];
+    if (usdRaw is! num || fetchedAtRaw is! int) return null;
+    final usdPrice = usdRaw.toDouble();
+    if (!usdPrice.isFinite || usdPrice <= 0) return null;
+    if (changeRaw != null && changeRaw is! num) return null;
+    final change24hPct = (changeRaw as num?)?.toDouble();
+    if (change24hPct != null && !change24hPct.isFinite) return null;
+    return CachedZecMarketData(
+      data: ZecMarketData(usdPrice: usdPrice, change24hPct: change24hPct),
+      fetchedAt: DateTime.fromMillisecondsSinceEpoch(fetchedAtRaw, isUtc: true),
+    );
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Non-swap ZEC market data source. Swap keeps using its provider-specific
@@ -35,12 +113,13 @@ abstract interface class ZecMarketDataSource {
 class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
   CoinGeckoZecMarketDataSource({
     HttpClient? client,
+    NetworkHttpClient? networkClient,
     Uri? baseUri,
     this.timeout = const Duration(seconds: 12),
-  }) : _client = client ?? HttpClient(),
+  }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? Uri.parse(kVizorCoinGeckoPriceBaseUrl);
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
   final Uri _baseUri;
   final Duration timeout;
 
@@ -48,10 +127,13 @@ class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
   Future<ZecMarketData?> fetchMarketData() async {
     final endpoint = coinGeckoSimplePriceUri(_baseUri);
     try {
-      final request = await _client.getUrl(endpoint).timeout(timeout);
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decoder.bind(response).join();
+      final response = await _client.request(
+        'GET',
+        endpoint,
+        headers: const {HttpHeaders.acceptHeader: 'application/json'},
+        timeout: timeout,
+      );
+      final body = utf8.decode(response.bodyBytes);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         log('zecMarketData: CoinGecko returned ${response.statusCode}');
         return null;
@@ -107,52 +189,166 @@ double? parseZecPriceChange24hPct(String body) {
   return parseZecMarketData(body)?.change24hPct;
 }
 
-const zecMarketDataRefreshInterval = Duration(minutes: 3);
-
 final zecMarketDataSourceProvider = Provider<ZecMarketDataSource>((ref) {
   return CoinGeckoZecMarketDataSource();
 });
 
-/// Latest known non-swap ZEC market data, or null until the first successful
-/// fetch. Stays on the last known value across transient fetch failures. Null
-/// while market-price UI is disabled on non-mainnet builds.
-final zecHomeMarketDataProvider =
-    NotifierProvider.autoDispose<ZecHomeMarketDataNotifier, ZecMarketData?>(
-      ZecHomeMarketDataNotifier.new,
-    );
+final zecMarketDataCacheProvider = Provider<ZecMarketDataCache>((ref) {
+  return const SharedPreferencesZecMarketDataCache();
+});
 
-class ZecHomeMarketDataNotifier extends Notifier<ZecMarketData?> {
-  Timer? _timer;
-  int _epoch = 0;
+final zecMarketDataNowProvider = Provider<DateTime Function()>((ref) {
+  return DateTime.now;
+});
 
-  @override
-  ZecMarketData? build() {
-    _timer?.cancel();
-    final epoch = ++_epoch;
-    if (!ref.watch(swapFeatureEnabledProvider)) return null;
-    final source = ref.watch(zecMarketDataSourceProvider);
+final zecMarketDataRefreshIntervalProvider = Provider<Duration>((ref) {
+  return zecMarketDataRefreshInterval;
+});
 
-    ref.onDispose(() {
-      _epoch++;
-      _timer?.cancel();
-    });
+class ZecHomeMarketDataState {
+  const ZecHomeMarketDataState({
+    this.displayData,
+    this.liveData,
+    this.fetchedAt,
+  });
 
-    Future<void> tick() async {
-      final data = await source.fetchMarketData();
-      if (epoch != _epoch) return;
-      if (data != null) state = data;
-      _timer = Timer(zecMarketDataRefreshInterval, () => unawaited(tick()));
-    }
+  final ZecMarketData? displayData;
+  final ZecMarketData? liveData;
+  final DateTime? fetchedAt;
 
-    scheduleMicrotask(() {
-      if (epoch == _epoch) unawaited(tick());
-    });
-    return null;
+  bool isFreshAt(DateTime now) {
+    final timestamp = fetchedAt;
+    if (displayData == null || timestamp == null) return false;
+    final age = now.toUtc().difference(timestamp.toUtc());
+    return !age.isNegative && age < zecMarketDataCacheTtl;
   }
 }
 
+/// Latest usable non-swap ZEC market data. A persisted value less than one
+/// hour old is exposed while the first network refresh is in flight; transient
+/// failures retain it only until that TTL expires. Null while market-price UI
+/// is disabled on non-mainnet builds.
+final zecHomeMarketDataStateProvider =
+    NotifierProvider.autoDispose<
+      ZecHomeMarketDataNotifier,
+      ZecHomeMarketDataState
+    >(ZecHomeMarketDataNotifier.new);
+
+class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
+  Timer? _refreshTimer;
+  Timer? _expiryTimer;
+  int _epoch = 0;
+
+  @override
+  ZecHomeMarketDataState build() {
+    _refreshTimer?.cancel();
+    _expiryTimer?.cancel();
+    final epoch = ++_epoch;
+    if (!ref.watch(swapFeatureEnabledProvider)) {
+      return const ZecHomeMarketDataState();
+    }
+    final source = ref.watch(zecMarketDataSourceProvider);
+    final cache = ref.watch(zecMarketDataCacheProvider);
+    final now = ref.watch(zecMarketDataNowProvider);
+    final refreshInterval = ref.watch(zecMarketDataRefreshIntervalProvider);
+
+    ref.onDispose(() {
+      _epoch++;
+      _refreshTimer?.cancel();
+      _expiryTimer?.cancel();
+    });
+
+    void clearMarketData() {
+      _expiryTimer?.cancel();
+      _expiryTimer = null;
+      state = const ZecHomeMarketDataState();
+    }
+
+    void scheduleExpiry(DateTime fetchedAt) {
+      _expiryTimer?.cancel();
+      final remaining = fetchedAt
+          .toUtc()
+          .add(zecMarketDataCacheTtl)
+          .difference(now().toUtc());
+      if (remaining <= Duration.zero) {
+        clearMarketData();
+        return;
+      }
+      _expiryTimer = Timer(remaining, () {
+        if (epoch != _epoch || state.fetchedAt != fetchedAt) return;
+        _expiryTimer = null;
+        state = const ZecHomeMarketDataState();
+      });
+    }
+
+    Future<void> persist(CachedZecMarketData value) async {
+      try {
+        await cache.write(value);
+      } catch (e) {
+        log('zecMarketData: cache write failed: $e');
+      }
+    }
+
+    Future<void> tick() async {
+      if (state.displayData != null && !state.isFreshAt(now())) {
+        clearMarketData();
+      }
+      final data = await source.fetchMarketData();
+      if (epoch != _epoch) return;
+      if (data != null) {
+        final fetchedAt = now().toUtc();
+        state = ZecHomeMarketDataState(
+          displayData: data,
+          liveData: data,
+          fetchedAt: fetchedAt,
+        );
+        scheduleExpiry(fetchedAt);
+        unawaited(
+          persist(CachedZecMarketData(data: data, fetchedAt: fetchedAt)),
+        );
+      } else if (state.displayData != null && !state.isFreshAt(now())) {
+        clearMarketData();
+      }
+      _refreshTimer = Timer(refreshInterval, () => unawaited(tick()));
+    }
+
+    Future<void> initialize() async {
+      try {
+        final cached = await cache.read();
+        if (epoch != _epoch) return;
+        if (cached != null && cached.isFreshAt(now())) {
+          state = ZecHomeMarketDataState(
+            displayData: cached.data,
+            fetchedAt: cached.fetchedAt,
+          );
+          scheduleExpiry(cached.fetchedAt);
+        }
+      } catch (e) {
+        log('zecMarketData: cache read failed: $e');
+      }
+      if (epoch == _epoch) await tick();
+    }
+
+    scheduleMicrotask(() {
+      if (epoch == _epoch) unawaited(initialize());
+    });
+    return const ZecHomeMarketDataState();
+  }
+}
+
+final zecHomeMarketDataProvider = Provider.autoDispose<ZecMarketData?>((ref) {
+  return ref.watch(zecHomeMarketDataStateProvider).displayData;
+});
+
 final zecHomeUsdUnitPriceProvider = Provider.autoDispose<double?>((ref) {
   return ref.watch(zecHomeMarketDataProvider)?.usdPrice;
+});
+
+/// ZEC/USD price fetched successfully during the current provider lifetime.
+/// Unlike the Home display price, this never exposes a persisted cache value
+/// to USD-denominated send amount calculations.
+final zecLiveUsdUnitPriceProvider = Provider.autoDispose<double?>((ref) {
+  return ref.watch(zecHomeMarketDataStateProvider).liveData?.usdPrice;
 });
 
 final zecPriceChange24hPctProvider = Provider.autoDispose<double?>((ref) {
