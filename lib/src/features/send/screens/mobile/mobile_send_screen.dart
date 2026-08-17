@@ -13,6 +13,8 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/naming/ens_name.dart';
+import '../../../../core/naming/ens_name_resolver.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -26,6 +28,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/ens_resolver_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -170,6 +173,7 @@ class MobileSendAmountArgs {
     required this.addressType,
     this.contactLabel,
     this.contactPictureId,
+    this.recipientEnsName,
   });
 
   final String sendFlowId;
@@ -177,6 +181,10 @@ class MobileSendAmountArgs {
   final String addressType;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// The `.eth` name [recipient] was resolved from, if any. [recipient] is
+  /// always the resolved Zcash address that downstream steps propose against.
+  final String? recipientEnsName;
 }
 
 class MobileSendReviewDraftArgs {
@@ -190,6 +198,7 @@ class MobileSendReviewDraftArgs {
     this.memo,
     this.contactLabel,
     this.contactPictureId,
+    this.recipientEnsName,
   });
 
   final String sendFlowId;
@@ -201,6 +210,9 @@ class MobileSendReviewDraftArgs {
   final String? memo;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// The `.eth` name [recipient] was resolved from, if any (display-only).
+  final String? recipientEnsName;
 }
 
 class MobileSendAmountScreen extends StatelessWidget {
@@ -218,6 +230,7 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialAddressType: args.addressType,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      initialEnsName: args.recipientEnsName,
     );
   }
 }
@@ -243,6 +256,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       initialMemo: args.memo,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      initialEnsName: args.recipientEnsName,
     );
   }
 }
@@ -312,6 +326,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialMemo,
     this.initialContactLabel,
     this.initialContactPictureId,
+    this.initialEnsName,
     this.initialRecipientFocused = false,
     super.key,
   });
@@ -343,6 +358,11 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// Preview/test seam for recipient summary states.
   final String? initialContactLabel;
   final String? initialContactPictureId;
+
+  /// The `.eth` name [initialRecipient] was resolved from, when a prior step
+  /// resolved an ENS recipient. Display-only; [initialRecipient] is the
+  /// resolved Zcash address.
+  final String? initialEnsName;
   final bool initialRecipientFocused;
 
   /// Preview/test seam for the direct Rust validation call.
@@ -374,6 +394,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _contactLabel;
   String? _contactPictureId;
   int _addressSeq = 0;
+  // ENS recipient resolution. A well-formed `.eth` name sets
+  // `_addressType = 'ens'` and is resolved on Continue; on success the field
+  // text is replaced with the resolved Zcash address so every downstream
+  // estimate/propose target uses the resolved address — never the name.
+  // `_recipientEnsName` is display-only. Editing the recipient clears these.
+  String? _recipientEnsName;
+  bool _resolvingRecipient = false;
+  String? _recipientResolveError;
 
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
@@ -418,6 +446,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _contactLabel = initialContactLabel.trim();
     }
     _contactPictureId = widget.initialContactPictureId;
+    final initialEnsName = widget.initialEnsName;
+    if (initialEnsName != null && initialEnsName.trim().isNotEmpty) {
+      _recipientEnsName = initialEnsName.trim();
+    }
     final initialMemo = widget.initialMemo;
     if (initialMemo != null && initialMemo.trim().isNotEmpty) {
       _memo = initialMemo.trim();
@@ -518,11 +550,35 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (mounted) setState(() {});
   }
 
+  void _clearEnsResolution() {
+    _recipientEnsName = null;
+    _resolvingRecipient = false;
+    _recipientResolveError = null;
+  }
+
+  String _mapEnsResolveError(EnsResolutionException e) {
+    switch (e.kind) {
+      case EnsResolutionFailure.noRecord:
+      case EnsResolutionFailure.notRegistered:
+        return 'Name has no usable Zcash address record';
+      case EnsResolutionFailure.network:
+        return 'Could not resolve name';
+      case EnsResolutionFailure.invalidName:
+        return e.message;
+    }
+  }
+
   Future<void> _validateAddress() async {
     final seq = ++_addressSeq;
     final address = _addressController.text.trim();
     if (address.isEmpty) {
       if (mounted && seq == _addressSeq) setState(() => _addressType = '');
+      return;
+    }
+    // A well-formed `.eth` name is a valid recipient here; it is resolved on
+    // Continue, so skip the Rust bech32m validation.
+    if (isEnsName(address)) {
+      if (mounted && seq == _addressSeq) setState(() => _addressType = 'ens');
       return;
     }
     try {
@@ -548,6 +604,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactPictureId = null;
       }
       _addressType = '';
+      _clearEnsResolution();
       _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
@@ -607,8 +664,71 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  void _continueToAmount() {
-    if (!_hasValidAddress || _isHardwareTexRecipient) return;
+  Future<void> _continueToAmount() async {
+    if (!_hasValidAddress || _isHardwareTexRecipient || _resolvingRecipient) {
+      return;
+    }
+
+    final typed = _addressController.text.trim();
+    var recipientAddress = typed;
+    var recipientAddressType = _addressType;
+
+    // Resolve a `.eth` recipient to its Zcash address record before leaving
+    // the recipient step. The RESOLVED address — never the name — is what
+    // reaches validateAddress/estimate/propose from here on.
+    if (isEnsName(typed)) {
+      setState(() {
+        _resolvingRecipient = true;
+        _recipientResolveError = null;
+      });
+      final String resolved;
+      try {
+        resolved = await ref
+            .read(ensResolverProvider)
+            .resolveZcashAddress(normalizeEnsName(typed));
+      } on EnsResolutionException catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _recipientResolveError = _mapEnsResolveError(e);
+          _resolvingRecipient = false;
+        });
+        return;
+      } catch (e) {
+        log('MobileSend: ENS resolution error: $e');
+        if (!mounted) return;
+        setState(() {
+          _recipientResolveError = 'Could not resolve name';
+          _resolvingRecipient = false;
+        });
+        return;
+      }
+      // Validate the resolved address exactly as a typed address; a ZEC
+      // record that fails bech32m validation is unusable — fail closed.
+      final validation = await rust_sync.validateAddress(address: resolved);
+      if (!mounted) return;
+      if (!validation.isValid) {
+        setState(() {
+          _recipientResolveError = 'Name has no usable Zcash address record';
+          _resolvingRecipient = false;
+        });
+        return;
+      }
+      recipientAddress = resolved;
+      recipientAddressType = validation.addressType;
+      // Pin the resolved address into the field so every downstream target
+      // uses it; keep the name only for display. This does not fire
+      // onChanged, so the ENS display state is preserved.
+      _addressController.value = TextEditingValue(
+        text: resolved,
+        selection: TextSelection.collapsed(offset: resolved.length),
+      );
+      setState(() {
+        _addressType = validation.addressType;
+        _recipientEnsName = normalizeEnsName(typed);
+        _resolvingRecipient = false;
+      });
+    }
+
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
@@ -616,10 +736,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           '/send/amount',
           extra: MobileSendAmountArgs(
             sendFlowId: _sendFlowId,
-            recipient: _addressController.text.trim(),
-            addressType: _addressType,
+            recipient: recipientAddress,
+            addressType: recipientAddressType,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
+            recipientEnsName: _recipientEnsName,
           ),
         ),
       );
@@ -1070,6 +1191,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             memo: _memo,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
+            recipientEnsName: _recipientEnsName,
           ),
         ),
       );
@@ -1454,6 +1576,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
     }
 
+    final ens = _recipientEnsName?.trim();
+    if (ens != null && ens.isNotEmpty) {
+      return _ReviewRecipientPresentation(
+        headline: ens,
+        verifyTitle: ens,
+        useZecIcon: true,
+      );
+    }
+
     final rememberedContactLabel = _contactLabel?.trim();
     if (rememberedContactLabel != null && rememberedContactLabel.isNotEmpty) {
       return _ReviewRecipientPresentation(
@@ -1477,7 +1608,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       'sapling' => 'Shielded address',
       'transparent' => 'Transparent address',
       'tex' => 'TEX address',
-      _ => 'Zcash address',
+      _ => 'Zcash address or .eth',
     };
   }
 
@@ -1813,13 +1944,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final colors = context.colors;
     final showAction = _addressFocus.hasFocus;
     final hasAddressError =
-        _addressType == 'invalid' || _addressType == 'error';
+        _addressType == 'invalid' ||
+        _addressType == 'error' ||
+        _recipientResolveError != null;
     return MobileTextField(
       key: const ValueKey('mobile_send_address_field'),
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Zcash Address',
+      hintText: 'Zcash address or .eth',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
@@ -1881,7 +2014,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     // valid and matches a saved contact / own account — the resolved name so
     // the user knows the pasted/typed address is the intended one.
     Widget? line;
-    if (showError) {
+    if (_recipientResolveError != null) {
+      line = Text(
+        _recipientResolveError!,
+        style: AppTypography.labelLarge.copyWith(
+          color: colors.text.destructive,
+        ),
+      );
+    } else if (_resolvingRecipient) {
+      line = Text(
+        'Resolving name…',
+        style: AppTypography.labelLarge.copyWith(
+          color: colors.text.secondary,
+        ),
+      );
+    } else if (showError) {
       line = Text(
         hardwareTex
             ? _hardwareTexUnsupportedText
@@ -1890,6 +2037,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   : 'Address validation failed'),
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,
+        ),
+      );
+    } else if (_addressType == 'ens') {
+      line = Text(
+        'Resolves on continue',
+        style: AppTypography.labelLarge.copyWith(
+          color: colors.text.secondary,
         ),
       );
     } else if (_hasValidAddress) {
@@ -1943,7 +2097,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             ? colors.border.subtleOpacity
             : null,
         onPressed: _hasValidAddress && !_isHardwareTexRecipient
-            ? _continueToAmount
+            ? () => unawaited(_continueToAmount())
             : null,
         child: Text(
           _addressController.text.trim().isEmpty

@@ -20,7 +20,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(MobileSendScreen), findsOneWidget);
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(find.text('Zcash Address'), findsOneWidget);
+    expect(find.text('Zcash address or .eth'), findsOneWidget);
     expect(find.text('Paste'), findsNothing);
     expect(find.text('Scan a QR Code'), findsOneWidget);
     expect(find.text('Continue'), findsNothing);

@@ -52,6 +52,7 @@ class SendReviewInfoSection extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.ensName,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
     this.onShowFullAddress,
@@ -75,6 +76,12 @@ class SendReviewInfoSection extends StatelessWidget {
 
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
+
+  /// The `.eth` name the recipient address was resolved from, if any. When
+  /// set (and the recipient is not a saved contact) the "To" row headlines
+  /// the name with the truncated resolved address beneath it. The full
+  /// address stays reachable via "Show full address".
+  final String? ensName;
 
   /// Connector between the Amount and To rows — arrow-down on review /
   /// in-progress / completed, uturn-up on failed.
@@ -132,19 +139,25 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 
   Widget _recipientRow(BuildContext context) {
+    final ens = ensName?.trim();
+    final hasEns = ens != null && ens.isNotEmpty;
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
         label: 'To',
-        value: truncatedAddress(address),
+        value: hasEns ? ens : truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         struckThrough: recipientStruckThrough,
-        bottomLeftIconName: _recipientBadgeIsShielded
+        bottomLeftIconName: hasEns
+            ? null
+            : _recipientBadgeIsShielded
             ? AppIcons.shieldKeyhole
             : AppIcons.transparentBalance,
-        bottomLeftIconColor: _recipientBadgeIsShielded
+        bottomLeftIconColor: hasEns
+            ? null
+            : _recipientBadgeIsShielded
             ? context.colors.text.brandCrimson
             : null,
-        bottomLeftText: _recipientBadgeText,
+        bottomLeftText: hasEns ? truncatedAddress(address) : _recipientBadgeText,
         trailingActionLabel: 'Show full address',
         onTrailingAction: onShowFullAddress,
       ),

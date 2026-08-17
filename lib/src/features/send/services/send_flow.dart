@@ -34,6 +34,7 @@ class SendReviewArgs {
     required this.feeZatoshi,
     required this.needsSaplingParams,
     this.memo,
+    this.recipientEnsName,
   });
 
   final BigInt proposalId;
@@ -45,6 +46,11 @@ class SendReviewArgs {
   final BigInt feeZatoshi;
   final bool needsSaplingParams;
   final String? memo;
+
+  /// The `.eth` name [address] was resolved from, if the recipient was
+  /// entered as an ENS name. Display-only: [address] is always the resolved
+  /// Zcash address that the proposal was built against.
+  final String? recipientEnsName;
 
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
 }
@@ -168,6 +174,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String addressType,
   required BigInt amountZatoshi,
   String? memo,
+  String? recipientEnsName,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
   final proposal = await ref
@@ -198,6 +205,7 @@ Future<SendReviewArgs> proposeSendTransfer({
     feeZatoshi: proposal.feeZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
     needsSaplingParams: proposal.needsSaplingParams,
+    recipientEnsName: recipientEnsName,
   );
 }
 

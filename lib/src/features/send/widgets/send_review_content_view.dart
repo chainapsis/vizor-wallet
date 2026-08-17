@@ -26,6 +26,7 @@ class SendReviewContentView extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.ensName,
     this.memoText,
     this.memoExpanded = false,
     this.confirmLabel = 'Confirm & send',
@@ -54,6 +55,9 @@ class SendReviewContentView extends StatelessWidget {
 
   /// Optional fiat sub-label under the amount; the row is hidden when null.
   final String? fiatText;
+
+  /// The `.eth` name the recipient was resolved from, if any (display-only).
+  final String? ensName;
 
   /// Optional memo. When null the Message row (and its divider) is omitted
   /// from the wrap card; when present it renders single-line truncated with
@@ -89,6 +93,7 @@ class SendReviewContentView extends StatelessWidget {
           recipient: recipient,
           isShieldedRecipient: isShieldedRecipient,
           recipientAddressType: recipientAddressType,
+          ensName: ensName,
           onShowFullAddress: onShowFullAddress,
         ),
         ReviewWrapCard(
