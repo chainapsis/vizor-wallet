@@ -70,6 +70,7 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
+  var _destinationResolveGen = 0;
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _payEntryGeneration = 0;
@@ -489,11 +490,16 @@ class SwapNotifier extends Notifier<SwapState> {
       destinationResolveStatus: SwapDestinationResolveStatus.resolving,
       clearDestinationResolveError: true,
     );
+    final gen = ++_destinationResolveGen;
+    final submittedChainTicker = state.externalAsset.chainTicker;
 
     try {
       final resolved = await ref
           .read(ensResolverProvider)
           .resolveEvmAddress(normalized, chainId: chainId);
+      if (_destinationResolveInvalidated(gen, submittedChainTicker)) {
+        return false;
+      }
       state = state.copyWith(
         destinationText: resolved,
         destinationEnsName: normalized,
@@ -504,6 +510,9 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return true;
     } on EnsResolutionException catch (e) {
+      if (_destinationResolveInvalidated(gen, submittedChainTicker)) {
+        return false;
+      }
       final message = switch (e.kind) {
         EnsResolutionFailure.notRegistered ||
         EnsResolutionFailure.noRecord =>
@@ -517,6 +526,9 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return false;
     } catch (_) {
+      if (_destinationResolveInvalidated(gen, submittedChainTicker)) {
+        return false;
+      }
       // Fail closed on any unexpected error (e.g. a malformed record that
       // throws below the typed EnsResolutionException layer) so the status
       // can never wedge in `resolving` and leave Update disabled.
@@ -527,6 +539,28 @@ class SwapNotifier extends Notifier<SwapState> {
       return false;
     }
   }
+
+  /// True when the in-flight resolution started at [gen] no longer describes
+  /// the current destination, so its result (or error) must be discarded
+  /// instead of written into state:
+  ///
+  /// - a newer [submitDestinationAddress] call started ([gen] is stale), or
+  /// - a destination mutation ran while resolving — every such mutation
+  ///   ([updateDestination], [selectDestinationContact], chain-changing
+  ///   [selectExternalAsset], pay/composer resets, …) resets
+  ///   [SwapState.destinationResolveStatus] away from `resolving`, which is
+  ///   the signal consumed here, or
+  /// - the external asset's chain changed without resetting the status
+  ///   (e.g. [selectPayExternalAsset] restoration calls that keep the
+  ///   destination), in which case the resolved address targets the old
+  ///   chain's ENSIP-11 coin type and must not be committed.
+  ///
+  /// A resolved address for the old input (or old chain) must never
+  /// overwrite the user's newer input.
+  bool _destinationResolveInvalidated(int gen, String submittedChainTicker) =>
+      gen != _destinationResolveGen ||
+      state.destinationResolveStatus != SwapDestinationResolveStatus.resolving ||
+      state.externalAsset.chainTicker != submittedChainTicker;
 
   void selectExternalAsset(SwapAsset asset) {
     final supportedAsset = _supportedAssetFor(

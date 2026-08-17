@@ -188,9 +188,10 @@ void main() {
       },
     );
 
-    test('resolving status is observable before the resolver future settles', () async {
-      final gate = _GatedFakeEnsNameResolver();
-      final gatedContainer = ProviderContainer(
+    // Container wired to a gated resolver whose futures the test settles
+    // manually, for observing and racing in-flight resolution.
+    ProviderContainer buildGatedContainer(_GatedFakeEnsNameResolver gate) {
+      final c = ProviderContainer(
         overrides: [
           accountProvider.overrideWith(_FakeAccountNotifier.new),
           swapIntentProvider.overrideWithValue(_FakeSwapProvider()),
@@ -202,10 +203,14 @@ void main() {
           ensResolverProvider.overrideWithValue(gate),
         ],
       );
-      addTearDown(gatedContainer.dispose);
-      gatedContainer
-          .read(swapStateProvider.notifier)
-          .selectExternalAsset(SwapAsset.usdc);
+      addTearDown(c.dispose);
+      c.read(swapStateProvider.notifier).selectExternalAsset(SwapAsset.usdc);
+      return c;
+    }
+
+    test('resolving status is observable before the resolver future settles', () async {
+      final gate = _GatedFakeEnsNameResolver();
+      final gatedContainer = buildGatedContainer(gate);
       final notifier = gatedContainer.read(swapStateProvider.notifier);
 
       final future = notifier.submitDestinationAddress('vitalik.eth');
@@ -224,6 +229,133 @@ void main() {
         SwapDestinationResolveStatus.idle,
       );
     });
+
+    test(
+      'a destination edit during in-flight resolution discards the stale '
+      'result',
+      () async {
+        final gate = _GatedFakeEnsNameResolver();
+        final c = buildGatedContainer(gate);
+        final notifier = c.read(swapStateProvider.notifier);
+
+        final future = notifier.submitDestinationAddress('vitalik.eth');
+        await Future<void>.delayed(Duration.zero);
+
+        // The user keeps typing while the lookup is in flight.
+        notifier.updateDestination('0x2222222222222222222222222222222222222222');
+
+        gate.complete('0x00000000219ab540356cbb839cbe05303d7705fa');
+        final ok = await future;
+
+        expect(ok, isFalse);
+        final state = c.read(swapStateProvider);
+        expect(
+          state.destinationText,
+          '0x2222222222222222222222222222222222222222',
+        );
+        expect(state.destinationEnsName, isNull);
+        expect(
+          state.destinationResolveStatus,
+          SwapDestinationResolveStatus.idle,
+        );
+      },
+    );
+
+    test(
+      'a chain change during in-flight resolution discards the stale result',
+      () async {
+        final gate = _GatedFakeEnsNameResolver();
+        final c = buildGatedContainer(gate);
+        final notifier = c.read(swapStateProvider.notifier);
+
+        final future = notifier.submitDestinationAddress('vitalik.eth');
+        await Future<void>.delayed(Duration.zero);
+
+        // Switching to a different chain invalidates the pending EVM lookup:
+        // its result targets the old chain's ENSIP-11 coin type.
+        notifier.selectExternalAsset(SwapAsset.sol);
+
+        gate.complete('0x00000000219ab540356cbb839cbe05303d7705fa');
+        final ok = await future;
+
+        expect(ok, isFalse);
+        final state = c.read(swapStateProvider);
+        expect(state.destinationText, isEmpty);
+        expect(state.destinationEnsName, isNull);
+        expect(
+          state.destinationResolveStatus,
+          SwapDestinationResolveStatus.idle,
+        );
+      },
+    );
+
+    test(
+      'a newer submit wins over a slower earlier submit',
+      () async {
+        final gate = _GatedFakeEnsNameResolver();
+        final c = buildGatedContainer(gate);
+        final notifier = c.read(swapStateProvider.notifier);
+
+        final first = notifier.submitDestinationAddress('vitalik.eth');
+        await Future<void>.delayed(Duration.zero);
+        final second = notifier.submitDestinationAddress('nick.eth');
+        await Future<void>.delayed(Duration.zero);
+
+        // The newer submit settles first; the older one settles late.
+        gate.complete(
+          '0x2222222222222222222222222222222222222222',
+          index: 1,
+        );
+        expect(await second, isTrue);
+        gate.complete('0x1111111111111111111111111111111111111111');
+        expect(await first, isFalse);
+
+        final state = c.read(swapStateProvider);
+        expect(
+          state.destinationText,
+          '0x2222222222222222222222222222222222222222',
+        );
+        expect(state.destinationEnsName, 'nick.eth');
+        expect(
+          state.destinationResolveStatus,
+          SwapDestinationResolveStatus.idle,
+        );
+      },
+    );
+
+    test(
+      'an in-flight failure after invalidation does not surface a stale error',
+      () async {
+        final gate = _GatedFakeEnsNameResolver();
+        final c = buildGatedContainer(gate);
+        final notifier = c.read(swapStateProvider.notifier);
+
+        final future = notifier.submitDestinationAddress('vitalik.eth');
+        await Future<void>.delayed(Duration.zero);
+
+        notifier.updateDestination('0x2222222222222222222222222222222222222222');
+
+        gate.completeError(
+          const EnsResolutionException(
+            EnsResolutionFailure.network,
+            'Could not resolve name',
+          ),
+        );
+        final ok = await future;
+
+        expect(ok, isFalse);
+        final state = c.read(swapStateProvider);
+        expect(
+          state.destinationResolveStatus,
+          SwapDestinationResolveStatus.idle,
+        );
+        expect(state.destinationResolveError, isNull);
+        expect(
+          state.destinationText,
+          '0x2222222222222222222222222222222222222222',
+        );
+      },
+    );
   });
 }
 
@@ -362,10 +494,16 @@ class _GatedFakeEnsNameResolver extends EnsNameResolver {
   _GatedFakeEnsNameResolver() : super(_UnusedEnsRpcTransport());
 
   final calls = <_ResolveCall>[];
-  final _completer = Completer<String>();
+  final _pending = <Completer<String>>[];
 
-  void complete(String result) {
-    _completer.complete(result);
+  /// Completes the oldest still-pending resolve call by default; [index]
+  /// selects a later one so tests can settle calls out of order.
+  void complete(String result, {int index = 0}) {
+    _pending.removeAt(index).complete(result);
+  }
+
+  void completeError(Object error, {int index = 0}) {
+    _pending.removeAt(index).completeError(error);
   }
 
   @override
@@ -374,6 +512,8 @@ class _GatedFakeEnsNameResolver extends EnsNameResolver {
     required int chainId,
   }) async {
     calls.add(_ResolveCall(name: name, chainId: chainId));
-    return _completer.future;
+    final completer = Completer<String>();
+    _pending.add(completer);
+    return completer.future;
   }
 }
