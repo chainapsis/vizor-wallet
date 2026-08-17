@@ -78,10 +78,6 @@ String _toChecksumAddress(List<int> raw) {
   return '0x${chars.join()}';
 }
 
-/// `addr(bytes32)` selector `3b3b57de`
-List<int> encodeAddrCall(List<int> node) =>
-    [...hexDecode('3b3b57de'), ...node];
-
 /// `addr(bytes32,uint256)` selector `f1cb7e06`
 List<int> encodeAddrCoinCall(List<int> node, BigInt coinType) =>
     [...hexDecode('f1cb7e06'), ...node, ..._word(coinType)];

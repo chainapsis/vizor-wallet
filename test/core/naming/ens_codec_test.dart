@@ -98,7 +98,7 @@ void main() {
 
   test('encodeUniversalResolve places two dynamic bytes args', () {
     final name = dnsEncodeName('foo.eth');
-    final call = encodeAddrCall(namehash('foo.eth'));
+    final call = encodeAddrCoinCall(namehash('foo.eth'), BigInt.from(60));
     final data = encodeUniversalResolve(name, call);
     expect(hexEncode(data.sublist(0, 4)), '0x9061b923');
     // head: offset1 = 0x40, offset2 = 0x40 + 32 + pad32(name.length)
