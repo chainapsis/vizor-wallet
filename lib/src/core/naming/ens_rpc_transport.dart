@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+
+import '../network/network_http_client.dart';
 
 /// Transport abstraction for ENS resolution: Ethereum JSON-RPC `eth_call`
 /// plus CCIP-Read (EIP-3668) offchain gateway fetches.
@@ -38,23 +39,42 @@ const List<String> defaultEnsRpcEndpoints = [
 
 const _rpcTimeout = Duration(seconds: 15);
 
-/// `dart:io` `HttpClient`-based [EnsRpcTransport].
+/// [NetworkHttpClient]-based [EnsRpcTransport].
+///
+/// All default HTTP goes through the app's policy-aware [NetworkHttpClient],
+/// so ENS resolution follows the Tor network-privacy route and fails closed
+/// while Tor is starting or broken — a raw `HttpClient` here would leak the
+/// user's IP alongside every recipient lookup on a Tor wallet.
 ///
 /// [postJson] and [fetchCcip] are injectable seams so tests never touch the
-/// real network; both default to real `dart:io` HTTP implementations.
+/// real network; both default to [NetworkHttpClient]-backed implementations.
 class HttpEnsRpcTransport implements EnsRpcTransport {
   HttpEnsRpcTransport({
     List<String> endpoints = defaultEnsRpcEndpoints,
+    NetworkHttpClient? networkClient,
     Future<String> Function(Uri uri, String body)? postJson,
     Future<String> Function(String method, Uri uri, String? body)? fetchCcip,
   })  : _endpoints = endpoints,
-        _postJson = postJson ?? _defaultPostJson,
-        _fetchCcip = fetchCcip ?? _defaultFetchCcip;
+        _networkClient = networkClient,
+        _injectedPostJson = postJson,
+        _injectedFetchCcip = fetchCcip;
 
   final List<String> _endpoints;
-  final Future<String> Function(Uri uri, String body) _postJson;
-  final Future<String> Function(String method, Uri uri, String? body)
-  _fetchCcip;
+  final Future<String> Function(Uri uri, String body)? _injectedPostJson;
+  final Future<String> Function(String method, Uri uri, String? body)?
+  _injectedFetchCcip;
+
+  NetworkHttpClient? _networkClient;
+
+  /// Created lazily so tests that inject both seams never register a
+  /// [NetworkHttpClient] instance with the process-wide quiesce set.
+  NetworkHttpClient get _client => _networkClient ??= NetworkHttpClient();
+
+  Future<String> Function(Uri uri, String body) get _postJson =>
+      _injectedPostJson ?? _policyAwarePostJson;
+
+  Future<String> Function(String method, Uri uri, String? body)
+  get _fetchCcip => _injectedFetchCcip ?? _policyAwareFetchCcip;
 
   @override
   Future<String> ethCall({required String to, required String data}) async {
@@ -155,39 +175,33 @@ class HttpEnsRpcTransport implements EnsRpcTransport {
     }
     throw const EnsRpcException('CCIP-Read gateway response missing data');
   }
-}
 
-Future<String> _defaultPostJson(Uri uri, String body) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(uri).timeout(_rpcTimeout);
-    request.headers.contentType = ContentType.json;
-    request.write(body);
-
-    final response = await request.close().timeout(_rpcTimeout);
-    return await utf8.decoder.bind(response).join();
-  } finally {
-    client.close(force: true);
+  Future<String> _policyAwarePostJson(Uri uri, String body) async {
+    final response = await _client.request(
+      'POST',
+      uri,
+      headers: const {'content-type': 'application/json'},
+      bodyBytes: utf8.encode(body),
+      timeout: _rpcTimeout,
+    );
+    return utf8.decode(response.bodyBytes);
   }
-}
 
-Future<String> _defaultFetchCcip(
-  String method,
-  Uri uri,
-  String? body,
-) async {
-  final client = HttpClient();
-  try {
-    final request = await client.openUrl(method, uri).timeout(_rpcTimeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    if (body != null) {
-      request.headers.contentType = ContentType.json;
-      request.write(body);
-    }
-
-    final response = await request.close().timeout(_rpcTimeout);
-    return await utf8.decoder.bind(response).join();
-  } finally {
-    client.close(force: true);
+  Future<String> _policyAwareFetchCcip(
+    String method,
+    Uri uri,
+    String? body,
+  ) async {
+    final response = await _client.request(
+      method,
+      uri,
+      headers: {
+        'accept': 'application/json',
+        if (body != null) 'content-type': 'application/json',
+      },
+      bodyBytes: body == null ? const [] : utf8.encode(body),
+      timeout: _rpcTimeout,
+    );
+    return utf8.decode(response.bodyBytes);
   }
 }
