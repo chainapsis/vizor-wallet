@@ -32,6 +32,7 @@ pub mod policy {
         summarize_share_tracking, ShareSubmissionPlan, ShareSubmissionRandomBytesRequired,
         ShareTimingPolicy, ShareTrackingSummary, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
         LAST_MOMENT_BUFFER_FRACTION_NUMERATOR, LAST_MOMENT_BUFFER_MAX_SECONDS,
+        SHARE_SUBMIT_AT_MAX_DELAY_SECONDS,
     };
 }
 
@@ -424,6 +425,7 @@ mod tests {
     #[test]
     fn share_policy_re_exports_are_callable() {
         assert_eq!(policy::share_submission_target_count(3), 2);
+        assert_eq!(policy::SHARE_SUBMIT_AT_MAX_DELAY_SECONDS, 48 * 60 * 60);
         assert_eq!(
             policy::scheduled_share_submit_at_from_random_unit(10, 100, Some(10), false, 0.0)
                 .unwrap(),

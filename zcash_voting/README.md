@@ -221,7 +221,8 @@ that should stay consistent across SDKs:
 
 - last-moment helper-share window, deadline, and mode decisions from round
   timing
-- delayed helper-share `submit_at` scheduling
+- delayed helper-share `submit_at` scheduling, capped at 48 hours while still
+  ending before the round's last-moment window
 - helper target counts and randomized helper ordering
 - batch share planning with independent entropy per share
 - resubmission ordering with untried helpers before already-sent helpers

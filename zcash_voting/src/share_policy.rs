@@ -23,6 +23,8 @@ pub const SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS: u64 = 30;
 pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
 /// Random bytes needed to sample an initial delayed share submission time.
 pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
+/// Maximum randomized delay before an initial helper share submission.
+pub const SHARE_SUBMIT_AT_MAX_DELAY_SECONDS: u64 = 48 * 60 * 60;
 const VOTE_COMMITMENT_SHARE_COUNT: usize = 16;
 /// Numerator for the last-moment share window fraction.
 pub const LAST_MOMENT_BUFFER_FRACTION_NUMERATOR: u64 = 2;
@@ -304,6 +306,9 @@ pub fn share_submit_at_random_bytes_required(
 
 /// Plan the delayed helper submission time from a caller-provided random unit.
 ///
+/// The sampled delay is capped at 48 hours and still ends before the round's
+/// last-moment window.
+///
 /// This is useful for deterministic tests and FFI callers that already expose a
 /// random sample in the `[0, 1)` range. Production submission paths should use
 /// `scheduled_share_submit_at_from_entropy` to keep sampling policy inside the
@@ -334,6 +339,9 @@ pub fn scheduled_share_submit_at_from_random_unit(
 }
 
 /// Plan the delayed helper submission time using caller-provided entropy.
+///
+/// The sampled delay is capped at 48 hours and still ends before the round's
+/// last-moment window.
 ///
 /// `submit_at_random_bytes` must contain at least
 /// `share_submit_at_random_bytes_required(...)` bytes from a cryptographically
@@ -369,6 +377,10 @@ pub fn scheduled_share_submit_at_from_entropy(
     Ok(now_seconds.saturating_add(delay_seconds))
 }
 
+/// Return the nonempty randomized delay window for an initial helper share.
+///
+/// The window ends no later than the round's last-moment boundary and is capped
+/// at 48 hours from `now_seconds`.
 fn delayed_share_window_seconds(
     now_seconds: u64,
     vote_end_time_seconds: u64,
@@ -389,7 +401,7 @@ fn delayed_share_window_seconds(
         return None;
     }
 
-    Some(deadline - now_seconds)
+    Some((deadline - now_seconds).min(SHARE_SUBMIT_AT_MAX_DELAY_SECONDS))
 }
 
 /// Return how many helpers should receive each initial share.
@@ -982,6 +994,135 @@ mod tests {
             scheduled_share_submit_at_from_random_unit(1_000, 2_000, Some(100), false, 0.5)
                 .unwrap();
         assert_eq!(submit_at, 1_450);
+    }
+
+    #[test]
+    fn delayed_share_window_caps_long_round_at_48_hours() {
+        let now = 1_000_000;
+        let vote_end = now + 30 * 24 * 60 * 60;
+
+        assert_eq!(
+            delayed_share_window_seconds(
+                now,
+                vote_end,
+                Some(LAST_MOMENT_BUFFER_MAX_SECONDS),
+                false,
+            ),
+            Some(SHARE_SUBMIT_AT_MAX_DELAY_SECONDS)
+        );
+        assert_eq!(
+            scheduled_share_submit_at_from_random_unit(
+                now,
+                vote_end,
+                Some(LAST_MOMENT_BUFFER_MAX_SECONDS),
+                false,
+                0.5,
+            )
+            .unwrap(),
+            now + 24 * 60 * 60
+        );
+    }
+
+    #[test]
+    fn delayed_share_window_preserves_shorter_round_deadline() {
+        let now = 1_000_000;
+        let vote_end = now + 36 * 60 * 60;
+
+        assert_eq!(
+            delayed_share_window_seconds(
+                now,
+                vote_end,
+                Some(LAST_MOMENT_BUFFER_MAX_SECONDS),
+                false,
+            ),
+            Some(30 * 60 * 60)
+        );
+    }
+
+    #[test]
+    fn delayed_share_window_is_immediate_inside_last_moment_buffer() {
+        let now = 1_000_000;
+        let buffer = LAST_MOMENT_BUFFER_MAX_SECONDS;
+
+        assert_eq!(
+            delayed_share_window_seconds(now, now + buffer, Some(buffer), false),
+            None
+        );
+        assert_eq!(
+            delayed_share_window_seconds(now, now + buffer - 1, Some(buffer), false),
+            None
+        );
+    }
+
+    #[test]
+    fn delayed_share_window_handles_clock_skew_without_underflow() {
+        assert_eq!(
+            delayed_share_window_seconds(u64::MAX, u64::MAX - 1, Some(1), false),
+            None
+        );
+        assert_eq!(delayed_share_window_seconds(1, 5, Some(10), false), None);
+        assert_eq!(
+            scheduled_share_submit_at_from_entropy(u64::MAX, u64::MAX - 1, Some(1), false, &[])
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn capped_submit_at_samples_remain_randomized_within_window() {
+        let now = 1_000_000;
+        let vote_end = now + 30 * 24 * 60 * 60;
+        let samples = [0, 1u64 << 62, 1u64 << 63, 3u64 << 62, u64::MAX];
+        let window_end = now + SHARE_SUBMIT_AT_MAX_DELAY_SECONDS;
+        let mut submit_times = Vec::new();
+
+        for sample in samples {
+            let submit_at = scheduled_share_submit_at_from_entropy(
+                now,
+                vote_end,
+                Some(LAST_MOMENT_BUFFER_MAX_SECONDS),
+                false,
+                &random_bytes(&[sample]),
+            )
+            .unwrap();
+            assert!(submit_at >= now);
+            assert!(submit_at < window_end);
+            submit_times.push(submit_at);
+        }
+
+        assert_eq!(submit_times[0], now);
+        assert_eq!(submit_times[4], window_end - 1);
+        assert!(submit_times.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn retry_uses_capped_submit_at_without_adding_another_window() {
+        let now = 1_000_000;
+        let vote_end = now + 30 * 24 * 60 * 60;
+        let submit_at = scheduled_share_submit_at_from_random_unit(
+            now,
+            vote_end,
+            Some(LAST_MOMENT_BUFFER_MAX_SECONDS),
+            false,
+            0.5,
+        )
+        .unwrap();
+        let share = share(submit_at, now);
+        let policy = ShareTimingPolicy::default();
+
+        assert_eq!(share_recovery_base_time(&share), now + 24 * 60 * 60);
+        assert!(!should_resubmit_share(
+            &share,
+            submit_at + SHARE_MAX_OVERDUE_THRESHOLD_SECONDS - 1,
+            vote_end,
+            policy,
+        ));
+        assert!(should_resubmit_share(
+            &share,
+            submit_at + SHARE_MAX_OVERDUE_THRESHOLD_SECONDS,
+            vote_end,
+            policy,
+        ));
     }
 
     #[test]
