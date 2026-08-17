@@ -66,6 +66,15 @@ class EnsNameResolver {
         'Name has no address for this chain',
       );
     }
+    // A non-empty resolver payload shorter than a 20-byte address is
+    // malformed; guard here so decodeAddressWord can never throw a
+    // RangeError that would escape submitDestinationAddress' typed catch.
+    if (payload.length < 20) {
+      throw const EnsResolutionException(
+        EnsResolutionFailure.noRecord,
+        'Name has no address for this chain',
+      );
+    }
     return decodeAddressWord(payload);
   }
 

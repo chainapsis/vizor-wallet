@@ -195,6 +195,31 @@ void main() {
       );
     });
 
+    test(
+      'throws noRecord (not RangeError) for a malformed record shorter than '
+      '20 bytes',
+      () async {
+        // A non-empty resolver payload of only 10 bytes would make
+        // decodeAddressWord throw a RangeError (word.sublist(word.length - 20))
+        // if left unguarded, escaping the typed EnsResolutionException catch
+        // and wedging swap in `resolving`.
+        final shortPayload = List<int>.generate(10, (i) => i + 1);
+        final transport = _FakeTransport([_resolveResultHex(shortPayload)]);
+        final resolver = EnsNameResolver(transport);
+
+        await expectLater(
+          resolver.resolveEvmAddress('vitalik.eth', chainId: 1),
+          throwsA(
+            isA<EnsResolutionException>().having(
+              (e) => e.kind,
+              'kind',
+              EnsResolutionFailure.noRecord,
+            ),
+          ),
+        );
+      },
+    );
+
     test('maps a null-revertData EnsRpcException to network', () async {
       final transport = _FakeTransport([
         const EnsRpcException('boom'),

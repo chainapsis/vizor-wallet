@@ -75,7 +75,7 @@ String _toChecksumAddress(List<int> raw) {
     final nibble = (i & 1) == 0 ? (hashByte >> 4) : (hashByte & 0x0f);
     chars.add(nibble >= 8 ? ch.toUpperCase() : ch);
   }
-  return '0x' + chars.join();
+  return '0x${chars.join()}';
 }
 
 /// `addr(bytes32)` selector `3b3b57de`

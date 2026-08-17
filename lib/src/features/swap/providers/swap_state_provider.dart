@@ -493,6 +493,15 @@ class SwapNotifier extends Notifier<SwapState> {
         destinationResolveError: message,
       );
       return false;
+    } catch (_) {
+      // Fail closed on any unexpected error (e.g. a malformed record that
+      // throws below the typed EnsResolutionException layer) so the status
+      // can never wedge in `resolving` and leave Update disabled.
+      state = state.copyWith(
+        destinationResolveStatus: SwapDestinationResolveStatus.failed,
+        destinationResolveError: 'Could not resolve name',
+      );
+      return false;
     }
   }
 

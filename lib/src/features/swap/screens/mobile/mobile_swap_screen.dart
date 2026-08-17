@@ -176,13 +176,23 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 initialAddress: _addressEditorDraftText,
                 initialRememberAddress: _addressEditorDraftRemember,
                 onSubmitted: (value, remember) async {
-                  if (remember) {
-                    unawaited(_rememberSwapAddress(value, swapState));
-                  }
                   final ok = await swapNotifier.submitDestinationAddress(
                     value,
                   );
-                  if (ok) _closeSwapModal();
+                  if (ok) {
+                    // Remember the pinned resolved address (0x for an ENS
+                    // name; identical to the typed value for a plain
+                    // address), never the raw `.eth` name.
+                    if (remember) {
+                      unawaited(
+                        _rememberSwapAddress(
+                          ref.read(swapStateProvider).destinationText,
+                          swapState,
+                        ),
+                      );
+                    }
+                    _closeSwapModal();
+                  }
                   return ok;
                 },
                 onScan: (value, remember) {
