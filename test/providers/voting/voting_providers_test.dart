@@ -1378,7 +1378,7 @@ void main() {
               'pir_depth': 18,
               'tier0_layers': 11,
               'tier1_layers': 7,
-              'poly_len': 4096,
+              'poly_len': 2048,
             },
           ),
         ),
@@ -1424,7 +1424,7 @@ void main() {
           pirDepth: 18,
           tier0Layers: 11,
           tier1Layers: 7,
-          polyLen: 4096,
+          polyLen: 2048,
         ),
       );
       expect(state.phase, VotingSessionPhase.readyToDelegate);
@@ -6233,6 +6233,7 @@ rust_frb_types.VoteRecoveryView vote({
 String commitmentBundleRecoveryJson({int proposalId = 7, int shareIndex = 0}) {
   return jsonEncode({
     'format': 'vizor_vote_commitment_bundle_recovery_v1',
+    'vote_round_id': kRoundId,
     'share_payloads': [
       {
         'shares_hash': _hexFromBytes(List.filled(32, 7)),
@@ -7457,6 +7458,7 @@ class FakeVotingRustApi implements VotingRustApi {
     });
     final encShare = payload['enc_share'] as Map<String, dynamic>;
     return jsonEncode({
+      'vote_round_id': decoded['vote_round_id'],
       'shares_hash': base64Encode(
         _bytesFromHex(payload['shares_hash'] as String),
       ),

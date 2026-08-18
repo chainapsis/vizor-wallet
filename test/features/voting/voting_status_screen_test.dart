@@ -4846,6 +4846,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt submitAt,
   }) async {
     return jsonEncode({
+      'vote_round_id': share.voteRoundId,
       'shares_hash': share.sharesHash,
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,

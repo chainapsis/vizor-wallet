@@ -387,7 +387,7 @@ pub fn next_share_tracking_delay_seconds(
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
-/// recovery material. This helper emits only the public base64 wire shape that
+/// recovery material. This helper emits only the public wire fields that
 /// helper servers accept.
 pub fn recovered_vote_share_wire_json(
     commitment_bundle_json: String,
@@ -2105,6 +2105,7 @@ mod tests {
         assert_eq!(recovered["share_index"], 1);
         assert_eq!(recovered["tree_position"], 99);
         assert_eq!(recovered["submit_at"], 0);
+        assert_eq!(recovered["vote_round_id"], "00".repeat(32));
         assert_eq!(recovered["enc_share"]["c1"], "Aw==");
         assert!(recovered.get("all_enc_shares").is_none());
         assert_eq!(
@@ -2128,30 +2129,35 @@ mod tests {
     }
 
     #[test]
-    fn share_wire_json_rejects_json_unsafe_integer_fields() {
-        let err = vote_share_wire_json(
-            zcash_voting::wire::VoteShareWire {
-                vote_round_id: ROUND_ID.to_string(),
-                shares_hash: "AQ==".to_string(),
-                proposal_id: 7,
-                vote_decision: 2,
-                encrypted_share: zcash_voting::wire::WireEncryptedShare {
-                    c1: vec![3],
-                    c2: vec![4],
-                    share_index: 1,
-                },
+    fn share_wire_json_rejects_invalid_fields() {
+        let mut share = zcash_voting::wire::VoteShareWire {
+            vote_round_id: ROUND_ID.to_string(),
+            shares_hash: "AQ==".to_string(),
+            proposal_id: 7,
+            vote_decision: 2,
+            encrypted_share: zcash_voting::wire::WireEncryptedShare {
+                c1: vec![3],
+                c2: vec![4],
                 share_index: 1,
-                vc_tree_position: 0,
-                share_comms: vec![],
-                primary_blind: "CQ==".to_string(),
-                submit_at: 0,
             },
+            share_index: 1,
+            vc_tree_position: 0,
+            share_comms: vec![],
+            primary_blind: "CQ==".to_string(),
+            submit_at: 0,
+        };
+        let err = vote_share_wire_json(
+            share.clone(),
             // JSON numbers are constrained to the IEEE-754 safe-integer range.
             Some(MAX_SAFE_JSON_INTEGER + 1),
             123,
         )
         .unwrap_err();
         assert!(err.contains("tree_position"));
+
+        share.vote_round_id = "AA".repeat(32);
+        let err = vote_share_wire_json(share, Some(99), 123).unwrap_err();
+        assert!(err.contains("vote_round_id"));
     }
 
     #[test]
@@ -2518,7 +2524,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -2559,7 +2565,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -2607,10 +2613,10 @@ mod tests {
         db.init_round(zcash_voting::Network::Regtest, &other_round_params, None)
             .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         db.ensure_bundles(OTHER_ROUND_ID, &[test_note_info(0)])
             .unwrap();
-        db.store_van_position(OTHER_ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, OTHER_ROUND_ID, 0, 0);
 
         let server_round_one = start_tree_server(1, vec![fp_one_base64()], 3);
         let round_one_height = sync_vote_tree(
@@ -2671,7 +2677,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        store_test_confirmed_van(&db, ROUND_ID, 0, 0);
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
 
         let height = sync_vote_tree(
@@ -3573,5 +3579,32 @@ mod tests {
 
     fn fp_one_base64() -> String {
         "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string()
+    }
+
+    /// Seeds the commitment and leaf position that a real confirmed delegation
+    /// persists in separate proof-generation and confirmation steps.
+    fn store_test_confirmed_van(
+        db: &zcash_voting::storage::VotingDb,
+        round_id: &str,
+        bundle_index: u32,
+        position: u32,
+    ) {
+        let commitment = base64::engine::general_purpose::STANDARD
+            .decode(fp_one_base64())
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE bundles SET gov_comm = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+                rusqlite::params![
+                    commitment,
+                    round_id,
+                    db.wallet_id(),
+                    i64::from(bundle_index)
+                ],
+            )
+            .unwrap();
+        db.store_van_position(round_id, bundle_index, position)
+            .unwrap();
     }
 }

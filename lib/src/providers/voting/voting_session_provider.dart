@@ -1595,11 +1595,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'server=$serverUrl treePosition=${body['tree_position']} '
             'submitAt=${plan.submitAt} target=$targetCount',
           );
-          await api.submitShare(
-            roundId: context.round.roundId,
-            serverUrl: Uri.parse(serverUrl),
-            share: body,
-          );
+          await api.submitShare(serverUrl: Uri.parse(serverUrl), share: body);
           helperHealth.recordSuccess(serverUrl);
           acceptedServers.add(serverUrl);
           debugPrint(
@@ -2186,7 +2182,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
       try {
         await api.resubmitShare(
-          roundId: context.round.roundId,
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
           share: body,

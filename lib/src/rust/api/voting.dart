@@ -162,7 +162,7 @@ Future<BigInt?> nextShareTrackingDelaySeconds({
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
-/// recovery material. This helper emits only the public base64 wire shape that
+/// recovery material. This helper emits only the public wire fields that
 /// helper servers accept.
 Future<String> recoveredVoteShareWireJson({
   required String commitmentBundleJson,
