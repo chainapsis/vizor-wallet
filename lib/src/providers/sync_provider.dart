@@ -801,6 +801,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final prevAccountUuid = prev?.value?.activeAccountUuid;
       final nextAccountUuid = next.value?.activeAccountUuid;
       if (prevAccountUuid != nextAccountUuid) {
+        // This only changes the order of transparent refreshes that Rust has
+        // not started yet. The current bounded request group keeps running.
+        rust_sync.setActiveSyncAccount(accountUuid: nextAccountUuid);
         _clearAccountScopedStateFor(nextAccountUuid);
       }
       if (nextCount > prevCount) {
@@ -1120,15 +1123,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // on a separate tokio runtime, so it can accept events while
           // the scan loop is still catching up on old blocks.
           _startMempoolObserver(dbPath, endpoint);
+          // Seed the shared priority synchronously before the asynchronous Rust
+          // sync task starts. Later account switches update the same target.
+          rust_sync.setActiveSyncAccount(accountUuid: _getActiveAccountUuid());
           final stream = rust_sync.startFullSync(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
             mode: 1,
-            // Endpoint preflight is asynchronous. Re-read the account here so
-            // a switch during preflight prioritizes the account the user is
-            // actually viewing when Rust starts.
-            activeAccountUuid: _getActiveAccountUuid(),
           );
           _syncSub = stream.listen(
             (event) {

@@ -1,7 +1,7 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use futures::{stream, StreamExt, TryStreamExt};
 use nonempty::NonEmpty;
@@ -88,6 +88,17 @@ const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS: usize = 4;
 const MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS: u32 = 3;
+
+pub(crate) type ActiveSyncAccountTarget = Arc<RwLock<Option<String>>>;
+
+fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Option<String> {
+    target.map(|target| {
+        target
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    })?
+}
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -1202,6 +1213,7 @@ async fn refresh_utxos(
     network: WalletNetwork,
     tip_height: BlockHeight,
     account_selection: TransparentAccountSelection<'_>,
+    priority_account_target: Option<&ActiveSyncAccountTarget>,
     received_outputs_seen: &mut bool,
     should_exit: &impl Fn() -> bool,
 ) -> Result<TransparentRefreshSummary, SyncError> {
@@ -1344,6 +1356,7 @@ async fn refresh_utxos(
             *received_outputs_seen |= received_outputs;
             Ok(())
         },
+        |pending| prioritize_pending_transparent_refreshes(pending, priority_account_target),
         should_exit,
     )
     .await?;
@@ -1355,6 +1368,35 @@ async fn refresh_utxos(
     }
 
     Ok(summary)
+}
+
+fn prioritize_pending_transparent_refreshes(
+    pending: &mut VecDeque<TransparentRefresh>,
+    priority_account_target: Option<&ActiveSyncAccountTarget>,
+) {
+    let Some(active_account_uuid) = current_active_sync_account(priority_account_target) else {
+        return;
+    };
+    let Some(previous_position) = pending
+        .iter()
+        .position(|refresh| refresh.account_uuid == active_account_uuid)
+    else {
+        return;
+    };
+    // Stable sorting keeps every other account in its existing order. This is
+    // evaluated only between bounded groups, so requests already in flight are
+    // allowed to finish and commit normally.
+    pending
+        .make_contiguous()
+        .sort_by_key(|refresh| refresh.account_uuid != active_account_uuid);
+    if previous_position > 0 {
+        log::info!(
+            "[{}] sync: moved active account {} ahead of {} pending transparent refresh(es)",
+            elapsed(),
+            active_account_uuid,
+            previous_position,
+        );
+    }
 }
 
 fn update_transparent_refresh_cache_metadata(
@@ -1419,6 +1461,7 @@ async fn process_bounded_transparent_refreshes<R, D, E, Download, DownloadFuture
     refreshes: Vec<R>,
     download: Download,
     mut persist: Persist,
+    mut prioritize_pending: impl FnMut(&mut VecDeque<R>),
     should_exit: &Exit,
 ) -> Result<TransparentRefreshOutcome, E>
 where
@@ -1427,15 +1470,15 @@ where
     Persist: FnMut(Vec<D>) -> Result<(), E>,
     Exit: Fn() -> bool,
 {
-    let mut refreshes = refreshes.into_iter();
+    let mut refreshes = VecDeque::from(refreshes);
     loop {
         if should_exit() {
             return Ok(TransparentRefreshOutcome::Cancelled);
         }
 
-        let group = refreshes
-            .by_ref()
-            .take(MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+        prioritize_pending(&mut refreshes);
+        let group = (0..MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+            .filter_map(|_| refreshes.pop_front())
             .collect::<Vec<_>>();
         if group.is_empty() {
             return Ok(TransparentRefreshOutcome::Completed);
@@ -1789,7 +1832,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
-    active_account_uuid: Option<&str>,
+    active_account_target: Option<ActiveSyncAccountTarget>,
     allow_resubmit: bool,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
@@ -1830,7 +1873,7 @@ pub async fn run_sync_inner(
             cancel.clone(),
             running_mode,
             desired_mode,
-            active_account_uuid,
+            active_account_target.as_ref(),
             allow_resubmit,
             &progress_fn,
         )
@@ -1888,10 +1931,11 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
-    active_account_uuid: Option<&str>,
+    active_account_target: Option<&ActiveSyncAccountTarget>,
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
+    let active_account_uuid = current_active_sync_account(active_account_target);
     let mut migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
             .map_err(SyncError::db)?;
@@ -1961,7 +2005,8 @@ async fn run_sync_impl(
 
     let should_exit =
         || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
-    let defer_inactive_transparent_refresh = if let Some(active_account_uuid) = active_account_uuid
+    let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
+        active_account_uuid.as_deref()
     {
         log::info!(
             "[{}] sync: refreshing active-account transparent UTXOs before chain scan ({})",
@@ -1976,6 +2021,7 @@ async fn run_sync_impl(
             network,
             tip_height,
             TransparentAccountSelection::Only(active_account_uuid),
+            None,
             &mut critical_received_outputs,
             &should_exit,
         )
@@ -1993,6 +2039,7 @@ async fn run_sync_impl(
                 network,
                 tip_height,
                 TransparentAccountSelection::All,
+                None,
                 &mut critical_received_outputs,
                 &should_exit,
             )
@@ -2010,6 +2057,7 @@ async fn run_sync_impl(
             network,
             tip_height,
             TransparentAccountSelection::All,
+            None,
             &mut critical_received_outputs,
             &should_exit,
         )
@@ -3001,7 +3049,9 @@ async fn run_sync_impl(
     // stream stays open until this bounded follow-up finishes, so lock/reset
     // cancellation and the global running guard still own its lifetime.
     if defer_inactive_transparent_refresh && !should_exit() {
-        let active_account_uuid = active_account_uuid.expect("deferred refresh has active account");
+        let active_account_uuid = active_account_uuid
+            .as_deref()
+            .expect("deferred refresh has active account");
         log::info!(
             "[{}] sync: starting deferred inactive-account transparent UTXO refresh",
             elapsed(),
@@ -3016,6 +3066,7 @@ async fn run_sync_impl(
                 network,
                 BlockHeight::from_u32(final_tip_height as u32),
                 TransparentAccountSelection::Except(active_account_uuid),
+                active_account_target,
                 &mut deferred_received_outputs,
                 &should_exit,
             )
@@ -3209,7 +3260,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::Mutex;
     use std::time::Duration;
-    use tokio::sync::{Barrier, Notify};
+    use tokio::sync::{Barrier, Notify, Semaphore};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
 
     struct DropSignal {
@@ -3275,6 +3326,7 @@ mod tests {
                 persist_count.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
+            |_| {},
             &|| false,
         )
         .await
@@ -3305,6 +3357,7 @@ mod tests {
                 }
             },
             |_| Ok(()),
+            |_| {},
             &|| false,
         );
         let outcome = tokio::time::timeout(std::time::Duration::from_secs(1), refresh)
@@ -3338,6 +3391,7 @@ mod tests {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
+            |_| {},
             &should_exit,
         )
         .await
@@ -3365,6 +3419,7 @@ mod tests {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
+            |_| {},
             &|| false,
         )
         .await;
@@ -3384,6 +3439,7 @@ mod tests {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
+            |_| {},
             &|| false,
         )
         .await
@@ -3408,6 +3464,7 @@ mod tests {
                 persist_commits.lock().unwrap().push(group);
                 Ok(())
             },
+            |_| {},
             &|| false,
         )
         .await
@@ -3415,6 +3472,88 @@ mod tests {
 
         assert_eq!(outcome, TransparentRefreshOutcome::Completed);
         assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![4, 5]]);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_reprioritizes_only_pending_groups() {
+        let priority = Arc::new(AtomicUsize::new(usize::MAX));
+        let commits = Arc::new(Mutex::new(Vec::new()));
+        let first_group_started = Arc::new(Barrier::new(5));
+        let release_first_group = Arc::new(Semaphore::new(0));
+
+        let run_priority = priority.clone();
+        let run_commits = commits.clone();
+        let run_started = first_group_started.clone();
+        let run_release = release_first_group.clone();
+        let run = tokio::spawn(async move {
+            process_bounded_transparent_refreshes(
+                (0..6).collect(),
+                move |refresh| {
+                    let started = run_started.clone();
+                    let release = run_release.clone();
+                    async move {
+                        if refresh < 4 {
+                            started.wait().await;
+                            release.acquire().await.unwrap().forget();
+                        }
+                        Ok::<_, &'static str>(Some(refresh))
+                    }
+                },
+                move |group| {
+                    run_commits.lock().unwrap().push(group);
+                    Ok(())
+                },
+                move |pending| {
+                    let priority = run_priority.load(Ordering::SeqCst);
+                    pending
+                        .make_contiguous()
+                        .sort_by_key(|refresh| *refresh != priority);
+                },
+                &|| false,
+            )
+            .await
+        });
+
+        first_group_started.wait().await;
+        priority.store(5, Ordering::SeqCst);
+        release_first_group.add_permits(4);
+        let outcome = run.await.unwrap().unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![5, 4]]);
+    }
+
+    #[test]
+    fn transparent_refresh_priority_moves_every_active_batch_stably() {
+        let refresh = |account_uuid: &str, label: &str| TransparentRefresh {
+            addresses: Vec::new(),
+            start_height: block_height(1),
+            label: label.to_string(),
+            account_uuid: account_uuid.to_string(),
+            completion: None,
+        };
+        let mut pending = VecDeque::from(vec![
+            refresh("active", "active recent"),
+            refresh("other", "other recent"),
+            refresh("active", "active sweep"),
+            refresh("other", "other sweep"),
+        ]);
+        let target = Arc::new(RwLock::new(Some("active".to_string())));
+
+        prioritize_pending_transparent_refreshes(&mut pending, Some(&target));
+
+        assert_eq!(
+            pending
+                .iter()
+                .map(|refresh| refresh.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "active recent",
+                "active sweep",
+                "other recent",
+                "other sweep",
+            ],
+        );
     }
 
     #[test]

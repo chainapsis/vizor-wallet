@@ -18,6 +18,11 @@ void setSyncMode({required int mode}) =>
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 
+/// Update the foreground sync account whose pending transparent refreshes
+/// should be scheduled first. Requests already in flight are not interrupted.
+void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
+    .crateApiSyncSetActiveSyncAccount(accountUuid: accountUuid);
+
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
 Stream<ApiSyncProgressEvent> startFullSync({
@@ -25,13 +30,11 @@ Stream<ApiSyncProgressEvent> startFullSync({
   required String lightwalletdUrl,
   required String network,
   required int mode,
-  String? activeAccountUuid,
 }) => RustLib.instance.api.crateApiSyncStartFullSync(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   mode: mode,
-  activeAccountUuid: activeAccountUuid,
 );
 
 /// Blocking sync entrypoint that uses the same API-layer network parsing,

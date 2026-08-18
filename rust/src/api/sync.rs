@@ -1,6 +1,6 @@
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
@@ -11,6 +11,8 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
+static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
+    std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -23,6 +25,15 @@ pub fn set_sync_mode(mode: u8) {
 #[frb(sync)]
 pub fn get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
+}
+
+/// Update the foreground sync account whose pending transparent refreshes
+/// should be scheduled first. Requests already in flight are not interrupted.
+#[frb(sync)]
+pub fn set_active_sync_account(account_uuid: Option<String>) {
+    *ACTIVE_SYNC_ACCOUNT
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = account_uuid;
 }
 
 // ======================== Full Sync ========================
@@ -49,7 +60,7 @@ fn run_full_sync_internal<F>(
     lightwalletd_url: String,
     network: String,
     mode: u8,
-    active_account_uuid: Option<String>,
+    active_account_target: Option<sync_engine::ActiveSyncAccountTarget>,
     on_progress: F,
 ) -> Result<(), String>
 where
@@ -63,7 +74,6 @@ where
     }
 
     DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
-
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let cancel = SYNC_CANCEL.clone();
@@ -78,7 +88,7 @@ where
                 cancel,
                 mode,
                 &DESIRED_SYNC_MODE,
-                active_account_uuid.as_deref(),
+                active_account_target,
                 true,
                 |progress| on_progress(&progress),
             )
@@ -97,15 +107,15 @@ pub fn start_full_sync(
     lightwalletd_url: String,
     network: String,
     mode: u8,
-    active_account_uuid: Option<String>,
     sink: StreamSink<ApiSyncProgressEvent>,
 ) -> Result<(), String> {
+    let active_account_target = (mode == 1).then(|| ACTIVE_SYNC_ACCOUNT.clone());
     let result = run_full_sync_internal(
         db_path,
         lightwalletd_url,
         network,
         mode,
-        active_account_uuid,
+        active_account_target,
         |progress| {
             if sink
                 .add(ApiSyncProgressEvent {
