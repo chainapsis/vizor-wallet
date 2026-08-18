@@ -18,6 +18,11 @@ void setSyncMode({required int mode}) =>
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 
+/// Update the foreground sync account whose pending transparent refreshes
+/// should be scheduled first. Requests already in flight are not interrupted.
+void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
+    .crateApiSyncSetActiveSyncAccount(accountUuid: accountUuid);
+
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
 Stream<ApiSyncProgressEvent> startFullSync({
@@ -1044,16 +1049,20 @@ class ApiSyncProgressEvent {
   final BigInt chainTipHeight;
   final double percentage;
 
-  /// UI-only smoothed progress target. Dart increments toward this
-  /// assuming one virtual block per 500ms, capped at the next batch.
+  /// UI-only smoothed progress target. Dart chooses the display tick and
+  /// advances at most `display_target_blocks` virtual blocks to this target.
   final double displayTargetPercentage;
   final BigInt displayTargetBlocks;
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
 
-  /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
-  /// `""` (completion / unspecified).
+  /// Completed and total work units for measurable preparation phases.
+  final BigInt phaseCompletedUnits;
+  final BigInt phaseTotalUnits;
+
+  /// Current sync phase. Preparation adds `"active_utxo"` and
+  /// `"chain_prepare"` before the existing download/scan phases.
   final String phase;
 
   const ApiSyncProgressEvent({
@@ -1065,6 +1074,8 @@ class ApiSyncProgressEvent {
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
+    required this.phaseCompletedUnits,
+    required this.phaseTotalUnits,
     required this.phase,
   });
 
@@ -1078,6 +1089,8 @@ class ApiSyncProgressEvent {
       isSyncing.hashCode ^
       isComplete.hashCode ^
       hasNewTx.hashCode ^
+      phaseCompletedUnits.hashCode ^
+      phaseTotalUnits.hashCode ^
       phase.hashCode;
 
   @override
@@ -1093,6 +1106,8 @@ class ApiSyncProgressEvent {
           isSyncing == other.isSyncing &&
           isComplete == other.isComplete &&
           hasNewTx == other.hasNewTx &&
+          phaseCompletedUnits == other.phaseCompletedUnits &&
+          phaseTotalUnits == other.phaseTotalUnits &&
           phase == other.phase;
 }
 
