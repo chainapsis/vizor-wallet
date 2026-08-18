@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -3099,6 +3100,70 @@ void main() {
     },
   );
 
+  test('share tracking failure fails the job and releases its guard', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final pendingShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const [],
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.one,
+    );
+    final rust = FakeVotingRustApi(
+      shareResubmissionError: StateError('share retry planning failed'),
+    );
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        roundStatus: roundStatusJson(
+          roundId: kRoundId,
+          voteEnd: nowSeconds + 1000,
+        ),
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': 'https://helper-a.example', 'label': 'helper-a'},
+          ],
+        ),
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _submittedDelegationWithShareRecoveryApi(
+        pendingShare,
+        includeCommitmentBundle: true,
+      ),
+      txConfirmationPolling: _fastTxConfirmationPolling,
+    );
+    addTearDown(container.dispose);
+
+    final key = await container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(
+      key,
+      const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+    );
+    final failed = await _waitForJobStatus(
+      container,
+      key!,
+      VotingSubmissionJobStatus.error,
+    );
+
+    expect(failed.errorMessage, 'share retry planning failed');
+    expect(rust.shareResubmissionConfiguredServerUrls, isNotEmpty);
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount('account-1'),
+      isNull,
+    );
+  });
+
   test('submission job clears stale vote progress at start', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
@@ -4675,6 +4740,76 @@ void main() {
     },
   );
 
+  test('active rounds without an end time do not track shares', () {
+    final round = VotingRoundDetails.fromStatus(
+      VotingRoundStatus.fromJson(roundStatusJson(roundId: kRoundId)),
+    );
+
+    expect(shouldTrackPendingVotingShares(round), isFalse);
+  });
+
+  test('persisted share discovery waits for unlock', () async {
+    var loadCount = 0;
+    final security = _MutableVotingSecurityNotifier(
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: false),
+    );
+    final container = _sessionContainer(
+      securityNotifier: security,
+      pendingShareRoundLoader:
+          ({required dbPath, required accountUuids}) async {
+            loadCount++;
+            return const [];
+          },
+    );
+    addTearDown(container.dispose);
+
+    final restorer = container.read(votingShareTrackingRestorerProvider);
+    await restorer.restore();
+    expect(loadCount, 0);
+
+    security.setUnlocked(true);
+    await pumpEventQueue();
+
+    expect(loadCount, 1);
+  });
+
+  test('locking drains discovery and unlocking resumes it', () async {
+    var loadCount = 0;
+    final loaderStarted = Completer<void>();
+    final releaseLoader = Completer<void>();
+    final security = _MutableVotingSecurityNotifier(
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+    );
+    final container = _sessionContainer(
+      securityNotifier: security,
+      pendingShareRoundLoader:
+          ({required dbPath, required accountUuids}) async {
+            loadCount++;
+            if (loadCount == 1) {
+              loaderStarted.complete();
+              await releaseLoader.future;
+            }
+            return const [];
+          },
+    );
+    addTearDown(container.dispose);
+
+    container.read(votingShareTrackingRestorerProvider);
+    await loaderStarted.future;
+
+    security.setUnlocked(false);
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    expect(registry.isQuiesced('account-1'), isTrue);
+    expect(registry.beginDiscovery(), isNull);
+
+    releaseLoader.complete();
+    security.setUnlocked(true);
+    await pumpEventQueue();
+
+    expect(loadCount, 2);
+    expect(registry.isQuiesced('account-1'), isFalse);
+  });
+
   test('destructive drain waits for persisted share discovery', () async {
     final loaderStarted = Completer<void>();
     final releaseLoader = Completer<void>();
@@ -5036,6 +5171,7 @@ void main() {
         unconfirmedShareDelegations: [pendingShare],
       ),
     );
+    final rust = FakeVotingRustApi();
     final http = FakeVotingHttpClient(
       responses:
           votingHttpResponses(
@@ -5047,6 +5183,10 @@ void main() {
             dynamicConfig: dynamicConfigJson(
               voteServers: const [
                 {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                {
+                  'url': 'https://helper-a.example',
+                  'label': 'helper-a-duplicate',
+                },
                 {'url': 'https://helper-b.example', 'label': 'helper-b'},
               ],
             ),
@@ -5057,7 +5197,11 @@ void main() {
                 {'status': 'pending'},
           }),
     );
-    final container = _sessionContainer(http: http, recoveryApi: recoveryApi);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
     addTearDown(container.dispose);
 
     await container.read(votingSessionProvider(kRoundId).future);
@@ -5080,6 +5224,9 @@ void main() {
     });
     expect(recoveryApi.addedSentServers, [
       _AddedSentServers(0, 7, 0, const ['https://helper-b.example']),
+    ]);
+    expect(rust.shareResubmissionConfiguredServerUrls, [
+      const ['https://helper-a.example', 'https://helper-b.example'],
     ]);
   });
 
@@ -5428,6 +5575,7 @@ ProviderContainer _sessionContainer({
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
   FakeVotingRecoveryApi? recoveryApi,
+  AppSecurityNotifier? securityNotifier,
   VotingDraftPersistence? draftPersistence,
   PirSnapshotResolver? pirResolver,
   VotingHotkeyStore? hotkeyStore,
@@ -5457,6 +5605,8 @@ ProviderContainer _sessionContainer({
     observers: observers,
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      if (securityNotifier != null)
+        appSecurityProvider.overrideWith(() => securityNotifier),
       votingConfigSourceStoreProvider.overrideWithValue(
         FakeVotingConfigSourceStore(),
       ),
@@ -5596,8 +5746,9 @@ FakeVotingRecoveryApi _submittedDelegationOnlyRecoveryApi() {
 }
 
 FakeVotingRecoveryApi _submittedDelegationWithShareRecoveryApi(
-  rust_frb_types.ShareDelegationRecordView share,
-) {
+  rust_frb_types.ShareDelegationRecordView share, {
+  bool includeCommitmentBundle = false,
+}) {
   final beforeConfirmation = apiRoundPlan(
     roundId: kRoundId,
     pendingRecovery: false,
@@ -5640,6 +5791,16 @@ FakeVotingRecoveryApi _submittedDelegationWithShareRecoveryApi(
           vanLeafPosition: null,
         ),
       ],
+      commitmentBundles: includeCommitmentBundle
+          ? [
+              rust_frb_types.RecoverableCommitmentBundle(
+                bundleIndex: share.bundleIndex,
+                proposalId: share.proposalId,
+                commitmentBundleJson: commitmentBundleRecoveryJson(),
+                vcTreePosition: BigInt.from(42),
+              ),
+            ]
+          : const [],
       shareDelegations: [share],
       unconfirmedShareDelegations: [share],
     ),
@@ -6667,6 +6828,19 @@ class _MutableVotingWalletSyncReadinessChecker
   }
 }
 
+class _MutableVotingSecurityNotifier extends AppSecurityNotifier {
+  _MutableVotingSecurityNotifier(this.initialState);
+
+  final AppSecurityState initialState;
+
+  @override
+  AppSecurityState build() => initialState;
+
+  void setUnlocked(bool value) {
+    state = state.copyWith(isUnlocked: value);
+  }
+}
+
 class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
@@ -6692,6 +6866,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneDelegationRequestFailuresByCall = const {},
     this.failingVoteTreeNodeUrls = const {},
     this.keystoneSignatureBatchFailuresRemaining = 0,
+    this.shareResubmissionError,
   });
 
   final Duration setupDelay;
@@ -6715,6 +6890,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Map<int, Object> keystoneDelegationRequestFailuresByCall;
   final Set<String> failingVoteTreeNodeUrls;
   int keystoneSignatureBatchFailuresRemaining;
+  final Object? shareResubmissionError;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -6748,6 +6924,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final planSingleShareValues = <bool>[];
   final accountUuids = <String>[];
   final confirmedShares = <String>[];
+  final shareResubmissionConfiguredServerUrls = <List<String>>[];
   final eligibilityAccountUuids = <String>[];
   final keystoneDelegationRequestCalls = <int>[];
   final keystoneProofBundleCalls = <int>[];
@@ -7330,6 +7507,14 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<String> configuredServerUrls,
     required List<String> sentToUrls,
   }) async {
+    shareResubmissionConfiguredServerUrls.add(
+      List<String>.of(configuredServerUrls),
+    );
+    if (configuredServerUrls.toSet().length != configuredServerUrls.length) {
+      throw ArgumentError('configured server URLs must be unique');
+    }
+    final error = shareResubmissionError;
+    if (error != null) throw error;
     final sent = sentToUrls.toSet();
     return [
       ...configuredServerUrls.where((url) => !sent.contains(url)),

@@ -50,7 +50,11 @@ DateTime? parseFlexibleDate(Object? value) {
     final milliseconds = value > 100000000000
         ? value.toInt()
         : (value * 1000).toInt();
-    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    try {
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    } on ArgumentError {
+      return null;
+    }
   }
   final text = value.toString().trim();
   final numeric = num.tryParse(text);

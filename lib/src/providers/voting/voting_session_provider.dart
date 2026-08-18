@@ -35,6 +35,7 @@ final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 /// account's Orchard key, but the action remains in the PCZT's Ironwood bundle.
 const _ironwoodPcztPool = 1;
 
+/// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
   final status = round.status.trim().toLowerCase();
   if (!const {
@@ -1545,8 +1546,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
     final helperHealth = ref.read(votingHelperHealthTrackerProvider);
-    final serverUrls = context.config.voteServers
-        .map((endpoint) => endpoint.url.toString())
+    final serverUrls = context.config.apiServers.all
+        .map((endpoint) => endpoint.toString())
         .toList(growable: false);
     if (serverUrls.isEmpty) {
       throw StateError('No vote servers configured for share submission.');
@@ -2083,8 +2084,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
       final helperHealth = ref.read(votingHelperHealthTrackerProvider);
-      final configuredServerUrls = context.config.voteServers
-          .map((endpoint) => endpoint.url.toString())
+      final configuredServerUrls = context.config.apiServers.all
+          .map((endpoint) => endpoint.toString())
           .toList(growable: false);
       final configuredServerUrlSet = configuredServerUrls.toSet();
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
@@ -2355,8 +2356,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _releaseAutomaticShareTracking();
         return;
       }
-      unawaited(submitPendingShares());
+      unawaited(_submitPendingSharesInBackground());
     });
+  }
+
+  Future<void> _submitPendingSharesInBackground() async {
+    try {
+      await submitPendingShares();
+    } catch (_) {
+      // The pass already logged the failure and scheduled its next retry.
+    }
   }
 
   Future<bool> _shareConfirmedByAnyHelper({
@@ -2584,6 +2593,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     void Function()? onError,
     bool cleanupProcessStateOnError = true,
     bool publishError = true,
+    bool propagateError = false,
   }) {
     final actionGeneration = _sessionGeneration;
     final next = _operation.then((_) async {
@@ -2604,6 +2614,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
         if (publishError) _setError(_actionErrorMessage(e), cause: e);
         onError?.call();
+        if (propagateError) rethrow;
       } finally {
         _runningActionGeneration = previousActionGeneration;
       }
@@ -2618,6 +2629,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       onError: _scheduleShareTrackingFailureRetry,
       cleanupProcessStateOnError: false,
       publishError: false,
+      propagateError: true,
     );
   }
 

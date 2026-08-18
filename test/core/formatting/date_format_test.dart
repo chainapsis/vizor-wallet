@@ -13,4 +13,11 @@ void main() {
   test('formatDayMonthTime abbreviates long month names', () {
     expect(formatDayMonthTime(DateTime(2026, 12, 31, 23, 59)), '31 Dec, 23:59');
   });
+
+  test('parseFlexibleDate rejects out-of-range epochs', () {
+    const outOfRangeMilliseconds = 8640000000000001;
+
+    expect(parseFlexibleDate(outOfRangeMilliseconds), isNull);
+    expect(parseFlexibleDate('$outOfRangeMilliseconds'), isNull);
+  });
 }
