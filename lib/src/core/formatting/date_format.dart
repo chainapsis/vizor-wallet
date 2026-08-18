@@ -48,9 +48,9 @@ DateTime? parseFlexibleDate(Object? value) {
   if (value is DateTime) return value;
   if (value is num) {
     if (!value.isFinite) return null;
-    final milliseconds = value > 100000000000
-        ? value.toInt()
-        : (value * 1000).toInt();
+    final millisecondsValue = value > 100000000000 ? value : value * 1000;
+    if (!millisecondsValue.isFinite) return null;
+    final milliseconds = millisecondsValue.toInt();
     try {
       return DateTime.fromMillisecondsSinceEpoch(milliseconds);
     } on ArgumentError {
