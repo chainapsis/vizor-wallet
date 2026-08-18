@@ -2962,6 +2962,42 @@ pub fn get_unconfirmed_delegations(
     )
 }
 
+/// Load each round with at least one unconfirmed helper share once.
+pub fn pending_share_rounds(
+    conn: &Connection,
+    wallet_id: &str,
+) -> Result<Vec<(String, Option<String>)>, VotingError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT rounds.round_id, rounds.session_json
+             FROM rounds
+             WHERE rounds.wallet_id = :wallet_id
+               AND EXISTS (
+                   SELECT 1
+                   FROM share_delegations
+                   WHERE share_delegations.round_id = rounds.round_id
+                     AND share_delegations.wallet_id = rounds.wallet_id
+                     AND share_delegations.confirmed = 0
+               )
+             ORDER BY rounds.created_at DESC, rounds.round_id",
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to prepare pending share round query: {e}"),
+        })?;
+    let rows = stmt
+        .query_map(named_params! { ":wallet_id": wallet_id }, |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to query pending share rounds: {e}"),
+        })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to read pending share round row: {e}"),
+        })
+}
+
 fn load_share_delegations(
     conn: &Connection,
     sql: &str,

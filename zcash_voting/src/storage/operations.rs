@@ -1546,6 +1546,15 @@ impl VotingDb {
         queries::get_unconfirmed_delegations(&conn, round_id, &wallet_id)
     }
 
+    /// Loads round identifiers and caller context for unconfirmed helper shares.
+    pub(crate) fn pending_share_rounds(
+        &self,
+    ) -> Result<Vec<(String, Option<String>)>, VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        queries::pending_share_rounds(&conn, &wallet_id)
+    }
+
     /// Mark a share delegation as confirmed on-chain.
     pub fn mark_share_confirmed(
         &self,

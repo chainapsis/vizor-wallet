@@ -6,6 +6,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+### Added
+- Added `share::pending_rounds` so wallets can restore unconfirmed helper-share
+  tracking with the caller context persisted for each round.
+
 ### Changed
 - Cap each randomized initial helper-share delay at 48 hours while preserving
   the round's last-moment safety window and retry timing from the sampled

@@ -16,6 +16,15 @@ use pasta_curves::pallas;
 
 pub use crate::types::ShareDelegationRecord as ShareRecord;
 
+/// One persisted round that still has unconfirmed helper shares.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingShareRound {
+    /// Stable vote-round identifier.
+    pub round_id: String,
+    /// Opaque caller context stored when the round was first created.
+    pub session_json: Option<String>,
+}
+
 /// Share scheduling and retry policy helpers.
 pub mod policy {
     pub use crate::share_policy::{
@@ -107,6 +116,23 @@ pub fn unconfirmed(
     round_id: &str,
 ) -> Result<Vec<ShareDelegationRecord>, VotingError> {
     db.get_unconfirmed_delegations(round_id)
+}
+
+/// Lists rounds with at least one unconfirmed helper share.
+///
+/// Each round is returned once in newest-first order. The persisted
+/// `session_json` lets wallet integrations restore caller-owned round timing
+/// without reading the voting database schema directly.
+pub fn pending_rounds(db: &VotingDb) -> Result<Vec<PendingShareRound>, VotingError> {
+    db.pending_share_rounds().map(|rounds| {
+        rounds
+            .into_iter()
+            .map(|(round_id, session_json)| PendingShareRound {
+                round_id,
+                session_json,
+            })
+            .collect()
+    })
 }
 
 /// Marks one helper-share record confirmed.
@@ -233,9 +259,13 @@ mod tests {
     const WALLET_ID: &str = "wallet";
 
     fn db_with_vote_recovery() -> VotingDb {
+        db_with_vote_recovery_and_session(None)
+    }
+
+    fn db_with_vote_recovery_and_session(session_json: Option<&str>) -> VotingDb {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);
-        db.create_round(crate::Network::Testnet, &round_params(), None)
+        db.create_round(crate::Network::Testnet, &round_params(), session_json)
             .unwrap();
         db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
         queries::store_vote(&db.conn(), ROUND_ID, WALLET_ID, 0, 1, 2, &[0xCA; 32]).unwrap();
@@ -420,6 +450,34 @@ mod tests {
         confirm(&db, ROUND_ID, 0, 1, 1).unwrap();
         assert!(unconfirmed(&db, ROUND_ID).unwrap().is_empty());
         assert_eq!(list(&db, ROUND_ID).unwrap()[0].confirmed, true);
+    }
+
+    #[test]
+    fn pending_rounds_return_session_context_until_all_shares_confirm() {
+        let session_json = r#"{"vote_end_time":4102444800}"#;
+        let db = db_with_vote_recovery_and_session(Some(session_json));
+        let urls = vec!["https://helper.example".to_string()];
+
+        record(&db, ROUND_ID, 0, 1, 0, &urls, 99).unwrap();
+        record(&db, ROUND_ID, 0, 1, 1, &urls, 100).unwrap();
+
+        assert_eq!(
+            pending_rounds(&db).unwrap(),
+            vec![PendingShareRound {
+                round_id: ROUND_ID.to_string(),
+                session_json: Some(session_json.to_string()),
+            }]
+        );
+
+        db.set_wallet_id("another-wallet");
+        assert!(pending_rounds(&db).unwrap().is_empty());
+        db.set_wallet_id(WALLET_ID);
+
+        confirm(&db, ROUND_ID, 0, 1, 0).unwrap();
+        assert_eq!(pending_rounds(&db).unwrap().len(), 1);
+
+        confirm(&db, ROUND_ID, 0, 1, 1).unwrap();
+        assert!(pending_rounds(&db).unwrap().is_empty());
     }
 
     #[test]
