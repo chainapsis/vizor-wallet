@@ -155,12 +155,51 @@ is computed in Dart from round timing before calling `record_share_delegation`:
   `submit_at = 0` (immediate submission).
 - If round timing is missing or invalid, Vizor uses `submit_at = 0`.
 
-Retry/resubmission paths submit immediately (`submit_at = 0`); the original
-scheduled value remains part of the durable record for the first accepted
-submission. The canonical scheduling/retry/polling policy lives in the crate's
+The canonical scheduling and polling policy lives in the crate's
 `share_policy` module; Dart mirrors it via the `plan_share_submissions`,
-`share_tracking_flags`, and `next_share_tracking_delay_seconds` helpers exposed
-through `api/voting.rs`.
+`share_resubmission_server_order`, `share_tracking_flags`, and
+`next_share_tracking_delay_seconds` helpers exposed through `api/voting.rs`.
+
+`list_pending_share_rounds` discovers account/round keys directly from the
+crate-owned sidecar so app launch and lifecycle resume can restore status
+tracking without reopening a voting screen or creating a parallel Flutter
+store. Only account-pinned submission sessions own automatic tracking timers;
+round sessions used by voting screens do not start a second loop. Retained
+sessions poll only while the service reports an explicitly active round with a
+known future end time. A confirmed helper response marks the durable share
+confirmed. Once the crate policy marks an unconfirmed share overdue, Vizor
+rebuilds the same share with `submit_at = 0`, tries configured helpers that have
+not accepted it before helpers that have, randomizes within each group using the
+crate policy, and stops after the first accepted retry. A newly accepting helper
+is merged into the durable `sent_to_urls` list. This matches ZODL's bounded
+resubmission order and avoids sending one retry to every untried helper in the
+same pass. Each helper gets one transport attempt in that pass, so an ambiguous
+timeout is not immediately repeated against the same endpoint. Overlapping
+lifecycle and job handoff triggers join the active check or defer to its
+crate-paced next timer instead of starting another immediate retry pass.
+Locking the wallet releases retained tracking sessions and prevents discovery or
+helper requests until the wallet is unlocked again. Account deletion and full
+wallet reset first quiesce the matching retained sessions and drain any active
+helper pass before removing the wallet or voting sidecar data.
+
+The current helper API does not distinguish durable queue acceptance, CheckTx
+broadcast, terminal rejection, expiry, and unknown/offline state. This retry is
+therefore best effort: a helper `pending` response or transport failure can
+still lead to one resubmission after the deadline. Definitive state-aware
+resubmission requires a richer server-owned status and idempotent retry contract
+plus per-helper attempt state in `zcash_voting`:
+
+- Status must report `queued`, `broadcast`, `committed`, `rejected`, `expired`,
+  or `unknown`. A broadcast result must identify the transaction and committed
+  height at which the attempt was made.
+- Retry must be keyed by round and share nullifier, check committed state first,
+  and requeue only a definitively failed or absent item while the round is
+  active. It must be a no-op for queued, broadcast, committed, expired, and
+  unknown state, with at most one broadcast attempt per new committed height.
+- `zcash_voting` must persist planned helper targets before network I/O and an
+  atomic per-helper outcome for accepted, definitively rejected, and ambiguous
+  delivery. It must also own retry claim/completion state so app resume and an
+  OS background task cannot race or widen helper disclosure after a timeout.
 
 ## Wire Types And FRB Scanning
 

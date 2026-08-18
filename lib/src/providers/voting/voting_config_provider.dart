@@ -43,6 +43,24 @@ final votingConfigRefreshFailureProvider =
       VotingConfigRefreshFailure?
     >(VotingConfigRefreshFailureNotifier.new);
 
+/// Monotonic signal emitted after a voting config is authenticated.
+///
+/// Consumers can react to successful config changes without watching
+/// [votingConfigProvider] and forcing it to load when voting is otherwise idle.
+class VotingConfigResolutionRevisionNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void markResolved() {
+    state++;
+  }
+}
+
+final votingConfigResolutionRevisionProvider =
+    NotifierProvider<VotingConfigResolutionRevisionNotifier, int>(
+      VotingConfigResolutionRevisionNotifier.new,
+    );
+
 /// Resolves the active dynamic voting configuration for the current source.
 ///
 /// Initial resolution failures remain explicit `AsyncError`s so voting fails
@@ -149,6 +167,7 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     _previousResolvedConfig = resolution.config;
     _previousResolvedSourceUrl = sourceUrl;
     _clearRefreshFailure();
+    ref.read(votingConfigResolutionRevisionProvider.notifier).markResolved();
     return resolution.config;
   }
 

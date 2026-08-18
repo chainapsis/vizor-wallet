@@ -290,7 +290,8 @@ class VotingApiClient {
   ///
   /// [shareId] is retained in the signature so call sites can keep the recovery
   /// key nearby, but the current helper endpoint accepts the same body as the
-  /// initial submission.
+  /// initial submission. This makes one transport attempt because a timeout is
+  /// ambiguous; the caller decides whether to try another helper or wait.
   Future<VotingShareSubmissionResult> resubmitShare({
     required String roundId,
     required Uri serverUrl,
@@ -302,7 +303,6 @@ class VotingApiClient {
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
       timeout: _helperTimeout,
-      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }

@@ -827,6 +827,41 @@ void main() {
     expect(delays, const [Duration(milliseconds: 2)]);
   });
 
+  test('does not repeat a resubmission after an ambiguous timeout', () async {
+    final delays = <Duration>[];
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://helper.example/shielded-vote/v1/shares':
+            SequentialVotingHttpResponses([
+              timeoutResponse(),
+              {'status': 'queued'},
+            ]),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+      helperRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-helper-retry',
+        delays: const [Duration(milliseconds: 2)],
+      ),
+      delay: (delay) async => delays.add(delay),
+    );
+
+    await expectLater(
+      client.resubmitShare(
+        roundId: encodedRoundId,
+        serverUrl: Uri.parse('https://helper.example'),
+        shareId: 'share-1',
+        share: {'share_index': 0},
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+
+    expect(http.requests, hasLength(1));
+    expect(delays, isEmpty);
+  });
+
   test('helper responses require known status values', () async {
     final acceptedClient = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),

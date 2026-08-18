@@ -96,6 +96,7 @@ import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/voting/voting_share_tracking_coordinator_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
@@ -1168,7 +1169,9 @@ class ZcashWalletApp extends ConsumerWidget {
                                   }
                                 },
                                 behavior: HitTestBehavior.translucent,
-                                child: child!,
+                                child: VotingShareTrackingCoordinatorHost(
+                                  child: child!,
+                                ),
                               ),
                             ),
                           ),

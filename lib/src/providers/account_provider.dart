@@ -27,6 +27,7 @@ import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'voting/voting_share_tracking_coordinator_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
 
 export 'account_models.dart';
@@ -542,6 +543,35 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    final shareTracking = ref.read(
+      votingShareTrackingCoordinatorProvider.notifier,
+    );
+    await shareTracking.quiesceAndDrain(accountUuid: uuid);
+    var walletAccountDeleted = false;
+    try {
+      await _removeAccountWithShareTrackingStopped(
+        uuid,
+        onWalletAccountDeleted: () => walletAccountDeleted = true,
+      );
+    } catch (_) {
+      if (!walletAccountDeleted) {
+        shareTracking.resumeAfterMutation(accountUuid: uuid);
+      }
+      rethrow;
+    }
+    shareTracking.resumeAfterMutation(accountUuid: uuid, refresh: false);
+  }
+
+  Future<void> _removeAccountWithShareTrackingStopped(
+    String uuid, {
+    required void Function() onWalletAccountDeleted,
+  }) async {
+    final prev = state.value ?? const AccountState();
+    final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
+    if (targetIndex < 0) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
+    }
+
     final target = prev.accounts[targetIndex];
     final remaining = [
       for (final account in prev.accounts)
@@ -570,6 +600,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         network: network,
         accountUuid: uuid,
       );
+      onWalletAccountDeleted();
       migrationRevocation.commit();
       log(
         'removeAccount: rust delete complete in '
@@ -675,6 +706,23 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    final shareTracking = ref.read(
+      votingShareTrackingCoordinatorProvider.notifier,
+    );
+    await shareTracking.quiesceAndDrain();
+    try {
+      await _resetWalletWithShareTrackingStopped();
+    } on WalletResetException catch (error) {
+      if (!error.dbDeleted) shareTracking.resumeAfterMutation();
+      rethrow;
+    } catch (_) {
+      shareTracking.resumeAfterMutation();
+      rethrow;
+    }
+    shareTracking.resumeAfterMutation(refresh: false);
+  }
+
+  Future<void> _resetWalletWithShareTrackingStopped() async {
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {
@@ -829,21 +877,26 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   void clearSensitiveStateForLock() {
     final prev = state.value ?? const AccountState();
-    final activeAccountUuid = prev.activeAccountUuid;
-    if (activeAccountUuid != null) {
+    // Background share tracking can leave process-local voting state for an
+    // account that is not currently active. Locking invalidates every account's
+    // in-process owner, so clear all unguarded accounts rather than only the one
+    // shown in the UI.
+    final accountsToReset = <String>[];
+    for (final account in prev.accounts) {
       final guardedSubmission = ref
           .read(votingSubmissionGuardProvider.notifier)
-          .guardForAccount(activeAccountUuid);
+          .guardForAccount(account.uuid);
       if (guardedSubmission == null) {
-        // Do not delay routing to unlock while best-effort process cleanup runs.
-        unawaited(_resetVotingProcessStateForAccount(activeAccountUuid));
+        accountsToReset.add(account.uuid);
       } else {
         log(
           'AccountNotifier: skipped voting process reset for lock while '
-          'submission is guarded for $activeAccountUuid',
+          'submission is guarded for ${account.uuid}',
         );
       }
     }
+    // Do not delay routing to unlock while best-effort process cleanup runs.
+    unawaited(_resetVotingProcessStateForAccounts(accountsToReset));
     state = AsyncData(
       AccountState(
         accounts: prev.accounts,
@@ -874,6 +927,23 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'AccountNotifier: failed to reset voting process state for '
         '$accountUuid: $e\n$st',
       );
+    }
+  }
+
+  /// Resolves the shared sidecar once and serializes multi-account lock cleanup.
+  Future<void> _resetVotingProcessStateForAccounts(
+    List<String> accountUuids,
+  ) async {
+    if (accountUuids.isEmpty) return;
+    final String dbPath;
+    try {
+      dbPath = await _getDbPath();
+    } catch (e, st) {
+      log('AccountNotifier: failed to resolve voting DB for lock: $e\n$st');
+      return;
+    }
+    for (final accountUuid in accountUuids) {
+      await _resetVotingProcessStateForAccount(accountUuid, dbPath: dbPath);
     }
   }
 

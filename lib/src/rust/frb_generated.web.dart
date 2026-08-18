@@ -85,6 +85,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
+  ApiPendingShareRound dco_decode_api_pending_share_round(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
@@ -288,6 +291,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiKeystoneSignatureInput> dco_decode_list_api_keystone_signature_input(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiPendingShareRound> dco_decode_list_api_pending_share_round(
     dynamic raw,
   );
 
@@ -851,6 +859,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiPendingShareRound sse_decode_api_pending_share_round(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   );
@@ -1112,6 +1125,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiKeystoneSignatureInput> sse_decode_list_api_keystone_signature_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiPendingShareRound> sse_decode_list_api_pending_share_round(
     SseDeserializer deserializer,
   );
 
@@ -1814,6 +1832,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_pending_share_round(
+    ApiPendingShareRound self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -2128,6 +2152,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_keystone_signature_input(
     List<ApiKeystoneSignatureInput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_pending_share_round(
+    List<ApiPendingShareRound> self,
     SseSerializer serializer,
   );
 

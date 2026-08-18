@@ -3801,6 +3801,7 @@ Map<String, dynamic> _roundStatusJson() => {
   'round_id': _roundId,
   'title': 'Poll',
   'status': 'active',
+  'vote_end_time': 4_102_444_800,
   'snapshot_height': 123,
   'ea_pk': _bytes1x32Base64,
   'nc_root': _bytes2x32Base64,
@@ -4891,6 +4892,18 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
+  }) async {
+    final sent = sentToUrls.toSet();
+    return [
+      ...configuredServerUrls.where((url) => !sent.contains(url)),
+      ...configuredServerUrls.where(sent.contains),
+    ];
+  }
+
+  @override
   BigInt? lastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -5319,6 +5332,15 @@ class _RustApiFake implements RustLibApi {
     required int mode,
   }) {
     return const Stream.empty();
+  }
+
+  @override
+  Future<List<rust_api.ApiPendingShareRound>>
+  crateApiVotingListPendingShareRounds({
+    required String dbPath,
+    required List<String> accountUuids,
+  }) async {
+    return const [];
   }
 
   @override

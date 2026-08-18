@@ -13,6 +13,7 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../account_provider.dart';
+import 'voting_share_tracking_coordinator_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -991,8 +992,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   void _completeJob({required VotingSessionKey key, required int generation}) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
+    _handoffSessionToShareTrackingCoordinator(key);
     _releaseGuard();
-    _releaseSessionSubscription();
     ref.invalidate(votingSessionProvider(key.roundId));
     _keystoneSigningRound = null;
     state = state.copyWith(
@@ -1031,8 +1032,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
+    _handoffSessionToShareTrackingCoordinator(key);
     _releaseGuard();
-    _releaseSessionSubscription();
     _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.error,
@@ -1085,6 +1086,17 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _sessionSubscription?.close();
     _sessionSubscription = null;
     _retainedSessionKey = null;
+  }
+
+  void _handoffSessionToShareTrackingCoordinator(VotingSessionKey key) {
+    // Transfer ownership before dropping the job's listener or mutation guard.
+    final sessionSubscription = _sessionSubscription;
+    ref
+        .read(votingShareTrackingCoordinatorProvider.notifier)
+        .retainSubmittedSession(key);
+    _sessionSubscription = null;
+    _retainedSessionKey = null;
+    sessionSubscription?.close();
   }
 
   void _releaseGuard() {

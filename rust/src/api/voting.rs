@@ -1,4 +1,4 @@
-use std::{panic, sync::Arc};
+use std::{panic, path::Path, sync::Arc};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -145,6 +145,16 @@ pub struct ApiKeystoneSignatureBatchResult {
     pub already_present: u32,
 }
 
+/// One account and round with durable unconfirmed helper-share state.
+///
+/// This is intentionally only a discovery key. The canonical share records and
+/// their recovery material remain owned by `zcash_voting`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiPendingShareRound {
+    pub account_uuid: String,
+    pub round_id: String,
+}
+
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
 /// Binary fields are base64-encoded here so Dart does not duplicate protocol
@@ -240,6 +250,34 @@ pub fn plan_share_submissions(
         .map_err(|e| e.to_string())?;
 
         Ok(plans)
+    })
+}
+
+/// Return the crate-owned randomized helper order for one share retry.
+///
+/// Untried helpers remain ahead of helpers that already accepted the share.
+/// Rust draws the exact amount of OS entropy requested by `zcash_voting`, so
+/// Dart does not duplicate or weaken the retry-order policy.
+pub fn share_resubmission_server_order(
+    configured_server_urls: Vec<String>,
+    sent_to_urls: Vec<String>,
+) -> Result<Vec<String>, String> {
+    catch(|| {
+        let required = zcash_voting::share_policy::resubmission_server_order_random_bytes_required(
+            &configured_server_urls,
+            &sent_to_urls,
+        );
+        let mut server_random_bytes = vec![0u8; required];
+        OsRng
+            .try_fill_bytes(&mut server_random_bytes)
+            .map_err(|e| format!("failed to draw share-resubmission entropy: {e}"))?;
+
+        zcash_voting::share_policy::resubmission_server_order(
+            &configured_server_urls,
+            &sent_to_urls,
+            &server_random_bytes,
+        )
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -1290,6 +1328,51 @@ pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Res
     })
 }
 
+/// Lists account/round pairs with durable unconfirmed helper shares.
+///
+/// The voting sidecar is not created when the wallet has never persisted voting
+/// state. Callers use these keys to restore share-status tracking after app
+/// restart without copying the crate's recovery records into another store.
+pub fn list_pending_share_rounds(
+    db_path: String,
+    mut account_uuids: Vec<String>,
+) -> Result<Vec<ApiPendingShareRound>, String> {
+    catch(|| {
+        let sidecar_path =
+            zcash_voting::storage::VotingDb::wallet_sidecar_path(Path::new(&db_path));
+        if !sidecar_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        account_uuids.retain(|account_uuid| !account_uuid.is_empty());
+        account_uuids.sort();
+        account_uuids.dedup();
+
+        let mut pending = Vec::new();
+        for account_uuid in account_uuids {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            let rounds = db
+                .list_rounds()
+                .map_err(|e| format!("list voting rounds failed: {e}"))?;
+            for round in rounds {
+                let shares = zcash_voting::share::unconfirmed(&db, &round.round_id)
+                    .map_err(|e| format!("list unconfirmed voting shares failed: {e}"))?;
+                if !shares.is_empty() {
+                    pending.push(ApiPendingShareRound {
+                        account_uuid: account_uuid.clone(),
+                        round_id: round.round_id,
+                    });
+                }
+            }
+        }
+
+        pending.sort_by(|left, right| {
+            (&left.account_uuid, &left.round_id).cmp(&(&right.account_uuid, &right.round_id))
+        });
+        Ok(pending)
+    })
+}
+
 /// Recover a committed but unsubmitted vote from persisted local recovery data.
 ///
 /// # Errors
@@ -2187,6 +2270,36 @@ mod tests {
     }
 
     #[test]
+    fn share_resubmission_order_uses_crate_policy() {
+        let configured = vec![
+            "https://helper-a.example".to_string(),
+            "https://helper-b.example".to_string(),
+            "https://helper-c.example".to_string(),
+            "https://helper-d.example".to_string(),
+        ];
+        let sent = vec![
+            "https://helper-a.example".to_string(),
+            "https://helper-d.example".to_string(),
+        ];
+
+        let order = share_resubmission_server_order(configured.clone(), sent.clone()).unwrap();
+        let mut sorted_order = order.clone();
+        sorted_order.sort();
+        let mut sorted_configured = configured;
+        sorted_configured.sort();
+
+        assert_eq!(sorted_order, sorted_configured);
+        assert!(order[..2].iter().all(|url| !sent.contains(url)));
+        assert!(order[2..].iter().all(|url| sent.contains(url)));
+
+        let duplicate = "https://helper-a.example".to_string();
+        assert!(
+            share_resubmission_server_order(vec![duplicate.clone(), duplicate], Vec::new(),)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn api_van_witness_preserves_core_fields() {
         let mut witness = vec![vec![0u8; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
         witness[0] = vec![1; 32];
@@ -2744,6 +2857,82 @@ mod tests {
         )
         .unwrap();
         assert!(cleared_state.share_delegations.is_empty());
+    }
+
+    #[test]
+    fn list_pending_share_rounds_does_not_create_an_unused_sidecar() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let sidecar_path = zcash_voting::storage::VotingDb::wallet_sidecar_path(db_path.as_path());
+
+        let pending = list_pending_share_rounds(
+            db_path.to_str().unwrap().to_string(),
+            vec![TEST_ACCOUNT_UUID.to_string()],
+        )
+        .unwrap();
+
+        assert!(pending.is_empty());
+        assert!(!sidecar_path.exists());
+    }
+
+    #[test]
+    fn list_pending_share_rounds_discovers_and_deduplicates_durable_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
+        drop(db);
+        record_share_delegation(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            0,
+            7,
+            0,
+            vec!["https://helper.example".to_string()],
+            123,
+        )
+        .unwrap();
+
+        let pending = list_pending_share_rounds(
+            db_path.to_str().unwrap().to_string(),
+            vec![
+                TEST_ACCOUNT_UUID.to_string(),
+                TEST_ACCOUNT_UUID.to_string(),
+                String::new(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            pending,
+            vec![ApiPendingShareRound {
+                account_uuid: TEST_ACCOUNT_UUID.to_string(),
+                round_id: ROUND_ID.to_string(),
+            }]
+        );
+
+        mark_share_confirmed(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            0,
+            7,
+            0,
+        )
+        .unwrap();
+        assert!(list_pending_share_rounds(
+            db_path.to_str().unwrap().to_string(),
+            vec![TEST_ACCOUNT_UUID.to_string()],
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]
