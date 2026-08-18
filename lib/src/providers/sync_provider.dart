@@ -17,6 +17,17 @@ import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
+const kSyncPhasePreflight = 'preflight';
+const kSyncPhaseSetup = 'setup';
+const kSyncPhaseActiveUtxo = 'active_utxo';
+const kSyncPhaseChainPrepare = 'chain_prepare';
+
+bool isSyncPreparationPhase(String phase) =>
+    phase == kSyncPhasePreflight ||
+    phase == kSyncPhaseSetup ||
+    phase == kSyncPhaseActiveUtxo ||
+    phase == kSyncPhaseChainPrepare;
+
 class SyncProgressEvent {
   final int scannedHeight;
   final int chainTipHeight;
@@ -26,9 +37,10 @@ class SyncProgressEvent {
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
+  final int phaseCompletedUnits;
+  final int phaseTotalUnits;
 
-  /// Current sync phase from Rust: `"download"`, `"scan"`,
-  /// `"enhance"`, or `""` (unspecified / completion).
+  /// Current sync phase from Rust, including preparation phases.
   final String phase;
 
   const SyncProgressEvent({
@@ -40,6 +52,8 @@ class SyncProgressEvent {
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
+    this.phaseCompletedUnits = 0,
+    this.phaseTotalUnits = 0,
     this.phase = '',
   });
 }
@@ -71,6 +85,8 @@ class SyncState {
   final double percentage;
   final double displayTargetPercentage;
   final int displayTargetBlocks;
+  final int phaseCompletedUnits;
+  final int phaseTotalUnits;
   final int scannedHeight;
   final int chainTipHeight;
   final BigInt transparentBalance;
@@ -141,9 +157,8 @@ class SyncState {
   final DateTime? lastSyncCompletedAt;
   final DateTime? lastSyncFailedAt;
 
-  /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
-  /// empty. Widgets can use this to show e.g. "Downloading..."
-  /// instead of a bare percentage.
+  /// Current preparation, download, or scan phase. The Sidebar keeps its
+  /// existing percentage copy and uses this only to estimate display progress.
   final String phase;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
@@ -324,6 +339,8 @@ class SyncState {
     this.percentage = 0,
     double? displayTargetPercentage,
     this.displayTargetBlocks = 0,
+    this.phaseCompletedUnits = 0,
+    this.phaseTotalUnits = 0,
     this.scannedHeight = 0,
     this.chainTipHeight = 0,
     BigInt? transparentBalance,
@@ -408,6 +425,8 @@ class SyncState {
     double? percentage,
     double? displayTargetPercentage,
     int? displayTargetBlocks,
+    int? phaseCompletedUnits,
+    int? phaseTotalUnits,
     int? scannedHeight,
     int? chainTipHeight,
     BigInt? transparentBalance,
@@ -458,6 +477,8 @@ class SyncState {
       displayTargetPercentage:
           displayTargetPercentage ?? this.displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks ?? this.displayTargetBlocks,
+      phaseCompletedUnits: phaseCompletedUnits ?? this.phaseCompletedUnits,
+      phaseTotalUnits: phaseTotalUnits ?? this.phaseTotalUnits,
       scannedHeight: scannedHeight ?? this.scannedHeight,
       chainTipHeight: chainTipHeight ?? this.chainTipHeight,
       transparentBalance: transparentBalance ?? this.transparentBalance,
@@ -540,6 +561,8 @@ class SyncState {
       percentage: current.percentage,
       displayTargetPercentage: current.displayTargetPercentage,
       displayTargetBlocks: current.displayTargetBlocks,
+      phaseCompletedUnits: current.phaseCompletedUnits,
+      phaseTotalUnits: current.phaseTotalUnits,
       scannedHeight: current.scannedHeight,
       chainTipHeight: current.chainTipHeight,
       failure: current.failure,
@@ -564,6 +587,8 @@ class SyncState {
       percentage: percentage,
       displayTargetPercentage: displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks,
+      phaseCompletedUnits: phaseCompletedUnits,
+      phaseTotalUnits: phaseTotalUnits,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       failure: failure,
@@ -1094,7 +1119,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
-        phase: '',
+        phase: kSyncPhasePreflight,
       ),
     );
 
@@ -1118,6 +1143,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
           final endpoint = _endpointConfig;
           log('Sync: starting foreground sync via ${endpoint.hostPort}');
+          final readyState = state.value;
+          if (readyState != null && gen == _syncGen) {
+            state = AsyncData(
+              readyState.copyWith(
+                phase: kSyncPhaseSetup,
+                phaseCompletedUnits: 0,
+                phaseTotalUnits: 0,
+              ),
+            );
+          }
           // Fire up the mempool observer alongside the scan loop.
           // It has its own Rust cancel flag (MEMPOOL_CANCEL) and runs
           // on a separate tokio runtime, so it can accept events while
@@ -1144,6 +1179,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 isSyncing: event.isSyncing,
                 isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
+                phaseCompletedUnits: event.phaseCompletedUnits.toInt(),
+                phaseTotalUnits: event.phaseTotalUnits.toInt(),
                 phase: event.phase,
               );
               _lastForegroundSyncProgress = progress;
@@ -2108,7 +2145,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final syncCompletedAt = event.isComplete
         ? DateTime.now()
         : prev?.lastSyncCompletedAt;
-    final actualPercentage = _clampProgress(event.percentage);
+    final isPreparationEvent = isSyncPreparationPhase(event.phase);
+    final eventPercentage = _clampProgress(event.percentage);
+    final actualPercentage = isPreparationEvent
+        ? math.max(currentState?.percentage ?? 0, eventPercentage)
+        : eventPercentage;
+    final nextScannedHeight = isPreparationEvent
+        ? currentState?.scannedHeight ?? event.scannedHeight
+        : event.scannedHeight;
+    final nextChainTipHeight = isPreparationEvent
+        ? math.max(currentState?.chainTipHeight ?? 0, event.chainTipHeight)
+        : event.chainTipHeight;
     final nextSpendableBalance = useFetchedBalance
         ? spendable ?? stateScopedPrev?.spendableBalance ?? BigInt.zero
         : stateScopedPrev?.spendableBalance ?? BigInt.zero;
@@ -2131,10 +2178,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
-        displayTargetPercentage: event.displayTargetPercentage,
-        displayTargetBlocks: event.displayTargetBlocks,
-        scannedHeight: event.scannedHeight,
-        chainTipHeight: event.chainTipHeight,
+        displayTargetPercentage: isPreparationEvent
+            ? currentState?.displayTargetPercentage ?? actualPercentage
+            : event.displayTargetPercentage,
+        displayTargetBlocks: isPreparationEvent
+            ? currentState?.displayTargetBlocks ?? 0
+            : event.displayTargetBlocks,
+        phaseCompletedUnits: event.phaseCompletedUnits,
+        phaseTotalUnits: event.phaseTotalUnits,
+        scannedHeight: nextScannedHeight,
+        chainTipHeight: nextChainTipHeight,
         transparentBalance: useFetchedBalance
             ? transparent
             : stateScopedPrev?.transparentBalance,
@@ -2688,6 +2741,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayTargetPercentage:
             current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
         displayTargetBlocks: current?.displayTargetBlocks ?? 0,
+        phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
+        phaseTotalUnits: current?.phaseTotalUnits ?? 0,
         scannedHeight: current?.scannedHeight ?? 0,
         chainTipHeight: current?.chainTipHeight ?? 0,
         transparentBalance: transparent ?? accountFallback?.transparentBalance,

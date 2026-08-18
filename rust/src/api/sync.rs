@@ -43,15 +43,18 @@ pub struct ApiSyncProgressEvent {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
-    /// UI-only smoothed progress target. Dart increments toward this
-    /// assuming one virtual block per 500ms, capped at the next batch.
+    /// UI-only smoothed progress target. Dart chooses the display tick and
+    /// advances at most `display_target_blocks` virtual blocks to this target.
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
-    /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
-    /// `""` (completion / unspecified).
+    /// Completed and total work units for measurable preparation phases.
+    pub phase_completed_units: u64,
+    pub phase_total_units: u64,
+    /// Current sync phase. Preparation adds `"active_utxo"` and
+    /// `"chain_prepare"` before the existing download/scan phases.
     pub phase: String,
 }
 
@@ -127,6 +130,8 @@ pub fn start_full_sync(
                     is_syncing: progress.is_syncing,
                     is_complete: progress.is_complete,
                     has_new_tx: progress.has_new_tx,
+                    phase_completed_units: progress.phase_completed_units,
+                    phase_total_units: progress.phase_total_units,
                     phase: progress.phase.clone(),
                 })
                 .is_err()

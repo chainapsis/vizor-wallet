@@ -222,6 +222,62 @@ void main() {
     expect(container.read(syncProvider).requireValue.percentage, 0.1);
   });
 
+  test(
+    'preparation progress preserves authoritative scan state on retry',
+    () async {
+      late _LifecycleTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () =>
+                notifier = _LifecycleTestSyncNotifier(() async => 'wallet.db'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.replaceState(
+        SyncState(
+          accountUuid: _accountUuid,
+          isSyncing: true,
+          percentage: 0.5,
+          displayTargetPercentage: 0.6,
+          displayTargetBlocks: 100,
+          scannedHeight: 50,
+          chainTipHeight: 100,
+        ),
+      );
+
+      await notifier.handleSyncProgressForTesting(
+        const SyncProgressEvent(
+          scannedHeight: 0,
+          chainTipHeight: 120,
+          percentage: 0,
+          displayTargetPercentage: 0,
+          displayTargetBlocks: 0,
+          isSyncing: true,
+          isComplete: false,
+          hasNewTx: false,
+          phaseCompletedUnits: 2,
+          phaseTotalUnits: 4,
+          phase: kSyncPhaseActiveUtxo,
+        ),
+      );
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.percentage, 0.5);
+      expect(current.displayTargetPercentage, 0.6);
+      expect(current.displayTargetBlocks, 100);
+      expect(current.scannedHeight, 50);
+      expect(current.chainTipHeight, 120);
+      expect(current.phaseCompletedUnits, 2);
+      expect(current.phaseTotalUnits, 4);
+    },
+  );
+
   test('in-flight progress cannot replace a newer sync failure', () async {
     final resolverStarted = Completer<void>();
     final dbPath = Completer<String>();

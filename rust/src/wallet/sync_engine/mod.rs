@@ -71,10 +71,16 @@ pub struct SyncProgressEvent {
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
+    /// Completed and total work units for preparation phases. A zero total
+    /// means the phase has no measurable work and should be time-interpolated
+    /// by the UI instead.
+    pub phase_completed_units: u64,
+    pub phase_total_units: u64,
     /// Current sync phase for UI display. One of:
+    /// - `"active_utxo"` — refreshing the active account's transparent UTXOs
+    /// - `"chain_prepare"` — resubmission, subtree, and scan-range preparation
     /// - `"download"` — downloading compact blocks from lightwalletd
     /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
-    /// - `"enhance"` — fetching full transaction data
     /// - `""` — completion event or unspecified
     pub phase: String,
 }
@@ -98,6 +104,27 @@ fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Opti
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     })?
+}
+
+fn preparation_progress_event(
+    chain_tip_height: u64,
+    phase: &str,
+    phase_completed_units: u64,
+    phase_total_units: u64,
+) -> SyncProgressEvent {
+    SyncProgressEvent {
+        scanned_height: 0,
+        chain_tip_height,
+        percentage: 0.0,
+        display_target_percentage: 0.0,
+        display_target_blocks: 0,
+        is_syncing: true,
+        is_complete: false,
+        has_new_tx: false,
+        phase_completed_units,
+        phase_total_units,
+        phase: phase.into(),
+    }
 }
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
@@ -1215,6 +1242,7 @@ async fn refresh_utxos(
     account_selection: TransparentAccountSelection<'_>,
     priority_account_target: Option<&ActiveSyncAccountTarget>,
     received_outputs_seen: &mut bool,
+    progress: Option<&(dyn Fn(u64, u64) + Sync)>,
     should_exit: &impl Fn() -> bool,
 ) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
@@ -1335,11 +1363,17 @@ async fn refresh_utxos(
         }
     }
 
+    let total_refreshes = refreshes.len() as u64;
+    if let Some(progress) = progress {
+        progress(0, total_refreshes);
+    }
+    let mut completed_refreshes = 0u64;
     let download_client = client.clone();
     let outcome = process_bounded_transparent_refreshes(
         refreshes,
         move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
         |downloaded| {
+            let downloaded_count = downloaded.len() as u64;
             let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
             store_then_mark_transparent_refreshes(
                 downloaded,
@@ -1354,6 +1388,10 @@ async fn refresh_utxos(
                 },
             )?;
             *received_outputs_seen |= received_outputs;
+            completed_refreshes = completed_refreshes.saturating_add(downloaded_count);
+            if let Some(progress) = progress {
+                progress(completed_refreshes, total_refreshes);
+            }
             Ok(())
         },
         |pending| prioritize_pending_transparent_refreshes(pending, priority_account_target),
@@ -2005,6 +2043,14 @@ async fn run_sync_impl(
 
     let should_exit =
         || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
+    let active_utxo_progress = |completed, total| {
+        progress_fn(preparation_progress_event(
+            current_tip_height,
+            "active_utxo",
+            completed,
+            total,
+        ));
+    };
     let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
         active_account_uuid.as_deref()
     {
@@ -2023,6 +2069,7 @@ async fn run_sync_impl(
             TransparentAccountSelection::Only(active_account_uuid),
             None,
             &mut critical_received_outputs,
+            Some(&active_utxo_progress),
             &should_exit,
         )
         .await?;
@@ -2041,6 +2088,7 @@ async fn run_sync_impl(
                 TransparentAccountSelection::All,
                 None,
                 &mut critical_received_outputs,
+                Some(&active_utxo_progress),
                 &should_exit,
             )
             .await?;
@@ -2059,6 +2107,7 @@ async fn run_sync_impl(
             TransparentAccountSelection::All,
             None,
             &mut critical_received_outputs,
+            None,
             &should_exit,
         )
         .await?;
@@ -2071,6 +2120,15 @@ async fn run_sync_impl(
             elapsed(),
         );
         return Ok(());
+    }
+
+    if running_mode == 1 {
+        progress_fn(preparation_progress_event(
+            current_tip_height,
+            "chain_prepare",
+            0,
+            0,
+        ));
     }
 
     // 2.5. Resubmit eligible unmined wallet txs now that we know the
@@ -2401,6 +2459,8 @@ async fn run_sync_impl(
             is_syncing: true,
             is_complete: false,
             has_new_tx: false,
+            phase_completed_units: 0,
+            phase_total_units: 0,
             phase: "download".into(),
         });
         log::info!(
@@ -2960,6 +3020,8 @@ async fn run_sync_impl(
             is_syncing: true,
             is_complete: false,
             has_new_tx,
+            phase_completed_units: 0,
+            phase_total_units: 0,
             phase: "scan".into(),
         };
         last_progress_percentage = progress.percentage;
@@ -3038,6 +3100,8 @@ async fn run_sync_impl(
         is_syncing: false,
         is_complete: true,
         has_new_tx: false,
+        phase_completed_units: 0,
+        phase_total_units: 0,
         phase: String::new(),
     };
     progress_fn(final_progress);
@@ -3068,6 +3132,7 @@ async fn run_sync_impl(
                 TransparentAccountSelection::Except(active_account_uuid),
                 active_account_target,
                 &mut deferred_received_outputs,
+                None,
                 &should_exit,
             )
             .await;
@@ -3136,6 +3201,8 @@ async fn run_sync_impl(
                 is_syncing: false,
                 is_complete: true,
                 has_new_tx: true,
+                phase_completed_units: 0,
+                phase_total_units: 0,
                 phase: String::new(),
             });
         }
