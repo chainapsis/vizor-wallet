@@ -544,16 +544,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
-    await shareTracking.quiesceAndDrain(accountUuid: uuid);
-    var restoreAfterFailure = false;
     try {
+      await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
-    } catch (_) {
-      restoreAfterFailure = true;
-      rethrow;
     } finally {
       shareTracking.resume(accountUuid: uuid);
-      if (restoreAfterFailure) shareTracking.requestRestore();
+      shareTracking.requestRestore();
     }
   }
 
@@ -698,9 +694,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
-    await shareTracking.quiesceAndDrain();
     var restoreAfterFailure = false;
     try {
+      await shareTracking.quiesceAndDrain();
       await _resetWalletWithShareTrackingStopped();
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;

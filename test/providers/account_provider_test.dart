@@ -8,13 +8,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
+final _rustApi = _AccountMutationRustApiFake();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() => RustLib.initMock(api: _rustApi));
+  tearDownAll(RustLib.dispose);
+  setUp(_rustApi.reset);
 
   test('wallet db cleanup paths include main db and voting sidecar files', () {
     const dbPath = '/tmp/zcash_wallet.db';
@@ -310,6 +318,110 @@ void main() {
     },
   );
 
+  test('successful account removal requests share restoration', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-account-removal',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDirectory.path;
+          }
+          throw MissingPluginException('Unexpected path provider call.');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final shareTracking = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    shareTracking.addRestoreRequestListener(() => restoreRequests++);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    await container.read(accountProvider.notifier).removeAccount('account-2');
+
+    expect(shareTracking.isQuiesced('account-2'), isFalse);
+    expect(restoreRequests, 1);
+    expect(_rustApi.deletedAccountUuids, ['account-2']);
+    expect(
+      container
+          .read(accountProvider)
+          .value!
+          .accounts
+          .map((account) => account.uuid),
+      ['account-1'],
+    );
+  });
+
+  test('drain failures resume tracking after destructive mutations', () async {
+    final shareTracking = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    shareTracking.addRestoreRequestListener(() => restoreRequests++);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    final deleteOwner = Object();
+    expect(
+      shareTracking.register(
+        key: const VotingSessionKey(
+          accountUuid: 'account-2',
+          roundId: 'round-delete',
+        ),
+        owner: deleteOwner,
+        stopAndDrain: () async => throw StateError('delete drain failed'),
+      ),
+      isTrue,
+    );
+
+    await expectLater(
+      container.read(accountProvider.notifier).removeAccount('account-2'),
+      throwsA(isA<StateError>()),
+    );
+    expect(shareTracking.isQuiesced('account-2'), isFalse);
+    expect(restoreRequests, 1);
+
+    final resetOwner = Object();
+    expect(
+      shareTracking.register(
+        key: const VotingSessionKey(
+          accountUuid: 'account-1',
+          roundId: 'round-reset',
+        ),
+        owner: resetOwner,
+        stopAndDrain: () async => throw StateError('reset drain failed'),
+      ),
+      isTrue,
+    );
+
+    await expectLater(
+      container.read(accountProvider.notifier).resetWallet(),
+      throwsA(isA<StateError>()),
+    );
+    expect(shareTracking.isQuiesced('account-1'), isFalse);
+    expect(restoreRequests, 2);
+  });
+
   test(
     'account switching is allowed while voting submission is guarded',
     () async {
@@ -396,6 +508,37 @@ class _FakeAnyhowException implements Exception {
 
   @override
   String toString() => 'AnyhowException($message)';
+}
+
+class _AccountMutationRustApiFake implements RustLibApi {
+  final deletedAccountUuids = <String>[];
+
+  void reset() => deletedAccountUuids.clear();
+
+  @override
+  Future<void> crateApiWalletDeleteAccount({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    deletedAccountUuids.add(accountUuid);
+  }
+
+  @override
+  Future<void> crateApiVotingResetVotingSessionState({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {}
+
+  @override
+  Future<int> crateApiVotingDeleteVotingAccountState({
+    required String dbPath,
+    required String accountUuid,
+  }) async => 1;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 AppBootstrapState _bootstrapWithAccounts() {
