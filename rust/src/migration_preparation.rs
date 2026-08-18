@@ -211,6 +211,7 @@ pub fn run_sync(
             control.cancel.clone(),
             MIGRATION_PREPARATION_SYNC_MODE,
             &control.desired_sync_mode,
+            None,
             false,
             progress_callback,
         ))
