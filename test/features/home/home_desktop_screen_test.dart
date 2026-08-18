@@ -1216,6 +1216,56 @@ void main() {
 
     expect(scrollableState.position.pixels, greaterThan(0));
   });
+
+  testWidgets('display progress ticks do not rebuild desktop Home content', (
+    tester,
+  ) async {
+    final initial = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      percentage: 1,
+      orchardBalance: BigInt.from(100000000),
+      spendableBalance: BigInt.from(100000000),
+      totalBalance: BigInt.from(100000000),
+      recentTransactions: [
+        _receivedZecTx(
+          txidHex: 'display-progress-home-row',
+          amountZatoshi: 100000000,
+          blockTime: 1800000000,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_appHarness('/home', syncState: initial));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    );
+    (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
+      initial.copyWith(
+        isSyncing: true,
+        percentage: 0.4,
+        displayTargetPercentage: 0.5,
+        displayTargetBlocks: 10,
+      ),
+    );
+    await tester.pump();
+
+    final balanceFinder = find.byKey(
+      const ValueKey('home_desktop_balance_amount_text'),
+    );
+    final activityFinder = find.byKey(
+      const ValueKey('home_desktop_activity_row_0'),
+    );
+    final balanceBeforeTicks = tester.widget(balanceFinder);
+    final activityBeforeTicks = tester.widget(activityFinder);
+
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(tester.widget(balanceFinder), same(balanceBeforeTicks));
+    expect(tester.widget(activityFinder), same(activityBeforeTicks));
+  });
 }
 
 SwapIntentRecord _swapActivityRecord({

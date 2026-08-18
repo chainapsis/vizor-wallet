@@ -255,7 +255,7 @@ bool isSyncKeepAwakeActiveSync(SyncState sync) {
 
 bool isSyncKeepAwakeCompletedSync(SyncState sync) {
   if (sync.isSyncing || sync.isBackgroundMode) return false;
-  if (sync.percentage >= 1 || sync.displayPercentage >= 1) return true;
+  if (sync.isSyncComplete || sync.percentage >= 1) return true;
   return sync.chainTipHeight > 0 && sync.scannedHeight >= sync.chainTipHeight;
 }
 

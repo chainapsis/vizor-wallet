@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
+import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../profile_pictures.dart';
@@ -29,7 +30,10 @@ class MobileTopNavAccount extends ConsumerWidget {
     final colors = context.colors;
     final account = ref.watch(accountProvider).value?.activeAccount;
     final sync = ref.watch(syncProvider).value ?? SyncState();
-    final status = SyncStatusLabel.from(sync);
+    final status = SyncStatusLabel.from(
+      sync,
+      displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
+    );
 
     final isSyncing = status.kind == SyncStatusKind.syncing;
     // Synced reads fully green: label `sync.text` (GreenPrimitives.p900) +

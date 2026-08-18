@@ -30,6 +30,7 @@ import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -626,7 +627,6 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 
     return _HomeDesktopPane(
       isImporting: isImporting,
-      importProgress: widget.sync.displayPercentage,
       importingAccountName: activeAccountName,
       hasBalance: hasBalance,
       showsIronwoodOnlyBalance: widget.showsIronwoodOnlyBalance,
@@ -1118,7 +1118,6 @@ Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
 class _HomeDesktopPane extends StatelessWidget {
   const _HomeDesktopPane({
     required this.isImporting,
-    required this.importProgress,
     required this.importingAccountName,
     required this.hasBalance,
     required this.showsIronwoodOnlyBalance,
@@ -1147,7 +1146,6 @@ class _HomeDesktopPane extends StatelessWidget {
   });
 
   final bool isImporting;
-  final double importProgress;
   final String? importingAccountName;
   final bool hasBalance;
   final bool showsIronwoodOnlyBalance;
@@ -1285,9 +1283,11 @@ class _HomeDesktopPane extends StatelessWidget {
                       horizontal: AppSpacing.s,
                       vertical: AppSpacing.sm,
                     ),
-                    child: _HomeImportingContent(
-                      progress: importProgress,
-                      accountName: importingAccountName,
+                    child: Consumer(
+                      builder: (context, ref, _) => _HomeImportingContent(
+                        progress: ref.watch(syncDisplayPercentageProvider),
+                        accountName: importingAccountName,
+                      ),
                     ),
                   ),
                 ),

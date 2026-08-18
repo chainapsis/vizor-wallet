@@ -45,9 +45,7 @@ void main() {
 
   testWidgets('sidebar shows in-progress sync percentage', (tester) async {
     await tester.pumpWidget(
-      _sidebarHarness(
-        SyncState(isSyncing: true, percentage: 1, displayPercentage: 1),
-      ),
+      _sidebarHarness(SyncState(isSyncing: true, percentage: 1)),
     );
     await tester.pump();
 
@@ -677,7 +675,7 @@ void main() {
           accountUuid: 'account-1',
           hasAccountScopedData: false,
           isSyncing: true,
-          displayPercentage: 0.32,
+          percentage: 0.32,
         ),
       ),
     );
@@ -813,7 +811,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _sidebarHarness(SyncState(isSyncing: true, displayPercentage: 0.34)),
+      _sidebarHarness(SyncState(isSyncing: true, percentage: 0.34)),
     );
     await tester.pump();
 
@@ -838,7 +836,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _sidebarHarness(
-        SyncState(isSyncing: true, displayPercentage: 0.34),
+        SyncState(isSyncing: true, percentage: 0.34),
         disableAnimations: false,
       ),
     );
@@ -869,7 +867,6 @@ void main() {
         SyncState(
           isSyncComplete: true,
           percentage: 1,
-          displayPercentage: 1,
           scannedHeight: 3_428_143,
           chainTipHeight: 3_428_143,
         ),
@@ -902,7 +899,6 @@ void main() {
       _sidebarHarness(
         SyncState(
           percentage: 1,
-          displayPercentage: 1,
           scannedHeight: 3_428_143,
           chainTipHeight: 3_428_143,
         ),
@@ -923,7 +919,6 @@ void main() {
         SyncState(
           isBackgroundMode: true,
           percentage: 1,
-          displayPercentage: 1,
           scannedHeight: 100,
           chainTipHeight: 100,
         ),
@@ -1028,7 +1023,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _sidebarHarness(
-        SyncState(isSyncing: true, displayPercentage: 0.34),
+        SyncState(isSyncing: true, percentage: 0.34),
         sidebarWidth: 180,
       ),
     );
@@ -1152,7 +1147,6 @@ final _syncedSyncState = SyncState(
   hasAccountScopedData: true,
   isSyncComplete: true,
   percentage: 1,
-  displayPercentage: 1,
   scannedHeight: 3_428_143,
   chainTipHeight: 3_428_143,
 );

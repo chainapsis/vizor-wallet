@@ -16,7 +16,7 @@ class SyncStatusLabel {
   final String label;
   final String semanticsLabel;
 
-  factory SyncStatusLabel.from(SyncState sync) {
+  factory SyncStatusLabel.from(SyncState sync, {int? displayWholePercentage}) {
     final failure = sync.failure;
     if (failure != null) {
       final reason = _syncFailureReason(failure.kind);
@@ -33,7 +33,9 @@ class SyncStatusLabel {
             (sync.chainTipHeight > 0 &&
                 sync.scannedHeight >= sync.chainTipHeight));
     if (!complete && (sync.isSyncing || sync.isBackgroundMode)) {
-      final pct = formatSyncStatusPercentage(sync.displayPercentage);
+      final pct =
+          displayWholePercentage?.clamp(0, 99).toString() ??
+          formatSyncStatusPercentage(sync.percentage);
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
         label: '$pct% Syncing...',

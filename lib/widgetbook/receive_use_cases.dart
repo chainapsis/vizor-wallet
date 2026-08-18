@@ -194,7 +194,6 @@ class _WidgetbookSyncNotifier extends SyncNotifier {
     accountUuid: _mobileAccountState.activeAccountUuid,
     hasAccountScopedData: true,
     percentage: 1,
-    displayPercentage: 1,
   );
 }
 
