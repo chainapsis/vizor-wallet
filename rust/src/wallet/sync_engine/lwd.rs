@@ -16,6 +16,7 @@
 
 use std::{future::Future, time::Duration};
 
+use futures::{Stream, StreamExt};
 use http::Uri;
 use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::{
@@ -25,6 +26,7 @@ use tonic::{
 use tower_service::Service;
 use zcash_client_backend::{
     data_api::{chain::CommitmentTreeRoot, WalletCommitmentTrees},
+    proto::compact_formats::CompactBlock,
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
@@ -661,23 +663,26 @@ pub(crate) async fn start_mempool_stream(
 /// lightwalletd into an in-memory [`MemoryBlockSource`] that the scan
 /// loop can hand straight to `scan_cached_blocks`. No file I/O — the
 /// batch lives in RAM for exactly one scan call and is dropped
-/// immediately after.
+/// immediately after. Incomplete, oversized, or out-of-order responses are
+/// rejected before the scanner can mistake them for progress.
 pub(super) async fn download_blocks(
     client: &mut CompactTxStreamerClient<Channel>,
     start: BlockHeight,
     end: BlockHeight,
     network: WalletNetwork,
 ) -> Result<MemoryBlockSource, SyncError> {
+    let start_height = u64::from(u32::from(start));
+    let end_height = u64::from(u32::from(end));
     let mut stream = await_tonic_stream(
         "get_block_range",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
         client.get_block_range(Request::new(BlockRange {
             start: Some(BlockId {
-                height: u32::from(start) as u64,
+                height: start_height,
                 hash: vec![],
             }),
             end: Some(BlockId {
-                height: u32::from(end) as u64,
+                height: end_height,
                 hash: vec![],
             }),
             pool_types: compact_block_pool_types(network, end),
@@ -686,17 +691,122 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
+    let blocks = collect_compact_blocks(
+        &mut stream,
+        start_height,
+        end_height,
+        LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+    )
+    .await?;
+
+    Ok(MemoryBlockSource::new(blocks))
+}
+
+async fn collect_compact_blocks<S>(
+    stream: &mut S,
+    start_height: u64,
+    end_height: u64,
+    idle_timeout: Duration,
+) -> Result<Vec<CompactBlock>, SyncError>
+where
+    S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
+{
+    let expected_count = expected_block_count(start_height, end_height)?;
     let mut blocks = Vec::new();
-    while let Some(block) = next_stream_message(&mut stream, "get_block_range stream").await? {
+    blocks
+        .try_reserve_exact(expected_count)
+        .map_err(|_| SyncError::other("get_block_range request is too large"))?;
+
+    loop {
+        let next = await_stream_message("get_block_range stream", idle_timeout, async {
+            match stream.next().await {
+                Some(Ok(block)) => Ok(Some(block)),
+                Some(Err(status)) => Err(status),
+                None => Ok(None),
+            }
+        })
+        .await?;
+        let Some(block) = next else {
+            break;
+        };
+
+        if blocks.len() >= expected_count {
+            return Err(SyncError::net(format!(
+                "get_block_range returned more than {expected_count} blocks for request \
+                 {start_height}..={end_height}"
+            )));
+        }
+        let offset = u64::try_from(blocks.len())
+            .map_err(|_| SyncError::other("get_block_range response is too large"))?;
+        let expected_height = start_height
+            .checked_add(offset)
+            .ok_or_else(|| SyncError::other("get_block_range response height overflowed"))?;
+        if block.height != expected_height {
+            return Err(SyncError::net(format!(
+                "get_block_range returned height {} while expecting {expected_height} for \
+                 request {start_height}..={end_height}",
+                block.height,
+            )));
+        }
         blocks.push(block);
     }
 
-    Ok(MemoryBlockSource::new(blocks))
+    if blocks.len() != expected_count {
+        return Err(SyncError::net(format!(
+            "get_block_range returned {} of {expected_count} blocks for request \
+             {start_height}..={end_height}",
+            blocks.len(),
+        )));
+    }
+
+    Ok(blocks)
+}
+
+fn expected_block_count(start_height: u64, end_height: u64) -> Result<usize, SyncError> {
+    let count = end_height
+        .checked_sub(start_height)
+        .and_then(|distance| distance.checked_add(1))
+        .ok_or_else(|| {
+            SyncError::other(format!(
+                "get_block_range request {start_height}..={end_height} is reversed or too large"
+            ))
+        })?;
+    usize::try_from(count).map_err(|_| SyncError::other("get_block_range request is too large"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    fn compact_block(height: u64) -> CompactBlock {
+        CompactBlock {
+            height,
+            ..Default::default()
+        }
+    }
+
+    async fn collect_fake_blocks(
+        start: u64,
+        end: u64,
+        heights: &[u64],
+        seen: Arc<AtomicUsize>,
+    ) -> Result<Vec<CompactBlock>, SyncError> {
+        let mut stream = futures::stream::iter(
+            heights
+                .iter()
+                .copied()
+                .map(compact_block)
+                .map(Ok::<_, Status>),
+        )
+        .inspect(move |_| {
+            seen.fetch_add(1, Ordering::SeqCst);
+        });
+        collect_compact_blocks(&mut stream, start, end, Duration::from_secs(1)).await
+    }
 
     #[test]
     fn onion_lightwalletd_hosts_enable_onion_service_connections() {
@@ -822,5 +932,107 @@ mod tests {
                 all_shielded_pools,
             );
         }
+    }
+
+    #[tokio::test]
+    async fn compact_block_stream_accepts_only_the_exact_requested_range() {
+        for (name, start, end, heights, expected_seen, error_fragment) in [
+            ("one block", 10, 10, vec![10], 1, None),
+            ("ordered range", 10, 12, vec![10, 11, 12], 3, None),
+            ("empty", 10, 10, vec![], 0, Some("returned 0 of 1")),
+            ("short", 10, 12, vec![10, 11], 2, Some("returned 2 of 3")),
+            (
+                "extra",
+                10,
+                12,
+                vec![10, 11, 12, 13, 14],
+                4,
+                Some("returned more than 3"),
+            ),
+            (
+                "out of order",
+                10,
+                12,
+                vec![10, 12, 11, 13],
+                2,
+                Some("height 12 while expecting 11"),
+            ),
+            (
+                "duplicate",
+                10,
+                12,
+                vec![10, 10, 11, 12],
+                2,
+                Some("height 10 while expecting 11"),
+            ),
+            (
+                "starts late",
+                10,
+                12,
+                vec![11, 12, 13],
+                1,
+                Some("height 11 while expecting 10"),
+            ),
+        ] {
+            let seen = Arc::new(AtomicUsize::new(0));
+            let result = collect_fake_blocks(start, end, &heights, seen.clone()).await;
+            assert_eq!(seen.load(Ordering::SeqCst), expected_seen, "{name}");
+            match error_fragment {
+                Some(fragment) => {
+                    let error = result.expect_err(name);
+                    assert!(
+                        matches!(error, SyncError::Network(ref message) if message.contains(fragment)),
+                        "{name}: {error}"
+                    );
+                }
+                None => {
+                    let blocks = result.expect(name);
+                    assert_eq!(
+                        blocks.iter().map(|block| block.height).collect::<Vec<_>>(),
+                        heights,
+                        "{name}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_compact_block_requests_are_rejected_before_polling() {
+        for (name, start, end) in [
+            ("reversed", 12, 10),
+            ("inclusive count overflow", 0, u64::MAX),
+        ] {
+            let seen = Arc::new(AtomicUsize::new(0));
+            let error = collect_fake_blocks(start, end, &[10, 11], seen.clone())
+                .await
+                .expect_err(name);
+            assert_eq!(seen.load(Ordering::SeqCst), 0, "{name}");
+            assert!(matches!(error, SyncError::Other(_)), "{name}: {error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn compact_block_stream_propagates_status_and_idle_timeout() {
+        let mut failed_stream = futures::stream::iter([
+            Ok(compact_block(10)),
+            Err(Status::unavailable("test failure")),
+        ]);
+        let status_error =
+            collect_compact_blocks(&mut failed_stream, 10, 11, Duration::from_secs(1))
+                .await
+                .expect_err("stream status must fail the batch");
+        assert!(
+            matches!(status_error, SyncError::Network(message) if message.contains("test failure"))
+        );
+
+        let mut stalled_stream = futures::stream::pending::<Result<CompactBlock, Status>>();
+        let timeout_error =
+            collect_compact_blocks(&mut stalled_stream, 10, 10, Duration::from_millis(5))
+                .await
+                .expect_err("idle stream must time out");
+        assert!(
+            matches!(timeout_error, SyncError::Network(message) if message.contains("timed out"))
+        );
     }
 }
