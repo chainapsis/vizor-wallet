@@ -10163,12 +10163,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PirLayout dco_decode_pir_layout(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return PirLayout(
       pirDepth: dco_decode_u_32(arr[0]),
       tier0Layers: dco_decode_u_32(arr[1]),
       tier1Layers: dco_decode_u_32(arr[2]),
+      polyLen: dco_decode_u_32(arr[3]),
     );
   }
 
@@ -10770,18 +10771,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VoteShareWire dco_decode_vote_share_wire(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return VoteShareWire(
-      sharesHash: dco_decode_String(arr[0]),
-      proposalId: dco_decode_u_32(arr[1]),
-      voteDecision: dco_decode_u_32(arr[2]),
-      encryptedShare: dco_decode_wire_encrypted_share(arr[3]),
-      shareIndex: dco_decode_u_32(arr[4]),
-      vcTreePosition: dco_decode_u_64(arr[5]),
-      shareComms: dco_decode_list_String(arr[6]),
-      primaryBlind: dco_decode_String(arr[7]),
-      submitAt: dco_decode_u_64(arr[8]),
+      voteRoundId: dco_decode_String(arr[0]),
+      sharesHash: dco_decode_String(arr[1]),
+      proposalId: dco_decode_u_32(arr[2]),
+      voteDecision: dco_decode_u_32(arr[3]),
+      encryptedShare: dco_decode_wire_encrypted_share(arr[4]),
+      shareIndex: dco_decode_u_32(arr[5]),
+      vcTreePosition: dco_decode_u_64(arr[6]),
+      shareComms: dco_decode_list_String(arr[7]),
+      primaryBlind: dco_decode_String(arr[8]),
+      submitAt: dco_decode_u_64(arr[9]),
     );
   }
 
@@ -13178,10 +13180,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pirDepth = sse_decode_u_32(deserializer);
     var var_tier0Layers = sse_decode_u_32(deserializer);
     var var_tier1Layers = sse_decode_u_32(deserializer);
+    var var_polyLen = sse_decode_u_32(deserializer);
     return PirLayout(
       pirDepth: var_pirDepth,
       tier0Layers: var_tier0Layers,
       tier1Layers: var_tier1Layers,
+      polyLen: var_polyLen,
     );
   }
 
@@ -13889,6 +13893,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   VoteShareWire sse_decode_vote_share_wire(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_voteRoundId = sse_decode_String(deserializer);
     var var_sharesHash = sse_decode_String(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_voteDecision = sse_decode_u_32(deserializer);
@@ -13899,6 +13904,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_primaryBlind = sse_decode_String(deserializer);
     var var_submitAt = sse_decode_u_64(deserializer);
     return VoteShareWire(
+      voteRoundId: var_voteRoundId,
       sharesHash: var_sharesHash,
       proposalId: var_proposalId,
       voteDecision: var_voteDecision,
@@ -15959,6 +15965,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.pirDepth, serializer);
     sse_encode_u_32(self.tier0Layers, serializer);
     sse_encode_u_32(self.tier1Layers, serializer);
+    sse_encode_u_32(self.polyLen, serializer);
   }
 
   @protected
@@ -16473,6 +16480,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.voteRoundId, serializer);
     sse_encode_String(self.sharesHash, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.voteDecision, serializer);
