@@ -1484,6 +1484,13 @@ fn classify_refreshed_tip(
     fresh_height: u64,
     fresh_hash: &[u8],
 ) -> Result<RefreshedTipRelation, SyncError> {
+    // A lower response is never authoritative enough to prove a reorg. The
+    // server may be a lagging replica that is still serving an orphaned fork,
+    // so even a hash mismatch at its tip must not trigger a wallet rewind.
+    if fresh_height < current_height {
+        return Ok(RefreshedTipRelation::ServerBehind);
+    }
+
     // `BlockID.hash` is optional in the lightwalletd protocol. Preserve
     // height-only compatibility when the server omits it, but reject a
     // non-empty malformed value instead of silently treating it as absent.
@@ -1500,17 +1507,6 @@ fn classify_refreshed_tip(
 
     if fresh_height > current_height {
         return Ok(RefreshedTipRelation::Advanced);
-    }
-
-    if fresh_height < current_height {
-        // A lower response can be a lagging replica rather than a reorg.
-        // Rewind only when the server proves divergence at the lower height.
-        return Ok(match (stored_hash, fresh_hash) {
-            (Some(stored_hash), Some(fresh_hash)) if stored_hash != fresh_hash => {
-                RefreshedTipRelation::Reorg
-            }
-            _ => RefreshedTipRelation::ServerBehind,
-        });
     }
 
     if stored_hash.is_some() && fresh_hash.is_none() {
@@ -1554,7 +1550,7 @@ fn tip_hash_fallback_required(
     fresh_height: u64,
     fresh_hash: &[u8],
 ) -> bool {
-    fresh_height <= current_height && stored_hash.is_some() && fresh_hash.is_empty()
+    fresh_height == current_height && stored_hash.is_some() && fresh_hash.is_empty()
 }
 
 fn stored_hash_for_refreshed_tip(
@@ -1562,7 +1558,7 @@ fn stored_hash_for_refreshed_tip(
     current_height: u64,
     fresh_height: u64,
 ) -> Result<Option<BlockHash>, SyncError> {
-    if fresh_height > current_height {
+    if fresh_height != current_height {
         return Ok(None);
     }
 
@@ -3688,7 +3684,7 @@ mod tests {
         let stored_hash = Some(BlockHash([0x11; 32]));
 
         assert!(tip_hash_fallback_required(100, stored_hash, 100, &[]));
-        assert!(tip_hash_fallback_required(100, stored_hash, 99, &[]));
+        assert!(!tip_hash_fallback_required(100, stored_hash, 99, &[]));
         assert!(!tip_hash_fallback_required(100, stored_hash, 101, &[]));
         assert!(!tip_hash_fallback_required(100, None, 100, &[]));
         assert!(!tip_hash_fallback_required(
@@ -3799,23 +3795,28 @@ mod tests {
     }
 
     #[test]
-    fn lower_same_chain_server_is_rejected_without_a_database_action() {
-        let shared_hash = BlockHash([0x11; 32]);
-        let relation = classify_refreshed_tip(100, Some(shared_hash), 99, &shared_hash.0).unwrap();
+    fn lower_server_is_rejected_without_a_database_action_even_when_its_hash_diverges() {
+        let stored_hash = BlockHash([0x11; 32]);
 
-        assert_eq!(relation, RefreshedTipRelation::ServerBehind);
-        let mut database_mutations = 0;
-        let result = match relation {
-            RefreshedTipRelation::ServerBehind => Err(lagging_lightwalletd_tip(100, 99)),
-            RefreshedTipRelation::Advanced | RefreshedTipRelation::Reorg => {
-                database_mutations += 1;
-                Ok(())
-            }
-            RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => Ok(()),
-        };
+        for fresh_hash in [vec![], vec![0x11; 32], vec![0x22; 32], vec![0x33; 31]] {
+            let relation = classify_refreshed_tip(100, Some(stored_hash), 99, &fresh_hash).unwrap();
 
-        assert!(matches!(result, Err(SyncError::Network(_))));
-        assert_eq!(database_mutations, 0);
+            assert_eq!(relation, RefreshedTipRelation::ServerBehind);
+            let mut database_mutations = 0;
+            let result = match relation {
+                RefreshedTipRelation::ServerBehind => Err(lagging_lightwalletd_tip(100, 99)),
+                RefreshedTipRelation::Advanced | RefreshedTipRelation::Reorg => {
+                    database_mutations += 1;
+                    Ok(())
+                }
+                RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
+                    Ok(())
+                }
+            };
+
+            assert!(matches!(result, Err(SyncError::Network(_))));
+            assert_eq!(database_mutations, 0);
+        }
     }
 
     #[tokio::test]
@@ -3940,7 +3941,7 @@ mod tests {
         );
         assert_eq!(
             classify_refreshed_tip(100, Some(stored_hash), 99, &[0x22; 32]).unwrap(),
-            RefreshedTipRelation::Reorg,
+            RefreshedTipRelation::ServerBehind,
         );
         assert_eq!(
             classify_refreshed_tip(100, None, 99, &[0x22; 32]).unwrap(),
