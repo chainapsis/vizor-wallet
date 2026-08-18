@@ -47,6 +47,7 @@ DateTime? parseFlexibleDate(Object? value) {
   if (value == null) return null;
   if (value is DateTime) return value;
   if (value is num) {
+    if (!value.isFinite) return null;
     final milliseconds = value > 100000000000
         ? value.toInt()
         : (value * 1000).toInt();

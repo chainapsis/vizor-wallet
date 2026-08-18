@@ -57,14 +57,20 @@ class VotingShareTrackingRestorer {
 
   Future<void> pause() {
     _cancelRetry();
-    return _pauseInFlight = _ref
+    final pause = _ref
         .read(votingShareTrackingRegistryProvider)
         .quiesceAndDrain();
+    return _pauseInFlight = pause.catchError((Object error, StackTrace stack) {
+      debugPrint('[zcash] Voting: share tracking pause failed: $error\n$stack');
+    });
   }
 
   Future<void> resume() async {
-    await _pauseInFlight;
-    _ref.read(votingShareTrackingRegistryProvider).resume();
+    try {
+      await _pauseInFlight;
+    } finally {
+      _ref.read(votingShareTrackingRegistryProvider).resume();
+    }
     await _restoreInFlight;
     await restore();
   }
@@ -124,6 +130,12 @@ class VotingShareTrackingRestorer {
           roundId: round.roundId,
         );
         final provider = votingSubmissionSessionProvider(key);
+        // Hold the auto-disposed session through asynchronous initialization.
+        final subscription = _ref.listen<AsyncValue<VotingSessionState>>(
+          provider,
+          (_, _) {},
+          fireImmediately: true,
+        );
         try {
           await _ref.read(provider.future);
           if (_ref.read(appSecurityProvider).requiresUnlock) break;
@@ -138,6 +150,8 @@ class VotingShareTrackingRestorer {
             'round=${round.roundId} account=${round.accountUuid} '
             'error=$error\n$stackTrace',
           );
+        } finally {
+          subscription.close();
         }
       }
     } catch (error, stackTrace) {

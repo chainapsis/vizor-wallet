@@ -75,12 +75,15 @@ class VotingShareTrackingRegistry {
     final discoveries = [
       for (final completion in _discoveries) completion.future,
     ];
-    await Future.wait([
-      ...discoveries,
-      ...sessions.map((entry) => entry.value.stopAndDrain()),
-    ]);
-    for (final entry in sessions) {
-      unregister(key: entry.key, owner: entry.value.owner);
+    try {
+      await Future.wait([
+        ...discoveries,
+        ...sessions.map((entry) => entry.value.stopAndDrain()),
+      ]);
+    } finally {
+      for (final entry in sessions) {
+        unregister(key: entry.key, owner: entry.value.owner);
+      }
     }
   }
 

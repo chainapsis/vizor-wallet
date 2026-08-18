@@ -120,7 +120,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       phase: _phaseForPlans(context.roundPlan),
     );
     _shareTrackingTimer?.cancel();
-    unawaited(_scheduleShareTracking(context, context.resumePlan));
+    await _scheduleShareTracking(context, context.resumePlan);
     return initialState;
   }
 
@@ -2377,22 +2377,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) async {
     final shareId = bytesToHex(share.nullifier);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
-      if (_automaticShareTrackingStopped ||
-          !_isCurrentContext(context) ||
-          ref.read(appSecurityProvider).requiresUnlock ||
-          !shouldTrackPendingVotingShares(context.round)) {
-        return false;
-      }
+      if (_shareTrackingCancelled(context)) return false;
       try {
         final status = await api.getShareStatus(
           roundId: share.roundId,
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
-          isCancelled: () =>
-              _automaticShareTrackingStopped ||
-              !_isCurrentContext(context) ||
-              ref.read(appSecurityProvider).requiresUnlock ||
-              !shouldTrackPendingVotingShares(context.round),
+          isCancelled: () => _shareTrackingCancelled(context),
         );
         if (_automaticShareTrackingStopped || !_isCurrentContext(context)) {
           return false;
@@ -2400,6 +2391,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         helperHealth.recordSuccess(serverUrl);
         if (status.status == 'confirmed') return true;
       } catch (e) {
+        if (_shareTrackingCancelled(context)) return false;
         debugPrint(
           '[zcash] Voting: share status check failed '
           'round=${share.roundId} bundle=${share.bundleIndex} '
@@ -2410,6 +2402,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
     return false;
+  }
+
+  bool _shareTrackingCancelled(_VotingSessionContext context) {
+    return _automaticShareTrackingStopped ||
+        !_isCurrentContext(context) ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !shouldTrackPendingVotingShares(context.round);
   }
 
   Future<Uri?> _resolvePirEndpoint(_VotingSessionContext context) async {

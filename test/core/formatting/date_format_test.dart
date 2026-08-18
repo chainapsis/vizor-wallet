@@ -20,4 +20,11 @@ void main() {
     expect(parseFlexibleDate(outOfRangeMilliseconds), isNull);
     expect(parseFlexibleDate('$outOfRangeMilliseconds'), isNull);
   });
+
+  test('parseFlexibleDate rejects non-finite epochs', () {
+    expect(parseFlexibleDate(double.infinity), isNull);
+    expect(parseFlexibleDate(double.negativeInfinity), isNull);
+    expect(parseFlexibleDate(double.nan), isNull);
+    expect(parseFlexibleDate('1e400'), isNull);
+  });
 }
