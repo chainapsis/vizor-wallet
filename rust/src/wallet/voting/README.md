@@ -162,6 +162,17 @@ submission. The canonical scheduling/retry/polling policy lives in the crate's
 `share_tracking_flags`, and `next_share_tracking_delay_seconds` helpers exposed
 through `api/voting.rs`.
 
+Accepted shares remain tracked after the vote screen closes. On launch, unlock,
+and resume, Vizor asks `zcash_voting::share::pending_rounds` for durable
+unconfirmed rounds and rejects expired or unauthenticated entries before
+restoring a session. A restored session checks only helpers still present in
+the current config and retains itself while work remains. Overdue shares use
+the crate's randomized resubmission order and stop after the first helper
+accepts; an ambiguous POST timeout is not repeated automatically. Lock, account
+deletion, and wallet reset stop and drain discovery plus active checks before
+protected state changes. If a mutation aborts while wallet state remains,
+Vizor requests fresh discovery after leaving the mutation boundary.
+
 ## Wire Types And FRB Scanning
 
 `zcash_voting::wire` is the canonical owner of protocol wire JSON and wallet view

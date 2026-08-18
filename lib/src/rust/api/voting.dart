@@ -14,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -90,6 +90,15 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   singleShare: singleShare,
 );
 
+/// Return the crate-owned randomized helper order for one share retry.
+Future<List<String>> shareResubmissionServerOrder({
+  required List<String> configuredServerUrls,
+  required List<String> sentToUrls,
+}) => RustLib.instance.api.crateApiVotingShareResubmissionServerOrder(
+  configuredServerUrls: configuredServerUrls,
+  sentToUrls: sentToUrls,
+);
+
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
 /// Trust model for the per-round parameters:
@@ -156,7 +165,7 @@ Future<BigInt?> nextShareTrackingDelaySeconds({
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
-/// recovery material. This helper emits only the public base64 wire shape that
+/// recovery material. This helper emits only the public wire fields that
 /// helper servers accept.
 Future<String> recoveredVoteShareWireJson({
   required String commitmentBundleJson,
@@ -510,6 +519,18 @@ Future<int> deleteVotingAccountState({
   accountUuid: accountUuid,
 );
 
+/// Lists account/round pairs with durable unconfirmed helper shares.
+///
+/// The opaque session JSON is returned for caller-owned deadline checks. The
+/// sidecar is not created when the wallet has never persisted voting state.
+Future<List<ApiPendingShareRound>> listPendingShareRounds({
+  required String dbPath,
+  required List<String> accountUuids,
+}) => RustLib.instance.api.crateApiVotingListPendingShareRounds(
+  dbPath: dbPath,
+  accountUuids: accountUuids,
+);
+
 /// Recover a committed but unsubmitted vote from persisted local recovery data.
 ///
 /// # Errors
@@ -847,6 +868,32 @@ class ApiKeystoneSignatureInput {
           sig == other.sig &&
           sighash == other.sighash &&
           rk == other.rk;
+}
+
+/// One account and round with durable unconfirmed helper shares.
+class ApiPendingShareRound {
+  final String accountUuid;
+  final String roundId;
+  final String? sessionJson;
+
+  const ApiPendingShareRound({
+    required this.accountUuid,
+    required this.roundId,
+    this.sessionJson,
+  });
+
+  @override
+  int get hashCode =>
+      accountUuid.hashCode ^ roundId.hashCode ^ sessionJson.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiPendingShareRound &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          roundId == other.roundId &&
+          sessionJson == other.sessionJson;
 }
 
 /// Progress event emitted while building ZKP2 vote commitments.

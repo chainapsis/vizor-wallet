@@ -158,6 +158,12 @@ zcash_note_encryption = "0.4"
 [dev-dependencies.vote-commitment-tree]
 version = "=0.5.0"
 
+# Temporary pending-share discovery API until the next zcash_voting release.
+[patch.crates-io]
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 

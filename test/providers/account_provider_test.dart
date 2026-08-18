@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 
 void main() {
@@ -264,6 +266,47 @@ void main() {
       expect(state.accounts, hasLength(2));
 
       container.read(votingSubmissionGuardProvider.notifier).release(guard);
+    },
+  );
+
+  test(
+    'failed destructive account mutations request share restoration',
+    () async {
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            throw PlatformException(code: 'db-path-unavailable');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+
+      final shareTracking = VotingShareTrackingRegistry();
+      var restoreRequests = 0;
+      shareTracking.addRestoreRequestListener(() => restoreRequests++);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).removeAccount('account-2'),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(shareTracking.isQuiesced('account-2'), isFalse);
+      expect(restoreRequests, 1);
+
+      await expectLater(
+        container.read(accountProvider.notifier).resetWallet(),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(shareTracking.isQuiesced('account-1'), isFalse);
+      expect(restoreRequests, 2);
     },
   );
 

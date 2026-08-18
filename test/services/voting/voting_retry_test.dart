@@ -83,4 +83,27 @@ void main() {
     );
     expect(attempts, 1);
   });
+
+  test('does not start another attempt after cancellation', () async {
+    var attempts = 0;
+    var cancelled = false;
+
+    await expectLater(
+      withVotingRetry<void>(
+        policy: VotingRetryPolicy.transientHttp(
+          name: 'cancelled',
+          delays: const [Duration(milliseconds: 1)],
+        ),
+        operation: () async {
+          attempts++;
+          throw TimeoutException('timed out');
+        },
+        delay: (_) async => cancelled = true,
+        isCancelled: () => cancelled,
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+
+    expect(attempts, 1);
+  });
 }
