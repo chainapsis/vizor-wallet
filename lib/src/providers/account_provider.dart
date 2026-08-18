@@ -27,6 +27,7 @@ import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'voting/voting_share_tracking_registry_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
 
 export 'account_models.dart';
@@ -542,6 +543,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    await shareTracking.quiesceAndDrain(accountUuid: uuid);
+    try {
+      await _removeAccountWithShareTrackingStopped(uuid);
+    } finally {
+      shareTracking.resume(accountUuid: uuid);
+    }
+  }
+
+  Future<void> _removeAccountWithShareTrackingStopped(String uuid) async {
+    final prev = state.value ?? const AccountState();
+    final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
+    if (targetIndex < 0) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
+    }
+
     final target = prev.accounts[targetIndex];
     final remaining = [
       for (final account in prev.accounts)
@@ -675,6 +692,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    await shareTracking.quiesceAndDrain();
+    try {
+      await _resetWalletWithShareTrackingStopped();
+    } finally {
+      shareTracking.resume();
+    }
+  }
+
+  Future<void> _resetWalletWithShareTrackingStopped() async {
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {

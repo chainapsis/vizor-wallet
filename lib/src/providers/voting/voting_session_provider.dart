@@ -20,8 +20,10 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_models.dart';
+import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
@@ -33,6 +35,20 @@ final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 /// account's Orchard key, but the action remains in the PCZT's Ironwood bundle.
 const _ironwoodPcztPool = 1;
 
+bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
+  final status = round.status.trim().toLowerCase();
+  if (!const {
+    'active',
+    'open',
+    '1',
+    'session_status_active',
+  }.contains(status)) {
+    return false;
+  }
+  final voteEnd = round.voteEndTime;
+  return voteEnd != null && (now ?? DateTime.now()).isBefore(voteEnd);
+}
+
 /// Orchestrates one round's voting lifecycle for the UI.
 ///
 /// The notifier is intentionally recovery-first: every public action reloads
@@ -42,11 +58,19 @@ const _ironwoodPcztPool = 1;
 class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   VotingSessionNotifier(this._roundId);
 
+  bool get _ownsAutomaticShareTracking => false;
+
+  bool _retainAutomaticShareTracking() => true;
+
+  void _releaseAutomaticShareTracking() {}
+
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
+  Future<void>? _shareTrackingPass;
+  bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
   _VotingSessionContext? _currentContext;
@@ -122,6 +146,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
+      _releaseAutomaticShareTracking();
       if (context == null) return;
       if (_activeSubmissionOwnsContext(context)) {
         debugPrint(
@@ -2011,13 +2036,41 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> submitPendingShares() {
-    return _enqueue(() async {
+    if (_automaticShareTrackingStopped) return Future.value();
+    final inFlight = _shareTrackingPass;
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> pass;
+    pass = _startPendingSharePass().whenComplete(() {
+      if (identical(_shareTrackingPass, pass)) _shareTrackingPass = null;
+    });
+    _shareTrackingPass = pass;
+    return pass;
+  }
+
+  Future<void> _startPendingSharePass() {
+    return _enqueueShareTracking(() async {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
-      var current = await future;
-      var context = await _loadContext(_roundId);
+      if (_automaticShareTrackingStopped) return;
+      final current = await future;
+      final context = await _loadContext(_roundId);
+      _currentContext = context;
       var plan = await _loadResumePlan(context);
       var roundPlan = await _loadRoundPlan(context);
+      if (ref.read(appSecurityProvider).requiresUnlock ||
+          !shouldTrackPendingVotingShares(context.round)) {
+        _setStateForContext(
+          context,
+          current.copyWith(
+            phase: _phaseForPlans(roundPlan),
+            resumePlan: plan,
+            roundPlan: roundPlan,
+          ),
+        );
+        _releaseAutomaticShareTracking();
+        return;
+      }
       _setStateForContext(
         context,
         current.copyWith(
@@ -2033,15 +2086,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final configuredServerUrls = context.config.voteServers
           .map((endpoint) => endpoint.url.toString())
           .toList(growable: false);
+      final configuredServerUrlSet = configuredServerUrls.toSet();
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final voteEnd = context.round.voteEndTime;
       final voteEndSeconds = voteEnd == null
           ? null
           : voteEnd.millisecondsSinceEpoch ~/ 1000;
       for (final share in plan.unconfirmedShareDelegations) {
-        // A share is recoverable once any helper accepted it, but every
-        // configured helper should eventually receive it for redundancy.
-        final acceptedUrls = LinkedHashSet<String>.of(share.sentToUrls);
+        final acceptedUrls = LinkedHashSet<String>.of(
+          share.sentToUrls.where(configuredServerUrlSet.contains),
+        );
         final trackingFlags = await rust.shareTrackingFlags(
           share: share,
           nowSeconds: BigInt.from(nowSeconds),
@@ -2059,6 +2113,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           // helper is enough to advance the local workflow for this share.
           final confirmed = await _shareConfirmedByAnyHelper(
             api: api,
+            context: context,
             helperHealth: helperHealth,
             share: share,
             serverUrls: acceptedUrls,
@@ -2076,27 +2131,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           }
         }
 
-        final missingUrls = configuredServerUrls
-            .where((serverUrl) => !acceptedUrls.contains(serverUrl))
-            .toList(growable: false);
-        if (overdueForRetry && missingUrls.isNotEmpty) {
-          final newUrls = await _resubmitShareToMissingHelpers(
+        if (overdueForRetry) {
+          final retryServer = await _resubmitShare(
             api: api,
             context: context,
             plan: plan,
             share: share,
-            serverUrls: missingUrls,
+            configuredServerUrls: configuredServerUrls,
+            sentToUrls: acceptedUrls,
           );
-          if (newUrls.isNotEmpty) {
+          if (retryServer != null && acceptedUrls.add(retryServer)) {
             await ref
                 .read(votingRecoveryServiceProvider)
                 .addSentServersForShare(
                   dbPath: context.dbPath,
                   accountUuid: context.accountUuid,
                   share: share,
-                  newUrls: newUrls,
+                  newUrls: [retryServer],
                 );
-            acceptedUrls.addAll(newUrls);
           }
         }
       }
@@ -2119,14 +2171,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  /// Retries an already-generated share against helpers missing from
-  /// `sent_to_urls` and returns only the helpers that accepted the retry.
-  Future<List<String>> _resubmitShareToMissingHelpers({
+  Future<void> stopAndDrainShareTracking() async {
+    _automaticShareTrackingStopped = true;
+    _shareTrackingTimer?.cancel();
+    _shareTrackingTimer = null;
+    _advanceSessionGeneration();
+    final pass = _shareTrackingPass;
+    if (pass != null) await pass;
+    _releaseAutomaticShareTracking();
+  }
+
+  void resumeShareTracking() {
+    _automaticShareTrackingStopped = false;
+  }
+
+  Future<String?> _resubmitShare({
     required VotingApiClient api,
     required _VotingSessionContext context,
     required VotingResumePlan plan,
     required rust_wire.ShareDelegationRecordView share,
-    required List<String> serverUrls,
+    required List<String> configuredServerUrls,
+    required Set<String> sentToUrls,
   }) async {
     final rust = ref.read(votingRustApiProvider);
     final key = VotingVoteKey(
@@ -2140,7 +2205,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=${share.roundId} bundle=${share.bundleIndex} '
         'proposal=${share.proposalId} share=${share.shareIndex}',
       );
-      return const [];
+      return null;
     }
     final Map<String, dynamic> body;
     try {
@@ -2159,26 +2224,38 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=${share.roundId} bundle=${share.bundleIndex} '
         'proposal=${share.proposalId} share=${share.shareIndex} error=$e',
       );
-      return const [];
+      return null;
     }
+
+    final retryOrder = await rust.shareResubmissionServerOrder(
+      configuredServerUrls: configuredServerUrls,
+      sentToUrls: sentToUrls.toList(growable: false),
+    );
     final shareId = bytesToHex(share.nullifier);
-    final acceptedUrls = <String>[];
     final helperHealth = ref.read(votingHelperHealthTrackerProvider);
-    for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
+    for (final serverUrl in retryOrder) {
+      if (_automaticShareTrackingStopped ||
+          !_isCurrentContext(context) ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          !shouldTrackPendingVotingShares(context.round)) {
+        return null;
+      }
       try {
         await api.resubmitShare(
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
           share: body,
         );
+        // Preserve a known acceptance even if a stop arrived during the POST;
+        // forgetting it could resend the same share after unlock.
         helperHealth.recordSuccess(serverUrl);
-        acceptedUrls.add(serverUrl);
         debugPrint(
           '[zcash] Voting: share resubmitted '
           'round=${share.roundId} bundle=${share.bundleIndex} '
           'proposal=${share.proposalId} share=${share.shareIndex} '
           'server=$serverUrl',
         );
+        return serverUrl;
       } catch (e) {
         debugPrint(
           '[zcash] Voting: share resubmit failed '
@@ -2189,17 +2266,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         helperHealth.recordFailure(serverUrl);
       }
     }
-    return acceptedUrls;
+    return null;
   }
 
   Future<void> _scheduleShareTracking(
     _VotingSessionContext context,
     VotingResumePlan plan,
   ) async {
+    if (!_ownsAutomaticShareTracking) {
+      _shareTrackingTimer?.cancel();
+      _shareTrackingTimer = null;
+      return;
+    }
+    if (_automaticShareTrackingStopped ||
+        plan.unconfirmedShareDelegations.isEmpty ||
+        !shouldTrackPendingVotingShares(context.round) ||
+        ref.read(appSecurityProvider).requiresUnlock) {
+      _shareTrackingTimer?.cancel();
+      _shareTrackingTimer = null;
+      _releaseAutomaticShareTracking();
+      return;
+    }
     if (!_isCurrentContext(context)) return;
+    if (!_retainAutomaticShareTracking()) return;
     _shareTrackingTimer?.cancel();
     _shareTrackingTimer = null;
-    if (plan.unconfirmedShareDelegations.isEmpty) return;
 
     final delaySeconds = await ref
         .read(votingRustApiProvider)
@@ -2209,34 +2300,94 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
           ),
         );
-    if (delaySeconds == null) return;
+    if (delaySeconds == null) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
     if (!_isCurrentContext(context)) return;
     final delay = Duration(seconds: delaySeconds.toInt());
+    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
+  }
 
-    // Keep the timer asynchronous so build/state updates settle before
-    // recovery polling re-enters the serialized operation queue.
-    final scheduledDelay = delay;
-    _shareTrackingTimer = Timer(scheduledDelay, () {
+  void _scheduleShareTrackingFailureRetry() {
+    if (_isDisposed ||
+        !_ownsAutomaticShareTracking ||
+        _automaticShareTrackingStopped ||
+        ref.read(appSecurityProvider).requiresUnlock) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    final config = ref.read(votingConfigProvider).value;
+    if (config != null && !config.isRoundAuthenticated(_roundId)) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    final context = _currentContext;
+    if (context == null ||
+        !_isCurrentContext(context) ||
+        !shouldTrackPendingVotingShares(context.round) ||
+        !_retainAutomaticShareTracking()) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    final configuredDelay = ref.read(
+      votingShareTrackingFailureRetryDelayProvider,
+    );
+    final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
+    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
+  }
+
+  Duration _delayCappedAtVoteEnd(
+    _VotingSessionContext context,
+    Duration delay,
+  ) {
+    final remaining = context.round.voteEndTime!.difference(DateTime.now());
+    if (remaining.isNegative) return Duration.zero;
+    return delay < remaining ? delay : remaining;
+  }
+
+  void _armShareTrackingTimer(_VotingSessionContext context, Duration delay) {
+    _shareTrackingTimer?.cancel();
+    _shareTrackingTimer = Timer(delay, () {
       _shareTrackingTimer = null;
       if (!_isCurrentContext(context)) return;
+      if (!shouldTrackPendingVotingShares(context.round)) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
       unawaited(submitPendingShares());
     });
   }
 
   Future<bool> _shareConfirmedByAnyHelper({
     required VotingApiClient api,
+    required _VotingSessionContext context,
     required VotingHelperHealthTracker helperHealth,
     required rust_wire.ShareDelegationRecordView share,
     required Iterable<String> serverUrls,
   }) async {
     final shareId = bytesToHex(share.nullifier);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
+      if (_automaticShareTrackingStopped ||
+          !_isCurrentContext(context) ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          !shouldTrackPendingVotingShares(context.round)) {
+        return false;
+      }
       try {
         final status = await api.getShareStatus(
           roundId: share.roundId,
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
+          isCancelled: () =>
+              _automaticShareTrackingStopped ||
+              !_isCurrentContext(context) ||
+              ref.read(appSecurityProvider).requiresUnlock ||
+              !shouldTrackPendingVotingShares(context.round),
         );
+        if (_automaticShareTrackingStopped || !_isCurrentContext(context)) {
+          return false;
+        }
         helperHealth.recordSuccess(serverUrl);
         if (status.status == 'confirmed') return true;
       } catch (e) {
@@ -2428,7 +2579,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '$height$statusCode$message';
   }
 
-  Future<void> _enqueue(Future<void> Function() action) {
+  Future<void> _enqueue(
+    Future<void> Function() action, {
+    void Function()? onError,
+    bool cleanupProcessStateOnError = true,
+    bool publishError = true,
+  }) {
     final actionGeneration = _sessionGeneration;
     final next = _operation.then((_) async {
       if (!_isCurrentGeneration(actionGeneration)) {
@@ -2443,14 +2599,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _logStaleSessionUpdate('action');
       } catch (e, st) {
         debugPrint('[zcash] Voting: session action failed: $e\n$st');
-        await _cleanupCurrentSessionState(reason: 'action-failed');
-        _setError(_actionErrorMessage(e), cause: e);
+        if (cleanupProcessStateOnError) {
+          await _cleanupCurrentSessionState(reason: 'action-failed');
+        }
+        if (publishError) _setError(_actionErrorMessage(e), cause: e);
+        onError?.call();
       } finally {
         _runningActionGeneration = previousActionGeneration;
       }
     });
     _operation = next.catchError((_) {});
     return next;
+  }
+
+  Future<void> _enqueueShareTracking(Future<void> Function() action) {
+    return _enqueue(
+      action,
+      onError: _scheduleShareTrackingFailureRetry,
+      cleanupProcessStateOnError: false,
+      publishError: false,
+    );
   }
 
   static String _actionErrorMessage(Object error) {
@@ -3471,6 +3639,38 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   VotingSubmissionSessionNotifier(this._key) : super(_key.roundId);
 
   final VotingSessionKey _key;
+  VotingShareTrackingRegistry? _shareTrackingRegistry;
+  void Function()? _closeShareTrackingKeepAlive;
+
+  @override
+  bool get _ownsAutomaticShareTracking => true;
+
+  @override
+  bool _retainAutomaticShareTracking() {
+    if (_closeShareTrackingKeepAlive != null) return true;
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    final keepAlive = ref.keepAlive();
+    if (!registry.register(
+      key: _key,
+      owner: this,
+      stopAndDrain: stopAndDrainShareTracking,
+    )) {
+      keepAlive.close();
+      return false;
+    }
+    _shareTrackingRegistry = registry;
+    _closeShareTrackingKeepAlive = keepAlive.close;
+    return true;
+  }
+
+  @override
+  void _releaseAutomaticShareTracking() {
+    _shareTrackingRegistry?.unregister(key: _key, owner: this);
+    _shareTrackingRegistry = null;
+    final close = _closeShareTrackingKeepAlive;
+    _closeShareTrackingKeepAlive = null;
+    close?.call();
+  }
 
   // This subclass must remain in this library because it overrides private
   // hooks to pin background submissions to their original account.
