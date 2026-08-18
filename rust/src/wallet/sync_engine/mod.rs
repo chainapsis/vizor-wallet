@@ -87,6 +87,7 @@ const BATCH_SIZE_BACKGROUND: u32 = 300;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS: usize = 4;
+const MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS: u32 = 3;
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -1172,23 +1173,52 @@ enum TransparentRefreshOutcome {
     Cancelled,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransparentAccountSelection<'a> {
+    All,
+    Only(&'a str),
+    Except(&'a str),
+}
+
+impl TransparentAccountSelection<'_> {
+    fn includes(self, account_uuid: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(selected) => account_uuid == selected,
+            Self::Except(selected) => account_uuid != selected,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TransparentRefreshSummary {
+    matched_accounts: usize,
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     tip_height: BlockHeight,
+    account_selection: TransparentAccountSelection<'_>,
+    received_outputs_seen: &mut bool,
     should_exit: &impl Fn() -> bool,
-) -> Result<(), SyncError> {
+) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
+    let mut summary = TransparentRefreshSummary::default();
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
     {
         if should_exit() {
-            return Ok(());
+            return Ok(summary);
         }
         let account_uuid = account_id.expose_uuid().to_string();
+        if !account_selection.includes(&account_uuid) {
+            continue;
+        }
+        summary.matched_accounts += 1;
         let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
@@ -1246,7 +1276,7 @@ async fn refresh_utxos(
 
         for (batch_index, batch) in external_batches.into_iter().enumerate() {
             if should_exit() {
-                return Ok(());
+                return Ok(summary);
             }
             let start_height = block_height_from_u64(
                 batch.start_height,
@@ -1298,6 +1328,7 @@ async fn refresh_utxos(
         refreshes,
         move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
         |downloaded| {
+            let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
             store_then_mark_transparent_refreshes(
                 downloaded,
                 |downloaded| store_transparent_outputs(db, downloaded),
@@ -1309,7 +1340,9 @@ async fn refresh_utxos(
                         downloaded,
                     )
                 },
-            )
+            )?;
+            *received_outputs_seen |= received_outputs;
+            Ok(())
         },
         should_exit,
     )
@@ -1321,7 +1354,7 @@ async fn refresh_utxos(
         );
     }
 
-    Ok(())
+    Ok(summary)
 }
 
 fn update_transparent_refresh_cache_metadata(
@@ -1495,9 +1528,10 @@ async fn download_transparent_outputs(
     }
 
     log::info!(
-        "[{}] sync: refreshing {} from height {} ({} addresses)",
+        "[{}] sync: refreshing {} for account {} from height {} ({} addresses)",
         elapsed(),
         refresh.label,
+        refresh.account_uuid,
         u32::from(refresh.start_height),
         refresh.addresses.len(),
     );
@@ -1755,6 +1789,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    active_account_uuid: Option<&str>,
     allow_resubmit: bool,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
@@ -1795,6 +1830,7 @@ pub async fn run_sync_inner(
             cancel.clone(),
             running_mode,
             desired_mode,
+            active_account_uuid,
             allow_resubmit,
             &progress_fn,
         )
@@ -1852,6 +1888,7 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    active_account_uuid: Option<&str>,
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
@@ -1924,15 +1961,61 @@ async fn run_sync_impl(
 
     let should_exit =
         || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
-    refresh_utxos(
-        &mut client,
-        db_data_path,
-        &mut db,
-        network,
-        tip_height,
-        &should_exit,
-    )
-    .await?;
+    let defer_inactive_transparent_refresh = if let Some(active_account_uuid) = active_account_uuid
+    {
+        log::info!(
+            "[{}] sync: refreshing active-account transparent UTXOs before chain scan ({})",
+            elapsed(),
+            active_account_uuid,
+        );
+        let mut critical_received_outputs = false;
+        let active_summary = refresh_utxos(
+            &mut client,
+            db_data_path,
+            &mut db,
+            network,
+            tip_height,
+            TransparentAccountSelection::Only(active_account_uuid),
+            &mut critical_received_outputs,
+            &should_exit,
+        )
+        .await?;
+        if active_summary.matched_accounts == 0 {
+            log::warn!(
+                "[{}] sync: active account {} was absent from the wallet DB; refreshing all transparent UTXOs before chain scan",
+                elapsed(),
+                active_account_uuid,
+            );
+            refresh_utxos(
+                &mut client,
+                db_data_path,
+                &mut db,
+                network,
+                tip_height,
+                TransparentAccountSelection::All,
+                &mut critical_received_outputs,
+                &should_exit,
+            )
+            .await?;
+            false
+        } else {
+            true
+        }
+    } else {
+        let mut critical_received_outputs = false;
+        refresh_utxos(
+            &mut client,
+            db_data_path,
+            &mut db,
+            network,
+            tip_height,
+            TransparentAccountSelection::All,
+            &mut critical_received_outputs,
+            &should_exit,
+        )
+        .await?;
+        false
+    };
 
     if should_exit() {
         log::info!(
@@ -2911,6 +2994,102 @@ async fn run_sync_impl(
     };
     progress_fn(final_progress);
 
+    // Transparent receivers belonging to inactive accounts do not affect the
+    // account-scoped balance shown for this completed foreground sync. Keep
+    // the active account on the correctness-critical path, then refresh all
+    // remaining accounts after reporting chain-sync completion. The FRB
+    // stream stays open until this bounded follow-up finishes, so lock/reset
+    // cancellation and the global running guard still own its lifetime.
+    if defer_inactive_transparent_refresh && !should_exit() {
+        let active_account_uuid = active_account_uuid.expect("deferred refresh has active account");
+        log::info!(
+            "[{}] sync: starting deferred inactive-account transparent UTXO refresh",
+            elapsed(),
+        );
+        let mut deferred_attempt = 1;
+        let mut deferred_received_outputs = false;
+        let deferred_result = loop {
+            let result = refresh_utxos(
+                &mut client,
+                db_data_path,
+                &mut db,
+                network,
+                BlockHeight::from_u32(final_tip_height as u32),
+                TransparentAccountSelection::Except(active_account_uuid),
+                &mut deferred_received_outputs,
+                &should_exit,
+            )
+            .await;
+            match result {
+                Ok(summary) => break Ok(summary),
+                Err(error)
+                    if deferred_attempt < MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS
+                        && !should_exit() =>
+                {
+                    let delay_secs = 1u64 << deferred_attempt;
+                    log::warn!(
+                        "[{}] sync: deferred transparent UTXO refresh attempt {}/{} failed; retrying in {}s: {}",
+                        elapsed(),
+                        deferred_attempt,
+                        MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS,
+                        delay_secs,
+                        error,
+                    );
+                    let retry_delay =
+                        tokio::time::sleep(std::time::Duration::from_secs(delay_secs));
+                    tokio::pin!(retry_delay);
+                    tokio::select! {
+                        biased;
+                        _ = watch_for_exit(&should_exit) => break Err(error),
+                        _ = &mut retry_delay => {}
+                    }
+                    deferred_attempt += 1;
+                }
+                Err(error) => break Err(error),
+            }
+        };
+        match &deferred_result {
+            Ok(summary) => {
+                log::info!(
+                    "[{}] sync: deferred transparent UTXO refresh finished (accounts={}, received_outputs={})",
+                    elapsed(),
+                    summary.matched_accounts,
+                    deferred_received_outputs,
+                );
+            }
+            Err(error) => log::warn!(
+                "[{}] sync: deferred inactive-account transparent UTXO refresh failed after {} attempt(s); it will retry on a later sync: {}",
+                elapsed(),
+                deferred_attempt,
+                error,
+            ),
+        }
+        if deferred_received_outputs && !should_exit() {
+            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+                log::warn!(
+                    "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
+                    elapsed(),
+                    error,
+                );
+            }
+            // The user may have switched accounts while the deferred pass was
+            // running. Re-emit completion even after a terminal partial
+            // failure so Dart refreshes whichever account is active now from
+            // every output that was committed by an earlier successful group.
+            progress_fn(SyncProgressEvent {
+                scanned_height: final_scanned_height,
+                chain_tip_height: final_tip_height,
+                percentage: 1.0,
+                display_target_percentage: 1.0,
+                display_target_blocks: 0,
+                is_syncing: false,
+                is_complete: true,
+                has_new_tx: true,
+                phase: String::new(),
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -3252,6 +3431,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(events.into_inner(), ["commit", "mark 1", "mark 2"]);
+    }
+
+    #[test]
+    fn transparent_account_selection_prioritizes_one_account() {
+        let selected = "active";
+        assert!(TransparentAccountSelection::All.includes(selected));
+        assert!(TransparentAccountSelection::Only(selected).includes(selected));
+        assert!(!TransparentAccountSelection::Only(selected).includes("inactive"));
+        assert!(!TransparentAccountSelection::Except(selected).includes(selected));
+        assert!(TransparentAccountSelection::Except(selected).includes("inactive"));
     }
 
     #[test]

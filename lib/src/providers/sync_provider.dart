@@ -1125,6 +1125,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
             mode: 1,
+            // Endpoint preflight is asynchronous. Re-read the account here so
+            // a switch during preflight prioritizes the account the user is
+            // actually viewing when Rust starts.
+            activeAccountUuid: _getActiveAccountUuid(),
           );
           _syncSub = stream.listen(
             (event) {

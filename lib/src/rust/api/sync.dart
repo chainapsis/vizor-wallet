@@ -25,11 +25,13 @@ Stream<ApiSyncProgressEvent> startFullSync({
   required String lightwalletdUrl,
   required String network,
   required int mode,
+  String? activeAccountUuid,
 }) => RustLib.instance.api.crateApiSyncStartFullSync(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   mode: mode,
+  activeAccountUuid: activeAccountUuid,
 );
 
 /// Blocking sync entrypoint that uses the same API-layer network parsing,

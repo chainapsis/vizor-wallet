@@ -6099,6 +6099,7 @@ fn wire__crate__api__sync__start_full_sync_impl(
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_mode = <u8>::sse_decode(&mut deserializer);
+            let api_active_account_uuid = <Option<String>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::sync::ApiSyncProgressEvent,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -6111,6 +6112,7 @@ fn wire__crate__api__sync__start_full_sync_impl(
                         api_lightwalletd_url,
                         api_network,
                         api_mode,
+                        api_active_account_uuid,
                         api_sink,
                     )?;
                     Ok(output_ok)

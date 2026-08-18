@@ -1095,6 +1095,7 @@ abstract class RustLibApi extends BaseApi {
     required String lightwalletdUrl,
     required String network,
     required int mode,
+    String? activeAccountUuid,
   });
 
   Stream<ApiMempoolTxEvent> crateApiSyncStartMempoolObserver({
@@ -7759,6 +7760,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required int mode,
+    String? activeAccountUuid,
   }) {
     final sink = RustStreamSink<ApiSyncProgressEvent>();
     unawaited(
@@ -7770,6 +7772,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(lightwalletdUrl, serializer);
             sse_encode_String(network, serializer);
             sse_encode_u_8(mode, serializer);
+            sse_encode_opt_String(activeAccountUuid, serializer);
             sse_encode_StreamSink_api_sync_progress_event_Sse(sink, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
@@ -7783,7 +7786,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_String,
           ),
           constMeta: kCrateApiSyncStartFullSyncConstMeta,
-          argValues: [dbPath, lightwalletdUrl, network, mode, sink],
+          argValues: [
+            dbPath,
+            lightwalletdUrl,
+            network,
+            mode,
+            activeAccountUuid,
+            sink,
+          ],
           apiImpl: this,
         ),
       ),
@@ -7793,7 +7803,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncStartFullSyncConstMeta => const TaskConstMeta(
     debugName: "start_full_sync",
-    argNames: ["dbPath", "lightwalletdUrl", "network", "mode", "sink"],
+    argNames: [
+      "dbPath",
+      "lightwalletdUrl",
+      "network",
+      "mode",
+      "activeAccountUuid",
+      "sink",
+    ],
   );
 
   @override

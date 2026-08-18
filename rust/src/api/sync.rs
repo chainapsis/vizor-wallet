@@ -49,6 +49,7 @@ fn run_full_sync_internal<F>(
     lightwalletd_url: String,
     network: String,
     mode: u8,
+    active_account_uuid: Option<String>,
     on_progress: F,
 ) -> Result<(), String>
 where
@@ -77,6 +78,7 @@ where
                 cancel,
                 mode,
                 &DESIRED_SYNC_MODE,
+                active_account_uuid.as_deref(),
                 true,
                 |progress| on_progress(&progress),
             )
@@ -95,29 +97,37 @@ pub fn start_full_sync(
     lightwalletd_url: String,
     network: String,
     mode: u8,
+    active_account_uuid: Option<String>,
     sink: StreamSink<ApiSyncProgressEvent>,
 ) -> Result<(), String> {
-    let result = run_full_sync_internal(db_path, lightwalletd_url, network, mode, |progress| {
-        if sink
-            .add(ApiSyncProgressEvent {
-                scanned_height: progress.scanned_height,
-                chain_tip_height: progress.chain_tip_height,
-                percentage: progress.percentage,
-                display_target_percentage: progress.display_target_percentage,
-                display_target_blocks: progress.display_target_blocks,
-                is_syncing: progress.is_syncing,
-                is_complete: progress.is_complete,
-                has_new_tx: progress.has_new_tx,
-                phase: progress.phase.clone(),
-            })
-            .is_err()
-        {
-            log::warn!(
-                "[{}] sync: StreamSink closed, progress not delivered",
-                sync_engine::elapsed(),
-            );
-        }
-    });
+    let result = run_full_sync_internal(
+        db_path,
+        lightwalletd_url,
+        network,
+        mode,
+        active_account_uuid,
+        |progress| {
+            if sink
+                .add(ApiSyncProgressEvent {
+                    scanned_height: progress.scanned_height,
+                    chain_tip_height: progress.chain_tip_height,
+                    percentage: progress.percentage,
+                    display_target_percentage: progress.display_target_percentage,
+                    display_target_blocks: progress.display_target_blocks,
+                    is_syncing: progress.is_syncing,
+                    is_complete: progress.is_complete,
+                    has_new_tx: progress.has_new_tx,
+                    phase: progress.phase.clone(),
+                })
+                .is_err()
+            {
+                log::warn!(
+                    "[{}] sync: StreamSink closed, progress not delivered",
+                    sync_engine::elapsed(),
+                );
+            }
+        },
+    );
 
     // Generated Dart exposes the sink stream, while the FRB task future is
     // detached. Forward terminal errors through the stream it actually reads.
@@ -143,7 +153,7 @@ pub fn run_full_sync_blocking(
     network: String,
     mode: u8,
 ) -> Result<(), String> {
-    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |_| {})
+    run_full_sync_internal(db_path, lightwalletd_url, network, mode, None, |_| {})
 }
 
 /// Cancel a running full sync.
