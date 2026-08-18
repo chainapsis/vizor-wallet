@@ -168,7 +168,11 @@ unconfirmed rounds and rejects expired or unauthenticated entries before
 restoring a session. A restored session checks only helpers still present in
 the current config and retains itself while work remains. Overdue shares use
 the crate's randomized resubmission order and stop after the first helper
-accepts; an ambiguous POST timeout is not repeated automatically. Lock, account
+acknowledges or the round ends. An unacknowledged POST remains eligible for a
+later retry, and recovery may continue to another helper even when the
+transport outcome is ambiguous. This deliberately trades possible duplicate
+encrypted-share delivery and additional helper metadata exposure for liveness
+when an overdue share might otherwise never reach the chain. Lock, account
 deletion, and wallet reset stop and drain discovery plus active checks before
 protected state changes. If a mutation aborts while wallet state remains,
 Vizor requests fresh discovery after leaving the mutation boundary.

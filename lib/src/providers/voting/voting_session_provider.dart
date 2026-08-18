@@ -2264,6 +2264,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'proposal=${share.proposalId} share=${share.shareIndex} '
           'server=$serverUrl error=$e',
         );
+        // Overdue recovery deliberately favors liveness. An ambiguous error
+        // may follow acceptance, but it may also mean the request never
+        // arrived, so keep this helper eligible and continue until one
+        // acknowledges or the round ends. This accepts possible duplicates.
         helperHealth.recordFailure(serverUrl);
       }
     }
