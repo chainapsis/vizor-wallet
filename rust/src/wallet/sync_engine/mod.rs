@@ -53,7 +53,10 @@ pub(crate) mod mempool;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
+use lwd::{
+    download_blocks, download_subtree_roots, get_address_utxos_stream, get_compact_block_hash,
+    get_tree_state,
+};
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
@@ -92,6 +95,8 @@ const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
+const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+const FINAL_TIP_REFRESH_MIN_AGE: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS: usize = 4;
 const MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS: u32 = 3;
 
@@ -836,38 +841,74 @@ fn ensure_complete_scan_state(
         ));
     }
 
-    let Some((fully_scanned_height, db_tip_height)) =
-        sync::wallet_scan_heights(db).map_err(SyncError::db)?
-    else {
-        if current_tip_height == 0 {
-            return Ok((0, 0));
-        }
-        return Err(SyncError::db(format!(
-            "sync completion blocked: wallet summary unavailable at tip {current_tip_height}"
-        )));
+    let wallet_heights = sync::wallet_scan_heights(db).map_err(SyncError::db)?;
+    let heights = validate_complete_scan_heights(current_tip_height, wallet_heights)?;
+    let stored_tip_hash = if current_tip_height == 0 {
+        None
+    } else {
+        let tip_height = block_height_from_u64(current_tip_height, "completion chain tip")?;
+        db.get_block_hash(tip_height)
+            .map_err(|e| SyncError::db(format!("get_block_hash({tip_height}): {e}")))?
+    };
+    validate_complete_tip_hash(current_tip_height, stored_tip_hash)?;
+    Ok(heights)
+}
+
+fn validate_complete_scan_heights(
+    current_tip_height: u64,
+    wallet_heights: Option<(u64, u64)>,
+) -> Result<(u64, u64), SyncError> {
+    let Some((fully_scanned_height, db_tip_height)) = wallet_heights else {
+        return if current_tip_height == 0 {
+            Ok((0, 0))
+        } else {
+            Err(SyncError::db(format!(
+                "sync completion blocked: wallet summary unavailable at tip \
+                 {current_tip_height}"
+            )))
+        };
     };
 
-    if db_tip_height < current_tip_height {
+    if db_tip_height != current_tip_height {
+        let relation = if db_tip_height < current_tip_height {
+            "lags"
+        } else {
+            "is ahead of"
+        };
         return Err(SyncError::continuity(
             current_tip_height,
             format!(
                 "sync completion blocked: wallet DB chain tip {db_tip_height} \
-                 lags lightwalletd tip {current_tip_height}"
+                 {relation} lightwalletd tip {current_tip_height}"
             ),
         ));
     }
 
-    if fully_scanned_height < db_tip_height {
+    if fully_scanned_height != db_tip_height {
         return Err(SyncError::continuity(
             db_tip_height,
             format!(
                 "sync completion blocked: fully scanned height {fully_scanned_height} \
-                 below wallet DB chain tip {db_tip_height}"
+                 does not match wallet DB chain tip {db_tip_height}"
             ),
         ));
     }
 
     Ok((fully_scanned_height, db_tip_height))
+}
+
+fn validate_complete_tip_hash(
+    current_tip_height: u64,
+    stored_tip_hash: Option<BlockHash>,
+) -> Result<(), SyncError> {
+    if current_tip_height == 0 || stored_tip_hash.is_some() {
+        Ok(())
+    } else {
+        Err(SyncError::db(format!(
+            "sync completion blocked: stored block hash is unavailable at tip \
+             {current_tip_height}"
+        )))
+    }
 }
 
 fn queue_witness_repairs_if_needed(
@@ -1084,7 +1125,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             canonical_ironwood,
         );
 
-        let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+        let current_tip =
+            block_height_from_u64(current_tip_height, "current lightwalletd chain tip")?;
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
@@ -1693,6 +1735,248 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+/// Discard a completed tip RPC result when cancellation or a mode handoff won
+/// the race. Callers must apply this before interpreting the result or mutating
+/// the wallet DB.
+fn tip_rpc_result_unless_exiting<T>(
+    result: Result<T, SyncError>,
+    should_exit: bool,
+) -> Option<Result<T, SyncError>> {
+    (!should_exit).then_some(result)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RefreshedTipRelation {
+    Unchanged,
+    UnchangedUnverified,
+    Advanced,
+    Reorg,
+    ServerBehind,
+}
+
+fn classify_refreshed_tip(
+    current_height: u64,
+    stored_hash: Option<BlockHash>,
+    fresh_height: u64,
+    fresh_hash: &[u8],
+) -> Result<RefreshedTipRelation, SyncError> {
+    // A lower response is never authoritative enough to prove a reorg. The
+    // server may be a lagging replica that is still serving an orphaned fork,
+    // so even a hash mismatch at its tip must not trigger a wallet rewind.
+    if fresh_height < current_height {
+        return Ok(RefreshedTipRelation::ServerBehind);
+    }
+
+    // `BlockID.hash` is optional in the lightwalletd protocol. Preserve
+    // height-only compatibility when the server omits it, but reject a
+    // non-empty malformed value instead of silently treating it as absent.
+    let fresh_hash = if fresh_hash.is_empty() {
+        None
+    } else {
+        Some(BlockHash::try_from_slice(fresh_hash).ok_or_else(|| {
+            SyncError::net(format!(
+                "get_latest_block returned a {}-byte hash at height {fresh_height}",
+                fresh_hash.len(),
+            ))
+        })?)
+    };
+
+    if fresh_height > current_height {
+        return Ok(RefreshedTipRelation::Advanced);
+    }
+
+    if stored_hash.is_some() && fresh_hash.is_none() {
+        return Err(SyncError::net(format!(
+            "a block hash is required to validate the stored tip at height {fresh_height}"
+        )));
+    }
+
+    Ok(match (stored_hash, fresh_hash) {
+        (Some(stored_hash), Some(fresh_hash)) if stored_hash != fresh_hash => {
+            RefreshedTipRelation::Reorg
+        }
+        (None, _) if current_height > 0 => RefreshedTipRelation::UnchangedUnverified,
+        _ => RefreshedTipRelation::Unchanged,
+    })
+}
+
+async fn classify_refreshed_tip_with_fallback(
+    client: &mut CompactTxStreamerClient<Channel>,
+    current_height: u64,
+    stored_hash: Option<BlockHash>,
+    fresh_height: u64,
+    fresh_hash: &[u8],
+) -> Result<RefreshedTipRelation, SyncError> {
+    if tip_hash_fallback_required(current_height, stored_hash, fresh_height, fresh_hash) {
+        let compact_block_hash = get_compact_block_hash(client, fresh_height).await?;
+        classify_refreshed_tip(
+            current_height,
+            stored_hash,
+            fresh_height,
+            &compact_block_hash.0,
+        )
+    } else {
+        classify_refreshed_tip(current_height, stored_hash, fresh_height, fresh_hash)
+    }
+}
+
+fn tip_hash_fallback_required(
+    current_height: u64,
+    stored_hash: Option<BlockHash>,
+    fresh_height: u64,
+    fresh_hash: &[u8],
+) -> bool {
+    fresh_height == current_height && stored_hash.is_some() && fresh_hash.is_empty()
+}
+
+fn stored_hash_for_refreshed_tip(
+    db: &WalletDatabase,
+    current_height: u64,
+    fresh_height: u64,
+) -> Result<Option<BlockHash>, SyncError> {
+    if fresh_height != current_height {
+        return Ok(None);
+    }
+
+    let fresh_height = block_height_from_u64(fresh_height, "refreshed lightwalletd chain tip")?;
+    db.get_block_hash(fresh_height)
+        .map_err(|e| SyncError::db(format!("get_block_hash({fresh_height}): {e}")))
+}
+
+fn lagging_lightwalletd_tip(current_height: u64, fresh_height: u64) -> SyncError {
+    SyncError::net(format!(
+        "lightwalletd tip {fresh_height} is behind wallet DB tip {current_height} \
+         without evidence of a reorg"
+    ))
+}
+
+fn should_refresh_tip_before_completion(
+    validation_required: bool,
+    validation_age: std::time::Duration,
+) -> bool {
+    validation_required || validation_age >= FINAL_TIP_REFRESH_MIN_AGE
+}
+
+fn truncate_wallet_to_height(
+    db: &mut WalletDatabase,
+    requested_height: BlockHeight,
+    fresh_tip_height: BlockHeight,
+    operation: &'static str,
+) -> Result<BlockHeight, SyncError> {
+    with_wallet_db_write_lock(operation, || {
+        truncate_wallet_with(requested_height, fresh_tip_height, |height| {
+            db.truncate_to_height(height)
+        })
+    })
+}
+
+fn truncate_wallet_with(
+    requested_height: BlockHeight,
+    fresh_tip_height: BlockHeight,
+    mut truncate: impl FnMut(BlockHeight) -> Result<BlockHeight, SqliteClientError>,
+) -> Result<BlockHeight, SyncError> {
+    match truncate(requested_height) {
+        Ok(height) => validate_reorg_rewind_height(height, fresh_tip_height),
+        Err(SqliteClientError::RequestedRewindInvalid {
+            safe_rewind_height: Some(safe_height),
+            ..
+        }) => {
+            // Validate before calling `truncate_to_height` again. A checkpoint
+            // at or above the divergent server tip cannot repair continuity,
+            // and must not trigger a fallback DB mutation.
+            validate_reorg_rewind_height(safe_height, fresh_tip_height)?;
+            log::warn!(
+                "[{}] sync: rewind target {requested_height} is not safely \
+                 representable; retrying at reported safe height {safe_height}",
+                elapsed(),
+            );
+            let actual_height = truncate(safe_height).map_err(|e| {
+                if is_sqlite_lock_contention(&e) {
+                    SyncError::other(format!(
+                        "truncate_to_height({safe_height}): SQLite lock contention: {e}"
+                    ))
+                } else {
+                    SyncError::db(format!("truncate_to_height({safe_height}): {e}"))
+                }
+            })?;
+            validate_reorg_rewind_height(actual_height, fresh_tip_height)
+        }
+        Err(SqliteClientError::RequestedRewindInvalid {
+            safe_rewind_height: None,
+            ..
+        }) => Err(SyncError::db(format!(
+            "truncate_to_height({requested_height}): no safe rewind height"
+        ))),
+        Err(e) if is_sqlite_lock_contention(&e) => Err(SyncError::other(format!(
+            "truncate_to_height({requested_height}): SQLite lock contention: {e}"
+        ))),
+        Err(e) => Err(SyncError::db(format!(
+            "truncate_to_height({requested_height}): {e}"
+        ))),
+    }
+}
+
+fn validate_reorg_rewind_height(
+    rewind_height: BlockHeight,
+    fresh_tip_height: BlockHeight,
+) -> Result<BlockHeight, SyncError> {
+    if rewind_height < fresh_tip_height {
+        Ok(rewind_height)
+    } else {
+        Err(SyncError::db(format!(
+            "confirmed reorg could not rewind below tip {fresh_tip_height}; \
+             candidate height was {rewind_height}"
+        )))
+    }
+}
+
+fn confirmed_reorg_rewind_target(fresh_tip_height: BlockHeight) -> Result<BlockHeight, SyncError> {
+    u32::from(fresh_tip_height)
+        .checked_sub(1)
+        .map(BlockHeight::from_u32)
+        .ok_or_else(|| SyncError::net("confirmed reorg cannot rewind below genesis"))
+}
+
+fn rewind_for_confirmed_tip_reorg(
+    db: &mut WalletDatabase,
+    fresh_tip_height: u64,
+) -> Result<(BlockHeight, Vec<ScanRange>, u64), SyncError> {
+    let fresh_height = block_height_from_u64(fresh_tip_height, "reorg lightwalletd chain tip")?;
+    let requested_height = confirmed_reorg_rewind_target(fresh_height)?;
+    let actual_height = truncate_wallet_to_height(
+        db,
+        requested_height,
+        fresh_height,
+        "sync_engine.truncate_to_height.tip_reorg",
+    )?;
+    let ranges = with_wallet_db_write_lock(
+        "sync_engine.update_chain_tip.tip_reorg",
+        || -> Result<Vec<ScanRange>, SyncError> {
+            db.update_chain_tip(fresh_height).map_err(|e| {
+                SyncError::db(format!(
+                    "update_chain_tip({fresh_height}) after confirmed reorg: {e}"
+                ))
+            })?;
+            db.suggest_scan_ranges().map_err(|e| {
+                SyncError::db(format!("suggest_scan_ranges after confirmed reorg: {e}"))
+            })
+        },
+    )?;
+    let pending_blocks = pending_scan_blocks(&ranges);
+
+    if pending_blocks == 0 {
+        return Err(SyncError::continuity(
+            fresh_tip_height,
+            format!(
+                "confirmed reorg rewind to {actual_height} produced no pending \
+                 scan ranges"
+            ),
+        ));
+    }
+
+    Ok((actual_height, ranges, pending_blocks))
+}
+
 type ScanBatch = (block_source::MemoryBlockSource, chain::ChainState);
 
 async fn join_scan_batch_inputs<BlockSourceT, ChainStateT, BlockFuture, StateFuture>(
@@ -2005,29 +2289,94 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    // The main-phase rewind budget also covers a reorg detected by the
+    // initial tip response, before the scan queue has been created.
+    let mut main_rewinds_this_run: u32 = 0;
+    let should_exit =
+        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
 
-    // 2. Get chain tip. `current_tip_height` is updated by the
-    // periodic refresh (TIP_REFRESH_INTERVAL) so that progress
-    // events always reflect the latest known chain height, not the
-    // one captured at sync start. The initial `tip` response is
-    // also kept around for its other fields but `current_tip_height`
-    // is the authoritative value for emitted events.
-    let tip = get_latest_block(&mut client).await?;
-    let mut current_tip_height: u64 = tip.height;
-    let tip_height = BlockHeight::from_u32(tip.height as u32);
-    log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
+    // 2. Get the chain tip. Reconcile it with the DB before treating it as
+    // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
+    // height below the maximum scanned block, so assigning the server height
+    // first could later report completion above a lagging endpoint.
+    let tip_result = get_latest_block(&mut client).await;
+    let Some(tip_result) = tip_rpc_result_unless_exiting(tip_result, should_exit()) else {
+        log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
+        return Ok(());
+    };
+    let tip = tip_result?;
+    let initial_tip_observed_at = std::time::Instant::now();
 
-    with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
-        db.update_chain_tip(tip_height).map_err(|e| {
-            if is_sqlite_lock_contention(&e) {
-                SyncError::other(format!(
-                    "update_chain_tip: transient SQLite lock contention: {e}"
-                ))
-            } else {
-                SyncError::db(format!("update_chain_tip: {e}"))
+    let tip_height = block_height_from_u64(tip.height, "lightwalletd chain tip")?;
+    let db_tip_height = sync::wallet_scan_heights(&mut db)
+        .map_err(SyncError::db)?
+        .map(|(_, db_tip)| db_tip);
+    let initial_tip_relation = if let Some(db_tip) = db_tip_height {
+        let stored_hash = stored_hash_for_refreshed_tip(&db, db_tip, tip.height)?;
+        let relation = classify_refreshed_tip_with_fallback(
+            &mut client,
+            db_tip,
+            stored_hash,
+            tip.height,
+            &tip.hash,
+        )
+        .await;
+        let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+            log::info!("[{}] sync: exiting after initial tip validation", elapsed());
+            return Ok(());
+        };
+        Some((db_tip, relation?))
+    } else {
+        None
+    };
+    let initial_tip_identity_verified = matches!(
+        initial_tip_relation,
+        Some((_, RefreshedTipRelation::Unchanged))
+    );
+
+    match initial_tip_relation {
+        Some((db_tip_height, RefreshedTipRelation::ServerBehind)) => {
+            return Err(lagging_lightwalletd_tip(db_tip_height, tip.height));
+        }
+        Some((_, RefreshedTipRelation::Reorg)) => {
+            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                return Err(SyncError::continuity(
+                    tip.height,
+                    "initial tip reorg rewind budget exhausted",
+                ));
             }
-        })
-    })?;
+            main_rewinds_this_run += 1;
+            let (actual_height, _, pending_blocks) =
+                rewind_for_confirmed_tip_reorg(&mut db, tip.height)?;
+            log::warn!(
+                "[{}] sync: initial tip proved a reorg; rewound to {} and \
+                 queued {} block(s) toward tip {}",
+                elapsed(),
+                actual_height,
+                pending_blocks,
+                tip.height,
+            );
+        }
+        Some((_, RefreshedTipRelation::Unchanged))
+        | Some((_, RefreshedTipRelation::UnchangedUnverified))
+        | Some((_, RefreshedTipRelation::Advanced))
+        | None => {
+            with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
+                db.update_chain_tip(tip_height).map_err(|e| {
+                    if is_sqlite_lock_contention(&e) {
+                        SyncError::other(format!(
+                            "update_chain_tip: transient SQLite lock contention: {e}"
+                        ))
+                    } else {
+                        SyncError::db(format!("update_chain_tip: {e}"))
+                    }
+                })
+            })?;
+        }
+    }
+
+    let mut current_tip_height: u64 = tip.height;
+    log::info!("[{}] sync: chain tip = {}", elapsed(), current_tip_height);
 
     // Retained send-lock expiry requires a usable target height.
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
@@ -2041,8 +2390,6 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    let should_exit =
-        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
     let active_utxo_progress = |completed, total| {
         progress_fn(preparation_progress_event(
             current_tip_height,
@@ -2162,7 +2509,7 @@ async fn run_sync_impl(
             db_data_path,
             lightwalletd_url,
             &mut client,
-            tip.height as u32,
+            u32::from(tip_height),
             &startup_resubmit_exclusions,
             || {
                 cancel.load(Ordering::Relaxed)
@@ -2228,18 +2575,17 @@ async fn run_sync_impl(
     let mut initial_total = pending_scan_blocks(&initial_ranges);
     let initial_window_start_height =
         earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
+    let mut queued_ranges = Some(initial_ranges);
     let mut prev_remaining = initial_total;
     let mut progress_display_mode = ProgressDisplayMode::Work;
     let mut last_progress_percentage: f64 = 0.0;
     log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
 
-    // Bounded counters for reorg-triggered rewinds inside this one sync run,
-    // split between the verify phase and the main scan phase. Separate
-    // budgets match zcash-android-wallet-sdk's pattern of running a
-    // dedicated verify-first loop before the main scan, so a flapping
-    // verify range can't eat the main scan's rewind budget.
+    // Reorg-triggered rewinds are split between the verify and main scan
+    // phases. The main budget was initialized before tip reconciliation;
+    // this verify budget is independent so a flapping verify range cannot
+    // consume the main scan's recovery allowance.
     let mut verify_rewinds_this_run: u32 = 0;
-    let mut main_rewinds_this_run: u32 = 0;
     let mut witness_repair_passes_this_run: u32 = 0;
     let mut anchor_root_repair_passes_this_run: u32 = 0;
     let mut force_witness_check_this_run = false;
@@ -2252,21 +2598,22 @@ async fn run_sync_impl(
     let mut verify_phase_announced = false;
     let mut main_phase_announced = false;
 
-    /// If the scan loop has been running longer than this without
-    /// refreshing the chain tip from lightwalletd, we re-fetch
-    /// the tip and call `update_chain_tip` so that
-    /// `suggest_scan_ranges` incorporates any new blocks that
-    /// appeared while the wallet was catching up.
-    ///
-    /// Matches zcash-android-wallet-sdk's
-    /// `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
-    /// (CompactBlockProcessor.kt:1197). We don't restart the
-    /// whole sync like the SDK does — just refreshing the tip is
-    /// enough because our `suggest_scan_ranges` call at the top
-    /// of each loop iteration already reflects the new tip once
-    /// `update_chain_tip` has written it to the DB.
-    const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
-    let mut last_tip_refresh = std::time::Instant::now();
+    // If the scan loop has been running longer than this without
+    // refreshing the chain tip from lightwalletd, we re-fetch
+    // the tip and call `update_chain_tip` so that
+    // `suggest_scan_ranges` incorporates any new blocks that
+    // appeared while the wallet was catching up.
+    //
+    // Matches zcash-android-wallet-sdk's
+    // `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
+    // (CompactBlockProcessor.kt:1197). We don't restart the
+    // whole sync like the SDK does — just refreshing the tip is
+    // enough because our `suggest_scan_ranges` call at the top
+    // of each loop iteration already reflects the new tip once
+    // `update_chain_tip` has written it to the DB.
+    let mut last_completion_tip_validation = initial_tip_observed_at;
+    let mut completion_tip_validation_required = !initial_tip_identity_verified;
+    let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
     // Prefetched scan batch from the previous iteration.
     // When the scan loop processes a range that spans multiple batches,
@@ -2296,48 +2643,223 @@ async fn run_sync_impl(
         // than TIP_REFRESH_INTERVAL, re-fetch the chain tip so
         // new blocks that arrived during a long catch-up are
         // picked up by the next suggest_scan_ranges() call.
-        // Errors are logged and skipped — we just keep the old
-        // tip and try again next period.
-        if last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL {
-            match get_latest_block(&mut client).await {
+        // Transport errors are logged and skipped so scanning can continue
+        // against the last validated tip. A lower, non-divergent response is
+        // returned as a transient error to avoid repeatedly requesting an
+        // empty range from a lagging replica.
+        if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
+            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+            let fresh_tip_result = get_latest_block(&mut client).await;
+            let Some(fresh_tip_result) =
+                tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+            else {
+                log::info!("[{}] sync: exiting after periodic tip fetch", elapsed());
+                return Ok(());
+            };
+            match fresh_tip_result {
                 Ok(fresh_tip) => {
-                    let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
-                    if let Err(e) =
-                        with_wallet_db_write_lock("sync_engine.update_chain_tip.periodic", || {
-                            db.update_chain_tip(fresh_height)
-                        })
-                    {
-                        log::warn!(
-                            "[{}] sync: periodic tip refresh update_chain_tip failed: {e}",
-                            elapsed(),
-                        );
-                    } else {
+                    let fresh_tip_height =
+                        block_height_from_u64(fresh_tip.height, "periodic lightwalletd chain tip")?;
+
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = classify_refreshed_tip_with_fallback(
+                        &mut client,
+                        current_tip_height,
+                        stored_hash,
+                        fresh_tip.height,
+                        &fresh_tip.hash,
+                    )
+                    .await;
+                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    else {
                         log::info!(
-                            "[{}] sync: periodic tip refresh {} → {}",
-                            elapsed(),
-                            current_tip_height,
-                            fresh_tip.height,
+                            "[{}] sync: exiting after periodic tip validation",
+                            elapsed()
                         );
-                        current_tip_height = fresh_tip.height;
+                        return Ok(());
+                    };
+                    let relation = relation?;
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = std::time::Instant::now();
+                            completion_tip_validation_required = false;
+                        }
+                        RefreshedTipRelation::UnchangedUnverified => {
+                            completion_tip_validation_required = true;
+                        }
+                        RefreshedTipRelation::Advanced => {
+                            if let Err(e) = with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.periodic",
+                                || db.update_chain_tip(fresh_tip_height),
+                            ) {
+                                completion_tip_validation_required = true;
+                                log::warn!(
+                                    "[{}] sync: periodic tip refresh update_chain_tip \
+                                     failed: {e}",
+                                    elapsed(),
+                                );
+                            } else {
+                                log::info!(
+                                    "[{}] sync: periodic tip refresh {} → {}",
+                                    elapsed(),
+                                    current_tip_height,
+                                    fresh_tip.height,
+                                );
+                                current_tip_height = fresh_tip.height;
+                                completion_tip_validation_required = true;
+                            }
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "periodic tip reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch = None;
+                            let (actual_height, repair_ranges, pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                            log::warn!(
+                                "[{}] sync: periodic tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
+                                elapsed(),
+                                actual_height,
+                                pending_blocks,
+                                fresh_tip.height,
+                            );
+                            current_tip_height = fresh_tip.height;
+                            initial_total = pending_blocks;
+                            prev_remaining = pending_blocks;
+                            queued_ranges = Some(repair_ranges);
+                            completion_tip_validation_required = true;
+                            continue;
+                        }
                     }
                 }
                 Err(e) => {
+                    completion_tip_validation_required = true;
                     log::warn!(
                         "[{}] sync: periodic tip refresh get_latest_block failed: {e}",
                         elapsed(),
                     );
                 }
             }
-            last_tip_refresh = std::time::Instant::now();
         }
 
-        let ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let ranges = if let Some(ranges) = queued_ranges.take() {
+            ranges
+        } else {
+            db.suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+        };
 
         let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
             Some(r) => r.clone(),
             None => {
+                // A long catch-up can outlive the tip captured at startup.
+                // Refresh once when the queue drains, but reuse a successful
+                // validation that is less than five seconds old. Any failed
+                // periodic or post-batch refresh forces this check regardless
+                // of age. If the tip advanced, queue its ranges before running
+                // completion repair checks.
+                if should_refresh_tip_before_completion(
+                    completion_tip_validation_required,
+                    last_completion_tip_validation.elapsed(),
+                ) {
+                    let fresh_tip_result = get_latest_block(&mut client).await;
+                    let Some(fresh_tip_result) =
+                        tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+                    else {
+                        log::info!("[{}] sync: exiting after final tip fetch", elapsed());
+                        return Ok(());
+                    };
+                    let fresh_tip = fresh_tip_result?;
+                    last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                    let fresh_tip_height =
+                        block_height_from_u64(fresh_tip.height, "final lightwalletd chain tip")?;
+
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = classify_refreshed_tip_with_fallback(
+                        &mut client,
+                        current_tip_height,
+                        stored_hash,
+                        fresh_tip.height,
+                        &fresh_tip.hash,
+                    )
+                    .await;
+                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    else {
+                        log::info!("[{}] sync: exiting after final tip validation", elapsed());
+                        return Ok(());
+                    };
+                    let relation = relation?;
+
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = std::time::Instant::now();
+                            completion_tip_validation_required = false;
+                        }
+                        RefreshedTipRelation::UnchangedUnverified => {
+                            completion_tip_validation_required = true;
+                        }
+                        RefreshedTipRelation::Advanced => {
+                            with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.queue_drain",
+                                || db.update_chain_tip(fresh_tip_height),
+                            )
+                            .map_err(|e| {
+                                SyncError::db(format!(
+                                    "queue-drain update_chain_tip({fresh_tip_height}): {e}"
+                                ))
+                            })?;
+                            current_tip_height = fresh_tip.height;
+                            completion_tip_validation_required = true;
+                            continue;
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "queue-drain reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch = None;
+                            let (actual_height, repair_ranges, repair_pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                            log::warn!(
+                                "[{}] sync: final tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
+                                elapsed(),
+                                actual_height,
+                                repair_pending_blocks,
+                                fresh_tip.height,
+                            );
+                            current_tip_height = fresh_tip.height;
+                            initial_total = repair_pending_blocks;
+                            prev_remaining = repair_pending_blocks;
+                            queued_ranges = Some(repair_ranges);
+                            completion_tip_validation_required = true;
+                            continue;
+                        }
+                    }
+                }
+
                 if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
                     db_data_path,
                     &mut db,
@@ -2666,7 +3188,8 @@ async fn run_sync_impl(
                     // recovers. When it's `None` there is genuinely
                     // nowhere safe to rewind to, and we surface the
                     // failure as fatal.
-                    let target = BlockHeight::from_u32(requested_rewind_height as u32);
+                    let target =
+                        block_height_from_u64(requested_rewind_height, "scan rewind target")?;
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
@@ -2723,7 +3246,10 @@ async fn run_sync_impl(
                             }
                         },
                     )?;
-                    let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+                    let current_tip = block_height_from_u64(
+                        current_tip_height,
+                        "current lightwalletd chain tip",
+                    )?;
                     let post_rewind_ranges = with_wallet_db_write_lock(
                         "sync_engine.update_chain_tip.after_rewind",
                         || -> Result<Vec<ScanRange>, SyncError> {
@@ -2837,9 +3363,9 @@ async fn run_sync_impl(
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
-        // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
-        // lines 593/701 call sites (end of verify batch / end of
-        // regular batch).
+        // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
+        // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
+        // verify batch / end of a regular batch).
         //
         // We deliberately re-fetch the chain tip via
         // `get_latest_block` before each pass instead of reusing
@@ -2875,50 +3401,111 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        match get_latest_block(&mut client)
-            .await
-            .map(|tip| tip.height as u32)
-        {
-            Ok(fresh_tip_height) => {
-                // Promote the fresh tip to the authoritative value
-                // so progress events and the final completion event
-                // use the latest chain height, not the one from
-                // sync startup. Also update the DB so
-                // suggest_scan_ranges picks up any new blocks that
-                // appeared since the initial (or last periodic) tip
-                // fetch.
-                //
-                // IMPORTANT: update_chain_tip MUST succeed before
-                // we bump current_tip_height. If the DB write fails,
-                // suggest_scan_ranges still operates on the old tip
-                // and the loop may break with isComplete=true —
-                // bumping current_tip_height prematurely would make
-                // the completion event claim a height the wallet
-                // never actually scanned. (Codex 3rd-round finding.)
-                if (fresh_tip_height as u64) > current_tip_height {
-                    let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
-                    match with_wallet_db_write_lock(
-                        "sync_engine.update_chain_tip.post_batch",
-                        || db.update_chain_tip(fresh_bh),
-                    ) {
-                        Ok(_) => {
-                            current_tip_height = fresh_tip_height as u64;
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
-                                 failed, keeping tip at {current_tip_height}: {e}",
-                                elapsed(),
-                            );
+        let fresh_tip_result = get_latest_block(&mut client).await;
+        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+        else {
+            log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
+            return Ok(());
+        };
+        match fresh_tip_result {
+            Ok(fresh_tip) => {
+                let fresh_tip_height =
+                    block_height_from_u64(fresh_tip.height, "post-batch lightwalletd chain tip")?;
+
+                let stored_hash =
+                    stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                let relation = classify_refreshed_tip_with_fallback(
+                    &mut client,
+                    current_tip_height,
+                    stored_hash,
+                    fresh_tip.height,
+                    &fresh_tip.hash,
+                )
+                .await;
+                let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+                    log::info!(
+                        "[{}] sync: exiting after post-batch tip validation",
+                        elapsed()
+                    );
+                    return Ok(());
+                };
+                let relation = relation?;
+                match relation {
+                    RefreshedTipRelation::Unchanged => {
+                        last_completion_tip_validation = std::time::Instant::now();
+                        completion_tip_validation_required = false;
+                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                    }
+                    RefreshedTipRelation::UnchangedUnverified => {
+                        completion_tip_validation_required = true;
+                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                    }
+                    RefreshedTipRelation::Advanced => {
+                        match with_wallet_db_write_lock(
+                            "sync_engine.update_chain_tip.post_batch",
+                            || db.update_chain_tip(fresh_tip_height),
+                        ) {
+                            Ok(_) => {
+                                current_tip_height = fresh_tip.height;
+                                completion_tip_validation_required = true;
+                                last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                            }
+                            Err(e) => {
+                                completion_tip_validation_required = true;
+                                log::warn!(
+                                    "[{}] sync: post-batch update_chain_tip({}) \
+                                         failed, keeping tip at {current_tip_height}: {e}",
+                                    elapsed(),
+                                    fresh_tip.height,
+                                );
+                            }
                         }
                     }
+                    RefreshedTipRelation::ServerBehind => {
+                        return Err(lagging_lightwalletd_tip(
+                            current_tip_height,
+                            fresh_tip.height,
+                        ));
+                    }
+                    RefreshedTipRelation::Reorg => {
+                        if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                            return Err(SyncError::continuity(
+                                fresh_tip.height,
+                                "post-batch tip reorg rewind budget exhausted",
+                            ));
+                        }
+                        main_rewinds_this_run += 1;
+                        prefetch = None;
+                        let (actual_height, repair_ranges, pending_blocks) =
+                            rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                        log::warn!(
+                            "[{}] sync: post-batch tip proved a reorg; rewound to {} \
+                                 and queued {} block(s) toward tip {}",
+                            elapsed(),
+                            actual_height,
+                            pending_blocks,
+                            fresh_tip.height,
+                        );
+                        current_tip_height = fresh_tip.height;
+                        initial_total = pending_blocks;
+                        prev_remaining = pending_blocks;
+                        queued_ranges = Some(repair_ranges);
+                        completion_tip_validation_required = true;
+                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                        continue;
+                    }
                 }
+
+                // Use the just-observed network height for the expiry
+                // filter. The authoritative progress tip was promoted
+                // above only when its DB update succeeded; lower or
+                // divergent responses cannot reach this broadcast path.
                 if allow_resubmit {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         lightwalletd_url,
                         &mut client,
-                        fresh_tip_height,
+                        u32::from(fresh_tip_height),
                         &resubmit_exclusions,
                         || {
                             cancel.load(Ordering::Relaxed)
@@ -2929,14 +3516,16 @@ async fn run_sync_impl(
                 }
             }
             Err(e) => {
+                completion_tip_validation_required = true;
                 log::warn!(
-                    "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
+                    "[{}] sync: post-batch tip refresh failed; skipping \
+                     tip promotion and resubmit pass: {e}",
                     elapsed(),
                 );
             }
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-            log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            log::info!("[{}] sync: exiting after post-batch pass", elapsed());
             return Ok(());
         }
 
@@ -3314,11 +3903,8 @@ fn should_use_empty_chain_state(
 
 // ==================== Tests ====================
 //
-// Error-taxonomy tests now live alongside their types in `error.rs`. The
-// only test that has to stay here is `sqlite_lock_contention_is_recognised`,
-// because it exercises the `is_sqlite_lock_contention` helper that still
-// lives in this module. A follow-up refactor commit moves the helper (and
-// this test) into the lwd submodule.
+// Error-taxonomy tests live alongside their types in `error.rs`. Tests here
+// cover the small orchestration helpers that remain in this module.
 
 #[cfg(test)]
 mod tests {
@@ -4270,6 +4856,337 @@ mod tests {
             read_sync_completion_meta(active_sync_path).unwrap(),
             (Some(SYNC_COMPLETION_POLICY_VERSION), Some(100), Some(true)),
         );
+    }
+
+    #[test]
+    fn completion_requires_one_exact_height_across_network_db_and_scanner() {
+        assert_eq!(
+            validate_complete_scan_heights(100, Some((100, 100))).unwrap(),
+            (100, 100),
+        );
+        assert_eq!(validate_complete_scan_heights(0, None).unwrap(), (0, 0));
+
+        for (label, current_tip, wallet_heights) in [
+            ("missing summary", 100, None),
+            ("DB behind network", 100, Some((99, 99))),
+            ("DB ahead of network", 100, Some((101, 101))),
+            ("scanner behind DB", 100, Some((99, 100))),
+            ("scanner ahead of DB", 100, Some((101, 100))),
+        ] {
+            assert!(
+                validate_complete_scan_heights(current_tip, wallet_heights).is_err(),
+                "{label} should block completion",
+            );
+        }
+    }
+
+    #[test]
+    fn completion_requires_the_scanned_tip_hash() {
+        assert!(validate_complete_tip_hash(0, None).is_ok());
+        assert!(validate_complete_tip_hash(100, Some(BlockHash([0x11; 32]))).is_ok());
+        assert!(matches!(
+            validate_complete_tip_hash(100, None),
+            Err(SyncError::Db(_)),
+        ));
+    }
+
+    #[test]
+    fn tip_hash_fallback_is_used_only_when_identity_proof_is_needed() {
+        let stored_hash = Some(BlockHash([0x11; 32]));
+
+        assert!(tip_hash_fallback_required(100, stored_hash, 100, &[]));
+        assert!(!tip_hash_fallback_required(100, stored_hash, 99, &[]));
+        assert!(!tip_hash_fallback_required(100, stored_hash, 101, &[]));
+        assert!(!tip_hash_fallback_required(100, None, 100, &[]));
+        assert!(!tip_hash_fallback_required(
+            100,
+            stored_hash,
+            100,
+            &[0x11; 32],
+        ));
+    }
+
+    #[test]
+    fn failed_refresh_forces_queue_drain_validation_inside_the_grace_period() {
+        assert!(should_refresh_tip_before_completion(
+            true,
+            std::time::Duration::ZERO,
+        ));
+        assert!(!should_refresh_tip_before_completion(
+            false,
+            FINAL_TIP_REFRESH_MIN_AGE - std::time::Duration::from_millis(1),
+        ));
+        assert!(should_refresh_tip_before_completion(
+            false,
+            FINAL_TIP_REFRESH_MIN_AGE,
+        ));
+    }
+
+    #[test]
+    fn partial_catch_up_validates_target_identity_before_completion() {
+        let target_hash = BlockHash([0x22; 32]);
+
+        // The target is ahead of the scanned DB, so its hash is not stored yet.
+        // This is valid catch-up work, but it cannot count as identity proof.
+        let initial_relation = classify_refreshed_tip(90, None, 100, &target_hash.0).unwrap();
+        assert_eq!(initial_relation, RefreshedTipRelation::Advanced);
+        let mut validation_required = initial_relation != RefreshedTipRelation::Unchanged;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+
+        // A refresh during partial scanning still cannot compare the target
+        // identity. The sync remains live and preserves the final check.
+        let partial_relation = classify_refreshed_tip(100, None, 100, &target_hash.0).unwrap();
+        assert_eq!(partial_relation, RefreshedTipRelation::UnchangedUnverified,);
+        validation_required = partial_relation != RefreshedTipRelation::Unchanged;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert!(validate_complete_tip_hash(100, None).is_err());
+
+        // Once scanning stores the target block, the queue-drain refresh can
+        // prove identity and the exact-height completion checks can pass.
+        let final_relation =
+            classify_refreshed_tip(100, Some(target_hash), 100, &target_hash.0).unwrap();
+        assert_eq!(final_relation, RefreshedTipRelation::Unchanged);
+        validation_required = final_relation != RefreshedTipRelation::Unchanged;
+        assert!(!should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert_eq!(
+            validate_complete_scan_heights(100, Some((100, 100))).unwrap(),
+            (100, 100),
+        );
+        validate_complete_tip_hash(100, Some(target_hash)).unwrap();
+    }
+
+    #[test]
+    fn same_height_fork_requires_rewind_rescan_and_identity_revalidation() {
+        let old_tip_hash = BlockHash([0x11; 32]);
+        let fork_tip_hash = BlockHash([0x22; 32]);
+
+        let fork_relation =
+            classify_refreshed_tip(100, Some(old_tip_hash), 100, &fork_tip_hash.0).unwrap();
+        assert_eq!(fork_relation, RefreshedTipRelation::Reorg);
+        let mut validation_required = true;
+        assert!(should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+
+        let requested = confirmed_reorg_rewind_target(BlockHeight::from_u32(100)).unwrap();
+        let mut rewind_calls = Vec::new();
+        let actual = truncate_wallet_with(requested, BlockHeight::from_u32(100), |height| {
+            rewind_calls.push(height);
+            Ok(height)
+        })
+        .unwrap();
+        assert_eq!(actual, BlockHeight::from_u32(99));
+        assert_eq!(rewind_calls, vec![BlockHeight::from_u32(99)]);
+        assert!(validate_complete_scan_heights(100, Some((99, 100))).is_err());
+
+        // Rescanning the replacement block stores the fork identity. A fresh
+        // same-height observation can then authorize completion.
+        let final_relation =
+            classify_refreshed_tip(100, Some(fork_tip_hash), 100, &fork_tip_hash.0).unwrap();
+        validation_required = final_relation != RefreshedTipRelation::Unchanged;
+        assert!(!should_refresh_tip_before_completion(
+            validation_required,
+            std::time::Duration::ZERO,
+        ));
+        assert_eq!(
+            validate_complete_scan_heights(100, Some((100, 100))).unwrap(),
+            (100, 100),
+        );
+        validate_complete_tip_hash(100, Some(fork_tip_hash)).unwrap();
+    }
+
+    #[test]
+    fn lower_server_is_rejected_without_a_database_action_even_when_its_hash_diverges() {
+        let stored_hash = BlockHash([0x11; 32]);
+
+        for fresh_hash in [vec![], vec![0x11; 32], vec![0x22; 32], vec![0x33; 31]] {
+            let relation = classify_refreshed_tip(100, Some(stored_hash), 99, &fresh_hash).unwrap();
+
+            assert_eq!(relation, RefreshedTipRelation::ServerBehind);
+            let mut database_mutations = 0;
+            let result = match relation {
+                RefreshedTipRelation::ServerBehind => Err(lagging_lightwalletd_tip(100, 99)),
+                RefreshedTipRelation::Advanced | RefreshedTipRelation::Reorg => {
+                    database_mutations += 1;
+                    Ok(())
+                }
+                RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
+                    Ok(())
+                }
+            };
+
+            assert!(matches!(result, Err(SyncError::Network(_))));
+            assert_eq!(database_mutations, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_latest_tip_rpc_wins_over_error_and_mutation() {
+        let cancel = AtomicBool::new(false);
+        let desired_mode = AtomicU8::new(1);
+        let should_exit =
+            || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != 1;
+
+        let rpc_result = async {
+            tokio::task::yield_now().await;
+            cancel.store(true, Ordering::Relaxed);
+            Err::<(), _>(SyncError::net("get_latest_block failed"))
+        }
+        .await;
+        let outcome = tip_rpc_result_unless_exiting(rpc_result, should_exit());
+
+        let mut database_mutations = 0;
+        if let Some(result) = outcome {
+            result.unwrap();
+            database_mutations += 1;
+        }
+        assert_eq!(database_mutations, 0);
+    }
+
+    #[tokio::test]
+    async fn mode_change_during_tip_hash_fallback_wins_over_error_and_mutation() {
+        let cancel = AtomicBool::new(false);
+        let desired_mode = AtomicU8::new(1);
+        let should_exit =
+            || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != 1;
+
+        let rpc_result = async {
+            tokio::task::yield_now().await;
+            desired_mode.store(2, Ordering::SeqCst);
+            Err::<RefreshedTipRelation, _>(SyncError::net("get_block failed"))
+        }
+        .await;
+        let outcome = tip_rpc_result_unless_exiting(rpc_result, should_exit());
+
+        let mut database_mutations = 0;
+        if let Some(result) = outcome {
+            result.unwrap();
+            database_mutations += 1;
+        }
+        assert_eq!(database_mutations, 0);
+    }
+
+    #[test]
+    fn unusable_safe_rewind_is_rejected_before_the_fallback_mutation() {
+        let requested = BlockHeight::from_u32(98);
+        let fresh_tip = BlockHeight::from_u32(100);
+        let unsafe_checkpoint = BlockHeight::from_u32(100);
+        let mut calls = Vec::new();
+
+        let result = truncate_wallet_with(requested, fresh_tip, |height| {
+            calls.push(height);
+            Err(SqliteClientError::RequestedRewindInvalid {
+                safe_rewind_height: Some(unsafe_checkpoint),
+                requested_height: height,
+            })
+        });
+
+        assert!(matches!(result, Err(SyncError::Db(_))));
+        assert_eq!(calls, vec![requested]);
+    }
+
+    #[test]
+    fn confirmed_reorg_target_is_checked_before_any_database_call() {
+        assert!(matches!(
+            confirmed_reorg_rewind_target(BlockHeight::from_u32(0)),
+            Err(SyncError::Network(_)),
+        ));
+        assert_eq!(
+            confirmed_reorg_rewind_target(BlockHeight::from_u32(1)).unwrap(),
+            BlockHeight::from_u32(0),
+        );
+        assert_eq!(
+            confirmed_reorg_rewind_target(BlockHeight::from_u32(100)).unwrap(),
+            BlockHeight::from_u32(99),
+        );
+    }
+
+    #[test]
+    fn usable_safe_rewind_is_validated_before_and_after_the_retry() {
+        let requested = BlockHeight::from_u32(98);
+        let fresh_tip = BlockHeight::from_u32(100);
+        let safe_checkpoint = BlockHeight::from_u32(99);
+        let mut calls = Vec::new();
+
+        let result = truncate_wallet_with(requested, fresh_tip, |height| {
+            calls.push(height);
+            if calls.len() == 1 {
+                Err(SqliteClientError::RequestedRewindInvalid {
+                    safe_rewind_height: Some(safe_checkpoint),
+                    requested_height: height,
+                })
+            } else {
+                Ok(height)
+            }
+        });
+
+        assert_eq!(result.unwrap(), safe_checkpoint);
+        assert_eq!(calls, vec![requested, safe_checkpoint]);
+    }
+
+    #[test]
+    fn refreshed_tip_classifies_height_and_hash_changes() {
+        let stored_hash = BlockHash([0x11; 32]);
+
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 101, &[]).unwrap(),
+            RefreshedTipRelation::Advanced,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[0x11; 32]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 99, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, None, 99, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::ServerBehind,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 100, &[0x11; 32]).unwrap(),
+            RefreshedTipRelation::Unchanged,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, Some(stored_hash), 100, &[0x22; 32]).unwrap(),
+            RefreshedTipRelation::Reorg,
+        );
+        assert!(classify_refreshed_tip(100, Some(stored_hash), 100, &[]).is_err());
+        assert_eq!(
+            classify_refreshed_tip(100, None, 100, &[]).unwrap(),
+            RefreshedTipRelation::UnchangedUnverified,
+        );
+        assert_eq!(
+            classify_refreshed_tip(100, None, 100, &[0x11; 32]).unwrap(),
+            RefreshedTipRelation::UnchangedUnverified,
+        );
+        assert_eq!(
+            classify_refreshed_tip(0, None, 0, &[]).unwrap(),
+            RefreshedTipRelation::Unchanged,
+        );
+    }
+
+    #[test]
+    fn refreshed_tip_rejects_a_nonempty_malformed_hash() {
+        assert!(
+            classify_refreshed_tip(100, Some(BlockHash([0x11; 32])), 100, &[0x11; 31]).is_err()
+        );
+        assert!(classify_refreshed_tip(100, None, 101, &[0x11; 31]).is_err());
     }
 
     #[test]
