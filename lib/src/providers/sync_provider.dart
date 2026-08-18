@@ -17,6 +17,17 @@ import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
+const kSyncPhasePreflight = 'preflight';
+const kSyncPhaseSetup = 'setup';
+const kSyncPhaseActiveUtxo = 'active_utxo';
+const kSyncPhaseChainPrepare = 'chain_prepare';
+
+bool isSyncPreparationPhase(String phase) =>
+    phase == kSyncPhasePreflight ||
+    phase == kSyncPhaseSetup ||
+    phase == kSyncPhaseActiveUtxo ||
+    phase == kSyncPhaseChainPrepare;
+
 class SyncProgressEvent {
   final int scannedHeight;
   final int chainTipHeight;
@@ -26,9 +37,10 @@ class SyncProgressEvent {
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
+  final int phaseCompletedUnits;
+  final int phaseTotalUnits;
 
-  /// Current sync phase from Rust: `"download"`, `"scan"`,
-  /// `"enhance"`, or `""` (unspecified / completion).
+  /// Current sync phase from Rust, including preparation phases.
   final String phase;
 
   const SyncProgressEvent({
@@ -40,6 +52,8 @@ class SyncProgressEvent {
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
+    this.phaseCompletedUnits = 0,
+    this.phaseTotalUnits = 0,
     this.phase = '',
   });
 }
@@ -69,9 +83,10 @@ class SyncState {
   /// this cannot be set by the final non-complete scan progress event.
   final bool isSyncComplete;
   final double percentage;
-  final double displayPercentage;
   final double displayTargetPercentage;
   final int displayTargetBlocks;
+  final int phaseCompletedUnits;
+  final int phaseTotalUnits;
   final int scannedHeight;
   final int chainTipHeight;
   final BigInt transparentBalance;
@@ -142,9 +157,8 @@ class SyncState {
   final DateTime? lastSyncCompletedAt;
   final DateTime? lastSyncFailedAt;
 
-  /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
-  /// empty. Widgets can use this to show e.g. "Downloading..."
-  /// instead of a bare percentage.
+  /// Current preparation, download, or scan phase. The Sidebar keeps its
+  /// existing percentage copy and uses this only to estimate display progress.
   final String phase;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
@@ -323,9 +337,10 @@ class SyncState {
     this.isBackgroundMode = false,
     this.isSyncComplete = false,
     this.percentage = 0,
-    double? displayPercentage,
     double? displayTargetPercentage,
     this.displayTargetBlocks = 0,
+    this.phaseCompletedUnits = 0,
+    this.phaseTotalUnits = 0,
     this.scannedHeight = 0,
     this.chainTipHeight = 0,
     BigInt? transparentBalance,
@@ -361,7 +376,6 @@ class SyncState {
   }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
-       displayPercentage = displayPercentage ?? percentage,
        displayTargetPercentage = displayTargetPercentage ?? percentage,
        transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
@@ -409,9 +423,10 @@ class SyncState {
     bool? isBackgroundMode,
     bool? isSyncComplete,
     double? percentage,
-    double? displayPercentage,
     double? displayTargetPercentage,
     int? displayTargetBlocks,
+    int? phaseCompletedUnits,
+    int? phaseTotalUnits,
     int? scannedHeight,
     int? chainTipHeight,
     BigInt? transparentBalance,
@@ -459,10 +474,11 @@ class SyncState {
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
       isSyncComplete: isSyncComplete ?? this.isSyncComplete,
       percentage: percentage ?? this.percentage,
-      displayPercentage: displayPercentage ?? this.displayPercentage,
       displayTargetPercentage:
           displayTargetPercentage ?? this.displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks ?? this.displayTargetBlocks,
+      phaseCompletedUnits: phaseCompletedUnits ?? this.phaseCompletedUnits,
+      phaseTotalUnits: phaseTotalUnits ?? this.phaseTotalUnits,
       scannedHeight: scannedHeight ?? this.scannedHeight,
       chainTipHeight: chainTipHeight ?? this.chainTipHeight,
       transparentBalance: transparentBalance ?? this.transparentBalance,
@@ -543,9 +559,10 @@ class SyncState {
       isBackgroundMode: current.isBackgroundMode,
       isSyncComplete: current.isSyncComplete,
       percentage: current.percentage,
-      displayPercentage: current.displayPercentage,
       displayTargetPercentage: current.displayTargetPercentage,
       displayTargetBlocks: current.displayTargetBlocks,
+      phaseCompletedUnits: current.phaseCompletedUnits,
+      phaseTotalUnits: current.phaseTotalUnits,
       scannedHeight: current.scannedHeight,
       chainTipHeight: current.chainTipHeight,
       failure: current.failure,
@@ -568,9 +585,10 @@ class SyncState {
       isBackgroundMode: isBackgroundMode,
       isSyncComplete: isSyncComplete,
       percentage: percentage,
-      displayPercentage: displayPercentage,
       displayTargetPercentage: displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks,
+      phaseCompletedUnits: phaseCompletedUnits,
+      phaseTotalUnits: phaseTotalUnits,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       failure: failure,
@@ -632,8 +650,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({Future<String> Function()? walletDbPathResolver})
     : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
 
-  static const _displayBlockDuration = Duration(milliseconds: 20);
-  static const _maxIncompleteDisplayPercentage = 0.999;
   static const _authoritativeBalanceRecoveryDelays = <Duration>[
     Duration.zero,
     Duration(milliseconds: 250),
@@ -655,7 +671,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
-  Timer? _displayProgressTimer;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
@@ -786,7 +801,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _deferredSyncLatestTipHeight = null;
       rust_sync.cancelFullSync();
       _syncSub?.cancel();
-      _displayProgressTimer?.cancel();
       _mempoolSub?.cancel();
       // Cancel the Rust-side observer too; cancelling the Dart
       // subscription alone leaves the tonic stream task alive
@@ -812,6 +826,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final prevAccountUuid = prev?.value?.activeAccountUuid;
       final nextAccountUuid = next.value?.activeAccountUuid;
       if (prevAccountUuid != nextAccountUuid) {
+        // This only changes the order of transparent refreshes that Rust has
+        // not started yet. The current bounded request group keeps running.
+        rust_sync.setActiveSyncAccount(accountUuid: nextAccountUuid);
         _clearAccountScopedStateFor(nextAccountUuid);
       }
       if (nextCount > prevCount) {
@@ -1025,7 +1042,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lastLoggedHeight = 0;
     _lastForegroundSyncProgress = null;
     _lastForegroundProgressHandling = null;
-    _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
@@ -1103,7 +1119,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
-        phase: '',
+        phase: kSyncPhasePreflight,
       ),
     );
 
@@ -1121,18 +1137,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             if (gen != _syncGen) return;
             log('Sync: endpoint preflight failed: $e');
             _isSyncing = false;
-            _stopDisplayProgressTimer();
             _recordSyncFailure(e);
             return;
           }
 
           final endpoint = _endpointConfig;
           log('Sync: starting foreground sync via ${endpoint.hostPort}');
+          final readyState = state.value;
+          if (readyState != null && gen == _syncGen) {
+            state = AsyncData(
+              readyState.copyWith(
+                phase: kSyncPhaseSetup,
+                phaseCompletedUnits: 0,
+                phaseTotalUnits: 0,
+              ),
+            );
+          }
           // Fire up the mempool observer alongside the scan loop.
           // It has its own Rust cancel flag (MEMPOOL_CANCEL) and runs
           // on a separate tokio runtime, so it can accept events while
           // the scan loop is still catching up on old blocks.
           _startMempoolObserver(dbPath, endpoint);
+          // Seed the shared priority synchronously before the asynchronous Rust
+          // sync task starts. Later account switches update the same target.
+          rust_sync.setActiveSyncAccount(accountUuid: _getActiveAccountUuid());
           final stream = rust_sync.startFullSync(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1151,6 +1179,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 isSyncing: event.isSyncing,
                 isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
+                phaseCompletedUnits: event.phaseCompletedUnits.toInt(),
+                phaseTotalUnits: event.phaseTotalUnits.toInt(),
                 phase: event.phase,
               );
               _lastForegroundSyncProgress = progress;
@@ -1194,7 +1224,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 }
                 ++_progressEventVersion;
                 _isSyncing = false;
-                _stopDisplayProgressTimer();
                 log(
                   'Sync: stream ended without applied isComplete, cleaning up',
                 );
@@ -1210,7 +1239,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               log('Sync: stream error: $e');
               ++_progressEventVersion;
               _isSyncing = false;
-              _stopDisplayProgressTimer();
               // Sync died mid-stream: tear the mempool observer down
               // at the same time so a failed sync session can't leak
               // a lightwalletd stream that keeps firing
@@ -1231,7 +1259,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           log('SyncNotifier: ERROR: $e\n$st');
           ++_progressEventVersion;
           _isSyncing = false;
-          _stopDisplayProgressTimer();
           // Sync setup threw before the stream was ever attached.
           // We may have already started the mempool observer
           // (happens on the main success path just before
@@ -1493,7 +1520,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // holds.
     _stopMempoolObserver();
     _isSyncing = false;
-    _stopDisplayProgressTimer();
     _stopPolling();
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
@@ -1509,7 +1535,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: false,
         isSyncComplete: prev?.isSyncComplete ?? false,
         percentage: prev?.percentage ?? 0.0,
-        displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
         transparentBalance: scopedPrev?.transparentBalance,
@@ -1579,7 +1604,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await onStoppingSync?.call();
     log('SyncNotifier: pausing sync for wallet DB mutation');
     _isSyncing = false;
-    _stopDisplayProgressTimer();
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
     _stopMempoolObserver();
@@ -1628,7 +1652,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ++_progressEventVersion;
     ++_balanceReadVersion;
     _isSyncing = false;
-    _stopDisplayProgressTimer();
     _stopPolling();
     _syncSub?.cancel();
     _syncSub = null;
@@ -1954,57 +1977,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   double _clampProgress(double value) => value.clamp(0.0, 1.0).toDouble();
 
-  void _stopDisplayProgressTimer() {
-    _displayProgressTimer?.cancel();
-    _displayProgressTimer = null;
-  }
-
-  void _startDisplayProgressSmoothing({
-    required double basePercentage,
-    required double targetPercentage,
-    required int targetBlocks,
-  }) {
-    _stopDisplayProgressTimer();
-
-    final base = math.min(
-      _clampProgress(basePercentage),
-      _maxIncompleteDisplayPercentage,
-    );
-    final target = math.min(
-      _clampProgress(targetPercentage),
-      _maxIncompleteDisplayPercentage,
-    );
-    if (targetBlocks <= 0 || target <= base) {
-      return;
-    }
-
-    _displayProgressTimer = Timer.periodic(_displayBlockDuration, (timer) {
-      if (!ref.mounted) {
-        timer.cancel();
-        return;
-      }
-      final current = state.value;
-      if (current == null || !current.isSyncing) {
-        _stopDisplayProgressTimer();
-        return;
-      }
-
-      final virtualBlocks = math.min(timer.tick, targetBlocks);
-      final next = _clampProgress(
-        math.min(
-          target,
-          base + ((target - base) * virtualBlocks / targetBlocks),
-        ),
-      );
-      if (next > current.displayPercentage) {
-        state = AsyncData(current.copyWith(displayPercentage: next));
-      }
-      if (virtualBlocks >= targetBlocks || next >= target) {
-        _stopDisplayProgressTimer();
-      }
-    });
-  }
-
   // ======================== Progress Handling ========================
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
@@ -2173,13 +2145,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final syncCompletedAt = event.isComplete
         ? DateTime.now()
         : prev?.lastSyncCompletedAt;
-    final actualPercentage = _clampProgress(event.percentage);
-    final maxDisplayPercentage = event.isComplete
-        ? 1.0
-        : _maxIncompleteDisplayPercentage;
-    final displayPercentage = event.isComplete
-        ? 1.0
-        : math.min(actualPercentage, maxDisplayPercentage);
+    final isPreparationEvent = isSyncPreparationPhase(event.phase);
+    final eventPercentage = _clampProgress(event.percentage);
+    final actualPercentage = isPreparationEvent
+        ? math.max(currentState?.percentage ?? 0, eventPercentage)
+        : eventPercentage;
+    final nextScannedHeight = isPreparationEvent
+        ? currentState?.scannedHeight ?? event.scannedHeight
+        : event.scannedHeight;
+    final nextChainTipHeight = isPreparationEvent
+        ? math.max(currentState?.chainTipHeight ?? 0, event.chainTipHeight)
+        : event.chainTipHeight;
     final nextSpendableBalance = useFetchedBalance
         ? spendable ?? stateScopedPrev?.spendableBalance ?? BigInt.zero
         : stateScopedPrev?.spendableBalance ?? BigInt.zero;
@@ -2202,11 +2178,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
-        displayPercentage: displayPercentage,
-        displayTargetPercentage: event.displayTargetPercentage,
-        displayTargetBlocks: event.displayTargetBlocks,
-        scannedHeight: event.scannedHeight,
-        chainTipHeight: event.chainTipHeight,
+        displayTargetPercentage: isPreparationEvent
+            ? currentState?.displayTargetPercentage ?? actualPercentage
+            : event.displayTargetPercentage,
+        displayTargetBlocks: isPreparationEvent
+            ? currentState?.displayTargetBlocks ?? 0
+            : event.displayTargetBlocks,
+        phaseCompletedUnits: event.phaseCompletedUnits,
+        phaseTotalUnits: event.phaseTotalUnits,
+        scannedHeight: nextScannedHeight,
+        chainTipHeight: nextChainTipHeight,
         transparentBalance: useFetchedBalance
             ? transparent
             : stateScopedPrev?.transparentBalance,
@@ -2299,16 +2280,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         phase: event.phase,
       ),
     );
-
-    if (event.isComplete || !event.isSyncing) {
-      _stopDisplayProgressTimer();
-    } else {
-      _startDisplayProgressSmoothing(
-        basePercentage: displayPercentage,
-        targetPercentage: event.displayTargetPercentage,
-        targetBlocks: event.displayTargetBlocks,
-      );
-    }
 
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
@@ -2585,7 +2556,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool clearRestoredSnapshotIfUnavailable = false,
   }) async {
     if (_requiresUnlock) {
-      _stopDisplayProgressTimer();
       state = AsyncData(SyncState());
       return;
     }
@@ -2768,11 +2738,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: current?.isBackgroundMode ?? false,
         isSyncComplete: current?.isSyncComplete ?? false,
         percentage: current?.percentage ?? 0.0,
-        displayPercentage:
-            current?.displayPercentage ?? current?.percentage ?? 0.0,
         displayTargetPercentage:
             current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
         displayTargetBlocks: current?.displayTargetBlocks ?? 0,
+        phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
+        phaseTotalUnits: current?.phaseTotalUnits ?? 0,
         scannedHeight: current?.scannedHeight ?? 0,
         chainTipHeight: current?.chainTipHeight ?? 0,
         transparentBalance: transparent ?? accountFallback?.transparentBalance,

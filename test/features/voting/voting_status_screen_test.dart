@@ -3444,6 +3444,7 @@ ProviderContainer _statusContainer({
                       pirDepth: 19,
                       tier0Layers: 12,
                       tier1Layers: 7,
+                      polyLen: 4096,
                     ),
                     supportedVersions: rust_config.SupportedVersions(
                       pir: ['2.0'],
@@ -4161,6 +4162,7 @@ class _CountingVotingConfigNotifier extends VotingConfigNotifier {
         pirDepth: 19,
         tier0Layers: 12,
         tier1Layers: 7,
+        polyLen: 4096,
       ),
       supportedVersions: rust_config.SupportedVersions(
         pir: [],
@@ -4854,6 +4856,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt submitAt,
   }) async {
     return jsonEncode({
+      'vote_round_id': share.voteRoundId,
       'shares_hash': share.sharesHash,
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
@@ -5176,6 +5179,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         ),
         shares: [
           rust_wire.VoteShareWire(
+            voteRoundId: roundId,
             sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
             proposalId: proposalId,
             voteDecision: choice,
@@ -5317,6 +5321,7 @@ class _RustApiFake implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required int mode,
+    String? activeAccountUuid,
   }) {
     return const Stream.empty();
   }

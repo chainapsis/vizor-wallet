@@ -725,7 +725,6 @@ Future<void> _pumpScreen(
               accountUuid: 'account-1',
               hasAccountScopedData: true,
               percentage: 1,
-              displayPercentage: 1,
             ),
           ),
         ),

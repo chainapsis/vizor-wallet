@@ -8,18 +8,20 @@ import 'voting_models.dart';
 
 /// Production static trust anchor used to discover the mutable voting config.
 ///
-/// The URL itself is expected to stay stable in the app, while the fetched JSON
-/// points at the current dynamic service configuration.
+/// The immutable gateway pin preserves the authenticated bytes while allowing
+/// GitHub transport failures to use the matching Cloudflare copy.
 const kProductionStaticVotingConfigSource =
-    'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-    '671f76403eea8aaf64a87cb484c4b0cdaea596db/prod/static-voting-config.json'
-    '?checksum=sha256:c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d';
+    'https://voting.valargroup.dev/pins/prod/'
+    'fb62a56fae28debfdaa092f163cda0dab13295f87d25bbc4d0064d6ccdeb6943/'
+    'static-voting-config.json'
+    '?checksum=sha256:fb62a56fae28debfdaa092f163cda0dab13295f87d25bbc4d0064d6ccdeb6943';
 
 /// Stage static trust anchor used by public testnet builds.
 const kStageStaticVotingConfigSource =
-    'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-    '491e55306aa5c539a0314d30a8b2c51946b88b73/stage/static-voting-config.json'
-    '?checksum=sha256:80890a6de9acc7293c3e2fabf870bb3e5755dbe0e69de4a59feb8f696134d4dc';
+    'https://voting.valargroup.dev/pins/stage/'
+    '046758f8d1f1a74c7ea63461fd77101930c5df5817b74453ed81895c26bf988f/'
+    'static-voting-config.json'
+    '?checksum=sha256:046758f8d1f1a74c7ea63461fd77101930c5df5817b74453ed81895c26bf988f';
 
 /// Bundled voting config for the selected launch network.
 const kDefaultStaticVotingConfigSource = kZcashDefaultNetworkRaw == 'test'

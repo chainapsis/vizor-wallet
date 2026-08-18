@@ -14,36 +14,38 @@ import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'fake_voting_http.dart';
 
 void main() {
-  test('production static config source is pinned', () {
+  test('production static config source uses immutable gateway pin', () {
     final source = parseStaticVotingConfigSource(
       kProductionStaticVotingConfigSource,
     );
 
     expect(
       source.uri.toString(),
-      'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-      '671f76403eea8aaf64a87cb484c4b0cdaea596db/prod/static-voting-config.json',
+      'https://voting.valargroup.dev/pins/prod/'
+      'fb62a56fae28debfdaa092f163cda0dab13295f87d25bbc4d0064d6ccdeb6943/'
+      'static-voting-config.json',
     );
     expect(
       source.sha256Hex,
-      'c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d',
+      'fb62a56fae28debfdaa092f163cda0dab13295f87d25bbc4d0064d6ccdeb6943',
     );
     expect(source.raw, kProductionStaticVotingConfigSource);
   });
 
-  test('stage static config source is pinned', () {
+  test('stage static config source uses immutable gateway pin', () {
     final source = parseStaticVotingConfigSource(
       kStageStaticVotingConfigSource,
     );
 
     expect(
       source.uri.toString(),
-      'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-      '491e55306aa5c539a0314d30a8b2c51946b88b73/stage/static-voting-config.json',
+      'https://voting.valargroup.dev/pins/stage/'
+      '046758f8d1f1a74c7ea63461fd77101930c5df5817b74453ed81895c26bf988f/'
+      'static-voting-config.json',
     );
     expect(
       source.sha256Hex,
-      '80890a6de9acc7293c3e2fabf870bb3e5755dbe0e69de4a59feb8f696134d4dc',
+      '046758f8d1f1a74c7ea63461fd77101930c5df5817b74453ed81895c26bf988f',
     );
     expect(source.raw, kStageStaticVotingConfigSource);
   });
@@ -459,6 +461,7 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
       pirDepth: 19,
       tier0Layers: 12,
       tier1Layers: 7,
+      polyLen: 4096,
     ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],

@@ -572,7 +572,6 @@ class _WidgetbookSendSyncNotifier extends SyncNotifier {
     spendableBalance: BigInt.from(14312120000),
     totalBalance: BigInt.from(14312120000),
     percentage: 1,
-    displayPercentage: 1,
   );
 }
 

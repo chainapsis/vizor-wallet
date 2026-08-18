@@ -1,7 +1,9 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
+use futures::{stream, StreamExt, TryStreamExt};
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
@@ -72,10 +74,16 @@ pub struct SyncProgressEvent {
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
+    /// Completed and total work units for preparation phases. A zero total
+    /// means the phase has no measurable work and should be time-interpolated
+    /// by the UI instead.
+    pub phase_completed_units: u64,
+    pub phase_total_units: u64,
     /// Current sync phase for UI display. One of:
+    /// - `"active_utxo"` — refreshing the active account's transparent UTXOs
+    /// - `"chain_prepare"` — resubmission, subtree, and scan-range preparation
     /// - `"download"` — downloading compact blocks from lightwalletd
     /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
-    /// - `"enhance"` — fetching full transaction data
     /// - `""` — completion event or unspecified
     pub phase: String,
 }
@@ -89,6 +97,40 @@ const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
 const FINAL_TIP_REFRESH_MIN_AGE: std::time::Duration = std::time::Duration::from_secs(5);
+const MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS: usize = 4;
+const MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS: u32 = 3;
+
+pub(crate) type ActiveSyncAccountTarget = Arc<RwLock<Option<String>>>;
+
+fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Option<String> {
+    target.map(|target| {
+        target
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    })?
+}
+
+fn preparation_progress_event(
+    chain_tip_height: u64,
+    phase: &str,
+    phase_completed_units: u64,
+    phase_total_units: u64,
+) -> SyncProgressEvent {
+    SyncProgressEvent {
+        scanned_height: 0,
+        chain_tip_height,
+        percentage: 0.0,
+        display_target_percentage: 0.0,
+        display_target_blocks: 0,
+        is_syncing: true,
+        is_complete: false,
+        has_new_tx: false,
+        phase_completed_units,
+        phase_total_units,
+        phase: phase.into(),
+    }
+}
 
 /// Sandblasting attack range (Zcash mainnet). Blocks in this range
 /// contain a very large number of outputs from a sustained spam
@@ -1187,22 +1229,78 @@ fn transparent_address_for_query(
         .map_err(|e| format!("decode transparent address {address}: {e}"))
 }
 
+struct TransparentRefresh {
+    addresses: Vec<String>,
+    start_height: BlockHeight,
+    label: String,
+    account_uuid: String,
+    completion: Option<TransparentRefreshCompletion>,
+}
+
+struct TransparentRefreshCompletion {
+    child_indices: Vec<u32>,
+    next_sweep_offset: Option<usize>,
+}
+
+struct DownloadedTransparentRefresh {
+    refresh: TransparentRefresh,
+    outputs: Vec<WalletTransparentOutput<AccountUuid>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransparentRefreshOutcome {
+    Completed,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransparentAccountSelection<'a> {
+    All,
+    Only(&'a str),
+    Except(&'a str),
+}
+
+impl TransparentAccountSelection<'_> {
+    fn includes(self, account_uuid: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(selected) => account_uuid == selected,
+            Self::Except(selected) => account_uuid != selected,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TransparentRefreshSummary {
+    matched_accounts: usize,
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     tip_height: BlockHeight,
+    account_selection: TransparentAccountSelection<'_>,
+    priority_account_target: Option<&ActiveSyncAccountTarget>,
+    received_outputs_seen: &mut bool,
+    progress: Option<&(dyn Fn(u64, u64) + Sync)>,
     should_exit: &impl Fn() -> bool,
-) -> Result<(), SyncError> {
+) -> Result<TransparentRefreshSummary, SyncError> {
+    let mut refreshes = Vec::new();
+    let mut summary = TransparentRefreshSummary::default();
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
     {
         if should_exit() {
-            return Ok(());
+            return Ok(summary);
         }
         let account_uuid = account_id.expose_uuid().to_string();
+        if !account_selection.includes(&account_uuid) {
+            continue;
+        }
+        summary.matched_accounts += 1;
         let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
@@ -1260,7 +1358,7 @@ async fn refresh_utxos(
 
         for (batch_index, batch) in external_batches.into_iter().enumerate() {
             if should_exit() {
-                return Ok(());
+                return Ok(summary);
             }
             let start_height = block_height_from_u64(
                 batch.start_height,
@@ -1271,33 +1369,16 @@ async fn refresh_utxos(
             } else {
                 "transparent external UTXOs recent batch".to_string()
             };
-            refresh_transparent_addresses(
-                client,
-                db,
-                batch.addresses,
+            refreshes.push(TransparentRefresh {
+                addresses: batch.addresses,
                 start_height,
-                &label,
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
-            if should_exit() {
-                return Ok(());
-            }
-            if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
-                db_data_path,
-                network,
-                &account_uuid,
-                &batch.child_indices,
-                u64::from(u32::from(tip_height)) + 1,
-                batch.next_sweep_offset,
-            ) {
-                log::warn!(
-                    "transparent receive cache: failed to mark UTXO batch complete for account {}: {}",
-                    account_uuid,
-                    e
-                );
-            }
+                label,
+                account_uuid: account_uuid.clone(),
+                completion: Some(TransparentRefreshCompletion {
+                    child_indices: batch.child_indices,
+                    next_sweep_offset: batch.next_sweep_offset,
+                }),
+            });
         }
 
         let external_selected = external_addresses
@@ -1314,20 +1395,116 @@ async fn refresh_utxos(
             .collect();
 
         if !non_external_addresses.is_empty() {
-            refresh_transparent_addresses(
-                client,
-                db,
-                non_external_addresses,
-                safety_start_height,
-                "transparent non-external UTXOs",
-                || mark_transparent_receive_cache_dirty(db_data_path, &account_uuid),
-                should_exit,
-            )
-            .await?;
+            refreshes.push(TransparentRefresh {
+                addresses: non_external_addresses,
+                start_height: safety_start_height,
+                label: "transparent non-external UTXOs".to_string(),
+                account_uuid,
+                completion: None,
+            });
         }
     }
 
-    Ok(())
+    let total_refreshes = refreshes.len() as u64;
+    if let Some(progress) = progress {
+        progress(0, total_refreshes);
+    }
+    let mut completed_refreshes = 0u64;
+    let download_client = client.clone();
+    let outcome = process_bounded_transparent_refreshes(
+        refreshes,
+        move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
+        |downloaded| {
+            let downloaded_count = downloaded.len() as u64;
+            let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
+            store_then_mark_transparent_refreshes(
+                downloaded,
+                |downloaded| store_transparent_outputs(db, downloaded),
+                |downloaded| {
+                    update_transparent_refresh_cache_metadata(
+                        db_data_path,
+                        network,
+                        tip_height,
+                        downloaded,
+                    )
+                },
+            )?;
+            *received_outputs_seen |= received_outputs;
+            completed_refreshes = completed_refreshes.saturating_add(downloaded_count);
+            if let Some(progress) = progress {
+                progress(completed_refreshes, total_refreshes);
+            }
+            Ok(())
+        },
+        |pending| prioritize_pending_transparent_refreshes(pending, priority_account_target),
+        should_exit,
+    )
+    .await?;
+    if outcome == TransparentRefreshOutcome::Cancelled {
+        log::info!(
+            "[{}] sync: exiting before transparent UTXO database update",
+            elapsed(),
+        );
+    }
+
+    Ok(summary)
+}
+
+fn prioritize_pending_transparent_refreshes(
+    pending: &mut VecDeque<TransparentRefresh>,
+    priority_account_target: Option<&ActiveSyncAccountTarget>,
+) {
+    let Some(active_account_uuid) = current_active_sync_account(priority_account_target) else {
+        return;
+    };
+    let Some(previous_position) = pending
+        .iter()
+        .position(|refresh| refresh.account_uuid == active_account_uuid)
+    else {
+        return;
+    };
+    // Stable sorting keeps every other account in its existing order. This is
+    // evaluated only between bounded groups, so requests already in flight are
+    // allowed to finish and commit normally.
+    pending
+        .make_contiguous()
+        .sort_by_key(|refresh| refresh.account_uuid != active_account_uuid);
+    if previous_position > 0 {
+        log::info!(
+            "[{}] sync: moved active account {} ahead of {} pending transparent refresh(es)",
+            elapsed(),
+            active_account_uuid,
+            previous_position,
+        );
+    }
+}
+
+fn update_transparent_refresh_cache_metadata(
+    db_data_path: &str,
+    network: WalletNetwork,
+    tip_height: BlockHeight,
+    downloaded: &DownloadedTransparentRefresh,
+) {
+    if !downloaded.outputs.is_empty() {
+        mark_transparent_receive_cache_dirty(db_data_path, &downloaded.refresh.account_uuid);
+    }
+    if let Some(completion) = downloaded.refresh.completion.as_ref() {
+        if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
+            db_data_path,
+            network,
+            &downloaded.refresh.account_uuid,
+            &completion.child_indices,
+            u64::from(u32::from(tip_height)) + 1,
+            completion.next_sweep_offset,
+        ) {
+            log::warn!(
+                "transparent receive cache: failed to mark UTXO batch complete for \
+                 account {}: {}",
+                downloaded.refresh.account_uuid,
+                e,
+            );
+        }
+    }
 }
 
 fn mark_transparent_receive_cache_dirty(db_data_path: &str, account_uuid: &str) {
@@ -1360,41 +1537,147 @@ fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncEr
     Ok(BlockHeight::from_u32(height))
 }
 
-async fn refresh_transparent_addresses(
-    client: &mut CompactTxStreamerClient<Channel>,
+async fn process_bounded_transparent_refreshes<R, D, E, Download, DownloadFuture, Persist, Exit>(
+    refreshes: Vec<R>,
+    download: Download,
+    mut persist: Persist,
+    mut prioritize_pending: impl FnMut(&mut VecDeque<R>),
+    should_exit: &Exit,
+) -> Result<TransparentRefreshOutcome, E>
+where
+    Download: Fn(R) -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<Option<D>, E>>,
+    Persist: FnMut(Vec<D>) -> Result<(), E>,
+    Exit: Fn() -> bool,
+{
+    let mut refreshes = VecDeque::from(refreshes);
+    loop {
+        if should_exit() {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        }
+
+        prioritize_pending(&mut refreshes);
+        let group = (0..MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+            .filter_map(|_| refreshes.pop_front())
+            .collect::<Vec<_>>();
+        if group.is_empty() {
+            return Ok(TransparentRefreshOutcome::Completed);
+        }
+
+        let downloaded_result = download_transparent_refresh_group(group, &download).await;
+        // Cancellation and mode handoff win if they race a network error.
+        // No database or cache mutation is allowed after either signal.
+        if should_exit() {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        }
+        let downloaded = downloaded_result?;
+        let Some(downloaded) = downloaded.into_iter().collect::<Option<Vec<_>>>() else {
+            return Ok(TransparentRefreshOutcome::Cancelled);
+        };
+
+        persist(downloaded)?;
+    }
+}
+
+async fn download_transparent_refresh_group<R, D, E, Download, DownloadFuture>(
+    refreshes: Vec<R>,
+    download: &Download,
+) -> Result<Vec<Option<D>>, E>
+where
+    Download: Fn(R) -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<Option<D>, E>>,
+{
+    let mut downloaded = stream::iter(refreshes.into_iter().enumerate())
+        .map(|(position, refresh)| {
+            let future = download(refresh);
+            async move { future.await.map(|downloaded| (position, downloaded)) }
+        })
+        .buffer_unordered(MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS)
+        .try_collect::<Vec<_>>()
+        .await?;
+    downloaded.sort_unstable_by_key(|(position, _)| *position);
+    Ok(downloaded
+        .into_iter()
+        .map(|(_, downloaded)| downloaded)
+        .collect())
+}
+
+fn store_then_mark_transparent_refreshes<T, E>(
+    downloaded: Vec<T>,
+    store: impl FnOnce(&[T]) -> Result<(), E>,
+    mut mark_cache_metadata: impl FnMut(&T),
+) -> Result<(), E> {
+    store(&downloaded)?;
+    for item in &downloaded {
+        mark_cache_metadata(item);
+    }
+    Ok(())
+}
+
+fn store_transparent_outputs(
     db: &mut WalletDatabase,
-    addresses: Vec<String>,
-    start_height: BlockHeight,
-    label: &str,
-    mut mark_cache_dirty: impl FnMut(),
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<(), SyncError> {
+    if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
+        return Ok(());
+    }
+
+    with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
+        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+            for batch in downloaded {
+                for output in &batch.outputs {
+                    tx_db.put_received_transparent_utxo(output)?;
+                }
+            }
+            Ok(())
+        })
+        .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
+    })
+}
+
+async fn download_transparent_outputs(
+    mut client: CompactTxStreamerClient<Channel>,
+    mut refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    if addresses.is_empty() || should_exit() {
-        return Ok(false);
+) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
+    if should_exit() {
+        return Ok(None);
+    }
+    if refresh.addresses.is_empty() {
+        return Ok(Some(DownloadedTransparentRefresh {
+            refresh,
+            outputs: Vec::new(),
+        }));
     }
 
     log::info!(
-        "[{}] sync: refreshing {} from height {} ({} addresses)",
+        "[{}] sync: refreshing {} for account {} from height {} ({} addresses)",
         elapsed(),
-        label,
-        u32::from(start_height),
-        addresses.len(),
+        refresh.label,
+        refresh.account_uuid,
+        u32::from(refresh.start_height),
+        refresh.addresses.len(),
     );
 
+    let addresses = std::mem::take(&mut refresh.addresses);
     let mut stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
             log::info!(
                 "[{}] sync: exiting during {} transparent UTXO stream start",
                 elapsed(),
-                label,
+                refresh.label,
             );
-            return Ok(false);
+            return Ok(None);
         }
-        result = get_address_utxos_stream(client, addresses, start_height) => result?,
+        result = get_address_utxos_stream(
+            &mut client,
+            addresses,
+            refresh.start_height,
+        ) => result?,
     };
 
-    let mut received_any = false;
+    let mut outputs = Vec::new();
     loop {
         let reply = tokio::select! {
             biased;
@@ -1402,9 +1685,9 @@ async fn refresh_transparent_addresses(
                 log::info!(
                     "[{}] sync: exiting during {} transparent UTXO refresh",
                     elapsed(),
-                    label,
+                    refresh.label,
                 );
-                return Ok(received_any);
+                return Ok(None);
             }
             result = next_stream_message(&mut stream, "get_address_utxos_stream") => result?,
         };
@@ -1428,29 +1711,22 @@ async fn refresh_transparent_addresses(
             ))
         })?;
 
-        let output = WalletTransparentOutput::from_parts(
-            OutPoint::new(txid, index),
-            TxOut::new(value, Script(script::Code(reply.script))),
-            Some(BlockHeight::from_u32(height)),
-            None,
-            None,
-            None,
-        )
-        .ok_or_else(|| {
-            SyncError::parse("transparent UTXO script did not decode to a wallet address")
-        })?;
-
-        with_wallet_db_write_lock("sync_engine.put_received_transparent_utxo", || {
-            db.put_received_transparent_utxo(&output)
-                .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
-        })?;
-        if !received_any {
-            mark_cache_dirty();
-        }
-        received_any = true;
+        outputs.push(
+            WalletTransparentOutput::from_parts(
+                OutPoint::new(txid, index),
+                TxOut::new(value, Script(script::Code(reply.script))),
+                Some(BlockHeight::from_u32(height)),
+                None,
+                None,
+                None,
+            )
+            .ok_or_else(|| {
+                SyncError::parse("transparent UTXO script did not decode to a wallet address")
+            })?,
+        );
     }
 
-    Ok(received_any)
+    Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
 }
 
 async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
@@ -1701,6 +1977,171 @@ fn rewind_for_confirmed_tip_reorg(
     Ok((actual_height, ranges, pending_blocks))
 }
 
+type ScanBatch = (block_source::MemoryBlockSource, chain::ChainState);
+
+async fn join_scan_batch_inputs<BlockSourceT, ChainStateT, BlockFuture, StateFuture>(
+    blocks: BlockFuture,
+    chain_state: StateFuture,
+) -> Result<(BlockSourceT, ChainStateT), SyncError>
+where
+    BlockFuture: Future<Output = Result<BlockSourceT, SyncError>>,
+    StateFuture: Future<Output = Result<ChainStateT, SyncError>>,
+{
+    tokio::try_join!(blocks, chain_state)
+}
+
+/// Downloads one compact-block batch and its preceding chain state in
+/// parallel. The requests are independent, and cloned tonic clients share the
+/// underlying HTTP/2 connection.
+async fn download_scan_batch(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: BlockHeight,
+    end: BlockHeight,
+    network: WalletNetwork,
+) -> Result<ScanBatch, SyncError> {
+    let mut tree_state_client = client.clone();
+    let use_empty_state = should_use_empty_chain_state(&network, start)?;
+    let tree_state = async move {
+        if use_empty_state {
+            Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
+        } else {
+            let state =
+                get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1))).await?;
+            state
+                .to_chain_state()
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
+        }
+    };
+
+    join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await
+}
+
+fn validate_scan_batch(
+    block_source: &block_source::MemoryBlockSource,
+    from_state: &chain::ChainState,
+    start: BlockHeight,
+    end: BlockHeight,
+) -> Result<(), SyncError> {
+    if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
+        return Err(SyncError::other(format!(
+            "downloaded compact blocks do not exactly cover {}..{}",
+            u32::from(start),
+            u32::from(end),
+        )));
+    }
+
+    let frontier_height = u32::from(start)
+        .checked_sub(1)
+        .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
+    if u32::from(from_state.block_height()) != frontier_height {
+        return Err(SyncError::other(format!(
+            "downloaded tree state height {} does not match scan frontier {frontier_height}",
+            u32::from(from_state.block_height()),
+        )));
+    }
+
+    Ok(())
+}
+
+struct Prefetch<T> {
+    handle: Option<tokio::task::JoinHandle<Result<T, SyncError>>>,
+    start: BlockHeight,
+    end: BlockHeight,
+}
+
+impl<T> Prefetch<T>
+where
+    T: Send + 'static,
+{
+    fn spawn(
+        start: BlockHeight,
+        end: BlockHeight,
+        future: impl Future<Output = Result<T, SyncError>> + Send + 'static,
+    ) -> Self {
+        Self {
+            handle: Some(tokio::spawn(future)),
+            start,
+            end,
+        }
+    }
+}
+
+impl<T> Drop for Prefetch<T> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+async fn resolve_prefetched_or_download<T, Download, DownloadFuture>(
+    prefetch: Option<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+    should_exit: &impl Fn() -> bool,
+    download_fresh: Download,
+) -> Result<Option<T>, SyncError>
+where
+    Download: FnOnce() -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<T, SyncError>>,
+{
+    if should_exit() {
+        return Ok(None);
+    }
+
+    if let Some(mut prefetch) = prefetch {
+        if prefetch.start == start && prefetch.end == end {
+            // Keep the handle inside `Prefetch` while suspended. If the sync
+            // future is dropped here, `Prefetch::drop` still aborts the task.
+            let result = tokio::select! {
+                biased;
+                _ = watch_for_exit(should_exit) => return Ok(None),
+                result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+            };
+            if should_exit() {
+                return Ok(None);
+            }
+            let _completed_handle = prefetch.handle.take().expect("prefetch handle present");
+            match result {
+                Ok(Ok(batch)) => return Ok(Some(batch)),
+                Ok(Err(error)) => log::warn!(
+                    "[{}] sync: prefetched batch {}-{} failed ({error}); downloading fresh",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(end).saturating_sub(1),
+                ),
+                Err(error) => log::warn!(
+                    "[{}] sync: prefetched batch {}-{} task failed ({error}); downloading fresh",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(end).saturating_sub(1),
+                ),
+            }
+        } else {
+            // A reorg or priority change invalidated the speculative range.
+            // Dropping the owner aborts the now-unusable network task.
+            drop(prefetch);
+        }
+    }
+
+    if should_exit() {
+        return Ok(None);
+    }
+    let fresh_download = download_fresh();
+    tokio::pin!(fresh_download);
+    let result = tokio::select! {
+        biased;
+        _ = watch_for_exit(should_exit) => return Ok(None),
+        result = &mut fresh_download => result,
+    };
+    // Cancellation and mode handoff win over a simultaneous network failure:
+    // callers asked the sync session to stop, so no retry should be scheduled.
+    if should_exit() {
+        return Ok(None);
+    }
+    result.map(Some)
+}
+
 // ==================== Main sync ====================
 
 /// Run the full sync loop with automatic retry on failure.
@@ -1713,6 +2154,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    active_account_target: Option<ActiveSyncAccountTarget>,
     allow_resubmit: bool,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
@@ -1753,6 +2195,7 @@ pub async fn run_sync_inner(
             cancel.clone(),
             running_mode,
             desired_mode,
+            active_account_target.as_ref(),
             allow_resubmit,
             &progress_fn,
         )
@@ -1810,9 +2253,11 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    active_account_target: Option<&ActiveSyncAccountTarget>,
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
+    let active_account_uuid = current_active_sync_account(active_account_target);
     let mut migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
             .map_err(SyncError::db)?;
@@ -1945,15 +2390,76 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    refresh_utxos(
-        &mut client,
-        db_data_path,
-        &mut db,
-        network,
-        tip_height,
-        &should_exit,
-    )
-    .await?;
+    let active_utxo_progress = |completed, total| {
+        progress_fn(preparation_progress_event(
+            current_tip_height,
+            "active_utxo",
+            completed,
+            total,
+        ));
+    };
+    let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
+        active_account_uuid.as_deref()
+    {
+        log::info!(
+            "[{}] sync: refreshing active-account transparent UTXOs before chain scan ({})",
+            elapsed(),
+            active_account_uuid,
+        );
+        let mut critical_received_outputs = false;
+        let active_summary = refresh_utxos(
+            &mut client,
+            db_data_path,
+            &mut db,
+            network,
+            tip_height,
+            TransparentAccountSelection::Only(active_account_uuid),
+            None,
+            &mut critical_received_outputs,
+            Some(&active_utxo_progress),
+            &should_exit,
+        )
+        .await?;
+        if active_summary.matched_accounts == 0 {
+            log::warn!(
+                "[{}] sync: active account {} was absent from the wallet DB; refreshing all transparent UTXOs before chain scan",
+                elapsed(),
+                active_account_uuid,
+            );
+            refresh_utxos(
+                &mut client,
+                db_data_path,
+                &mut db,
+                network,
+                tip_height,
+                TransparentAccountSelection::All,
+                None,
+                &mut critical_received_outputs,
+                Some(&active_utxo_progress),
+                &should_exit,
+            )
+            .await?;
+            false
+        } else {
+            true
+        }
+    } else {
+        let mut critical_received_outputs = false;
+        refresh_utxos(
+            &mut client,
+            db_data_path,
+            &mut db,
+            network,
+            tip_height,
+            TransparentAccountSelection::All,
+            None,
+            &mut critical_received_outputs,
+            None,
+            &should_exit,
+        )
+        .await?;
+        false
+    };
 
     if should_exit() {
         log::info!(
@@ -1961,6 +2467,15 @@ async fn run_sync_impl(
             elapsed(),
         );
         return Ok(());
+    }
+
+    if running_mode == 1 {
+        progress_fn(preparation_progress_event(
+            current_tip_height,
+            "chain_prepare",
+            0,
+            0,
+        ));
     }
 
     // 2.5. Resubmit eligible unmined wallet txs now that we know the
@@ -2100,38 +2615,18 @@ async fn run_sync_impl(
     let mut completion_tip_validation_required = !initial_tip_identity_verified;
     let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
-    // Prefetched block source from the previous iteration.
+    // Prefetched scan batch from the previous iteration.
     // When the scan loop processes a range that spans multiple batches,
-    // we kick off a background download of the next batch while running
-    // enhancement / resubmit / progress reporting for the current
-    // batch. This overlaps network I/O (download) with CPU-bound
-    // work (enhancement) and unrelated gRPC calls (resubmit), matching
+    // we start the next block-and-frontier tuple before scanning the current
+    // batch. This overlaps network I/O with CPU work on multithread runtimes
+    // and with later async stages on the iOS current-thread runtime, matching
     // the SDK's `.buffer(1)` pipelining pattern in
     // `CompactBlockProcessor.kt:1666`.
     //
     // `None` on the first iteration and whenever the previous batch
     // was the last in its range (so there's nothing to prefetch until
     // `suggest_scan_ranges` runs again).
-    type PrefetchResult =
-        Result<crate::wallet::sync_engine::block_source::MemoryBlockSource, SyncError>;
-    /// Prefetched block download state. Implements `Drop` to
-    /// abort the spawned tokio task when the loop exits for any
-    /// reason (cancel, mode change, error, break, reorg
-    /// `continue`) so detached downloads can't outlive the sync
-    /// session and leak network traffic after shutdown.
-    struct Prefetch {
-        handle: Option<tokio::task::JoinHandle<PrefetchResult>>,
-        start: BlockHeight,
-        end: BlockHeight,
-    }
-    impl Drop for Prefetch {
-        fn drop(&mut self) {
-            if let Some(h) = self.handle.take() {
-                h.abort();
-            }
-        }
-    }
-    let mut prefetch: Option<Prefetch> = None;
+    let mut prefetch: Option<Prefetch<ScanBatch>> = None;
 
     // 5. Sync loop
     loop {
@@ -2486,6 +2981,8 @@ async fn run_sync_impl(
             is_syncing: true,
             is_complete: false,
             has_new_tx: false,
+            phase_completed_units: 0,
+            phase_total_units: 0,
             phase: "download".into(),
         });
         log::info!(
@@ -2502,71 +2999,58 @@ async fn run_sync_impl(
             batch_size,
         );
 
-        // Download blocks into memory — or use the prefetched data
-        // from the previous iteration if it matches this batch.
-        let block_source = if let Some(mut pf) = prefetch.take() {
-            if pf.start == start && pf.end == end {
-                // Prefetch matches. Take the handle out of the
-                // Option so Drop doesn't abort a completed task.
-                let handle = pf.handle.take().expect("prefetch handle present");
-                match handle.await {
-                    Ok(Ok(bs)) => {
-                        log::debug!(
-                            "[{}] sync: using prefetched blocks for {}-{}",
-                            elapsed(),
-                            u32::from(start),
-                            u32::from(end) - 1,
-                        );
-                        bs
-                    }
-                    _ => {
-                        // Prefetch failed — download synchronously.
-                        log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1, network).await?
-                    }
-                }
-            } else {
-                // Range changed (reorg, priority switch, etc.) —
-                // Drop the Prefetch, which aborts the background task.
-                drop(pf);
-                download_blocks(&mut client, start, end - 1, network).await?
-            }
-        } else {
-            download_blocks(&mut client, start, end - 1, network).await?
+        // Download blocks and their preceding frontier together, or consume a
+        // matching tuple that the previous iteration prefetched.
+        let batch =
+            resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
+                download_scan_batch(&mut client, start, end - 1, network)
+            })
+            .await?;
+        let Some((block_source, from_state)) = batch else {
+            log::info!("[{}] sync: exiting after download", elapsed());
+            return Ok(());
         };
-
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
         }
 
-        if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
-            return Err(SyncError::other(format!(
-                "downloaded compact blocks do not exactly cover {}..{}",
-                u32::from(start),
-                u32::from(end),
-            )));
-        }
-
-        // Fetch and validate the frontier before projecting the checkpoints
-        // this batch will create. `update_tree` inserts this exact height as a
-        // checkpoint before any compact-block commitments.
-        let from_state = if should_use_empty_chain_state(&network, start)? {
-            chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
-        } else {
-            let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
-            ts.to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
-        };
-        if u32::from(from_state.block_height()) != frontier_height {
-            return Err(SyncError::other(format!(
-                "downloaded tree state height {} does not match scan frontier {frontier_height}",
-                u32::from(from_state.block_height()),
-            )));
-        }
+        // Validate the tuple before projecting checkpoints or scheduling work
+        // derived from it. Neither half is useful without the other.
+        validate_scan_batch(&block_source, &from_state, start, end)?;
 
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
+
+        // Start the next tuple before scanning this batch. Dropping `prefetch`
+        // on any early return, error, or reorg aborts its network task.
+        if end < range_end && !should_exit() {
+            let prefetch_start = end;
+            if let Some((_, prefetch_end)) = scannable_batch_end(
+                base_batch_size,
+                prefetch_start,
+                range_end,
+                current_tip_height,
+            ) {
+                let mut prefetch_client = client.clone();
+                prefetch = Some(Prefetch::spawn(prefetch_start, prefetch_end, async move {
+                    download_scan_batch(
+                        &mut prefetch_client,
+                        prefetch_start,
+                        prefetch_end - 1,
+                        network,
+                    )
+                    .await
+                }));
+            } else {
+                log::debug!(
+                    "[{}] sync: skipping prefetch from {} past current tip {}",
+                    elapsed(),
+                    u32::from(prefetch_start),
+                    current_tip_height,
+                );
+            }
+        }
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -3125,6 +3609,8 @@ async fn run_sync_impl(
             is_syncing: true,
             is_complete: false,
             has_new_tx,
+            phase_completed_units: 0,
+            phase_total_units: 0,
             phase: "scan".into(),
         };
         last_progress_percentage = progress.percentage;
@@ -3139,43 +3625,6 @@ async fn run_sync_impl(
         progress_fn(progress);
         #[cfg(debug_assertions)]
         maybe_sleep_for_e2e_sync_batch_delay().await;
-
-        // Prefetch: if the current range still has blocks beyond
-        // `end`, kick off a background download of the next batch
-        // now, while the next loop iteration does suggest_scan_ranges
-        // + phase bookkeeping + (potentially) enhancement for the
-        // batch we just finished. The download runs on a cloned
-        // gRPC client so it doesn't conflict with the main client's
-        // unary RPCs (tree_state, get_latest_block, etc.).
-        //
-        // When the range is exhausted (end == range.end), we skip
-        // the prefetch — the next range comes from
-        // suggest_scan_ranges() which needs the DB state the current
-        // scan just committed, and we can't predict it in advance.
-        if end < range_end && !cancel.load(Ordering::Relaxed) {
-            let pf_start = end;
-            // Recompute batch_size for the prefetch range in case
-            // it crosses a sandblasting boundary differently.
-            if let Some((_, pf_end)) =
-                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
-            {
-                let mut pf_client = client.clone();
-                prefetch = Some(Prefetch {
-                    start: pf_start,
-                    end: pf_end,
-                    handle: Some(tokio::spawn(async move {
-                        download_blocks(&mut pf_client, pf_start, pf_end - 1, network).await
-                    })),
-                });
-            } else {
-                log::debug!(
-                    "[{}] sync: skipping prefetch from {} past current tip {}",
-                    elapsed(),
-                    u32::from(pf_start),
-                    current_tip_height,
-                );
-            }
-        }
     }
 
     let (final_scanned_height, final_tip_height) =
@@ -3240,9 +3689,113 @@ async fn run_sync_impl(
         is_syncing: false,
         is_complete: true,
         has_new_tx: false,
+        phase_completed_units: 0,
+        phase_total_units: 0,
         phase: String::new(),
     };
     progress_fn(final_progress);
+
+    // Transparent receivers belonging to inactive accounts do not affect the
+    // account-scoped balance shown for this completed foreground sync. Keep
+    // the active account on the correctness-critical path, then refresh all
+    // remaining accounts after reporting chain-sync completion. The FRB
+    // stream stays open until this bounded follow-up finishes, so lock/reset
+    // cancellation and the global running guard still own its lifetime.
+    if defer_inactive_transparent_refresh && !should_exit() {
+        let active_account_uuid = active_account_uuid
+            .as_deref()
+            .expect("deferred refresh has active account");
+        log::info!(
+            "[{}] sync: starting deferred inactive-account transparent UTXO refresh",
+            elapsed(),
+        );
+        let mut deferred_attempt = 1;
+        let mut deferred_received_outputs = false;
+        let deferred_result = loop {
+            let result = refresh_utxos(
+                &mut client,
+                db_data_path,
+                &mut db,
+                network,
+                BlockHeight::from_u32(final_tip_height as u32),
+                TransparentAccountSelection::Except(active_account_uuid),
+                active_account_target,
+                &mut deferred_received_outputs,
+                None,
+                &should_exit,
+            )
+            .await;
+            match result {
+                Ok(summary) => break Ok(summary),
+                Err(error)
+                    if deferred_attempt < MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS
+                        && !should_exit() =>
+                {
+                    let delay_secs = 1u64 << deferred_attempt;
+                    log::warn!(
+                        "[{}] sync: deferred transparent UTXO refresh attempt {}/{} failed; retrying in {}s: {}",
+                        elapsed(),
+                        deferred_attempt,
+                        MAX_DEFERRED_TRANSPARENT_REFRESH_ATTEMPTS,
+                        delay_secs,
+                        error,
+                    );
+                    let retry_delay =
+                        tokio::time::sleep(std::time::Duration::from_secs(delay_secs));
+                    tokio::pin!(retry_delay);
+                    tokio::select! {
+                        biased;
+                        _ = watch_for_exit(&should_exit) => break Err(error),
+                        _ = &mut retry_delay => {}
+                    }
+                    deferred_attempt += 1;
+                }
+                Err(error) => break Err(error),
+            }
+        };
+        match &deferred_result {
+            Ok(summary) => {
+                log::info!(
+                    "[{}] sync: deferred transparent UTXO refresh finished (accounts={}, received_outputs={})",
+                    elapsed(),
+                    summary.matched_accounts,
+                    deferred_received_outputs,
+                );
+            }
+            Err(error) => log::warn!(
+                "[{}] sync: deferred inactive-account transparent UTXO refresh failed after {} attempt(s); it will retry on a later sync: {}",
+                elapsed(),
+                deferred_attempt,
+                error,
+            ),
+        }
+        if deferred_received_outputs && !should_exit() {
+            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+                log::warn!(
+                    "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
+                    elapsed(),
+                    error,
+                );
+            }
+            // The user may have switched accounts while the deferred pass was
+            // running. Re-emit completion even after a terminal partial
+            // failure so Dart refreshes whichever account is active now from
+            // every output that was committed by an earlier successful group.
+            progress_fn(SyncProgressEvent {
+                scanned_height: final_scanned_height,
+                chain_tip_height: final_tip_height,
+                percentage: 1.0,
+                display_target_percentage: 1.0,
+                display_target_blocks: 0,
+                is_syncing: false,
+                is_complete: true,
+                has_new_tx: true,
+                phase_completed_units: 0,
+                phase_total_units: 0,
+                phase: String::new(),
+            });
+        }
+    }
 
     Ok(())
 }
@@ -3356,12 +3909,670 @@ fn should_use_empty_chain_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
+    use std::time::Duration;
+    use tokio::sync::{Barrier, Notify, Semaphore};
+    use zcash_client_backend::proto::compact_formats::CompactBlock;
+
+    struct DropSignal {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn block_height(height: u32) -> BlockHeight {
+        BlockHeight::from_u32(height)
+    }
+
+    fn block_source(heights: &[u64]) -> block_source::MemoryBlockSource {
+        block_source::MemoryBlockSource::new(
+            heights
+                .iter()
+                .map(|height| CompactBlock {
+                    height: *height,
+                    ..Default::default()
+                })
+                .collect(),
+        )
+    }
+
+    async fn wait_for_drop(dropped: &AtomicBool) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("prefetch task was not dropped");
+    }
+
+    #[tokio::test]
+    async fn transparent_refreshes_limit_concurrency_to_four() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let commit_count = Arc::new(AtomicUsize::new(0));
+
+        let download_active = active.clone();
+        let download_peak = peak.clone();
+        let persist_count = commit_count.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..12).collect(),
+            move |refresh| {
+                let active = download_active.clone();
+                let peak = download_peak.clone();
+                async move {
+                    let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(concurrent, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, &'static str>(Some(refresh))
+                }
+            },
+            move |group| {
+                assert!(group.len() <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
+                persist_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_| {},
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(peak.load(Ordering::SeqCst), 4);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(commit_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_downloads_actually_overlap() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(4));
+        let started = Arc::new(AtomicUsize::new(0));
+
+        let download_barrier = barrier.clone();
+        let download_started = started.clone();
+        let refresh = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            move |refresh| {
+                let barrier = download_barrier.clone();
+                let started = download_started.clone();
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    barrier.wait().await;
+                    Ok::<_, &'static str>(Some(refresh))
+                }
+            },
+            |_| Ok(()),
+            |_| {},
+            &|| false,
+        );
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(1), refresh)
+            .await
+            .expect("four downloads did not overlap")
+            .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(started.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_cancellation_wins_over_racing_error() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let commits = Arc::new(AtomicUsize::new(0));
+        let download_cancelled = cancelled.clone();
+        let persist_commits = commits.clone();
+        let exit_cancelled = cancelled.clone();
+        let should_exit = move || exit_cancelled.load(Ordering::SeqCst);
+
+        let outcome = process_bounded_transparent_refreshes(
+            vec![0],
+            move |_| {
+                let cancelled = download_cancelled.clone();
+                async move {
+                    cancelled.store(true, Ordering::SeqCst);
+                    Err::<Option<usize>, _>("network error")
+                }
+            },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_| {},
+            &should_exit,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Cancelled);
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_transparent_stream_prevents_group_commit() {
+        let commits = Arc::new(AtomicUsize::new(0));
+        let persist_commits = commits.clone();
+        let result = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            |refresh| async move {
+                if refresh == 2 {
+                    Err("stream failed")
+                } else {
+                    tokio::task::yield_now().await;
+                    Ok(Some(refresh))
+                }
+            },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_| {},
+            &|| false,
+        )
+        .await;
+
+        assert_eq!(result, Err("stream failed"));
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn cancelled_transparent_stream_prevents_group_commit() {
+        let commits = Arc::new(AtomicUsize::new(0));
+        let persist_commits = commits.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..4).collect(),
+            |refresh| async move { Ok::<_, &'static str>((refresh != 2).then_some(refresh)) },
+            move |_| {
+                persist_commits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_| {},
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Cancelled);
+        assert_eq!(commits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_groups_restore_request_order_before_commit() {
+        let commits = Arc::new(Mutex::new(Vec::new()));
+        let persist_commits = commits.clone();
+        let outcome = process_bounded_transparent_refreshes(
+            (0..6).collect(),
+            |refresh| async move {
+                let delay = 5 * (4 - (refresh % 4));
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                Ok::<_, &'static str>(Some(refresh))
+            },
+            move |group| {
+                persist_commits.lock().unwrap().push(group);
+                Ok(())
+            },
+            |_| {},
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![4, 5]]);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_reprioritizes_only_pending_groups() {
+        let priority = Arc::new(AtomicUsize::new(usize::MAX));
+        let commits = Arc::new(Mutex::new(Vec::new()));
+        let first_group_started = Arc::new(Barrier::new(5));
+        let release_first_group = Arc::new(Semaphore::new(0));
+
+        let run_priority = priority.clone();
+        let run_commits = commits.clone();
+        let run_started = first_group_started.clone();
+        let run_release = release_first_group.clone();
+        let run = tokio::spawn(async move {
+            process_bounded_transparent_refreshes(
+                (0..6).collect(),
+                move |refresh| {
+                    let started = run_started.clone();
+                    let release = run_release.clone();
+                    async move {
+                        if refresh < 4 {
+                            started.wait().await;
+                            release.acquire().await.unwrap().forget();
+                        }
+                        Ok::<_, &'static str>(Some(refresh))
+                    }
+                },
+                move |group| {
+                    run_commits.lock().unwrap().push(group);
+                    Ok(())
+                },
+                move |pending| {
+                    let priority = run_priority.load(Ordering::SeqCst);
+                    pending
+                        .make_contiguous()
+                        .sort_by_key(|refresh| *refresh != priority);
+                },
+                &|| false,
+            )
+            .await
+        });
+
+        first_group_started.wait().await;
+        priority.store(5, Ordering::SeqCst);
+        release_first_group.add_permits(4);
+        let outcome = run.await.unwrap().unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Completed);
+        assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![5, 4]]);
+    }
+
+    #[test]
+    fn transparent_refresh_priority_moves_every_active_batch_stably() {
+        let refresh = |account_uuid: &str, label: &str| TransparentRefresh {
+            addresses: Vec::new(),
+            start_height: block_height(1),
+            label: label.to_string(),
+            account_uuid: account_uuid.to_string(),
+            completion: None,
+        };
+        let mut pending = VecDeque::from(vec![
+            refresh("active", "active recent"),
+            refresh("other", "other recent"),
+            refresh("active", "active sweep"),
+            refresh("other", "other sweep"),
+        ]);
+        let target = Arc::new(RwLock::new(Some("active".to_string())));
+
+        prioritize_pending_transparent_refreshes(&mut pending, Some(&target));
+
+        assert_eq!(
+            pending
+                .iter()
+                .map(|refresh| refresh.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "active recent",
+                "active sweep",
+                "other recent",
+                "other sweep",
+            ],
+        );
+    }
+
+    #[test]
+    fn transparent_cache_metadata_is_marked_only_after_commit() {
+        let events = RefCell::new(Vec::new());
+        store_then_mark_transparent_refreshes(
+            vec![1, 2],
+            |_| {
+                events.borrow_mut().push("commit".to_string());
+                Ok::<_, &'static str>(())
+            },
+            |refresh| events.borrow_mut().push(format!("mark {refresh}")),
+        )
+        .unwrap();
+
+        assert_eq!(events.into_inner(), ["commit", "mark 1", "mark 2"]);
+    }
+
+    #[test]
+    fn transparent_account_selection_prioritizes_one_account() {
+        let selected = "active";
+        assert!(TransparentAccountSelection::All.includes(selected));
+        assert!(TransparentAccountSelection::Only(selected).includes(selected));
+        assert!(!TransparentAccountSelection::Only(selected).includes("inactive"));
+        assert!(!TransparentAccountSelection::Except(selected).includes(selected));
+        assert!(TransparentAccountSelection::Except(selected).includes("inactive"));
+    }
+
+    #[test]
+    fn failed_transparent_commit_does_not_advance_cache_metadata() {
+        let marked = Cell::new(0);
+        let result = store_then_mark_transparent_refreshes(
+            vec![1, 2],
+            |_| Err("commit failed"),
+            |_| marked.set(marked.get() + 1),
+        );
+
+        assert_eq!(result, Err("commit failed"));
+        assert_eq!(marked.get(), 0);
+    }
 
     fn assert_pct(actual: f64, expected: f64) {
         assert!(
             (actual - expected).abs() < 0.000_001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[tokio::test]
+    async fn scan_batch_inputs_start_concurrently() {
+        let barrier = Arc::new(Barrier::new(3));
+        let block_barrier = barrier.clone();
+        let state_barrier = barrier.clone();
+        let joined = tokio::spawn(join_scan_batch_inputs(
+            async move {
+                block_barrier.wait().await;
+                Ok::<_, SyncError>("blocks")
+            },
+            async move {
+                state_barrier.wait().await;
+                Ok::<_, SyncError>("frontier")
+            },
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), barrier.wait())
+            .await
+            .expect("block and frontier futures were not both polled");
+        assert_eq!(
+            joined.await.expect("join task").expect("joined inputs"),
+            ("blocks", "frontier"),
+        );
+    }
+
+    #[tokio::test]
+    async fn scan_batch_input_failure_drops_the_sibling_request() {
+        let barrier = Arc::new(Barrier::new(2));
+        let block_barrier = barrier.clone();
+        let state_barrier = barrier.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let block_dropped = dropped.clone();
+
+        let result = join_scan_batch_inputs(
+            async move {
+                let _drop_signal = DropSignal {
+                    dropped: block_dropped,
+                };
+                block_barrier.wait().await;
+                std::future::pending::<Result<u8, SyncError>>().await
+            },
+            async move {
+                state_barrier.wait().await;
+                Err::<u8, _>(SyncError::net("frontier failed"))
+            },
+        )
+        .await;
+
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn scan_batch_prefetch_success_and_failure_choose_the_right_source() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let keep_running = || false;
+        let fresh_calls = AtomicUsize::new(0);
+
+        let prefetched = Prefetch::spawn(start, end, async { Ok::<_, SyncError>(7) });
+        let value =
+            resolve_prefetched_or_download(Some(prefetched), start, end, &keep_running, || {
+                fresh_calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(9) }
+            })
+            .await
+            .expect("successful prefetch")
+            .expect("sync remains active");
+        assert_eq!(value, 7);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        let failed = Prefetch::spawn(start, end, async {
+            Err::<u8, _>(SyncError::net("prefetch failed"))
+        });
+        let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
+            fresh_calls.fetch_add(1, Ordering::SeqCst);
+            async { Ok(9) }
+        })
+        .await
+        .expect("fresh fallback")
+        .expect("sync remains active");
+        assert_eq!(value, 9);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn mismatched_scan_batch_prefetch_is_aborted_before_fallback() {
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let stale = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("stale prefetch started");
+
+        let keep_running = || false;
+        let value = resolve_prefetched_or_download(
+            Some(stale),
+            block_height(20),
+            block_height(23),
+            &keep_running,
+            || async { Ok(42) },
+        )
+        .await
+        .expect("fallback succeeds")
+        .expect("sync remains active");
+
+        assert_eq!(value, 42);
+        wait_for_drop(&dropped).await;
+    }
+
+    #[tokio::test]
+    async fn dropping_a_scan_batch_wait_aborts_its_prefetch_task() {
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("prefetch started");
+
+        let resolver = tokio::spawn(async move {
+            let keep_running = || false;
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &keep_running,
+                || async { Ok(9) },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        resolver.abort();
+        let _ = resolver.await;
+
+        wait_for_drop(&dropped).await;
+    }
+
+    #[tokio::test]
+    async fn scan_batch_cancellation_interrupts_pending_network_work() {
+        let exit = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("prefetch started");
+
+        let resolver_exit = exit.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || async { Ok(9) },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        exit.store(true, Ordering::SeqCst);
+        assert!(tokio::time::timeout(Duration::from_secs(1), resolver)
+            .await
+            .expect("prefetch cancellation timed out")
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        wait_for_drop(&dropped).await;
+
+        exit.store(false, Ordering::SeqCst);
+        let fresh_started = Arc::new(Notify::new());
+        let task_started = fresh_started.clone();
+        let fresh_dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = fresh_dropped.clone();
+        let resolver_exit = exit.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                None::<Prefetch<u8>>,
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || async move {
+                    let _drop_signal = DropSignal {
+                        dropped: task_dropped,
+                    };
+                    task_started.notify_one();
+                    std::future::pending::<Result<u8, SyncError>>().await
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), fresh_started.notified())
+            .await
+            .expect("fresh download started");
+        exit.store(true, Ordering::SeqCst);
+        assert!(tokio::time::timeout(Duration::from_secs(1), resolver)
+            .await
+            .expect("fresh cancellation timed out")
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        wait_for_drop(&fresh_dropped).await;
+    }
+
+    #[tokio::test]
+    async fn scan_batch_cancellation_wins_over_prefetch_and_fallback_errors() {
+        let exit = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(Notify::new());
+        let task_release = release.clone();
+        let task_exit = exit.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            task_release.notified().await;
+            task_exit.store(true, Ordering::SeqCst);
+            Err::<u8, _>(SyncError::net("prefetch failed during cancellation"))
+        });
+        let resolver_exit = exit.clone();
+        let fresh_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_fresh_calls = fresh_calls.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || {
+                    resolver_fresh_calls.fetch_add(1, Ordering::SeqCst);
+                    async { Err(SyncError::net("fresh fallback should not run")) }
+                },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        release.notify_one();
+
+        assert!(resolver
+            .await
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        exit.store(false, Ordering::SeqCst);
+        let fresh_exit = exit.clone();
+        let should_exit = || exit.load(Ordering::SeqCst);
+        let result = resolve_prefetched_or_download(
+            None::<Prefetch<u8>>,
+            block_height(10),
+            block_height(13),
+            &should_exit,
+            || async move {
+                fresh_exit.store(true, Ordering::SeqCst);
+                Err(SyncError::net("fresh download failed during cancellation"))
+            },
+        )
+        .await;
+        assert!(result.expect("cancellation is not an error").is_none());
+    }
+
+    #[test]
+    fn scan_batch_range_and_frontier_must_match() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let exact_blocks = block_source(&[10, 11, 12]);
+        let exact_frontier = chain::ChainState::empty(block_height(9), BlockHash([0u8; 32]));
+        assert!(validate_scan_batch(&exact_blocks, &exact_frontier, start, end).is_ok());
+
+        for (name, blocks, frontier, error_fragment) in [
+            (
+                "short blocks",
+                block_source(&[10, 11]),
+                chain::ChainState::empty(block_height(9), BlockHash([0u8; 32])),
+                "compact blocks",
+            ),
+            (
+                "out-of-order blocks",
+                block_source(&[10, 12, 11]),
+                chain::ChainState::empty(block_height(9), BlockHash([0u8; 32])),
+                "compact blocks",
+            ),
+            (
+                "wrong frontier",
+                block_source(&[10, 11, 12]),
+                chain::ChainState::empty(block_height(8), BlockHash([0u8; 32])),
+                "tree state height",
+            ),
+        ] {
+            let error = validate_scan_batch(&blocks, &frontier, start, end).expect_err(name);
+            assert!(
+                error.to_string().contains(error_fragment),
+                "{name}: {error}"
+            );
+        }
     }
 
     #[test]

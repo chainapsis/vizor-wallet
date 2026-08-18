@@ -1378,6 +1378,7 @@ void main() {
               'pir_depth': 18,
               'tier0_layers': 11,
               'tier1_layers': 7,
+              'poly_len': 2048,
             },
           ),
         ),
@@ -1423,6 +1424,7 @@ void main() {
           pirDepth: 18,
           tier0Layers: 11,
           tier1Layers: 7,
+          polyLen: 2048,
         ),
       );
       expect(state.phase, VotingSessionPhase.readyToDelegate);
@@ -5626,6 +5628,7 @@ rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
       pirDepth: 19,
       tier0Layers: 12,
       tier1Layers: 7,
+      polyLen: 4096,
     ),
     supportedVersions: const rust_config.SupportedVersions(
       pir: ['v0'],
@@ -5733,7 +5736,7 @@ const _delegationSubmissionWireGolden =
 const _voteCommitmentWireGolden =
     '{"van_nullifier":"$_bytes1x32Base64","vote_authority_note_new":"$_bytes2x32Base64","vote_commitment":"$_bytes3x32Base64","proposal_id":7,"proof":"BA==","vote_round_id":"$_roundIdBase64","vote_comm_tree_anchor_height":10,"r_vpk":"$_bytes13x32Base64","vote_auth_sig":"$_bytes12x64Base64"}';
 const _voteShareWireGolden =
-    '{"shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0,"vote_round_id":"$kRoundId"}';
+    '{"vote_round_id":"$kRoundId","shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0}';
 const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   attempts: 1,
   delay: Duration.zero,
@@ -5816,6 +5819,7 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
       pirDepth: (pirLayout['pir_depth'] as num).toInt(),
       tier0Layers: (pirLayout['tier0_layers'] as num).toInt(),
       tier1Layers: (pirLayout['tier1_layers'] as num).toInt(),
+      polyLen: (pirLayout['poly_len'] as num).toInt(),
     ),
     supportedVersions: rust_config.SupportedVersions(
       pir: (versions['pir'] as List<dynamic>)
@@ -5856,6 +5860,7 @@ Map<String, dynamic> dynamicConfigJson({
     'pir_depth': 19,
     'tier0_layers': 12,
     'tier1_layers': 7,
+    'poly_len': 4096,
   },
 }) => {
   'config_version': 1,
@@ -6001,6 +6006,7 @@ rust_frb_types.VoteRecoveryView vote({
 String commitmentBundleRecoveryJson({int proposalId = 7, int shareIndex = 0}) {
   return jsonEncode({
     'format': 'vizor_vote_commitment_bundle_recovery_v1',
+    'vote_round_id': kRoundId,
     'share_payloads': [
       {
         'shares_hash': _hexFromBytes(List.filled(32, 7)),
@@ -7042,6 +7048,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required BigInt submitAt,
   }) async {
     return jsonEncode({
+      'vote_round_id': share.voteRoundId,
       'shares_hash': share.sharesHash,
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
@@ -7185,6 +7192,7 @@ class FakeVotingRustApi implements VotingRustApi {
     });
     final encShare = payload['enc_share'] as Map<String, dynamic>;
     return jsonEncode({
+      'vote_round_id': decoded['vote_round_id'],
       'shares_hash': base64Encode(
         _bytesFromHex(payload['shares_hash'] as String),
       ),
@@ -7338,6 +7346,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   final shares = [
     for (final wireShare in wireShares)
       rust_wire.VoteShareWire(
+        voteRoundId: roundId,
         sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
         proposalId: proposalId,
         voteDecision: choice,
