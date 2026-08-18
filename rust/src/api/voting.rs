@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, panic, sync::Arc};
+use std::{panic, sync::Arc};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -9,7 +9,9 @@ use super::voting_helpers::{
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
-    voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
+    voting::{
+        db, delegation, delegation::DelegationProgress, hotkey, network::voting_network, share,
+    },
 };
 use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
@@ -206,70 +208,15 @@ pub fn plan_vote_share_submissions(
     last_moment_buffer_seconds: Option<u64>,
 ) -> Result<Vec<zcash_voting::wire::VoteShareSubmissionPlan>, String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let snapshot = zcash_voting::recovery::round_snapshot(&db, &round_id)
-            .map_err(|e| format!("round_snapshot failed: {e}"))?;
-        let selected_proposals = db
-            .ballot_intents(&round_id)
-            .map_err(|e| format!("ballot_intents failed: {e}"))?
-            .into_iter()
-            .filter_map(|(proposal_id, decision)| match decision {
-                zcash_voting::session::Decision::Choice(choice) => Some((proposal_id, choice)),
-                zcash_voting::session::Decision::Skipped => None,
-            })
-            .collect::<Vec<_>>();
-        if selected_proposals.is_empty() {
-            return Err("vote submission contains no selected proposals".to_string());
-        }
-        let votes = snapshot
-            .votes
-            .into_iter()
-            .map(|vote| ((vote.bundle_index, vote.proposal_id), vote))
-            .collect::<BTreeMap<_, _>>();
-        let mut bundles = Vec::new();
-        for bundle_index in 0..snapshot.bundle_count {
-            for &(proposal_id, choice) in &selected_proposals {
-                let vote = votes.get(&(bundle_index, proposal_id)).ok_or_else(|| {
-                    format!("missing vote for bundle={bundle_index} proposal={proposal_id}")
-                })?;
-                if vote.choice != choice {
-                    return Err(format!(
-                        "vote choice does not match ballot intent for bundle={bundle_index} proposal={proposal_id}"
-                    ));
-                }
-                if vote.phase != zcash_voting::phases::VotePhase::Confirmed {
-                    return Err(format!(
-                        "vote bundle={} proposal={} must be confirmed before share planning",
-                        vote.bundle_index, vote.proposal_id
-                    ));
-                }
-                bundles.push(
-                    zcash_voting::vote::recovery_bundle(
-                        &db,
-                        &round_id,
-                        vote.bundle_index,
-                        vote.proposal_id,
-                    )
-                    .map_err(|e| format!("load vote recovery failed: {e}"))?
-                    .ok_or_else(|| {
-                        format!(
-                            "missing vote recovery for bundle={} proposal={}",
-                            vote.bundle_index, vote.proposal_id
-                        )
-                    })?,
-                );
-            }
-        }
-
-        zcash_voting::share::plan_vote_share_submissions(
-            &bundles,
+        share::plan_vote_share_submissions(
+            &db_path,
+            &account_uuid,
+            &round_id,
             &server_urls,
             now_seconds,
             vote_end_time_seconds,
             last_moment_buffer_seconds,
-            true,
         )
-        .map_err(|e| e.to_string())
     })
 }
 
