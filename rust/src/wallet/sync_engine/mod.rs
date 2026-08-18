@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashSet};
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -53,9 +54,9 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
 pub(crate) use lwd::{
-    open_background_direct_lwd_channel,
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
-    open_isolated_lwd_channel, open_lwd_channel, send_transaction, send_transaction_with_status,
+    open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
+    send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -1417,6 +1418,171 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+type ScanBatch = (block_source::MemoryBlockSource, chain::ChainState);
+
+async fn join_scan_batch_inputs<BlockSourceT, ChainStateT, BlockFuture, StateFuture>(
+    blocks: BlockFuture,
+    chain_state: StateFuture,
+) -> Result<(BlockSourceT, ChainStateT), SyncError>
+where
+    BlockFuture: Future<Output = Result<BlockSourceT, SyncError>>,
+    StateFuture: Future<Output = Result<ChainStateT, SyncError>>,
+{
+    tokio::try_join!(blocks, chain_state)
+}
+
+/// Downloads one compact-block batch and its preceding chain state in
+/// parallel. The requests are independent, and cloned tonic clients share the
+/// underlying HTTP/2 connection.
+async fn download_scan_batch(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: BlockHeight,
+    end: BlockHeight,
+    network: WalletNetwork,
+) -> Result<ScanBatch, SyncError> {
+    let mut tree_state_client = client.clone();
+    let use_empty_state = should_use_empty_chain_state(&network, start)?;
+    let tree_state = async move {
+        if use_empty_state {
+            Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
+        } else {
+            let state =
+                get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1))).await?;
+            state
+                .to_chain_state()
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
+        }
+    };
+
+    join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await
+}
+
+fn validate_scan_batch(
+    block_source: &block_source::MemoryBlockSource,
+    from_state: &chain::ChainState,
+    start: BlockHeight,
+    end: BlockHeight,
+) -> Result<(), SyncError> {
+    if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
+        return Err(SyncError::other(format!(
+            "downloaded compact blocks do not exactly cover {}..{}",
+            u32::from(start),
+            u32::from(end),
+        )));
+    }
+
+    let frontier_height = u32::from(start)
+        .checked_sub(1)
+        .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
+    if u32::from(from_state.block_height()) != frontier_height {
+        return Err(SyncError::other(format!(
+            "downloaded tree state height {} does not match scan frontier {frontier_height}",
+            u32::from(from_state.block_height()),
+        )));
+    }
+
+    Ok(())
+}
+
+struct Prefetch<T> {
+    handle: Option<tokio::task::JoinHandle<Result<T, SyncError>>>,
+    start: BlockHeight,
+    end: BlockHeight,
+}
+
+impl<T> Prefetch<T>
+where
+    T: Send + 'static,
+{
+    fn spawn(
+        start: BlockHeight,
+        end: BlockHeight,
+        future: impl Future<Output = Result<T, SyncError>> + Send + 'static,
+    ) -> Self {
+        Self {
+            handle: Some(tokio::spawn(future)),
+            start,
+            end,
+        }
+    }
+}
+
+impl<T> Drop for Prefetch<T> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+async fn resolve_prefetched_or_download<T, Download, DownloadFuture>(
+    prefetch: Option<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+    should_exit: &impl Fn() -> bool,
+    download_fresh: Download,
+) -> Result<Option<T>, SyncError>
+where
+    Download: FnOnce() -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<T, SyncError>>,
+{
+    if should_exit() {
+        return Ok(None);
+    }
+
+    if let Some(mut prefetch) = prefetch {
+        if prefetch.start == start && prefetch.end == end {
+            // Keep the handle inside `Prefetch` while suspended. If the sync
+            // future is dropped here, `Prefetch::drop` still aborts the task.
+            let result = tokio::select! {
+                biased;
+                _ = watch_for_exit(should_exit) => return Ok(None),
+                result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+            };
+            if should_exit() {
+                return Ok(None);
+            }
+            let _completed_handle = prefetch.handle.take().expect("prefetch handle present");
+            match result {
+                Ok(Ok(batch)) => return Ok(Some(batch)),
+                Ok(Err(error)) => log::warn!(
+                    "[{}] sync: prefetched batch {}-{} failed ({error}); downloading fresh",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(end).saturating_sub(1),
+                ),
+                Err(error) => log::warn!(
+                    "[{}] sync: prefetched batch {}-{} task failed ({error}); downloading fresh",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(end).saturating_sub(1),
+                ),
+            }
+        } else {
+            // A reorg or priority change invalidated the speculative range.
+            // Dropping the owner aborts the now-unusable network task.
+            drop(prefetch);
+        }
+    }
+
+    if should_exit() {
+        return Ok(None);
+    }
+    let fresh_download = download_fresh();
+    tokio::pin!(fresh_download);
+    let result = tokio::select! {
+        biased;
+        _ = watch_for_exit(should_exit) => return Ok(None),
+        result = &mut fresh_download => result,
+    };
+    // Cancellation and mode handoff win over a simultaneous network failure:
+    // callers asked the sync session to stop, so no retry should be scheduled.
+    if should_exit() {
+        return Ok(None);
+    }
+    result.map(Some)
+}
+
 // ==================== Main sync ====================
 
 /// Run the full sync loop with automatic retry on failure.
@@ -1753,38 +1919,18 @@ async fn run_sync_impl(
     const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
     let mut last_tip_refresh = std::time::Instant::now();
 
-    // Prefetched block source from the previous iteration.
+    // Prefetched scan batch from the previous iteration.
     // When the scan loop processes a range that spans multiple batches,
-    // we kick off a background download of the next batch while running
-    // enhancement / resubmit / progress reporting for the current
-    // batch. This overlaps network I/O (download) with CPU-bound
-    // work (enhancement) and unrelated gRPC calls (resubmit), matching
+    // we start the next block-and-frontier tuple before scanning the current
+    // batch. This overlaps network I/O with CPU work on multithread runtimes
+    // and with later async stages on the iOS current-thread runtime, matching
     // the SDK's `.buffer(1)` pipelining pattern in
     // `CompactBlockProcessor.kt:1666`.
     //
     // `None` on the first iteration and whenever the previous batch
     // was the last in its range (so there's nothing to prefetch until
     // `suggest_scan_ranges` runs again).
-    type PrefetchResult =
-        Result<crate::wallet::sync_engine::block_source::MemoryBlockSource, SyncError>;
-    /// Prefetched block download state. Implements `Drop` to
-    /// abort the spawned tokio task when the loop exits for any
-    /// reason (cancel, mode change, error, break, reorg
-    /// `continue`) so detached downloads can't outlive the sync
-    /// session and leak network traffic after shutdown.
-    struct Prefetch {
-        handle: Option<tokio::task::JoinHandle<PrefetchResult>>,
-        start: BlockHeight,
-        end: BlockHeight,
-    }
-    impl Drop for Prefetch {
-        fn drop(&mut self) {
-            if let Some(h) = self.handle.take() {
-                h.abort();
-            }
-        }
-    }
-    let mut prefetch: Option<Prefetch> = None;
+    let mut prefetch: Option<Prefetch<ScanBatch>> = None;
 
     // 5. Sync loop
     loop {
@@ -1980,71 +2126,58 @@ async fn run_sync_impl(
             batch_size,
         );
 
-        // Download blocks into memory — or use the prefetched data
-        // from the previous iteration if it matches this batch.
-        let block_source = if let Some(mut pf) = prefetch.take() {
-            if pf.start == start && pf.end == end {
-                // Prefetch matches. Take the handle out of the
-                // Option so Drop doesn't abort a completed task.
-                let handle = pf.handle.take().expect("prefetch handle present");
-                match handle.await {
-                    Ok(Ok(bs)) => {
-                        log::debug!(
-                            "[{}] sync: using prefetched blocks for {}-{}",
-                            elapsed(),
-                            u32::from(start),
-                            u32::from(end) - 1,
-                        );
-                        bs
-                    }
-                    _ => {
-                        // Prefetch failed — download synchronously.
-                        log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1, network).await?
-                    }
-                }
-            } else {
-                // Range changed (reorg, priority switch, etc.) —
-                // Drop the Prefetch, which aborts the background task.
-                drop(pf);
-                download_blocks(&mut client, start, end - 1, network).await?
-            }
-        } else {
-            download_blocks(&mut client, start, end - 1, network).await?
+        // Download blocks and their preceding frontier together, or consume a
+        // matching tuple that the previous iteration prefetched.
+        let batch =
+            resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
+                download_scan_batch(&mut client, start, end - 1, network)
+            })
+            .await?;
+        let Some((block_source, from_state)) = batch else {
+            log::info!("[{}] sync: exiting after download", elapsed());
+            return Ok(());
         };
-
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
         }
 
-        if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
-            return Err(SyncError::other(format!(
-                "downloaded compact blocks do not exactly cover {}..{}",
-                u32::from(start),
-                u32::from(end),
-            )));
-        }
-
-        // Fetch and validate the frontier before projecting the checkpoints
-        // this batch will create. `update_tree` inserts this exact height as a
-        // checkpoint before any compact-block commitments.
-        let from_state = if should_use_empty_chain_state(&network, start)? {
-            chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
-        } else {
-            let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
-            ts.to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
-        };
-        if u32::from(from_state.block_height()) != frontier_height {
-            return Err(SyncError::other(format!(
-                "downloaded tree state height {} does not match scan frontier {frontier_height}",
-                u32::from(from_state.block_height()),
-            )));
-        }
+        // Validate the tuple before projecting checkpoints or scheduling work
+        // derived from it. Neither half is useful without the other.
+        validate_scan_batch(&block_source, &from_state, start, end)?;
 
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
+
+        // Start the next tuple before scanning this batch. Dropping `prefetch`
+        // on any early return, error, or reorg aborts its network task.
+        if end < range_end && !should_exit() {
+            let prefetch_start = end;
+            if let Some((_, prefetch_end)) = scannable_batch_end(
+                base_batch_size,
+                prefetch_start,
+                range_end,
+                current_tip_height,
+            ) {
+                let mut prefetch_client = client.clone();
+                prefetch = Some(Prefetch::spawn(prefetch_start, prefetch_end, async move {
+                    download_scan_batch(
+                        &mut prefetch_client,
+                        prefetch_start,
+                        prefetch_end - 1,
+                        network,
+                    )
+                    .await
+                }));
+            } else {
+                log::debug!(
+                    "[{}] sync: skipping prefetch from {} past current tip {}",
+                    elapsed(),
+                    u32::from(prefetch_start),
+                    current_tip_height,
+                );
+            }
+        }
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -2550,43 +2683,6 @@ async fn run_sync_impl(
         progress_fn(progress);
         #[cfg(debug_assertions)]
         maybe_sleep_for_e2e_sync_batch_delay().await;
-
-        // Prefetch: if the current range still has blocks beyond
-        // `end`, kick off a background download of the next batch
-        // now, while the next loop iteration does suggest_scan_ranges
-        // + phase bookkeeping + (potentially) enhancement for the
-        // batch we just finished. The download runs on a cloned
-        // gRPC client so it doesn't conflict with the main client's
-        // unary RPCs (tree_state, get_latest_block, etc.).
-        //
-        // When the range is exhausted (end == range.end), we skip
-        // the prefetch — the next range comes from
-        // suggest_scan_ranges() which needs the DB state the current
-        // scan just committed, and we can't predict it in advance.
-        if end < range_end && !cancel.load(Ordering::Relaxed) {
-            let pf_start = end;
-            // Recompute batch_size for the prefetch range in case
-            // it crosses a sandblasting boundary differently.
-            if let Some((_, pf_end)) =
-                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
-            {
-                let mut pf_client = client.clone();
-                prefetch = Some(Prefetch {
-                    start: pf_start,
-                    end: pf_end,
-                    handle: Some(tokio::spawn(async move {
-                        download_blocks(&mut pf_client, pf_start, pf_end - 1, network).await
-                    })),
-                });
-            } else {
-                log::debug!(
-                    "[{}] sync: skipping prefetch from {} past current tip {}",
-                    elapsed(),
-                    u32::from(pf_start),
-                    current_tip_height,
-                );
-            }
-        }
     }
 
     let (final_scanned_height, final_tip_height) =
@@ -2770,12 +2866,372 @@ fn should_use_empty_chain_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
+    use tokio::sync::{Barrier, Notify};
+    use zcash_client_backend::proto::compact_formats::CompactBlock;
+
+    struct DropSignal {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn block_height(height: u32) -> BlockHeight {
+        BlockHeight::from_u32(height)
+    }
+
+    fn block_source(heights: &[u64]) -> block_source::MemoryBlockSource {
+        block_source::MemoryBlockSource::new(
+            heights
+                .iter()
+                .map(|height| CompactBlock {
+                    height: *height,
+                    ..Default::default()
+                })
+                .collect(),
+        )
+    }
+
+    async fn wait_for_drop(dropped: &AtomicBool) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("prefetch task was not dropped");
+    }
 
     fn assert_pct(actual: f64, expected: f64) {
         assert!(
             (actual - expected).abs() < 0.000_001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[tokio::test]
+    async fn scan_batch_inputs_start_concurrently() {
+        let barrier = Arc::new(Barrier::new(3));
+        let block_barrier = barrier.clone();
+        let state_barrier = barrier.clone();
+        let joined = tokio::spawn(join_scan_batch_inputs(
+            async move {
+                block_barrier.wait().await;
+                Ok::<_, SyncError>("blocks")
+            },
+            async move {
+                state_barrier.wait().await;
+                Ok::<_, SyncError>("frontier")
+            },
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), barrier.wait())
+            .await
+            .expect("block and frontier futures were not both polled");
+        assert_eq!(
+            joined.await.expect("join task").expect("joined inputs"),
+            ("blocks", "frontier"),
+        );
+    }
+
+    #[tokio::test]
+    async fn scan_batch_input_failure_drops_the_sibling_request() {
+        let barrier = Arc::new(Barrier::new(2));
+        let block_barrier = barrier.clone();
+        let state_barrier = barrier.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let block_dropped = dropped.clone();
+
+        let result = join_scan_batch_inputs(
+            async move {
+                let _drop_signal = DropSignal {
+                    dropped: block_dropped,
+                };
+                block_barrier.wait().await;
+                std::future::pending::<Result<u8, SyncError>>().await
+            },
+            async move {
+                state_barrier.wait().await;
+                Err::<u8, _>(SyncError::net("frontier failed"))
+            },
+        )
+        .await;
+
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn scan_batch_prefetch_success_and_failure_choose_the_right_source() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let keep_running = || false;
+        let fresh_calls = AtomicUsize::new(0);
+
+        let prefetched = Prefetch::spawn(start, end, async { Ok::<_, SyncError>(7) });
+        let value =
+            resolve_prefetched_or_download(Some(prefetched), start, end, &keep_running, || {
+                fresh_calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(9) }
+            })
+            .await
+            .expect("successful prefetch")
+            .expect("sync remains active");
+        assert_eq!(value, 7);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        let failed = Prefetch::spawn(start, end, async {
+            Err::<u8, _>(SyncError::net("prefetch failed"))
+        });
+        let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
+            fresh_calls.fetch_add(1, Ordering::SeqCst);
+            async { Ok(9) }
+        })
+        .await
+        .expect("fresh fallback")
+        .expect("sync remains active");
+        assert_eq!(value, 9);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn mismatched_scan_batch_prefetch_is_aborted_before_fallback() {
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let stale = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("stale prefetch started");
+
+        let keep_running = || false;
+        let value = resolve_prefetched_or_download(
+            Some(stale),
+            block_height(20),
+            block_height(23),
+            &keep_running,
+            || async { Ok(42) },
+        )
+        .await
+        .expect("fallback succeeds")
+        .expect("sync remains active");
+
+        assert_eq!(value, 42);
+        wait_for_drop(&dropped).await;
+    }
+
+    #[tokio::test]
+    async fn dropping_a_scan_batch_wait_aborts_its_prefetch_task() {
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("prefetch started");
+
+        let resolver = tokio::spawn(async move {
+            let keep_running = || false;
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &keep_running,
+                || async { Ok(9) },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        resolver.abort();
+        let _ = resolver.await;
+
+        wait_for_drop(&dropped).await;
+    }
+
+    #[tokio::test]
+    async fn scan_batch_cancellation_interrupts_pending_network_work() {
+        let exit = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(Notify::new());
+        let task_started = started.clone();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            let _drop_signal = DropSignal {
+                dropped: task_dropped,
+            };
+            task_started.notify_one();
+            std::future::pending::<Result<u8, SyncError>>().await
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("prefetch started");
+
+        let resolver_exit = exit.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || async { Ok(9) },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        exit.store(true, Ordering::SeqCst);
+        assert!(tokio::time::timeout(Duration::from_secs(1), resolver)
+            .await
+            .expect("prefetch cancellation timed out")
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        wait_for_drop(&dropped).await;
+
+        exit.store(false, Ordering::SeqCst);
+        let fresh_started = Arc::new(Notify::new());
+        let task_started = fresh_started.clone();
+        let fresh_dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = fresh_dropped.clone();
+        let resolver_exit = exit.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                None::<Prefetch<u8>>,
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || async move {
+                    let _drop_signal = DropSignal {
+                        dropped: task_dropped,
+                    };
+                    task_started.notify_one();
+                    std::future::pending::<Result<u8, SyncError>>().await
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), fresh_started.notified())
+            .await
+            .expect("fresh download started");
+        exit.store(true, Ordering::SeqCst);
+        assert!(tokio::time::timeout(Duration::from_secs(1), resolver)
+            .await
+            .expect("fresh cancellation timed out")
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        wait_for_drop(&fresh_dropped).await;
+    }
+
+    #[tokio::test]
+    async fn scan_batch_cancellation_wins_over_prefetch_and_fallback_errors() {
+        let exit = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(Notify::new());
+        let task_release = release.clone();
+        let task_exit = exit.clone();
+        let prefetch = Prefetch::spawn(block_height(10), block_height(13), async move {
+            task_release.notified().await;
+            task_exit.store(true, Ordering::SeqCst);
+            Err::<u8, _>(SyncError::net("prefetch failed during cancellation"))
+        });
+        let resolver_exit = exit.clone();
+        let fresh_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_fresh_calls = fresh_calls.clone();
+        let resolver = tokio::spawn(async move {
+            let should_exit = || resolver_exit.load(Ordering::SeqCst);
+            resolve_prefetched_or_download(
+                Some(prefetch),
+                block_height(10),
+                block_height(13),
+                &should_exit,
+                || {
+                    resolver_fresh_calls.fetch_add(1, Ordering::SeqCst);
+                    async { Err(SyncError::net("fresh fallback should not run")) }
+                },
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        release.notify_one();
+
+        assert!(resolver
+            .await
+            .expect("resolver task")
+            .expect("cancellation is not an error")
+            .is_none());
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        exit.store(false, Ordering::SeqCst);
+        let fresh_exit = exit.clone();
+        let should_exit = || exit.load(Ordering::SeqCst);
+        let result = resolve_prefetched_or_download(
+            None::<Prefetch<u8>>,
+            block_height(10),
+            block_height(13),
+            &should_exit,
+            || async move {
+                fresh_exit.store(true, Ordering::SeqCst);
+                Err(SyncError::net("fresh download failed during cancellation"))
+            },
+        )
+        .await;
+        assert!(result.expect("cancellation is not an error").is_none());
+    }
+
+    #[test]
+    fn scan_batch_range_and_frontier_must_match() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let exact_blocks = block_source(&[10, 11, 12]);
+        let exact_frontier = chain::ChainState::empty(block_height(9), BlockHash([0u8; 32]));
+        assert!(validate_scan_batch(&exact_blocks, &exact_frontier, start, end).is_ok());
+
+        for (name, blocks, frontier, error_fragment) in [
+            (
+                "short blocks",
+                block_source(&[10, 11]),
+                chain::ChainState::empty(block_height(9), BlockHash([0u8; 32])),
+                "compact blocks",
+            ),
+            (
+                "out-of-order blocks",
+                block_source(&[10, 12, 11]),
+                chain::ChainState::empty(block_height(9), BlockHash([0u8; 32])),
+                "compact blocks",
+            ),
+            (
+                "wrong frontier",
+                block_source(&[10, 11, 12]),
+                chain::ChainState::empty(block_height(8), BlockHash([0u8; 32])),
+                "tree state height",
+            ),
+        ] {
+            let error = validate_scan_batch(&blocks, &frontier, start, end).expect_err(name);
+            assert!(
+                error.to_string().contains(error_fragment),
+                "{name}: {error}"
+            );
+        }
     }
 
     #[test]
