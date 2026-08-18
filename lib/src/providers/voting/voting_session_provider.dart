@@ -1618,16 +1618,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           debugPrint(
             '[zcash] Voting: background share was not accepted '
             'bundle=${plan.bundleIndex} proposal=${plan.proposalId} '
-            'share=${plan.shareIndex}',
+            'share=${plan.shareIndex}; persisting for retry',
           );
-          continue;
+        } else {
+          throw StateError(
+            'No vote server accepted share ${share.shareIndex} '
+            'for proposal ${share.proposalId}.',
+          );
         }
-        throw StateError(
-          'No vote server accepted share ${share.shareIndex} '
-          'for proposal ${share.proposalId}.',
-        );
-      }
-      if (acceptedServers.length < targetCount) {
+      } else if (acceptedServers.length < targetCount) {
         debugPrint(
           '[zcash] Voting: share accepted by fewer helpers than planned '
           'proposal=${share.proposalId} '
@@ -2054,8 +2053,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ? null
           : voteEnd.millisecondsSinceEpoch ~/ 1000;
       for (final share in plan.unconfirmedShareDelegations) {
-        // A share is recoverable once any helper accepted it, but every
-        // configured helper should eventually receive it for redundancy.
+        // A persisted share remains recoverable even when its initial delivery
+        // failed. Every configured helper should eventually receive it.
         final acceptedUrls = LinkedHashSet<String>.of(share.sentToUrls);
         final trackingFlags = await rust.shareTrackingFlags(
           share: share,

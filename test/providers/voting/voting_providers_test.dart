@@ -4558,6 +4558,59 @@ void main() {
     );
   });
 
+  test('failed background share is persisted for retry', () async {
+    final responses = votingHttpResponses()
+      ..['/shielded-vote/v1/shares'] = SequentialVotingHttpResponses([
+        {'status': 'queued'},
+        StateError('helper temporarily unavailable'),
+      ]);
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 2,
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
+    final container = _sessionContainer(
+      http: FakeVotingHttpClient(responses: responses),
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    expect(rust.recordedShares, hasLength(2));
+    expect(rust.recordedShares[0].shareIndex, 0);
+    expect(rust.recordedShares[0].sentToUrls, ['https://voting.example']);
+    expect(rust.recordedShares[1].shareIndex, 1);
+    expect(rust.recordedShares[1].sentToUrls, isEmpty);
+  });
+
   test('ballot intent write failure aborts before vote submission', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
