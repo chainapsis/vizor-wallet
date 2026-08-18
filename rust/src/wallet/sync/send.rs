@@ -94,6 +94,7 @@ use zcash_protocol::{
     PoolType, ShieldedPool,
 };
 
+use crate::wallet::confirmations_policy;
 use crate::wallet::db::{
     open_wallet_db_readonly_with_timeout, open_wallet_raw_conn_with_timeout,
     with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
@@ -3344,7 +3345,7 @@ fn propose_send_with_reserved_notes(
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
-    let confirmations_policy = ConfirmationsPolicy::default();
+    let confirmations_policy = confirmations_policy();
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Read chain state for proposal: {e}"))?
@@ -3737,7 +3738,7 @@ fn build_send_max_proposal(
         to,
         memo_bytes,
         MaxSpendMode::MaxSpendable,
-        ConfirmationsPolicy::default(),
+        confirmations_policy(),
         &LockedInputPolicy::Exclude,
         None,
     )
@@ -3752,7 +3753,7 @@ fn proposed_tx_version_for_wallet_db(
     network: WalletNetwork,
     context: &str,
 ) -> Result<Option<TxVersion>, String> {
-    let confirmations_policy = ConfirmationsPolicy::default();
+    let confirmations_policy = confirmations_policy();
     let (target_height, _) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Read chain state for {context}: {e}"))?
@@ -3786,7 +3787,7 @@ fn build_transparent_recipient_send_max_proposal(
     fee_rule: WalletFeeRule,
     spend_pools: &[ShieldedPool],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
-    let confirmations_policy = ConfirmationsPolicy::default();
+    let confirmations_policy = confirmations_policy();
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Failed to read target height: {e}"))?
@@ -3891,7 +3892,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         fee_rule,
         target_height,
         // Matches the flow's proposal policy (see zip317_helper callers).
-        ConfirmationsPolicy::default(),
+        confirmations_policy(),
         false,
         network.is_nu_active(
             zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
