@@ -59,7 +59,10 @@ import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
+import 'src/features/payment_links/models/vizor_payment_link.dart';
+import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'src/features/payment_links/screens/payment_links_desktop_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -358,9 +361,9 @@ String? appRedirect({
   final isLostPassword = state.matchedLocation == '/lost-password';
   final isUnlockFlow = isUnlock || isLostPassword;
   final isSwap =
-      state.matchedLocation.startsWith('/swap') ||
-      state.matchedLocation.startsWith('/pay') ||
-      state.matchedLocation.startsWith('/activity/swap');
+      _matchesRoutePrefix(state.matchedLocation, '/swap') ||
+      _matchesRoutePrefix(state.matchedLocation, '/pay') ||
+      _matchesRoutePrefix(state.matchedLocation, '/activity/swap');
   final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
   log(
@@ -802,6 +805,14 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(
+    path: '/payment-links',
+    builder: (_, state) => PaymentLinksDesktopScreen(
+      initialCards: state.extra is PaymentLinkCardsSnapshot
+          ? state.extra! as PaymentLinkCardsSnapshot
+          : null,
+    ),
+  ),
+  GoRoute(
     path: '/migration',
     builder: (_, _) => const IronwoodMigrationEntryScreen(),
   ),
@@ -1149,6 +1160,7 @@ class ZcashWalletApp extends ConsumerWidget {
               child: _WindowsUpdatePromptHost(
                 router: router,
                 child: _IncomingPaymentLinkHost(
+                  router: router,
                   child: _RpcEndpointFailoverToastListener(
                     child: _DesktopOpaqueWindowBackground(
                       child: IronwoodMigrationCoordinatorHost(
@@ -1230,8 +1242,9 @@ class _MacOSUpdatePrivacyChoiceHostState
 }
 
 class _IncomingPaymentLinkHost extends ConsumerStatefulWidget {
-  const _IncomingPaymentLinkHost({required this.child});
+  const _IncomingPaymentLinkHost({required this.router, required this.child});
 
+  final GoRouter router;
   final Widget child;
 
   @override
@@ -1242,10 +1255,22 @@ class _IncomingPaymentLinkHost extends ConsumerStatefulWidget {
 class _IncomingPaymentLinkHostState
     extends ConsumerState<_IncomingPaymentLinkHost> {
   StreamSubscription<String>? _subscription;
+  ProviderSubscription<VizorPaymentLink?>? _intakeSubscription;
+  ProviderSubscription<AppSecurityState>? _securitySubscription;
+  bool _navigationScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _intakeSubscription = ref.listenManual(
+      paymentLinkIntakeProvider.select((state) => state.pendingLink),
+      (_, link) {
+        if (link != null) _openPendingPaymentLink();
+      },
+    );
+    _securitySubscription = ref.listenManual(appSecurityProvider, (_, state) {
+      if (!state.requiresUnlock) _openPendingPaymentLink();
+    });
     final service = ref.read(incomingUriServiceProvider);
     _subscription = service.uriStream.listen((rawUri) {
       ref.read(paymentLinkIntakeProvider.notifier).ingest(rawUri);
@@ -1256,7 +1281,28 @@ class _IncomingPaymentLinkHostState
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
+    _intakeSubscription?.close();
+    _securitySubscription?.close();
     super.dispose();
+  }
+
+  void _openPendingPaymentLink() {
+    if (_navigationScheduled ||
+        kAppFormFactor != AppFormFactor.desktop ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+      return;
+    }
+    _navigationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigationScheduled = false;
+      if (!mounted ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+        return;
+      }
+      widget.router.go('/payment-links');
+    });
   }
 
   @override

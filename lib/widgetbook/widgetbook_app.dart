@@ -21,6 +21,7 @@ import 'home_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'pay_use_cases.dart';
+import 'payment_link_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
 import 'review_components_use_cases.dart';
@@ -884,6 +885,152 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Submitted',
                       builder: buildMobilePaySubmittedUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Gift Cards',
+              children: [
+                WidgetbookComponent(
+                  name: 'Home',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty',
+                      builder: buildPaymentLinkEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'How it works',
+                      builder: buildPaymentLinkHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Created list',
+                      builder: buildPaymentLinkCardsListUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received list — claim pending',
+                      builder: buildPaymentLinkCardsReceivingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received list — mined',
+                      builder: buildPaymentLinkCardsReceivedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Create amount',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty',
+                      builder: buildPaymentLinkCreateEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Focused',
+                      builder: buildPaymentLinkCreateFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'ZEC amount',
+                      builder: buildPaymentLinkCreateAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Waiting for sync',
+                      builder: buildPaymentLinkCreateSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Insufficient balance',
+                      builder: buildPaymentLinkCreateInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fiat loading',
+                      builder: buildPaymentLinkCreateFiatLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fiat resolved',
+                      builder: buildPaymentLinkCreateFiatUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Interactive simulator',
+                      builder: buildPaymentLinkInteractiveUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Create message and review',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Message empty',
+                      builder: buildPaymentLinkMessageEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message filled',
+                      builder: buildPaymentLinkMessageFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message interactive',
+                      builder: buildPaymentLinkMessageInteractiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message editor focused',
+                      builder: buildPaymentLinkMessageEditingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message too large',
+                      builder: buildPaymentLinkMessageTooLargeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review',
+                      builder: buildPaymentLinkReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review message side',
+                      builder: buildPaymentLinkReviewMessageUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Ready and received',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Waiting for confirmations',
+                      builder: buildPaymentLinkReadyWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Link available soon',
+                      builder: buildPaymentLinkReadySoonUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready',
+                      builder: buildPaymentLinkReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift',
+                      builder: buildPaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift with message',
+                      builder: buildPaymentLinkReceivedMessageUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Redeem',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Paste link',
+                      builder: buildPaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Loading',
+                      builder: buildPaymentLinkRedeemLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Invalid link',
+                      builder: buildPaymentLinkRedeemInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No available balance',
+                      builder: buildPaymentLinkRedeemUnavailableUseCase,
                     ),
                   ],
                 ),

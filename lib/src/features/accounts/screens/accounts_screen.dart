@@ -27,6 +27,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../send/models/send_prefill_args.dart';
+import '../../payment_links/services/payment_link_recovery_store.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
@@ -266,6 +267,12 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         modalAccount != null && _activeModal == _AccountModalType.removeAccount
         ? ref.watch(swapPendingIntentCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
+    final modalUnsharedGiftCardCount =
+        modalAccount != null &&
+            !isLastModalAccount &&
+            _activeModal == _AccountModalType.removeAccount
+        ? ref.watch(paymentLinkUnsharedFundedCountProvider(modalAccount.uuid))
+        : const AsyncValue<int>.data(0);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -350,6 +357,12 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     pendingSwapCount: modalPendingSwapCount.value ?? 0,
                     checkingPendingSwaps: modalPendingSwapCount.isLoading,
                     pendingSwapCheckFailed: modalPendingSwapCount.hasError,
+                    unsharedGiftCardCount:
+                        modalUnsharedGiftCardCount.value ?? 0,
+                    checkingUnsharedGiftCards:
+                        modalUnsharedGiftCardCount.isLoading,
+                    unsharedGiftCardCheckFailed:
+                        modalUnsharedGiftCardCount.hasError,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)

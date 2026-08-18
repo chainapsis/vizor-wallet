@@ -106,20 +106,33 @@ void main() {
   });
 
   test(
-    'payment-link recovery stays encrypted across password rotation',
+    'payment-link secrets stay encrypted across password rotation',
     () async {
       const recoveryPayload =
           '{"link":"vizor://payment-link?p=secret-mnemonic-payload"}';
+      const receivedPayload =
+          '{"claimLink":"vizor://payment-link?p=received-secret-payload"}';
       await store.configurePassword(_oldPassword);
       await store.writeSecretString(
         kPaymentLinkRecoveryStorageKey,
         recoveryPayload,
+      );
+      await store.writeSecretString(
+        kPaymentLinkReceivedStorageKey,
+        receivedPayload,
       );
 
       final storedBeforeRotation = await store.readPlain(
         kPaymentLinkRecoveryStorageKey,
       );
       expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
+      final receivedBeforeRotation = await store.readPlain(
+        kPaymentLinkReceivedStorageKey,
+      );
+      expect(
+        receivedBeforeRotation,
+        isNot(contains('received-secret-payload')),
+      );
 
       final didChange = await store.changePassword(
         currentPassword: _oldPassword,
@@ -135,6 +148,13 @@ void main() {
           requireUnlockedSession: true,
         ),
         recoveryPayload,
+      );
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkReceivedStorageKey,
+          requireUnlockedSession: true,
+        ),
+        receivedPayload,
       );
     },
   );

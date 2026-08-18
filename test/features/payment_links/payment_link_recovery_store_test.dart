@@ -104,6 +104,36 @@ void main() {
       expect(restartedRecords.single.fundingTxids, 'pending-funding-txid');
     });
 
+    test('counts only funded links that have not been shared', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final first = _link();
+      final second = VizorPaymentLink(
+        network: first.network,
+        address: 'u1secondpaymentlinkaddress',
+        amountZatoshi: first.amountZatoshi,
+        mnemonic: first.mnemonic,
+        birthdayHeight: first.birthdayHeight,
+        label: first.label,
+        createdAt: first.createdAt,
+      );
+
+      await store.saveDraft(link: first, sourceAccountUuid: 'source-account');
+      await store.markFunded(
+        address: first.address,
+        fundingTxids: 'funding-txid',
+      );
+      await store.saveDraft(link: second, sourceAccountUuid: 'source-account');
+      await store.markFunded(
+        address: second.address,
+        fundingTxids: 'second-funding-txid',
+      );
+      await store.markShared(address: second.address);
+
+      expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+      expect(await store.countUnsharedFundedForAccount('other-account'), 0);
+    });
+
     test('archiving a shared record keeps its recovery secret', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
       final store = PaymentLinkRecoveryStore(storage);
