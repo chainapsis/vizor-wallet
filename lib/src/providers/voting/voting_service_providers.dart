@@ -14,8 +14,7 @@ import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/round.dart' as rust_round;
-import '../../rust/third_party/zcash_voting/share_policy.dart'
-    as rust_share_policy;
+import '../../rust/third_party/zcash_voting/share.dart' as rust_share;
 import '../../rust/third_party/zcash_voting/vote.dart' as rust_vote;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -494,13 +493,14 @@ abstract interface class VotingRustApi {
     required BigInt submitAt,
   });
 
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
+  Future<List<rust_share.VoteShareSubmissionPlan>> planVoteShareSubmissions({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required List<String> serverUrls,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
   });
 
   BigInt? lastMomentBufferSeconds({
@@ -888,21 +888,23 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
+  Future<List<rust_share.VoteShareSubmissionPlan>> planVoteShareSubmissions({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required List<String> serverUrls,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
   }) {
-    return rust_api.planShareSubmissions(
-      shareCount: shareCount,
+    return rust_api.planVoteShareSubmissions(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
       serverUrls: serverUrls,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
-      singleShare: singleShare,
     );
   }
 

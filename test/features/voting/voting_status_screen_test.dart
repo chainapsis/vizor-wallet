@@ -46,8 +46,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
     as rust_round;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
-    as rust_share_policy;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share.dart'
+    as rust_share;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
     as rust_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
@@ -2909,7 +2909,6 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    await tester.pumpAndSettle();
     expect(find.text('Confirmed by helper'), findsNothing);
     await _pumpUntilCondition(
       tester,
@@ -2942,24 +2941,6 @@ void main() {
       findsNothing,
     );
     expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
-    expect(
-      http.requests.any(
-        (request) => request.uri.path.contains('/share-status/'),
-      ),
-      isTrue,
-    );
-
-    await tester.pump(const Duration(seconds: 1));
-    for (var i = 0; i < 20; i++) {
-      if (http.requests.any(
-        (request) => request.uri.path.contains('/share-status/'),
-      )) {
-        break;
-      }
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-
-    expect(find.text('submission confirmed route'), findsOne);
     expect(
       http.requests.any(
         (request) => request.uri.path.contains('/share-status/'),
@@ -3444,6 +3425,7 @@ ProviderContainer _statusContainer({
                       pirDepth: 19,
                       tier0Layers: 12,
                       tier1Layers: 7,
+                      polyLen: 4096,
                     ),
                     supportedVersions: rust_config.SupportedVersions(
                       pir: ['2.0'],
@@ -4059,6 +4041,7 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
 class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
   rust_frb_types.RoundRecoveryStateView state = _recoveryState();
   rust_wire.RoundPlanView? roundPlan;
+  ({int bundleIndex, int proposalId, int shareIndex})? priorityShareKey;
   final ballotIntents = <String>[];
 
   @override
@@ -4078,11 +4061,11 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
     required List<int> proposalIds,
   }) async {
     return roundPlan ??
-        super.getRoundPlan(
-          dbPath: dbPath,
-          accountUuid: accountUuid,
+        apiRoundPlanFromRecoveryState(
+          state: state,
           roundId: roundId,
           proposalIds: proposalIds,
+          priorityShareKey: priorityShareKey,
         );
   }
 
@@ -4161,6 +4144,7 @@ class _CountingVotingConfigNotifier extends VotingConfigNotifier {
         pirDepth: 19,
         tier0Layers: 12,
         tier1Layers: 7,
+        polyLen: 4096,
       ),
       supportedVersions: rust_config.SupportedVersions(
         pir: [],
@@ -4467,9 +4451,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     this.bundleCount = 1,
     this.eligibilityWeightZatoshi,
     this.setupWeightPerBundle,
-    this.shareTrackingDelaySeconds,
+    BigInt? shareTrackingDelaySeconds,
     this.keystoneMemoZecByBundle = const {},
-  }) : _persistedBundleCount = bundleCount;
+  }) : shareTrackingDelaySeconds = shareTrackingDelaySeconds ?? BigInt.one,
+       _persistedBundleCount = bundleCount;
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
@@ -4483,6 +4468,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int eligibilityCheckCalls = 0;
   int keystoneDelegationRequestCalls = 0;
   int voteCommitmentCalls = 0;
+  final _plannedVoteShares =
+      <({int bundleIndex, int proposalId, int shareIndex})>{};
 
   @override
   Future<rust_round.BundleLayout> setupDelegationBundles({
@@ -4815,6 +4802,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }) async* {
     voteCommitmentCalls++;
     for (final draft in draftVotes) {
+      _plannedVoteShares.add((
+        bundleIndex: bundleIndex,
+        proposalId: draft.proposalId,
+        shareIndex: 0,
+      ));
       yield rust_api.ApiVoteCommitEvent(
         phase: 'result',
         proposalId: draft.proposalId,
@@ -4871,19 +4863,24 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
+  Future<List<rust_share.VoteShareSubmissionPlan>> planVoteShareSubmissions({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required List<String> serverUrls,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
   }) async {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
+    recoveryApi.priorityShareKey = _plannedVoteShares.firstOrNull;
     return [
-      for (var i = 0; i < shareCount; i++)
-        rust_share_policy.ShareSubmissionPlan(
-          submitAt: BigInt.zero,
+      for (final (index, key) in _plannedVoteShares.indexed)
+        rust_share.VoteShareSubmissionPlan(
+          bundleIndex: key.bundleIndex,
+          proposalId: key.proposalId,
+          shareIndex: key.shareIndex,
+          submitAt: index == 0 ? nowSeconds : BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),
@@ -4930,7 +4927,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         ? share.submitAt.toInt()
         : share.createdAt.toInt();
     var flags = 0;
-    if (!share.confirmed && now >= base + 10) {
+    final priority = recoveryApi.priorityShareKey;
+    final isPriority =
+        priority != null &&
+        share.bundleIndex == priority.bundleIndex &&
+        share.proposalId == priority.proposalId &&
+        share.shareIndex == priority.shareIndex;
+    if (!share.confirmed && (isPriority || now >= base + 10)) {
       flags |= 1;
     }
     final voteEnd = voteEndTimeSeconds?.toInt();
@@ -5176,6 +5179,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         ),
         shares: [
           rust_wire.VoteShareWire(
+            voteRoundId: roundId,
             sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
             proposalId: proposalId,
             voteDecision: choice,

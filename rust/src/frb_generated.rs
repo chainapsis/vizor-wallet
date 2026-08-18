@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1626111918;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -390022284;
 
 // Section: executor
 
@@ -4640,7 +4640,7 @@ fn wire__crate__api__keystone__pczt_spend_nullifiers_impl(
         },
     )
 }
-fn wire__crate__api__voting__plan_share_submissions_impl(
+fn wire__crate__api__voting__plan_vote_share_submissions_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -4648,7 +4648,7 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "plan_share_submissions",
+            debug_name: "plan_vote_share_submissions",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -4662,22 +4662,24 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_share_count = <u32>::sse_decode(&mut deserializer);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
             let api_now_seconds = <u64>::sse_decode(&mut deserializer);
             let api_vote_end_time_seconds = <u64>::sse_decode(&mut deserializer);
             let api_last_moment_buffer_seconds = <Option<u64>>::sse_decode(&mut deserializer);
-            let api_single_share = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::plan_share_submissions(
-                        api_share_count,
+                    let output_ok = crate::api::voting::plan_vote_share_submissions(
+                        api_db_path,
+                        api_account_uuid,
+                        api_round_id,
                         api_server_urls,
                         api_now_seconds,
                         api_vote_end_time_seconds,
                         api_last_moment_buffer_seconds,
-                        api_single_share,
                     )?;
                     Ok(output_ok)
                 })())
@@ -7008,6 +7010,7 @@ const _: fn() = || {
         let _: u32 = PirLayout.pir_depth;
         let _: u32 = PirLayout.tier0_layers;
         let _: u32 = PirLayout.tier1_layers;
+        let _: u32 = PirLayout.poly_len;
     }
     {
         let RecoverableCommitmentBundle =
@@ -7084,12 +7087,6 @@ const _: fn() = || {
         let _: bool = ShareDelegationRecordView.confirmed;
         let _: u64 = ShareDelegationRecordView.submit_at;
         let _: u64 = ShareDelegationRecordView.created_at;
-    }
-    {
-        let ShareSubmissionPlan = None::<zcash_voting::share_policy::ShareSubmissionPlan>.unwrap();
-        let _: u64 = ShareSubmissionPlan.submit_at;
-        let _: u32 = ShareSubmissionPlan.target_count;
-        let _: Vec<String> = ShareSubmissionPlan.target_servers;
     }
     {
         let ShareWorkflowRecoveryView =
@@ -7177,7 +7174,17 @@ const _: fn() = || {
         let _: Vec<u32> = VoteRecoveryWorkView.share_indexes;
     }
     {
+        let VoteShareSubmissionPlan = None::<zcash_voting::share::VoteShareSubmissionPlan>.unwrap();
+        let _: u32 = VoteShareSubmissionPlan.bundle_index;
+        let _: u32 = VoteShareSubmissionPlan.proposal_id;
+        let _: u32 = VoteShareSubmissionPlan.share_index;
+        let _: u64 = VoteShareSubmissionPlan.submit_at;
+        let _: u32 = VoteShareSubmissionPlan.target_count;
+        let _: Vec<String> = VoteShareSubmissionPlan.target_servers;
+    }
+    {
         let VoteShareWire = None::<zcash_voting::wire::VoteShareWire>.unwrap();
+        let _: String = VoteShareWire.vote_round_id;
         let _: String = VoteShareWire.shares_hash;
         let _: u32 = VoteShareWire.proposal_id;
         let _: u32 = VoteShareWire.vote_decision;
@@ -8478,18 +8485,6 @@ impl SseDecode for Vec<zcash_voting::wire::ShareDelegationRecordView> {
     }
 }
 
-impl SseDecode for Vec<zcash_voting::share_policy::ShareSubmissionPlan> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<zcash_voting::share_policy::ShareSubmissionPlan>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<zcash_voting::wire::ShareWorkflowRecoveryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -8617,6 +8612,20 @@ impl SseDecode for Vec<zcash_voting::wire::VoteRecoveryWorkView> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<zcash_voting::wire::VoteRecoveryWorkView>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<zcash_voting::share::VoteShareSubmissionPlan> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<zcash_voting::share::VoteShareSubmissionPlan>::sse_decode(
                 deserializer,
             ));
         }
@@ -9290,10 +9299,12 @@ impl SseDecode for zcash_voting::config::PirLayout {
         let mut var_pirDepth = <u32>::sse_decode(deserializer);
         let mut var_tier0Layers = <u32>::sse_decode(deserializer);
         let mut var_tier1Layers = <u32>::sse_decode(deserializer);
+        let mut var_polyLen = <u32>::sse_decode(deserializer);
         return zcash_voting::config::PirLayout {
             pir_depth: var_pirDepth,
             tier0_layers: var_tier0Layers,
             tier1_layers: var_tier1Layers,
+            poly_len: var_polyLen,
         };
     }
 }
@@ -9508,20 +9519,6 @@ impl SseDecode for zcash_voting::wire::ShareDelegationRecordView {
             confirmed: var_confirmed,
             submit_at: var_submitAt,
             created_at: var_createdAt,
-        };
-    }
-}
-
-impl SseDecode for zcash_voting::share_policy::ShareSubmissionPlan {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_submitAt = <u64>::sse_decode(deserializer);
-        let mut var_targetCount = <u32>::sse_decode(deserializer);
-        let mut var_targetServers = <Vec<String>>::sse_decode(deserializer);
-        return zcash_voting::share_policy::ShareSubmissionPlan {
-            submit_at: var_submitAt,
-            target_count: var_targetCount,
-            target_servers: var_targetServers,
         };
     }
 }
@@ -9999,9 +9996,30 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryWorkView {
     }
 }
 
+impl SseDecode for zcash_voting::share::VoteShareSubmissionPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_bundleIndex = <u32>::sse_decode(deserializer);
+        let mut var_proposalId = <u32>::sse_decode(deserializer);
+        let mut var_shareIndex = <u32>::sse_decode(deserializer);
+        let mut var_submitAt = <u64>::sse_decode(deserializer);
+        let mut var_targetCount = <u32>::sse_decode(deserializer);
+        let mut var_targetServers = <Vec<String>>::sse_decode(deserializer);
+        return zcash_voting::share::VoteShareSubmissionPlan {
+            bundle_index: var_bundleIndex,
+            proposal_id: var_proposalId,
+            share_index: var_shareIndex,
+            submit_at: var_submitAt,
+            target_count: var_targetCount,
+            target_servers: var_targetServers,
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::VoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_voteRoundId = <String>::sse_decode(deserializer);
         let mut var_sharesHash = <String>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_voteDecision = <u32>::sse_decode(deserializer);
@@ -10013,6 +10031,7 @@ impl SseDecode for zcash_voting::wire::VoteShareWire {
         let mut var_primaryBlind = <String>::sse_decode(deserializer);
         let mut var_submitAt = <u64>::sse_decode(deserializer);
         return zcash_voting::wire::VoteShareWire {
+            vote_round_id: var_voteRoundId,
             shares_hash: var_sharesHash,
             proposal_id: var_proposalId,
             vote_decision: var_voteDecision,
@@ -10315,7 +10334,7 @@ fn pde_ffi_dispatcher_primary_impl(
 114 => wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
 116 => wire__crate__api__voting__next_share_tracking_delay_seconds_impl(port, ptr, rust_vec_len, data_len),
 117 => wire__crate__api__keystone__pczt_spend_nullifiers_impl(port, ptr, rust_vec_len, data_len),
-118 => wire__crate__api__voting__plan_share_submissions_impl(port, ptr, rust_vec_len, data_len),
+118 => wire__crate__api__voting__plan_vote_share_submissions_impl(port, ptr, rust_vec_len, data_len),
 119 => wire__crate__api__voting__precompute_delegation_pir_impl(port, ptr, rust_vec_len, data_len),
 120 => wire__crate__api__sync__prepare_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
 121 => wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
@@ -11961,6 +11980,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::PirLayou
             self.0.pir_depth.into_into_dart().into_dart(),
             self.0.tier0_layers.into_into_dart().into_dart(),
             self.0.tier1_layers.into_into_dart().into_dart(),
+            self.0.poly_len.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12226,28 +12246,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::ShareDeleg
     for zcash_voting::wire::ShareDelegationRecordView
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::ShareDelegationRecordView> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::share_policy::ShareSubmissionPlan> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.submit_at.into_into_dart().into_dart(),
-            self.0.target_count.into_into_dart().into_dart(),
-            self.0.target_servers.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::share_policy::ShareSubmissionPlan>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::share_policy::ShareSubmissionPlan>>
-    for zcash_voting::share_policy::ShareSubmissionPlan
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::share_policy::ShareSubmissionPlan> {
         self.into()
     }
 }
@@ -12840,9 +12838,35 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteRecove
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::share::VoteShareSubmissionPlan> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.bundle_index.into_into_dart().into_dart(),
+            self.0.proposal_id.into_into_dart().into_dart(),
+            self.0.share_index.into_into_dart().into_dart(),
+            self.0.submit_at.into_into_dart().into_dart(),
+            self.0.target_count.into_into_dart().into_dart(),
+            self.0.target_servers.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::share::VoteShareSubmissionPlan>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::share::VoteShareSubmissionPlan>>
+    for zcash_voting::share::VoteShareSubmissionPlan
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::share::VoteShareSubmissionPlan> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteShareWire> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.0.vote_round_id.into_into_dart().into_dart(),
             self.0.shares_hash.into_into_dart().into_dart(),
             self.0.proposal_id.into_into_dart().into_dart(),
             self.0.vote_decision.into_into_dart().into_dart(),
@@ -14019,16 +14043,6 @@ impl SseEncode for Vec<zcash_voting::wire::ShareDelegationRecordView> {
     }
 }
 
-impl SseEncode for Vec<zcash_voting::share_policy::ShareSubmissionPlan> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <zcash_voting::share_policy::ShareSubmissionPlan>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<zcash_voting::wire::ShareWorkflowRecoveryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -14125,6 +14139,16 @@ impl SseEncode for Vec<zcash_voting::wire::VoteRecoveryWorkView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <zcash_voting::wire::VoteRecoveryWorkView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<zcash_voting::share::VoteShareSubmissionPlan> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <zcash_voting::share::VoteShareSubmissionPlan>::sse_encode(item, serializer);
         }
     }
 }
@@ -14622,6 +14646,7 @@ impl SseEncode for zcash_voting::config::PirLayout {
         <u32>::sse_encode(self.pir_depth, serializer);
         <u32>::sse_encode(self.tier0_layers, serializer);
         <u32>::sse_encode(self.tier1_layers, serializer);
+        <u32>::sse_encode(self.poly_len, serializer);
     }
 }
 
@@ -14766,15 +14791,6 @@ impl SseEncode for zcash_voting::wire::ShareDelegationRecordView {
         <bool>::sse_encode(self.confirmed, serializer);
         <u64>::sse_encode(self.submit_at, serializer);
         <u64>::sse_encode(self.created_at, serializer);
-    }
-}
-
-impl SseEncode for zcash_voting::share_policy::ShareSubmissionPlan {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u64>::sse_encode(self.submit_at, serializer);
-        <u32>::sse_encode(self.target_count, serializer);
-        <Vec<String>>::sse_encode(self.target_servers, serializer);
     }
 }
 
@@ -15094,9 +15110,22 @@ impl SseEncode for zcash_voting::wire::VoteRecoveryWorkView {
     }
 }
 
+impl SseEncode for zcash_voting::share::VoteShareSubmissionPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.bundle_index, serializer);
+        <u32>::sse_encode(self.proposal_id, serializer);
+        <u32>::sse_encode(self.share_index, serializer);
+        <u64>::sse_encode(self.submit_at, serializer);
+        <u32>::sse_encode(self.target_count, serializer);
+        <Vec<String>>::sse_encode(self.target_servers, serializer);
+    }
+}
+
 impl SseEncode for zcash_voting::wire::VoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.vote_round_id, serializer);
         <String>::sse_encode(self.shares_hash, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.vote_decision, serializer);

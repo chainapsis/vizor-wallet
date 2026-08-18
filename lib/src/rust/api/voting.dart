@@ -7,14 +7,14 @@ import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/round.dart';
-import '../third_party/zcash_voting/share_policy.dart';
+import '../third_party/zcash_voting/share.dart';
 import '../third_party/zcash_voting/types.dart';
 import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -64,30 +64,36 @@ Future<String> voteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Plan independent helper-share timing and randomized helper targets.
+/// Plan one complete vote submission's helper-share timing and targets.
 ///
-/// This mirrors the zcash-swift-wallet-sdk wrapper around
-/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
-/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// The recovery bundles and their secret share values stay inside Rust. Exactly
+/// one share across the round is returned first with `submit_at` set to
+/// `now_seconds`: the submission-wide largest active share selected by
+/// `zcash_voting`. The remaining shares retain randomized schedules and helper
+/// targets. This timing deliberately reveals which public share is the largest,
+/// but does not reveal the bundle count through multiple immediate submissions.
 ///
 /// # Errors
 ///
-/// Returns an error if `share_count` does not fit `usize`, entropy generation
-/// fails, or crate policy rejects the supplied timing/server inputs.
-Future<List<ShareSubmissionPlan>> planShareSubmissions({
-  required int shareCount,
+/// Returns an error if the voting database cannot be read, any vote in the
+/// round is not yet confirmed, recovery material is missing, or crate policy
+/// rejects the supplied timing/server inputs.
+Future<List<VoteShareSubmissionPlan>> planVoteShareSubmissions({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
   required List<String> serverUrls,
   required BigInt nowSeconds,
   required BigInt voteEndTimeSeconds,
   BigInt? lastMomentBufferSeconds,
-  required bool singleShare,
-}) => RustLib.instance.api.crateApiVotingPlanShareSubmissions(
-  shareCount: shareCount,
+}) => RustLib.instance.api.crateApiVotingPlanVoteShareSubmissions(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
   serverUrls: serverUrls,
   nowSeconds: nowSeconds,
   voteEndTimeSeconds: voteEndTimeSeconds,
   lastMomentBufferSeconds: lastMomentBufferSeconds,
-  singleShare: singleShare,
 );
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -699,8 +705,11 @@ Future<void> clearRecoveryState({
   roundId: roundId,
 );
 
-/// Compute the resumable voting-session plan for a round. The plan reports the
-/// ordered remaining work (`next_steps`) and which proposals are still open.
+/// Compute Vizor's resumable voting-session plan for a round.
+///
+/// The submission-wide largest share remains foreground work until one helper
+/// reports its nullifier in committed chain state. Other share work remains in
+/// the plan but does not block completion.
 Future<RoundPlanView> getRoundPlan({
   required String dbPath,
   required String accountUuid,

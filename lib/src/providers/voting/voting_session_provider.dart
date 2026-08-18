@@ -1077,6 +1077,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'proposals=$totalQuestions '
         'lastMoment=${startTiming.isLastMoment}',
       );
+      final pendingShares = <_VoteShareKey, _PendingVoteShare>{};
       for (final recoveredWork in recoveredVoteWork) {
         final key = recoveredWork.key;
         final voteTimer = Stopwatch()..start();
@@ -1112,52 +1113,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           vcTreePositions = await _submitVoteCommitments(context, commitments);
         } else {
           final vcTreePosition = recoveredWork.vcTreePosition;
-          if (vcTreePosition == null) {
-            throw StateError(
-              'Missing vote tree position for submitted shares '
-              'bundle=${key.bundleIndex} proposal=${key.proposalId}.',
-            );
-          }
           final shareIndexes = recoveredWork.shareIndexes;
-          if (shareIndexes == null || shareIndexes.isEmpty) {
+          if (vcTreePosition == null ||
+              shareIndexes == null ||
+              shareIndexes.isEmpty) {
             throw StateError(
-              'Missing planned share indexes for submitted shares '
-              'bundle=${key.bundleIndex} proposal=${key.proposalId}.',
-            );
-          }
-          final recoveredShareIndexes = {
-            for (final commitment in commitments.commitments)
-              if (commitment.proposalId == key.proposalId)
-                for (final share in commitment.shares) share.shareIndex,
-          };
-          final missingRecoveredShares = shareIndexes
-              .where(
-                (shareIndex) => !recoveredShareIndexes.contains(shareIndex),
-              )
-              .toList(growable: false);
-          if (missingRecoveredShares.isNotEmpty) {
-            throw StateError(
-              'Recovered commitment did not contain planned share(s) '
-              '${missingRecoveredShares.join(', ')} '
-              'for bundle=${key.bundleIndex} proposal=${key.proposalId}.',
+              'Missing recovered share fields for bundle=${key.bundleIndex} '
+              'proposal=${key.proposalId}.',
             );
           }
           vcTreePositions = {key.proposalId: vcTreePosition};
-          shareIndexFilter = Set<int>.unmodifiable(shareIndexes);
+          shareIndexFilter = shareIndexes;
         }
-        await _submitCommitmentShares(
-          context,
-          commitments,
+        _collectPendingShares(
+          pendingShares: pendingShares,
+          commitments: commitments,
           vcTreePositions: vcTreePositions,
-          singleShare: _commitmentsUseSingleShare(commitments),
           shareIndexFilter: shareIndexFilter,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: _voteSubmissionProgress(
-            completedBundleTasks: completedBundleTasks,
-            totalBundleTasks: totalBundleTasks,
-            currentBundleProgress: 0.95,
-          ),
         );
         completedBundleTasks++;
         completedQuestions++;
@@ -1324,21 +1296,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 context,
                 commitments,
               );
-              await _submitCommitmentShares(
-                context,
-                commitments,
+              _collectPendingShares(
+                pendingShares: pendingShares,
+                commitments: commitments,
                 vcTreePositions: vcTreePositions,
-                singleShare: timedDraftVote.singleShare,
-                completedQuestions: completedQuestions,
-                totalQuestions: totalQuestions,
-                voteSubmissionProgress: _voteSubmissionProgress(
-                  completedBundleTasks: completedBundleTasks,
-                  totalBundleTasks: totalBundleTasks,
-                  currentBundleProgress: _monotonicProofProgress(
-                    progress[key]?.proofProgress,
-                    0.95,
-                  ),
-                ),
               );
             }
           }
@@ -1384,6 +1345,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
         );
       }
+
+      await _submitPlannedShares(
+        context,
+        pendingShares: pendingShares,
+        completedQuestions: completedQuestions,
+        totalQuestions: totalQuestions,
+        voteSubmissionProgress: _voteSubmissionProgress(
+          completedBundleTasks: completedBundleTasks,
+          totalBundleTasks: totalBundleTasks,
+        ),
+      );
 
       final resumeTimer = Stopwatch()..start();
       debugPrint(
@@ -1507,12 +1479,51 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         plan.shareDelegations.isNotEmpty;
   }
 
-  Future<void> _submitCommitmentShares(
-    _VotingSessionContext context,
-    rust_wire.SignedVoteCommitmentsView commitments, {
-    Map<int, BigInt> vcTreePositions = const {},
+  void _collectPendingShares({
+    required Map<_VoteShareKey, _PendingVoteShare> pendingShares,
+    required rust_wire.SignedVoteCommitmentsView commitments,
+    required Map<int, BigInt> vcTreePositions,
     Set<int>? shareIndexFilter,
-    required bool singleShare,
+  }) {
+    final collectedIndexes = <int>{};
+    for (final commitment in commitments.commitments) {
+      final vcTreePosition = vcTreePositions[commitment.proposalId];
+      if (vcTreePosition == null) {
+        throw StateError(
+          'Missing vote tree position for bundle=${commitments.bundleIndex} '
+          'proposal=${commitment.proposalId}.',
+        );
+      }
+      for (final share in commitment.shares) {
+        if (shareIndexFilter != null &&
+            !shareIndexFilter.contains(share.shareIndex)) {
+          continue;
+        }
+        collectedIndexes.add(share.shareIndex);
+        pendingShares[(
+          bundleIndex: commitments.bundleIndex,
+          proposalId: commitment.proposalId,
+          shareIndex: share.shareIndex,
+        )] = (
+          share: share,
+          vcTreePosition: vcTreePosition,
+        );
+      }
+    }
+    if (shareIndexFilter != null) {
+      final missing = shareIndexFilter.difference(collectedIndexes);
+      if (missing.isNotEmpty) {
+        throw StateError(
+          'Recovered commitment did not contain planned share(s) '
+          '${missing.join(', ')} for bundle=${commitments.bundleIndex}.',
+        );
+      }
+    }
+  }
+
+  Future<void> _submitPlannedShares(
+    _VotingSessionContext context, {
+    required Map<_VoteShareKey, _PendingVoteShare> pendingShares,
     required int completedQuestions,
     required int totalQuestions,
     required double? voteSubmissionProgress,
@@ -1527,119 +1538,123 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throw StateError('No vote servers configured for share submission.');
     }
 
+    if (pendingShares.isEmpty) return;
+
     final timing = _roundShareTiming(context, _nowSeconds());
-    final bundleProgressMessage = _bundleProgressMessage(
-      bundleIndex: commitments.bundleIndex,
-      bundleCount: context.resumePlan.bundleCount,
+    final plans = await rust.planVoteShareSubmissions(
+      dbPath: context.dbPath,
+      accountUuid: context.accountUuid,
+      roundId: context.round.roundId,
+      serverUrls: serverUrls,
+      nowSeconds: BigInt.from(timing.nowSeconds),
+      voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
+      lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
     );
-
-    for (final commitment in commitments.commitments) {
-      final shares = shareIndexFilter == null
-          ? commitment.shares
-          : commitment.shares
-                .where((share) => shareIndexFilter.contains(share.shareIndex))
-                .toList(growable: false);
-      if (shares.isEmpty) continue;
-      final vcTreePosition = vcTreePositions[commitment.proposalId];
-      final plans = await rust.planShareSubmissions(
-        shareCount: shares.length,
-        serverUrls: serverUrls,
-        nowSeconds: BigInt.from(timing.nowSeconds),
-        voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
-        lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
-        singleShare: singleShare,
+    for (var planIndex = 0; planIndex < plans.length; planIndex++) {
+      final plan = plans[planIndex];
+      final key = (
+        bundleIndex: plan.bundleIndex,
+        proposalId: plan.proposalId,
+        shareIndex: plan.shareIndex,
       );
-      if (plans.length != shares.length) {
-        throw StateError(
-          'Share submission policy returned ${plans.length} plan(s) for '
-          '${shares.length} payload(s).',
-        );
-      }
-
-      for (var payloadIndex = 0; payloadIndex < shares.length; payloadIndex++) {
-        final share = shares[payloadIndex];
-        final plan = plans[payloadIndex];
-        final acceptedServers = <String>[];
-        final targetCount = plan.targetCount
-            .clamp(1, serverUrls.length)
-            .toInt();
-        final candidateServers = _plannedShareServers(
-          plannedServers: plan.targetServers,
-          fallbackServers: helperHealth.candidateServers(serverUrls),
-        );
-        final body = await _wireJsonMap(
-          rust.voteShareWireJson(
-            share: share,
-            vcTreePosition: vcTreePosition,
-            submitAt: plan.submitAt,
-          ),
-        );
-        _setShareSubmissionProgress(
-          context: context,
-          bundleIndex: commitments.bundleIndex,
-          proposalId: share.proposalId,
-          message: bundleProgressMessage,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: voteSubmissionProgress,
-        );
-        for (final serverUrl in candidateServers) {
-          if (acceptedServers.length >= targetCount) break;
-          try {
-            debugPrint(
-              '[zcash] Voting: submitting share '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl treePosition=${body['tree_position']} '
-              'submitAt=${plan.submitAt} target=$targetCount',
-            );
-            await api.submitShare(
-              roundId: context.round.roundId,
-              serverUrl: Uri.parse(serverUrl),
-              share: body,
-            );
-            helperHealth.recordSuccess(serverUrl);
-            acceptedServers.add(serverUrl);
-            debugPrint(
-              '[zcash] Voting: share accepted '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
-            );
-          } catch (e) {
-            debugPrint(
-              '[zcash] Voting: share rejected '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl error=$e',
-            );
-            helperHealth.recordFailure(serverUrl);
-            // Recovery retries helpers that did not accept this share.
-          }
-        }
-        if (acceptedServers.isEmpty) {
-          throw StateError(
-            'No vote server accepted share ${share.shareIndex} '
-            'for proposal ${share.proposalId}.',
-          );
-        }
-        if (acceptedServers.length < targetCount) {
-          debugPrint(
-            '[zcash] Voting: share accepted by fewer helpers than planned '
-            'proposal=${share.proposalId} '
-            'share=${share.shareIndex} '
-            'accepted=${acceptedServers.length}/$targetCount',
-          );
-        }
-
-        await rust.recordShareDelegation(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          bundleIndex: commitments.bundleIndex,
-          proposalId: share.proposalId,
-          shareIndex: share.shareIndex,
-          sentToUrls: acceptedServers,
+      final pending = pendingShares.remove(key);
+      if (pending == null) continue;
+      final share = pending.share;
+      final bundleProgressMessage = _bundleProgressMessage(
+        bundleIndex: plan.bundleIndex,
+        bundleCount: context.resumePlan.bundleCount,
+      );
+      final acceptedServers = <String>[];
+      final targetCount = plan.targetCount.clamp(1, serverUrls.length).toInt();
+      final candidateServers = _plannedShareServers(
+        plannedServers: plan.targetServers,
+        fallbackServers: helperHealth.candidateServers(serverUrls),
+      );
+      final body = await _wireJsonMap(
+        rust.voteShareWireJson(
+          share: share,
+          vcTreePosition: pending.vcTreePosition,
           submitAt: plan.submitAt,
+        ),
+      );
+      _setShareSubmissionProgress(
+        context: context,
+        bundleIndex: plan.bundleIndex,
+        proposalId: share.proposalId,
+        message: bundleProgressMessage,
+        completedQuestions: completedQuestions,
+        totalQuestions: totalQuestions,
+        voteSubmissionProgress: voteSubmissionProgress,
+      );
+      for (final serverUrl in candidateServers) {
+        if (acceptedServers.length >= targetCount) break;
+        try {
+          debugPrint(
+            '[zcash] Voting: submitting share '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl treePosition=${body['tree_position']} '
+            'submitAt=${plan.submitAt} target=$targetCount',
+          );
+          await api.submitShare(
+            roundId: context.round.roundId,
+            serverUrl: Uri.parse(serverUrl),
+            share: body,
+          );
+          helperHealth.recordSuccess(serverUrl);
+          acceptedServers.add(serverUrl);
+          debugPrint(
+            '[zcash] Voting: share accepted '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
+          );
+        } catch (e) {
+          debugPrint(
+            '[zcash] Voting: share rejected '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl error=$e',
+          );
+          helperHealth.recordFailure(serverUrl);
+          // Recovery retries helpers that did not accept this share.
+        }
+      }
+      if (acceptedServers.isEmpty) {
+        if (planIndex != 0) {
+          debugPrint(
+            '[zcash] Voting: background share was not accepted '
+            'bundle=${plan.bundleIndex} proposal=${plan.proposalId} '
+            'share=${plan.shareIndex}',
+          );
+          continue;
+        }
+        throw StateError(
+          'No vote server accepted share ${share.shareIndex} '
+          'for proposal ${share.proposalId}.',
         );
       }
+      if (acceptedServers.length < targetCount) {
+        debugPrint(
+          '[zcash] Voting: share accepted by fewer helpers than planned '
+          'proposal=${share.proposalId} '
+          'share=${share.shareIndex} '
+          'accepted=${acceptedServers.length}/$targetCount',
+        );
+      }
+
+      await rust.recordShareDelegation(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: plan.bundleIndex,
+        proposalId: share.proposalId,
+        shareIndex: share.shareIndex,
+        sentToUrls: acceptedServers,
+        submitAt: plan.submitAt,
+      );
+    }
+    if (pendingShares.isNotEmpty) {
+      throw StateError(
+        'Share submission policy omitted ${pendingShares.length} pending share(s).',
+      );
     }
   }
 
@@ -3245,15 +3260,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     ];
   }
 
-  static bool _commitmentsUseSingleShare(
-    rust_wire.SignedVoteCommitmentsView commitments,
-  ) {
-    return commitments.commitments.isNotEmpty &&
-        commitments.commitments.every(
-          (commitment) => commitment.shares.length <= 1,
-        );
-  }
-
   rust_wire.DraftVote _draftVoteForCurrentShareMode(
     _VotingSessionContext context,
     rust_wire.DraftVote draftVote,
@@ -3395,6 +3401,12 @@ class _RoundShareTiming {
   final BigInt? lastMomentBufferSeconds;
   final bool isLastMoment;
 }
+
+typedef _VoteShareKey = ({int bundleIndex, int proposalId, int shareIndex});
+typedef _PendingVoteShare = ({
+  rust_wire.VoteShareWire share,
+  BigInt vcTreePosition,
+});
 
 enum _RecoveredVoteWorkKind { submitVote, submitShares }
 

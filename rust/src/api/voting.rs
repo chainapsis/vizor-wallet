@@ -1,4 +1,4 @@
-use std::{panic, sync::Arc};
+use std::{collections::BTreeMap, panic, sync::Arc};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -11,7 +11,6 @@ use crate::wallet::{
     keys,
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
-use rand::{rngs::OsRng, RngCore};
 use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
 use zcash_voting::config;
@@ -183,63 +182,94 @@ pub fn vote_share_wire_json(
     })
 }
 
-/// Plan independent helper-share timing and randomized helper targets.
+/// Plan one complete vote submission's helper-share timing and targets.
 ///
-/// This mirrors the zcash-swift-wallet-sdk wrapper around
-/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
-/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// The recovery bundles and their secret share values stay inside Rust. Exactly
+/// one share across the round is returned first with `submit_at` set to
+/// `now_seconds`: the submission-wide largest active share selected by
+/// `zcash_voting`. The remaining shares retain randomized schedules and helper
+/// targets. This timing deliberately reveals which public share is the largest,
+/// but does not reveal the bundle count through multiple immediate submissions.
 ///
 /// # Errors
 ///
-/// Returns an error if `share_count` does not fit `usize`, entropy generation
-/// fails, or crate policy rejects the supplied timing/server inputs.
-pub fn plan_share_submissions(
-    share_count: u32,
+/// Returns an error if the voting database cannot be read, any vote in the
+/// round is not yet confirmed, recovery material is missing, or crate policy
+/// rejects the supplied timing/server inputs.
+pub fn plan_vote_share_submissions(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
     server_urls: Vec<String>,
     now_seconds: u64,
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
-    single_share: bool,
-) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlan>, String> {
+) -> Result<Vec<zcash_voting::wire::VoteShareSubmissionPlan>, String> {
     catch(|| {
-        // Convert to usize once for policy sizing and planner inputs.
-        let share_count = usize::try_from(share_count)
-            .map_err(|_| "share_count does not fit in usize".to_string())?;
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+        let snapshot = zcash_voting::recovery::round_snapshot(&db, &round_id)
+            .map_err(|e| format!("round_snapshot failed: {e}"))?;
+        let selected_proposals = db
+            .ballot_intents(&round_id)
+            .map_err(|e| format!("ballot_intents failed: {e}"))?
+            .into_iter()
+            .filter_map(|(proposal_id, decision)| match decision {
+                zcash_voting::session::Decision::Choice(choice) => Some((proposal_id, choice)),
+                zcash_voting::session::Decision::Skipped => None,
+            })
+            .collect::<Vec<_>>();
+        if selected_proposals.is_empty() {
+            return Err("vote submission contains no selected proposals".to_string());
+        }
+        let votes = snapshot
+            .votes
+            .into_iter()
+            .map(|vote| ((vote.bundle_index, vote.proposal_id), vote))
+            .collect::<BTreeMap<_, _>>();
+        let mut bundles = Vec::new();
+        for bundle_index in 0..snapshot.bundle_count {
+            for &(proposal_id, choice) in &selected_proposals {
+                let vote = votes.get(&(bundle_index, proposal_id)).ok_or_else(|| {
+                    format!("missing vote for bundle={bundle_index} proposal={proposal_id}")
+                })?;
+                if vote.choice != choice {
+                    return Err(format!(
+                        "vote choice does not match ballot intent for bundle={bundle_index} proposal={proposal_id}"
+                    ));
+                }
+                if vote.phase != zcash_voting::phases::VotePhase::Confirmed {
+                    return Err(format!(
+                        "vote bundle={} proposal={} must be confirmed before share planning",
+                        vote.bundle_index, vote.proposal_id
+                    ));
+                }
+                bundles.push(
+                    zcash_voting::vote::recovery_bundle(
+                        &db,
+                        &round_id,
+                        vote.bundle_index,
+                        vote.proposal_id,
+                    )
+                    .map_err(|e| format!("load vote recovery failed: {e}"))?
+                    .ok_or_else(|| {
+                        format!(
+                            "missing vote recovery for bundle={} proposal={}",
+                            vote.bundle_index, vote.proposal_id
+                        )
+                    })?,
+                );
+            }
+        }
 
-        // Ask crate policy how much CSPRNG entropy is required.
-        let required = zcash_voting::share_policy::share_submission_random_bytes_required(
-            share_count,
-            server_urls.len(),
-            now_seconds,
-            vote_end_time_seconds,
-            last_moment_buffer_seconds,
-            single_share,
-        );
-
-        // Draw independent entropy streams for schedule and helper selection.
-        let mut submit_at_random_bytes = vec![0u8; required.submit_at_random_bytes];
-        let mut server_random_bytes = vec![0u8; required.server_random_bytes];
-        OsRng
-            .try_fill_bytes(&mut submit_at_random_bytes)
-            .map_err(|e| format!("failed to draw submit_at entropy: {e}"))?;
-        OsRng
-            .try_fill_bytes(&mut server_random_bytes)
-            .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
-
-        // Build FRB-safe plans with fully materialized random inputs.
-        let plans = zcash_voting::share_policy::plan_share_submissions(
-            share_count,
+        zcash_voting::share::plan_vote_share_submissions(
+            &bundles,
             &server_urls,
             now_seconds,
             vote_end_time_seconds,
             last_moment_buffer_seconds,
-            single_share,
-            &submit_at_random_bytes,
-            &server_random_bytes,
+            true,
         )
-        .map_err(|e| e.to_string())?;
-
-        Ok(plans)
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -1581,8 +1611,11 @@ pub fn clear_recovery_state(
     })
 }
 
-/// Compute the resumable voting-session plan for a round. The plan reports the
-/// ordered remaining work (`next_steps`) and which proposals are still open.
+/// Compute Vizor's resumable voting-session plan for a round.
+///
+/// The submission-wide largest share remains foreground work until one helper
+/// reports its nullifier in committed chain state. Other share work remains in
+/// the plan but does not block completion.
 pub fn get_round_plan(
     db_path: String,
     account_uuid: String,
@@ -1592,8 +1625,15 @@ pub fn get_round_plan(
     catch(|| {
         // Derive resumable next steps and convert to wire view.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
-            .map_err(|e| format!("resume_plan failed: {e}"))?;
+        let plan = zcash_voting::session::resume_plan_with_options(
+            &db,
+            &round_id,
+            &proposal_ids,
+            zcash_voting::session::ResumePlanOptions {
+                require_largest_share_confirmation: true,
+            },
+        )
+        .map_err(|e| format!("resume_plan_with_options failed: {e}"))?;
         zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
     })
 }
@@ -1767,6 +1807,7 @@ mod tests {
             pir_depth: 19,
             tier0_layers: 12,
             tier1_layers: 7,
+            poly_len: 4096,
         }
     }
 
@@ -1985,6 +2026,7 @@ mod tests {
     fn share_wire_json_matches_helper_shape_for_live_and_recovery_payloads() {
         let live = vote_share_wire_json(
             zcash_voting::wire::VoteShareWire {
+                vote_round_id: ROUND_ID.to_string(),
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
@@ -2004,6 +2046,7 @@ mod tests {
         )
         .unwrap();
         let expected = serde_json::json!({
+            "vote_round_id": ROUND_ID,
             "enc_share": {"c1":"Aw==","c2":"BA==","share_index":1},
             "primary_blind":"CQ==",
             "proposal_id":7,
@@ -2088,6 +2131,7 @@ mod tests {
     fn share_wire_json_rejects_json_unsafe_integer_fields() {
         let err = vote_share_wire_json(
             zcash_voting::wire::VoteShareWire {
+                vote_round_id: ROUND_ID.to_string(),
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
@@ -2166,15 +2210,68 @@ mod tests {
     }
 
     #[test]
-    fn plan_share_submissions_happy_path_returns_helper_targets() {
+    fn vote_share_planner_uses_the_complete_confirmed_round() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        let notes: Vec<_> = (0..6).map(test_note_info).collect();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        db.set_ballot_intent(ROUND_ID, 7, zcash_voting::session::Decision::Choice(1), 2)
+            .unwrap();
+        for bundle_index in 0..2 {
+            seed_recovery_vote_with_value(
+                &db,
+                TEST_ACCOUNT_UUID,
+                bundle_index,
+                7,
+                1,
+                88 + u64::from(bundle_index),
+                1 + u64::from(bundle_index) * 9,
+            );
+            zcash_voting::vote::record_submission(
+                &db,
+                ROUND_ID,
+                bundle_index,
+                7,
+                &format!("vote-{bundle_index}"),
+            )
+            .unwrap();
+            zcash_voting::vote::record_vc_position(
+                &db,
+                ROUND_ID,
+                bundle_index,
+                7,
+                88 + u64::from(bundle_index),
+            )
+            .unwrap();
+        }
+
         let server_urls = vec![
             "https://helper-a.example".to_string(),
             "https://helper-b.example".to_string(),
         ];
-        let plans =
-            plan_share_submissions(3, server_urls.clone(), 100, 600, Some(120), false).unwrap();
+        let plans = plan_vote_share_submissions(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            server_urls.clone(),
+            100,
+            600,
+            Some(120),
+        )
+        .unwrap();
 
-        assert_eq!(plans.len(), 3);
+        assert_eq!(plans.len(), 2);
+        assert_eq!(plans[0].bundle_index, 1);
+        assert_eq!(plans[0].proposal_id, 7);
+        assert_eq!(plans[0].share_index, 0);
+        assert_eq!(plans[0].submit_at, 100);
         for plan in plans {
             assert!(plan.submit_at >= 100);
             assert!(!plan.target_servers.is_empty());
@@ -2305,6 +2402,7 @@ mod tests {
                         share_index: 0,
                     }],
                     share_payloads: vec![zcash_voting::SharePayload {
+                        vote_round_id: ROUND_ID.to_string(),
                         shares_hash: vec![7; 32],
                         proposal_id: 2,
                         vote_decision: 1,
@@ -3260,8 +3358,35 @@ mod tests {
         vote_decision: u32,
         vc_tree_position: u64,
     ) {
-        let recovery_json =
-            test_vote_recovery_json(bundle_index, proposal_id, vote_decision, vc_tree_position);
+        seed_recovery_vote_with_value(
+            db,
+            account_uuid,
+            bundle_index,
+            proposal_id,
+            vote_decision,
+            vc_tree_position,
+            1,
+        );
+    }
+
+    fn seed_recovery_vote_with_value(
+        db: &zcash_voting::storage::VotingDb,
+        account_uuid: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        vote_decision: u32,
+        vc_tree_position: u64,
+        plaintext_value: u64,
+    ) {
+        let mut recovery = zcash_voting::vote::parse_recovery(&test_vote_recovery_json(
+            bundle_index,
+            proposal_id,
+            vote_decision,
+            vc_tree_position,
+        ))
+        .unwrap();
+        recovery.encrypted_shares[0].plaintext_value = plaintext_value;
+        let recovery_json = zcash_voting::vote::serialize_recovery(&recovery).unwrap();
         let recovery = zcash_voting::vote::parse_recovery(&recovery_json).unwrap();
         let commitment_bytes = serde_json::to_vec(&serde_json::json!({
             "van_nullifier": hex::encode(recovery.van_nullifier),

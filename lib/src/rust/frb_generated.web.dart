@@ -21,7 +21,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/round.dart';
-import 'third_party/zcash_voting/share_policy.dart';
+import 'third_party/zcash_voting/share.dart';
 import 'third_party/zcash_voting/types.dart';
 import 'third_party/zcash_voting/vote.dart';
 import 'third_party/zcash_voting/wire.dart';
@@ -422,9 +422,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<ShareSubmissionPlan> dco_decode_list_share_submission_plan(dynamic raw);
-
-  @protected
   List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
     dynamic raw,
   );
@@ -461,6 +458,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteRecoveryWorkView> dco_decode_list_vote_recovery_work_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<VoteShareSubmissionPlan> dco_decode_list_vote_share_submission_plan(
     dynamic raw,
   );
 
@@ -645,9 +647,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw);
-
-  @protected
   ShareWorkflowRecoveryView dco_decode_share_workflow_recovery_view(
     dynamic raw,
   );
@@ -753,6 +752,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteRecoveryWorkView dco_decode_vote_recovery_work_view(dynamic raw);
+
+  @protected
+  VoteShareSubmissionPlan dco_decode_vote_share_submission_plan(dynamic raw);
 
   @protected
   VoteShareWire dco_decode_vote_share_wire(dynamic raw);
@@ -1280,11 +1282,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<ShareSubmissionPlan> sse_decode_list_share_submission_plan(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<ShareWorkflowRecoveryView> sse_decode_list_share_workflow_recovery_view(
     SseDeserializer deserializer,
   );
@@ -1329,6 +1326,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteRecoveryWorkView> sse_decode_list_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VoteShareSubmissionPlan> sse_decode_list_vote_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -1557,11 +1559,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareSubmissionPlan sse_decode_share_submission_plan(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ShareWorkflowRecoveryView sse_decode_share_workflow_recovery_view(
     SseDeserializer deserializer,
   );
@@ -1681,6 +1678,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteRecoveryWorkView sse_decode_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VoteShareSubmissionPlan sse_decode_vote_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -2339,12 +2341,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_share_submission_plan(
-    List<ShareSubmissionPlan> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_share_workflow_recovery_view(
     List<ShareWorkflowRecoveryView> self,
     SseSerializer serializer,
@@ -2401,6 +2397,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_vote_recovery_work_view(
     List<VoteRecoveryWorkView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_vote_share_submission_plan(
+    List<VoteShareSubmissionPlan> self,
     SseSerializer serializer,
   );
 
@@ -2669,12 +2671,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_share_submission_plan(
-    ShareSubmissionPlan self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_share_workflow_recovery_view(
     ShareWorkflowRecoveryView self,
     SseSerializer serializer,
@@ -2827,6 +2823,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_vote_recovery_work_view(
     VoteRecoveryWorkView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_share_submission_plan(
+    VoteShareSubmissionPlan self,
     SseSerializer serializer,
   );
 

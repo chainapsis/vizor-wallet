@@ -1256,13 +1256,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'confirm_share') {
-          if (session.resumePlan?.hasBlockingShareWork ?? true) return true;
-          continue;
-        }
-        if (_stepCanRecoverWithoutDraft(step)) return true;
-      }
+      return roundPlan.blockingRecovery;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&

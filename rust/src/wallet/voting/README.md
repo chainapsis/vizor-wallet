@@ -145,22 +145,48 @@ stateDiagram-v2
 ### Helper Share Scheduling
 
 Helper-share `submit_at` (the Unix-second reveal time sent to the helper server)
-is computed in Dart from round timing before calling `record_share_delegation`:
+is planned in Rust after every chosen vote commitment is confirmed:
+
+- Exactly one active share across the complete multi-bundle submission is
+  returned first with `submit_at` set to the current Unix time. The crate
+  selects the largest share, with stable bundle/proposal/share tie breaking.
+- This first-share timing reveals which public share represents the largest
+  value, but does not emit one immediate share per bundle and therefore does not
+  reveal the bundle count through immediate-submission timing.
+- Secret plaintext share values never cross the Rust boundary. Dart correlates
+  plans and public payloads by bundle, proposal, and share index.
 
 - The last-moment buffer is 40% of the round duration from `ceremony_phase_start`
   to `vote_end_time`, capped at six hours.
-- Before that buffer, each share samples a randomized `submit_at` uniformly in
+- Before that buffer, each remaining share samples a randomized `submit_at` in
   `[now, vote_end_time - buffer)`.
-- Inside the buffer, the vote commitment uses single-share mode and shares use
-  `submit_at = 0` (immediate submission).
-- If round timing is missing or invalid, Vizor uses `submit_at = 0`.
+- Inside the buffer, the vote commitment uses single-share mode and remaining
+  shares use `submit_at = 0` (immediate submission).
+- If round timing is missing or invalid, remaining shares use `submit_at = 0`.
 
 Retry/resubmission paths submit immediately (`submit_at = 0`); the original
 scheduled value remains part of the durable record for the first accepted
-submission. The canonical scheduling/retry/polling policy lives in the crate's
-`share_policy` module; Dart mirrors it via the `plan_share_submissions`,
-`share_tracking_flags`, and `next_share_tracking_delay_seconds` helpers exposed
-through `api/voting.rs`.
+submission. The foreground voting job remains incomplete until any accepting
+helper reports the selected largest share's nullifier in committed chain state.
+An accepted helper POST only means queued; helper broadcast or CheckTx success
+does not complete the job. The helper's `confirmed` status is the
+application-level evidence of transaction inclusion that Vizor accepts.
+The five-second helper timeout applies to each HTTP attempt, not to the overall
+confirmation wait. Slow or absent blocks leave the durable share row pending so
+polling or a later process can resume without creating a different priority
+share. Other share work remains nonblocking.
+
+Retries reuse the same persisted share, and an identical helper enqueue is
+treated as an idempotent duplicate. A wallet or helper restart only delays
+polling because the priority key and accepting helper URLs are recovered from
+durable state, while helper status is derived from the current committed chain.
+This wait adds no confirmation depth. A reorg before confirmation makes a later
+status check pending again; after Vizor reports success it does not keep polling
+for a subsequent reorg.
+
+The canonical scheduling, retry, polling, and resume policy lives in
+`zcash_voting`; Dart executes the keyed plans and persists observed transport
+and committed-chain results.
 
 ## Wire Types And FRB Scanning
 

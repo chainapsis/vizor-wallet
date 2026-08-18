@@ -20,7 +20,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/round.dart';
-import 'third_party/zcash_voting/share_policy.dart';
+import 'third_party/zcash_voting/share.dart';
 import 'third_party/zcash_voting/types.dart';
 import 'third_party/zcash_voting/vote.dart';
 import 'third_party/zcash_voting/wire.dart';
@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1626111918;
+  int get rustContentHash => -390022284;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -838,13 +838,14 @@ abstract class RustLibApi extends BaseApi {
     required List<int> pcztBytes,
   });
 
-  Future<List<ShareSubmissionPlan>> crateApiVotingPlanShareSubmissions({
-    required int shareCount,
+  Future<List<VoteShareSubmissionPlan>> crateApiVotingPlanVoteShareSubmissions({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required List<String> serverUrls,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
   });
 
   Future<DelegationPirPrecomputeResultView>
@@ -6140,24 +6141,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<List<ShareSubmissionPlan>> crateApiVotingPlanShareSubmissions({
-    required int shareCount,
+  Future<List<VoteShareSubmissionPlan>> crateApiVotingPlanVoteShareSubmissions({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required List<String> serverUrls,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_u_32(shareCount, serializer);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(roundId, serializer);
           sse_encode_list_String(serverUrls, serializer);
           sse_encode_u_64(nowSeconds, serializer);
           sse_encode_u_64(voteEndTimeSeconds, serializer);
           sse_encode_opt_box_autoadd_u_64(lastMomentBufferSeconds, serializer);
-          sse_encode_bool(singleShare, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6166,33 +6169,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_share_submission_plan,
+          decodeSuccessData: sse_decode_list_vote_share_submission_plan,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiVotingPlanShareSubmissionsConstMeta,
+        constMeta: kCrateApiVotingPlanVoteShareSubmissionsConstMeta,
         argValues: [
-          shareCount,
+          dbPath,
+          accountUuid,
+          roundId,
           serverUrls,
           nowSeconds,
           voteEndTimeSeconds,
           lastMomentBufferSeconds,
-          singleShare,
         ],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiVotingPlanShareSubmissionsConstMeta =>
+  TaskConstMeta get kCrateApiVotingPlanVoteShareSubmissionsConstMeta =>
       const TaskConstMeta(
-        debugName: "plan_share_submissions",
+        debugName: "plan_vote_share_submissions",
         argNames: [
-          "shareCount",
+          "dbPath",
+          "accountUuid",
+          "roundId",
           "serverUrls",
           "nowSeconds",
           "voteEndTimeSeconds",
           "lastMomentBufferSeconds",
-          "singleShare",
         ],
       );
 
@@ -9613,14 +9618,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShareSubmissionPlan> dco_decode_list_share_submission_plan(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_share_submission_plan)
-        .toList();
-  }
-
-  @protected
   List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
     dynamic raw,
   ) {
@@ -9699,6 +9696,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>)
         .map(dco_decode_vote_recovery_work_view)
+        .toList();
+  }
+
+  @protected
+  List<VoteShareSubmissionPlan> dco_decode_list_vote_share_submission_plan(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_vote_share_submission_plan)
         .toList();
   }
 
@@ -10163,12 +10170,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PirLayout dco_decode_pir_layout(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return PirLayout(
       pirDepth: dco_decode_u_32(arr[0]),
       tier0Layers: dco_decode_u_32(arr[1]),
       tier1Layers: dco_decode_u_32(arr[2]),
+      polyLen: dco_decode_u_32(arr[3]),
     );
   }
 
@@ -10336,19 +10344,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       confirmed: dco_decode_bool(arr[7]),
       submitAt: dco_decode_u_64(arr[8]),
       createdAt: dco_decode_u_64(arr[9]),
-    );
-  }
-
-  @protected
-  ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return ShareSubmissionPlan(
-      submitAt: dco_decode_u_64(arr[0]),
-      targetCount: dco_decode_u_32(arr[1]),
-      targetServers: dco_decode_list_String(arr[2]),
     );
   }
 
@@ -10767,21 +10762,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  VoteShareSubmissionPlan dco_decode_vote_share_submission_plan(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return VoteShareSubmissionPlan(
+      bundleIndex: dco_decode_u_32(arr[0]),
+      proposalId: dco_decode_u_32(arr[1]),
+      shareIndex: dco_decode_u_32(arr[2]),
+      submitAt: dco_decode_u_64(arr[3]),
+      targetCount: dco_decode_u_32(arr[4]),
+      targetServers: dco_decode_list_String(arr[5]),
+    );
+  }
+
+  @protected
   VoteShareWire dco_decode_vote_share_wire(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return VoteShareWire(
-      sharesHash: dco_decode_String(arr[0]),
-      proposalId: dco_decode_u_32(arr[1]),
-      voteDecision: dco_decode_u_32(arr[2]),
-      encryptedShare: dco_decode_wire_encrypted_share(arr[3]),
-      shareIndex: dco_decode_u_32(arr[4]),
-      vcTreePosition: dco_decode_u_64(arr[5]),
-      shareComms: dco_decode_list_String(arr[6]),
-      primaryBlind: dco_decode_String(arr[7]),
-      submitAt: dco_decode_u_64(arr[8]),
+      voteRoundId: dco_decode_String(arr[0]),
+      sharesHash: dco_decode_String(arr[1]),
+      proposalId: dco_decode_u_32(arr[2]),
+      voteDecision: dco_decode_u_32(arr[3]),
+      encryptedShare: dco_decode_wire_encrypted_share(arr[4]),
+      shareIndex: dco_decode_u_32(arr[5]),
+      vcTreePosition: dco_decode_u_64(arr[6]),
+      shareComms: dco_decode_list_String(arr[7]),
+      primaryBlind: dco_decode_String(arr[8]),
+      submitAt: dco_decode_u_64(arr[9]),
     );
   }
 
@@ -12335,20 +12347,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShareSubmissionPlan> sse_decode_list_share_submission_plan(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ShareSubmissionPlan>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_share_submission_plan(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<ShareWorkflowRecoveryView> sse_decode_list_share_workflow_recovery_view(
     SseDeserializer deserializer,
   ) {
@@ -12482,6 +12480,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <VoteRecoveryWorkView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_vote_recovery_work_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<VoteShareSubmissionPlan> sse_decode_list_vote_share_submission_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <VoteShareSubmissionPlan>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_vote_share_submission_plan(deserializer));
     }
     return ans_;
   }
@@ -13178,10 +13190,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pirDepth = sse_decode_u_32(deserializer);
     var var_tier0Layers = sse_decode_u_32(deserializer);
     var var_tier1Layers = sse_decode_u_32(deserializer);
+    var var_polyLen = sse_decode_u_32(deserializer);
     return PirLayout(
       pirDepth: var_pirDepth,
       tier0Layers: var_tier0Layers,
       tier1Layers: var_tier1Layers,
+      polyLen: var_polyLen,
     );
   }
 
@@ -13390,21 +13404,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       confirmed: var_confirmed,
       submitAt: var_submitAt,
       createdAt: var_createdAt,
-    );
-  }
-
-  @protected
-  ShareSubmissionPlan sse_decode_share_submission_plan(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_submitAt = sse_decode_u_64(deserializer);
-    var var_targetCount = sse_decode_u_32(deserializer);
-    var var_targetServers = sse_decode_list_String(deserializer);
-    return ShareSubmissionPlan(
-      submitAt: var_submitAt,
-      targetCount: var_targetCount,
-      targetServers: var_targetServers,
     );
   }
 
@@ -13887,8 +13886,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  VoteShareSubmissionPlan sse_decode_vote_share_submission_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_bundleIndex = sse_decode_u_32(deserializer);
+    var var_proposalId = sse_decode_u_32(deserializer);
+    var var_shareIndex = sse_decode_u_32(deserializer);
+    var var_submitAt = sse_decode_u_64(deserializer);
+    var var_targetCount = sse_decode_u_32(deserializer);
+    var var_targetServers = sse_decode_list_String(deserializer);
+    return VoteShareSubmissionPlan(
+      bundleIndex: var_bundleIndex,
+      proposalId: var_proposalId,
+      shareIndex: var_shareIndex,
+      submitAt: var_submitAt,
+      targetCount: var_targetCount,
+      targetServers: var_targetServers,
+    );
+  }
+
+  @protected
   VoteShareWire sse_decode_vote_share_wire(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_voteRoundId = sse_decode_String(deserializer);
     var var_sharesHash = sse_decode_String(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_voteDecision = sse_decode_u_32(deserializer);
@@ -13899,6 +13920,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_primaryBlind = sse_decode_String(deserializer);
     var var_submitAt = sse_decode_u_64(deserializer);
     return VoteShareWire(
+      voteRoundId: var_voteRoundId,
       sharesHash: var_sharesHash,
       proposalId: var_proposalId,
       voteDecision: var_voteDecision,
@@ -15299,18 +15321,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_share_submission_plan(
-    List<ShareSubmissionPlan> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_share_submission_plan(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_share_workflow_recovery_view(
     List<ShareWorkflowRecoveryView> self,
     SseSerializer serializer,
@@ -15427,6 +15437,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_vote_recovery_work_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_vote_share_submission_plan(
+    List<VoteShareSubmissionPlan> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_vote_share_submission_plan(item, serializer);
     }
   }
 
@@ -15959,6 +15981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.pirDepth, serializer);
     sse_encode_u_32(self.tier0Layers, serializer);
     sse_encode_u_32(self.tier1Layers, serializer);
+    sse_encode_u_32(self.polyLen, serializer);
   }
 
   @protected
@@ -16111,17 +16134,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.confirmed, serializer);
     sse_encode_u_64(self.submitAt, serializer);
     sse_encode_u_64(self.createdAt, serializer);
-  }
-
-  @protected
-  void sse_encode_share_submission_plan(
-    ShareSubmissionPlan self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_64(self.submitAt, serializer);
-    sse_encode_u_32(self.targetCount, serializer);
-    sse_encode_list_String(self.targetServers, serializer);
   }
 
   @protected
@@ -16468,11 +16480,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_vote_share_submission_plan(
+    VoteShareSubmissionPlan self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.bundleIndex, serializer);
+    sse_encode_u_32(self.proposalId, serializer);
+    sse_encode_u_32(self.shareIndex, serializer);
+    sse_encode_u_64(self.submitAt, serializer);
+    sse_encode_u_32(self.targetCount, serializer);
+    sse_encode_list_String(self.targetServers, serializer);
+  }
+
+  @protected
   void sse_encode_vote_share_wire(
     VoteShareWire self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.voteRoundId, serializer);
     sse_encode_String(self.sharesHash, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.voteDecision, serializer);

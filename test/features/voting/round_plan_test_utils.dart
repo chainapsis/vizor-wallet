@@ -70,6 +70,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   required rust_wire.RoundRecoveryStateView state,
   required String roundId,
   required List<int> proposalIds,
+  ({int bundleIndex, int proposalId, int shareIndex})? priorityShareKey,
 }) {
   final nextSteps = <rust_wire.NextStepView>[];
   final recoveredDelegationWork = <rust_wire.DelegationRecoveryWorkView>[];
@@ -201,9 +202,18 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   final blockingShareWork = state.unconfirmedShareDelegations.any(
     (share) => share.sentToUrls.isEmpty,
   );
+  final blockingShareConfirmation =
+      priorityShareKey != null &&
+      state.unconfirmedShareDelegations.any(
+        (share) =>
+            share.bundleIndex == priorityShareKey.bundleIndex &&
+            share.proposalId == priorityShareKey.proposalId &&
+            share.shareIndex == priorityShareKey.shareIndex,
+      );
   final blockingRecovery =
       nextSteps.any((step) => step.kind != 'confirm_share') ||
-      blockingShareWork;
+      blockingShareWork ||
+      blockingShareConfirmation;
   final completedForDisplay = completedVoteArtifact && !blockingRecovery;
 
   return apiRoundPlan(
