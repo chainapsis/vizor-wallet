@@ -12,14 +12,16 @@ class VotingShareTrackingRegistry {
   final Set<Completer<void>> _discoveries = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
   final Set<String> _quiescedAccounts = {};
-  bool _allQuiesced = false;
+  int _globalQuiescenceDepth = 0;
 
   /// Starts discovery before its first asynchronous operation.
   ///
   /// Destructive wallet operations block new discovery and await the returned
   /// lease, so sidecar reads cannot outlive the state they are inspecting.
   VoidCallback? beginDiscovery() {
-    if (_allQuiesced || _quiescedAccounts.isNotEmpty) return null;
+    if (_globalQuiescenceDepth > 0 || _quiescedAccounts.isNotEmpty) {
+      return null;
+    }
     final completion = Completer<void>();
     _discoveries.add(completion);
     return () {
@@ -59,12 +61,17 @@ class VotingShareTrackingRegistry {
   }
 
   bool isQuiesced(String accountUuid) {
-    return _allQuiesced || _quiescedAccounts.contains(accountUuid);
+    return _globalQuiescenceDepth > 0 ||
+        _quiescedAccounts.contains(accountUuid);
   }
 
+  /// Blocks matching discovery until paired with [resume].
+  ///
+  /// Global calls are reference counted so overlapping owners cannot release
+  /// each other's destructive boundary.
   Future<void> quiesceAndDrain({String? accountUuid}) async {
     if (accountUuid == null) {
-      _allQuiesced = true;
+      _globalQuiescenceDepth++;
     } else {
       _quiescedAccounts.add(accountUuid);
     }
@@ -89,7 +96,7 @@ class VotingShareTrackingRegistry {
 
   void resume({String? accountUuid}) {
     if (accountUuid == null) {
-      _allQuiesced = false;
+      if (_globalQuiescenceDepth > 0) _globalQuiescenceDepth--;
     } else {
       _quiescedAccounts.remove(accountUuid);
     }

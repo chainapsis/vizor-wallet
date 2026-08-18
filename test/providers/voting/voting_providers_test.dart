@@ -4891,6 +4891,23 @@ void main() {
     expect(drained, isTrue);
   });
 
+  test('global quiescence remains until every owner resumes', () async {
+    final registry = VotingShareTrackingRegistry();
+
+    await registry.quiesceAndDrain();
+    await registry.quiesceAndDrain();
+    registry.resume();
+
+    expect(registry.isQuiesced('account-1'), isTrue);
+    expect(registry.beginDiscovery(), isNull);
+
+    registry.resume();
+    expect(registry.isQuiesced('account-1'), isFalse);
+    final releaseDiscovery = registry.beginDiscovery();
+    expect(releaseDiscovery, isNotNull);
+    releaseDiscovery!();
+  });
+
   test('restore request restarts discovery after destructive drain', () async {
     var loadCount = 0;
     final container = _sessionContainer(
