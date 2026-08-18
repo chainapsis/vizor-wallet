@@ -5020,6 +5020,55 @@ void main() {
     },
   );
 
+  test('destructive drain ignores a completed tracking pass failure', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final pendingShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.from(nowSeconds - 100),
+    );
+    final rust = _GatedFailingShareTrackingRustApi();
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: recoveryState(
+          shareDelegations: [pendingShare],
+          unconfirmedShareDelegations: [pendingShare],
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+    const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+    await container.read(votingSubmissionSessionProvider(key).future);
+    final pass = container
+        .read(votingSubmissionSessionProvider(key).notifier)
+        .submitPendingShares();
+    final passFailure = expectLater(pass, throwsA(isA<StateError>()));
+    await rust.started.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    var drained = false;
+    final drain = registry.quiesceAndDrain().then((_) => drained = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    rust.release.complete();
+    await passFailure;
+    await drain;
+
+    expect(drained, isTrue);
+    expect(registry.registeredKeys, isEmpty);
+    registry.resume();
+  });
+
   test('restores persisted shares across async session loading', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     const unknownRoundId =
@@ -7983,6 +8032,22 @@ class FakeVotingRustApi implements VotingRustApi {
     required int shareIndex,
   }) async {
     confirmedShares.add('$bundleIndex:$proposalId:$shareIndex');
+  }
+}
+
+class _GatedFailingShareTrackingRustApi extends FakeVotingRustApi {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<int> shareTrackingFlags({
+    required rust_frb_types.ShareDelegationRecordView share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) async {
+    started.complete();
+    await release.future;
+    throw StateError('injected tracking pass failure');
   }
 }
 

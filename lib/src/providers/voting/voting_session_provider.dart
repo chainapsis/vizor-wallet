@@ -2178,8 +2178,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _shareTrackingTimer = null;
     _advanceSessionGeneration();
     final pass = _shareTrackingPass;
-    if (pass != null) await pass;
-    _releaseAutomaticShareTracking();
+    try {
+      if (pass != null) await pass;
+    } catch (_) {
+      // The tracking action already logged its business error. Destructive
+      // wallet operations require the pass to finish, not to succeed.
+    } finally {
+      _releaseAutomaticShareTracking();
+    }
   }
 
   void resumeShareTracking() {
