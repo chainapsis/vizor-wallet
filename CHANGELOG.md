@@ -11,7 +11,7 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   tracking with the caller context persisted for each round.
 
 ### Changed
-- Cap each randomized initial helper-share delay at 48 hours while preserving
+- Cap each randomized initial helper-share delay at 100 hours while preserving
   the round's last-moment safety window and retry timing from the sampled
   `submit_at`.
 

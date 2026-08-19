@@ -24,7 +24,7 @@ pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
 /// Random bytes needed to sample an initial delayed share submission time.
 pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
 /// Maximum randomized delay before an initial helper share submission.
-pub const SHARE_SUBMIT_AT_MAX_DELAY_SECONDS: u64 = 48 * 60 * 60;
+pub const SHARE_SUBMIT_AT_MAX_DELAY_SECONDS: u64 = 100 * 60 * 60;
 const VOTE_COMMITMENT_SHARE_COUNT: usize = 16;
 /// Numerator for the last-moment share window fraction.
 pub const LAST_MOMENT_BUFFER_FRACTION_NUMERATOR: u64 = 2;
@@ -306,7 +306,7 @@ pub fn share_submit_at_random_bytes_required(
 
 /// Plan the delayed helper submission time from a caller-provided random unit.
 ///
-/// The sampled delay is capped at 48 hours and still ends before the round's
+/// The sampled delay is capped at 100 hours and still ends before the round's
 /// last-moment window.
 ///
 /// This is useful for deterministic tests and FFI callers that already expose a
@@ -340,7 +340,7 @@ pub fn scheduled_share_submit_at_from_random_unit(
 
 /// Plan the delayed helper submission time using caller-provided entropy.
 ///
-/// The sampled delay is capped at 48 hours and still ends before the round's
+/// The sampled delay is capped at 100 hours and still ends before the round's
 /// last-moment window.
 ///
 /// `submit_at_random_bytes` must contain at least
@@ -380,7 +380,7 @@ pub fn scheduled_share_submit_at_from_entropy(
 /// Return the nonempty randomized delay window for an initial helper share.
 ///
 /// The window ends no later than the round's last-moment boundary and is capped
-/// at 48 hours from `now_seconds`.
+/// at 100 hours from `now_seconds`.
 fn delayed_share_window_seconds(
     now_seconds: u64,
     vote_end_time_seconds: u64,
@@ -997,7 +997,7 @@ mod tests {
     }
 
     #[test]
-    fn delayed_share_window_caps_long_round_at_48_hours() {
+    fn delayed_share_window_caps_long_round_at_100_hours() {
         let now = 1_000_000;
         let vote_end = now + 30 * 24 * 60 * 60;
 
@@ -1019,7 +1019,7 @@ mod tests {
                 0.5,
             )
             .unwrap(),
-            now + 24 * 60 * 60
+            now + 50 * 60 * 60
         );
     }
 
@@ -1110,7 +1110,7 @@ mod tests {
         let share = share(submit_at, now);
         let policy = ShareTimingPolicy::default();
 
-        assert_eq!(share_recovery_base_time(&share), now + 24 * 60 * 60);
+        assert_eq!(share_recovery_base_time(&share), now + 50 * 60 * 60);
         assert!(!should_resubmit_share(
             &share,
             submit_at + SHARE_MAX_OVERDUE_THRESHOLD_SECONDS - 1,
