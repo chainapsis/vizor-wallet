@@ -847,6 +847,7 @@ fn active_migration_restricts_ordinary_sends_to_ironwood() {
     assert!(!policy.permits_shielded(ShieldedPool::Sapling));
     assert!(!policy.permits_shielded(ShieldedPool::Orchard));
     assert!(policy.permits_shielded(ShieldedPool::Ironwood));
+    assert_eq!(policy.note_selection(), NoteSelection::PreferConsolidation);
     assert_eq!(
         ordinary_send_spend_pools(true),
         vec![ShieldedPool::Ironwood]
@@ -860,6 +861,7 @@ fn ordinary_send_policy_keeps_all_shielded_pools_without_migration() {
     assert!(policy.permits_shielded(ShieldedPool::Sapling));
     assert!(policy.permits_shielded(ShieldedPool::Orchard));
     assert!(policy.permits_shielded(ShieldedPool::Ironwood));
+    assert_eq!(policy.note_selection(), NoteSelection::PreferConsolidation);
 }
 
 fn migration_test_stage(
