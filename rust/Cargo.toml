@@ -10,10 +10,10 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
-sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "1.0.0-rc.1", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = "0.5"
+pasta_curves = { package = "zakura-pasta-curves", version = "1.0.0-rc.1" }
 ff = "0.13"
 # Required by no-op Sapling prover trait impls
 jubjub = "0.10"
@@ -75,15 +75,18 @@ ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
 serde_json = "1"
 url = "2.5.8"
 
-# Zcash core
+# Zcash core. Package names are the Zakura forks; lib names stay upstream so
+# `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
-version = "0.30.0"
+package = "zakura-primitives"
+version = "1.0.0-rc.1"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
-version = "0.16.1"
+package = "zakura-keys"
+version = "1.0.0-rc.1"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -94,7 +97,8 @@ package = "zcash_transparent"
 version = "0.10.0"
 
 [dependencies.zcash_client_backend]
-version = "0.24.0-rc.7"
+package = "zakura-client-backend"
+version = "0.1.0-rc1"
 features = [
     "orchard",
     "transparent-inputs",
@@ -106,24 +110,26 @@ features = [
 ]
 
 [dependencies.zcash_client_sqlite]
-version = "0.22.0-rc.7"
+package = "zakura-client-sqlite"
+version = "0.1.0-rc1"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
-# Voting clients need PIR lookup support and vote-commitment-tree sync.
 [dependencies.zcash_voting]
-version = "=3.0.0"
+version = "=3.1.0-rc.1"
+default-features = false
+features = ["zakura"]
 
-# Keep Orchard aligned with the released librustzcash and zcash_voting family
-# to avoid type conflicts.
 [dependencies.orchard]
-version = "0.15.4"
+package = "zakura-orchard"
+version = "1.0.0-rc.1"
 
-# Proofs
 [dependencies.zcash_proofs]
-version = "0.30.0"
+package = "zakura-proofs"
+version = "1.0.0-rc.1"
 
 [dependencies.pczt]
-version = "0.9.2"
+package = "zakura-pczt"
+version = "0.1.0-rc0"
 features = [
     "orchard",
     "io-finalizer",
@@ -156,13 +162,9 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.5.0"
-
-# Temporary pending-share discovery API until the next zcash_voting release.
-[patch.crates-io]
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "7986b9cddf987c69e4a8ea23d3bb55c89e054910" }
+version = "=0.5.1"
+default-features = false
+features = ["zakura"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
@@ -177,3 +179,4 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
