@@ -7,11 +7,15 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/valargroup/zcash_voting"
 readme = "README.md"
 
+[features]
+default = ["upstream"]
+upstream = ["imt-tree/upstream", "voting-crypto-deps/upstream", "voting-circuits/upstream"]
+zakura = ["imt-tree/zakura", "voting-crypto-deps/zakura", "voting-circuits/zakura"]
+
 [dependencies]
-imt-tree = "=0.2.1"
-pasta_curves = "0.5"
+imt-tree = { version = "=0.3.0", default-features = false }
+voting-crypto-deps = { workspace = true }
 ff = "0.13"
-halo2_gadgets = { version = "=0.5.0", default-features = false }
 anyhow = "1.0"
 incrementalmerkletree = "0.8.1"
 shardtree = "0.7"
@@ -20,5 +24,4 @@ libc = "0.2"
 
 [dev-dependencies]
 rand = "0.8"
-orchard = { workspace = true }
 voting-circuits = { workspace = true }

@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::orchard;
 use orchard::bundle::BundleVersion;
 use orchard::note::NoteVersion;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Parameters};

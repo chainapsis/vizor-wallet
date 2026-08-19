@@ -3,6 +3,8 @@
 //! These helpers keep the tonic/lightwalletd edge in `zcash_voting` for callers
 //! that need Zcash mainnet chain state while preparing delegation witnesses.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::zcash_client_backend;
 use std::{future::Future, time::Duration};
 
 use prost::Message;

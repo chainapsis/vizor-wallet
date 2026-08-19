@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves, pczt, zcash_keys, zcash_primitives};
 use ff::{Field, PrimeField};
 use pasta_curves::arithmetic::{CurveAffine, CurveExt};
 use pasta_curves::group::{Curve, Group, GroupEncoding};

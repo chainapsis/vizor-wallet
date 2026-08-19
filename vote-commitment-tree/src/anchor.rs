@@ -2,7 +2,7 @@
 
 use ff::PrimeField;
 use incrementalmerkletree::{Hashable, Level};
-use pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::hash::{MerkleHashVote, TREE_DEPTH};
 

@@ -8,8 +8,8 @@
 
 use base64::prelude::*;
 use ff::PrimeField;
-use pasta_curves::Fp;
 use serde::Deserialize;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use vote_commitment_tree::sync_api::{BlockCommitments, BlockCommitmentsPage, TreeState};
 use vote_commitment_tree::MerkleHashVote;

@@ -12,8 +12,8 @@ jobs:
             exit 1
           fi
 
-  no-inline-git-dependencies:
-    name: No inline git dependencies
+  registry-dependency-readiness:
+    name: Registry dependency readiness
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

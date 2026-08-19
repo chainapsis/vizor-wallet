@@ -4,6 +4,21 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+default = ["upstream"]
+upstream = [
+    "zcash_voting/upstream",
+    "voting-crypto-deps/upstream",
+    "zakura-wallet-lib/lrz",
+    "zakura-wallet-lib/orchard",
+]
+zakura = [
+    "zcash_voting/zakura",
+    "voting-crypto-deps/zakura",
+    "zakura-wallet-lib/zakura",
+    "zakura-wallet-lib/orchard",
+]
+
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
@@ -14,14 +29,12 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1", "http2"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
-orchard = { workspace = true }
-pasta_curves = "0.5"
 rand = "0.8"
 rusqlite = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-zcash_client_sqlite = { workspace = true }
-zcash_keys = { workspace = true }
+voting-crypto-deps = { workspace = true }
+zakura-wallet-lib = { workspace = true }
 zcash_protocol = { workspace = true }
-zcash_voting = { path = "../zcash_voting" }
+zcash_voting = { path = "../zcash_voting", default-features = false }
 zip32 = "0.2"

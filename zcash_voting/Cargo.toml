@@ -9,11 +9,46 @@ repository = "https://github.com/valargroup/zcash_voting"
 readme = "README.md"
 
 [features]
+default = ["upstream"]
+# crates.io librustzcash + voting-crypto-deps/upstream. What ZODL builds.
+upstream = [
+    "vote-commitment-tree/upstream",
+    "vote-commitment-tree-client/upstream",
+    "voting-circuits/upstream",
+    "voting-crypto-deps/upstream",
+    "imt-tree/upstream",
+    "pir-client/upstream",
+    "pir-types/upstream",
+    "zakura-wallet-lib/lrz",
+    "zakura-wallet-lib/orchard",
+    "dep:orchard",
+    "dep:pczt",
+    "dep:zcash_client_backend",
+    "dep:zcash_client_sqlite",
+    "dep:zcash_keys",
+    "dep:zcash_primitives",
+]
+# Zakura wallet-libraries forks + voting-crypto-deps/zakura. What Vizor builds.
+zakura = [
+    "vote-commitment-tree/zakura",
+    "vote-commitment-tree-client/zakura",
+    "voting-circuits/zakura",
+    "voting-crypto-deps/zakura",
+    "imt-tree/zakura",
+    "pir-client/zakura",
+    "pir-types/zakura",
+    "zakura-wallet-lib/zakura",
+    "zakura-wallet-lib/orchard",
+    "dep:zakura-orchard",
+    "dep:zakura-pczt",
+    "dep:zakura-client-sqlite",
+    "dep:zakura-client-backend",
+    "dep:zakura-keys",
+    "dep:zakura-primitives",
+]
 test-fixtures = []
 
 [dependencies]
-# Curves (same as Orchard/Zcash)
-pasta_curves = "0.5"
 ff = "0.13"
 group = "0.13"
 
@@ -22,9 +57,7 @@ rand = "0.8"
 
 # Hashing
 blake2b_simd = "1"
-halo2_gadgets = "=0.5.0"
-halo2_proofs = "0.3"
-sinsemilla = "0.1"
+voting-crypto-deps = { workspace = true }
 
 # Serialization
 base64 = "0.22"
@@ -36,14 +69,14 @@ sha2 = "0.10"
 ed25519-dalek = "2"
 
 # PIR (private nullifier exclusion proofs).
-pir-client = { version = "=0.4.0", default-features = false }
+pir-client = { version = "=0.5.0", default-features = false }
 # Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
 # direct dependencies constrain the versions Cargo may resolve, but they do not
 # change whether upstream build scripts execute.
-pir-types = { version = "=0.3.0", default-features = false }
+pir-types = { version = "=0.4.0", default-features = false }
 valar-spiral-rs = { version = "=0.5.2", default-features = false }
 valar-ypir = { version = "=0.2.0", default-features = false }
-imt-tree = { version = "=0.2.1" }
+imt-tree = { version = "=0.3.0", default-features = false }
 
 bytes = { version = "1" }
 http = { version = "1" }
@@ -55,8 +88,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0" }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.0", features = ["http"] }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0", default-features = false }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.0", default-features = false, features = ["http"] }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -66,23 +99,30 @@ anyhow = "1"
 thiserror = "2"
 zeroize = "1"
 
-# Orchard and voting-circuits use workspace dependencies so every consumer gets
-# the same circuit-compatible pair. Orchard's `unstable-voting-circuits` feature is
-# required by integration tests in `zkp1.rs` (`Note::new`, `Note::dummy`,
-# `Rho::from_nf_old`).
+# Backend selection: `zakura-wallet-lib` re-exports one wallet stack, and
+# `voting-crypto-deps` re-exports one proving stack. Optional crates below
+# exist only to turn on features (tonic, pczt roles) that the facade does not
+# forward; they unify onto the same packages the facade selected.
 subtle = "2.6"
-orchard = { workspace = true }
+zakura-wallet-lib = { workspace = true }
 voting-circuits = { workspace = true }
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"
 
 zcash_protocol = { workspace = true }
-zcash_client_backend = { workspace = true }
-zcash_client_sqlite = { workspace = true }
-zcash_keys = { workspace = true }
-pczt = { workspace = true }
-zcash_primitives = { workspace = true }
+pczt = { workspace = true, optional = true }
+orchard = { workspace = true, optional = true }
+zcash_client_backend = { workspace = true, optional = true }
+zcash_client_sqlite = { workspace = true, optional = true }
+zcash_keys = { workspace = true, optional = true }
+zcash_primitives = { workspace = true, optional = true }
+zakura-orchard = { package = "zakura-orchard", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["circuit", "std", "unstable-voting-circuits"] }
+zakura-pczt = { package = "zakura-pczt", version = "0.1.0-rc0", optional = true, features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc0", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc0", default-features = false, optional = true, features = ["orchard"] }
+zakura-keys = { package = "zakura-keys", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["orchard"] }
+zakura-primitives = { package = "zakura-primitives", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["std", "circuits"] }
 uuid = "1.23.1"
 
 [dev-dependencies]

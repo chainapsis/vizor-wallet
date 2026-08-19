@@ -8,7 +8,7 @@ from pathlib import Path
 DEPENDENCY_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
 
 
-def git_dependencies(manifest: dict) -> list[str]:
+def git_dependency_sources(manifest: dict) -> list[str]:
     violations = []
 
     def inspect(table: dict, section: str) -> None:
@@ -25,6 +25,9 @@ def git_dependencies(manifest: dict) -> list[str]:
         for section in DEPENDENCY_SECTIONS:
             inspect(target_manifest.get(section, {}), f"target.{target}.{section}")
 
+    for source, patched_dependencies in manifest.get("patch", {}).items():
+        inspect(patched_dependencies, f"patch.{source}")
+
     return violations
 
 
@@ -36,13 +39,14 @@ def main() -> int:
             continue
 
         manifest = tomllib.loads(path.read_text(encoding="utf-8"))
-        violations.extend(f"{path}: {dependency}" for dependency in git_dependencies(manifest))
+        violations.extend(
+            f"{path}: {dependency}" for dependency in git_dependency_sources(manifest)
+        )
 
     if violations:
-        print("Inline git dependencies are not allowed.", file=sys.stderr)
+        print("Git dependency sources must be removed before merge.", file=sys.stderr)
         print(
-            "Use a version requirement and put source overrides in the root "
-            "[patch.crates-io] table.",
+            "Publish the required crates and use registry version requirements.",
             file=sys.stderr,
         )
         for violation in violations:

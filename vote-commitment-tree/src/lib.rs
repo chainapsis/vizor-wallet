@@ -46,7 +46,7 @@ pub use sync_api::TreeSyncApi;
 
 // -- Shared utilities ------------------------------------------------------
 
-use pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::Fp;
 
 /// Domain tag for Vote Commitments (matches `orchard::vote_proof::circuit::DOMAIN_VC`).
 pub const DOMAIN_VC: u64 = 1;
@@ -59,7 +59,9 @@ pub fn poseidon_hash(left: Fp, right: Fp) -> Fp {
 
 /// Poseidon hash of six field elements (`ConstantLength<6>`, width 3, rate 2).
 pub fn poseidon_hash_6(a: Fp, b: Fp, c: Fp, d: Fp, e: Fp, f: Fp) -> Fp {
-    use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
+    use voting_crypto_deps::halo2_gadgets::poseidon::primitives::{
+        self as poseidon, ConstantLength, P128Pow5T3,
+    };
 
     poseidon::Hash::<_, P128Pow5T3, ConstantLength<6>, 3, 2>::init().hash([a, b, c, d, e, f])
 }

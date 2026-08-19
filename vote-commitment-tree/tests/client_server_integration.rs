@@ -10,11 +10,11 @@
 
 use std::convert::Infallible;
 
-use pasta_curves::Fp;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use vote_commitment_tree::sync_api::{BlockCommitmentsPage, TreeState};
 use vote_commitment_tree::{MemoryTreeServer, MerklePath, SyncError, TreeClient, TreeSyncApi};
+use voting_crypto_deps::pasta_curves::Fp;
 
 fn fp(x: u64) -> Fp {
     Fp::from(x)

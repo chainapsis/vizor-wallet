@@ -1,5 +1,9 @@
 //! Wallet note selection helpers for voting snapshots.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{
+    orchard, zcash_client_backend, zcash_client_sqlite, zcash_primitives,
+};
 use std::borrow::Borrow;
 
 use crate::shielded_protocol::VotingShieldedProtocol;

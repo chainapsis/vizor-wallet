@@ -19,12 +19,12 @@
 use std::collections::BTreeMap;
 
 use incrementalmerkletree::{Hashable, Level, Retention};
-use pasta_curves::{group::ff::PrimeField, Fp};
 use shardtree::{
     error::ShardTreeError,
     store::{memory::MemoryShardStore, ShardStore},
     ShardTree,
 };
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use crate::hash::{MerkleHashVote, MAX_CHECKPOINTS, SHARD_HEIGHT, TREE_DEPTH};
 use crate::kv_shard_store::{KvCallbacks, KvError, KvShardStore};

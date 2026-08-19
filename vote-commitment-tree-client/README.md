@@ -4,6 +4,11 @@ HTTP client and CLI for syncing and verifying the [vote commitment tree](../vote
 
 Provides the library functions `zcash_voting` uses to incrementally pull new leaves from the chain after each delegation or cast-vote, and a `vote-tree-cli` binary for operator-level inspection.
 
+The default `upstream` feature uses the crates.io voting crypto libraries. A
+Zakura consumer must use `default-features = false, features = ["zakura"]`.
+The two backend features are mutually exclusive; `http` and `cli` remain
+independent transport features.
+
 ## Binary
 
 ```bash

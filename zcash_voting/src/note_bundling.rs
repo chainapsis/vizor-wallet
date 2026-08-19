@@ -1,5 +1,7 @@
 //! Smart note bundle planning for voting rounds.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, zcash_client_backend};
 use std::collections::HashSet;
 
 use crate::{

@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{halo2_gadgets, orchard, pasta_curves};
 use ff::PrimeField;
 use pasta_curves::pallas;
 use voting_circuits::delegation::{
@@ -135,6 +137,7 @@ pub fn compute_rho_binding(
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) use crate::backend::halo2_gadgets;
     use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
 
     #[test]

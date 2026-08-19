@@ -1,7 +1,7 @@
 //! Merkle authentication path for the vote commitment tree.
 
 use incrementalmerkletree::Hashable;
-use pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::anchor::Anchor;
 use crate::hash::{MerkleHashVote, TREE_DEPTH};

@@ -1,6 +1,8 @@
 //! Compact delegation capability handoff for separately controlled funds and
 //! voting hotkeys.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::pasta_curves;
 use std::collections::HashSet;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};

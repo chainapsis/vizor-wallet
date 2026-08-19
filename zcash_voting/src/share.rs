@@ -4,6 +4,8 @@
 //! share-delegation persistence so wallets do not need direct access to
 //! `share_delegations` SQL or recovery JSON internals.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::pasta_curves;
 use crate::{
     round::VotingDb,
     types::{

@@ -8,7 +8,9 @@ repository = "https://github.com/valargroup/zcash_voting"
 readme = "README.md"
 
 [features]
-default = []
+default = ["upstream"]
+upstream = ["vote-commitment-tree/upstream", "voting-crypto-deps/upstream"]
+zakura = ["vote-commitment-tree/zakura", "voting-crypto-deps/zakura"]
 # HTTP transport for syncing the tree from a vote chain node's REST API.
 # Enables the `http_sync_api` module without selecting a concrete HTTP stack.
 http = []
@@ -22,8 +24,8 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0" }
-pasta_curves = "0.5"
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0", default-features = false }
+voting-crypto-deps = { workspace = true }
 ff = "0.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

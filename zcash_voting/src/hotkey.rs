@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, zcash_keys};
 use orchard::keys::{FullViewingKey, SpendingKey};
 use rand::RngCore;
 use zcash_keys::keys::UnifiedSpendingKey;

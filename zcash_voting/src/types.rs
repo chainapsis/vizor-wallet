@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves, zcash_client_backend, zcash_keys};
 use std::fmt;
 
 use ff::PrimeField;

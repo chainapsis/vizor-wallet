@@ -8,6 +8,8 @@
 //! bundle with flags `0x07`, a positive 1-zatoshi value balance, and one
 //! action. V6 signatures do not commit to the shielded anchor.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pczt};
 use crate::VotingError;
 
 /// Version byte for the current TX1 effects encoding.

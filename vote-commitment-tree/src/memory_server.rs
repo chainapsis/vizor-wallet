@@ -10,8 +10,8 @@
 
 use std::convert::Infallible;
 
-use pasta_curves::Fp;
 use shardtree::store::ShardStore;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::hash::MerkleHashVote;
 use crate::server::SyncableServer;

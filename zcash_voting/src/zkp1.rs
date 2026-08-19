@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{halo2_proofs, orchard, pasta_curves, zcash_keys};
 use std::collections::HashMap;
 
 use ff::PrimeField;

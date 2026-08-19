@@ -18,7 +18,7 @@ use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::TokioExecutor,
 };
-use pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use vote_commitment_tree::{MerklePath, TreeClient, TreeSyncApi};
 use vote_commitment_tree_client::http_sync_api::HttpTreeSyncApi;

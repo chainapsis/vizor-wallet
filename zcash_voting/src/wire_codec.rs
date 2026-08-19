@@ -7,6 +7,8 @@
 //! It is kept separate from `wire.rs` so the FRB-scanned `wire` module can stay
 //! struct-only and expose a clean, stable cross-language schema.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves, zcash_client_backend};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 use crate::{

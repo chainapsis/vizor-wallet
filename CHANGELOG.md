@@ -9,8 +9,16 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ### Added
 - Added `share::pending_rounds` so wallets can restore unconfirmed helper-share
   tracking with the caller context persisted for each round.
+- Extended `zcash_voting` with mutually exclusive `upstream` (default) and
+  `zakura` features so the wallet layer can select crates.io librustzcash or the
+  Zakura wallet-libraries forks via `zakura-wallet-lib`, in lockstep with the
+  vote commitment tree crypto backend.
 
 ### Changed
+- Replaced temporary Git dependency patches with the published backend-selector
+  releases for IMT, PIR, voting circuits, and voting crypto dependencies.
+- Let the vote commitment tree and client select either the default upstream
+  voting crypto crates or the mutually exclusive Zakura backend.
 - Cap each randomized initial helper-share delay at 100 hours while preserving
   the round's last-moment safety window and retry timing from the sampled
   `submit_at`.

@@ -14,8 +14,8 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use incrementalmerkletree::{Hashable, Level, Retention};
-use pasta_curves::Fp;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::hash::{MerkleHashVote, MAX_CHECKPOINTS, SHARD_HEIGHT, TREE_DEPTH};
 use crate::path::MerklePath;

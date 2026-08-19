@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves};
 use crate::types::{
     validate_encrypted_shares, validate_proposal_id, validate_vote_decision,
     validate_vote_round_id_hex, CastVoteSignature, Network, SharePayload, VoteCommitmentBundle,

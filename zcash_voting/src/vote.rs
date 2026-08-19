@@ -4,6 +4,8 @@
 //! proposal, sign the cast-vote payload, persist crash-recovery material, and
 //! reconstruct chain-ready submission fields.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves};
 use serde::{Deserialize, Serialize};
 
 use rusqlite::{named_params, OptionalExtension};

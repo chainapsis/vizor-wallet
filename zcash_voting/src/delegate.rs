@@ -4,6 +4,10 @@
 //! build a governance PCZT, precompute proof inputs, prove delegation, assemble
 //! chain submission data, and record chain recovery data.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{
+    orchard, pasta_curves, pczt, zcash_client_backend, zcash_client_sqlite, zcash_primitives,
+};
 pub use crate::phases::DelegationPhase;
 
 use std::borrow::Borrow;
@@ -1282,6 +1286,7 @@ fn array64_slice(label: &str, value: &[u8]) -> Result<[u8; 64], VotingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) use crate::backend::pasta_curves;
 
     use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use orchard::{

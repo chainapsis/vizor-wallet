@@ -8,6 +8,8 @@
 //! See the `zcash-voting-wallet-example` workspace crate for caller-oriented
 //! precompute orchestration that can evolve independently from the library API.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{pasta_curves, zcash_client_sqlite};
 use std::borrow::Borrow;
 
 use std::{
@@ -347,6 +349,7 @@ mod pir_tests {
 #[cfg(test)]
 mod tree_sync_tests {
     use super::*;
+    pub(crate) use crate::backend::pasta_curves;
     use ff::PrimeField;
     use pasta_curves::Fp;
     use std::{
@@ -535,6 +538,7 @@ mod tree_sync_tests {
 #[cfg(test)]
 mod session_reset_tests {
     use super::*;
+    pub(crate) use crate::backend::pasta_curves;
     use crate::storage::queries;
     use ff::PrimeField;
     use pasta_curves::Fp;

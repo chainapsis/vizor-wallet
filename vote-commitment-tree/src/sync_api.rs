@@ -4,7 +4,7 @@
 //! In the POC: in-process trait object.
 //! In production: maps to Cosmos SDK gRPC/REST endpoints.
 
-use pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::hash::MerkleHashVote;
 

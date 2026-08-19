@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::backend::{orchard, pasta_curves};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
 use pasta_curves::pallas;

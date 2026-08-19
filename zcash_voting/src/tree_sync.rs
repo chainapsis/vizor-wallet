@@ -4,6 +4,8 @@
 //! from a chain node via HTTP, then generates Merkle authentication paths
 //! (witnesses) for Vote Authority Notes (VANs) needed by ZKP #2.
 
+#[allow(unused_imports)]
+pub(crate) use crate::backend::pasta_curves;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 

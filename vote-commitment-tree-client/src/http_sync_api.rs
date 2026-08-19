@@ -7,8 +7,8 @@
 
 use std::sync::Arc;
 
-use pasta_curves::Fp;
 use vote_commitment_tree::sync_api::{BlockCommitmentsPage, TreeState, TreeSyncApi};
+use voting_crypto_deps::pasta_curves::Fp;
 
 use crate::transport::{Transport, TransportError, TransportResponse};
 use crate::types::{
