@@ -119,8 +119,8 @@ zcash_keys = { workspace = true, optional = true }
 zcash_primitives = { workspace = true, optional = true }
 zakura-orchard = { package = "zakura-orchard", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["circuit", "std", "unstable-voting-circuits"] }
 zakura-pczt = { package = "zakura-pczt", version = "0.1.0-rc0", optional = true, features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc0", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc0", default-features = false, optional = true, features = ["orchard"] }
+zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc1", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc1", default-features = false, optional = true, features = ["orchard"] }
 zakura-keys = { package = "zakura-keys", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["orchard"] }
 zakura-primitives = { package = "zakura-primitives", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["std", "circuits"] }
 uuid = "1.23.1"
