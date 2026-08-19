@@ -1,6 +1,6 @@
 [package]
 name = "vote-commitment-tree-client"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "HTTP client and CLI for syncing and verifying the vote commitment tree against a running Zcash shielded-voting chain node."
 license = "MIT OR Apache-2.0"
@@ -24,7 +24,7 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.0", default-features = false }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.1", default-features = false }
 voting-crypto-deps = { workspace = true }
 ff = "0.13"
 serde = { version = "1", features = ["derive"] }

@@ -4,7 +4,7 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v3.1.0-rc.0
 
 ### Added
 - Added `share::pending_rounds` so wallets can restore unconfirmed helper-share
@@ -17,8 +17,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ### Changed
 - Replaced temporary Git dependency patches with the published backend-selector
   releases for IMT, PIR, voting circuits, and voting crypto dependencies.
-- Let the vote commitment tree and client select either the default upstream
-  voting crypto crates or the mutually exclusive Zakura backend.
+- Released `vote-commitment-tree 0.5.1` and
+  `vote-commitment-tree-client 0.7.1`, allowing both crates to select either
+  the default upstream voting crypto backend or the mutually exclusive Zakura
+  backend.
 - Cap each randomized initial helper-share delay at 100 hours while preserving
   the round's last-moment safety window and retry timing from the sampled
   `submit_at`.

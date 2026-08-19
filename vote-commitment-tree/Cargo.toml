@@ -1,6 +1,6 @@
 [package]
 name = "vote-commitment-tree"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Append-only Poseidon Merkle tree for Vote Authority Notes and Vote Commitments in the Zcash shielded-voting protocol."
 license = "MIT OR Apache-2.0"
