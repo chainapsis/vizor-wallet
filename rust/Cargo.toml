@@ -2,6 +2,7 @@
 name = "rust_lib_zcash_wallet"
 version = "0.1.0"
 edition = "2021"
+autobenches = false
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
@@ -145,11 +146,14 @@ features = ["std"]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [dev-dependencies]
+criterion = "0.7"
+rand_chacha = "0.3"
 tempfile = "3"
 hex = "0.4"
 # Integration tests inject/inspect scan_queue rows directly to exercise the
 # VZR-89 rescue path. Keep this version aligned with the [dependencies] entry.
 rusqlite = "0.37"
+zcash_client_backend = { version = "0.24.0-rc.7", features = ["test-dependencies"] }
 # Used only by the sigs-only byte-identity test to recover the spendable note
 # from a freshly built Orchard bundle (matches pczt's own end-to-end test).
 # Already in the dependency graph via zcash_client_backend.
@@ -157,6 +161,10 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.5.0"
+
+[[bench]]
+name = "ironwood_trial_decryption"
+harness = false
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
