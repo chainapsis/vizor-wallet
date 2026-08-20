@@ -144,11 +144,11 @@ use zcash_voting::config::{
 # fn example(static_bytes: &[u8], dynamic_bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 let source = "https://example.com/static.json?checksum=sha256:...";
 
-// The wallet resolves the static trust anchor, learns the dynamic config URL
-// from it, fetches that with its chosen transport, then resolves the dynamic
+// The wallet resolves the static trust anchor, learns the dynamic config URLs
+// from it, fetches one with its chosen transport, then resolves the dynamic
 // config bytes against the authenticated static config.
 let resolved_static = resolve_static_voting_config(source, static_bytes)?;
-let _dynamic_config_url = &resolved_static.dynamic_config_url;
+let _dynamic_config_urls = &resolved_static.dynamic_config_urls;
 
 let resolved = resolve_dynamic_voting_config(
     resolved_static,
@@ -168,6 +168,86 @@ Hash-pin mismatch and dynamic round signature verification failure are reported
 as `VotingConfigError::RemoteAuthenticationFailed`, so callers can surface a
 clear "remote authentication failed" message.
 
+### Static config versions and dynamic config fallback
+
+Two static config schema versions are supported, and both resolve through the
+same `resolve_static_voting_config` call:
+
+- **v1** (`static_config_version: 1`) names one `dynamic_config_url`.
+- **v2** (`static_config_version: 2`) names an ordered `dynamic_config_urls`
+  list of mirrors, most preferred first. Every mirror serves the same document;
+  the list exists so a wallet is not stranded when the origin it is pinned to is
+  unreachable.
+
+Each version owns exactly one of those fields, and a document carrying the
+other version's field is rejected rather than reinterpreted. Existing v1 pins
+are unaffected: they resolve exactly as before.
+
+`ResolvedStaticVotingConfig::dynamic_config_urls` is always non-empty, so a
+wallet can walk it uniformly regardless of schema version.
+`dynamic_config_url` remains as its first entry for callers written against v1.
+
+`resolve_dynamic_voting_config_from_attempts` takes the ordered fetch outcomes
+and returns the first that resolves, plus the mirrors it passed over:
+
+```rust
+use zcash_voting::config::{
+    resolve_dynamic_voting_config_from_attempts, DynamicConfigAttempt,
+    ResolveVotingConfigOptions, ResolvedStaticVotingConfig,
+};
+
+# fn example(
+#     resolved_static: ResolvedStaticVotingConfig,
+#     fetch: impl Fn(&str) -> Result<Vec<u8>, String>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let attempts = resolved_static
+    .dynamic_config_urls
+    .iter()
+    .map(|url| match fetch(url) {
+        Ok(bytes) => DynamicConfigAttempt::fetched(url, bytes),
+        Err(e) => DynamicConfigAttempt::failed(url, e),
+    })
+    .collect();
+
+let (resolved, skipped) = resolve_dynamic_voting_config_from_attempts(
+    resolved_static,
+    attempts,
+    ResolveVotingConfigOptions::default(),
+)?;
+# let _ = (resolved, skipped);
+# Ok(())
+# }
+```
+
+Async wallets can instead call `resolve_dynamic_voting_config_over_mirrors`,
+which walks the same list lazily and wraps each fetch in
+`DYNAMIC_MIRROR_FETCH_TIMEOUT` (30s) so a stalled primary cannot block a
+healthy later mirror. The wallet-example and `config_fetcher` reference
+transports use that helper; wallets with a custom stack should apply an
+equivalent per-attempt deadline before recording a fetch failure.
+A mirror is skipped when its fetch failed, its bytes did not decode, or it
+advertised unsupported versions. A mirror that resolves but authenticates no
+rounds is deprioritized rather than skipped: later mirrors are tried first, but
+if none carries a verifiable round set, the round-less resolution is returned —
+an empty authenticated round set is a valid outcome, with unverifiable rounds
+reported through `skipped_round_ids`. When no mirror resolves at all, the error
+is `VotingConfigError::AllMirrorsFailed`, whose message enumerates each URL and
+its reason — no single mirror's error can stand in for the set, since mirrors
+commonly fail for different reasons. A one-mirror list, which is every v1
+static config, has nothing to enumerate and reports its own error verbatim —
+including the transport cause when the fetch itself failed.
+
+Fallback widens **availability, not trust**. Whichever mirror answers, the
+static hash pin still covers the trust anchor and every round is still
+authenticated against the static `trusted_keys`, so a mirror can serve a stale
+round set but cannot forge one. Resolving from a mirror other than the first
+emits a `ConfigConditionKind::DynamicMirrorFallbackUsed` condition so wallets
+can surface the degradation.
+
+`ConfigConditionKind::StaticHashPinVerified` reports whether a pin was actually
+checked: a source without a `?checksum=sha256:` query resolves, but that
+condition is reported as `false`.
+
 `decide_config_switch` classifies the semantic wallet transition as
 `InitialLoad`, `Unchanged`, `SameChainServiceUpdate`, `NewChainOrRound`, or
 `ProtocolChanged`. The wallet owns executing that branch. Endpoint and signing
@@ -185,8 +265,11 @@ A direct-HTTPS reference transport lives in the `wallet-example` crate as
 `resolve_dynamic_voting_config` calls with a `DirectHttpsFetcher` and shows how
 to persist the resolved summary used for future switch decisions:
 
-- `resolve_voting_config_over_https` fetches the static and dynamic config and
-  returns the authenticated `ResolvedVotingConfig`.
+- `resolve_voting_config_over_https` fetches the static config, then walks its
+  `dynamic_config_urls` lazily via `resolve_dynamic_voting_config_over_mirrors`
+  — each attempt bounded by `DYNAMIC_MIRROR_FETCH_TIMEOUT`, stopping at the
+  first mirror that both fetches and authenticates — and returns the
+  `ResolvedVotingConfig` together with the mirrors it skipped.
 - `resolve_config_switch` resolves the config and classifies it against the
   previously stored summary, returning the `ConfigSwitchDecision` plus the
   `StoredConfigState` to persist for the next run.

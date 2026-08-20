@@ -58,7 +58,8 @@ impl TryFrom<u64> for BoundedU32 {
 
 pub use crate::config::{
     ConfigCondition, ConfigConditionKind, ConfigSwitchDecision, ConfigSwitchKind,
-    PinnedConfigSource, PirLayout, ResolveVotingConfigOptions, ResolvedVotingConfig,
+    DynamicConfigAttempt, DynamicConfigMirrorFailure, PinnedConfigSource, PirLayout,
+    ResolveVotingConfigOptions, ResolvedStaticVotingConfig, ResolvedVotingConfig,
     ResolvedVotingConfigSummary, ServiceEndpoint, SupportedVersions, VotingConfigError,
     WalletCapabilities,
 };

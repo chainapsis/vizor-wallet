@@ -13,12 +13,12 @@ use hyper_util::{
 };
 use serde::{Deserialize, Serialize};
 use zcash_voting::config::{
-    decide_config_switch, resolve_dynamic_voting_config, resolve_static_voting_config,
-    AuthenticatedRound, PinnedConfigSource,
+    decide_config_switch, resolve_dynamic_voting_config_over_mirrors, resolve_static_voting_config,
+    AuthenticatedRound, PinnedConfigSource, DYNAMIC_MIRROR_FETCH_TIMEOUT,
 };
 use zcash_voting::wire::{
-    ConfigSwitchDecision, ResolveVotingConfigOptions, ResolvedVotingConfig,
-    ResolvedVotingConfigSummary,
+    ConfigSwitchDecision, DynamicConfigMirrorFailure, ResolveVotingConfigOptions,
+    ResolvedVotingConfig, ResolvedVotingConfigSummary,
 };
 use zcash_voting::{connect_pir_blocking, HyperTransport, PirClientBlocking};
 
@@ -59,6 +59,8 @@ pub struct ConfigSwitchOutcome {
     pub resolved: ResolvedVotingConfig,
     pub decision: ConfigSwitchDecision,
     pub next_state: StoredConfigState,
+    /// Dynamic config mirrors passed over before one resolved, in order.
+    pub skipped_config_urls: Vec<DynamicConfigMirrorFailure>,
 }
 
 /// Builds trusted round params from resolved config and server round metadata.
@@ -84,24 +86,35 @@ pub fn build_trusted_round_params_from_status(
         .map_err(|e| anyhow!("build trusted round params failed: {e}"))
 }
 
+/// A resolved config plus the dynamic mirrors that were passed over.
+pub struct ResolvedWithMirrorReport {
+    pub resolved: ResolvedVotingConfig,
+    pub skipped_config_urls: Vec<DynamicConfigMirrorFailure>,
+}
+
 /// Resolves and authenticates voting config from a static source URL.
 ///
 /// This fetches the static trust anchor with the example HTTPS transport and
-/// resolves it via [`resolve_static_voting_config`], learns the dynamic config
-/// URL it points at, fetches that too, and then resolves it via
-/// [`resolve_dynamic_voting_config`]. During resolution, round entries are
-/// authenticated against the trusted static keys before `ResolvedVotingConfig`
-/// is returned. Transport and config errors are flattened into one `anyhow`
-/// chain so example callers can surface a single message.
+/// resolves it via [`resolve_static_voting_config`], then walks the ordered
+/// `dynamic_config_urls` it names via
+/// [`resolve_dynamic_voting_config_over_mirrors`]. A v1 static config names
+/// exactly one mirror, so it behaves exactly as before; a v2 static config
+/// falls through to the next mirror when one is unavailable or times out.
+///
+/// Each mirror attempt is bounded by [`DYNAMIC_MIRROR_FETCH_TIMEOUT`]. Mirrors
+/// are fetched lazily and the walk stops at the first that resolves with
+/// authenticated rounds, so a healthy primary costs exactly one request.
+/// Transport and config errors are flattened into one `anyhow` chain so example
+/// callers can surface a single message.
 ///
 /// # Errors
 ///
-/// Returns an error if either fetch fails, the static hash pin does not match,
-/// the config bytes fail to decode, or round signatures/versions are invalid.
+/// Returns an error if the static fetch fails, the static hash pin does not
+/// match, the static bytes fail to decode, or every dynamic mirror fails.
 pub async fn resolve_voting_config_over_https(
     fetcher: &DirectHttpsFetcher,
     source: &str,
-) -> Result<ResolvedVotingConfig> {
+) -> Result<ResolvedWithMirrorReport> {
     // The hash-pin checksum lives in the source query but is not part of the
     // fetch URL, so resolve it once to learn where to GET the static bytes.
     let static_url = PinnedConfigSource::parse(source)
@@ -110,15 +123,27 @@ pub async fn resolve_voting_config_over_https(
     let static_bytes = fetcher.fetch_bytes(&static_url).await?;
     let resolved_static = resolve_static_voting_config(source, &static_bytes)
         .map_err(|e| anyhow!("resolve static config failed: {e}"))?;
-    let dynamic_bytes = fetcher
-        .fetch_bytes(&resolved_static.dynamic_config_url)
-        .await?;
-    resolve_dynamic_voting_config(
+
+    // Bound each mirror attempt so a blackholed primary cannot strand a healthy
+    // later mirror. Preference rules (including round-less deprioritization)
+    // live in the shared walk helper.
+    let (resolved, skipped_config_urls) = resolve_dynamic_voting_config_over_mirrors(
         resolved_static,
-        &dynamic_bytes,
+        DYNAMIC_MIRROR_FETCH_TIMEOUT,
         ResolveVotingConfigOptions::default(),
+        |url| async move {
+            fetcher
+                .fetch_bytes(&url)
+                .await
+                .map_err(|e| format!("{e:#}"))
+        },
     )
-    .map_err(|e| anyhow!("resolve voting config failed: {e}"))
+    .await
+    .map_err(|e| anyhow!("resolve voting config failed: {e}"))?;
+    Ok(ResolvedWithMirrorReport {
+        resolved,
+        skipped_config_urls,
+    })
 }
 
 /// Resolves config and classifies the switch against previously stored state.
@@ -136,17 +161,18 @@ pub async fn resolve_config_switch(
     source: &str,
     previous: Option<StoredConfigState>,
 ) -> Result<ConfigSwitchOutcome> {
-    let resolved = resolve_voting_config_over_https(fetcher, source).await?;
-    let next_state = StoredConfigState::from_resolved(&resolved);
+    let report = resolve_voting_config_over_https(fetcher, source).await?;
+    let next_state = StoredConfigState::from_resolved(&report.resolved);
     let decision = decide_config_switch(
         previous.map(|state| state.summary),
         next_state.summary.clone(),
     );
 
     Ok(ConfigSwitchOutcome {
-        resolved,
+        resolved: report.resolved,
         decision,
         next_state,
+        skipped_config_urls: report.skipped_config_urls,
     })
 }
 

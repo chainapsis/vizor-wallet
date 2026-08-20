@@ -58,6 +58,8 @@
 //!   choose the correct state transition.
 //!
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -70,7 +72,8 @@ use crate::{
     types::validate_vote_round_id_hex,
 };
 
-const STATIC_CONFIG_VERSION: u32 = 1;
+const STATIC_CONFIG_VERSION_V1: u32 = 1;
+const STATIC_CONFIG_VERSION_V2: u32 = 2;
 const DYNAMIC_CONFIG_VERSION: u32 = 1;
 const ALG_ED25519: &str = "ed25519";
 const CHECKSUM_QUERY_NAME: &str = "checksum";
@@ -189,7 +192,21 @@ pub struct ResolvedStaticVotingConfig {
     pub source: PinnedConfigSource,
     pub source_fingerprint: String,
     pub trusted_key_fingerprint: String,
+    /// First entry of [`Self::dynamic_config_urls`].
+    ///
+    /// Retained so callers written against the v1 single-URL schema keep
+    /// working unchanged. Prefer `dynamic_config_urls` to get mirror fallback.
     pub dynamic_config_url: String,
+    /// Ordered dynamic config mirrors, most preferred first.
+    ///
+    /// Always non-empty. A v1 static config yields exactly one entry; a v2
+    /// static config yields its `dynamic_config_urls` list verbatim. Every
+    /// mirror is expected to serve the same document, so falling back to a
+    /// later entry widens availability without widening trust: rounds are
+    /// still authenticated against [`Self::trusted_key_fingerprint`]'s keys.
+    pub dynamic_config_urls: Vec<String>,
+    /// `static_config_version` of the document this was resolved from.
+    pub static_config_version: u32,
     trusted_keys: Vec<TrustedKey>,
 }
 
@@ -281,6 +298,11 @@ pub enum ConfigConditionKind {
     DynamicConfigDecoded,
     DynamicSignaturesVerified,
     VersionsSupported,
+    /// A dynamic config mirror other than the first was used.
+    ///
+    /// Only emitted by [`resolve_dynamic_voting_config_from_attempts`], and
+    /// only when at least one earlier mirror was passed over.
+    DynamicMirrorFallbackUsed,
 }
 
 /// Small, stable summary used to decide how much state a config switch
@@ -371,6 +393,17 @@ pub enum VotingConfigError {
     },
     #[error("remote authentication failed: {message}")]
     RemoteAuthenticationFailed { message: String },
+    /// Every dynamic config mirror was tried and none resolved.
+    ///
+    /// `message` enumerates each mirror URL and its reason, and each reason is
+    /// the rendering of that mirror's own [`VotingConfigError`]. This variant
+    /// exists because no single mirror's error can stand in for the whole set:
+    /// mirrors commonly fail for different reasons, and picking one would
+    /// discard the rest. Only produced by
+    /// [`resolve_dynamic_voting_config_from_attempts`], and only when more than
+    /// one mirror was attempted.
+    #[error("all dynamic config mirrors failed: {message}")]
+    AllMirrorsFailed { message: String },
 }
 
 /// Parse and authenticate the static config bytes selected by the wallet.
@@ -396,13 +429,16 @@ pub fn resolve_static_voting_config(
         .map_err(|e| VotingConfigError::DecodeFailed {
             message: format!("static config decode failed: {e}"),
         })?;
-    validate_static_config(&static_config)?;
+    let dynamic_config_urls = validate_static_config(&static_config)?;
 
     Ok(ResolvedStaticVotingConfig {
         source_fingerprint: source.fingerprint(),
         trusted_key_fingerprint: fingerprint_json(&static_config.trusted_keys),
         source,
-        dynamic_config_url: static_config.dynamic_config_url,
+        // Validation guarantees at least one mirror, so index 0 always exists.
+        dynamic_config_url: dynamic_config_urls[0].clone(),
+        dynamic_config_urls,
+        static_config_version: static_config.static_config_version,
         trusted_keys: static_config.trusted_keys,
     })
 }
@@ -432,6 +468,10 @@ pub fn resolve_dynamic_voting_config(
 
     let authenticated_count = authenticated_rounds.authenticated_rounds.len();
     let skipped_count = authenticated_rounds.skipped_round_ids.len();
+    // The hash pin is optional: a source without `?checksum=sha256:` is
+    // resolvable but unpinned, and the condition must say so rather than
+    // claim a verification that never ran.
+    let hash_pin_verified = resolved_static.source.sha256.is_some();
 
     Ok(ResolvedVotingConfig {
         source_fingerprint: resolved_static.source_fingerprint,
@@ -446,8 +486,12 @@ pub fn resolve_dynamic_voting_config(
         conditions: vec![
             ConfigCondition {
                 kind: ConfigConditionKind::StaticHashPinVerified,
-                status: true,
-                message: "static hash pin verified".to_string(),
+                status: hash_pin_verified,
+                message: if hash_pin_verified {
+                    "static hash pin verified".to_string()
+                } else {
+                    "static config source carried no hash pin".to_string()
+                },
             },
             ConfigCondition {
                 kind: ConfigConditionKind::DynamicConfigDecoded,
@@ -469,6 +513,258 @@ pub fn resolve_dynamic_voting_config(
             },
         ],
     })
+}
+
+/// One mirror's fetch outcome, supplied by the wallet's transport.
+///
+/// Config resolution stays transport-agnostic: the wallet fetches each URL from
+/// [`ResolvedStaticVotingConfig::dynamic_config_urls`] with its own networking
+/// stack and reports the result here. `result` carries the response bytes, or
+/// the transport's error message for a mirror that could not be read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DynamicConfigAttempt {
+    pub url: String,
+    pub result: Result<Vec<u8>, String>,
+}
+
+impl DynamicConfigAttempt {
+    /// Records bytes successfully fetched from `url`.
+    pub fn fetched(url: impl Into<String>, bytes: Vec<u8>) -> Self {
+        Self {
+            url: url.into(),
+            result: Ok(bytes),
+        }
+    }
+
+    /// Records a transport failure for `url`.
+    pub fn failed(url: impl Into<String>, error: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            result: Err(error.into()),
+        }
+    }
+}
+
+/// Why a dynamic config mirror was passed over.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DynamicConfigMirrorFailure {
+    pub url: String,
+    pub reason: String,
+}
+
+/// Resolve the dynamic voting config from ordered mirror attempts.
+///
+/// Walks `attempts` in order and returns the first one that both fetched and
+/// resolved, together with the ordered mirrors that were passed over so the
+/// caller can log or surface the degradation.
+///
+/// A mirror is skipped when its transport failed, when its bytes did not
+/// decode, or when it advertised versions this wallet does not support.
+///
+/// A mirror that resolves but authenticates no rounds is *deprioritized*, not
+/// skipped: later mirrors are tried first in case one carries a verifiable
+/// round set, but if none does, the round-less resolution is returned. It is a
+/// valid config — a round set can legitimately be empty, and rounds signed by
+/// keys or under a layout this build does not accept are reported through
+/// `skipped_round_ids` — so failing on it would turn a resolution that
+/// succeeds today into an error.
+///
+/// Falling back widens availability, not trust. Every candidate is
+/// authenticated against the same static trusted keys by
+/// [`resolve_dynamic_voting_config`], so a mirror can serve a stale round set
+/// but cannot forge one.
+///
+/// # Errors
+///
+/// Returns [`VotingConfigError::InvalidInput`] if `attempts` is empty. When no
+/// mirror resolved at all, a single attempt reports its own error verbatim,
+/// and multiple attempts report [`VotingConfigError::AllMirrorsFailed`] with a
+/// message enumerating every mirror and its reason.
+pub fn resolve_dynamic_voting_config_from_attempts(
+    resolved_static: ResolvedStaticVotingConfig,
+    attempts: Vec<DynamicConfigAttempt>,
+    options: ResolveVotingConfigOptions,
+) -> Result<(ResolvedVotingConfig, Vec<DynamicConfigMirrorFailure>), VotingConfigError> {
+    if attempts.is_empty() {
+        return Err(VotingConfigError::InvalidInput {
+            message: "dynamic config attempts must contain at least one entry".to_string(),
+        });
+    }
+    let attempt_count = attempts.len();
+
+    let mut skipped: Vec<DynamicConfigMirrorFailure> = Vec::new();
+    let mut last_error = None;
+    // First mirror that resolved but authenticated nothing, held as a
+    // last-resort result along with the skip list as it stood at that point.
+    let mut round_less: Option<(ResolvedVotingConfig, String, usize)> = None;
+
+    for attempt in attempts {
+        let bytes = match attempt.result {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                skipped.push(DynamicConfigMirrorFailure {
+                    url: attempt.url,
+                    reason: format!("fetch failed: {error}"),
+                });
+                // Keep the transport cause in the error message. For the
+                // single-mirror / v1 path this is returned verbatim, so callers
+                // still see DNS failures and HTTP statuses instead of a bare
+                // "dynamic config fetch failed".
+                last_error = Some(VotingConfigError::RemoteAuthenticationFailed {
+                    message: format!("dynamic config fetch failed: {error}"),
+                });
+                continue;
+            }
+        };
+
+        match resolve_dynamic_voting_config(resolved_static.clone(), &bytes, options.clone()) {
+            Ok(resolved) if resolved.authenticated_rounds.is_empty() => {
+                if round_less.is_none() {
+                    round_less = Some((resolved, attempt.url.clone(), skipped.len()));
+                }
+                skipped.push(DynamicConfigMirrorFailure {
+                    url: attempt.url,
+                    reason: "resolved config authenticated no rounds".to_string(),
+                });
+            }
+            Ok(resolved) => return Ok(finish(resolved, attempt.url, skipped)),
+            Err(e) => {
+                skipped.push(DynamicConfigMirrorFailure {
+                    url: attempt.url,
+                    reason: e.to_string(),
+                });
+                last_error = Some(e);
+            }
+        }
+    }
+
+    if let Some((resolved, url, skipped_before)) = round_less {
+        // Nothing better turned up. Report only the mirrors passed over ahead
+        // of this one; those tried after it were not preferred to it.
+        skipped.truncate(skipped_before);
+        return Ok(finish(resolved, url, skipped));
+    }
+
+    let only_error = last_error.expect("non-empty attempts record an error");
+    if attempt_count == 1 {
+        // Nothing to enumerate, so report the mirror's own error verbatim. This
+        // keeps the single-mirror path — every v1 static config — identical to
+        // a direct `resolve_dynamic_voting_config` call, kind and message alike.
+        return Err(only_error);
+    }
+
+    // Mirrors routinely fail for different reasons, and no one mirror's error
+    // can represent the set: reducing them to the last one would discard both
+    // the other reasons and the URLs. `reason` already renders each mirror's
+    // own error, so the enumeration preserves every kind, including
+    // `UnsupportedVersion`, whose fields have nowhere else to go.
+    Err(VotingConfigError::AllMirrorsFailed {
+        message: skipped
+            .iter()
+            .map(|failure| format!("{}: {}", failure.url, failure.reason))
+            .collect::<Vec<_>>()
+            .join("; "),
+    })
+}
+
+/// Default bound on a single dynamic-config mirror fetch for reference transports.
+///
+/// A blackholed connection or a server that stops sending must not leave a
+/// healthy later mirror unused. Wallets with their own networking stack should
+/// apply an equivalent per-attempt deadline before reporting a fetch failure to
+/// [`resolve_dynamic_voting_config_from_attempts`].
+pub const DYNAMIC_MIRROR_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Lazily fetch and resolve dynamic config mirrors, bounding each attempt.
+///
+/// Calls `fetch` for each URL in
+/// [`ResolvedStaticVotingConfig::dynamic_config_urls`] in order, wrapping every
+/// call in `timeout`. After each attempt, preference rules from
+/// [`resolve_dynamic_voting_config_from_attempts`] decide whether to stop (a
+/// resolution with authenticated rounds) or keep walking (a round-less
+/// resolution is kept while later mirrors are still tried).
+///
+/// `fetch` should return response bytes or a transport error string. A timeout
+/// is recorded as a fetch failure with an explicit timed-out reason so it
+/// participates in the same skip / all-mirrors-failed path as any other
+/// transport error.
+///
+/// # Errors
+///
+/// Propagates the error from [`resolve_dynamic_voting_config_from_attempts`]
+/// when every mirror fails and no round-less resolution was kept. Returns
+/// [`VotingConfigError::InvalidInput`] if the static config names no mirrors.
+pub async fn resolve_dynamic_voting_config_over_mirrors<F, Fut>(
+    resolved_static: ResolvedStaticVotingConfig,
+    timeout: Duration,
+    options: ResolveVotingConfigOptions,
+    mut fetch: F,
+) -> Result<(ResolvedVotingConfig, Vec<DynamicConfigMirrorFailure>), VotingConfigError>
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<Vec<u8>, String>>,
+{
+    let urls = resolved_static.dynamic_config_urls.clone();
+    if urls.is_empty() {
+        return Err(VotingConfigError::InvalidInput {
+            message: "dynamic config attempts must contain at least one entry".to_string(),
+        });
+    }
+
+    let mut attempts = Vec::new();
+    let mut best = None;
+
+    for url in urls.iter() {
+        let attempt = match tokio::time::timeout(timeout, fetch(url.clone())).await {
+            Ok(Ok(bytes)) => DynamicConfigAttempt::fetched(url.clone(), bytes),
+            Ok(Err(error)) => DynamicConfigAttempt::failed(url.clone(), error),
+            Err(_) => DynamicConfigAttempt::failed(
+                url.clone(),
+                format!("timed out after {}s", timeout.as_secs()),
+            ),
+        };
+        attempts.push(attempt);
+
+        match resolve_dynamic_voting_config_from_attempts(
+            resolved_static.clone(),
+            attempts.clone(),
+            options.clone(),
+        ) {
+            Ok(outcome) => {
+                let has_rounds = !outcome.0.authenticated_rounds.is_empty();
+                best = Some(outcome);
+                if has_rounds {
+                    break;
+                }
+            }
+            Err(e) if attempts.len() == urls.len() && best.is_none() => return Err(e),
+            Err(_) => {}
+        }
+    }
+
+    best.ok_or_else(|| VotingConfigError::InvalidInput {
+        message: "dynamic config attempts must contain at least one entry".to_string(),
+    })
+}
+
+/// Attach the fallback condition when earlier mirrors were passed over.
+fn finish(
+    mut resolved: ResolvedVotingConfig,
+    url: String,
+    skipped: Vec<DynamicConfigMirrorFailure>,
+) -> (ResolvedVotingConfig, Vec<DynamicConfigMirrorFailure>) {
+    if !skipped.is_empty() {
+        resolved.conditions.push(ConfigCondition {
+            kind: ConfigConditionKind::DynamicMirrorFallbackUsed,
+            status: true,
+            message: format!(
+                "resolved from fallback mirror {} after skipping {} mirror(s)",
+                url,
+                skipped.len()
+            ),
+        });
+    }
+    (resolved, skipped)
 }
 
 /// Classify the wallet transition required to switch to `next`.
@@ -554,7 +850,12 @@ impl PinnedConfigSource {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 struct WireStaticVotingConfig {
     static_config_version: u32,
-    dynamic_config_url: String,
+    /// Present on v1 documents only; forbidden on v2.
+    #[serde(default)]
+    dynamic_config_url: Option<String>,
+    /// Present on v2 documents only; forbidden on v1.
+    #[serde(default)]
+    dynamic_config_urls: Option<Vec<String>>,
     trusted_keys: Vec<TrustedKey>,
 }
 
@@ -593,16 +894,64 @@ struct RoundSignature {
     sig: Vec<u8>,
 }
 
-fn validate_static_config(config: &WireStaticVotingConfig) -> Result<(), VotingConfigError> {
-    if config.static_config_version != STATIC_CONFIG_VERSION {
-        return Err(VotingConfigError::DecodeFailed {
-            message: format!(
-                "unsupported static_config_version {}",
-                config.static_config_version
-            ),
-        });
-    }
-    validate_https_url(&config.dynamic_config_url, "dynamic_config_url")?;
+/// Validate a static config document and normalize it to an ordered mirror list.
+///
+/// Each schema version owns exactly one URL field, so a document carrying the
+/// other version's field is rejected rather than silently reinterpreted. The
+/// returned list is non-empty and ordered most-preferred first.
+fn validate_static_config(
+    config: &WireStaticVotingConfig,
+) -> Result<Vec<String>, VotingConfigError> {
+    let dynamic_config_urls = match config.static_config_version {
+        STATIC_CONFIG_VERSION_V1 => {
+            if config.dynamic_config_urls.is_some() {
+                return Err(VotingConfigError::DecodeFailed {
+                    message: "static_config_version 1 must not set dynamic_config_urls".to_string(),
+                });
+            }
+            let url = config.dynamic_config_url.clone().ok_or_else(|| {
+                VotingConfigError::DecodeFailed {
+                    message: "static_config_version 1 requires dynamic_config_url".to_string(),
+                }
+            })?;
+            validate_https_url(&url, "dynamic_config_url")?;
+            vec![url]
+        }
+        STATIC_CONFIG_VERSION_V2 => {
+            if config.dynamic_config_url.is_some() {
+                return Err(VotingConfigError::DecodeFailed {
+                    message: "static_config_version 2 must not set dynamic_config_url".to_string(),
+                });
+            }
+            let urls = config.dynamic_config_urls.clone().ok_or_else(|| {
+                VotingConfigError::DecodeFailed {
+                    message: "static_config_version 2 requires dynamic_config_urls".to_string(),
+                }
+            })?;
+            if urls.is_empty() {
+                return Err(VotingConfigError::DecodeFailed {
+                    message: "dynamic_config_urls must contain at least one entry".to_string(),
+                });
+            }
+            for (index, url) in urls.iter().enumerate() {
+                validate_https_url(url, &format!("dynamic_config_urls[{index}]"))?;
+                // Duplicates would retry the same origin and mask a real
+                // outage as extra attempts, so the publisher forbids them.
+                if urls[..index].contains(url) {
+                    return Err(VotingConfigError::DecodeFailed {
+                        message: format!("dynamic_config_urls[{index}] is a duplicate: {url}"),
+                    });
+                }
+            }
+            urls
+        }
+        version => {
+            return Err(VotingConfigError::DecodeFailed {
+                message: format!("unsupported static_config_version {version}"),
+            });
+        }
+    };
+
     if config.trusted_keys.is_empty() {
         return Err(VotingConfigError::DecodeFailed {
             message: "trusted_keys must contain at least one entry".to_string(),
@@ -623,7 +972,7 @@ fn validate_static_config(config: &WireStaticVotingConfig) -> Result<(), VotingC
             });
         }
     }
-    Ok(())
+    Ok(dynamic_config_urls)
 }
 
 fn validate_dynamic_config(
@@ -915,6 +1264,25 @@ mod tests {
             poly_len: 4096,
         }
     }
+
+    fn static_bytes_v2(signing_key: &SigningKey, urls: &[&str]) -> Vec<u8> {
+        let pubkey = signing_key.verifying_key().to_bytes();
+        serde_json::json!({
+            "static_config_version": 2,
+            "dynamic_config_urls": urls,
+            "trusted_keys": [{
+                "key_id": "k1",
+                "alg": "ed25519",
+                "pubkey": BASE64.encode(pubkey),
+                "notes": null
+            }]
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    const MIRROR_A: &str = "https://a.example.com/dynamic.json";
+    const MIRROR_B: &str = "https://b.example.com/dynamic.json";
 
     fn dynamic_bytes_with_layout_and_round_signers(
         layout: PirLayout,
@@ -1910,5 +2278,562 @@ mod tests {
         let decision = decide_config_switch(Some(current.clone()), current);
 
         assert_eq!(decision.kind, ConfigSwitchKind::Unchanged);
+    }
+
+    // --- static config v1 / v2 schema ---
+
+    #[test]
+    fn static_v1_resolution_exposes_single_mirror_list() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let resolved =
+            resolve_static_voting_config(&source(), &static_bytes(&signing_key)).unwrap();
+
+        assert_eq!(resolved.static_config_version, 1);
+        assert_eq!(
+            resolved.dynamic_config_url,
+            "https://example.com/dynamic.json"
+        );
+        assert_eq!(
+            resolved.dynamic_config_urls,
+            vec!["https://example.com/dynamic.json".to_string()]
+        );
+    }
+
+    #[test]
+    fn static_v2_resolution_preserves_mirror_order() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let resolved = resolve_static_voting_config(
+            &source(),
+            &static_bytes_v2(&signing_key, &[MIRROR_A, MIRROR_B]),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.static_config_version, 2);
+        assert_eq!(resolved.dynamic_config_url, MIRROR_A);
+        assert_eq!(
+            resolved.dynamic_config_urls,
+            vec![MIRROR_A.to_string(), MIRROR_B.to_string()]
+        );
+    }
+
+    #[test]
+    fn static_v2_resolution_rejects_empty_mirror_list() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let error = resolve_static_voting_config(&source(), &static_bytes_v2(&signing_key, &[]))
+            .unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::DecodeFailed { message } if message.contains("at least one entry")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn static_v2_resolution_rejects_singular_dynamic_config_url() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let pubkey = signing_key.verifying_key().to_bytes();
+        let bytes = serde_json::json!({
+            "static_config_version": 2,
+            "dynamic_config_url": MIRROR_A,
+            "dynamic_config_urls": [MIRROR_A],
+            "trusted_keys": [{
+                "key_id": "k1", "alg": "ed25519",
+                "pubkey": BASE64.encode(pubkey), "notes": null
+            }]
+        })
+        .to_string()
+        .into_bytes();
+
+        let error = resolve_static_voting_config(&source(), &bytes).unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::DecodeFailed { message } if message.contains("must not set dynamic_config_url")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn static_v1_resolution_rejects_mirror_list() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let pubkey = signing_key.verifying_key().to_bytes();
+        let bytes = serde_json::json!({
+            "static_config_version": 1,
+            "dynamic_config_url": MIRROR_A,
+            "dynamic_config_urls": [MIRROR_A, MIRROR_B],
+            "trusted_keys": [{
+                "key_id": "k1", "alg": "ed25519",
+                "pubkey": BASE64.encode(pubkey), "notes": null
+            }]
+        })
+        .to_string()
+        .into_bytes();
+
+        let error = resolve_static_voting_config(&source(), &bytes).unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::DecodeFailed { message } if message.contains("must not set dynamic_config_urls")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn static_v2_resolution_rejects_duplicate_mirrors() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let error = resolve_static_voting_config(
+            &source(),
+            &static_bytes_v2(&signing_key, &[MIRROR_A, MIRROR_A]),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::DecodeFailed { message } if message.contains("duplicate")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn static_v2_resolution_rejects_non_https_mirror() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let error = resolve_static_voting_config(
+            &source(),
+            &static_bytes_v2(
+                &signing_key,
+                &[MIRROR_A, "http://b.example.com/dynamic.json"],
+            ),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::InvalidInput { message } if message.contains("dynamic_config_urls[1]")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn static_resolution_rejects_unknown_version() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let pubkey = signing_key.verifying_key().to_bytes();
+        let bytes = serde_json::json!({
+            "static_config_version": 3,
+            "dynamic_config_urls": [MIRROR_A],
+            "trusted_keys": [{
+                "key_id": "k1", "alg": "ed25519",
+                "pubkey": BASE64.encode(pubkey), "notes": null
+            }]
+        })
+        .to_string()
+        .into_bytes();
+
+        let error = resolve_static_voting_config(&source(), &bytes).unwrap_err();
+
+        assert_eq!(
+            error,
+            VotingConfigError::DecodeFailed {
+                message: "unsupported static_config_version 3".to_string()
+            }
+        );
+    }
+
+    /// The real `prod/v2-static-voting-config.json` published by
+    /// token-holder-voting-config, so a publisher-side shape change that this
+    /// crate cannot parse fails here rather than in a wallet.
+    #[test]
+    fn static_v2_resolution_accepts_published_prod_document() {
+        let bytes = br#"{
+  "static_config_version": 2,
+  "dynamic_config_urls": [
+    "https://voting.valargroup.dev/prod/dynamic-voting-config.json",
+    "https://raw.githubusercontent.com/valargroup/token-holder-voting-config/main/prod/dynamic-voting-config.json"
+  ],
+  "trusted_keys": [
+    {
+      "key_id": "valargroup",
+      "alg": "ed25519",
+      "pubkey": "8oQiUWq6QDGnAgRw6U3YhnXb6JLFSXauYnWHIFmJRcw=",
+      "notes": "Vote-manager Keplr-derived key for sv1wyf8tuys2ussdqwc6ugnvq0x273j8wq8fm3jrj"
+    },
+    {
+      "key_id": "tachyon",
+      "alg": "ed25519",
+      "pubkey": "F8L2S+sjsQMwsZr03ebovvbVRd2B8BXx5e8KpTBmxHs=",
+      "notes": "Vote-manager Keplr-derived key for sv1zd8mc9mx85zgarx692w38n8t2g2f6r92ajwhth"
+    },
+    {
+      "key_id": "zodl",
+      "alg": "ed25519",
+      "pubkey": "b7aj3HFKqKAF/gwIcf01KXqvDN91ww759pjAxN8whBk=",
+      "notes": "Vote-manager Keplr-derived key for ZODL prod vote manager; sv1jpxuakysz65rzg9kn90xg4m4vpyer6np9n7c0t"
+    },
+    {
+      "key_id": "shielded-labs",
+      "alg": "ed25519",
+      "pubkey": "Lsn7flRsI5udUOwqK8ShWu1+jU08AkP0/ed8ihj46kE=",
+      "notes": "derived key for sv169hpcstyc9qal5t2hu2y6xlqjjvc303cpdanam"
+    }
+  ]
+}"#;
+
+        let resolved = resolve_static_voting_config(&source(), bytes).unwrap();
+
+        assert_eq!(resolved.static_config_version, 2);
+        assert_eq!(resolved.dynamic_config_urls.len(), 2);
+        assert_eq!(
+            resolved.dynamic_config_url,
+            "https://voting.valargroup.dev/prod/dynamic-voting-config.json"
+        );
+    }
+
+    #[test]
+    fn unpinned_source_reports_hash_pin_condition_as_unverified() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let resolved = resolve_test_dynamic(&signing_key, &dynamic_bytes(&signing_key)).unwrap();
+
+        let condition = resolved
+            .conditions
+            .iter()
+            .find(|c| c.kind == ConfigConditionKind::StaticHashPinVerified)
+            .expect("hash pin condition");
+        assert!(!condition.status);
+    }
+
+    // --- dynamic config mirror fallback ---
+
+    fn resolved_static_v2(signing_key: &SigningKey) -> ResolvedStaticVotingConfig {
+        resolve_static_voting_config(
+            &source(),
+            &static_bytes_v2(signing_key, &[MIRROR_A, MIRROR_B]),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn mirror_fallback_skips_unreachable_mirror() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+
+        let (resolved, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::failed(MIRROR_A, "dns lookup failed"),
+                DynamicConfigAttempt::fetched(MIRROR_B, dynamic_bytes(&signing_key)),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.authenticated_rounds.len(), 1);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].url, MIRROR_A);
+        assert!(skipped[0].reason.contains("dns lookup failed"));
+        assert!(resolved
+            .conditions
+            .iter()
+            .any(|c| c.kind == ConfigConditionKind::DynamicMirrorFallbackUsed));
+    }
+
+    #[test]
+    fn mirror_fallback_skips_undecodable_mirror() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+
+        let (resolved, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::fetched(MIRROR_A, b"<html>504</html>".to_vec()),
+                DynamicConfigAttempt::fetched(MIRROR_B, dynamic_bytes(&signing_key)),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.authenticated_rounds.len(), 1);
+        assert_eq!(skipped.len(), 1);
+        assert!(skipped[0].reason.contains("decode failed"));
+    }
+
+    /// A mirror that decodes but authenticates nothing is deprioritized, so a
+    /// later mirror carrying a verifiable round set wins.
+    #[test]
+    fn mirror_fallback_prefers_mirror_authenticating_rounds() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let untrusted_key = SigningKey::from_bytes(&[4u8; 32]);
+
+        let (resolved, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::fetched(MIRROR_A, dynamic_bytes(&untrusted_key)),
+                DynamicConfigAttempt::fetched(MIRROR_B, dynamic_bytes(&signing_key)),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.authenticated_rounds.len(), 1);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].url, MIRROR_A);
+        assert!(skipped[0].reason.contains("authenticated no rounds"));
+    }
+
+    /// A round-less resolution must never be downgraded into an error: it is a
+    /// valid config, and prod resolves this way today.
+    #[test]
+    fn mirror_fallback_returns_round_less_config_when_no_mirror_has_rounds() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let untrusted_key = SigningKey::from_bytes(&[4u8; 32]);
+
+        let (resolved, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::fetched(MIRROR_A, dynamic_bytes(&untrusted_key)),
+                DynamicConfigAttempt::fetched(MIRROR_B, dynamic_bytes(&untrusted_key)),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert!(resolved.authenticated_rounds.is_empty());
+        assert_eq!(resolved.skipped_round_ids, vec![ROUND_ID.to_string()]);
+        // Mirror A won, so nothing was passed over ahead of it.
+        assert!(skipped.is_empty());
+        assert!(!resolved
+            .conditions
+            .iter()
+            .any(|c| c.kind == ConfigConditionKind::DynamicMirrorFallbackUsed));
+    }
+
+    /// The v1 single-mirror path must behave exactly as it did before mirror
+    /// support existed, including for a config that authenticates no rounds.
+    #[test]
+    fn single_round_less_mirror_matches_direct_resolution() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let untrusted_key = SigningKey::from_bytes(&[4u8; 32]);
+        let dynamic = dynamic_bytes(&untrusted_key);
+        let resolved_static =
+            resolve_static_voting_config(&source(), &static_bytes(&signing_key)).unwrap();
+
+        let (via_attempts, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static.clone(),
+            vec![DynamicConfigAttempt::fetched(
+                &resolved_static.dynamic_config_url,
+                dynamic.clone(),
+            )],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+        let direct = resolve_dynamic_voting_config(
+            resolved_static,
+            &dynamic,
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert!(skipped.is_empty());
+        assert_eq!(via_attempts, direct);
+    }
+
+    #[test]
+    fn mirror_fallback_reports_every_mirror_when_all_fail() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+
+        let error = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::failed(MIRROR_A, "connection refused"),
+                DynamicConfigAttempt::fetched(MIRROR_B, b"not json".to_vec()),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains(MIRROR_A), "missing mirror a: {message}");
+        assert!(message.contains(MIRROR_B), "missing mirror b: {message}");
+        assert!(message.contains("connection refused"), "{message}");
+    }
+
+    #[test]
+    fn single_mirror_fallback_matches_direct_resolution() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let dynamic = dynamic_bytes(&signing_key);
+        let resolved_static =
+            resolve_static_voting_config(&source(), &static_bytes(&signing_key)).unwrap();
+
+        let (via_attempts, skipped) = resolve_dynamic_voting_config_from_attempts(
+            resolved_static.clone(),
+            vec![DynamicConfigAttempt::fetched(
+                &resolved_static.dynamic_config_url,
+                dynamic.clone(),
+            )],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+        let direct = resolve_dynamic_voting_config(
+            resolved_static,
+            &dynamic,
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap();
+
+        assert!(skipped.is_empty());
+        assert_eq!(via_attempts, direct);
+        assert!(!via_attempts
+            .conditions
+            .iter()
+            .any(|c| c.kind == ConfigConditionKind::DynamicMirrorFallbackUsed));
+    }
+
+    /// An unsupported-version failure must not swallow the other mirrors: it
+    /// is the one error kind with no message field of its own, so the
+    /// enumeration is the only place its detail can survive.
+    #[test]
+    fn mirror_fallback_preserves_detail_when_last_mirror_is_unsupported_version() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut doc: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        doc["supported_versions"]["vote_server"] = serde_json::json!("v99");
+        let unsupported = doc.to_string().into_bytes();
+
+        let error = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            vec![
+                DynamicConfigAttempt::failed(MIRROR_A, "connection refused"),
+                DynamicConfigAttempt::fetched(MIRROR_B, unsupported),
+            ],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+
+        let VotingConfigError::AllMirrorsFailed { message } = &error else {
+            panic!("unexpected error: {error:?}");
+        };
+        // The unreachable mirror survives alongside the version failure.
+        assert!(message.contains(MIRROR_A), "{message}");
+        assert!(message.contains("connection refused"), "{message}");
+        // And the version failure keeps its component and advertised value.
+        assert!(message.contains(MIRROR_B), "{message}");
+        assert!(
+            message.contains("unsupported version for vote_server: v99"),
+            "{message}"
+        );
+    }
+
+    /// A single mirror has nothing to enumerate, so its own error kind must
+    /// survive rather than being flattened into `AllMirrorsFailed`.
+    #[test]
+    fn single_mirror_failure_reports_underlying_error_verbatim() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let mut doc: serde_json::Value =
+            serde_json::from_slice(&dynamic_bytes(&signing_key)).unwrap();
+        doc["supported_versions"]["vote_server"] = serde_json::json!("v99");
+        let unsupported = doc.to_string().into_bytes();
+        let resolved_static =
+            resolve_static_voting_config(&source(), &static_bytes(&signing_key)).unwrap();
+
+        let via_attempts = resolve_dynamic_voting_config_from_attempts(
+            resolved_static.clone(),
+            vec![DynamicConfigAttempt::fetched(
+                &resolved_static.dynamic_config_url,
+                unsupported.clone(),
+            )],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+        let direct = resolve_dynamic_voting_config(
+            resolved_static,
+            &unsupported,
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(via_attempts, direct);
+        assert_eq!(
+            via_attempts,
+            VotingConfigError::UnsupportedVersion {
+                component: "vote_server".to_string(),
+                advertised: "v99".to_string(),
+            }
+        );
+    }
+
+    /// A v1 / one-URL fetch failure must surface the transport cause, not a
+    /// bare "dynamic config fetch failed" that drops DNS or HTTP detail.
+    #[test]
+    fn single_mirror_fetch_failure_preserves_transport_error() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let resolved_static =
+            resolve_static_voting_config(&source(), &static_bytes(&signing_key)).unwrap();
+
+        let error = resolve_dynamic_voting_config_from_attempts(
+            resolved_static.clone(),
+            vec![DynamicConfigAttempt::failed(
+                &resolved_static.dynamic_config_url,
+                "dns error: no such host",
+            )],
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            VotingConfigError::RemoteAuthenticationFailed {
+                message: "dynamic config fetch failed: dns error: no such host".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn mirror_fallback_rejects_empty_attempts() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+
+        let error = resolve_dynamic_voting_config_from_attempts(
+            resolved_static_v2(&signing_key),
+            Vec::new(),
+            ResolveVotingConfigOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&error, VotingConfigError::InvalidInput { message } if message.contains("at least one entry")),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    /// A primary that never answers must not block a healthy secondary: each
+    /// mirror attempt is bounded, and the timed-out URL is skipped like any
+    /// other transport failure.
+    #[tokio::test(start_paused = true)]
+    async fn stalled_primary_mirror_times_out_and_falls_back() {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let healthy = dynamic_bytes(&signing_key);
+        let timeout = Duration::from_secs(5);
+
+        let (resolved, skipped) = resolve_dynamic_voting_config_over_mirrors(
+            resolved_static_v2(&signing_key),
+            timeout,
+            ResolveVotingConfigOptions::default(),
+            |url| {
+                let healthy = healthy.clone();
+                async move {
+                    if url == MIRROR_A {
+                        std::future::pending::<Result<Vec<u8>, String>>().await
+                    } else {
+                        Ok(healthy)
+                    }
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resolved.authenticated_rounds.len(), 1);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].url, MIRROR_A);
+        assert!(
+            skipped[0].reason.contains("timed out after 5s"),
+            "unexpected skip reason: {}",
+            skipped[0].reason
+        );
+        assert!(resolved
+            .conditions
+            .iter()
+            .any(|c| c.kind == ConfigConditionKind::DynamicMirrorFallbackUsed));
     }
 }

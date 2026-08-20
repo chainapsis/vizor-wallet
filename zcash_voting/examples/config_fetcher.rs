@@ -10,11 +10,12 @@ use hyper_util::{
 use serde::{Deserialize, Serialize};
 use std::{fs, io::ErrorKind, path::PathBuf};
 use zcash_voting::config::{
-    decide_config_switch, resolve_dynamic_voting_config, resolve_static_voting_config,
-    AuthenticatedRound, PinnedConfigSource,
+    decide_config_switch, resolve_dynamic_voting_config_over_mirrors, resolve_static_voting_config,
+    AuthenticatedRound, PinnedConfigSource, DYNAMIC_MIRROR_FETCH_TIMEOUT,
 };
 use zcash_voting::wire::{
-    ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    DynamicConfigMirrorFailure, ResolveVotingConfigOptions, ResolvedVotingConfig,
+    ResolvedVotingConfigSummary,
 };
 
 type RequestBody = Full<Bytes>;
@@ -27,19 +28,19 @@ async fn main() -> Result<()> {
 
     match command {
         Command::Resolve { source } => {
-            let resolved = fetch_resolved_config(&fetcher, &source).await?;
-            print_resolved_config(&resolved);
+            let (resolved, skipped_config_urls) = fetch_resolved_config(&fetcher, &source).await?;
+            print_resolved_config(&resolved, &skipped_config_urls);
         }
         Command::CheckSwitch { state_path, source } => {
             let previous = read_state(&state_path)?;
-            let resolved = fetch_resolved_config(&fetcher, &source).await?;
+            let (resolved, skipped_config_urls) = fetch_resolved_config(&fetcher, &source).await?;
             let next_summary = ResolvedVotingConfigSummary::from(&resolved);
             let decision = decide_config_switch(
                 previous.as_ref().map(|state| state.summary.clone()),
                 next_summary.clone(),
             );
 
-            print_resolved_config(&resolved);
+            print_resolved_config(&resolved, &skipped_config_urls);
             println!("switch kind: {:?}", decision.kind);
             println!("state path: {}", state_path.display());
 
@@ -88,28 +89,44 @@ struct StoredConfigState {
     authenticated_rounds: Vec<AuthenticatedRound>,
 }
 
+/// Fetches and resolves a config, walking the static config's dynamic mirrors.
+///
+/// A v1 static config names one mirror, so this is a single fetch. A v2 static
+/// config names an ordered list, and each mirror is tried in turn until one
+/// both fetches and authenticates.
 async fn fetch_resolved_config(
     fetcher: &DirectHttpsFetcher,
     source: &str,
-) -> Result<ResolvedVotingConfig> {
+) -> Result<(ResolvedVotingConfig, Vec<DynamicConfigMirrorFailure>)> {
     let static_url = PinnedConfigSource::parse(source)
         .map_err(|e| anyhow!("parse static config source failed: {e}"))?
         .url;
     let static_bytes = fetcher.fetch_bytes(&static_url).await?;
     let resolved_static = resolve_static_voting_config(source, &static_bytes)
         .map_err(|e| anyhow!("resolve static config failed: {e}"))?;
-    let dynamic_bytes = fetcher
-        .fetch_bytes(&resolved_static.dynamic_config_url)
-        .await?;
-    resolve_dynamic_voting_config(
+
+    resolve_dynamic_voting_config_over_mirrors(
         resolved_static,
-        &dynamic_bytes,
+        DYNAMIC_MIRROR_FETCH_TIMEOUT,
         ResolveVotingConfigOptions::default(),
+        |url| async move {
+            fetcher
+                .fetch_bytes(&url)
+                .await
+                .map_err(|e| format!("{e:#}"))
+        },
     )
+    .await
     .map_err(|e| anyhow!("resolve voting config failed: {e}"))
 }
 
-fn print_resolved_config(resolved: &ResolvedVotingConfig) {
+fn print_resolved_config(
+    resolved: &ResolvedVotingConfig,
+    skipped_config_urls: &[DynamicConfigMirrorFailure],
+) {
+    for failure in skipped_config_urls {
+        println!("skipped mirror {}: {}", failure.url, failure.reason);
+    }
     println!("vote servers: {}", resolved.vote_servers.len());
     println!("PIR endpoints: {}", resolved.pir_endpoints.len());
     println!(
