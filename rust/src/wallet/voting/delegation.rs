@@ -21,7 +21,7 @@ use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-const WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 1000 * ZATOSHI_PER_ZEC;
+const WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 25_000 * ZATOSHI_PER_ZEC;
 
 /// Start a new bundle before adding a note would cross the whale threshold.
 ///
@@ -467,13 +467,14 @@ mod tests {
     #[test]
     fn whale_protection_starts_new_bundle_when_addition_would_cross_threshold() {
         let notes = vec![
-            note_with_value(1, WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI),
-            note_with_value(2, 400 * ZATOSHI_PER_ZEC),
-            note_with_value(3, 200 * ZATOSHI_PER_ZEC),
+            note_with_value(1, 10_000 * ZATOSHI_PER_ZEC),
+            note_with_value(2, 10_000 * ZATOSHI_PER_ZEC),
+            note_with_value(3, 5_000 * ZATOSHI_PER_ZEC),
+            note_with_value(4, ZATOSHI_PER_ZEC),
         ];
         let default_plan =
             zcash_voting::round::note_bundles_with_policy(&notes, BundlePolicy::default()).unwrap();
-        assert_eq!(default_plan[0].len(), 3);
+        assert_eq!(default_plan[0].len(), 4);
 
         let policy = whale_protected_bundle_policy(BundlePolicy::default());
         let protected_plan = zcash_voting::round::note_bundles_with_policy(&notes, policy).unwrap();
@@ -483,8 +484,8 @@ mod tests {
             .collect();
 
         assert_eq!(protected_plan.len(), 2);
-        assert!(protected_positions.contains(&vec![1]));
-        assert!(protected_positions.contains(&vec![2, 3]));
+        assert!(protected_positions.contains(&vec![1, 2, 3]));
+        assert!(protected_positions.contains(&vec![4]));
     }
 
     #[test]
