@@ -6,6 +6,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.1.0-rc.3
+
 ### Added
 - Accept `static_config_version: 2` static voting configs, which replace v1's
   single `dynamic_config_url` with an ordered `dynamic_config_urls` mirror list.
