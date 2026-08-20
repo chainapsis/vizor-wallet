@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_config_settings_panel.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
@@ -19,6 +20,43 @@ import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provid
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 
 void main() {
+  testWidgets('test round visibility setting persists both states', (
+    tester,
+  ) async {
+    final visibilityStore = _FakeVotingRoundVisibilityStore();
+    await tester.binding.setSurfaceSize(const Size(800, 720));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await _pumpPanel(
+      tester,
+      store: _FakeVotingConfigSourceStore(),
+      visibilityStore: visibilityStore,
+    );
+
+    expect(find.text('Show test rounds'), findsOneWidget);
+    expect(
+      find.text('Display authenticated rounds whose titles begin with [TEST].'),
+      findsOneWidget,
+    );
+    expect(visibilityStore.showTestRounds, isFalse);
+
+    await tester.tap(
+      find.byKey(const ValueKey('voting_show_test_rounds_toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(visibilityStore.showTestRounds, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey('voting_show_test_rounds_toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(visibilityStore.showTestRounds, isFalse);
+  });
+
   testWidgets('default source does not duplicate the current URL', (
     tester,
   ) async {
@@ -212,12 +250,16 @@ void main() {
 Future<void> _pumpPanel(
   WidgetTester tester, {
   required _FakeVotingConfigSourceStore store,
+  _FakeVotingRoundVisibilityStore? visibilityStore,
   bool guarded = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         votingConfigSourceStoreProvider.overrideWithValue(store),
+        votingRoundVisibilityStoreProvider.overrideWithValue(
+          visibilityStore ?? _FakeVotingRoundVisibilityStore(),
+        ),
         votingConfigProvider.overrideWith(_NoopVotingConfigNotifier.new),
         votingRoundsProvider.overrideWith(_NoopVotingRoundsNotifier.new),
         if (guarded)
@@ -332,5 +374,19 @@ class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
   @override
   Future<void> writeSavedSourcesJson(String savedSourcesJson) async {
     this.savedSourcesJson = savedSourcesJson;
+  }
+}
+
+class _FakeVotingRoundVisibilityStore implements VotingRoundVisibilityStore {
+  _FakeVotingRoundVisibilityStore();
+
+  bool showTestRounds = false;
+
+  @override
+  Future<bool> readShowTestRounds() async => showTestRounds;
+
+  @override
+  Future<void> writeShowTestRounds(bool show) async {
+    showTestRounds = show;
   }
 }

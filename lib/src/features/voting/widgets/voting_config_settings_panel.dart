@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart'
-    show SystemMouseCursors, TextInputAction, TextInputType;
+    show LogicalKeyboardKey, SystemMouseCursors, TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +12,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_config_source_provider.dart';
+import '../../../providers/voting/voting_round_visibility_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
@@ -46,7 +47,9 @@ class _VotingConfigSettingsPanelState
   bool _showEditor = false;
   bool _isSubmitting = false;
   bool _isSavingSelection = false;
+  bool _isSavingTestRoundVisibility = false;
   String? _submitError;
+  String? _testRoundVisibilityError;
   String? _validationField;
   _ConfigSourceSelection? _pendingSelection;
 
@@ -375,10 +378,34 @@ class _VotingConfigSettingsPanelState
     return text.isEmpty ? "Couldn't update voting config." : text;
   }
 
+  Future<void> _toggleTestRoundVisibility(bool currentlyShown) async {
+    if (_isSavingTestRoundVisibility) return;
+    setState(() {
+      _isSavingTestRoundVisibility = true;
+      _testRoundVisibilityError = null;
+    });
+    try {
+      await ref
+          .read(showTestVotingRoundsProvider.notifier)
+          .setShowTestRounds(!currentlyShown);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _testRoundVisibilityError =
+            "Couldn't update the test round visibility setting.";
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingTestRoundVisibility = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final sourceState = ref.watch(votingConfigSourceProvider);
+    final showTestRoundsState = ref.watch(showTestVotingRoundsProvider);
     final submissionInProgress = ref
         .watch(votingSubmissionGuardProvider)
         .isNotEmpty;
@@ -428,6 +455,18 @@ class _VotingConfigSettingsPanelState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          _ShowTestRoundsCard(
+                            enabled: showTestRoundsState.value ?? false,
+                            error: _testRoundVisibilityError,
+                            onToggle:
+                                showTestRoundsState.hasValue &&
+                                    !_isSavingTestRoundVisibility
+                                ? () => _toggleTestRoundVisibility(
+                                    showTestRoundsState.requireValue,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
                           _SourceCard(
                             title: 'Token holder voting',
                             sourceUrl: kDefaultStaticVotingConfigSource,
@@ -551,6 +590,161 @@ class _VotingConfigSettingsPanelState
                 ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const _toggleShortcuts = <ShortcutActivator, Intent>{
+  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+};
+
+class _ShowTestRoundsCard extends StatefulWidget {
+  const _ShowTestRoundsCard({
+    required this.enabled,
+    required this.error,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final String? error;
+  final VoidCallback? onToggle;
+
+  @override
+  State<_ShowTestRoundsCard> createState() => _ShowTestRoundsCardState();
+}
+
+class _ShowTestRoundsCardState extends State<_ShowTestRoundsCard> {
+  bool _focused = false;
+
+  void _activate() => widget.onToggle?.call();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final interactive = widget.onToggle != null;
+    return Semantics(
+      container: true,
+      button: true,
+      enabled: interactive,
+      toggled: widget.enabled,
+      label: 'Show test rounds',
+      onTap: widget.onToggle,
+      excludeSemantics: true,
+      child: MouseRegion(
+        cursor: interactive
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        child: FocusableActionDetector(
+          enabled: interactive,
+          mouseCursor: interactive
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          onShowFocusHighlight: (focused) {
+            if (_focused == focused) return;
+            setState(() => _focused = focused);
+          },
+          shortcuts: _toggleShortcuts,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                _activate();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            key: const ValueKey('voting_show_test_rounds_toggle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onToggle,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.surface.card,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+                border: Border.all(
+                  color: _focused
+                      ? colors.state.focusRing
+                      : colors.border.subtle,
+                  width: _focused ? 2 : 1,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Show test rounds',
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            'Display authenticated rounds whose titles begin with [TEST].',
+                            style: AppTypography.labelMedium.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                          if (widget.error != null) ...[
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              widget.error!,
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.text.destructive,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Opacity(
+                      opacity: interactive ? 1 : 0.65,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOut,
+                        width: 44,
+                        height: 20,
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: widget.enabled
+                              ? colors.background.brandCrimsonStrong
+                              : colors.background.overlay,
+                          borderRadius: BorderRadius.circular(AppRadii.full),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 140),
+                          curve: Curves.easeOut,
+                          alignment: widget.enabled
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: DecoratedBox(
+                            key: const ValueKey(
+                              'voting_show_test_rounds_thumb',
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFFFF),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.full,
+                              ),
+                            ),
+                            child: const SizedBox(width: 28, height: 16),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
