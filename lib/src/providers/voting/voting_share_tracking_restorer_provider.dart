@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/layout/app_form_factor.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -37,14 +38,17 @@ final votingPendingShareRestoreRetryDelayProvider = Provider((ref) {
 });
 
 class VotingShareTrackingRestorer {
-  VotingShareTrackingRestorer(this._ref);
+  VotingShareTrackingRestorer(this._ref, {required bool enabled})
+    : _enabled = enabled;
 
   final Ref _ref;
+  final bool _enabled;
   Future<void>? _restoreInFlight;
   Future<void> _pauseInFlight = Future.value();
   Timer? _retryTimer;
 
   Future<void> restore() {
+    if (!_enabled) return Future.value();
     final inFlight = _restoreInFlight;
     if (inFlight != null) return inFlight;
     late final Future<void> restore;
@@ -56,6 +60,7 @@ class VotingShareTrackingRestorer {
   }
 
   Future<void> pause() {
+    if (!_enabled) return Future.value();
     _cancelRetry();
     final pause = _ref
         .read(votingShareTrackingRegistryProvider)
@@ -66,6 +71,7 @@ class VotingShareTrackingRestorer {
   }
 
   Future<void> resume() async {
+    if (!_enabled) return;
     try {
       await _pauseInFlight;
     } finally {
@@ -182,7 +188,9 @@ class VotingShareTrackingRestorer {
 }
 
 final votingShareTrackingRestorerProvider = Provider((ref) {
-  final restorer = VotingShareTrackingRestorer(ref);
+  const enabled = kAppFormFactor == AppFormFactor.desktop;
+  final restorer = VotingShareTrackingRestorer(ref, enabled: enabled);
+  if (!enabled) return restorer;
   final registry = ref.read(votingShareTrackingRegistryProvider);
   void requestRestore() => unawaited(restorer.restore());
   registry.addRestoreRequestListener(requestRestore);

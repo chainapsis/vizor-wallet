@@ -1120,7 +1120,9 @@ class ZcashWalletApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(votingShareTrackingRestorerProvider);
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      ref.watch(votingShareTrackingRestorerProvider);
+    }
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);

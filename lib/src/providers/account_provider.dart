@@ -11,6 +11,7 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/profile_pictures.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
@@ -543,6 +544,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      await _removeAccountWithShareTrackingStopped(uuid);
+      return;
+    }
+
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     try {
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
@@ -692,6 +698,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
+
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      await _resetWalletWithShareTrackingStopped();
+      return;
+    }
 
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;
