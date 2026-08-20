@@ -3,9 +3,14 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer_provider.dart';
 
 void main() {
+  test('mobile submission sessions do not own automatic share tracking', () {
+    expect(automaticVotingShareTrackingEnabled(), isFalse);
+  });
+
   test('mobile builds do not start desktop vote share recovery', () async {
     var discoveryCount = 0;
     final container = ProviderContainer(
