@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
@@ -890,6 +891,47 @@ void main() {
 
     final rounds = await container.read(votingRoundsProvider.future);
     expect(rounds.map((round) => round.roundId), [kOtherRoundId]);
+  });
+
+  test('rounds provider refreshes when test rounds are enabled', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {
+              'vote_round_id': kRoundId,
+              'title': '[TEST] Opt-in poll',
+              'status': 'active',
+            },
+            {
+              'vote_round_id': kOtherRoundId,
+              'title': 'Visible poll',
+              'status': 'active',
+            },
+          ],
+        },
+      },
+    );
+    final visibilityStore = FakeVotingRoundVisibilityStore();
+    final container = _container(http: http, visibilityStore: visibilityStore);
+    addTearDown(container.dispose);
+
+    final hiddenRounds = await container.read(votingRoundsProvider.future);
+    expect(hiddenRounds.map((round) => round.roundId), [kOtherRoundId]);
+
+    await container
+        .read(showTestVotingRoundsProvider.notifier)
+        .setShowTestRounds(true);
+
+    final visibleRounds = await container.read(votingRoundsProvider.future);
+    expect(visibleRounds.map((round) => round.roundId), [
+      kRoundId,
+      kOtherRoundId,
+    ]);
+    expect(visibilityStore.showTestRounds, isTrue);
   });
 
   test(
@@ -5174,11 +5216,15 @@ void main() {
 ProviderContainer _container({
   required VotingHttpClient http,
   VotingConfigSourceStore? sourceStore,
+  VotingRoundVisibilityStore? visibilityStore,
 }) {
   return ProviderContainer(
     overrides: [
       votingConfigSourceStoreProvider.overrideWithValue(
         sourceStore ?? FakeVotingConfigSourceStore(),
+      ),
+      votingRoundVisibilityStoreProvider.overrideWithValue(
+        visibilityStore ?? FakeVotingRoundVisibilityStore(),
       ),
       votingHttpClientProvider.overrideWithValue(http),
       votingConfigLoaderProvider.overrideWithValue(
@@ -5202,6 +5248,20 @@ ProviderContainer _container({
       votingActiveAccountUuidProvider.overrideWithValue(() async => null),
     ],
   );
+}
+
+class FakeVotingRoundVisibilityStore implements VotingRoundVisibilityStore {
+  FakeVotingRoundVisibilityStore({this.showTestRounds = false});
+
+  bool showTestRounds;
+
+  @override
+  Future<bool> readShowTestRounds() async => showTestRounds;
+
+  @override
+  Future<void> writeShowTestRounds(bool show) async {
+    showTestRounds = show;
+  }
 }
 
 final class _ProviderDisposalObserver extends ProviderObserver {

@@ -8,6 +8,7 @@ import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
+import 'voting_round_visibility_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
@@ -68,7 +69,8 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   @override
   Future<List<VotingRoundView>> build() async {
     ref.watch(votingActiveAccountUuidProvider);
-    return _load();
+    final showTestRounds = await ref.watch(showTestVotingRoundsProvider.future);
+    return _load(showTestRounds: showTestRounds);
   }
 
   Future<void> reload() async {
@@ -84,7 +86,12 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       do {
         _reloadQueued = false;
         state = const AsyncLoading<List<VotingRoundView>>();
-        state = await AsyncValue.guard(_load);
+        state = await AsyncValue.guard(() async {
+          final showTestRounds = await ref.read(
+            showTestVotingRoundsProvider.future,
+          );
+          return _load(showTestRounds: showTestRounds);
+        });
       } while (_reloadQueued);
     }();
     _reloadFuture = run;
@@ -95,7 +102,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     }
   }
 
-  Future<List<VotingRoundView>> _load() async {
+  Future<List<VotingRoundView>> _load({required bool showTestRounds}) async {
     final config = await ref.read(votingConfigProvider.future);
     final api = ref.read(votingApiClientProvider(config.apiServers));
 
@@ -113,9 +120,13 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         'shown=${authenticatedRounds.length} total=${rounds.length}',
       );
     }
-    final visibleRounds = authenticatedRounds
-        .where((round) => !round.title.startsWith(_hiddenTestRoundTitlePrefix))
-        .toList(growable: false);
+    final visibleRounds = showTestRounds
+        ? authenticatedRounds
+        : authenticatedRounds
+              .where(
+                (round) => !round.title.startsWith(_hiddenTestRoundTitlePrefix),
+              )
+              .toList(growable: false);
     if (visibleRounds.length != authenticatedRounds.length) {
       debugPrint(
         '[zcash] Voting: filtered test rounds '
