@@ -863,6 +863,35 @@ void main() {
     expect(rounds.map((round) => round.roundId), [kRoundId, kOtherRoundId]);
   });
 
+  test('rounds provider hides authenticated [TEST] title prefixes', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {
+              'vote_round_id': kRoundId,
+              'title': '[TEST] Hidden poll',
+              'status': 'active',
+            },
+            {
+              'vote_round_id': kOtherRoundId,
+              'title': 'Visible poll [TEST]',
+              'status': 'active',
+            },
+          ],
+        },
+      },
+    );
+    final container = _container(http: http);
+    addTearDown(container.dispose);
+
+    final rounds = await container.read(votingRoundsProvider.future);
+    expect(rounds.map((round) => round.roundId), [kOtherRoundId]);
+  });
+
   test(
     'rounds provider marks locally completed active rounds as voted',
     () async {

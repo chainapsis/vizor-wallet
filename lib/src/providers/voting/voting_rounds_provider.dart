@@ -12,6 +12,7 @@ import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
 const kVotingPollListRecentRefreshWindow = Duration(seconds: 10);
+const _hiddenTestRoundTitlePrefix = '[TEST]';
 DateTime? _lastVotingPollListRefreshAt;
 
 class VotingPollListRefreshRequestNotifier extends Notifier<int> {
@@ -102,22 +103,32 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
         .toSet();
-    final filteredRounds = rounds
+    final authenticatedRounds = rounds
         .where((round) => authenticatedRoundIds.contains(round.roundId))
         .toList(growable: false);
-    if (filteredRounds.length != rounds.length) {
+    if (authenticatedRounds.length != rounds.length) {
       debugPrint(
         '[zcash] Voting: filtered rounds '
         '(unauthenticated) '
-        'shown=${filteredRounds.length} total=${rounds.length}',
+        'shown=${authenticatedRounds.length} total=${rounds.length}',
+      );
+    }
+    final visibleRounds = authenticatedRounds
+        .where((round) => !round.title.startsWith(_hiddenTestRoundTitlePrefix))
+        .toList(growable: false);
+    if (visibleRounds.length != authenticatedRounds.length) {
+      debugPrint(
+        '[zcash] Voting: filtered test rounds '
+        'shown=${visibleRounds.length} '
+        'authenticated=${authenticatedRounds.length}',
       );
     }
     final recoveryStates = await _roundListRecoveryStates(
-      filteredRounds,
+      visibleRounds,
       api: api,
     );
     return [
-      for (final round in filteredRounds)
+      for (final round in visibleRounds)
         VotingRoundView.fromSummary(
           round,
           voted: recoveryStates[round.roundId]?.voted ?? false,
