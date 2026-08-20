@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../../frb_generated.dart';
+import 'note_bundling.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
@@ -588,6 +589,7 @@ class SignedDelegationPayloadView {
   final BigInt delegatedWeightZatoshi;
   final int bundleCount;
   final int bundleIndex;
+  final PrivacyTrim privacyTrim;
 
   const SignedDelegationPayloadView({
     required this.pcztBytes,
@@ -598,6 +600,7 @@ class SignedDelegationPayloadView {
     required this.delegatedWeightZatoshi,
     required this.bundleCount,
     required this.bundleIndex,
+    required this.privacyTrim,
   });
 
   @override
@@ -609,7 +612,8 @@ class SignedDelegationPayloadView {
       eligibleWeightZatoshi.hashCode ^
       delegatedWeightZatoshi.hashCode ^
       bundleCount.hashCode ^
-      bundleIndex.hashCode;
+      bundleIndex.hashCode ^
+      privacyTrim.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -623,7 +627,8 @@ class SignedDelegationPayloadView {
           eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
           delegatedWeightZatoshi == other.delegatedWeightZatoshi &&
           bundleCount == other.bundleCount &&
-          bundleIndex == other.bundleIndex;
+          bundleIndex == other.bundleIndex &&
+          privacyTrim == other.privacyTrim;
 }
 
 class SignedVoteCommitmentView {

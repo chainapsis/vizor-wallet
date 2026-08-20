@@ -19,6 +19,7 @@ import 'network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
+import 'third_party/zcash_voting/note_bundling.dart';
 import 'third_party/zcash_voting/round.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/types.dart';
@@ -9021,12 +9022,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BundleLayout dco_decode_bundle_layout(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return BundleLayout(
       bundleCount: dco_decode_u_32(arr[0]),
       eligibleWeight: dco_decode_u_64(arr[1]),
       droppedCount: dco_decode_u_32(arr[2]),
+      privacyTrim: dco_decode_privacy_trim(arr[3]),
     );
   }
 
@@ -10311,6 +10313,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PrivacyTrim dco_decode_privacy_trim(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PrivacyTrim(
+      droppedBundles: dco_decode_u_32(arr[0]),
+      droppedNotes: dco_decode_u_32(arr[1]),
+      droppedValue: dco_decode_u_64(arr[2]),
+    );
+  }
+
+  @protected
   ProposalResult dco_decode_proposal_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -10559,8 +10574,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return SignedDelegationPayloadView(
       pcztBytes: dco_decode_list_prim_u_8_strict(arr[0]),
       status: dco_decode_String(arr[1]),
@@ -10570,6 +10585,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       delegatedWeightZatoshi: dco_decode_u_64(arr[5]),
       bundleCount: dco_decode_u_32(arr[6]),
       bundleIndex: dco_decode_u_32(arr[7]),
+      privacyTrim: dco_decode_privacy_trim(arr[8]),
     );
   }
 
@@ -11511,10 +11527,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleCount = sse_decode_u_32(deserializer);
     var var_eligibleWeight = sse_decode_u_64(deserializer);
     var var_droppedCount = sse_decode_u_32(deserializer);
+    var var_privacyTrim = sse_decode_privacy_trim(deserializer);
     return BundleLayout(
       bundleCount: var_bundleCount,
       eligibleWeight: var_eligibleWeight,
       droppedCount: var_droppedCount,
+      privacyTrim: var_privacyTrim,
     );
   }
 
@@ -13360,6 +13378,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PrivacyTrim sse_decode_privacy_trim(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_droppedBundles = sse_decode_u_32(deserializer);
+    var var_droppedNotes = sse_decode_u_32(deserializer);
+    var var_droppedValue = sse_decode_u_64(deserializer);
+    return PrivacyTrim(
+      droppedBundles: var_droppedBundles,
+      droppedNotes: var_droppedNotes,
+      droppedValue: var_droppedValue,
+    );
+  }
+
+  @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_proposalId = sse_decode_u_64(deserializer);
@@ -13669,6 +13700,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_delegatedWeightZatoshi = sse_decode_u_64(deserializer);
     var var_bundleCount = sse_decode_u_32(deserializer);
     var var_bundleIndex = sse_decode_u_32(deserializer);
+    var var_privacyTrim = sse_decode_privacy_trim(deserializer);
     return SignedDelegationPayloadView(
       pcztBytes: var_pcztBytes,
       status: var_status,
@@ -13678,6 +13710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       delegatedWeightZatoshi: var_delegatedWeightZatoshi,
       bundleCount: var_bundleCount,
       bundleIndex: var_bundleIndex,
+      privacyTrim: var_privacyTrim,
     );
   }
 
@@ -14686,6 +14719,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleCount, serializer);
     sse_encode_u_64(self.eligibleWeight, serializer);
     sse_encode_u_32(self.droppedCount, serializer);
+    sse_encode_privacy_trim(self.privacyTrim, serializer);
   }
 
   @protected
@@ -16164,6 +16198,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_privacy_trim(PrivacyTrim self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.droppedBundles, serializer);
+    sse_encode_u_32(self.droppedNotes, serializer);
+    sse_encode_u_64(self.droppedValue, serializer);
+  }
+
+  @protected
   void sse_encode_proposal_result(
     ProposalResult self,
     SseSerializer serializer,
@@ -16391,6 +16433,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.delegatedWeightZatoshi, serializer);
     sse_encode_u_32(self.bundleCount, serializer);
     sse_encode_u_32(self.bundleIndex, serializer);
+    sse_encode_privacy_trim(self.privacyTrim, serializer);
   }
 
   @protected

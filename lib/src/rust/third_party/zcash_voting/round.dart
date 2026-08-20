@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../../frb_generated.dart';
+import 'note_bundling.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Result of idempotently planning or validating note bundles for a round.
@@ -12,15 +13,22 @@ class BundleLayout {
   final BigInt eligibleWeight;
   final int droppedCount;
 
+  /// What the privacy trim removed while planning this round.
+  final PrivacyTrim privacyTrim;
+
   const BundleLayout({
     required this.bundleCount,
     required this.eligibleWeight,
     required this.droppedCount,
+    required this.privacyTrim,
   });
 
   @override
   int get hashCode =>
-      bundleCount.hashCode ^ eligibleWeight.hashCode ^ droppedCount.hashCode;
+      bundleCount.hashCode ^
+      eligibleWeight.hashCode ^
+      droppedCount.hashCode ^
+      privacyTrim.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -29,5 +37,6 @@ class BundleLayout {
           runtimeType == other.runtimeType &&
           bundleCount == other.bundleCount &&
           eligibleWeight == other.eligibleWeight &&
-          droppedCount == other.droppedCount;
+          droppedCount == other.droppedCount &&
+          privacyTrim == other.privacyTrim;
 }

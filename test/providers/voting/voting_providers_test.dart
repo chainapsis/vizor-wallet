@@ -34,6 +34,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/note_bundling.dart'
+    as rust_note_bundling;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
     as rust_round;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
@@ -7372,6 +7374,11 @@ class FakeVotingRustApi implements VotingRustApi {
       bundleCount: bundleCount,
       eligibleWeight: BigInt.from(setupEligibleWeight),
       droppedCount: 0,
+      privacyTrim: rust_note_bundling.PrivacyTrim(
+        droppedBundles: 0,
+        droppedNotes: 0,
+        droppedValue: BigInt.zero,
+      ),
     );
   }
 
@@ -7431,6 +7438,11 @@ class FakeVotingRustApi implements VotingRustApi {
         delegatedWeightZatoshi: BigInt.from(100),
         bundleCount: 1,
         bundleIndex: bundleIndex,
+        privacyTrim: rust_note_bundling.PrivacyTrim(
+          droppedBundles: 0,
+          droppedNotes: 0,
+          droppedValue: BigInt.zero,
+        ),
       ),
     );
   }
@@ -7614,6 +7626,11 @@ class FakeVotingRustApi implements VotingRustApi {
         delegatedWeightZatoshi: BigInt.from(100),
         bundleCount: bundleCount,
         bundleIndex: bundleIndex,
+        privacyTrim: rust_note_bundling.PrivacyTrim(
+          droppedBundles: 0,
+          droppedNotes: 0,
+          droppedValue: BigInt.zero,
+        ),
       ),
     );
   }

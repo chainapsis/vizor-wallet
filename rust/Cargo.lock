@@ -1312,7 +1312,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d308ebe4b10924331bd079044b418da7b227d724d3e2408567a47ad7c3da2a0"
 dependencies = [
  "derive-deftly-macros",
- "heck 0.5.0",
+ "heck 0.4.1",
 ]
 
 [[package]]
@@ -4000,8 +4000,8 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
- "itertools 0.14.0",
+ "heck 0.4.1",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -4033,7 +4033,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6931,8 +6931,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vote-commitment-tree"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b341759f23454409a432b51d127e62df1ea0c5c2e2e14420d40fd506be00462b"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=0938fbd66fe65db8a62c8ae6af4e905e4a02ea22#0938fbd66fe65db8a62c8ae6af4e905e4a02ea22"
 dependencies = [
  "anyhow",
  "ff",
@@ -6947,8 +6946,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "211c6a63a87e0063b6af575657fef1d7e2f1ba520591c389bd0bb4d78980ffd3"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=0938fbd66fe65db8a62c8ae6af4e905e4a02ea22#0938fbd66fe65db8a62c8ae6af4e905e4a02ea22"
 dependencies = [
  "base64",
  "ff",
@@ -8362,9 +8360,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "3.1.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "448504462b6f5e818d51582de7aa80f5014731a9131a5ac650b3491a383937b3"
+version = "3.1.0-rc.2"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=0938fbd66fe65db8a62c8ae6af4e905e4a02ea22#0938fbd66fe65db8a62c8ae6af4e905e4a02ea22"
 dependencies = [
  "anyhow",
  "base64",

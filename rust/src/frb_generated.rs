@@ -7007,6 +7007,7 @@ const _: fn() = || {
         let _: u32 = BundleLayout.bundle_count;
         let _: u64 = BundleLayout.eligible_weight;
         let _: u32 = BundleLayout.dropped_count;
+        let _: zcash_voting::note_bundling::PrivacyTrim = BundleLayout.privacy_trim;
     }
     {
         let CompletedVoteChoiceView = None::<zcash_voting::wire::CompletedVoteChoiceView>.unwrap();
@@ -7117,6 +7118,12 @@ const _: fn() = || {
         let _: u32 = PirLayout.poly_len;
     }
     {
+        let PrivacyTrim = None::<zcash_voting::note_bundling::PrivacyTrim>.unwrap();
+        let _: u32 = PrivacyTrim.dropped_bundles;
+        let _: u32 = PrivacyTrim.dropped_notes;
+        let _: u64 = PrivacyTrim.dropped_value;
+    }
+    {
         let RecoverableCommitmentBundle =
             None::<zcash_voting::wire::RecoverableCommitmentBundle>.unwrap();
         let _: u32 = RecoverableCommitmentBundle.bundle_index;
@@ -7218,6 +7225,7 @@ const _: fn() = || {
         let _: u64 = SignedDelegationPayloadView.delegated_weight_zatoshi;
         let _: u32 = SignedDelegationPayloadView.bundle_count;
         let _: u32 = SignedDelegationPayloadView.bundle_index;
+        let _: zcash_voting::note_bundling::PrivacyTrim = SignedDelegationPayloadView.privacy_trim;
     }
     {
         let SignedVoteCommitmentView =
@@ -7641,10 +7649,13 @@ impl SseDecode for zcash_voting::round::BundleLayout {
         let mut var_bundleCount = <u32>::sse_decode(deserializer);
         let mut var_eligibleWeight = <u64>::sse_decode(deserializer);
         let mut var_droppedCount = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrim =
+            <zcash_voting::note_bundling::PrivacyTrim>::sse_decode(deserializer);
         return zcash_voting::round::BundleLayout {
             bundle_count: var_bundleCount,
             eligible_weight: var_eligibleWeight,
             dropped_count: var_droppedCount,
+            privacy_trim: var_privacyTrim,
         };
     }
 }
@@ -9440,6 +9451,20 @@ impl SseDecode for zcash_voting::config::PirLayout {
     }
 }
 
+impl SseDecode for zcash_voting::note_bundling::PrivacyTrim {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_droppedBundles = <u32>::sse_decode(deserializer);
+        let mut var_droppedNotes = <u32>::sse_decode(deserializer);
+        let mut var_droppedValue = <u64>::sse_decode(deserializer);
+        return zcash_voting::note_bundling::PrivacyTrim {
+            dropped_bundles: var_droppedBundles,
+            dropped_notes: var_droppedNotes,
+            dropped_value: var_droppedValue,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::ProposalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9750,6 +9775,8 @@ impl SseDecode for zcash_voting::wire::SignedDelegationPayloadView {
         let mut var_delegatedWeightZatoshi = <u64>::sse_decode(deserializer);
         let mut var_bundleCount = <u32>::sse_decode(deserializer);
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrim =
+            <zcash_voting::note_bundling::PrivacyTrim>::sse_decode(deserializer);
         return zcash_voting::wire::SignedDelegationPayloadView {
             pczt_bytes: var_pcztBytes,
             status: var_status,
@@ -9759,6 +9786,7 @@ impl SseDecode for zcash_voting::wire::SignedDelegationPayloadView {
             delegated_weight_zatoshi: var_delegatedWeightZatoshi,
             bundle_count: var_bundleCount,
             bundle_index: var_bundleIndex,
+            privacy_trim: var_privacyTrim,
         };
     }
 }
@@ -10919,6 +10947,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::round::BundleLay
             self.0.bundle_count.into_into_dart().into_dart(),
             self.0.eligible_weight.into_into_dart().into_dart(),
             self.0.dropped_count.into_into_dart().into_dart(),
+            self.0.privacy_trim.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12149,6 +12178,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::config::PirLayou
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::note_bundling::PrivacyTrim> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.dropped_bundles.into_into_dart().into_dart(),
+            self.0.dropped_notes.into_into_dart().into_dart(),
+            self.0.dropped_value.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::note_bundling::PrivacyTrim>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::note_bundling::PrivacyTrim>>
+    for zcash_voting::note_bundling::PrivacyTrim
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::note_bundling::PrivacyTrim> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::ProposalResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -12530,6 +12581,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::SignedDele
             self.0.delegated_weight_zatoshi.into_into_dart().into_dart(),
             self.0.bundle_count.into_into_dart().into_dart(),
             self.0.bundle_index.into_into_dart().into_dart(),
+            self.0.privacy_trim.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -13514,6 +13566,7 @@ impl SseEncode for zcash_voting::round::BundleLayout {
         <u32>::sse_encode(self.bundle_count, serializer);
         <u64>::sse_encode(self.eligible_weight, serializer);
         <u32>::sse_encode(self.dropped_count, serializer);
+        <zcash_voting::note_bundling::PrivacyTrim>::sse_encode(self.privacy_trim, serializer);
     }
 }
 
@@ -14820,6 +14873,15 @@ impl SseEncode for zcash_voting::config::PirLayout {
     }
 }
 
+impl SseEncode for zcash_voting::note_bundling::PrivacyTrim {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.dropped_bundles, serializer);
+        <u32>::sse_encode(self.dropped_notes, serializer);
+        <u64>::sse_encode(self.dropped_value, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::ProposalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -15027,6 +15089,7 @@ impl SseEncode for zcash_voting::wire::SignedDelegationPayloadView {
         <u64>::sse_encode(self.delegated_weight_zatoshi, serializer);
         <u32>::sse_encode(self.bundle_count, serializer);
         <u32>::sse_encode(self.bundle_index, serializer);
+        <zcash_voting::note_bundling::PrivacyTrim>::sse_encode(self.privacy_trim, serializer);
     }
 }
 

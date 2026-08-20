@@ -44,6 +44,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/note_bundling.dart'
+    as rust_note_bundling;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
     as rust_round;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
@@ -1772,6 +1774,55 @@ void main() {
     expect(find.text('Retry eligibility'), findsOneWidget);
     expect(find.text('Preparing voting power'), findsNothing);
   });
+
+  testWidgets(
+    'poll stops preparing when eligibility refresh completes without a result',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1152, 768));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final roundJson = _roundStatusJson();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSessionProvider(_roundId).overrideWith(
+            () => _StaticVotingSessionNotifier(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.idle,
+                round: VotingRoundDetails(
+                  roundId: _roundId,
+                  title: 'Test round',
+                  status: 'active',
+                  snapshotHeight: 3359740,
+                  eaPk: Uint8List(32),
+                  ncRoot: Uint8List(32),
+                  nullifierImtRoot: Uint8List(32),
+                  rawJson: roundJson,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _proposalHarness(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Preparing voting power'), findsNothing);
+      expect(find.text('Voting power unavailable.'), findsOneWidget);
+      expect(find.text('Retry eligibility'), findsOneWidget);
+    },
+  );
 
   testWidgets('poll retries voting power from error state', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
@@ -4499,6 +4550,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       bundleCount: _persistedBundleCount,
       eligibleWeight: eligibleWeight,
       droppedCount: 0,
+      privacyTrim: rust_note_bundling.PrivacyTrim(
+        droppedBundles: 0,
+        droppedNotes: 0,
+        droppedValue: BigInt.zero,
+      ),
     );
   }
 
@@ -4563,6 +4619,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         delegatedWeightZatoshi: BigInt.from(100),
         bundleCount: 1,
         bundleIndex: bundleIndex,
+        privacyTrim: rust_note_bundling.PrivacyTrim(
+          droppedBundles: 0,
+          droppedNotes: 0,
+          droppedValue: BigInt.zero,
+        ),
       ),
     );
   }
@@ -4705,6 +4766,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         delegatedWeightZatoshi: BigInt.from(100),
         bundleCount: 1,
         bundleIndex: bundleIndex,
+        privacyTrim: rust_note_bundling.PrivacyTrim(
+          droppedBundles: 0,
+          droppedNotes: 0,
+          droppedValue: BigInt.zero,
+        ),
       ),
     );
   }

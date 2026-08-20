@@ -18,6 +18,7 @@ import 'network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
+import 'third_party/zcash_voting/note_bundling.dart';
 import 'third_party/zcash_voting/round.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/types.dart';
@@ -615,6 +616,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PirLayout dco_decode_pir_layout(dynamic raw);
+
+  @protected
+  PrivacyTrim dco_decode_privacy_trim(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -1531,6 +1535,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PirLayout sse_decode_pir_layout(SseDeserializer deserializer);
+
+  @protected
+  PrivacyTrim sse_decode_privacy_trim(SseDeserializer deserializer);
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -2644,6 +2651,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_pir_layout(PirLayout self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_privacy_trim(PrivacyTrim self, SseSerializer serializer);
 
   @protected
   void sse_encode_proposal_result(

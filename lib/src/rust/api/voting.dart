@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
+import '../third_party/zcash_voting/note_bundling.dart';
 import '../third_party/zcash_voting/round.dart';
 import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/types.dart';

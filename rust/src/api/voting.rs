@@ -1920,6 +1920,7 @@ mod tests {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
+            privacy_trim: Default::default(),
         };
 
         assert_eq!(api.bundle_count, 2);
@@ -1948,6 +1949,7 @@ mod tests {
                 delegated_weight_zatoshi: 10,
                 bundle_count: 2,
                 bundle_index: 1,
+                privacy_trim: Default::default(),
             },
         )
         .unwrap();
@@ -2005,6 +2007,7 @@ mod tests {
                 delegated_weight_zatoshi: 0,
                 bundle_count: 1,
                 bundle_index: 0,
+                privacy_trim: Default::default(),
             })
             .unwrap();
 
@@ -2342,6 +2345,7 @@ mod tests {
                 delegated_weight_zatoshi: 10,
                 bundle_count: 1,
                 bundle_index: 0,
+                privacy_trim: Default::default(),
             }),
         };
         assert_eq!(result.phase, "result");
@@ -2448,8 +2452,20 @@ mod tests {
             anchor_tree_state: test_tree_state(100),
         };
 
-        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected(
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-selection").unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+
+        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected_for_round(
             selected,
+            &db,
+            ROUND_ID,
             BundlePolicy::default(),
         )
         .unwrap();
@@ -2461,6 +2477,7 @@ mod tests {
         assert_eq!(api.notes[0].commitment_tree_position, 3);
         assert_eq!(api.notes[1].value_zatoshi, divisor / 2);
         assert_eq!(api.notes[1].voting_weight_zatoshi, divisor / 2);
+        assert!(api.privacy_trim.is_empty());
     }
 
     #[test]
