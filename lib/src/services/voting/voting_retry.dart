@@ -32,6 +32,7 @@ Future<T> withVotingRetry<T>({
   required VotingRetryPolicy policy,
   required Future<T> Function() operation,
   Future<void> Function(Duration delay)? delay,
+  bool Function()? isCancelled,
 }) async {
   final wait = delay ?? Future<void>.delayed;
   Object? lastError;
@@ -40,10 +41,13 @@ Future<T> withVotingRetry<T>({
       return await operation();
     } catch (error) {
       lastError = error;
-      if (attempt == policy.delays.length || !policy.shouldRetry(error)) {
+      if (attempt == policy.delays.length ||
+          !policy.shouldRetry(error) ||
+          (isCancelled?.call() ?? false)) {
         rethrow;
       }
       await wait(policy.delays[attempt]);
+      if (isCancelled?.call() ?? false) rethrow;
     }
   }
   throw StateError('${policy.name} retry exited unexpectedly: $lastError');

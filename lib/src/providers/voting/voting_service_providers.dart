@@ -59,6 +59,11 @@ final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 5);
 });
 
+/// Delay before retrying a failed automatic helper-share tracking pass.
+final votingShareTrackingFailureRetryDelayProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 15);
+});
+
 /// Timeout for PIR `/root` probe requests.
 final votingPirProbeTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
@@ -503,6 +508,11 @@ abstract interface class VotingRustApi {
     required bool singleShare,
   });
 
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
+  });
+
   BigInt? lastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -903,6 +913,17 @@ class FrbVotingRustApi implements VotingRustApi {
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+    );
+  }
+
+  @override
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
+  }) {
+    return rust_api.shareResubmissionServerOrder(
+      configuredServerUrls: configuredServerUrls,
+      sentToUrls: sentToUrls,
     );
   }
 

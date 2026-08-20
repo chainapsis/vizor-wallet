@@ -176,9 +176,11 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   /// - shared transport/client + PIR resolver caches via [_invalidateEndpointState];
   /// - the poll list ([votingRoundsProvider]) and the interactive session
   ///   ([votingSessionProvider]) so status polls and session setup rerun;
-  /// - the submission-session family ([votingSubmissionSessionProvider]) so a
-  ///   subsequent submission re-resolves its endpoints. Active submission guards
-  ///   keep existing sessions alive until their jobs release process-local state.
+  ///
+  /// Submission sessions stay alive because each action reloads this provider.
+  /// Recreating one during an ambiguous helper POST could duplicate a retry.
+  /// Active submission guards defer interactive-session invalidation until the
+  /// job releases process-local state.
   void _applySwitch(ConfigSwitchKind kind, {required bool sourceChanged}) {
     if (sourceChanged) {
       _invalidateConfigDependentState();
@@ -221,7 +223,6 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
 
   void _invalidateVotingSessionState() {
     ref.invalidate(votingSessionProvider);
-    ref.invalidate(votingSubmissionSessionProvider);
   }
 
   void _invalidateEndpointState() {

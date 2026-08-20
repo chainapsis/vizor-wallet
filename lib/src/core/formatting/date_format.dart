@@ -47,10 +47,15 @@ DateTime? parseFlexibleDate(Object? value) {
   if (value == null) return null;
   if (value is DateTime) return value;
   if (value is num) {
-    final milliseconds = value > 100000000000
-        ? value.toInt()
-        : (value * 1000).toInt();
-    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    if (!value.isFinite) return null;
+    final millisecondsValue = value > 100000000000 ? value : value * 1000;
+    if (!millisecondsValue.isFinite) return null;
+    final milliseconds = millisecondsValue.toInt();
+    try {
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    } on ArgumentError {
+      return null;
+    }
   }
   final text = value.toString().trim();
   final numeric = num.tryParse(text);

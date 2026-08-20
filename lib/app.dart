@@ -96,6 +96,7 @@ import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
@@ -1119,6 +1120,9 @@ class ZcashWalletApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      ref.watch(votingShareTrackingRestorerProvider);
+    }
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);

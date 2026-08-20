@@ -11,6 +11,7 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/profile_pictures.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
@@ -27,6 +28,7 @@ import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'voting/voting_share_tracking_registry_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
 
 export 'account_models.dart';
@@ -542,6 +544,28 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      await _removeAccountWithShareTrackingStopped(uuid);
+      return;
+    }
+
+    final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    try {
+      await shareTracking.quiesceAndDrain(accountUuid: uuid);
+      await _removeAccountWithShareTrackingStopped(uuid);
+    } finally {
+      shareTracking.resume(accountUuid: uuid);
+      shareTracking.requestRestore();
+    }
+  }
+
+  Future<void> _removeAccountWithShareTrackingStopped(String uuid) async {
+    final prev = state.value ?? const AccountState();
+    final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
+    if (targetIndex < 0) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
+    }
+
     final target = prev.accounts[targetIndex];
     final remaining = [
       for (final account in prev.accounts)
@@ -675,6 +699,26 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      await _resetWalletWithShareTrackingStopped();
+      return;
+    }
+
+    final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    var restoreAfterFailure = false;
+    try {
+      await shareTracking.quiesceAndDrain();
+      await _resetWalletWithShareTrackingStopped();
+    } catch (error) {
+      restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
+      rethrow;
+    } finally {
+      shareTracking.resume();
+      if (restoreAfterFailure) shareTracking.requestRestore();
+    }
+  }
+
+  Future<void> _resetWalletWithShareTrackingStopped() async {
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {

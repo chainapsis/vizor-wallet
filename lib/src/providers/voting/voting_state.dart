@@ -167,6 +167,17 @@ class VotingRoundDetails {
   DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
 }
 
+DateTime? votingSessionVoteEndTime(String? sessionJson) {
+  if (sessionJson == null) return null;
+  try {
+    final decoded = jsonDecode(sessionJson);
+    if (decoded is! Map<String, dynamic>) return null;
+    return _dateFromJson(decoded, 'vote_end_time');
+  } on FormatException {
+    return null;
+  }
+}
+
 /// One compact Keystone signature correlated to a pending voting bundle.
 class VotingKeystoneBatchSignature {
   final int bundleIndex;

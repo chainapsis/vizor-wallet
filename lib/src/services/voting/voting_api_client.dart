@@ -266,10 +266,14 @@ class VotingApiClient {
   }
 
   /// Checks whether a helper has confirmed a share identified by its nullifier.
+  ///
+  /// [isCancelled] is checked before each retry so lifecycle-owned polling can
+  /// stop without starting another request.
   Future<VotingShareStatus> getShareStatus({
     required String roundId,
     required Uri serverUrl,
     required String shareId,
+    bool Function()? isCancelled,
   }) async {
     final decoded = await _getJson(
       _endpoint([
@@ -279,6 +283,7 @@ class VotingApiClient {
       ], baseUrl: serverUrl),
       timeout: _helperTimeout,
       retryPolicy: _helperRetryPolicy,
+      isCancelled: isCancelled,
     );
     return VotingShareStatus.fromJson(_objectFromValue(decoded));
   }
@@ -287,7 +292,8 @@ class VotingApiClient {
   ///
   /// [shareId] is retained in the signature so call sites can keep the recovery
   /// key nearby, but the current helper endpoint accepts the same body as the
-  /// initial submission.
+  /// initial submission. This makes one transport attempt because a timeout is
+  /// ambiguous; the caller decides whether to try another helper or wait.
   Future<VotingShareSubmissionResult> resubmitShare({
     required Uri serverUrl,
     required String shareId,
@@ -297,7 +303,6 @@ class VotingApiClient {
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
       timeout: _helperTimeout,
-      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -321,9 +326,11 @@ class VotingApiClient {
     Uri uri, {
     Duration? timeout,
     VotingRetryPolicy? retryPolicy,
+    bool Function()? isCancelled,
   }) async {
     final response = await _runRequestWithRetry(
       retryPolicy: retryPolicy,
+      isCancelled: isCancelled,
       operation: () async {
         final response = await _get(uri, timeout: timeout ?? _timeout);
         _throwIfNotSuccess(uri, response);
@@ -366,6 +373,7 @@ class VotingApiClient {
   Future<T> _runRequestWithRetry<T>({
     required Future<T> Function() operation,
     VotingRetryPolicy? retryPolicy,
+    bool Function()? isCancelled,
   }) {
     if (retryPolicy == null) {
       return operation();
@@ -374,6 +382,7 @@ class VotingApiClient {
       policy: retryPolicy,
       operation: operation,
       delay: _delay,
+      isCancelled: isCancelled,
     );
   }
 

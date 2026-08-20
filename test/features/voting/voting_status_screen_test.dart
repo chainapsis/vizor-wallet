@@ -3802,6 +3802,7 @@ Map<String, dynamic> _roundStatusJson() => {
   'round_id': _roundId,
   'title': 'Poll',
   'status': 'active',
+  'vote_end_time': 4102444800,
   'snapshot_height': 123,
   'ea_pk': _bytes1x32Base64,
   'nc_root': _bytes2x32Base64,

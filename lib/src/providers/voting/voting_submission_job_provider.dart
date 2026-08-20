@@ -512,6 +512,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _completeJob(key: key, generation: generation);
         return;
       }
+      if (round.voteEndTime == null) {
+        _failJob(
+          key: key,
+          generation: generation,
+          message: 'Voting round end time is unavailable. Retry in a moment.',
+        );
+        return;
+      }
 
       await sessionNotifier.ensureWalletReadyForVoting();
       if (!_isCurrentJob(key: key, generation: generation)) return;
