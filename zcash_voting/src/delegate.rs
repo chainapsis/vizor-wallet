@@ -513,15 +513,10 @@ where
 
     // Ensure the round is present in the voting database.
     voting_db.ensure_round(network, &round_params, None)?;
-    // Ensure the bundles are present in the voting database.
-    let layout = voting_db.ensure_bundles_with_skipped_suffix_with_policy(
+    let (layout, bundle_note_infos) = ensure_delegation_bundle_selection(
+        voting_db,
         &round_id,
         &wallet_inputs.round_note_infos,
-        params.bundle_policy,
-    )?;
-    let bundle_note_infos = crate::round::bundle_notes_for_index_with_policy(
-        &wallet_inputs.round_note_infos,
-        &layout,
         params.bundle_index,
         params.bundle_policy,
     )?;
@@ -543,6 +538,28 @@ where
     prepared.ensure_witnesses(voting_db, wallet_db)?;
 
     Ok(prepared)
+}
+
+fn ensure_delegation_bundle_selection(
+    voting_db: &VotingDb,
+    round_id: &str,
+    round_note_infos: &[NoteInfo],
+    bundle_index: u32,
+    requested_policy: BundlePolicy,
+) -> Result<(BundleLayout, Vec<NoteInfo>), VotingError> {
+    let layout = voting_db.ensure_bundles_with_skipped_suffix_with_policy(
+        round_id,
+        round_note_infos,
+        requested_policy,
+    )?;
+    let bundle_note_infos = crate::round::bundle_notes_for_index_for_round(
+        round_note_infos,
+        &layout,
+        bundle_index,
+        voting_db,
+        round_id,
+    )?;
+    Ok((layout, bundle_note_infos))
 }
 
 /// Inputs gathered from lightwalletd and the wallet before voting-DB work.
@@ -689,6 +706,8 @@ pub struct SignedDelegationBundle {
     pub bundle_count: u32,
     /// Bundle index represented by this signed payload.
     pub bundle_index: u32,
+    /// What the privacy trim withheld while planning this round.
+    pub privacy_trim: crate::note_bundling::PrivacyTrim,
 }
 
 /// Voting PCZT request that should be signed by an external signer.
@@ -895,6 +914,7 @@ impl PreparedDelegationBundle {
             delegated_weight_zatoshi: self.delegated_weight_zatoshi()?,
             bundle_count: self.layout.bundle_count,
             bundle_index: self.bundle_index,
+            privacy_trim: self.layout.privacy_trim,
         })
     }
 
@@ -1454,6 +1474,45 @@ mod tests {
     }
 
     #[test]
+    fn delegation_note_selection_reuses_the_persisted_bundle_policy() {
+        let voting_db = VotingDb::open_in_memory().unwrap();
+        voting_db.set_wallet_id("delegation-persisted-policy");
+        let round_params = crate::VotingRoundParams {
+            vote_round_id: "03".repeat(32),
+            snapshot_height: REGTEST_NU6_3_SNAPSHOT_HEIGHT,
+            ea_pk: vec![1; 32],
+            nc_root: vec![2; 32],
+            nullifier_imt_root: vec![3; 32],
+        };
+        voting_db
+            .ensure_round(Network::Regtest, &round_params, None)
+            .unwrap();
+
+        let notes: Vec<_> = (0..6)
+            .map(|position| note_info(position, crate::governance::BALLOT_DIVISOR))
+            .collect();
+        let persisted_policy = BundlePolicy::new(1).unwrap();
+        let initial = voting_db
+            .ensure_bundles_with_policy(&round_params.vote_round_id, &notes, persisted_policy)
+            .unwrap();
+        assert_eq!(initial.bundle_count, 6);
+
+        // The current default would produce only two bundles, so index 5 is
+        // valid only when both validation and selection honor stored policy.
+        let (resumed, selected) = ensure_delegation_bundle_selection(
+            &voting_db,
+            &round_params.vote_round_id,
+            &notes,
+            5,
+            BundlePolicy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(resumed.bundle_count, 6);
+        assert_eq!(selected.len(), 1);
+    }
+
+    #[test]
     fn signed_bundle_rejects_pczt_sighash_mismatch() {
         let (voting_db, _round_params, _hotkey, prepared) = prepared_wallet_delegation_fixture();
         let setup = prepared
@@ -1597,6 +1656,7 @@ mod tests {
                 bundle_count: 1,
                 eligible_weight: crate::round::quantized_bundle_weight(&bundle_note_infos).unwrap(),
                 dropped_count: 0,
+                privacy_trim: Default::default(),
             },
             bundle_note_infos,
             delegation_keys: DelegationKeys {

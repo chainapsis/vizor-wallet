@@ -313,7 +313,20 @@ impl From<NoteRef> for VotingNoteRefView {
 }
 
 impl VotingNoteSelectionResultView {
-    pub fn from_selected(
+    /// Builds a selection view using the policy authoritative for `round_id`.
+    ///
+    /// Wallet setup persists the effective policy before this view is built.
+    pub fn from_selected_for_round(
+        selected: SelectedNotes,
+        voting_db: &crate::round::VotingDb,
+        round_id: &str,
+    ) -> Result<Self, VotingError> {
+        let effective_policy =
+            voting_db.effective_bundle_policy(round_id, BundlePolicy::default())?;
+        Self::from_selected_with_policy(selected, effective_policy)
+    }
+
+    fn from_selected_with_policy(
         selected: SelectedNotes,
         bundle_policy: BundlePolicy,
     ) -> Result<Self, VotingError> {
@@ -324,7 +337,17 @@ impl VotingNoteSelectionResultView {
                     selected.notes.len()
                 ),
             })?;
-        let eligible_weight_zatoshi = crate::voting_power_with_policy(&selected, bundle_policy);
+        // Plan once so the reported weight and the privacy trim describe the
+        // same bundle set; recomputing the weight separately could drift.
+        // Malformed note rows report zero weight rather than failing, matching
+        // the behavior this view had when it called `voting_power_with_policy`.
+        let plan = crate::note_bundling::canonical_note_bundle_plan_for_notes(
+            &selected.voting_note_infos(),
+            bundle_policy,
+        )
+        .ok();
+        let eligible_weight_zatoshi = plan.as_ref().map_or(0, |plan| plan.eligible_weight);
+        let privacy_trim = plan.map(|plan| plan.privacy_trim).unwrap_or_default();
         let snapshot_height = selected.snapshot_height;
         let anchor_height = selected.anchor_tree_state.height;
         let notes = selected.notes.into_iter().map(Into::into).collect();
@@ -334,6 +357,7 @@ impl VotingNoteSelectionResultView {
             snapshot_height,
             anchor_height,
             notes,
+            privacy_trim,
         })
     }
 }
@@ -363,6 +387,7 @@ impl TryFrom<SignedDelegationBundle> for SignedDelegationPayloadView {
             delegated_weight_zatoshi: result.delegated_weight_zatoshi,
             bundle_count: result.bundle_count,
             bundle_index: result.bundle_index,
+            privacy_trim: result.privacy_trim,
         })
     }
 }
@@ -1069,9 +1094,27 @@ mod tests {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
+            privacy_trim: crate::note_bundling::PrivacyTrim {
+                dropped_bundles: 1,
+                dropped_notes: 4,
+                dropped_value: 900,
+            },
         };
         assert_eq!(view.bundle_count, 2);
         assert_eq!(view.eligible_weight, 50);
+
+        let json = serde_json::to_string(&view).unwrap();
+        assert_eq!(
+            serde_json::from_str::<crate::round::BundleLayout>(&json).unwrap(),
+            view
+        );
+
+        // Payloads written before the privacy trim shipped must still decode.
+        let legacy = r#"{"bundle_count":2,"eligible_weight_zatoshi":50,"dropped_count":0}"#;
+        let decoded: crate::round::BundleLayout = serde_json::from_str(legacy).unwrap();
+        assert_eq!(decoded.privacy_trim.dropped_bundles, 0);
+        assert_eq!(decoded.privacy_trim.dropped_notes, 0);
+        assert_eq!(decoded.privacy_trim.dropped_value, 0);
     }
 
     #[test]
@@ -1142,8 +1185,15 @@ mod tests {
             delegated_weight_zatoshi: 10,
             bundle_count: 2,
             bundle_index: 1,
+            privacy_trim: crate::note_bundling::PrivacyTrim {
+                dropped_bundles: 3,
+                dropped_notes: 7,
+                dropped_value: 1_234,
+            },
         })
         .unwrap();
+        assert_eq!(view.privacy_trim.dropped_bundles, 3);
+        assert_eq!(view.privacy_trim.dropped_value, 1_234);
         assert_eq!(view.pczt_bytes, vec![1, 2, 3]);
         assert_eq!(view.status, "ready_for_submission");
         assert_eq!(view.message, None);
@@ -1159,6 +1209,12 @@ mod tests {
         assert_eq!(view.delegated_weight_zatoshi, 10);
         assert_eq!(view.bundle_count, 2);
         assert_eq!(view.bundle_index, 1);
+
+        // Payloads cached before privacy trimming shipped must still decode.
+        let mut legacy_json = serde_json::to_value(&view).unwrap();
+        legacy_json.as_object_mut().unwrap().remove("privacy_trim");
+        let decoded: SignedDelegationPayloadView = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(decoded.privacy_trim, Default::default());
     }
 
     #[test]
@@ -1282,8 +1338,11 @@ mod tests {
             snapshot_height: 100,
             anchor_tree_state: test_tree_state(100),
         };
-        let view = VotingNoteSelectionResultView::from_selected(selected, BundlePolicy::default())
-            .unwrap();
+        let view = VotingNoteSelectionResultView::from_selected_with_policy(
+            selected,
+            BundlePolicy::default(),
+        )
+        .unwrap();
         assert_eq!(view.note_count, 2);
         assert_eq!(view.eligible_weight_zatoshi, divisor);
         assert_eq!(view.snapshot_height, 100);
@@ -1291,6 +1350,62 @@ mod tests {
         assert_eq!(view.notes[0].commitment_tree_position, 3);
         assert_eq!(view.notes[1].value_zatoshi, divisor / 2);
         assert_eq!(view.notes[1].voting_weight_zatoshi, divisor / 2);
+
+        // Results cached before privacy trimming shipped must still decode.
+        let mut legacy_json = serde_json::to_value(&view).unwrap();
+        legacy_json.as_object_mut().unwrap().remove("privacy_trim");
+        let decoded: VotingNoteSelectionResultView = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(decoded.privacy_trim, Default::default());
+    }
+
+    #[test]
+    fn voting_note_selection_result_view_uses_persisted_round_policy() {
+        let divisor = crate::governance::BALLOT_DIVISOR;
+        let note_value = divisor * 3 / 5;
+        let selected = SelectedNotes {
+            notes: (1..=4)
+                .map(|position| test_note_ref(note_value, note_value, position))
+                .collect(),
+            snapshot_height: 100,
+            anchor_tree_state: test_tree_state(100),
+        };
+        let params = target_round_params(42);
+        let voting_db = crate::round::VotingDb::open_in_memory().unwrap();
+        voting_db.set_wallet_id("selection-view-policy");
+        voting_db
+            .ensure_round(Network::Regtest, &params, None)
+            .unwrap();
+
+        // The original caller groups two 0.6-ballot notes per bundle, producing
+        // two eligible bundles. A later caller policy puts each note in its own
+        // sub-ballot bundle and would report zero weight if used for the view.
+        let persisted_policy = BundlePolicy::new(2).unwrap().with_max_privacy_bundles(None);
+        let requested_policy = BundlePolicy::new(1).unwrap().with_max_privacy_bundles(None);
+        let layout = voting_db
+            .ensure_bundles_with_policy(
+                &params.vote_round_id,
+                &selected.voting_note_infos(),
+                persisted_policy,
+            )
+            .unwrap();
+        assert_eq!(layout.eligible_weight, 2 * divisor);
+
+        assert_eq!(
+            crate::note_bundling::voting_power_with_policy(&selected, requested_policy),
+            0
+        );
+        assert_eq!(
+            crate::voting_power_for_round(&selected, &voting_db, &params.vote_round_id,).unwrap(),
+            2 * divisor
+        );
+
+        let resumed_round_view = VotingNoteSelectionResultView::from_selected_for_round(
+            selected,
+            &voting_db,
+            &params.vote_round_id,
+        )
+        .unwrap();
+        assert_eq!(resumed_round_view.eligible_weight_zatoshi, 2 * divisor);
     }
 
     #[test]

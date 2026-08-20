@@ -4,6 +4,8 @@
 pub(crate) use crate::backend::{orchard, zcash_client_backend};
 use std::collections::HashSet;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS},
     types::{validate_notes_for_round, NoteInfo, SelectedNotes, VotingError},
@@ -16,15 +18,109 @@ pub const MINIMUM_VOTING_NOTE_COUNT: usize = BUNDLE_NOTE_SLOTS;
 /// Minimum quantized voting weight in zatoshi required before a wallet can vote.
 pub const MINIMUM_VOTING_WEIGHT_ZATOSHI: u64 = BALLOT_DIVISOR;
 
+/// Bundle count the privacy trim aims for when the drop budget allows it.
+///
+/// Bundle count is `ceil(note_count / BUNDLE_NOTE_SLOTS)`, so a holder whose
+/// value sits in a few large notes plus a long dust tail emits many delegation
+/// submissions that carry almost no voting weight. Trimming that tail shrinks
+/// the observable submission count for exactly those holders.
+pub const DEFAULT_MAX_PRIVACY_BUNDLES: usize = 2;
+
+/// Default share of selected note value the privacy trim may discard, in basis
+/// points. 100 bps is 1%.
+pub const DEFAULT_PRIVACY_DROP_BPS: u32 = 100;
+
+/// Maximum share of selected note value the privacy trim may discard, in basis
+/// points. 500 bps is 5%.
+pub const MAX_PRIVACY_DROP_BPS: u32 = 500;
+
+/// Default absolute ceiling on raw note value discarded by the privacy trim.
+///
+/// One ZEC is 100,000,000 zatoshi, so this caps the default budget at 1,000 ZEC
+/// even when 1% of the selected balance would be larger.
+pub const DEFAULT_MAX_PRIVACY_DROP_ZATOSHI: u64 = 100_000_000_000;
+
+/// Basis-point denominator. Kept explicit so the trim stays integer-only.
+const BPS_DENOMINATOR: u128 = 10_000;
+
 /// Controls how many real wallet notes are placed into each voting bundle.
 ///
 /// Bundles with fewer than [`BUNDLE_NOTE_SLOTS`] real notes are still padded
 /// later by the proof construction path. This policy only controls how many
 /// selected wallet notes can appear in one real bundle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Serialized with every round so the plan re-derives identically after an SDK
+/// upgrade that changes the defaults.
+///
+/// # Persisted schema
+///
+/// Round storage does not serialize this type directly. It uses a strict,
+/// versioned persistence DTO so a newly added policy field cannot silently
+/// change an older round. Any extension here must add the corresponding field
+/// to a new persisted schema version and define its conversion explicitly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "UncheckedBundlePolicy")]
 pub struct BundlePolicy {
     max_real_notes_per_bundle: usize,
     bundle_addition_threshold_zatoshi: Option<u64>,
+    /// Missing from policies serialized before privacy trimming shipped.
+    ///
+    /// Treating absence as disabled preserves the behavior of those policies
+    /// instead of silently applying the current trim defaults on deserialization.
+    privacy_trim: Option<PrivacyTrimPolicy>,
+}
+
+/// Deserialization shape for [`BundlePolicy`].
+///
+/// Serde must not construct the public policy directly because doing so would
+/// bypass the capacity and privacy-budget validation enforced by its builders.
+#[derive(Deserialize)]
+struct UncheckedBundlePolicy {
+    max_real_notes_per_bundle: usize,
+    bundle_addition_threshold_zatoshi: Option<u64>,
+    #[serde(default)]
+    privacy_trim: Option<PrivacyTrimPolicy>,
+}
+
+impl TryFrom<UncheckedBundlePolicy> for BundlePolicy {
+    type Error = VotingError;
+
+    fn try_from(value: UncheckedBundlePolicy) -> Result<Self, Self::Error> {
+        let mut policy = Self::new(value.max_real_notes_per_bundle)?;
+        if let Some(threshold) = value.bundle_addition_threshold_zatoshi {
+            policy = policy.with_bundle_addition_threshold(threshold);
+        }
+
+        let Some(privacy_trim) = value.privacy_trim else {
+            return Ok(policy.with_max_privacy_bundles(None));
+        };
+
+        Ok(policy
+            .with_max_privacy_bundles(Some(privacy_trim.max_bundles))
+            .with_privacy_drop_bps(privacy_trim.drop_bps)?
+            .with_max_privacy_drop_zatoshi(privacy_trim.max_drop_zatoshi))
+    }
+}
+
+/// Configuration for dropping a low-value bundle tail.
+///
+/// This is optional on [`BundlePolicy`]: `None` disables privacy trimming,
+/// while `Some` keeps the target and both budget limits together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrivacyTrimPolicy {
+    max_bundles: usize,
+    drop_bps: u32,
+    max_drop_zatoshi: Option<u64>,
+}
+
+impl Default for PrivacyTrimPolicy {
+    fn default() -> Self {
+        Self {
+            max_bundles: DEFAULT_MAX_PRIVACY_BUNDLES,
+            drop_bps: DEFAULT_PRIVACY_DROP_BPS,
+            max_drop_zatoshi: Some(DEFAULT_MAX_PRIVACY_DROP_ZATOSHI),
+        }
+    }
 }
 
 impl BundlePolicy {
@@ -38,7 +134,7 @@ impl BundlePolicy {
         if (1..=BUNDLE_NOTE_SLOTS).contains(&max_real_notes_per_bundle) {
             Ok(Self {
                 max_real_notes_per_bundle,
-                bundle_addition_threshold_zatoshi: None,
+                ..Self::default()
             })
         } else {
             Err(VotingError::InvalidInput {
@@ -90,6 +186,92 @@ impl BundlePolicy {
     pub fn bundle_addition_threshold(self) -> Option<u64> {
         self.bundle_addition_threshold_zatoshi
     }
+
+    /// Returns a copy of this policy with an explicit privacy bundle target.
+    ///
+    /// `None` disables the privacy trim entirely, which is what in-flight rounds
+    /// created before the trim shipped must use so their persisted bundle rows
+    /// still re-derive. A target of zero is treated as one because privacy
+    /// trimming must preserve at least one eligible bundle.
+    pub fn with_max_privacy_bundles(mut self, max_privacy_bundles: Option<usize>) -> Self {
+        self.privacy_trim = max_privacy_bundles.map(|max_bundles| {
+            let mut privacy_trim = self.privacy_trim.unwrap_or_default();
+            privacy_trim.max_bundles = max_bundles;
+            privacy_trim
+        });
+        self
+    }
+
+    /// Returns a copy of this policy with an explicit privacy drop budget, in
+    /// basis points of total selected note value.
+    ///
+    /// This has no effect while privacy trimming is disabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when `privacy_drop_bps` is greater
+    /// than [`MAX_PRIVACY_DROP_BPS`] (5% of selected note value).
+    pub fn with_privacy_drop_bps(mut self, privacy_drop_bps: u32) -> Result<Self, VotingError> {
+        if privacy_drop_bps > MAX_PRIVACY_DROP_BPS {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "privacy_drop_bps must be <= {MAX_PRIVACY_DROP_BPS}, got {privacy_drop_bps}"
+                ),
+            });
+        }
+        if let Some(privacy_trim) = &mut self.privacy_trim {
+            privacy_trim.drop_bps = privacy_drop_bps;
+        }
+        Ok(self)
+    }
+
+    /// Returns a copy of this policy with an absolute clamp on the privacy drop.
+    ///
+    /// The effective budget becomes `min(bps_budget, clamp)`. Passing `None`
+    /// removes the default 1,000 ZEC ceiling. This has no effect while privacy
+    /// trimming is disabled.
+    pub fn with_max_privacy_drop_zatoshi(mut self, max_privacy_drop_zatoshi: Option<u64>) -> Self {
+        if let Some(privacy_trim) = &mut self.privacy_trim {
+            privacy_trim.max_drop_zatoshi = max_privacy_drop_zatoshi;
+        }
+        self
+    }
+
+    /// Returns the bundle count the privacy trim aims for, if it is enabled.
+    pub fn max_privacy_bundles(self) -> Option<usize> {
+        self.privacy_trim
+            .map(|privacy_trim| privacy_trim.max_bundles)
+    }
+
+    /// Returns the privacy drop budget in basis points of selected note value.
+    pub fn privacy_drop_bps(self) -> u32 {
+        self.privacy_trim
+            .map(|privacy_trim| privacy_trim.drop_bps)
+            .unwrap_or(DEFAULT_PRIVACY_DROP_BPS)
+    }
+
+    /// Returns the optional absolute clamp on the privacy drop budget.
+    pub fn max_privacy_drop_zatoshi(self) -> Option<u64> {
+        self.privacy_trim
+            .map(|privacy_trim| privacy_trim.max_drop_zatoshi)
+            .unwrap_or(Some(DEFAULT_MAX_PRIVACY_DROP_ZATOSHI))
+    }
+
+    /// Returns the privacy drop budget in zatoshi for a given total note value.
+    ///
+    /// The budget is `total_value * privacy_drop_bps / 10_000`, further clamped
+    /// by [`BundlePolicy::max_privacy_drop_zatoshi`] when one is set. Integer
+    /// math throughout, so the returned budget never exceeds the intended share.
+    fn privacy_drop_budget(self, total_value: u128) -> u128 {
+        let Some(privacy_trim) = self.privacy_trim else {
+            return 0;
+        };
+        let budget = total_value * u128::from(privacy_trim.drop_bps) / BPS_DENOMINATOR;
+        match privacy_trim.max_drop_zatoshi {
+            Some(clamp) => budget.min(u128::from(clamp)),
+            None => budget,
+        }
+    }
 }
 
 impl Default for BundlePolicy {
@@ -97,7 +279,34 @@ impl Default for BundlePolicy {
         Self {
             max_real_notes_per_bundle: BUNDLE_NOTE_SLOTS,
             bundle_addition_threshold_zatoshi: None,
+            privacy_trim: Some(PrivacyTrimPolicy::default()),
         }
+    }
+}
+
+/// What the privacy trim removed from a bundle plan.
+///
+/// Reported separately from the sub-ballot drop because the two mean different
+/// things to a voter: sub-ballot notes were already worth zero ballots, while
+/// these bundles carried selected note value that was excluded in exchange for
+/// emitting fewer delegation submissions. [`PrivacyTrim::dropped_value`] is the
+/// raw value of those notes, not their bundle-quantized voting weight.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrivacyTrim {
+    /// Bundles removed to shrink the observable submission count.
+    pub dropped_bundles: u32,
+    /// Notes inside the removed bundles.
+    pub dropped_notes: u32,
+    /// Raw zatoshi value inside the removed bundles.
+    #[serde(rename = "dropped_value_zatoshi")]
+    pub dropped_value: u64,
+}
+
+impl PrivacyTrim {
+    /// Returns whether the trim left the plan untouched.
+    pub fn is_empty(self) -> bool {
+        self.dropped_bundles == 0
     }
 }
 
@@ -111,6 +320,8 @@ pub struct ChunkResult {
     pub eligible_weight: u64,
     /// Number of notes that were dropped (in bundles below BALLOT_DIVISOR).
     pub dropped_count: usize,
+    /// What the privacy trim removed, if anything.
+    pub privacy_trim: PrivacyTrim,
 }
 
 /// Read-only result of checking the minimum voting eligibility rule.
@@ -127,9 +338,25 @@ impl MinimumVotingEligibility {
     }
 }
 
-/// Returns quantized zatoshi voting power for the selected note set.
+/// Returns quantized zatoshi voting power under the current default policy.
+///
+/// This helper does not consult persisted round state. Use
+/// [`voting_power_for_round`] when reporting power for an existing round.
 pub fn voting_power(notes: &SelectedNotes) -> u64 {
     voting_power_with_policy(notes, BundlePolicy::default())
+}
+
+/// Returns quantized zatoshi voting power using the policy authoritative for
+/// `round_id`.
+///
+/// Wallet setup persists the effective policy before this helper is used.
+pub fn voting_power_for_round(
+    notes: &SelectedNotes,
+    voting_db: &crate::round::VotingDb,
+    round_id: &str,
+) -> Result<u64, VotingError> {
+    let policy = voting_db.effective_bundle_policy(round_id, BundlePolicy::default())?;
+    Ok(voting_power_with_policy(notes, policy))
 }
 
 /// Returns quantized zatoshi voting power under an explicit bundle policy.
@@ -244,20 +471,33 @@ pub fn chunk_notes(notes: &[NoteInfo]) -> ChunkResult {
 /// 4. Drop bundles with total < BALLOT_DIVISOR
 /// 5. Re-sort notes within each surviving bundle by position
 /// 6. Sort surviving bundles by total value DESC (min position as tiebreaker)
+/// 7. Drop trailing bundles down to the policy's privacy bundle target, while
+///    the discarded value stays inside the policy's drop budget
 ///
-/// Sequential packing concentrates high-value notes in early bundles, maximizing
-/// per-bundle VAN weight and minimizing quantization loss. Dust notes naturally
-/// end up in the last (smallest) bundle which gets dropped if below threshold.
-/// Value-descending bundle order lets Keystone users sign the most valuable
-/// bundles first and optionally skip the remaining low-value ones.
+/// Sequential packing concentrates high-value notes in early bundles, so dust
+/// notes naturally end up in the last (smallest) bundles. Those either fall
+/// below BALLOT_DIVISOR and drop for free in step 4, or become the cheapest
+/// candidates for the step 7 privacy trim. Value-descending bundle order also
+/// lets Keystone users sign the most valuable bundles first and optionally skip
+/// the remaining low-value ones.
+///
+/// Note that this ordering is not chosen to minimize quantization loss; spreading
+/// notes across bundles can recover slightly more weight. It is chosen so that
+/// the low-value tail is contiguous and droppable.
 pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> ChunkResult {
     if notes.is_empty() {
         return ChunkResult {
             bundles: vec![],
             eligible_weight: 0,
             dropped_count: 0,
+            privacy_trim: PrivacyTrim::default(),
         };
     }
+
+    // The privacy drop budget is a share of the balance the voter selected, so
+    // it is measured against every note handed in, including notes that step 4
+    // later drops for being worth zero ballots.
+    let total_value: u128 = notes.iter().map(|note| u128::from(note.value)).sum();
 
     // Step 1: Sort by value DESC, then position ASC as tiebreaker.
     let mut sorted = notes.to_vec();
@@ -319,10 +559,40 @@ pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> Chun
         })
     });
 
+    // Step 7: Privacy trim. Bundle count is `ceil(note_count / BUNDLE_NOTE_SLOTS)`,
+    // so a holder whose value sits in a few large notes plus a long dust tail
+    // emits many delegation submissions that carry almost no voting weight.
+    // Bundles are value-DESC here, so the last one is always the cheapest way to
+    // shed a submission, and popping greedily yields the smallest bundle count
+    // reachable within the budget.
+    let mut privacy_trim = PrivacyTrim::default();
+    let mut privacy_dropped_value: u128 = 0;
+
+    if let Some(max_privacy_bundles) = policy.max_privacy_bundles() {
+        let budget = policy.privacy_drop_budget(total_value);
+        // Keep at least one eligible bundle even if a zero target is configured.
+        let max_privacy_bundles = max_privacy_bundles.max(1);
+        while surviving.len() > max_privacy_bundles {
+            let bundle_total = surviving.last().expect("bundle exists").0;
+            let bundle_value = u128::from(bundle_total);
+            if privacy_dropped_value + bundle_value > budget {
+                break;
+            }
+            let (_, bundle) = surviving.pop().expect("bundle exists");
+            privacy_dropped_value += bundle_value;
+            privacy_trim.dropped_bundles += 1;
+            privacy_trim.dropped_notes += bundle.len() as u32;
+            // Safe: this bundle's quantized weight was added in step 4.
+            eligible_weight -= (bundle_total / BALLOT_DIVISOR) * BALLOT_DIVISOR;
+        }
+        privacy_trim.dropped_value = u64::try_from(privacy_dropped_value).unwrap_or(u64::MAX);
+    }
+
     ChunkResult {
         bundles: surviving.into_iter().map(|(_, b)| b).collect(),
         eligible_weight,
         dropped_count,
+        privacy_trim,
     }
 }
 
@@ -856,5 +1126,387 @@ mod tests {
         assert!(BundlePolicy::new(BUNDLE_NOTE_SLOTS + 1).is_err());
         assert!(BundlePolicy::from_optional_max_real_notes_per_bundle(None).is_ok());
         assert!(BundlePolicy::from_optional_max_real_notes_per_bundle(Some(999)).is_err());
+    }
+
+    #[test]
+    fn bundle_policy_rejects_privacy_drop_bps_above_max() {
+        assert!(BundlePolicy::default()
+            .with_privacy_drop_bps(MAX_PRIVACY_DROP_BPS)
+            .is_ok());
+        assert!(BundlePolicy::default()
+            .with_privacy_drop_bps(MAX_PRIVACY_DROP_BPS + 1)
+            .is_err());
+    }
+
+    #[test]
+    fn bundle_policy_decodes_pre_privacy_trim_json_with_trimming_disabled() {
+        let legacy = serde_json::json!({
+            "max_real_notes_per_bundle": 3,
+            "bundle_addition_threshold_zatoshi": 42
+        });
+
+        let policy: BundlePolicy = serde_json::from_value(legacy).unwrap();
+
+        assert_eq!(policy.max_real_notes_per_bundle(), 3);
+        assert_eq!(policy.bundle_addition_threshold(), Some(42));
+        assert_eq!(policy.max_privacy_bundles(), None);
+    }
+
+    #[test]
+    fn bundle_policy_json_round_trips_nested_privacy_trim_policy() {
+        let policy = BundlePolicy::new(2)
+            .unwrap()
+            .with_max_privacy_bundles(Some(3))
+            .with_privacy_drop_bps(75)
+            .unwrap()
+            .with_max_privacy_drop_zatoshi(Some(99));
+
+        let json = serde_json::to_value(policy).unwrap();
+
+        assert_eq!(json["privacy_trim"]["max_bundles"], 3);
+        assert_eq!(json["privacy_trim"]["drop_bps"], 75);
+        assert_eq!(json["privacy_trim"]["max_drop_zatoshi"], 99);
+        assert_eq!(
+            serde_json::from_value::<BundlePolicy>(json).unwrap(),
+            policy
+        );
+    }
+
+    #[test]
+    fn bundle_policy_json_rejects_invalid_real_note_capacity() {
+        for capacity in [0, BUNDLE_NOTE_SLOTS + 1] {
+            let json = serde_json::json!({
+                "max_real_notes_per_bundle": capacity,
+                "bundle_addition_threshold_zatoshi": null,
+                "privacy_trim": null
+            });
+
+            let error = serde_json::from_value::<BundlePolicy>(json).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("max_real_notes_per_bundle must be in"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn bundle_policy_json_rejects_privacy_drop_bps_above_max() {
+        let json = serde_json::json!({
+            "max_real_notes_per_bundle": BUNDLE_NOTE_SLOTS,
+            "bundle_addition_threshold_zatoshi": null,
+            "privacy_trim": {
+                "max_bundles": 1,
+                "drop_bps": MAX_PRIVACY_DROP_BPS + 1,
+                "max_drop_zatoshi": null
+            }
+        });
+
+        let error = serde_json::from_value::<BundlePolicy>(json).unwrap_err();
+        assert!(
+            error.to_string().contains("privacy_drop_bps must be <="),
+            "{error}"
+        );
+    }
+
+    const ZEC: u64 = 100_000_000;
+    const WHALE_PROTECTION_THRESHOLD: u64 = 1_000 * ZEC;
+
+    /// Builds a holder whose value is concentrated in `large_count` notes of
+    /// `large_value`, followed by a long tail of equal dust notes.
+    fn concentrated_notes_with_dust_tail(
+        large_count: usize,
+        large_value: u64,
+        dust_count: usize,
+        dust_value: u64,
+    ) -> Vec<NoteInfo> {
+        (0..large_count)
+            .map(|i| make_note(large_value, i as u64))
+            .chain((0..dust_count).map(|i| make_note(dust_value, (large_count + i) as u64)))
+            .collect()
+    }
+
+    fn total_value(notes: &[NoteInfo]) -> u64 {
+        notes.iter().map(|note| note.value).sum()
+    }
+
+    #[test]
+    fn privacy_trim_collapses_concentrated_whale_with_dust_tail() {
+        // 8 x 500 ZEC plus 190 dust notes of 0.1 ZEC: 4019 ZEC over 40 bundles.
+        let notes = concentrated_notes_with_dust_tail(8, 500 * ZEC, 190, ZEC / 10);
+        let balance = total_value(&notes);
+
+        let untrimmed = chunk_notes_with_policy(
+            &notes,
+            BundlePolicy::default().with_max_privacy_bundles(None),
+        );
+        let trimmed = chunk_notes(&notes);
+
+        // Exact counts, cross-checked against the standalone model in
+        // scratchpad/sim2.py: 40 bundles collapse to 2 for 18.80 of 4019 ZEC,
+        // well inside the 40.19 ZEC budget.
+        assert_eq!(untrimmed.bundles.len(), 40);
+        assert_eq!(trimmed.bundles.len(), DEFAULT_MAX_PRIVACY_BUNDLES);
+        assert_eq!(trimmed.privacy_trim.dropped_value, 1_880_000_000);
+        assert_eq!(
+            trimmed.privacy_trim.dropped_bundles as usize,
+            untrimmed.bundles.len() - trimmed.bundles.len()
+        );
+        // The budget is a hard ceiling, and the weight report stays consistent.
+        assert!(u128::from(trimmed.privacy_trim.dropped_value) <= u128::from(balance) / 100);
+        assert!(trimmed.eligible_weight < untrimmed.eligible_weight);
+        assert!(trimmed.privacy_trim.dropped_notes > 0);
+    }
+
+    #[test]
+    fn privacy_trim_leaves_whale_protection_bundles_intact() {
+        // Same holder under vizor's 1000 ZEC per-bundle cap. The trim should
+        // still shed the dust tail, but must not touch a full-weight bundle:
+        // 1% of 4019 ZEC cannot pay for a bundle worth ~1000 ZEC.
+        let notes = concentrated_notes_with_dust_tail(8, 500 * ZEC, 190, ZEC / 10);
+        let policy =
+            BundlePolicy::default().with_bundle_addition_threshold(WHALE_PROTECTION_THRESHOLD);
+
+        let untrimmed = chunk_notes_with_policy(&notes, policy.with_max_privacy_bundles(None));
+        let trimmed = chunk_notes_with_policy(&notes, policy);
+
+        // Same model: the cap raises the untrimmed count to 42, and the trim
+        // can only reach 4 because each surviving bundle holds ~1000 ZEC.
+        assert_eq!(untrimmed.bundles.len(), 42);
+        assert_eq!(trimmed.bundles.len(), 4);
+        assert_eq!(trimmed.privacy_trim.dropped_value, 1_900_000_000);
+        // Every large bundle survives; only sub-threshold tail bundles went.
+        let surviving_big = trimmed
+            .bundles
+            .iter()
+            .filter(|bundle| {
+                bundle.iter().map(|note| note.value).sum::<u64>() > WHALE_PROTECTION_THRESHOLD / 2
+            })
+            .count();
+        let untrimmed_big = untrimmed
+            .bundles
+            .iter()
+            .filter(|bundle| {
+                bundle.iter().map(|note| note.value).sum::<u64>() > WHALE_PROTECTION_THRESHOLD / 2
+            })
+            .count();
+        assert_eq!(surviving_big, untrimmed_big);
+        assert!(
+            u128::from(trimmed.privacy_trim.dropped_value) <= u128::from(total_value(&notes)) / 100
+        );
+    }
+
+    #[test]
+    fn privacy_trim_leaves_uniform_note_whale_untouched() {
+        // 200 x 50 ZEC: every bundle is worth 250 ZEC, far past a 100 ZEC budget.
+        let notes: Vec<NoteInfo> = (0..200).map(|i| make_note(50 * ZEC, i as u64)).collect();
+
+        let result = chunk_notes(&notes);
+
+        assert_eq!(result.bundles.len(), 40);
+        assert_eq!(result.privacy_trim.dropped_bundles, 0);
+        assert_eq!(result.privacy_trim.dropped_value, 0);
+    }
+
+    #[test]
+    fn privacy_trim_leaves_small_uniform_balance_untouched() {
+        // 50 x 0.125 ZEC form 10 bundles worth 0.625 ZEC each. The total
+        // balance is 6.25 ZEC, so its 1% budget cannot pay for any bundle.
+        let notes: Vec<NoteInfo> = (0..50).map(|i| make_note(ZEC / 8, i as u64)).collect();
+
+        let result = chunk_notes(&notes);
+
+        assert_eq!(result.bundles.len(), 10);
+        assert_eq!(result.privacy_trim.dropped_bundles, 0);
+        assert_eq!(result.privacy_trim.dropped_notes, 0);
+        assert_eq!(result.privacy_trim.dropped_value, 0);
+    }
+
+    #[test]
+    fn privacy_trim_leaves_large_uniform_bundles_untouched_under_whale_protection() {
+        // 10 x 1000 ZEC under the 1000 ZEC cap: one note per bundle, and no
+        // bundle is affordable within 1% of 10_000 ZEC.
+        let notes: Vec<NoteInfo> = (0..10).map(|i| make_note(1_000 * ZEC, i as u64)).collect();
+        let policy =
+            BundlePolicy::default().with_bundle_addition_threshold(WHALE_PROTECTION_THRESHOLD);
+
+        let result = chunk_notes_with_policy(&notes, policy);
+
+        assert_eq!(result.bundles.len(), 10);
+        assert_eq!(result.privacy_trim.dropped_bundles, 0);
+    }
+
+    #[test]
+    fn privacy_trim_preserves_the_downstream_whale_protection_shape() {
+        // Mirrors vizor-wallet's
+        // `whale_protection_starts_new_bundle_when_addition_would_cross_threshold`,
+        // which pins exact bundle counts and positions. Keeping it here means a
+        // change to the trim cannot silently break that downstream assertion.
+        let notes = vec![
+            make_note(WHALE_PROTECTION_THRESHOLD, 1),
+            make_note(400 * ZEC, 2),
+            make_note(200 * ZEC, 3),
+        ];
+
+        let default_plan = chunk_notes(&notes);
+        assert_eq!(default_plan.bundles[0].len(), 3);
+        assert!(default_plan.privacy_trim.is_empty());
+
+        let protected = chunk_notes_with_policy(
+            &notes,
+            BundlePolicy::default().with_bundle_addition_threshold(WHALE_PROTECTION_THRESHOLD),
+        );
+        let positions: Vec<Vec<u64>> = protected
+            .bundles
+            .iter()
+            .map(|bundle| bundle.iter().map(|note| note.position).collect())
+            .collect();
+
+        assert_eq!(protected.bundles.len(), 2);
+        assert!(positions.contains(&vec![1]));
+        assert!(positions.contains(&vec![2, 3]));
+        assert!(protected.privacy_trim.is_empty());
+    }
+
+    #[test]
+    fn privacy_trim_is_a_no_op_at_or_below_the_bundle_target() {
+        for bundle_count in 1..=DEFAULT_MAX_PRIVACY_BUNDLES {
+            let notes: Vec<NoteInfo> = (0..bundle_count * BUNDLE_NOTE_SLOTS)
+                .map(|i| make_note(BALLOT_DIVISOR, i as u64))
+                .collect();
+
+            let result = chunk_notes(&notes);
+
+            assert_eq!(result.bundles.len(), bundle_count);
+            assert_eq!(result.privacy_trim.dropped_bundles, 0);
+            assert_eq!(result.privacy_trim.dropped_notes, 0);
+            assert_eq!(result.privacy_trim.dropped_value, 0);
+        }
+    }
+
+    #[test]
+    fn privacy_trim_budget_boundary_is_inclusive() {
+        // Three bundles of one note each. The tail bundle is priced exactly at
+        // the 1% budget, then one zatoshi above it.
+        let big = 1_000 * BALLOT_DIVISOR;
+        let policy = BundlePolicy::new(1).unwrap();
+
+        // total = 2 * big + tail, and we want tail == total / 100.
+        // Solving: tail = 2 * big / 99 (integer division keeps tail <= budget).
+        let tail = 2 * big / 99;
+        let at_budget = vec![make_note(big, 0), make_note(big, 1), make_note(tail, 2)];
+        let over_budget = vec![
+            make_note(big, 0),
+            make_note(big, 1),
+            make_note(tail + 100, 2),
+        ];
+
+        let at = chunk_notes_with_policy(&at_budget, policy);
+        let over = chunk_notes_with_policy(&over_budget, policy);
+
+        assert_eq!(at.bundles.len(), 2, "a bundle exactly at budget is dropped");
+        assert_eq!(at.privacy_trim.dropped_bundles, 1);
+        assert_eq!(at.privacy_trim.dropped_value, tail);
+        assert_eq!(over.bundles.len(), 3, "one zatoshi over budget is kept");
+        assert_eq!(over.privacy_trim.dropped_bundles, 0);
+    }
+
+    #[test]
+    fn privacy_trim_default_budget_is_capped_at_1000_zec() {
+        // A 1,000,000 ZEC holder has a 10,000 ZEC percentage budget. The default
+        // absolute ceiling limits the trim to one 1,000 ZEC bundle. Callers can
+        // explicitly remove the ceiling or set a tighter one.
+        let notes: Vec<NoteInfo> = (0..1_000)
+            .map(|i| make_note(1_000 * ZEC, i as u64))
+            .collect();
+        let policy =
+            BundlePolicy::default().with_bundle_addition_threshold(WHALE_PROTECTION_THRESHOLD);
+
+        let default_capped = chunk_notes_with_policy(&notes, policy);
+        let uncapped = chunk_notes_with_policy(&notes, policy.with_max_privacy_drop_zatoshi(None));
+        let tighter_cap = chunk_notes_with_policy(
+            &notes,
+            policy.with_max_privacy_drop_zatoshi(Some(100 * ZEC)),
+        );
+
+        assert_eq!(default_capped.bundles.len(), 999);
+        assert_eq!(default_capped.privacy_trim.dropped_bundles, 1);
+        assert_eq!(
+            default_capped.privacy_trim.dropped_value,
+            DEFAULT_MAX_PRIVACY_DROP_ZATOSHI
+        );
+        assert_eq!(uncapped.bundles.len(), 990, "1% pays for ten bundles");
+        assert_eq!(uncapped.privacy_trim.dropped_bundles, 10);
+        assert_eq!(
+            tighter_cap.bundles.len(),
+            1_000,
+            "a 100 ZEC cap blocks a 1,000 ZEC bundle"
+        );
+        assert_eq!(tighter_cap.privacy_trim.dropped_bundles, 0);
+    }
+
+    #[test]
+    fn privacy_trim_never_drops_below_minimum_voting_eligibility() {
+        // Worst case for the floor: a zero target and a budget large enough to
+        // pay for everything. The trim must still leave one bundle standing,
+        // so the voter stays eligible.
+        //
+        // Construct the oversize budget via private fields: the public setter
+        // caps drop_bps at MAX_PRIVACY_DROP_BPS, which cannot cover dropping
+        // every eligible bundle.
+        let notes: Vec<NoteInfo> = (0..50)
+            .map(|i| make_note(BALLOT_DIVISOR, i as u64))
+            .collect();
+        let policy = BundlePolicy {
+            max_real_notes_per_bundle: BUNDLE_NOTE_SLOTS,
+            bundle_addition_threshold_zatoshi: None,
+            privacy_trim: Some(PrivacyTrimPolicy {
+                max_bundles: 0,
+                drop_bps: 10_000,
+                max_drop_zatoshi: None,
+            }),
+        };
+
+        let result = chunk_notes_with_policy(&notes, policy);
+        let eligibility = minimum_voting_eligibility_for_notes(&notes, policy).unwrap();
+
+        assert_eq!(result.bundles.len(), 1);
+        assert!(result.eligible_weight >= MINIMUM_VOTING_WEIGHT_ZATOSHI);
+        assert!(eligibility.is_eligible());
+    }
+
+    #[test]
+    fn privacy_trim_reports_weight_consistently_with_surviving_bundles() {
+        let notes = concentrated_notes_with_dust_tail(8, 500 * ZEC, 190, ZEC / 10);
+
+        let result = chunk_notes(&notes);
+
+        // eligible_weight must describe exactly the bundles that survived.
+        let recomputed: u64 = result
+            .bundles
+            .iter()
+            .map(|bundle| {
+                let total: u64 = bundle.iter().map(|note| note.value).sum();
+                (total / BALLOT_DIVISOR) * BALLOT_DIVISOR
+            })
+            .sum();
+        assert_eq!(result.eligible_weight, recomputed);
+    }
+
+    #[test]
+    fn privacy_trim_is_deterministic_across_repeated_planning() {
+        // ensure_bundles re-derives the plan and requires identical bundle
+        // identities, so the trim must be a pure function of notes and policy.
+        let notes = concentrated_notes_with_dust_tail(8, 500 * ZEC, 190, ZEC / 10);
+
+        let first = chunk_notes(&notes);
+        let second = chunk_notes(&notes);
+        let mut shuffled = notes.clone();
+        shuffled.reverse();
+        let third = chunk_notes(&shuffled);
+
+        assert_eq!(first, second);
+        assert_eq!(first, third, "input order must not change the plan");
     }
 }

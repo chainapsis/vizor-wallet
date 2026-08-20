@@ -318,6 +318,7 @@ mod pir_tests {
             bundle_count: 1,
             eligible_weight: 42,
             dropped_count: 0,
+            privacy_trim: Default::default(),
         };
         let pir_client = pir_client::PirClientBlocking::with_transport(
             "https://pir.test",

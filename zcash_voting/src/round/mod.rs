@@ -10,7 +10,7 @@ use rusqlite::{named_params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    note_bundling::{canonical_note_bundle_plan_for_notes, BundlePolicy},
+    note_bundling::{canonical_note_bundle_plan_for_notes, BundlePolicy, PrivacyTrim},
     storage::{queries, RoundState, VotingDb as InnerVotingDb},
     types::{Network, NoteInfo, VotingError, VotingRoundParams},
 };
@@ -41,6 +41,9 @@ pub struct BundleLayout {
     pub eligible_weight: u64,
     #[serde(default)]
     pub dropped_count: u32,
+    /// What the privacy trim removed while planning this round.
+    #[serde(default)]
+    pub privacy_trim: PrivacyTrim,
 }
 
 /// Validates that `bundle_index` is in `[0, bundle_count)`.
@@ -71,23 +74,24 @@ pub fn delegation_round_name(params: &RoundParams, round_name: &str) -> String {
     }
 }
 
-/// Returns the note rows for one bundle index after [`VotingDb::ensure_bundles`].
+/// Returns the note rows for one bundle index using the policy authoritative for
+/// `round_id`.
+///
+/// Wallet setup persists the effective policy before this helper is used.
 ///
 /// # Errors
 ///
-/// Returns [`VotingError::InvalidInput`] when no bundles exist, `bundle_index`
-/// is out of range, or note bundling fails.
-pub fn bundle_notes_for_index(
+/// Returns an error when the round policy cannot be loaded, no bundles exist,
+/// `bundle_index` is out of range, or note bundling fails.
+pub fn bundle_notes_for_index_for_round(
     round_note_infos: &[NoteInfo],
     bundle_setup: &BundleLayout,
     bundle_index: u32,
+    voting_db: &VotingDb,
+    round_id: &str,
 ) -> Result<Vec<NoteInfo>, VotingError> {
-    bundle_notes_for_index_with_policy(
-        round_note_infos,
-        bundle_setup,
-        bundle_index,
-        BundlePolicy::default(),
-    )
+    let policy = voting_db.effective_bundle_policy(round_id, BundlePolicy::default())?;
+    bundle_notes_for_index_with_policy(round_note_infos, bundle_setup, bundle_index, policy)
 }
 
 /// Returns the note rows for one bundle index under an explicit bundle policy.
@@ -120,16 +124,28 @@ pub fn bundle_notes_for_index_with_policy(
         })
 }
 
-/// Returns the canonical eligible note bundles for a round note set.
+/// Returns the canonical eligible note bundles under the current default policy.
 ///
-/// This is the read-only counterpart to [`VotingDb::ensure_bundles`]. Wallets
-/// that need to operate on one bundle after setup can use this instead of
-/// depending on the lower-level chunking internals.
+/// This helper does not consult persisted round state. Use
+/// [`note_bundles_for_round`] when interpreting an existing round.
 ///
 /// Duplicate nullifiers are collapsed before chunking so each spendable note can
 /// appear in at most one bundle.
 pub fn note_bundles(notes: &[NoteInfo]) -> Result<Vec<Vec<NoteInfo>>, VotingError> {
     note_bundles_with_policy(notes, BundlePolicy::default())
+}
+
+/// Returns the eligible note bundles using the policy authoritative for
+/// `round_id`.
+///
+/// Wallet setup persists the effective policy before this helper is used.
+pub fn note_bundles_for_round(
+    notes: &[NoteInfo],
+    voting_db: &VotingDb,
+    round_id: &str,
+) -> Result<Vec<Vec<NoteInfo>>, VotingError> {
+    let policy = voting_db.effective_bundle_policy(round_id, BundlePolicy::default())?;
+    note_bundles_with_policy(notes, policy)
 }
 
 /// Returns the eligible note bundles for a round note set under an explicit policy.
@@ -343,6 +359,33 @@ impl VotingDb {
         self.clear_round(round_id)
     }
 
+    /// Returns the policy a round's bundle plan must be derived with.
+    ///
+    /// A stored readable policy is authoritative. Rounds with no stored policy,
+    /// or whose stored JSON is an unknown/unreadable schema, fall back to
+    /// `requested`, with one exception: a round that already has persisted
+    /// bundle rows was planned without a readable policy for this binary, so
+    /// the trim is disabled for it. Re-deriving those rows under a trimming
+    /// policy would plan a smaller bundle count than storage holds and
+    /// permanently reject the round. Only the trim is overridden, so the
+    /// caller's note capacity and value threshold still apply -- those are
+    /// what the persisted rows were planned with.
+    pub(crate) fn effective_bundle_policy(
+        &self,
+        round_id: &str,
+        requested: BundlePolicy,
+    ) -> Result<BundlePolicy, VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        if let Some(stored) = queries::get_round_bundle_policy(&conn, round_id, &wallet_id)? {
+            return Ok(stored);
+        }
+        if queries::get_bundle_count(&conn, round_id, &wallet_id)? > 0 {
+            return Ok(requested.with_max_privacy_bundles(None));
+        }
+        Ok(requested)
+    }
+
     /// Creates bundle rows for `notes`, or validates existing bundle rows.
     ///
     /// The note ordering, duplicate-nullifier handling, and weight quantization
@@ -369,16 +412,23 @@ impl VotingDb {
         notes: &[NoteInfo],
         policy: BundlePolicy,
     ) -> Result<BundleLayout, VotingError> {
+        // A round's bundle rows must keep re-deriving for the life of the round,
+        // so once a plan is persisted its policy becomes authoritative and the
+        // caller's is ignored. Otherwise an SDK upgrade that changes the
+        // defaults would invalidate bundles that were already signed.
+        let policy = self.effective_bundle_policy(round_id, policy)?;
         let plan = canonical_note_bundle_plan_for_notes(notes, policy)?;
         let expected_count = plan.bundles.len() as u32;
         let existing_count = self.get_bundle_count(round_id)?;
 
         if existing_count == 0 {
-            let (bundle_count, eligible_weight) = self.persist_bundle_plan(round_id, &plan)?;
+            let (bundle_count, eligible_weight) =
+                self.persist_bundle_plan(round_id, &plan, policy)?;
             return Ok(BundleLayout {
                 bundle_count,
                 eligible_weight,
                 dropped_count: plan.dropped_count as u32,
+                privacy_trim: plan.privacy_trim,
             });
         }
 
@@ -401,11 +451,16 @@ impl VotingDb {
                 bundle_notes,
             )?;
         }
+        // Record the policy only after it reproduces every persisted bundle.
+        // This also replaces unreadable policy JSON with the validated fallback
+        // so later passes do not reinterpret the same rows differently.
+        queries::set_round_bundle_policy(&conn, round_id, &wallet_id, policy)?;
 
         Ok(BundleLayout {
             bundle_count: expected_count,
             eligible_weight: plan.eligible_weight,
             dropped_count: plan.dropped_count as u32,
+            privacy_trim: plan.privacy_trim,
         })
     }
 
@@ -450,7 +505,9 @@ impl VotingDb {
             return self.ensure_bundles_with_policy(round_id, notes, policy);
         }
 
-        let bundles = note_bundles_with_policy(notes, policy)?;
+        let policy = self.effective_bundle_policy(round_id, policy)?;
+        let plan = canonical_note_bundle_plan_for_notes(notes, policy)?;
+        let bundles = plan.bundles;
         if bundles.len() < stored_count as usize {
             return Err(VotingError::InvalidInput {
                 message: format!(
@@ -462,10 +519,18 @@ impl VotingDb {
 
         let stored_bundles = &bundles[..stored_count as usize];
         validate_persisted_bundle_notes(self, round_id, stored_bundles)?;
+        // Record the policy only after it reproduces the persisted prefix,
+        // replacing unreadable policy JSON with the validated fallback.
+        let conn = self.conn();
+        queries::set_round_bundle_policy(&conn, round_id, &self.wallet_id(), policy)?;
         Ok(BundleLayout {
             bundle_count: stored_count,
             eligible_weight: quantized_bundle_set_weight(stored_bundles)?,
+            // `dropped_count` stays 0 here: this view describes the persisted
+            // prefix, not the notes planning left out. The privacy trim still
+            // reports the raw note value excluded from delegation.
             dropped_count: 0,
+            privacy_trim: plan.privacy_trim,
         })
     }
 }
@@ -525,6 +590,18 @@ mod tests {
         db.create_round(Network::Testnet, &round_params(), None)
             .unwrap();
         db
+    }
+
+    /// Raw stored policy JSON, for assertions that care about the bytes on disk
+    /// rather than the decoded policy.
+    fn stored_policy_json(db: &VotingDb) -> String {
+        db.conn()
+            .query_row(
+                "SELECT bundle_policy_json FROM rounds WHERE round_id = ?1",
+                rusqlite::params![ROUND_ID],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap()
     }
 
     #[test]
@@ -620,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_bundles_uses_custom_real_note_capacity() {
+    fn round_aware_helpers_reuse_custom_real_note_capacity() {
         let db = test_db("wallet-policy");
         let notes = vec![
             note(0, crate::governance::BALLOT_DIVISOR),
@@ -632,7 +709,7 @@ mod tests {
         let layout = db
             .ensure_bundles_with_policy(ROUND_ID, &notes, policy)
             .unwrap();
-        let bundles = note_bundles_with_policy(&notes, policy).unwrap();
+        let bundles = note_bundles_for_round(&notes, &db, ROUND_ID).unwrap();
 
         assert_eq!(layout.bundle_count, 3);
         assert_eq!(
@@ -641,7 +718,7 @@ mod tests {
         );
         assert!(bundles.iter().all(|bundle| bundle.len() == 1));
         assert_eq!(
-            bundle_notes_for_index_with_policy(&notes, &layout, 2, policy)
+            bundle_notes_for_index_for_round(&notes, &layout, 2, &db, ROUND_ID,)
                 .unwrap()
                 .len(),
             1
@@ -665,7 +742,7 @@ mod tests {
         let notes = vec![base_note.clone(); crate::governance::BUNDLE_NOTE_SLOTS];
 
         let layout = db.ensure_bundles(ROUND_ID, &notes).unwrap();
-        let bundle = bundle_notes_for_index(&notes, &layout, 0).unwrap();
+        let bundle = bundle_notes_for_index_for_round(&notes, &layout, 0, &db, ROUND_ID).unwrap();
 
         assert_eq!(layout.bundle_count, 1);
         assert_eq!(layout.eligible_weight, crate::governance::BALLOT_DIVISOR);
@@ -673,7 +750,11 @@ mod tests {
     }
 
     #[test]
-    fn ensure_bundles_rejects_existing_rows_when_policy_changes_shape() {
+    fn ensure_bundles_reuses_the_policy_a_round_was_planned_with() {
+        // A round's persisted rows must keep re-deriving for the life of the
+        // round. Once a plan is stored its policy wins, so a later caller
+        // passing a different policy cannot reinterpret rows that may already
+        // be signed or submitted.
         let db = test_db("wallet-policy-change");
         let notes = vec![
             note(0, crate::governance::BALLOT_DIVISOR),
@@ -683,18 +764,360 @@ mod tests {
             note(4, crate::governance::BALLOT_DIVISOR),
             note(5, crate::governance::BALLOT_DIVISOR),
         ];
-        db.ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::new(1).unwrap())
+        let planned = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::new(1).unwrap())
+            .unwrap();
+        assert_eq!(planned.bundle_count, 6);
+
+        let revalidated = db.ensure_bundles(ROUND_ID, &notes).unwrap();
+
+        assert_eq!(revalidated.bundle_count, 6);
+        assert_eq!(revalidated.eligible_weight, planned.eligible_weight);
+    }
+
+    #[test]
+    fn ensure_bundles_rejects_existing_rows_when_the_note_set_changes_shape() {
+        // Without a stored policy to fall back on, a note set that plans to a
+        // different bundle count must still be refused rather than silently
+        // reinterpreting persisted rows.
+        let db = test_db("wallet-shape-change");
+        let policy = BundlePolicy::new(1).unwrap();
+        let notes: Vec<NoteInfo> = (0..6)
+            .map(|i| note(i, crate::governance::BALLOT_DIVISOR))
+            .collect();
+        db.ensure_bundles_with_policy(ROUND_ID, &notes, policy)
             .unwrap();
 
         let err = db
-            .ensure_bundles(ROUND_ID, &notes)
-            .expect_err("default policy must not reuse policy-1 rows");
+            .ensure_bundles_with_policy(ROUND_ID, &notes[..3], policy)
+            .expect_err("a shorter note set must not reuse six persisted rows");
 
         assert!(
             err.to_string()
-                .contains("existing bundle count 6 does not match planned bundle count 2"),
+                .contains("existing bundle count 6 does not match planned bundle count 3"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn ensure_bundles_falls_back_to_the_caller_policy_for_rounds_without_a_stored_one() {
+        // Rounds planned before the policy was recorded have a NULL column.
+        // Those must keep re-deriving with whatever policy the caller supplies,
+        // rather than silently switching to the current default.
+        let db = test_db("wallet-legacy-policy");
+        let policy = BundlePolicy::new(1).unwrap();
+        let notes: Vec<NoteInfo> = (0..6)
+            .map(|i| note(i, crate::governance::BALLOT_DIVISOR))
+            .collect();
+        db.ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = NULL WHERE round_id = ?1",
+                rusqlite::params![ROUND_ID],
+            )
+            .unwrap();
+
+        let revalidated = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+            .unwrap();
+
+        assert_eq!(revalidated.bundle_count, 6);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            Some(policy.with_max_privacy_bundles(None))
+        );
+        assert_eq!(
+            note_bundles_for_round(&notes, &db, ROUND_ID).unwrap().len(),
+            6
+        );
+    }
+
+    #[test]
+    fn ensure_bundles_disables_the_privacy_trim_for_rounds_migrated_from_launch() {
+        // The v13 -> v14 in-place migration preserves bundle rows but leaves
+        // `bundle_policy_json` NULL. Those rows were planned before the trim
+        // existed, so re-deriving them under the current default would plan a
+        // smaller bundle count and reject the round for the rest of its life --
+        // stranding every bundle the voter had not yet submitted.
+        let db = test_db("wallet-migrated-launch-round");
+        let pre_trim = BundlePolicy::default().with_max_privacy_bundles(None);
+        // Value concentrated in three notes plus a dust tail: the shape the
+        // trim collapses, and the shape a migrated round can already hold.
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+        let planned = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, pre_trim)
+            .unwrap();
+        assert_eq!(planned.bundle_count, 5);
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = NULL WHERE round_id = ?1",
+                rusqlite::params![ROUND_ID],
+            )
+            .unwrap();
+
+        // The upgraded SDK passes its new default, which trims to two bundles.
+        assert_eq!(
+            crate::note_bundling::chunk_notes_with_policy(&notes, BundlePolicy::default())
+                .bundles
+                .len(),
+            2
+        );
+        let resumed = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::default())
+            .unwrap();
+        let resumed_bundles = note_bundles_for_round(&notes, &db, ROUND_ID).unwrap();
+
+        assert_eq!(resumed.bundle_count, 5);
+        assert!(resumed.privacy_trim.is_empty());
+        assert_eq!(resumed_bundles.len(), 5);
+        for (bundle_index, expected_notes) in resumed_bundles.iter().enumerate() {
+            assert_eq!(
+                bundle_notes_for_index_for_round(
+                    &notes,
+                    &resumed,
+                    bundle_index as u32,
+                    &db,
+                    ROUND_ID,
+                )
+                .unwrap(),
+                expected_notes.clone()
+            );
+        }
+    }
+
+    #[test]
+    fn ensure_bundles_with_skipped_suffix_disables_the_trim_for_migrated_rounds() {
+        // The delegation path reaches storage through the skipped-suffix
+        // variant, which rejects a plan shorter than the persisted rows.
+        let db = test_db("wallet-migrated-suffix-round");
+        let pre_trim = BundlePolicy::default().with_max_privacy_bundles(None);
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+        db.ensure_bundles_with_policy(ROUND_ID, &notes, pre_trim)
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = NULL WHERE round_id = ?1",
+                rusqlite::params![ROUND_ID],
+            )
+            .unwrap();
+
+        let resumed = db
+            .ensure_bundles_with_skipped_suffix_with_policy(
+                ROUND_ID,
+                &notes,
+                BundlePolicy::default(),
+            )
+            .unwrap();
+
+        assert_eq!(resumed.bundle_count, 5);
+    }
+
+    #[test]
+    fn ensure_bundles_disables_the_privacy_trim_for_unreadable_future_policy_schema() {
+        // A future SDK may persist a higher schema version. Downgrading must
+        // not map that to Internal and brick the round; treat it like NULL so
+        // existing rows and van_comm_rand stay usable without clear_round.
+        // Once a policy validates against those rows it replaces the
+        // unreadable value, so the round does not stay undecodable forever.
+        let db = test_db("wallet-future-policy-schema");
+        let pre_trim = BundlePolicy::default().with_max_privacy_bundles(None);
+        let future_policy_json = r#"{"version":2,"policy":{"max_real_notes_per_bundle":2}}"#;
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+        let planned = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, pre_trim)
+            .unwrap();
+        assert_eq!(planned.bundle_count, 5);
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = ?1 WHERE round_id = ?2",
+                rusqlite::params![future_policy_json, ROUND_ID],
+            )
+            .unwrap();
+
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            None
+        );
+        assert_eq!(
+            db.effective_bundle_policy(ROUND_ID, BundlePolicy::default())
+                .unwrap(),
+            BundlePolicy::default().with_max_privacy_bundles(None)
+        );
+
+        let resumed = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::default())
+            .unwrap();
+        assert_eq!(resumed.bundle_count, 5);
+        assert!(resumed.privacy_trim.is_empty());
+        // The fallback proved it reproduces the persisted rows, so it replaces
+        // the value this binary cannot read.
+        assert_ne!(stored_policy_json(&db), future_policy_json);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            Some(BundlePolicy::default().with_max_privacy_bundles(None))
+        );
+    }
+
+    #[test]
+    fn ensure_bundles_replaces_unreadable_policy_when_planning_new_rows() {
+        // Unreadable JSON on a round with no bundle rows describes nothing. If
+        // planning inserted rows but left the value in place, the next call
+        // would see "rows exist, no readable policy", disable the trim, and
+        // plan a larger count than storage holds -- rejecting the round for
+        // good. The note set here is trim-sensitive so that regression bites.
+        let db = test_db("wallet-future-policy-without-bundles");
+        let future_policy_json = r#"{"version":2,"policy":{"max_real_notes_per_bundle":2}}"#;
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = ?1 WHERE round_id = ?2",
+                rusqlite::params![future_policy_json, ROUND_ID],
+            )
+            .unwrap();
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+
+        let planned = db.ensure_bundles(ROUND_ID, &notes).unwrap();
+
+        assert_eq!(planned.bundle_count, 2);
+        assert!(!planned.privacy_trim.is_empty());
+        assert_ne!(stored_policy_json(&db), future_policy_json);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            Some(BundlePolicy::default())
+        );
+
+        // The round keeps re-deriving; without the replacement this call plans
+        // 5 bundles against 2 persisted rows and fails permanently.
+        let resumed = db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        assert_eq!(resumed.bundle_count, 2);
+    }
+
+    #[test]
+    fn ensure_bundles_does_not_store_a_policy_for_an_empty_plan() {
+        // Every bundle is sub-ballot, so nothing is persisted. Storing the
+        // policy anyway would make it authoritative for a round with no rows,
+        // and a retry under a corrected policy could never take effect.
+        let db = test_db("wallet-empty-plan-policy");
+        let notes: Vec<NoteInfo> = (0..10)
+            .map(|i| note(i, crate::governance::BALLOT_DIVISOR / 2))
+            .collect();
+        let too_narrow = BundlePolicy::new(1).unwrap();
+
+        let empty = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, too_narrow)
+            .unwrap();
+
+        assert_eq!(empty.bundle_count, 0);
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            None
+        );
+
+        // The corrected policy is honored because nothing was frozen.
+        let retried = db.ensure_bundles(ROUND_ID, &notes).unwrap();
+
+        assert_eq!(retried.bundle_count, 2);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            Some(BundlePolicy::default())
+        );
+    }
+
+    #[test]
+    fn bundle_policy_is_stored_exactly_when_bundle_rows_exist() {
+        // The invariant both P2 fixes rest on: the column is non-NULL if and
+        // only if the round has bundle rows for it to describe.
+        let db = test_db("wallet-policy-row-invariant");
+        let policy = BundlePolicy::new(1).unwrap();
+        let stored = |db: &VotingDb| {
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap()
+        };
+
+        // No rows yet.
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+        assert_eq!(stored(&db), None);
+
+        // A plan that survives no bundles inserts nothing, so it records
+        // nothing either.
+        let sub_ballot: Vec<NoteInfo> = (0..10)
+            .map(|i| note(i, crate::governance::BALLOT_DIVISOR / 2))
+            .collect();
+        assert_eq!(
+            db.ensure_bundles_with_policy(ROUND_ID, &sub_ballot, policy)
+                .unwrap()
+                .bundle_count,
+            0
+        );
+        assert_eq!(stored(&db), None);
+
+        // Rows created -> policy recorded.
+        let notes: Vec<NoteInfo> = (0..6)
+            .map(|i| note(i, crate::governance::BALLOT_DIVISOR))
+            .collect();
+        assert_eq!(
+            db.ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+                .unwrap()
+                .bundle_count,
+            6
+        );
+        assert_eq!(stored(&db), Some(policy));
+
+        // Some rows remain -> policy still describes them.
+        db.delete_skipped_bundles(ROUND_ID, 2).unwrap();
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 2);
+        assert_eq!(stored(&db), Some(policy));
+
+        // Last row gone -> policy goes with it.
+        db.delete_skipped_bundles(ROUND_ID, 0).unwrap();
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+        assert_eq!(stored(&db), None);
+    }
+
+    #[test]
+    fn ensure_bundles_still_trims_a_round_with_no_persisted_rows() {
+        // The override is scoped to rounds that already have bundle rows. A
+        // round planned for the first time after the upgrade must still trim.
+        let db = test_db("wallet-fresh-round-trims");
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+
+        let planned = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::default())
+            .unwrap();
+
+        assert_eq!(planned.bundle_count, 2);
+        assert!(!planned.privacy_trim.is_empty());
+    }
+
+    #[test]
+    fn ensure_bundles_persists_the_privacy_trim_report() {
+        let db = test_db("wallet-privacy-trim");
+        // Two full-weight notes plus a dust tail that fits inside the 1% budget.
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes = vec![note(0, big), note(1, big)];
+        notes.push(note(2, 2 * big / 99));
+        let policy = BundlePolicy::new(1).unwrap();
+
+        let layout = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+            .unwrap();
+
+        assert_eq!(layout.bundle_count, 2);
+        assert_eq!(layout.privacy_trim.dropped_bundles, 1);
+        assert_eq!(layout.privacy_trim.dropped_notes, 1);
+        assert!(layout.privacy_trim.dropped_value > 0);
     }
 
     #[test]
@@ -760,6 +1183,37 @@ mod tests {
         assert_eq!(
             reused.eligible_weight,
             5 * crate::governance::BALLOT_DIVISOR
+        );
+    }
+
+    #[test]
+    fn delete_skipped_bundles_clears_policy_when_no_rows_remain() {
+        // keep_count == 0 removes every bundle row but leaves the rounds row.
+        // The stored policy must go with them so a later replan uses the caller.
+        let db = test_db("wallet-clear-policy-on-full-skip");
+        let notes = vec![
+            note(0, crate::governance::BALLOT_DIVISOR),
+            note(1, crate::governance::BALLOT_DIVISOR),
+        ];
+        let policy = BundlePolicy::new(1).unwrap();
+        db.ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+            .unwrap();
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            Some(policy)
+        );
+
+        db.delete_skipped_bundles(ROUND_ID, 0).unwrap();
+
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+        assert_eq!(
+            queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
+            None
+        );
+        assert_eq!(
+            db.effective_bundle_policy(ROUND_ID, BundlePolicy::default())
+                .unwrap(),
+            BundlePolicy::default()
         );
     }
 

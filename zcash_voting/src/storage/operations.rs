@@ -14,7 +14,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 
 use crate::delegate::{DelegationKeys, DelegationSigningRequest};
 use crate::governance::BUNDLE_NOTE_SLOTS;
-use crate::note_bundling::ChunkResult;
+use crate::note_bundling::{BundlePolicy, ChunkResult};
 use crate::storage::queries;
 use crate::storage::{
     KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord, VotingDb,
@@ -434,6 +434,7 @@ impl VotingDb {
         &self,
         round_id: &str,
         plan: &ChunkResult,
+        policy: BundlePolicy,
     ) -> Result<(u32, u64), VotingError> {
         let mut conn = self.conn();
         let wallet_id = self.wallet_id();
@@ -449,6 +450,10 @@ impl VotingDb {
         for (i, chunk) in plan.bundles.iter().enumerate() {
             queries::insert_bundle_notes(&tx, round_id, &wallet_id, i as u32, chunk)?;
         }
+        // Must follow the inserts: the policy is only stored for a round that
+        // has bundle rows to describe. A plan whose bundles were all sub-ballot
+        // writes nothing, so a retry can replan under a corrected policy.
+        queries::set_round_bundle_policy(&tx, round_id, &wallet_id, policy)?;
         tx.commit().map_err(|e| VotingError::Internal {
             message: format!("failed to commit bundle setup transaction: {e}"),
         })?;
@@ -1295,8 +1300,9 @@ impl VotingDb {
 
     /// Delete local bundle rows with index >= `keep_count`, so that only the
     /// first `keep_count` bundles remain. Witnesses and proofs cascade-delete
-    /// via FK. Imported capability rounds return [`VotingError::InvalidInput`]
-    /// because their complete bundle batch must remain atomic.
+    /// via FK. When no bundle rows remain, clears the stored bundle policy.
+    /// Imported capability rounds return [`VotingError::InvalidInput`] because
+    /// their complete bundle batch must remain atomic.
     /// Returns the number of deleted rows.
     pub fn delete_skipped_bundles(
         &self,
@@ -2535,8 +2541,9 @@ mod tests {
         }
 
         let plan = crate::note_bundling::chunk_notes(&notes);
+        let policy = BundlePolicy::default();
         let err = db
-            .persist_bundle_plan(ROUND_ID, &plan)
+            .persist_bundle_plan(ROUND_ID, &plan, policy)
             .expect_err("bundle index conflict should fail setup");
         assert!(err.to_string().contains("failed to insert bundle"));
 
@@ -2551,6 +2558,10 @@ mod tests {
             .unwrap();
         assert_eq!(bundle_zero_count, 0);
         assert_eq!(queries::get_bundle_count(&conn, ROUND_ID, W).unwrap(), 1);
+        assert_eq!(
+            queries::get_round_bundle_policy(&conn, ROUND_ID, W).unwrap(),
+            None
+        );
     }
 
     #[test]

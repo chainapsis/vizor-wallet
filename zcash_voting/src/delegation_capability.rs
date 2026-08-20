@@ -944,7 +944,7 @@ mod tests {
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 13);
+        assert_eq!(version, 14);
         for index in 0..2 {
             let data =
                 queries::load_zkp2_inputs(&conn, &params.vote_round_id, WALLET, index).unwrap();

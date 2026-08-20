@@ -37,8 +37,9 @@ pub use crate::hotkey::{
 };
 pub use crate::note_bundling::{
     minimum_voting_eligibility_for_notes, validate_minimum_voting_eligibility_for_notes,
-    voting_power, voting_power_with_policy, BundlePolicy, MinimumVotingEligibility,
-    MINIMUM_VOTING_NOTE_COUNT, MINIMUM_VOTING_WEIGHT_ZATOSHI,
+    voting_power, voting_power_for_round, voting_power_with_policy, BundlePolicy,
+    MinimumVotingEligibility, PrivacyTrim, MINIMUM_VOTING_NOTE_COUNT,
+    MINIMUM_VOTING_WEIGHT_ZATOSHI,
 };
 pub use crate::phases::{SharePhase, VotePhase, WorkflowPhase};
 pub use crate::pir::{
@@ -52,9 +53,10 @@ pub use crate::recovery::{
     RecoverableCommitmentBundle, RoundRecoverySnapshot, ShareWorkflow, VoteRecovery,
 };
 pub use crate::round::{
-    bundle_notes_for_index, bundle_notes_for_index_with_policy, delegation_round_name,
-    note_bundles, note_bundles_with_policy, quantized_bundle_set_weight, quantized_bundle_weight,
-    raw_bundle_weight, validate_bundle_index, BundleLayout, RoundInfo, RoundParams, VotingDb,
+    bundle_notes_for_index_for_round, bundle_notes_for_index_with_policy, delegation_round_name,
+    note_bundles, note_bundles_for_round, note_bundles_with_policy, quantized_bundle_set_weight,
+    quantized_bundle_weight, raw_bundle_weight, validate_bundle_index, BundleLayout, RoundInfo,
+    RoundParams, VotingDb,
 };
 pub use crate::selection::select_notes_with_lwd;
 pub use crate::selection::{

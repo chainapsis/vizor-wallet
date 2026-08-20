@@ -140,6 +140,38 @@ There are three different kinds of notes in the construction:
 TX1 also has a separate, zero-value output note addressed to the hotkey. That
 output is not the signed note.
 
+### Which eligible notes reach a bundle
+
+Not every selected note is delegated. Bundle planning drops notes twice, for
+different reasons, and a wallet should present the two differently:
+
+- Bundles whose total falls below `BALLOT_DIVISOR` are dropped because they are
+  worth zero ballots after quantization. Nothing is lost.
+- Trailing bundles are dropped by the **privacy trim** even though they carry
+  real weight. Bundle count is `ceil(note_count / BUNDLE_NOTE_SLOTS)`, so a
+  holder whose value sits in a few large notes plus a long dust tail emits many
+  TX1s and delegation submissions that contribute almost nothing. Planning trims
+  that tail down to `BundlePolicy::max_privacy_bundles` while the discarded raw
+  note value stays inside `BundlePolicy::privacy_drop_bps` of the selected note
+  value and the absolute `max_privacy_drop_zatoshi` ceiling. Defaults are 1% and
+  1,000 ZEC. The count is a target; both budget limits are hard ceilings.
+
+Trimmed notes never appear in any TX1, VAN, or delegation submission, so the trim
+leaves no on-chain trace. `PrivacyTrim::dropped_value_zatoshi` reports the raw
+value of the excluded notes, not their bundle-quantized voting weight. Wallets
+SHOULD surface that distinction rather than reducing voting power silently.
+
+The trim composes with a per-bundle value threshold rather than replacing it. A
+1% budget below 1,000 ZEC cannot pay for a bundle sitting near a 1,000 ZEC
+per-bundle cap, so smaller concentrated holders only shed their dust tail. At
+100,000 ZEC selected value, however, 1% reaches the default 1,000 ZEC absolute
+ceiling and can remove one full 1,000 ZEC bundle. The absolute ceiling prevents
+the default trim from removing more than 1,000 ZEC in total; callers can set a
+tighter ceiling or explicitly remove it. Holders whose uniformly sized tail
+bundle exceeds the effective budget see no reduction. The trim narrows the "this
+voter emitted many submissions" inference for concentrated holders; it does not
+make bundle counts uniform across voters.
+
 ### Eligible and padding note slots
 
 ZKP #1 always has `BUNDLE_NOTE_SLOTS` note slots. The wallet places the real

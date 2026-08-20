@@ -9,6 +9,7 @@ CREATE TABLE rounds (
     session_json        TEXT,
     phase               INTEGER NOT NULL DEFAULT 0,
     created_at          INTEGER NOT NULL,
+    bundle_policy_json  TEXT,
     PRIMARY KEY (round_id, wallet_id)
 );
 

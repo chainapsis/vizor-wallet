@@ -3,8 +3,10 @@ pub(crate) use crate::backend::pasta_curves;
 use ff::PrimeField;
 use pasta_curves::pallas;
 use rusqlite::{named_params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use serde::{Deserialize, Serialize};
 use voting_circuits::delegation::ImtProofData;
 
+use crate::note_bundling::BundlePolicy;
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
 use crate::types::{
     Network, NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData,
@@ -12,6 +14,161 @@ use crate::types::{
 
 const NOTE_IDENTITY_HASH_BYTES: usize = 32;
 const NOTE_IDENTITY_DOMAIN: &[u8] = b"zcash-voting-note-identity-v1";
+const BUNDLE_POLICY_SCHEMA_VERSION: u32 = 1;
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
+/// Exact on-disk representation of bundle policy schema version 1.
+///
+/// All fields are required intentionally. Adding a runtime policy field requires
+/// a new persistence DTO and schema version rather than a serde default here.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PersistedBundlePolicyV1 {
+    max_real_notes_per_bundle: usize,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    bundle_addition_threshold_zatoshi: Option<u64>,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    max_privacy_bundles: Option<usize>,
+    privacy_drop_bps: u32,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    max_privacy_drop_zatoshi: Option<u64>,
+}
+
+impl From<BundlePolicy> for PersistedBundlePolicyV1 {
+    fn from(policy: BundlePolicy) -> Self {
+        Self {
+            max_real_notes_per_bundle: policy.max_real_notes_per_bundle(),
+            bundle_addition_threshold_zatoshi: policy.bundle_addition_threshold(),
+            max_privacy_bundles: policy.max_privacy_bundles(),
+            privacy_drop_bps: policy.privacy_drop_bps(),
+            max_privacy_drop_zatoshi: policy.max_privacy_drop_zatoshi(),
+        }
+    }
+}
+
+impl PersistedBundlePolicyV1 {
+    fn into_policy(self) -> Result<BundlePolicy, VotingError> {
+        let mut policy = BundlePolicy::new(self.max_real_notes_per_bundle)?;
+        if let Some(threshold) = self.bundle_addition_threshold_zatoshi {
+            policy = policy.with_bundle_addition_threshold(threshold);
+        }
+        Ok(policy
+            .with_max_privacy_bundles(self.max_privacy_bundles)
+            .with_privacy_drop_bps(self.privacy_drop_bps)?
+            .with_max_privacy_drop_zatoshi(self.max_privacy_drop_zatoshi))
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PersistedBundlePolicyEnvelope<T> {
+    version: u32,
+    policy: T,
+}
+
+fn encode_bundle_policy(policy: BundlePolicy) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&PersistedBundlePolicyEnvelope::<PersistedBundlePolicyV1> {
+        version: BUNDLE_POLICY_SCHEMA_VERSION,
+        policy: policy.into(),
+    })
+}
+
+fn decode_bundle_policy(json: &str) -> Result<BundlePolicy, String> {
+    let envelope: PersistedBundlePolicyEnvelope<serde_json::Value> =
+        serde_json::from_str(json).map_err(|e| format!("invalid versioned policy: {e}"))?;
+    if envelope.version != BUNDLE_POLICY_SCHEMA_VERSION {
+        return Err(format!("unsupported schema version {}", envelope.version));
+    }
+    let persisted: PersistedBundlePolicyV1 = serde_json::from_value(envelope.policy)
+        .map_err(|e| format!("invalid version 1 policy: {e}"))?;
+
+    persisted
+        .into_policy()
+        .map_err(|e| format!("invalid policy value: {e}"))
+}
+
+#[cfg(test)]
+mod bundle_policy_schema_tests {
+    use super::*;
+    use crate::note_bundling::MAX_PRIVACY_DROP_BPS;
+
+    fn custom_policy() -> BundlePolicy {
+        BundlePolicy::new(1)
+            .unwrap()
+            .with_bundle_addition_threshold(42)
+            .with_max_privacy_bundles(Some(3))
+            .with_privacy_drop_bps(75)
+            .unwrap()
+            .with_max_privacy_drop_zatoshi(Some(99))
+    }
+
+    #[test]
+    fn bundle_policy_writes_a_versioned_envelope() {
+        let json = encode_bundle_policy(custom_policy()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["version"], BUNDLE_POLICY_SCHEMA_VERSION);
+        assert!(value["policy"].is_object());
+        assert_eq!(decode_bundle_policy(&json).unwrap(), custom_policy());
+    }
+
+    #[test]
+    fn bundle_policy_rejects_unversioned_payloads() {
+        let unversioned =
+            serde_json::to_string(&PersistedBundlePolicyV1::from(custom_policy())).unwrap();
+
+        let error = decode_bundle_policy(&unversioned).unwrap_err();
+        assert!(error.contains("invalid versioned policy"));
+    }
+
+    #[test]
+    fn bundle_policy_rejects_missing_persisted_fields() {
+        let incomplete = serde_json::json!({
+            "version": BUNDLE_POLICY_SCHEMA_VERSION,
+            "policy": {
+                "max_real_notes_per_bundle": 1,
+                "bundle_addition_threshold_zatoshi": null,
+                "max_privacy_bundles": 2,
+                "privacy_drop_bps": 100
+            }
+        });
+
+        let error = decode_bundle_policy(&incomplete.to_string()).unwrap_err();
+        assert!(error.contains("missing field `max_privacy_drop_zatoshi`"));
+    }
+
+    #[test]
+    fn bundle_policy_rejects_unknown_schema_versions() {
+        let json = serde_json::json!({
+            "version": BUNDLE_POLICY_SCHEMA_VERSION + 1,
+            "policy": PersistedBundlePolicyV1::from(custom_policy())
+        });
+
+        let error = decode_bundle_policy(&json.to_string()).unwrap_err();
+        assert!(error.contains("unsupported schema version"));
+    }
+
+    #[test]
+    fn bundle_policy_rejects_privacy_drop_bps_above_max() {
+        let mut persisted = PersistedBundlePolicyV1::from(custom_policy());
+        persisted.privacy_drop_bps = MAX_PRIVACY_DROP_BPS + 1;
+
+        let json = serde_json::json!({
+            "version": BUNDLE_POLICY_SCHEMA_VERSION,
+            "policy": persisted
+        });
+
+        let error = decode_bundle_policy(&json.to_string()).unwrap_err();
+        assert!(error.contains("privacy_drop_bps"));
+    }
+}
 
 fn update_hash_with_len_prefixed_bytes(state: &mut blake2b_simd::State, value: &[u8]) {
     state.update(&(value.len() as u64).to_le_bytes());
@@ -522,6 +679,78 @@ pub fn get_bundle_count(
     .map_err(|e| VotingError::Internal {
         message: format!("failed to get bundle count: {}", e),
     })
+}
+
+/// Reads the bundle policy persisted with a round, if one was stored.
+///
+/// Returns `None` when the column is NULL, or when the stored JSON is an
+/// unknown schema version / otherwise unreadable. Callers then fall back the
+/// same way as for pre-policy rounds: keep the caller's capacity/threshold and
+/// disable the privacy trim when bundle rows already exist. Strict decode is
+/// still used when a readable policy is present; this only avoids bricking a
+/// round after a future schema bump on downgrade.
+pub fn get_round_bundle_policy(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+) -> Result<Option<BundlePolicy>, VotingError> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT bundle_policy_json FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id",
+            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to read stored bundle policy: {e}"),
+        })?
+        .flatten();
+
+    Ok(stored.and_then(|json| decode_bundle_policy(&json).ok()))
+}
+
+/// Records the bundle policy that produced a round's persisted bundle rows.
+///
+/// Later planning passes re-derive with this value instead of the caller's, so
+/// an SDK upgrade that changes the defaults cannot invalidate bundles that were
+/// already signed or submitted.
+///
+/// # Invariant
+///
+/// `bundle_policy_json` is non-NULL if and only if the round has at least one
+/// bundle row, and it holds the policy that produced those rows. The `EXISTS`
+/// clause below enforces one direction; [`delete_bundles_from`] enforces the
+/// other by clearing the column once the last row is gone.
+///
+/// Callers writing a freshly planned round must therefore insert the bundle
+/// rows *before* calling this, in the same transaction. A plan with no
+/// surviving bundles writes nothing, which leaves the round free to replan
+/// under a different policy.
+pub fn set_round_bundle_policy(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    policy: BundlePolicy,
+) -> Result<(), VotingError> {
+    let json = encode_bundle_policy(policy).map_err(|e| VotingError::Internal {
+        message: format!("failed to encode bundle policy: {e}"),
+    })?;
+    conn.execute(
+        "UPDATE rounds SET bundle_policy_json = :policy
+         WHERE round_id = :round_id
+           AND wallet_id = :wallet_id
+           AND EXISTS (SELECT 1 FROM bundles b
+                        WHERE b.round_id = :round_id AND b.wallet_id = :wallet_id)",
+        named_params! {
+            ":policy": json,
+            ":round_id": round_id,
+            ":wallet_id": wallet_id,
+        },
+    )
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to store bundle policy: {e}"),
+    })?;
+    Ok(())
 }
 
 /// Imported bundles omit local note positions; local bundle insertion always stores them.
@@ -2371,8 +2600,10 @@ pub fn get_votes(
 /// Delete all local bundles (and their cascaded witnesses/proofs) with index >= `from_index`.
 /// Used when the user skips remaining Keystone bundles — we remove the unsigned
 /// bundle rows so that `proof_generated` (which counts ALL DB bundles) reflects
-/// only the signed+proven bundles. Imported capability batches are atomic and
-/// must instead be replaced with `clear_round` followed by a complete re-import.
+/// only the signed+proven bundles. When no bundle rows remain, clears
+/// `bundle_policy_json` so a later replan can honor the caller's policy.
+/// Imported capability batches are atomic and must instead be replaced with
+/// `clear_round` followed by a complete re-import.
 pub fn delete_bundles_from(
     conn: &Connection,
     round_id: &str,
@@ -2404,6 +2635,19 @@ pub fn delete_bundles_from(
         .map_err(|e| VotingError::Internal {
             message: format!("failed to delete bundles from index {}: {}", from_index, e),
         })?;
+    if get_bundle_count(&tx, round_id, wallet_id)? == 0 {
+        tx.execute(
+            "UPDATE rounds SET bundle_policy_json = NULL
+             WHERE round_id = :round_id AND wallet_id = :wallet_id",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to clear bundle policy after deleting all bundles: {e}"),
+        })?;
+    }
     tx.commit().map_err(|e| VotingError::Internal {
         message: format!("failed to commit bundle deletion: {e}"),
     })?;
