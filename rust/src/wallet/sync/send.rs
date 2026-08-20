@@ -53,7 +53,7 @@ use shardtree::{
 use tonic::Code;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, SpendPolicy,
+    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -3391,6 +3391,7 @@ fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<Shield
 
 fn ordinary_send_spend_policy(orchard_reserved_for_migration: bool) -> SpendPolicy {
     SpendPolicy::shielded_pools(ordinary_send_spend_pools(orchard_reserved_for_migration))
+        .with_note_selection(NoteSelection::PreferConsolidation)
 }
 
 pub(super) fn proposal_input_refs(
