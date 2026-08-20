@@ -156,6 +156,23 @@ repo root:
 flutter_rust_bridge_codegen generate
 ```
 
+## Support Vizor
+
+If Vizor is useful to you, consider supporting its continued development with
+a ZEC donation.
+
+<p align="center">
+  <img src=".github/assets/zcash-donation-qr.png"
+       alt="Zcash donation QR code"
+       width="280">
+</p>
+
+**Zcash Unified Address**
+
+```text
+u15kdlm6j5tp4tptue4fdra4qa50d6zfl76anf7dagzu9y0yz875qhtvxgd6dju7l7epjwwxvuzh7z67gnxfw9msqxtnjg96x77x4y3vmzfehm0p9l6q2yhuskztxl8dlrswp6nf3u2j35krarnntc85h92h64g29f73ze5tewugq8tg3y
+```
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
