@@ -261,7 +261,7 @@ fvm flutter test integration_test/regtest_voting_test.dart -d "$FLUTTER_DEVICE" 
 
 METRICS="$(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/metrics")"
 if [[ "$SLOW_HELPER_MODE" == "1" ]]; then
-  jq -e '.slow_share_requests > 0 and .share_max_inflight > 1' \
+  jq -e '.slow_share_requests > 0 and .slow_share_max_inflight > 1' \
     <<<"$METRICS" >/dev/null || {
       echo "slow-helper E2E did not observe concurrent share submission: $METRICS" >&2
       exit 1
