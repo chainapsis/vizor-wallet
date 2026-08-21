@@ -62,9 +62,9 @@ use zcash_client_backend::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             ConfirmationsPolicy, TargetHeight,
         },
-        Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
-        NoteRetention, OutputLockStore, ReceivedNotes, TargetValue, TransparentKeyOrigin,
-        WalletCommitmentTrees, WalletRead,
+        Account as _, AccountMeta, Balance, CoinbaseFilter, ConsolidationNotes, InputSource,
+        MaxSpendMode, NoteFilter, NoteRetention, OutputLockStore, ReceivedNotes, TargetValue,
+        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -3356,7 +3356,8 @@ fn propose_send_with_reserved_notes(
         migration_locks,
     };
     let zip318 = db.pool_migration_params();
-    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(None);
+    let (change_strategy, input_selector) =
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None);
 
     input_selector
         .propose_transaction(
@@ -3528,14 +3529,14 @@ where
     }
 }
 
-struct ReservedInputSource<'a> {
-    inner: &'a WalletDatabase,
-    reserved: &'a BTreeSet<ReceivedNoteId>,
+struct ReservedInputSource<'a, I: InputSource> {
+    inner: &'a I,
+    reserved: &'a BTreeSet<I::NoteRef>,
     migration_locks: &'a BTreeSet<(String, u32)>,
 }
 
-impl ReservedInputSource<'_> {
-    fn merged_excludes(&self, exclude: &[ReceivedNoteId]) -> Vec<ReceivedNoteId> {
+impl<I: InputSource> ReservedInputSource<'_, I> {
+    fn merged_excludes(&self, exclude: &[I::NoteRef]) -> Vec<I::NoteRef> {
         let mut merged = exclude.to_vec();
         merged.extend(self.reserved.iter().copied());
         merged.sort_unstable();
@@ -3543,19 +3544,39 @@ impl ReservedInputSource<'_> {
         merged
     }
 
-    fn note_is_locked<N>(&self, note: &ReceivedNote<ReceivedNoteId, N>) -> bool {
+    fn note_is_locked<N>(&self, note: &ReceivedNote<I::NoteRef, N>) -> bool {
         let key = (
             format!("{}", note.txid()).to_lowercase(),
             note.output_index() as u32,
         );
         self.migration_locks.contains(&key)
     }
+
+    fn append_migration_locked_note_ids<N>(
+        &self,
+        notes: &[ReceivedNote<I::NoteRef, N>],
+        locked: &mut Vec<I::NoteRef>,
+    ) {
+        locked.extend(
+            notes
+                .iter()
+                .filter(|note| self.note_is_locked(note))
+                .map(|note| *note.internal_note_id()),
+        );
+    }
+
+    fn migration_locked_note_ids(&self, notes: &ReceivedNotes<I::NoteRef>) -> Vec<I::NoteRef> {
+        let mut locked = vec![];
+        self.append_migration_locked_note_ids(notes.orchard(), &mut locked);
+        self.append_migration_locked_note_ids(notes.ironwood(), &mut locked);
+        locked
+    }
 }
 
-impl InputSource for ReservedInputSource<'_> {
-    type Error = <WalletDatabase as InputSource>::Error;
-    type AccountId = <WalletDatabase as InputSource>::AccountId;
-    type NoteRef = <WalletDatabase as InputSource>::NoteRef;
+impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
+    type Error = I::Error;
+    type AccountId = I::AccountId;
+    type NoteRef = I::NoteRef;
 
     fn anchor_computable(
         &self,
@@ -3614,6 +3635,42 @@ impl InputSource for ReservedInputSource<'_> {
                 .cloned()
                 .collect(),
         ))
+    }
+
+    fn select_spendable_notes_for_consolidation(
+        &self,
+        account: Self::AccountId,
+        value: Zatoshis,
+        source: ShieldedPool,
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
+        max_additional_notes: usize,
+    ) -> Result<ConsolidationNotes<Self::NoteRef>, Self::Error> {
+        let mut merged_excludes = self.merged_excludes(exclude);
+        loop {
+            let selected = self.inner.select_spendable_notes_for_consolidation(
+                account,
+                value,
+                source,
+                target_height,
+                confirmations_policy,
+                &merged_excludes,
+                lock_filter,
+                max_additional_notes,
+            )?;
+            let (funding, additional) = selected.into_parts();
+            let mut newly_excluded = self.migration_locked_note_ids(&funding);
+            newly_excluded.extend(self.migration_locked_note_ids(&additional));
+            if newly_excluded.is_empty() {
+                return Ok(ConsolidationNotes::from_parts(funding, additional));
+            }
+
+            merged_excludes.extend(newly_excluded);
+            merged_excludes.sort_unstable();
+            merged_excludes.dedup();
+        }
     }
 
     fn select_unspent_notes(
