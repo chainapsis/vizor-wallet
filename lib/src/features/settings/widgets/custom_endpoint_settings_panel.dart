@@ -147,10 +147,9 @@ class _CustomEndpointSettingsPanelState
                 child: CustomEndpointForm(
                   controller: _controller,
                   messageText: _customMessageText(),
-                  onChanged:
-                      (_) => setState(() {
-                        _submitError = null;
-                      }),
+                  onChanged: (_) => setState(() {
+                    _submitError = null;
+                  }),
                   onSubmit: _submit,
                 ),
               ),
@@ -298,10 +297,9 @@ class CustomEndpointForm extends StatelessWidget {
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.done,
               messageText: messageText,
-              tone:
-                  messageText == null
-                      ? AppTextFieldTone.neutral
-                      : AppTextFieldTone.destructive,
+              tone: messageText == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
               onChanged: onChanged,
               onSubmitted: (_) => onSubmit(),
             ),

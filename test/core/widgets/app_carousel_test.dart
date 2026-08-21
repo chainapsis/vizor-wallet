@@ -127,8 +127,7 @@ void main() {
     final pageView = tester.widget<PageView>(
       find.byKey(const ValueKey('app_carousel_page_view')),
     );
-    final delegate =
-        pageView.childrenDelegate as SliverChildBuilderDelegate;
+    final delegate = pageView.childrenDelegate as SliverChildBuilderDelegate;
     expect(delegate.childCount, 1);
     expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
     expect(find.byKey(const ValueKey('app_carousel_card_0')), findsOneWidget);

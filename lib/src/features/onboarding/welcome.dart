@@ -188,10 +188,9 @@ class _WelcomeHeroPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset =
-        isDark
-            ? 'assets/illustrations/welcome_hero_dark.png'
-            : 'assets/illustrations/welcome_hero_light.png';
+    final asset = isDark
+        ? 'assets/illustrations/welcome_hero_dark.png'
+        : 'assets/illustrations/welcome_hero_light.png';
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.large),

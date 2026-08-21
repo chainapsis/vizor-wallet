@@ -110,9 +110,7 @@ void main() {
     );
   });
 
-  testWidgets('uses the darker modal layer in dark mode', (
-    tester,
-  ) async {
+  testWidgets('uses the darker modal layer in dark mode', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_welcomeScreen(theme: AppThemeData.dark));
 
@@ -131,10 +129,7 @@ void main() {
       find.byKey(const ValueKey('network_privacy_surface')),
     );
     final privacyDecoration = privacySurface.decoration as BoxDecoration;
-    expect(
-      privacyDecoration.color,
-      AppThemeData.dark.colors.background.ground,
-    );
+    expect(privacyDecoration.color, AppThemeData.dark.colors.background.ground);
     expect(privacyDecoration.border, isNull);
   });
 
@@ -177,11 +172,10 @@ void main() {
         GoRoute(path: '/home', builder: (_, _) => const Text('Home')),
         GoRoute(
           path: '/accounts',
-          builder:
-              (context, _) => TextButton(
-                onPressed: () => context.push('/add-account'),
-                child: const Text('Open add account'),
-              ),
+          builder: (context, _) => TextButton(
+            onPressed: () => context.push('/add-account'),
+            child: const Text('Open add account'),
+          ),
         ),
         GoRoute(
           path: '/add-account',
@@ -204,10 +198,9 @@ void main() {
 Future<void> _loadAppFonts() async {
   final youngSerif = FontLoader('Young Serif')
     ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
-  final geist =
-      FontLoader('Geist')
-        ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-        ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
 
   await Future.wait([youngSerif.load(), geist.load()]);
 }

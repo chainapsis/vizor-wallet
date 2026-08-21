@@ -30,27 +30,21 @@ void main() {
 
     test('rejects a tampered checksum', () {
       expect(
-        decodeSegwitAddress(
-          'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5',
-        ),
+        decodeSegwitAddress('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5'),
         isNull,
       );
     });
 
     test('rejects mixed case', () {
       expect(
-        decodeSegwitAddress(
-          'bc1qw508d6qejxtdg4y5r3zarvarY0c5xw7kv8f3t4',
-        ),
+        decodeSegwitAddress('bc1qw508d6qejxtdg4y5r3zarvarY0c5xw7kv8f3t4'),
         isNull,
       );
     });
 
     test('rejects the wrong human-readable prefix (tb = testnet)', () {
       expect(
-        decodeSegwitAddress(
-          'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-        ),
+        decodeSegwitAddress('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'),
         isNull,
       );
     });

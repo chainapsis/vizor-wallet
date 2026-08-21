@@ -71,12 +71,12 @@ class BiometricUnlockNotifier extends AsyncNotifier<BiometricUnlockState> {
   @override
   Future<BiometricUnlockState> build() async {
     final availability = await _service.availability();
-    final enabled = await _store.readPlain(kBiometricUnlockEnabledKey) == 'true';
+    final enabled =
+        await _store.readPlain(kBiometricUnlockEnabledKey) == 'true';
     return BiometricUnlockState(availability: availability, enabled: enabled);
   }
 
-  Future<BiometricUnlockState> _current() async =>
-      state.value ?? await future;
+  Future<BiometricUnlockState> _current() async => state.value ?? await future;
 
   /// Writes the escrow for [passcode] and flips the flag on.
   Future<void> enable(String passcode) async {

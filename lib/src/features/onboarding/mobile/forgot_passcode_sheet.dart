@@ -121,8 +121,9 @@ class _ForgotPasscodeLastWarningContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final resetLabel =
-        _armed ? 'Reset Vizor' : 'Reset after ${_remainingSeconds}s...';
+    final resetLabel = _armed
+        ? 'Reset Vizor'
+        : 'Reset after ${_remainingSeconds}s...';
     return MobileModalScaffold(
       title: 'Are you sure?',
       onClose: () => Navigator.of(context).pop(false),

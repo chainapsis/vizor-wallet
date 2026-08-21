@@ -24,8 +24,14 @@ void main() {
 
     test('hashes a multi-word message', () {
       expect(
-        _hex(keccak256(utf8.encode('The quick brown fox jumps over the '
-            'lazy dog'))),
+        _hex(
+          keccak256(
+            utf8.encode(
+              'The quick brown fox jumps over the '
+              'lazy dog',
+            ),
+          ),
+        ),
         '4d741b6f1eb29cb2a9b9911c82f56fa8d73b04959d3d9d222895df6c0b28aa15',
       );
     });

@@ -4,11 +4,12 @@
 //! helper that the FRB layer in `api/sync.rs` or the C FFI layer in
 //! `ffi.rs` calls per user action:
 //!
-//!   - Balance / address queries (`get_wallet_balance`,
-//!     `get_next_available_address`).
-//!   - Transaction list + on-chain enhancement requests
-//!     (`get_transaction_history`, `get_transaction_data_requests`,
-//!     `decrypt_and_store_transaction`, `set_transaction_status`).
+//! - Balance / address queries (`get_wallet_balance`,
+//!   `get_next_available_address`).
+//! - Transaction list + on-chain enhancement requests
+//!   (`get_transaction_history`, `get_transaction_data_requests`,
+//!   `decrypt_and_store_transaction`, `set_transaction_status`).
+//!
 //! None of these belong to the orchestration loop — the loop lives
 //! in `sync_engine/mod.rs`. They're one-shot lookups the UI drives
 //! directly, so extracting them into their own submodule keeps
@@ -97,7 +98,7 @@ impl WalletBalance {
     }
 }
 
-pub fn get_wallet_balance(
+pub(crate) fn get_wallet_balance(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
@@ -120,7 +121,7 @@ pub fn get_wallet_balance(
 /// missing from the summary yields `AccountUnavailable` rather than an
 /// error, matching the single-account behaviour, so one unknown account
 /// cannot fail the whole batch.
-pub fn get_wallet_balances(
+pub(crate) fn get_wallet_balances(
     db_path: &str,
     network: WalletNetwork,
     account_uuids: &[&str],
@@ -265,7 +266,7 @@ pub(crate) struct TxDataRequest {
     pub block_range_end: Option<u64>,
 }
 
-pub fn get_transaction_data_requests(
+pub(crate) fn get_transaction_data_requests(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<Vec<TxDataRequest>, String> {
@@ -584,7 +585,7 @@ struct ClassifiedTx {
     row_order: u8,
 }
 
-pub fn get_transaction_history(
+pub(crate) fn get_transaction_history(
     db_path: &str,
     _network: WalletNetwork,
     limit: Option<u32>,
@@ -812,7 +813,7 @@ fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Opti
     .map_err(|e| format!("Query error: {e}"))
 }
 
-pub fn get_transaction_detail(
+pub(crate) fn get_transaction_detail(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,

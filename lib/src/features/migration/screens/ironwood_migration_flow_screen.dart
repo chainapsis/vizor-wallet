@@ -67,7 +67,6 @@ part 'ironwood_migration_flow/private_status.dart';
 part 'ironwood_migration_flow/private_review.dart';
 part 'ironwood_migration_flow/immediate_review.dart';
 part 'ironwood_migration_flow/schedule.dart';
-part 'ironwood_migration_flow/migration_progress_segments.dart';
 part 'ironwood_migration_flow/migration_batch_status.dart';
 part 'ironwood_migration_flow/transfer_status.dart';
 part 'ironwood_migration_flow/review_plan.dart';

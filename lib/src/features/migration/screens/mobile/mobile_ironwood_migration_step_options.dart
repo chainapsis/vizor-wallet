@@ -165,48 +165,10 @@ class _MobileMigrationOptionCard extends StatelessWidget {
   }
 }
 
-const _mobileMigrationPlanRevealDuration = Duration(milliseconds: 2000);
-const _mobileMigrationReviewCompactContentHeight = 430.0;
-const _mobileMigrationPlanBarMorphStartMilliseconds = 420;
-const _mobileMigrationPlanBarMorphMilliseconds = 700;
-const _mobileMigrationPlanBarStyleStaggerMilliseconds = 70;
-const _mobileMigrationPlanBarStyleMaxDelayMilliseconds = 350;
-const _mobileMigrationPlanRowStartMilliseconds = 1200;
-const _mobileMigrationPlanRowStaggerMilliseconds = 70;
-const _mobileMigrationPlanRowMaxDelayMilliseconds = 350;
-const _mobileMigrationPlanInitialBarWidth = 196.0;
-const _mobileMigrationPlanInitialBarHeight = 12.0;
 const _mobileMigrationPlanFinalBarHeight = 20.0;
 const _mobileMigrationPlanBarGap = 8.0;
-const _mobileMigrationPlanBarMorphCurve = Cubic(0.77, 0, 0.175, 1);
 const _mobileMigrationPartRowExtent = 48.0;
 const _mobileMigrationPartRowContentExtent = 24.0;
-const _mobileMigrationPartListMaxHeight = 264.0;
-const _mobileMigrationPlanSummaryLayoutGap = 41.0;
-const _mobileMigrationPlanSummaryVisualOffset = 12.5;
 const _mobileMigrationPartLabelWidth = 70.0;
 const _mobileMigrationPartValueWidth = 130.0;
 const _mobileMigrationPartStatusWidth = 130.0;
-
-double _mobileMigrationPartListContentHeight(int count) {
-  if (count <= 0) return 0;
-  return ((count - 1) * _mobileMigrationPartRowExtent) +
-      _mobileMigrationPartRowContentExtent;
-}
-
-Animation<double> _mobileMigrationPlanRevealAnimation(
-  Animation<double> parent, {
-  required int startMilliseconds,
-  required int durationMilliseconds,
-  Curve curve = _migrationAnalysisEaseOut,
-}) {
-  final totalMilliseconds = _mobileMigrationPlanRevealDuration.inMilliseconds
-      .toDouble();
-  final begin = (startMilliseconds / totalMilliseconds).clamp(0.0, 1.0);
-  final end = ((startMilliseconds + durationMilliseconds) / totalMilliseconds)
-      .clamp(0.0, 1.0);
-  return CurvedAnimation(
-    parent: parent,
-    curve: Interval(begin, end, curve: curve),
-  );
-}

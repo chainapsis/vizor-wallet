@@ -9,10 +9,7 @@ void main() {
     expect(style.statusBarColor, AppColors.light.background.window);
     expect(style.statusBarIconBrightness, Brightness.dark);
     expect(style.systemStatusBarContrastEnforced, isFalse);
-    expect(
-      style.systemNavigationBarColor,
-      AppColors.light.background.window,
-    );
+    expect(style.systemNavigationBarColor, AppColors.light.background.window);
     expect(
       style.systemNavigationBarDividerColor,
       AppColors.light.background.window,
@@ -26,10 +23,7 @@ void main() {
     expect(style.statusBarColor, AppColors.dark.background.window);
     expect(style.statusBarIconBrightness, Brightness.light);
     expect(style.systemStatusBarContrastEnforced, isFalse);
-    expect(
-      style.systemNavigationBarColor,
-      AppColors.dark.background.window,
-    );
+    expect(style.systemNavigationBarColor, AppColors.dark.background.window);
     expect(
       style.systemNavigationBarDividerColor,
       AppColors.dark.background.window,

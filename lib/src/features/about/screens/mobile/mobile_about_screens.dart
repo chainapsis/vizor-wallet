@@ -187,8 +187,11 @@ class _LinkButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(iconName, size: AppIconSize.medium,
-                  color: colors.icon.accent),
+              AppIcon(
+                iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.accent,
+              ),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 label,

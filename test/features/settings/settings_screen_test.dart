@@ -241,10 +241,7 @@ void main() {
     );
 
     expect(
-      actionFor(
-        torEnabled: false,
-        status: NetworkPrivacyConnectionStatus.off,
-      ),
+      actionFor(torEnabled: false, status: NetworkPrivacyConnectionStatus.off),
       NetworkPrivacyToggleAction.enable,
     );
     expect(

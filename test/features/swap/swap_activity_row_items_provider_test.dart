@@ -91,7 +91,8 @@ void main() {
             id: 'storage-failed-broadcast',
             depositDeadline: future,
             depositTxHash: 'storage-failed-txid',
-            broadcastStatus: SwapDepositBroadcastStatus.broadcastedStorageFailed,
+            broadcastStatus:
+                SwapDepositBroadcastStatus.broadcastedStorageFailed,
           ),
           // Provider observed the source-chain deposit -> confirmed -> counted.
           _pendingCountRecord(

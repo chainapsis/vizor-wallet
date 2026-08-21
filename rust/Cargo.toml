@@ -169,6 +169,19 @@ features = ["zakura"]
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
+[lints.clippy]
+# These shapes are intentional at FFI/API boundaries or in transaction
+# orchestration code. Refactoring them solely to satisfy style lints would add
+# indirection without improving runtime safety.
+too_many_arguments = "allow"
+not_unsafe_ptr_arg_deref = "allow"
+type_complexity = "allow"
+should_implement_trait = "allow"
+# Test-only helpers intentionally sit next to the production code they verify,
+# and several assertions document cfg-dependent invariants.
+items_after_test_module = "allow"
+assertions_on_constants = "allow"
+
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
 # debug opt-level=0, so keep debug assertions and symbols while making local
@@ -179,4 +192,3 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
-

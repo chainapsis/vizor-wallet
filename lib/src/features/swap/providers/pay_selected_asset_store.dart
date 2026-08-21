@@ -33,9 +33,7 @@ class AppSecureStorePaySelectedAssetStore implements PaySelectedAssetStore {
 
   @override
   Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
-    final raw = await _storage.readString(
-      _paySelectedAssetKeyFor(accountUuid),
-    );
+    final raw = await _storage.readString(_paySelectedAssetKeyFor(accountUuid));
     if (raw == null || raw.trim().isEmpty) {
       return null;
     }

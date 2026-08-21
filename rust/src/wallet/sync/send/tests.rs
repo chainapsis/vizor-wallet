@@ -1947,7 +1947,7 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     );
     assert!(!pczt.orchard().actions().is_empty());
     assert!(pczt.ironwood().actions().is_empty());
-    assert_eq!(result.needs_sapling_params, false);
+    assert!(!result.needs_sapling_params);
     assert!(result.fee_zatoshi > 0);
     assert!(result.shielded_zatoshi > 0);
 }
@@ -2022,7 +2022,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     );
     assert!(!pczt.ironwood().actions().is_empty());
     assert!(pczt.orchard().actions().is_empty());
-    assert_eq!(result.needs_sapling_params, false);
+    assert!(!result.needs_sapling_params);
     assert!(result.fee_zatoshi > 0);
     assert!(result.shielded_zatoshi > 0);
 }
@@ -2347,7 +2347,7 @@ fn scheduled_storage_failure_after_acceptance_marks_broadcasted() {
         MIGRATION_TEST_ACCOUNT,
         WalletNetwork::Test,
         &plan,
-        &[selected_note.clone()],
+        std::slice::from_ref(&selected_note),
         Vec::new(),
         vec![migration_test_stage(
             denomination_input_txid,

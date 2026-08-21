@@ -29,19 +29,20 @@ pub(crate) use split_plan::{
     plan_padded_denominations_without_refinement, SplitStageInput, SplitTerminalKind,
     DENOMINATION_SPLIT_ACTIONS,
 };
+#[cfg(test)]
+pub(crate) use stages::all_denomination_stages_confirmed;
 #[allow(unused_imports)]
 pub(crate) use stages::{
-    all_denomination_stages_confirmed, denomination_stage_chain_records,
-    denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
-    denomination_stages_for_run, expired_broadcasted_denomination_stage_count,
-    expired_unbroadcast_denomination_stage_count, insert_denomination_stages_with_tx,
-    locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
-    mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
-    promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
-    reset_denomination_stage_exact, reset_denomination_stage_for_reorg, DenominationStage,
-    DenominationStageChainRecord, DenominationStageInputRef, DenominationStageInsert,
-    DenominationStageOutputKind, DenominationStageOutputRef, DenominationStageStatus,
-    DenominationStageStatusCounts, PendingRawDenominationStage,
+    denomination_stage_chain_records, denomination_stage_expected_txids,
+    denomination_stage_status_counts, denomination_stages_for_run,
+    expired_broadcasted_denomination_stage_count, expired_unbroadcast_denomination_stage_count,
+    insert_denomination_stages_with_tx, locked_denomination_stage_input_outpoints,
+    mark_denomination_stage_broadcasted, mark_denomination_stage_confirmed_at,
+    pending_raw_denomination_stages, promote_awaiting_denomination_stage,
+    replace_denomination_stage_confirmation_identity, reset_denomination_stage_exact,
+    DenominationStage, DenominationStageChainRecord, DenominationStageInputRef,
+    DenominationStageInsert, DenominationStageOutputKind, DenominationStageOutputRef,
+    DenominationStageStatus, DenominationStageStatusCounts, PendingRawDenominationStage,
 };
 use stages::{STAGES_TABLE, STAGE_INPUTS_TABLE, STAGE_OUTPUTS_TABLE};
 
@@ -205,7 +206,6 @@ pub(crate) struct SignedMigrationPcztInsert {
 }
 
 pub(crate) struct SignedMigrationPczt {
-    pub message_id: String,
     pub child_index: u32,
     pub base_pczt: Vec<u8>,
     /// Decoded compact spend-authorization signatures for this child (see
@@ -1988,6 +1988,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn set_run_approved_schedule(
     db_path: &str,
     run_id: &str,
@@ -2031,20 +2032,6 @@ pub(crate) fn approved_schedule_for_run(
         .map_err(|e| format!("Read approved migration schedule: {e}"))?;
     serde_json::from_str(&schedule_json)
         .map_err(|e| format!("Decode approved migration schedule: {e}"))
-}
-
-pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u64>, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let target_values_json = conn
-        .query_row(
-            &format!("SELECT target_values_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
-            params![run_id],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| format!("Read migration target values: {e}"))?;
-    serde_json::from_str(&target_values_json)
-        .map_err(|e| format!("Decode migration target values: {e}"))
 }
 
 pub(crate) fn signed_schedule_origin_for_run(
@@ -2604,7 +2591,6 @@ pub(crate) fn signed_child_pczts_for_run(
             .map_err(|e| format!("Decode signed migration PCZT metadata: {e}"))?;
 
         signed.push(SignedMigrationPczt {
-            message_id,
             child_index,
             base_pczt: base_pczt.to_vec(),
             sigs,
@@ -2749,7 +2735,7 @@ fn unpromoted_signed_child_note_outpoints_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<Vec<(String, u32)>, String> {
-    let pending = pending_migration_note_outpoints_with_conn(&conn, run_id)?;
+    let pending = pending_migration_note_outpoints_with_conn(conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT selected_note_json
@@ -5168,11 +5154,11 @@ fn update_run_after_pending_broadcast(
     run_id: &str,
     now: i64,
 ) -> Result<(), String> {
-    let needs_resign_remaining = count_pending_with_status(&tx, run_id, "needs_resign")?;
-    let scheduled_remaining = count_pending_with_status(&tx, run_id, "scheduled")?;
-    let pending_count = count_for_run(&tx, PENDING_TXS_TABLE, run_id)?;
-    let planned_count = planned_part_count_with_conn(&tx, run_id)?;
-    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(&tx, run_id)?;
+    let needs_resign_remaining = count_pending_with_status(tx, run_id, "needs_resign")?;
+    let scheduled_remaining = count_pending_with_status(tx, run_id, "scheduled")?;
+    let pending_count = count_for_run(tx, PENDING_TXS_TABLE, run_id)?;
+    let planned_count = planned_part_count_with_conn(tx, run_id)?;
+    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(tx, run_id)?;
     let fully_materialized =
         planned_count > 0 && pending_count == planned_count && unpromoted_count == 0;
     let next_phase = if needs_resign_remaining > 0 {
@@ -5441,7 +5427,7 @@ fn prepared_notes_proof_ready_height_with_conn(
 
     let mut ready_height = 0u32;
     for txid in txids {
-        let Some(identity) = local_denomination_chain_identity(&conn, &txid)? else {
+        let Some(identity) = local_denomination_chain_identity(conn, &txid)? else {
             return Ok(None);
         };
         ready_height = ready_height.max(proof_ready_height_for_note_mined_height(
@@ -6283,9 +6269,11 @@ fn migration_preparation_transactions_for_run(
         // because the UI uses it to preserve transaction order; only its
         // completion forecast should continue moving until it is mined.
         let projected_height = effective_height.max(dependency_projection).max(
-            (state == MigrationPreparationTransactionState::Scheduled)
-                .then_some(current_scanned_height)
-                .unwrap_or(0),
+            if state == MigrationPreparationTransactionState::Scheduled {
+                current_scanned_height
+            } else {
+                0
+            },
         );
         let projected_completion_height = mined_height.map_or_else(
             || {
@@ -7435,7 +7423,7 @@ fn synced_orchard_confirmation_count(
             )
             .map_err(|e| format!("Read latest Orchard checkpoint: {e}"))?;
 
-        return Ok(latest_checkpoint
+        Ok(latest_checkpoint
             .map(|checkpoint| {
                 if checkpoint < height {
                     0
@@ -7444,7 +7432,7 @@ fn synced_orchard_confirmation_count(
                 }
             })
             .unwrap_or(0)
-            .min(denomination_confirmations_required()));
+            .min(denomination_confirmations_required()))
     }
 
     #[cfg(not(test))]

@@ -12,7 +12,12 @@ int eventIntFromTxEventsJson(
   String roundId,
   String key,
 ) {
-  final value = eventAttributeFromTxEventsJson(eventsJson, eventType, roundId, key);
+  final value = eventAttributeFromTxEventsJson(
+    eventsJson,
+    eventType,
+    roundId,
+    key,
+  );
   final parsed = int.tryParse(value ?? '');
   if (parsed == null) {
     throw StateError('Missing $eventType $key.');
@@ -21,10 +26,8 @@ int eventIntFromTxEventsJson(
 }
 
 /// Parses `cast_vote` leaf-index payloads encoded as `"van,vc_tree_position"`.
-({int vanPosition, BigInt vcTreePosition}) castVoteLeafPositionsFromTxEventsJson(
-  String eventsJson,
-  String roundId,
-) {
+({int vanPosition, BigInt vcTreePosition})
+castVoteLeafPositionsFromTxEventsJson(String eventsJson, String roundId) {
   final raw = eventAttributeFromTxEventsJson(
     eventsJson,
     'cast_vote',

@@ -116,7 +116,7 @@ where
 
     if let Some(cached) = entry.cached.as_ref() {
         let current = epoch_fn();
-        if current == cached.epoch && current % 2 == 0 && Path::new(db_path).exists() {
+        if current == cached.epoch && current.is_multiple_of(2) && Path::new(db_path).exists() {
             return Ok(cached.summary.clone());
         }
         // Stale epoch, write in progress, or DB file replaced/deleted.
@@ -134,7 +134,7 @@ where
     };
 
     let epoch_after = epoch_fn();
-    if epoch_before == epoch_after && epoch_before % 2 == 0 {
+    if epoch_before == epoch_after && epoch_before.is_multiple_of(2) {
         entry.cached = Some(CacheEntry {
             epoch: epoch_before,
             summary: loaded.clone(),
@@ -594,7 +594,7 @@ mod tests {
         // The reload assertions below absorb that as a lower bound, but a
         // cache *hit* cannot be expressed that way -- so only assert it when
         // no write intervened.
-        if epoch_before == wallet_db_write_epoch() && epoch_before % 2 == 0 {
+        if epoch_before == wallet_db_write_epoch() && epoch_before.is_multiple_of(2) {
             assert_eq!(loads.load(Ordering::SeqCst), 1);
         }
 

@@ -95,9 +95,7 @@ void main() {
     );
   });
 
-  testWidgets('mobile deposit QR uses the shared dotted shape', (
-    tester,
-  ) async {
+  testWidgets('mobile deposit QR uses the shared dotted shape', (tester) async {
     await tester.pumpWidget(_harness(_content()));
 
     final decoration = _qrDecoration(tester);

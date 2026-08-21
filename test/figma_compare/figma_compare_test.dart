@@ -6,7 +6,11 @@ import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_scenarios.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
+import 'figma_compare_font_loader.dart';
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
+
   test('comparison scenarios have stable unique IDs', () {
     final ids = figmaCompareScenarios.map((scenario) => scenario.id).toList();
 

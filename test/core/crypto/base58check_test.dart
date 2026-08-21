@@ -18,10 +18,7 @@ void main() {
 
     test('rejects a tampered checksum', () {
       // Genesis address with the last character changed.
-      expect(
-        base58CheckDecode('1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb'),
-        isNull,
-      );
+      expect(base58CheckDecode('1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb'), isNull);
     });
 
     test('rejects non-base58 characters', () {

@@ -6,8 +6,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/swap_chain_txid.dart';
 
-typedef PayDepositTransactionQuery =
-    ({String accountUuid, String depositTxid});
+typedef PayDepositTransactionQuery = ({String accountUuid, String depositTxid});
 
 typedef PayDepositTransactionLoader =
     Future<rust_sync.TransactionInfo?> Function({
@@ -41,22 +40,23 @@ final payDepositTransactionLoaderProvider =
 /// Scoped to the Pay activity detail currently on screen. A completed sync
 /// invalidates the lookup so a previously unmined deposit can reveal its real
 /// fee without keeping a full-history cache alive globally.
-final payDepositTransactionProvider = FutureProvider.autoDispose.family<
-  rust_sync.TransactionInfo?,
-  PayDepositTransactionQuery
->((ref, query) async {
-  ref.watch(
-    syncProvider.select((sync) {
-      final value = sync.value;
-      if (value?.accountUuid != query.accountUuid) return null;
-      return value?.lastSyncCompletedAt;
-    }),
-  );
+final payDepositTransactionProvider = FutureProvider.autoDispose
+    .family<rust_sync.TransactionInfo?, PayDepositTransactionQuery>((
+      ref,
+      query,
+    ) async {
+      ref.watch(
+        syncProvider.select((sync) {
+          final value = sync.value;
+          if (value?.accountUuid != query.accountUuid) return null;
+          return value?.lastSyncCompletedAt;
+        }),
+      );
 
-  final walletTxid = swapChainTxidToWalletTxidHex(query.depositTxid);
-  if (walletTxid == null) return null;
-  return ref.read(payDepositTransactionLoaderProvider)(
-    accountUuid: query.accountUuid,
-    walletTxid: walletTxid,
-  );
-});
+      final walletTxid = swapChainTxidToWalletTxidHex(query.depositTxid);
+      if (walletTxid == null) return null;
+      return ref.read(payDepositTransactionLoaderProvider)(
+        accountUuid: query.accountUuid,
+        walletTxid: walletTxid,
+      );
+    });

@@ -756,7 +756,7 @@ fn retry_store_then_pending_migration_policy_rebuild_message(
     pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
 }
 
-pub fn propose_send(
+pub(crate) fn propose_send(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
@@ -1717,24 +1717,23 @@ fn build_orchard_migration_immediate_pczt(
             .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
             .map_err(|e| format!("Failed to read anchor height: {e}"))?
             .ok_or("Wallet must sync before migrating")?;
-        let orchard_notes =
-            select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?
-                .into_iter()
-                .map(|note| {
-                    db.get_spendable_note(
-                        note.txid(),
-                        ShieldedPool::Orchard,
-                        note.output_index() as u32,
-                        target_height,
-                        LockFilter::Policy(&LockedInputPolicy::Exclude),
-                    )
-                    .map_err(|e| format!("Revalidate Immediate migration input: {e}"))
-                    .map(|spendable| spendable.map(|_| note))
-                })
-                .collect::<Result<Vec<_>, String>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
+        let orchard_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?
+            .into_iter()
+            .map(|note| {
+                db.get_spendable_note(
+                    note.txid(),
+                    ShieldedPool::Orchard,
+                    note.output_index() as u32,
+                    target_height,
+                    LockFilter::Policy(&LockedInputPolicy::Exclude),
+                )
+                .map_err(|e| format!("Revalidate Immediate migration input: {e}"))
+                .map(|spendable| spendable.map(|_| note))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         let valued_notes = orchard_notes
             .into_iter()
             .map(|note| {
@@ -1775,19 +1774,15 @@ fn build_orchard_migration_immediate_pczt(
                 )
             })
             .collect::<Vec<_>>();
-        let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
-            &mut db,
-            network,
-            BlockHeight::from(anchor_height),
-            &orchard_notes,
-        )?;
+        let (orchard_anchor, orchard_inputs) =
+            migration_orchard_witnesses(&mut db, network, anchor_height, &orchard_notes)?;
         let fee_rule = ConservativeZip317FeeRule;
         let make_builder = |amount: Zatoshis| {
             let mut builder = migration_child_builder(
                 network,
                 BlockHeight::from(target_height),
                 BlockHeight::from(target_height),
-                orchard_anchor.clone(),
+                orchard_anchor,
             )?;
             for (note, merkle_path) in &orchard_inputs {
                 builder
@@ -4132,8 +4127,7 @@ fn orchard_anchor_and_witnesses_for_denomination_inputs(
     // transaction spends it. After a reorg we need to reprove the same signed
     // effecting data, so the old unmined authorization must not hide the
     // stage-owned input from recovery.
-    let available_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let available_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
 
     let mut selected_notes = Vec::with_capacity(inputs.len());
     let mut nullifiers = Vec::with_capacity(inputs.len());
@@ -4217,8 +4211,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before finalizing migration")?;
-    let available_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let available_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     let Some(selected) = available_notes.iter().find(|selected| {
         format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
             && selected.output_index() as u32 == note_ref.output_index
@@ -4342,8 +4335,7 @@ fn orchard_witness_is_available_for_prepared_note(
     else {
         return Ok(false);
     };
-    let available_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let available_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     let Some(selected) = available_notes.iter().find(|selected| {
         format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
             && selected.output_index() as u32 == note_ref.output_index

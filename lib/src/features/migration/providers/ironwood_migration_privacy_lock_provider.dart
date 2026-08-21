@@ -35,6 +35,7 @@ class IronwoodMigrationPrivacyLockSuppressionNotifier
   }
 
   void release(IronwoodMigrationPrivacyLockSuppression suppression) {
+    if (!ref.mounted) return;
     if (state?.token != suppression.token) return;
     state = null;
   }

@@ -99,7 +99,10 @@ void main() {
 
       logE2e('funding after primary recovery');
       await _fundWallet('0.25');
-      await _waitForAnyShieldedBalance(tester, {'2 $mobileE2eTicker', '2.00 $mobileE2eTicker'});
+      await _waitForAnyShieldedBalance(tester, {
+        '2 $mobileE2eTicker',
+        '2.00 $mobileE2eTicker',
+      });
 
       logE2e('making primary proxy unavailable');
       proxy.setDown();
