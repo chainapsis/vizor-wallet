@@ -166,25 +166,6 @@ version = "=0.5.1"
 default-features = false
 features = ["zakura"]
 
-# TEMPORARY: local replace while zcash_voting 3.1.0-rc.5 is unpublished.
-#
-# rc.5 makes `VotingDb::effective_bundle_policy` and
-# `minimum_voting_eligibility_and_plan_for_notes` public so the voting-power
-# preview can resolve a round's authoritative bundle policy and plan once,
-# instead of reconstructing either downstream. Delete this stanza once rc.5 is
-# on crates.io; the `=3.1.0-rc.5` pin above then resolves normally.
-#
-# Assumes the sibling checkout layout `~/projects/{vizor-wallet,zcash_voting}`.
-[patch.crates-io]
-zcash_voting = { path = "../../zcash_voting/zcash_voting" }
-# The patched zcash_voting depends on its workspace siblings by path, so these
-# must be patched too. Without them the graph carries two copies of the vote
-# commitment tree crypto backend -- the path one behind zcash_voting and the
-# crates.io one behind this crate's dev-dependency -- which is exactly the
-# lockstep AGENTS.md requires these crates to keep.
-vote-commitment-tree = { path = "../../zcash_voting/vote-commitment-tree" }
-vote-commitment-tree-client = { path = "../../zcash_voting/vote-commitment-tree-client" }
-
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
