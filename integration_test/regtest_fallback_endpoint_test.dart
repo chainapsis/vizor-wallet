@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import 'support/desktop_onboarding_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 const _mnemonic =
@@ -79,6 +80,7 @@ void main() {
       _log('making primary proxy unavailable before sync starts');
       proxy.setDown();
       await _tapButton(tester, const ValueKey('set_password_submit_button'));
+      await finishDesktopAccountCustomisation(tester);
 
       await _pumpUntil(
         tester,

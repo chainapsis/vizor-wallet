@@ -114,13 +114,14 @@ class RegtestLightwalletdProxy
     }
   }
 
-  service.BlockID _withModeHeight(service.BlockID block) {
+  Future<service.BlockID> _withModeHeight(service.BlockID block) async {
     final slowHeight = _slowHeight;
     if (_mode != _ProxyMode.slowHeight || slowHeight == null) return block;
     if (block.height.toInt() <= slowHeight) return block;
-    final copy = block.deepCopy();
-    copy.height = Int64(slowHeight);
-    return copy;
+    final compactBlock = await _client.getBlock(
+      service.BlockID(height: Int64(slowHeight)),
+    );
+    return service.BlockID(height: Int64(slowHeight), hash: compactBlock.hash);
   }
 
   service.LightdInfo _withModeInfoHeight(service.LightdInfo info) {

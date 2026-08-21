@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import 'support/desktop_onboarding_flow.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
@@ -80,6 +81,7 @@ void main() {
       );
       proxy.stallNextAddressUtxosStreamAfterHeaders();
       await tapAppButton(tester, const ValueKey('set_password_submit_button'));
+      await finishDesktopAccountCustomisation(tester);
 
       await pumpUntil(
         tester,
@@ -88,7 +90,21 @@ void main() {
         timeout: const Duration(seconds: 60),
       );
       expect(rust_sync.isSyncRunning(), isTrue);
-      expect(find.text('0% Syncing...'), findsOneWidget);
+      final visibleSyncLabels = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((widget) => widget.data)
+          .whereType<String>()
+          .where((label) => label.contains('Sync'))
+          .toList();
+      e2eLog(
+        'visible sync labels while UTXO stream is stalled: '
+        '$visibleSyncLabels',
+      );
+      expect(visibleSyncLabels, hasLength(1));
+      expect(
+        visibleSyncLabels.single,
+        matches(RegExp(r'^\d+% Syncing\.\.\.$')),
+      );
       e2eLog('reproduced the pre-progress sync wait');
 
       await pumpUntil(

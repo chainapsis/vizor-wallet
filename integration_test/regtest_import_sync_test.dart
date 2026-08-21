@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import 'support/desktop_onboarding_flow.dart';
+
 const _mnemonic =
     'abandon abandon abandon abandon abandon abandon abandon abandon abandon '
     'abandon abandon about';
@@ -46,19 +48,13 @@ void main() {
         _mnemonic,
       );
       _log('entering BIP39 passphrase');
-      await _tapButton(
-        tester,
-        const ValueKey('bip39_passphrase_action'),
-      );
+      await _tapButton(tester, const ValueKey('bip39_passphrase_action'));
       await _enterText(
         tester,
         const ValueKey('bip39_passphrase_field'),
         _bip39Passphrase,
       );
-      await _tapButton(
-        tester,
-        const ValueKey('bip39_passphrase_save_button'),
-      );
+      await _tapButton(tester, const ValueKey('bip39_passphrase_save_button'));
       await _tapButton(tester, const ValueKey('import_secret_submit_button'));
 
       _log('skipping birthday');
@@ -80,6 +76,7 @@ void main() {
         _password,
       );
       await _tapButton(tester, const ValueKey('set_password_submit_button'));
+      await finishDesktopAccountCustomisation(tester);
 
       await _pumpUntil(
         tester,
@@ -166,15 +163,11 @@ Future<void> _stopRustWorkForCleanup() async {
 
 Future<void> _tapButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
-  await _pumpUntil(
-    tester,
-    () {
-      if (!tester.any(finder)) return false;
-      final widget = tester.widget(finder);
-      return widget is! AppButton || widget.onPressed != null;
-    },
-    description: '$key button to be enabled',
-  );
+  await _pumpUntil(tester, () {
+    if (!tester.any(finder)) return false;
+    final widget = tester.widget(finder);
+    return widget is! AppButton || widget.onPressed != null;
+  }, description: '$key button to be enabled');
   await tester.ensureVisible(finder);
   await tester.pump(const Duration(milliseconds: 50));
   await tester.tap(finder);
