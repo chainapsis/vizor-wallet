@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -20,6 +22,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.da
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -62,10 +65,14 @@ void main() {
                   accountUuid: 'account-1',
                 ),
             ironwoodMigrationFlowData: _migrationFlowData,
+            migrationReadyToStart: true,
           ),
         );
 
-        await tester.pumpAndSettle();
+        await _pumpUntilPresent(
+          tester,
+          find.byType(IronwoodMigrationFlowScreen),
+        );
 
         expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
         expect(find.byType(SendScreen), findsNothing);
@@ -308,6 +315,7 @@ Widget _appHarness(
   IronwoodPostMigrationState ironwoodPostMigrationState =
       const IronwoodPostMigrationState.inactive(),
   IronwoodMigrationFlowData? ironwoodMigrationFlowData,
+  bool migrationReadyToStart = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -341,6 +349,18 @@ Widget _appHarness(
         ironwoodMigrationFlowDataProvider.overrideWith((ref) {
           return ironwoodMigrationFlowData;
         }),
+      if (migrationReadyToStart) ...[
+        ironwoodMigrationInputsProvider.overrideWithValue(
+          _readyMigrationInputs,
+        ),
+        walletDbPathGetterProvider.overrideWithValue(
+          () async => '/tmp/wallet.db',
+        ),
+        orchardMigrationStatusGetterProvider.overrideWithValue(
+          ({required dbPath, required network, required accountUuid}) async =>
+              _readyMigrationStatus,
+        ),
+      ],
     ],
     child: const ZcashWalletApp(),
   );
@@ -394,6 +414,45 @@ AppBootstrapState _bootstrap(
 final _syncedSyncState = SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
+);
+
+final _readyMigrationInputs = IronwoodMigrationInputs(
+  ironwoodActiveAtTip: true,
+  network: 'main',
+  accountUuid: 'account-1',
+  accountName: 'Account 1',
+  profilePictureId: 'pfp-03',
+  hasAccountScopedData: true,
+  isSyncing: false,
+  isBackgroundMode: false,
+  isSyncComplete: true,
+  hasSyncFailure: false,
+  orchardBalance: BigInt.from(10_000_000),
+  orchardPendingBalance: BigInt.zero,
+  ironwoodBalance: BigInt.zero,
+  ironwoodPendingBalance: BigInt.zero,
+);
+
+final _readyMigrationStatus = rust_sync.MigrationStatus(
+  phase: kIronwoodMigrationReadyPhase,
+  targetValuesZatoshi: frb.Uint64List.fromList(const []),
+  preparedNoteCount: 0,
+  denominationConfirmationCount: 0,
+  denominationConfirmationTarget: 0,
+  denominationSplitCompletedCount: 0,
+  denominationSplitTotalCount: 0,
+  pendingTxCount: 0,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 0,
+  totalCount: 0,
+  signedChildPcztCount: 0,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 40,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  scheduledBroadcasts: const [],
+  parts: const [],
 );
 
 class _FakeSwapActivityStore implements SwapActivityStore {
