@@ -13,6 +13,9 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/desktop_activity_flow.dart';
+import 'support/desktop_onboarding_flow.dart';
+
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
@@ -161,6 +164,7 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('first wallet imported');
 }
@@ -179,6 +183,7 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
     tester,
     const ValueKey('unknown_birthday_confirm_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('second wallet imported');
 }
@@ -304,7 +309,9 @@ Future<T> _zcashdRpc<T>(
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
-  if (tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text')))) {
+  if (tester.any(
+    find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+  )) {
     return;
   }
   await _tapWidget(tester, const ValueKey('sidebar_home_button'));
@@ -315,7 +322,7 @@ Future<void> _openActivity(WidgetTester tester) async {
   await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('activity_screen_row_0'))),
+    () => tester.any(desktopActivityRowFinder('activity_screen', 0)),
     description: 'activity screen rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -325,14 +332,19 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapWidget(tester, ValueKey('sidebar_account_popover_row_$accountUuid'));
+  await _tapWidget(
+    tester,
+    ValueKey('sidebar_account_popover_row_$accountUuid'),
+  );
   await _waitForHome(tester);
 }
 
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
@@ -485,7 +497,7 @@ Future<void> _expectActivityRow(
   await _pumpUntil(
     tester,
     () => _activityRowMatches(
-      _textSetIn(tester, find.byKey(key)),
+      _textSetIn(tester, desktopActivityRowFinderForKey(key)),
       title,
       amount,
       status,

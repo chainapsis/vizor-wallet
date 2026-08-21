@@ -13,7 +13,6 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
-import '../../rust/third_party/zcash_voting/round.dart' as rust_round;
 import '../../rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
 import '../../rust/third_party/zcash_voting/vote.dart' as rust_vote;
@@ -348,7 +347,7 @@ abstract interface class VotingRustApi {
     required List<int> nullifierImtRoot,
   });
 
-  Future<rust_round.BundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   });
 
@@ -605,7 +604,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_round.BundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) {
     return rust_api.setupDelegationBundles(ctx: ctx);

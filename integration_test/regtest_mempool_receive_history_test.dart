@@ -13,6 +13,9 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/desktop_activity_flow.dart';
+import 'support/desktop_onboarding_flow.dart';
+
 final _network = kZcashDefaultNetworkName;
 const _driverUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
@@ -76,7 +79,7 @@ void main() {
         final firstAccountUuid = await _accountUuidAtOrder(0);
         await _openWallet(tester);
 
-        final txid = await _fundUnmined(firstAddress, '0.25');
+        final txid = await _fundPreparedUnmined(firstAddress, '0.25');
         _log('external unmined funding txid=$txid');
         await _waitForHistoryTx(
           tester,
@@ -144,7 +147,7 @@ void main() {
         _log('pumping app');
         await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
-        await _importFirstWallet(tester);
+        await _importFirstWallet(tester, waitForHomeBalance: false);
         final firstAccountUuid = await _accountUuidAtOrder(0);
         final firstAddress = await _unifiedAddressForAccount(firstAccountUuid);
         expect(firstAddress, startsWith('uregtest1'));
@@ -291,7 +294,7 @@ void main() {
           rowKeyPrefix: 'activity_screen',
           title: 'Received',
           amount: '0.25 $_currencyTicker',
-          status: 'Failed',
+          status: 'Refunded',
           timeout: const Duration(minutes: 2),
         );
         _expectNoActivityRow(
@@ -307,7 +310,10 @@ void main() {
   }
 }
 
-Future<void> _importFirstWallet(WidgetTester tester) async {
+Future<void> _importFirstWallet(
+  WidgetTester tester, {
+  bool waitForHomeBalance = true,
+}) async {
   _log('importing first wallet');
   await _tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
   await _enterText(
@@ -332,7 +338,8 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
-  await _waitForHome(tester);
+  await finishDesktopAccountCustomisation(tester);
+  if (waitForHomeBalance) await _waitForHome(tester);
   _log('first wallet imported');
 }
 
@@ -364,19 +371,6 @@ Future<String> _unifiedAddressForAccount(String accountUuid) async {
     network: _network,
     accountUuid: accountUuid,
   );
-}
-
-Future<String> _fundUnmined(String address, String amount) async {
-  _log(
-    'requesting external unmined funding of $amount $_currencyTicker to $address',
-  );
-  final response = await _postDriver('/fund-unmined', {
-    'address': address,
-    'amount': amount,
-  }, timeout: const Duration(minutes: 5));
-  final txid = response['txid'] as String? ?? '';
-  if (txid.isEmpty) fail('E2E driver did not return a txid.');
-  return txid;
 }
 
 Future<String> _fundPreparedUnmined(String address, String amount) async {
@@ -462,7 +456,7 @@ Future<void> _openActivity(WidgetTester tester) async {
   await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('activity_screen_row_0'))),
+    () => tester.any(desktopActivityRowFinder('activity_screen', 0)),
     description: 'activity screen rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -471,7 +465,9 @@ Future<void> _openActivity(WidgetTester tester) async {
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
@@ -747,7 +743,7 @@ Future<void> _expectActivityRow(
   await _pumpUntil(
     tester,
     () => _activityRowMatches(
-      _textSetIn(tester, find.byKey(key)),
+      _textSetIn(tester, desktopActivityRowFinderForKey(key)),
       title,
       amount,
       status,
@@ -797,10 +793,13 @@ Future<void> _expectAnyActivityRow(
   await _pumpUntil(
     tester,
     () {
-      for (var i = 0; i < 10; i++) {
+      final rowCount = rowKeyPrefix == 'activity_screen'
+          ? desktopActivityRowsFinder().evaluate().length
+          : 10;
+      for (var i = 0; i < rowCount; i++) {
         final texts = _textSetIn(
           tester,
-          find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
+          desktopActivityRowFinder(rowKeyPrefix, i),
         );
         if (_activityRowMatches(texts, title, amount, status)) {
           return true;
@@ -821,9 +820,12 @@ void _expectNoActivityRow(
   required String amount,
   required String status,
 }) {
-  for (var i = 0; i < 10; i++) {
+  final rowCount = rowKeyPrefix == 'activity_screen'
+      ? desktopActivityRowsFinder().evaluate().length
+      : 10;
+  for (var i = 0; i < rowCount; i++) {
     final key = ValueKey('${rowKeyPrefix}_row_$i');
-    final texts = _textSetIn(tester, find.byKey(key));
+    final texts = _textSetIn(tester, desktopActivityRowFinder(rowKeyPrefix, i));
     if (_activityRowMatches(texts, title, amount, status)) {
       fail('Unexpected stale activity row $key: $title $amount $status');
     }
@@ -924,10 +926,7 @@ Future<void> _tapReceiveButton(WidgetTester tester) async {
     () => tester.any(find.byKey(regular)) || tester.any(find.byKey(first)),
     description: 'a home receive button to render',
   );
-  await _tapWidget(
-    tester,
-    tester.any(find.byKey(regular)) ? regular : first,
-  );
+  await _tapWidget(tester, tester.any(find.byKey(regular)) ? regular : first);
 }
 
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {

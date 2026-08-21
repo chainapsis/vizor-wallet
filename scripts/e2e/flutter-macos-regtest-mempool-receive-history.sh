@@ -27,12 +27,16 @@ if [[ "$RESET_REGTEST" == "1" ]]; then
 fi
 scripts/regtest/up.sh
 
+echo "preparing shielded faucet for fast unmined external funding"
+PREPARED_FAUCET_ZADDR="$(scripts/regtest/prepare-unmined-faucet.sh 0.35)"
+
 mkdir -p "$ROOT_DIR/.regtest"
 : > "$DRIVER_LOG"
 
 python3 -u scripts/e2e/mempool-receive-history-driver.py \
   --repo-root "$ROOT_DIR" \
   --port "$DRIVER_PORT" \
+  --prepared-faucet-zaddr "$PREPARED_FAUCET_ZADDR" \
   >"$DRIVER_LOG" 2>&1 &
 driver_pid="$!"
 

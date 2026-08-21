@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import 'support/desktop_onboarding_flow.dart';
+
 const _mnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -73,6 +75,7 @@ void main() {
         _password,
       );
       await _tapButton(tester, const ValueKey('set_password_submit_button'));
+      await finishDesktopAccountCustomisation(tester);
 
       await _pumpUntil(
         tester,

@@ -6,7 +6,6 @@
 import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
-import '../third_party/zcash_voting/round.dart';
 import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/types.dart';
 import '../third_party/zcash_voting/vote.dart';
@@ -14,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -198,7 +197,7 @@ Future<Uint8List> generateVotingHotkey({required String network}) =>
 ///
 /// Returns an error if bundle policy parsing, opening the sidecar DB, round
 /// initialization, note selection, or bundle layout persistence fails.
-Future<BundleLayout> setupDelegationBundles({
+Future<ApiBundleLayout> setupDelegationBundles({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingSetupDelegationBundles(ctx: ctx);
 
@@ -755,13 +754,18 @@ Future<void> setBallotIntent({
   choice: choice,
 );
 
-/// Authenticate the static voting config bytes and surface the dynamic URL.
+/// Authenticate the static voting config bytes and surface the dynamic mirrors.
 ///
 /// The wallet fetches the static trust anchor with its own transport and passes
 /// the bytes here. Rust verifies the hash pin and decodes the static config,
-/// returning the `dynamic_config_url` the wallet must fetch next before calling
-/// [`resolve_voting_config`]. Config errors are returned as a flat string.
-Future<String> resolveStaticVotingConfig({
+/// returning the ordered `dynamic_config_urls` the wallet must walk before
+/// calling [`resolve_voting_config_from_attempts`].
+///
+/// The returned list is always non-empty. A v1 static config names exactly one
+/// URL and yields a single entry, so the v1 path is unchanged; a v2 config
+/// yields its full mirror list, canonical origin first. Config errors are
+/// returned as a flat string.
+Future<List<String>> resolveStaticVotingConfig({
   required String source,
   required List<int> staticBytes,
 }) => RustLib.instance.api.crateApiVotingResolveStaticVotingConfig(
@@ -772,21 +776,74 @@ Future<String> resolveStaticVotingConfig({
 /// Resolve and authenticate voting config from wallet-fetched bytes.
 ///
 /// The wallet owns transport: it fetches the static bytes, calls
-/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
-/// dynamic bytes, then passes both blobs here. Rust authenticates them and
-/// computes the config-switch classification against `previous`. Config errors
-/// are returned as a flat string; transport failures never reach this layer.
-Future<VotingConfigResolution> resolveVotingConfig({
+/// [`resolve_static_voting_config`] to learn the dynamic mirrors, fetches them
+/// in order, and passes the accumulated per-mirror outcomes here. Rust picks the
+/// first mirror that both decodes and authenticates, reports the ones it passed
+/// over, and computes the config-switch classification against `previous`.
+///
+/// Callers are expected to re-invoke this after each mirror fetch rather than
+/// gathering every mirror up front, so a healthy primary costs one request. A
+/// mirror that resolves but authenticates no rounds is deprioritized rather than
+/// skipped, so the caller should keep walking while `authenticated_rounds` is
+/// empty and accept the round-less resolution only once the list is exhausted.
+///
+/// Config errors are returned as a flat string; transport failures never reach
+/// this layer, they arrive as failed attempts.
+Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
   required String source,
   required List<int> staticBytes,
-  required List<int> dynamicBytes,
+  required List<ApiDynamicConfigAttempt> attempts,
   ResolvedVotingConfig? previous,
-}) => RustLib.instance.api.crateApiVotingResolveVotingConfig(
+}) => RustLib.instance.api.crateApiVotingResolveVotingConfigFromAttempts(
   source: source,
   staticBytes: staticBytes,
-  dynamicBytes: dynamicBytes,
+  attempts: attempts,
   previous: previous,
 );
+
+/// FRB-facing bundle layout for [`setup_delegation_bundles`].
+///
+/// Keeps the SDK's flat privacy-trim totals on the existing layout boundary so
+/// Dart can surface withheld voting power without mirroring a nested policy.
+class ApiBundleLayout {
+  final int bundleCount;
+  final BigInt eligibleWeight;
+  final int droppedCount;
+  final int privacyTrimDroppedBundles;
+  final int privacyTrimDroppedNotes;
+  final BigInt privacyTrimDroppedValueZatoshi;
+
+  const ApiBundleLayout({
+    required this.bundleCount,
+    required this.eligibleWeight,
+    required this.droppedCount,
+    required this.privacyTrimDroppedBundles,
+    required this.privacyTrimDroppedNotes,
+    required this.privacyTrimDroppedValueZatoshi,
+  });
+
+  @override
+  int get hashCode =>
+      bundleCount.hashCode ^
+      eligibleWeight.hashCode ^
+      droppedCount.hashCode ^
+      privacyTrimDroppedBundles.hashCode ^
+      privacyTrimDroppedNotes.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiBundleLayout &&
+          runtimeType == other.runtimeType &&
+          bundleCount == other.bundleCount &&
+          eligibleWeight == other.eligibleWeight &&
+          droppedCount == other.droppedCount &&
+          privacyTrimDroppedBundles == other.privacyTrimDroppedBundles &&
+          privacyTrimDroppedNotes == other.privacyTrimDroppedNotes &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi;
+}
 
 /// Progress event emitted while building, proving, and signing a delegation payload.
 ///
@@ -817,6 +874,55 @@ class ApiDelegationProofEvent {
           phase == other.phase &&
           proofProgress == other.proofProgress &&
           signedDelegationPayload == other.signedDelegationPayload;
+}
+
+/// One wallet-side fetch outcome for a single dynamic config mirror.
+///
+/// Flat by necessity: the crate's [`DynamicConfigAttempt`] carries a
+/// `Result<Vec<u8>, String>`, which flutter_rust_bridge cannot represent as a
+/// struct field. Exactly one of `bytes` / `error` is expected to be set;
+/// `bytes: None` means this mirror did not produce usable bytes and `error`
+/// explains why for logging and diagnostics.
+class ApiDynamicConfigAttempt {
+  final String url;
+  final Uint8List? bytes;
+  final String? error;
+
+  const ApiDynamicConfigAttempt({required this.url, this.bytes, this.error});
+
+  @override
+  int get hashCode => url.hashCode ^ bytes.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDynamicConfigAttempt &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          bytes == other.bytes &&
+          error == other.error;
+}
+
+/// A dynamic config mirror the resolver passed over, and why.
+class ApiDynamicConfigMirrorFailure {
+  final String url;
+  final String reason;
+
+  const ApiDynamicConfigMirrorFailure({
+    required this.url,
+    required this.reason,
+  });
+
+  @override
+  int get hashCode => url.hashCode ^ reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDynamicConfigMirrorFailure &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          reason == other.reason;
 }
 
 /// Outcome of an idempotent Keystone signature batch write.
@@ -1032,13 +1138,18 @@ class VotingConfigResolution {
   final ResolvedVotingConfig config;
   final ConfigSwitchKind switchKind;
 
+  /// Mirrors skipped before the one that resolved. Empty on the happy path.
+  final List<ApiDynamicConfigMirrorFailure> skippedMirrors;
+
   const VotingConfigResolution({
     required this.config,
     required this.switchKind,
+    required this.skippedMirrors,
   });
 
   @override
-  int get hashCode => config.hashCode ^ switchKind.hashCode;
+  int get hashCode =>
+      config.hashCode ^ switchKind.hashCode ^ skippedMirrors.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1046,5 +1157,6 @@ class VotingConfigResolution {
       other is VotingConfigResolution &&
           runtimeType == other.runtimeType &&
           config == other.config &&
-          switchKind == other.switchKind;
+          switchKind == other.switchKind &&
+          skippedMirrors == other.skippedMirrors;
 }

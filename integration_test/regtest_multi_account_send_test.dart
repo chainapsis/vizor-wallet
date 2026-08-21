@@ -14,6 +14,9 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/desktop_activity_flow.dart';
+import 'support/desktop_onboarding_flow.dart';
+
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
@@ -209,6 +212,7 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('first wallet imported');
 }
@@ -227,6 +231,7 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
     tester,
     const ValueKey('unknown_birthday_confirm_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('second wallet imported');
 }
@@ -366,8 +371,9 @@ Future<void> _openActivity(WidgetTester tester) async {
   await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
   await _pumpUntil(
     tester,
-    () =>
-        tester.any(_activityRowFinder(const ValueKey('activity_screen_row_0'))),
+    () => tester.any(
+      desktopActivityRowFinderForKey(const ValueKey('activity_screen_row_0')),
+    ),
     description: 'activity screen rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -556,7 +562,7 @@ Future<void> _expectActivityRow(
   await _pumpUntil(
     tester,
     () => _activityRowMatches(
-      _textSetIn(tester, _activityRowFinder(key)),
+      _textSetIn(tester, desktopActivityRowFinderForKey(key)),
       title,
       amount,
       status,
@@ -567,22 +573,6 @@ Future<void> _expectActivityRow(
   _log('activity row matched: $title $amount $status');
 }
 
-Finder _activityRowFinder(Key key) {
-  if (key case ValueKey<String>(
-    value: final value,
-  ) when value.startsWith('activity_screen_row_')) {
-    final index = int.parse(value.substring('activity_screen_row_'.length));
-    return find
-        .byWidgetPredicate((widget) {
-          final widgetKey = widget.key;
-          return widgetKey is ValueKey<String> &&
-              widgetKey.value.startsWith('tx:');
-        })
-        .at(index);
-  }
-  return find.byKey(key);
-}
-
 void _expectNoActivityRow(
   WidgetTester tester, {
   required String rowKeyPrefix,
@@ -590,9 +580,12 @@ void _expectNoActivityRow(
   required String amount,
   required String status,
 }) {
-  for (var i = 0; i < 10; i++) {
+  final rowCount = rowKeyPrefix == 'activity_screen'
+      ? desktopActivityRowsFinder().evaluate().length
+      : 10;
+  for (var i = 0; i < rowCount; i++) {
     final key = ValueKey('${rowKeyPrefix}_row_$i');
-    final texts = _textSetIn(tester, find.byKey(key));
+    final texts = _textSetIn(tester, desktopActivityRowFinder(rowKeyPrefix, i));
     if (_activityRowMatches(texts, title, amount, status)) {
       fail('Unexpected stale activity row $key: $title $amount $status');
     }

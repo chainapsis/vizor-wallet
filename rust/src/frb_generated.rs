@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1578850925;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 582226879;
 
 // Section: executor
 
@@ -5537,7 +5537,7 @@ fn wire__crate__api__voting__resolve_static_voting_config_impl(
         },
     )
 }
-fn wire__crate__api__voting__resolve_voting_config_impl(
+fn wire__crate__api__voting__resolve_voting_config_from_attempts_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -5545,7 +5545,7 @@ fn wire__crate__api__voting__resolve_voting_config_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "resolve_voting_config",
+            debug_name: "resolve_voting_config_from_attempts",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -5561,16 +5561,17 @@ fn wire__crate__api__voting__resolve_voting_config_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_source = <String>::sse_decode(&mut deserializer);
             let api_static_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_dynamic_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_attempts =
+                <Vec<crate::api::voting::ApiDynamicConfigAttempt>>::sse_decode(&mut deserializer);
             let api_previous =
                 <Option<zcash_voting::config::ResolvedVotingConfig>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::resolve_voting_config(
+                    let output_ok = crate::api::voting::resolve_voting_config_from_attempts(
                         api_source,
                         api_static_bytes,
-                        api_dynamic_bytes,
+                        api_attempts,
                         api_previous,
                     )?;
                     Ok(output_ok)
@@ -7003,15 +7004,6 @@ const _: fn() = || {
         let _: Vec<u8> = AuthenticatedRound.ea_pk;
     }
     {
-        let BundleLayout = None::<zcash_voting::round::BundleLayout>.unwrap();
-        let _: u32 = BundleLayout.bundle_count;
-        let _: u64 = BundleLayout.eligible_weight;
-        let _: u32 = BundleLayout.dropped_count;
-        let _: u32 = BundleLayout.privacy_trim_dropped_bundles;
-        let _: u32 = BundleLayout.privacy_trim_dropped_notes;
-        let _: u64 = BundleLayout.privacy_trim_dropped_value_zatoshi;
-    }
-    {
         let CompletedVoteChoiceView = None::<zcash_voting::wire::CompletedVoteChoiceView>.unwrap();
         let _: u32 = CompletedVoteChoiceView.proposal_id;
         let _: Option<u32> = CompletedVoteChoiceView.choice;
@@ -7441,6 +7433,26 @@ impl SseDecode for crate::api::sync::AddressValidationResult {
     }
 }
 
+impl SseDecode for crate::api::voting::ApiBundleLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_bundleCount = <u32>::sse_decode(deserializer);
+        let mut var_eligibleWeight = <u64>::sse_decode(deserializer);
+        let mut var_droppedCount = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedBundles = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedNotes = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
+        return crate::api::voting::ApiBundleLayout {
+            bundle_count: var_bundleCount,
+            eligible_weight: var_eligibleWeight,
+            dropped_count: var_droppedCount,
+            privacy_trim_dropped_bundles: var_privacyTrimDroppedBundles,
+            privacy_trim_dropped_notes: var_privacyTrimDroppedNotes,
+            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting::ApiDelegationProofEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7452,6 +7464,32 @@ impl SseDecode for crate::api::voting::ApiDelegationProofEvent {
             phase: var_phase,
             proof_progress: var_proofProgress,
             signed_delegation_payload: var_signedDelegationPayload,
+        };
+    }
+}
+
+impl SseDecode for crate::api::voting::ApiDynamicConfigAttempt {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_url = <String>::sse_decode(deserializer);
+        let mut var_bytes = <Option<Vec<u8>>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::voting::ApiDynamicConfigAttempt {
+            url: var_url,
+            bytes: var_bytes,
+            error: var_error,
+        };
+    }
+}
+
+impl SseDecode for crate::api::voting::ApiDynamicConfigMirrorFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_url = <String>::sse_decode(deserializer);
+        let mut var_reason = <String>::sse_decode(deserializer);
+        return crate::api::voting::ApiDynamicConfigMirrorFailure {
+            url: var_url,
+            reason: var_reason,
         };
     }
 }
@@ -7637,26 +7675,6 @@ impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u8().unwrap() != 0
-    }
-}
-
-impl SseDecode for zcash_voting::round::BundleLayout {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_bundleCount = <u32>::sse_decode(deserializer);
-        let mut var_eligibleWeight = <u64>::sse_decode(deserializer);
-        let mut var_droppedCount = <u32>::sse_decode(deserializer);
-        let mut var_privacyTrimDroppedBundles = <u32>::sse_decode(deserializer);
-        let mut var_privacyTrimDroppedNotes = <u32>::sse_decode(deserializer);
-        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
-        return zcash_voting::round::BundleLayout {
-            bundle_count: var_bundleCount,
-            eligible_weight: var_eligibleWeight,
-            dropped_count: var_droppedCount,
-            privacy_trim_dropped_bundles: var_privacyTrimDroppedBundles,
-            privacy_trim_dropped_notes: var_privacyTrimDroppedNotes,
-            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
-        };
     }
 }
 
@@ -8163,6 +8181,34 @@ impl SseDecode for Vec<crate::api::wallet::AccountInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::wallet::AccountInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::voting::ApiDynamicConfigAttempt> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::voting::ApiDynamicConfigAttempt>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::voting::ApiDynamicConfigMirrorFailure> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(
+                <crate::api::voting::ApiDynamicConfigMirrorFailure>::sse_decode(deserializer),
+            );
         }
         return ans_;
     }
@@ -10187,9 +10233,12 @@ impl SseDecode for crate::api::voting::VotingConfigResolution {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_config = <zcash_voting::config::ResolvedVotingConfig>::sse_decode(deserializer);
         let mut var_switchKind = <zcash_voting::config::ConfigSwitchKind>::sse_decode(deserializer);
+        let mut var_skippedMirrors =
+            <Vec<crate::api::voting::ApiDynamicConfigMirrorFailure>>::sse_decode(deserializer);
         return crate::api::voting::VotingConfigResolution {
             config: var_config,
             switch_kind: var_switchKind,
+            skipped_mirrors: var_skippedMirrors,
         };
     }
 }
@@ -10491,7 +10540,7 @@ fn pde_ffi_dispatcher_primary_impl(
 136 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
 137 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
 138 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
-139 => wire__crate__api__voting__resolve_voting_config_impl(port, ptr, rust_vec_len, data_len),
+139 => wire__crate__api__voting__resolve_voting_config_from_attempts_impl(port, ptr, rust_vec_len, data_len),
 140 => wire__crate__api__sync__retain_proposal_lock_until_expiry_impl(port, ptr, rust_vec_len, data_len),
 141 => wire__crate__api__sync__retire_unbroadcast_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
 142 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
@@ -10666,6 +10715,35 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::AddressValidationResult
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiBundleLayout {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.bundle_count.into_into_dart().into_dart(),
+            self.eligible_weight.into_into_dart().into_dart(),
+            self.dropped_count.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_bundles
+                .into_into_dart()
+                .into_dart(),
+            self.privacy_trim_dropped_notes.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_value_zatoshi
+                .into_into_dart()
+                .into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiBundleLayout
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiBundleLayout>
+    for crate::api::voting::ApiBundleLayout
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiBundleLayout {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDelegationProofEvent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -10684,6 +10762,49 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationProofEve
     for crate::api::voting::ApiDelegationProofEvent
 {
     fn into_into_dart(self) -> crate::api::voting::ApiDelegationProofEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDynamicConfigAttempt {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.url.into_into_dart().into_dart(),
+            self.bytes.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiDynamicConfigAttempt
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDynamicConfigAttempt>
+    for crate::api::voting::ApiDynamicConfigAttempt
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiDynamicConfigAttempt {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDynamicConfigMirrorFailure {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.url.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiDynamicConfigMirrorFailure
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDynamicConfigMirrorFailure>
+    for crate::api::voting::ApiDynamicConfigMirrorFailure
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiDynamicConfigMirrorFailure {
         self
     }
 }
@@ -10925,40 +11046,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::BlockMetaInfo>
 {
     fn into_into_dart(self) -> crate::api::sync::BlockMetaInfo {
         self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::round::BundleLayout> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.bundle_count.into_into_dart().into_dart(),
-            self.0.eligible_weight.into_into_dart().into_dart(),
-            self.0.dropped_count.into_into_dart().into_dart(),
-            self.0
-                .privacy_trim_dropped_bundles
-                .into_into_dart()
-                .into_dart(),
-            self.0
-                .privacy_trim_dropped_notes
-                .into_into_dart()
-                .into_dart(),
-            self.0
-                .privacy_trim_dropped_value_zatoshi
-                .into_into_dart()
-                .into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::round::BundleLayout>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::round::BundleLayout>>
-    for zcash_voting::round::BundleLayout
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::round::BundleLayout> {
-        self.into()
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -13074,6 +13161,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::VotingConfigResolutio
         [
             self.config.into_into_dart().into_dart(),
             self.switch_kind.into_into_dart().into_dart(),
+            self.skipped_mirrors.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -13407,6 +13495,18 @@ impl SseEncode for crate::api::sync::AddressValidationResult {
     }
 }
 
+impl SseEncode for crate::api::voting::ApiBundleLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.bundle_count, serializer);
+        <u64>::sse_encode(self.eligible_weight, serializer);
+        <u32>::sse_encode(self.dropped_count, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_bundles, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_notes, serializer);
+        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting::ApiDelegationProofEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -13416,6 +13516,23 @@ impl SseEncode for crate::api::voting::ApiDelegationProofEvent {
             self.signed_delegation_payload,
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::voting::ApiDynamicConfigAttempt {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.url, serializer);
+        <Option<Vec<u8>>>::sse_encode(self.bytes, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::voting::ApiDynamicConfigMirrorFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.url, serializer);
+        <String>::sse_encode(self.reason, serializer);
     }
 }
 
@@ -13534,18 +13651,6 @@ impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u8(self as _).unwrap();
-    }
-}
-
-impl SseEncode for zcash_voting::round::BundleLayout {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.bundle_count, serializer);
-        <u64>::sse_encode(self.eligible_weight, serializer);
-        <u32>::sse_encode(self.dropped_count, serializer);
-        <u32>::sse_encode(self.privacy_trim_dropped_bundles, serializer);
-        <u32>::sse_encode(self.privacy_trim_dropped_notes, serializer);
-        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
     }
 }
 
@@ -13892,6 +13997,26 @@ impl SseEncode for Vec<crate::api::wallet::AccountInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::wallet::AccountInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::voting::ApiDynamicConfigAttempt> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::voting::ApiDynamicConfigAttempt>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::voting::ApiDynamicConfigMirrorFailure> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::voting::ApiDynamicConfigMirrorFailure>::sse_encode(item, serializer);
         }
     }
 }
@@ -15343,6 +15468,10 @@ impl SseEncode for crate::api::voting::VotingConfigResolution {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <zcash_voting::config::ResolvedVotingConfig>::sse_encode(self.config, serializer);
         <zcash_voting::config::ConfigSwitchKind>::sse_encode(self.switch_kind, serializer);
+        <Vec<crate::api::voting::ApiDynamicConfigMirrorFailure>>::sse_encode(
+            self.skipped_mirrors,
+            serializer,
+        );
     }
 }
 

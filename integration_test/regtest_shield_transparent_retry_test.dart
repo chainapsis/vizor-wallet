@@ -13,6 +13,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/desktop_activity_flow.dart';
+import 'support/desktop_onboarding_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 final _network = kZcashDefaultNetworkName;
@@ -241,6 +243,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
     const ValueKey('set_password_submit_button'),
     timeout: const Duration(minutes: 4),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester, timeout: const Duration(minutes: 4));
   _log('first wallet created');
 }
@@ -315,7 +318,7 @@ Future<void> _openActivity(WidgetTester tester) async {
   await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('activity_screen_row_0'))),
+    () => tester.any(desktopActivityRowFinder('activity_screen', 0)),
     description: 'activity screen rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -463,10 +466,13 @@ Future<void> _expectAnyActivityRow(
   await _pumpUntil(
     tester,
     () {
-      for (var i = 0; i < 10; i++) {
+      final rowCount = rowKeyPrefix == 'activity_screen'
+          ? desktopActivityRowsFinder().evaluate().length
+          : 10;
+      for (var i = 0; i < rowCount; i++) {
         final texts = _textSetIn(
           tester,
-          find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
+          desktopActivityRowFinder(rowKeyPrefix, i),
         );
         if (_activityRowMatches(texts, title, amount, status)) {
           return true;

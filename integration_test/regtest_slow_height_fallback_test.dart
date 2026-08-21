@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/desktop_onboarding_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 const _mnemonic =
@@ -76,9 +77,7 @@ void main() {
       );
 
       await _importWallet(tester);
-      await _waitForBalance(tester, {
-        '1.25',
-      }, 'initial primary sync');
+      await _waitForBalance(tester, {'1.25'}, 'initial primary sync');
 
       final baselineHeight = await rust_wallet.getLatestBlockHeight(
         lightwalletdUrl: _realLightwalletdUrl,
@@ -94,9 +93,7 @@ void main() {
         description: 'slow-height fallback toast',
         timeout: const Duration(minutes: 2),
       );
-      await _waitForBalance(tester, {
-        '1.75',
-      }, 'sync through fallback');
+      await _waitForBalance(tester, {'1.75'}, 'sync through fallback');
 
       _log('recovering primary proxy');
       proxy.setHealthy();
@@ -160,6 +157,7 @@ Future<void> _importWallet(WidgetTester tester) async {
     _password,
   );
   await _tapButton(tester, const ValueKey('set_password_submit_button'));
+  await finishDesktopAccountCustomisation(tester);
 }
 
 Future<void> _configureSlowPresetPrimary() async {

@@ -12,6 +12,8 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'desktop_onboarding_flow.dart';
+
 const desktopRegtestMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -46,6 +48,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
     desktopRegtestPassword,
   );
   await tapAppButton(tester, const ValueKey('set_password_submit_button'));
+  await finishDesktopAccountCustomisation(tester);
   await pumpUntil(
     tester,
     () => tester.any(
@@ -74,6 +77,7 @@ Future<void> importAdditionalDesktopRegtestWallet(WidgetTester tester) async {
   await tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
   await tapAppButton(tester, const ValueKey('unknown_birthday_confirm_button'));
+  await finishDesktopAccountCustomisation(tester);
   await pumpUntil(
     tester,
     () => tester.any(
@@ -449,7 +453,18 @@ Future<void> enterAppText(WidgetTester tester, Key key, String text) async {
 String? textForKey(WidgetTester tester, Key key) {
   final finder = find.byKey(key);
   if (!tester.any(finder)) return null;
-  return tester.widget<Text>(finder).data;
+  final keyedWidget = tester.widget(finder);
+  if (keyedWidget is Text) {
+    return keyedWidget.data ?? keyedWidget.textSpan?.toPlainText();
+  }
+  final descendants = tester.widgetList<Text>(
+    find.descendant(of: finder, matching: find.byType(Text)),
+  );
+  for (final descendant in descendants) {
+    final text = descendant.data ?? descendant.textSpan?.toPlainText();
+    if (text != null) return text;
+  }
+  return null;
 }
 
 Future<void> pumpUntil(
