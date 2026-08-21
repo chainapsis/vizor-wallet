@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/voting/voting_config_loader.dart';
 
-/// Mirrors passed over by the most recent voting config load attempt.
+/// Mirrors passed over while obtaining the active voting config.
 ///
 /// Separate from `votingConfigRefreshFailureProvider` on purpose: that channel
 /// means "the load failed", while this one records mirrors rejected on loads
@@ -11,22 +11,16 @@ import '../../services/voting/voting_config_loader.dart';
 /// returns normally, and without this the strongest tamper signal the wallet
 /// has would leave no provider-visible trace at all.
 ///
-/// Scoped to one load attempt. [beginAttempt] clears it before each try so a
-/// retry that succeeds cleanly does not inherit the previous try's failures,
-/// and so the list always describes how the config currently in use was
-/// obtained.
+/// Replaced only when a current load generation successfully commits, so a
+/// failed refresh or stale concurrent load cannot change the evidence attached
+/// to the config still in use.
 class VotingConfigMirrorIntegrityNotifier
     extends Notifier<List<VotingConfigMirrorFailure>> {
   @override
   List<VotingConfigMirrorFailure> build() => const [];
 
-  void beginAttempt() {
-    if (state.isEmpty) return;
-    state = const [];
-  }
-
-  void record(VotingConfigMirrorFailure failure) {
-    state = [...state, failure];
+  void replace(List<VotingConfigMirrorFailure> failures) {
+    state = List.unmodifiable(failures);
   }
 }
 

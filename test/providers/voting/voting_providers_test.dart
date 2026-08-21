@@ -6323,6 +6323,7 @@ class _GatedVotingConfigLoader extends VotingConfigLoader {
   @override
   Future<rust_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
   }) {
     return _loads.load(_sourceUrl);
   }

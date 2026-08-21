@@ -363,13 +363,18 @@ class VotingConfigLoader {
   /// `isRetryableVotingError` keys the retry and last-good-config paths off it.
   Future<rust_config_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
   }) async {
-    final (source, staticBytes, dynamicUrls) = await _resolveStaticAnchor();
+    final observer = mirrorFailureObserver ?? onMirrorFailure;
+    final (source, staticBytes, dynamicUrls) = await _resolveStaticAnchor(
+      observer,
+    );
     final resolution = await _walkDynamicMirrors(
       source: source,
       staticBytes: staticBytes,
       dynamicUrls: dynamicUrls,
       previous: previous,
+      mirrorFailureObserver: observer,
     );
 
     for (final mirror in resolution.skippedMirrors) {
@@ -395,7 +400,9 @@ class VotingConfigLoader {
   /// while another origin may still hold the pinned bytes. When every mirror
   /// fails, the first failure is rethrown, so a transport outage still surfaces
   /// as [VotingHttpException] rather than as a config error.
-  Future<(String, Uint8List, List<String>)> _resolveStaticAnchor() async {
+  Future<(String, Uint8List, List<String>)> _resolveStaticAnchor(
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
+  ) async {
     Object? firstError;
     StackTrace? firstStackTrace;
 
@@ -416,6 +423,7 @@ class VotingConfigLoader {
           stage: VotingConfigMirrorStage.staticAnchor,
           url: source.uri.toString(),
           error: error,
+          observer: mirrorFailureObserver,
         );
       }
     }
@@ -454,6 +462,8 @@ class VotingConfigLoader {
     required Uint8List staticBytes,
     required List<String> dynamicUrls,
     required rust_config.ResolvedVotingConfig? previous,
+    required void Function(VotingConfigMirrorFailure failure)?
+    mirrorFailureObserver,
   }) async {
     final attempts = <rust_config_api.ApiDynamicConfigAttempt>[];
     rust_config_api.VotingConfigResolution? best;
@@ -475,6 +485,7 @@ class VotingConfigLoader {
           stage: VotingConfigMirrorStage.dynamicConfig,
           url: url,
           error: error,
+          observer: mirrorFailureObserver,
         );
         attempts.add(
           rust_config_api.ApiDynamicConfigAttempt(
@@ -508,6 +519,7 @@ class VotingConfigLoader {
           stage: VotingConfigMirrorStage.dynamicConfig,
           url: url,
           error: error,
+          observer: mirrorFailureObserver,
         );
       }
     }
@@ -538,13 +550,13 @@ class VotingConfigLoader {
     required VotingConfigMirrorStage stage,
     required String url,
     required Object error,
+    required void Function(VotingConfigMirrorFailure failure)? observer,
   }) {
     final kind = classifyVotingConfigMirrorFailure(error);
     debugPrint(
       '[zcash] Voting: ${stage.name} mirror $url passed over '
       '(${kind.name}): $error',
     );
-    final observer = onMirrorFailure;
     if (observer == null) return;
     try {
       observer(

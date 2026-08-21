@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust/api/voting.dart';
 import '../../rust/third_party/zcash_voting/config.dart';
+import '../../services/voting/voting_config_loader.dart';
 import '../../services/voting/voting_retry.dart';
 import 'voting_config_mirror_integrity_provider.dart';
 import 'voting_config_source_provider.dart';
@@ -130,22 +131,29 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     final previousForSource = _previousResolvedSourceUrl == sourceUrl
         ? _previousResolvedConfig
         : null;
+    var successfulAttemptFailures = <VotingConfigMirrorFailure>[];
     final resolution = await _loadWithConfigRetry(() {
-      // Per attempt, not per load: a retry that succeeds cleanly must not
-      // inherit the previous attempt's rejected mirrors, so the recorded set
-      // always describes how the config now in use was actually obtained.
-      ref.read(votingConfigMirrorIntegrityProvider.notifier).beginAttempt();
+      final attemptFailures = <VotingConfigMirrorFailure>[];
+      successfulAttemptFailures = attemptFailures;
       return ref
           .read(votingConfigLoaderProvider)
-          .load(previous: previousForSource);
+          .load(
+            previous: previousForSource,
+            mirrorFailureObserver: attemptFailures.add,
+          );
     });
     if (!_isCurrentLoad(generation)) return null;
-    return _commitResolution(resolution, sourceUrl: sourceUrl);
+    return _commitResolution(
+      resolution,
+      sourceUrl: sourceUrl,
+      mirrorFailures: successfulAttemptFailures,
+    );
   }
 
   ResolvedVotingConfig _commitResolution(
     VotingConfigResolution resolution, {
     required String sourceUrl,
+    required List<VotingConfigMirrorFailure> mirrorFailures,
   }) {
     final sourceChanged =
         _previousResolvedSourceUrl != null &&
@@ -153,6 +161,9 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     _applySwitch(resolution.switchKind, sourceChanged: sourceChanged);
     _previousResolvedConfig = resolution.config;
     _previousResolvedSourceUrl = sourceUrl;
+    ref
+        .read(votingConfigMirrorIntegrityProvider.notifier)
+        .replace(mirrorFailures);
     _clearRefreshFailure();
     return resolution.config;
   }
