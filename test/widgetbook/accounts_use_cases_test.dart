@@ -142,7 +142,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(find.textContaining('re-import it'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
       findsOneWidget,
@@ -168,7 +168,7 @@ void main() {
       buildMobileAccountsRemoveAccountUseCase,
     );
     expect(tester.takeException(), isNull);
-    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(find.textContaining('re-import it'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
       findsOneWidget,
