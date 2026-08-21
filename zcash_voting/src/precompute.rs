@@ -318,7 +318,9 @@ mod pir_tests {
             bundle_count: 1,
             eligible_weight: 42,
             dropped_count: 0,
-            privacy_trim: Default::default(),
+            privacy_trim_dropped_bundles: 0,
+            privacy_trim_dropped_notes: 0,
+            privacy_trim_dropped_value_zatoshi: 0,
         };
         let pir_client = pir_client::PirClientBlocking::with_transport(
             "https://pir.test",

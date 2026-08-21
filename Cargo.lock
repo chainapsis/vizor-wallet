@@ -3867,7 +3867,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "3.1.0-rc.3"
+version = "3.1.0-rc.4"
 dependencies = [
  "anyhow",
  "base64",

@@ -212,8 +212,6 @@ pub struct SignedDelegationPayloadView {
     pub delegated_weight_zatoshi: u64,
     pub bundle_count: u32,
     pub bundle_index: u32,
-    #[serde(default)]
-    pub privacy_trim: PrivacyTrim,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

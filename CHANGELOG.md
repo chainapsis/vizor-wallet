@@ -6,6 +6,18 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.1.0-rc.4
+
+### Changed
+- **Breaking:** `BundleLayout` reports privacy-trim totals as flat fields
+  (`privacy_trim_dropped_bundles`, `privacy_trim_dropped_notes`,
+  `privacy_trim_dropped_value_zatoshi`) instead of a nested `PrivacyTrim`.
+  Struct literals and JSON consumers must use the new names; absent fields still
+  default to zero.
+- **Breaking:** removed `privacy_trim` from `SignedDelegationBundle` and
+  `SignedDelegationPayloadView`. Trim reporting stays on `BundleLayout` and
+  `VotingNoteSelectionResultView` (`ChunkResult` is unchanged).
+
 ## v3.1.0-rc.3
 
 ### Added

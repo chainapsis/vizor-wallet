@@ -10,7 +10,7 @@ use rusqlite::{named_params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    note_bundling::{canonical_note_bundle_plan_for_notes, BundlePolicy, PrivacyTrim},
+    note_bundling::{canonical_note_bundle_plan_for_notes, BundlePolicy},
     storage::{queries, RoundState, VotingDb as InnerVotingDb},
     types::{Network, NoteInfo, VotingError, VotingRoundParams},
 };
@@ -41,9 +41,15 @@ pub struct BundleLayout {
     pub eligible_weight: u64,
     #[serde(default)]
     pub dropped_count: u32,
-    /// What the privacy trim removed while planning this round.
+    /// Bundles removed by the privacy tail trim.
     #[serde(default)]
-    pub privacy_trim: PrivacyTrim,
+    pub privacy_trim_dropped_bundles: u32,
+    /// Notes contained in bundles removed by the privacy tail trim.
+    #[serde(default)]
+    pub privacy_trim_dropped_notes: u32,
+    /// Raw value removed by the privacy tail trim.
+    #[serde(default)]
+    pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
 /// Validates that `bundle_index` is in `[0, bundle_count)`.
@@ -428,7 +434,9 @@ impl VotingDb {
                 bundle_count,
                 eligible_weight,
                 dropped_count: plan.dropped_count as u32,
-                privacy_trim: plan.privacy_trim,
+                privacy_trim_dropped_bundles: plan.privacy_trim.dropped_bundles,
+                privacy_trim_dropped_notes: plan.privacy_trim.dropped_notes,
+                privacy_trim_dropped_value_zatoshi: plan.privacy_trim.dropped_value,
             });
         }
 
@@ -460,7 +468,9 @@ impl VotingDb {
             bundle_count: expected_count,
             eligible_weight: plan.eligible_weight,
             dropped_count: plan.dropped_count as u32,
-            privacy_trim: plan.privacy_trim,
+            privacy_trim_dropped_bundles: plan.privacy_trim.dropped_bundles,
+            privacy_trim_dropped_notes: plan.privacy_trim.dropped_notes,
+            privacy_trim_dropped_value_zatoshi: plan.privacy_trim.dropped_value,
         })
     }
 
@@ -507,6 +517,7 @@ impl VotingDb {
 
         let policy = self.effective_bundle_policy(round_id, policy)?;
         let plan = canonical_note_bundle_plan_for_notes(notes, policy)?;
+        let privacy_trim = plan.privacy_trim;
         let bundles = plan.bundles;
         if bundles.len() < stored_count as usize {
             return Err(VotingError::InvalidInput {
@@ -526,11 +537,12 @@ impl VotingDb {
         Ok(BundleLayout {
             bundle_count: stored_count,
             eligible_weight: quantized_bundle_set_weight(stored_bundles)?,
-            // `dropped_count` stays 0 here: this view describes the persisted
-            // prefix, not the notes planning left out. The privacy trim still
-            // reports the raw note value excluded from delegation.
+            // This view describes the persisted prefix, not notes omitted while
+            // planning the original bundle set.
             dropped_count: 0,
-            privacy_trim: plan.privacy_trim,
+            privacy_trim_dropped_bundles: privacy_trim.dropped_bundles,
+            privacy_trim_dropped_notes: privacy_trim.dropped_notes,
+            privacy_trim_dropped_value_zatoshi: privacy_trim.dropped_value,
         })
     }
 }
@@ -871,7 +883,15 @@ mod tests {
         let resumed_bundles = note_bundles_for_round(&notes, &db, ROUND_ID).unwrap();
 
         assert_eq!(resumed.bundle_count, 5);
-        assert!(resumed.privacy_trim.is_empty());
+        assert_eq!(resumed.privacy_trim_dropped_bundles, 0);
+        assert_eq!(resumed.privacy_trim_dropped_notes, 0);
+        assert_eq!(resumed.privacy_trim_dropped_value_zatoshi, 0);
+        assert_eq!(
+            db.effective_bundle_policy(ROUND_ID, BundlePolicy::default())
+                .unwrap()
+                .max_privacy_bundles(),
+            None
+        );
         assert_eq!(resumed_bundles.len(), 5);
         for (bundle_index, expected_notes) in resumed_bundles.iter().enumerate() {
             assert_eq!(
@@ -955,7 +975,15 @@ mod tests {
             .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::default())
             .unwrap();
         assert_eq!(resumed.bundle_count, 5);
-        assert!(resumed.privacy_trim.is_empty());
+        assert_eq!(resumed.privacy_trim_dropped_bundles, 0);
+        assert_eq!(resumed.privacy_trim_dropped_notes, 0);
+        assert_eq!(resumed.privacy_trim_dropped_value_zatoshi, 0);
+        assert_eq!(
+            db.effective_bundle_policy(ROUND_ID, BundlePolicy::default())
+                .unwrap()
+                .max_privacy_bundles(),
+            None
+        );
         // The fallback proved it reproduces the persisted rows, so it replaces
         // the value this binary cannot read.
         assert_ne!(stored_policy_json(&db), future_policy_json);
@@ -989,7 +1017,9 @@ mod tests {
         let planned = db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         assert_eq!(planned.bundle_count, 2);
-        assert!(!planned.privacy_trim.is_empty());
+        assert!(planned.privacy_trim_dropped_bundles > 0);
+        assert!(planned.privacy_trim_dropped_notes > 0);
+        assert!(planned.privacy_trim_dropped_value_zatoshi > 0);
         assert_ne!(stored_policy_json(&db), future_policy_json);
         assert_eq!(
             queries::get_round_bundle_policy(&db.conn(), ROUND_ID, &db.wallet_id()).unwrap(),
@@ -1098,11 +1128,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(planned.bundle_count, 2);
-        assert!(!planned.privacy_trim.is_empty());
+        assert!(planned.privacy_trim_dropped_bundles > 0);
+        assert!(planned.privacy_trim_dropped_notes > 0);
+        assert!(planned.privacy_trim_dropped_value_zatoshi > 0);
     }
 
     #[test]
-    fn ensure_bundles_persists_the_privacy_trim_report() {
+    fn ensure_bundles_returns_flat_privacy_trim_details() {
         let db = test_db("wallet-privacy-trim");
         // Two full-weight notes plus a dust tail that fits inside the 1% budget.
         let big = 1_000 * crate::governance::BALLOT_DIVISOR;
@@ -1115,9 +1147,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(layout.bundle_count, 2);
-        assert_eq!(layout.privacy_trim.dropped_bundles, 1);
-        assert_eq!(layout.privacy_trim.dropped_notes, 1);
-        assert!(layout.privacy_trim.dropped_value > 0);
+        assert_eq!(layout.privacy_trim_dropped_bundles, 1);
+        assert_eq!(layout.privacy_trim_dropped_notes, 1);
+        assert!(layout.privacy_trim_dropped_value_zatoshi > 0);
     }
 
     #[test]

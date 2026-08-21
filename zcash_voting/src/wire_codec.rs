@@ -387,7 +387,6 @@ impl TryFrom<SignedDelegationBundle> for SignedDelegationPayloadView {
             delegated_weight_zatoshi: result.delegated_weight_zatoshi,
             bundle_count: result.bundle_count,
             bundle_index: result.bundle_index,
-            privacy_trim: result.privacy_trim,
         })
     }
 }
@@ -1094,11 +1093,9 @@ mod tests {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
-            privacy_trim: crate::note_bundling::PrivacyTrim {
-                dropped_bundles: 1,
-                dropped_notes: 4,
-                dropped_value: 900,
-            },
+            privacy_trim_dropped_bundles: 1,
+            privacy_trim_dropped_notes: 4,
+            privacy_trim_dropped_value_zatoshi: 900,
         };
         assert_eq!(view.bundle_count, 2);
         assert_eq!(view.eligible_weight, 50);
@@ -1108,13 +1105,11 @@ mod tests {
             serde_json::from_str::<crate::round::BundleLayout>(&json).unwrap(),
             view
         );
-
-        // Payloads written before the privacy trim shipped must still decode.
-        let legacy = r#"{"bundle_count":2,"eligible_weight_zatoshi":50,"dropped_count":0}"#;
-        let decoded: crate::round::BundleLayout = serde_json::from_str(legacy).unwrap();
-        assert_eq!(decoded.privacy_trim.dropped_bundles, 0);
-        assert_eq!(decoded.privacy_trim.dropped_notes, 0);
-        assert_eq!(decoded.privacy_trim.dropped_value, 0);
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["privacy_trim_dropped_bundles"], 1);
+        assert_eq!(json["privacy_trim_dropped_notes"], 4);
+        assert_eq!(json["privacy_trim_dropped_value_zatoshi"], 900);
+        assert!(json.get("privacy_trim").is_none());
     }
 
     #[test]
@@ -1185,15 +1180,8 @@ mod tests {
             delegated_weight_zatoshi: 10,
             bundle_count: 2,
             bundle_index: 1,
-            privacy_trim: crate::note_bundling::PrivacyTrim {
-                dropped_bundles: 3,
-                dropped_notes: 7,
-                dropped_value: 1_234,
-            },
         })
         .unwrap();
-        assert_eq!(view.privacy_trim.dropped_bundles, 3);
-        assert_eq!(view.privacy_trim.dropped_value, 1_234);
         assert_eq!(view.pczt_bytes, vec![1, 2, 3]);
         assert_eq!(view.status, "ready_for_submission");
         assert_eq!(view.message, None);
@@ -1209,12 +1197,10 @@ mod tests {
         assert_eq!(view.delegated_weight_zatoshi, 10);
         assert_eq!(view.bundle_count, 2);
         assert_eq!(view.bundle_index, 1);
-
-        // Payloads cached before privacy trimming shipped must still decode.
-        let mut legacy_json = serde_json::to_value(&view).unwrap();
-        legacy_json.as_object_mut().unwrap().remove("privacy_trim");
-        let decoded: SignedDelegationPayloadView = serde_json::from_value(legacy_json).unwrap();
-        assert_eq!(decoded.privacy_trim, Default::default());
+        assert!(serde_json::to_value(&view)
+            .unwrap()
+            .get("privacy_trim")
+            .is_none());
     }
 
     #[test]

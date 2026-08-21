@@ -706,8 +706,6 @@ pub struct SignedDelegationBundle {
     pub bundle_count: u32,
     /// Bundle index represented by this signed payload.
     pub bundle_index: u32,
-    /// What the privacy trim withheld while planning this round.
-    pub privacy_trim: crate::note_bundling::PrivacyTrim,
 }
 
 /// Voting PCZT request that should be signed by an external signer.
@@ -914,7 +912,6 @@ impl PreparedDelegationBundle {
             delegated_weight_zatoshi: self.delegated_weight_zatoshi()?,
             bundle_count: self.layout.bundle_count,
             bundle_index: self.bundle_index,
-            privacy_trim: self.layout.privacy_trim,
         })
     }
 
@@ -1656,7 +1653,9 @@ mod tests {
                 bundle_count: 1,
                 eligible_weight: crate::round::quantized_bundle_weight(&bundle_note_infos).unwrap(),
                 dropped_count: 0,
-                privacy_trim: Default::default(),
+                privacy_trim_dropped_bundles: 0,
+                privacy_trim_dropped_notes: 0,
+                privacy_trim_dropped_value_zatoshi: 0,
             },
             bundle_note_infos,
             delegation_keys: DelegationKeys {
