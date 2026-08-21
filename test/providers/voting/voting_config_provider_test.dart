@@ -5,10 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_config_mirror_integrity_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
-import 'package:zcash_wallet/src/rust/api/voting_config.dart'
-    as rust_config_api;
+import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
@@ -61,7 +61,7 @@ void main() {
   });
 
   test(
-    'refresh keeps last-good config on transient failure and records side channel',
+    'failed refresh preserves active mirror evidence until a clean commit',
     () async {
       final initial = _resolution(
         'initial',
@@ -71,11 +71,25 @@ void main() {
         'recovered',
         rust_config.ConfigSwitchKind.sameChainServiceUpdate,
       );
+      final activeIntegrityFailure = _mirrorFailure(
+        'https://active-primary.example/static.json',
+        VotingConfigMirrorFailureKind.integrity,
+      );
+      final failedRefreshTransport = _mirrorFailure(
+        'https://failed-refresh.example/static.json',
+        VotingConfigMirrorFailureKind.transport,
+      );
       final loader = _RecordingVotingConfigLoader([
-        initial,
-        TimeoutException('refresh timeout 1'),
-        TimeoutException('refresh timeout 2'),
-        TimeoutException('refresh timeout 3'),
+        _QueuedConfigLoad(initial, [activeIntegrityFailure]),
+        _QueuedConfigLoad(TimeoutException('refresh timeout 1'), [
+          failedRefreshTransport,
+        ]),
+        _QueuedConfigLoad(TimeoutException('refresh timeout 2'), [
+          failedRefreshTransport,
+        ]),
+        _QueuedConfigLoad(TimeoutException('refresh timeout 3'), [
+          failedRefreshTransport,
+        ]),
         recovered,
       ]);
       final container = ProviderContainer(
@@ -90,6 +104,9 @@ void main() {
 
       await container.read(votingConfigProvider.future);
       expect(container.read(votingConfigProvider).value, initial.config);
+      expect(container.read(votingConfigMirrorIntegrityProvider), [
+        activeIntegrityFailure,
+      ]);
 
       await container.read(votingConfigProvider.notifier).refresh();
       final failure = container.read(votingConfigRefreshFailureProvider);
@@ -97,12 +114,71 @@ void main() {
       expect(failure!.error, isA<TimeoutException>());
       expect(container.read(votingConfigProvider).hasError, isFalse);
       expect(container.read(votingConfigProvider).value, initial.config);
+      expect(container.read(votingConfigMirrorIntegrityProvider), [
+        activeIntegrityFailure,
+      ]);
 
       await container.read(votingConfigProvider.notifier).refresh();
       expect(container.read(votingConfigProvider).value, recovered.config);
       expect(container.read(votingConfigRefreshFailureProvider), isNull);
+      expect(container.read(votingConfigMirrorIntegrityProvider), isEmpty);
     },
   );
+
+  test('stale load cannot replace current mirror evidence', () async {
+    final initial = _resolution(
+      'initial',
+      rust_config.ConfigSwitchKind.initialLoad,
+    );
+    final stale = _resolution('stale', rust_config.ConfigSwitchKind.unchanged);
+    final current = _resolution(
+      'current',
+      rust_config.ConfigSwitchKind.unchanged,
+    );
+    final staleFailure = _mirrorFailure(
+      'https://stale.example/static.json',
+      VotingConfigMirrorFailureKind.integrity,
+    );
+    final currentFailure = _mirrorFailure(
+      'https://current.example/static.json',
+      VotingConfigMirrorFailureKind.integrity,
+    );
+    final loader = _ConcurrentVotingConfigLoader(
+      initial: initial,
+      stale: stale,
+      current: current,
+      staleFailure: staleFailure,
+      currentFailure: currentFailure,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        votingConfigSourceStoreProvider.overrideWithValue(
+          _InMemorySourceStore(),
+        ),
+        votingConfigLoaderProvider.overrideWithValue(loader),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingConfigProvider.future);
+    final staleRefresh = container
+        .read(votingConfigProvider.notifier)
+        .refresh();
+    await loader.staleStarted.future;
+
+    await container.read(votingConfigProvider.notifier).refresh();
+    expect(container.read(votingConfigProvider).value, current.config);
+    expect(container.read(votingConfigMirrorIntegrityProvider), [
+      currentFailure,
+    ]);
+
+    loader.releaseStale.complete();
+    await staleRefresh;
+    expect(container.read(votingConfigProvider).value, current.config);
+    expect(container.read(votingConfigMirrorIntegrityProvider), [
+      currentFailure,
+    ]);
+  });
 
   test('refresh keeps explicit AsyncError on non-retryable failure', () async {
     final initial = _resolution(
@@ -173,16 +249,69 @@ class _RecordingVotingConfigLoader extends VotingConfigLoader {
   @override
   Future<rust_config_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
   }) async {
     previousByCall.add(previous);
     if (_responses.isEmpty) {
       throw StateError('No config responses queued.');
     }
-    final next = _responses.removeFirst();
+    final queued = _responses.removeFirst();
+    final next = queued is _QueuedConfigLoad ? queued.result : queued;
+    if (queued is _QueuedConfigLoad) {
+      for (final failure in queued.failures) {
+        mirrorFailureObserver?.call(failure);
+      }
+    }
     if (next is rust_config_api.VotingConfigResolution) return next;
     if (next is Error) throw next;
     if (next is Exception) throw next;
     throw StateError('Unsupported queued loader response: $next');
+  }
+}
+
+class _QueuedConfigLoad {
+  const _QueuedConfigLoad(this.result, this.failures);
+
+  final Object result;
+  final List<VotingConfigMirrorFailure> failures;
+}
+
+class _ConcurrentVotingConfigLoader extends VotingConfigLoader {
+  _ConcurrentVotingConfigLoader({
+    required this.initial,
+    required this.stale,
+    required this.current,
+    required this.staleFailure,
+    required this.currentFailure,
+  }) : super(httpClient: const _NoopVotingHttpClient());
+
+  final rust_config_api.VotingConfigResolution initial;
+  final rust_config_api.VotingConfigResolution stale;
+  final rust_config_api.VotingConfigResolution current;
+  final VotingConfigMirrorFailure staleFailure;
+  final VotingConfigMirrorFailure currentFailure;
+  final Completer<void> staleStarted = Completer<void>();
+  final Completer<void> releaseStale = Completer<void>();
+  var _calls = 0;
+
+  @override
+  Future<rust_config_api.VotingConfigResolution> load({
+    rust_config.ResolvedVotingConfig? previous,
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
+  }) async {
+    _calls++;
+    if (_calls == 1) return initial;
+    if (_calls == 2) {
+      staleStarted.complete();
+      await releaseStale.future;
+      mirrorFailureObserver?.call(staleFailure);
+      return stale;
+    }
+    if (_calls == 3) {
+      mirrorFailureObserver?.call(currentFailure);
+      return current;
+    }
+    throw StateError('Unexpected config load call $_calls.');
   }
 }
 
@@ -251,5 +380,18 @@ rust_config_api.VotingConfigResolution _resolution(
       conditions: const [],
     ),
     switchKind: switchKind,
+    skippedMirrors: const [],
+  );
+}
+
+VotingConfigMirrorFailure _mirrorFailure(
+  String url,
+  VotingConfigMirrorFailureKind kind,
+) {
+  return VotingConfigMirrorFailure(
+    stage: VotingConfigMirrorStage.staticAnchor,
+    url: url,
+    kind: kind,
+    error: StateError('${kind.name} failure at $url'),
   );
 }

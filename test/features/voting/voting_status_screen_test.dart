@@ -37,15 +37,11 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
-import 'package:zcash_wallet/src/rust/api/voting_config.dart'
-    as rust_config_api;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
-    as rust_round;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
@@ -3414,16 +3410,18 @@ ProviderContainer _statusContainer({
           sourceUrl: 'https://voting.example/static-voting-config.json',
           resolveStaticVotingConfig:
               ({required String source, required List<int> staticBytes}) async {
-                return 'https://voting.example/dynamic-voting-config.json';
+                return const [
+                  'https://voting.example/dynamic-voting-config.json',
+                ];
               },
-          resolveVotingConfig:
+          resolveVotingConfigFromAttempts:
               ({
                 required String source,
                 required List<int> staticBytes,
-                required List<int> dynamicBytes,
+                required List<rust_api.ApiDynamicConfigAttempt> attempts,
                 rust_config.ResolvedVotingConfig? previous,
               }) async {
-                return rust_config_api.VotingConfigResolution(
+                return rust_api.VotingConfigResolution(
                   config: rust_config.ResolvedVotingConfig(
                     sourceFingerprint: 'test-source-fingerprint',
                     trustedKeyFingerprint: 'test-trusted-key-fingerprint',
@@ -3462,6 +3460,7 @@ ProviderContainer _statusContainer({
                     conditions: [],
                   ),
                   switchKind: rust_config.ConfigSwitchKind.initialLoad,
+                  skippedMirrors: const [],
                 );
               },
         ),
@@ -4488,14 +4487,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int voteCommitmentCalls = 0;
 
   @override
-  Future<rust_round.BundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     setupDelegationBundleCalls++;
     final eligibleWeight = setupWeightPerBundle == null
         ? BigInt.from(100)
         : setupWeightPerBundle! * BigInt.from(_persistedBundleCount);
-    return rust_round.BundleLayout(
+    return rust_api.ApiBundleLayout(
       bundleCount: _persistedBundleCount,
       eligibleWeight: eligibleWeight,
       droppedCount: 0,

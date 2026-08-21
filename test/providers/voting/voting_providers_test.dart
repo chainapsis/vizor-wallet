@@ -28,14 +28,10 @@ import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
-import 'package:zcash_wallet/src/rust/api/voting_config.dart'
-    as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
-    as rust_round;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
@@ -304,11 +300,11 @@ void main() {
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-            resolveVotingConfig:
+            resolveVotingConfigFromAttempts:
                 ({
                   required source,
                   required staticBytes,
-                  required dynamicBytes,
+                  required attempts,
                   previous,
                 }) async {
                   resolveCount++;
@@ -316,14 +312,14 @@ void main() {
                     staleLoadStarted.complete();
                     await staleLoadGate.future;
                     return fakeResolveVotingConfig(
-                      dynamicBytes: dynamicBytes,
+                      dynamicBytes: attempts.last.bytes!,
                       previous: previous,
                       switchKind: rust_config.ConfigSwitchKind.newChainOrRound,
                       authenticatedRoundIds: const [kRoundId],
                     );
                   }
                   return fakeResolveVotingConfig(
-                    dynamicBytes: dynamicBytes,
+                    dynamicBytes: attempts.last.bytes!,
                     previous: previous,
                     switchKind: previous == null
                         ? rust_config.ConfigSwitchKind.initialLoad
@@ -396,14 +392,14 @@ void main() {
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-            resolveVotingConfig:
+            resolveVotingConfigFromAttempts:
                 ({
                   required source,
                   required staticBytes,
-                  required dynamicBytes,
+                  required attempts,
                   previous,
                 }) => fakeResolveVotingConfig(
-                  dynamicBytes: dynamicBytes,
+                  dynamicBytes: attempts.last.bytes!,
                   previous: previous,
                   switchKind: refreshCount++ == 0
                       ? rust_config.ConfigSwitchKind.initialLoad
@@ -467,14 +463,14 @@ void main() {
               httpClient: http,
               sourceUrl: 'https://voting.example/static-voting-config.json',
               resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-              resolveVotingConfig:
+              resolveVotingConfigFromAttempts:
                   ({
                     required source,
                     required staticBytes,
-                    required dynamicBytes,
+                    required attempts,
                     previous,
                   }) => fakeResolveVotingConfig(
-                    dynamicBytes: dynamicBytes,
+                    dynamicBytes: attempts.last.bytes!,
                     previous: previous,
                     authenticatedRoundIds: authenticatedRoundIds,
                     switchKind: previous == null
@@ -565,14 +561,14 @@ void main() {
               httpClient: http,
               sourceUrl: source,
               resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-              resolveVotingConfig:
+              resolveVotingConfigFromAttempts:
                   ({
                     required source,
                     required staticBytes,
-                    required dynamicBytes,
+                    required attempts,
                     previous,
                   }) => fakeResolveVotingConfig(
-                    dynamicBytes: dynamicBytes,
+                    dynamicBytes: attempts.last.bytes!,
                     previous: previous,
                     authenticatedRoundIds: const [kRoundId],
                   ),
@@ -686,14 +682,14 @@ void main() {
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-            resolveVotingConfig:
+            resolveVotingConfigFromAttempts:
                 ({
                   required source,
                   required staticBytes,
-                  required dynamicBytes,
+                  required attempts,
                   previous,
                 }) => fakeResolveVotingConfig(
-                  dynamicBytes: dynamicBytes,
+                  dynamicBytes: attempts.last.bytes!,
                   previous: previous,
                   switchKind: previous == null
                       ? rust_config.ConfigSwitchKind.initialLoad
@@ -826,14 +822,14 @@ void main() {
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-            resolveVotingConfig:
+            resolveVotingConfigFromAttempts:
                 ({
                   required source,
                   required staticBytes,
-                  required dynamicBytes,
+                  required attempts,
                   previous,
                 }) => fakeResolveVotingConfig(
-                  dynamicBytes: dynamicBytes,
+                  dynamicBytes: attempts.last.bytes!,
                   previous: previous,
                   authenticatedRoundIds: const [kRoundId],
                 ),
@@ -5878,14 +5874,14 @@ ProviderContainer _container({
           httpClient: http,
           sourceUrl: 'https://voting.example/static-voting-config.json',
           resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-          resolveVotingConfig:
+          resolveVotingConfigFromAttempts:
               ({
                 required source,
                 required staticBytes,
-                required dynamicBytes,
+                required attempts,
                 previous,
               }) => fakeResolveVotingConfig(
-                dynamicBytes: dynamicBytes,
+                dynamicBytes: attempts.last.bytes!,
                 previous: previous,
                 authenticatedRoundIds: const [kRoundId, kOtherRoundId],
               ),
@@ -5998,14 +5994,14 @@ ProviderContainer _sessionContainer({
           httpClient: effectiveHttp,
           sourceUrl: 'https://voting.example/static-voting-config.json',
           resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
-          resolveVotingConfig:
+          resolveVotingConfigFromAttempts:
               ({
                 required source,
                 required staticBytes,
-                required dynamicBytes,
+                required attempts,
                 previous,
               }) => fakeResolveVotingConfig(
-                dynamicBytes: dynamicBytes,
+                dynamicBytes: attempts.last.bytes!,
                 previous: previous,
                 authenticatedRoundIds: authenticatedRoundIds,
                 authenticatedRoundEaPks: authenticatedRoundEaPks,
@@ -6273,7 +6269,7 @@ Future<void> _waitForConfirmedShare(
 class _GatedVotingConfigLoads {
   _GatedVotingConfigLoads(this._configs);
 
-  final Map<String, rust_config_api.VotingConfigResolution> _configs;
+  final Map<String, rust_api.VotingConfigResolution> _configs;
   final Map<String, List<Object>> _failures = {};
   final Map<String, int> _loadCounts = {};
   final Map<String, List<Completer<void>>> _gates = {};
@@ -6288,7 +6284,7 @@ class _GatedVotingConfigLoads {
     (_failures[sourceUrl] ??= []).add(error);
   }
 
-  Future<rust_config_api.VotingConfigResolution> load(String sourceUrl) async {
+  Future<rust_api.VotingConfigResolution> load(String sourceUrl) async {
     _loadCounts[sourceUrl] = (_loadCounts[sourceUrl] ?? 0) + 1;
     final gates = _gates[sourceUrl];
     if (gates != null && gates.isNotEmpty) {
@@ -6325,8 +6321,9 @@ class _GatedVotingConfigLoader extends VotingConfigLoader {
   final String _sourceUrl;
 
   @override
-  Future<rust_config_api.VotingConfigResolution> load({
+  Future<rust_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
+    void Function(VotingConfigMirrorFailure failure)? mirrorFailureObserver,
   }) {
     return _loads.load(_sourceUrl);
   }
@@ -6388,7 +6385,7 @@ class _GetCountWaiter {
   final Completer<void> completer = Completer<void>();
 }
 
-rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
+rust_api.VotingConfigResolution _configForVoteServer(String url) {
   final defaultEaPk = Uint8List.fromList(List.filled(32, 1));
   final config = rust_config.ResolvedVotingConfig(
     sourceFingerprint: 'test-source-fingerprint',
@@ -6417,9 +6414,10 @@ rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
     skippedRoundIds: const [],
     conditions: const [],
   );
-  return rust_config_api.VotingConfigResolution(
+  return rust_api.VotingConfigResolution(
     config: config,
     switchKind: rust_config.ConfigSwitchKind.unchanged,
+    skippedMirrors: const [],
   );
 }
 
@@ -6516,19 +6514,27 @@ const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   delay: Duration.zero,
 );
 
-Future<String> fakeResolveStaticVotingConfig({
+/// Mirrors the Rust resolver's schema handling: v2 names an ordered list, v1
+/// names exactly one URL and resolves to a single-entry list.
+Future<List<String>> fakeResolveStaticVotingConfig({
   required String source,
   required List<int> staticBytes,
 }) async {
   final staticJson = decodeVotingJsonObject(utf8.decode(staticBytes));
+  final dynamicConfigUrls = staticJson['dynamic_config_urls'];
+  if (dynamicConfigUrls is List && dynamicConfigUrls.isNotEmpty) {
+    return dynamicConfigUrls
+        .map((value) => value.toString())
+        .toList(growable: false);
+  }
   final dynamicConfigUrl = staticJson['dynamic_config_url']?.toString();
   if (dynamicConfigUrl == null || dynamicConfigUrl.isEmpty) {
     throw const FormatException('Missing required string: dynamic_config_url');
   }
-  return dynamicConfigUrl;
+  return [dynamicConfigUrl];
 }
 
-Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
+Future<rust_api.VotingConfigResolution> fakeResolveVotingConfig({
   required List<int> dynamicBytes,
   rust_config.ResolvedVotingConfig? previous,
   List<String>? authenticatedRoundIds,
@@ -6608,13 +6614,14 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
     conditions: const [],
   );
 
-  return rust_config_api.VotingConfigResolution(
+  return rust_api.VotingConfigResolution(
     config: resolved,
     switchKind:
         switchKind ??
         (previous == null
             ? rust_config.ConfigSwitchKind.initialLoad
             : rust_config.ConfigSwitchKind.unchanged),
+    skippedMirrors: const [],
   );
 }
 
@@ -7349,7 +7356,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_round.BundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     lastSetupRoundParams = ctx.roundParams;
@@ -7368,7 +7375,7 @@ class FakeVotingRustApi implements VotingRustApi {
     }
     setupCalls++;
     _activeSetups--;
-    return rust_round.BundleLayout(
+    return rust_api.ApiBundleLayout(
       bundleCount: bundleCount,
       eligibleWeight: BigInt.from(setupEligibleWeight),
       droppedCount: 0,

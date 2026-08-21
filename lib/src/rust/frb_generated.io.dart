@@ -18,7 +18,6 @@ import 'network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
-import 'third_party/zcash_voting/round.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/types.dart';
 import 'third_party/zcash_voting/vote.dart';
@@ -68,7 +67,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
+  ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw);
+
+  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
+
+  @protected
+  ApiDynamicConfigAttempt dco_decode_api_dynamic_config_attempt(dynamic raw);
+
+  @protected
+  ApiDynamicConfigMirrorFailure dco_decode_api_dynamic_config_mirror_failure(
+    dynamic raw,
+  );
 
   @protected
   ApiKeystoneSignatureBatchResult
@@ -171,9 +181,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteShareWire dco_decode_box_autoadd_vote_share_wire(dynamic raw);
-
-  @protected
-  BundleLayout dco_decode_bundle_layout(dynamic raw);
 
   @protected
   ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
@@ -286,6 +293,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<ApiDynamicConfigAttempt> dco_decode_list_api_dynamic_config_attempt(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiDynamicConfigMirrorFailure>
+  dco_decode_list_api_dynamic_config_mirror_failure(dynamic raw);
 
   @protected
   List<ApiKeystoneSignatureInput> dco_decode_list_api_keystone_signature_input(
@@ -838,7 +854,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer);
+
+  @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDynamicConfigAttempt sse_decode_api_dynamic_config_attempt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDynamicConfigMirrorFailure sse_decode_api_dynamic_config_mirror_failure(
     SseDeserializer deserializer,
   );
 
@@ -969,9 +998,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteShareWire sse_decode_box_autoadd_vote_share_wire(
     SseDeserializer deserializer,
   );
-
-  @protected
-  BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
 
   @protected
   ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
@@ -1120,6 +1146,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<ApiDynamicConfigAttempt> sse_decode_list_api_dynamic_config_attempt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiDynamicConfigMirrorFailure>
+  sse_decode_list_api_dynamic_config_mirror_failure(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<ApiKeystoneSignatureInput> sse_decode_list_api_keystone_signature_input(
@@ -1806,8 +1843,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_bundle_layout(
+    ApiBundleLayout self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_dynamic_config_attempt(
+    ApiDynamicConfigAttempt self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_dynamic_config_mirror_failure(
+    ApiDynamicConfigMirrorFailure self,
     SseSerializer serializer,
   );
 
@@ -1960,9 +2015,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     VoteShareWire self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
 
   @protected
   void sse_encode_chain_upgrade_activation_status(
@@ -2144,6 +2196,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_dynamic_config_attempt(
+    List<ApiDynamicConfigAttempt> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_dynamic_config_mirror_failure(
+    List<ApiDynamicConfigMirrorFailure> self,
     SseSerializer serializer,
   );
 
