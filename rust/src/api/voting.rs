@@ -1504,7 +1504,7 @@ where
         )
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
 
-        zcash_voting::vote::commit_batch(
+        let prepared = zcash_voting::vote::prepare_commit_batch(
             &voting_db,
             &round_id,
             bundle_index,
@@ -1513,7 +1513,11 @@ where
             zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
             &reporter,
         )
-        .map_err(|e| format!("vote commit batch failed: {e}"))
+        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
+                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
+        })
     })
     .await
     .map_err(|e| format!("vote commitment task failed: {e}"))
@@ -1595,10 +1599,12 @@ pub fn mark_vote_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        // Persist submission hash for this round/bundle/proposal key.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
-            .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Persist submission hash for this round/bundle/proposal key.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
+                .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1619,17 +1625,19 @@ pub fn confirm_vote_submission(
 ) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
         let events = parse_tx_events_json(&events_json)?;
-        // Parse tx events and persist vote confirmation fields.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::confirmation::confirm_vote_submission(
-            &db,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            &tx_hash,
-            &events,
-        )
-        .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Parse tx events and persist vote confirmation fields.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::confirmation::confirm_vote_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+                &tx_hash,
+                &events,
+            )
+            .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1657,14 +1665,14 @@ pub fn record_share_delegation(
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // Recover vote context first, then persist helper submission metadata.
-        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("recover committed vote failed: {e}"))?
-            .record_share(&db, share_index, &sent_to_urls, submit_at)
-            .map_err(|e| format!("record_share_delegation failed: {e}"))?;
-        Ok(())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // Recover vote context first, then persist helper submission metadata.
+            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("recover committed vote failed: {e}"))?
+                .record_share(&db, share_index, &sent_to_urls, submit_at)
+                .map_err(|e| format!("record_share_delegation failed: {e}"))
+        })
     })
 }
 
@@ -1683,14 +1691,14 @@ pub fn mark_share_confirmed(
     share_index: u32,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // Recover vote context first, then mark the specific share as confirmed.
-        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("recover committed vote failed: {e}"))?
-            .confirm_share(&db, share_index)
-            .map_err(|e| format!("mark_share_confirmed failed: {e}"))?;
-        Ok(())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // Recover vote context first, then mark the specific share as confirmed.
+            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("recover committed vote failed: {e}"))?
+                .confirm_share(&db, share_index)
+                .map_err(|e| format!("mark_share_confirmed failed: {e}"))
+        })
     })
 }
 
@@ -1710,17 +1718,19 @@ pub fn add_sent_servers(
     new_urls: Vec<String>,
 ) -> Result<(), String> {
     catch(|| {
-        // Merge additional helper URLs into persisted share delivery state.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::share::add_sent_servers(
-            &db,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            share_index,
-            &new_urls,
-        )
-        .map_err(|e| format!("add_sent_servers failed: {e}"))
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Merge additional helper URLs into persisted share delivery state.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::share::add_sent_servers(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                &new_urls,
+            )
+            .map_err(|e| format!("add_sent_servers failed: {e}"))
+        })
     })
 }
 
@@ -1771,19 +1781,20 @@ pub fn set_ballot_intent(
     choice: Option<u32>,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // `skipped` takes precedence; otherwise a concrete choice is required.
-        let decision = if skipped {
-            zcash_voting::session::Decision::Skipped
-        } else {
-            let c = choice.ok_or_else(|| {
-                "set_ballot_intent: choice must be Some when skipped is false".to_string()
-            })?;
-            zcash_voting::session::Decision::Choice(c)
-        };
-        db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
-            .map_err(|e| format!("set_ballot_intent failed: {e}"))
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // `skipped` takes precedence; otherwise a concrete choice is required.
+            let decision = if skipped {
+                zcash_voting::session::Decision::Skipped
+            } else {
+                let c = choice.ok_or_else(|| {
+                    "set_ballot_intent: choice must be Some when skipped is false".to_string()
+                })?;
+                zcash_voting::session::Decision::Choice(c)
+            };
+            db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
+                .map_err(|e| format!("set_ballot_intent failed: {e}"))
+        })
     })
 }
 

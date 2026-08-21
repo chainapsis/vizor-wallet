@@ -308,6 +308,20 @@ class VotingSessionState {
             .toSet(),
       );
 
+  UnmodifiableSetView<VotingVoteKey> get activeVoteKeys => UnmodifiableSetView(
+    voteProgress.entries
+        .where(
+          (entry) => !const {
+            'completed',
+            'confirmed',
+            'submitted',
+            'failed',
+          }.contains(entry.value.phase),
+        )
+        .map((entry) => entry.key)
+        .toSet(),
+  );
+
   bool get hasConfirmedVotingEligibility =>
       eligibleWeightZatoshi != null &&
       eligibleWeightZatoshi! > BigInt.zero &&

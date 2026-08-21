@@ -941,40 +941,91 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       var confirmedSubmittedVotes = false;
-      for (final work in _pendingVotePollingWork(roundPlan)) {
-        final key = VotingVoteKey(
-          bundleIndex: work.bundleIndex,
-          proposalId: work.proposalId,
-        );
-        final txHash = work.txHash;
-        if (txHash == null) continue;
-        final confirmation = await _awaitTxConfirmation(api, txHash);
-        if (confirmation == null) {
-          _setError(
-            'Vote commitment transaction $txHash for bundle '
-            '${key.bundleIndex}, proposal ${key.proposalId} is still '
-            'unconfirmed after repeated checks. Retry to resume confirmation '
-            'before continuing.',
+      final pendingVotePolling = _pendingVotePollingWork(roundPlan);
+      final pollingOutcomes = await _runBoundedBundleWork(
+        List<int>.generate(pendingVotePolling.length, (index) => index),
+        concurrency: _delegationBundleConcurrency,
+        work: (index) async {
+          final work = pendingVotePolling[index];
+          final key = VotingVoteKey(
+            bundleIndex: work.bundleIndex,
+            proposalId: work.proposalId,
+          );
+          final txHash = work.txHash;
+          if (txHash == null) {
+            throw StateError(
+              'Missing submitted vote transaction hash for '
+              'bundle ${key.bundleIndex}, proposal ${key.proposalId}.',
+            );
+          }
+          final confirmation = await _awaitTxConfirmation(
+            api,
+            txHash,
             context: context,
           );
-          return;
-        }
-        if (confirmation.code != 0) {
-          throw StateError(
-            confirmation.log.isEmpty
-                ? 'Vote commitment transaction failed.'
-                : confirmation.log,
+          if (confirmation == null) {
+            throw _VoteConfirmationTimeout(key: key, txHash: txHash);
+          }
+          return _PolledVoteRecovery(
+            key: key,
+            txHash: txHash,
+            confirmation: confirmation,
           );
+        },
+      );
+      final voteRecoveryFailures = <_VoteWaveFailure>[];
+      for (var index = 0; index < pendingVotePolling.length; index++) {
+        final outcome = pollingOutcomes[index]!;
+        final error = outcome.error;
+        if (error != null) {
+          final work = pendingVotePolling[index];
+          voteRecoveryFailures.add(
+            _VoteWaveFailure(
+              bundleIndex: work.bundleIndex,
+              stage: 'recovery confirmation polling',
+              error: error,
+            ),
+          );
+          continue;
         }
-        await rust.confirmVoteSubmission(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-          txHash: txHash,
-          eventsJson: confirmation.eventsJson,
-        );
+        final polled = outcome.value!;
+        final key = polled.key;
+        final txHash = polled.txHash;
+        final confirmation = polled.confirmation;
+        if (confirmation.code != 0) {
+          voteRecoveryFailures.add(
+            _VoteWaveFailure(
+              bundleIndex: key.bundleIndex,
+              stage: 'recovery confirmation',
+              error: StateError(
+                confirmation.log.isEmpty
+                    ? 'Vote commitment transaction failed.'
+                    : confirmation.log,
+              ),
+            ),
+          );
+          continue;
+        }
+        try {
+          await rust.confirmVoteSubmission(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+            bundleIndex: key.bundleIndex,
+            proposalId: key.proposalId,
+            txHash: txHash,
+            eventsJson: confirmation.eventsJson,
+          );
+        } catch (error) {
+          voteRecoveryFailures.add(
+            _VoteWaveFailure(
+              bundleIndex: key.bundleIndex,
+              stage: 'recovery confirmation persistence',
+              error: error,
+            ),
+          );
+          continue;
+        }
         progress[key] = VotingSessionProgress(
           phase: 'confirmed',
           bundleIndex: key.bundleIndex,
@@ -994,6 +1045,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             voteProgress: progress,
           ),
         );
+      }
+      for (final failure in voteRecoveryFailures) {
+        final error = failure.error;
+        if (error is _VoteConfirmationTimeout) {
+          _setError(
+            'Vote commitment transaction ${error.txHash} for bundle '
+            '${error.key.bundleIndex}, proposal ${error.key.proposalId} is still '
+            'unconfirmed after repeated checks. Retry to resume confirmation '
+            'before continuing.',
+            context: context,
+          );
+          return;
+        }
+      }
+      if (voteRecoveryFailures.isNotEmpty) {
+        throw _VoteWaveBatchException(voteRecoveryFailures);
       }
       final recoveredVoteWork = _pendingRecoveredVoteWork(roundPlan);
       final recoveredVoteKeys = {
@@ -1166,191 +1233,44 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       for (final work in voteWork) {
         final draftVote = work.draftVote;
-        for (final bundleIndex in work.bundleIndexes) {
-          final voteTimer = Stopwatch()..start();
-          final key = VotingVoteKey(
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
-          );
-          _setStateForContext(
-            context,
-            (state.value ?? current).copyWith(
-              phase: VotingSessionPhase.syncingVoteTree,
-              currentBundleIndex: bundleIndex,
-              currentVoteKey: key,
-              voteSubmissionCompletedCount: completedQuestions,
-              voteSubmissionTotalCount: totalQuestions,
-              voteSubmissionProgress: _voteSubmissionProgress(
-                completedBundleTasks: completedBundleTasks,
-                totalBundleTasks: totalBundleTasks,
-              ),
-            ),
-          );
-          debugPrint(
-            '[zcash] Voting: vote tree sync start '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId}',
-          );
-          final syncTimer = Stopwatch()..start();
-          final anchorHeight = await _syncVoteTreeWithFailover(
+        late final int waveCompleted;
+        try {
+          waveCompleted = await _runVoteProposalWave(
             context: context,
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
+            fallbackState: current,
+            draftVote: draftVote,
+            bundleIndexes: work.bundleIndexes,
+            storedHotkeySecret: storedHotkeySecret!,
+            progress: progress,
+            completedBundleTasks: completedBundleTasks,
+            totalBundleTasks: totalBundleTasks,
+            completedQuestions: completedQuestions,
+            totalQuestions: totalQuestions,
           );
-          debugPrint(
-            '[zcash] Voting: vote tree sync completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight '
-            'elapsed=${formatElapsedSeconds(syncTimer.elapsed)}',
-          );
-
-          final witnessTimer = Stopwatch()..start();
-          debugPrint(
-            '[zcash] Voting: VAN witness generation start '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight',
-          );
-          final witness = await ref
-              .read(votingRustApiProvider)
-              .generateVanWitness(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                bundleIndex: bundleIndex,
-                anchorHeight: anchorHeight,
-              );
-          debugPrint(
-            '[zcash] Voting: VAN witness generation completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} position=${witness.position} '
-            'elapsed=${formatElapsedSeconds(witnessTimer.elapsed)}',
-          );
+        } catch (_) {
+          plan = await _loadResumePlan(context);
+          roundPlan = await _loadRoundPlan(context);
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(
-              phase: VotingSessionPhase.castingVotes,
-              currentBundleIndex: bundleIndex,
-              currentVoteKey: key,
-              voteSubmissionCompletedCount: completedQuestions,
-              voteSubmissionTotalCount: totalQuestions,
-              voteSubmissionProgress: _voteSubmissionProgress(
-                completedBundleTasks: completedBundleTasks,
-                totalBundleTasks: totalBundleTasks,
-              ),
-            ),
-          );
-          final timedDraftVote = _draftVoteForCurrentShareMode(
-            context,
-            draftVote,
-          );
-          debugPrint(
-            '[zcash] Voting: ZKP2 commitment stream start '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} '
-            'singleShare=${timedDraftVote.singleShare}',
-          );
-          await for (final event
-              in ref
-                  .read(votingRustApiProvider)
-                  .buildVoteCommitmentsWithProgress(
-                    dbPath: context.dbPath,
-                    accountUuid: context.accountUuid,
-                    network: context.network,
-                    roundId: context.round.roundId,
-                    bundleIndex: bundleIndex,
-                    storedHotkeySecret: storedHotkeySecret!,
-                    vanWitness: witness,
-                    draftVotes: [timedDraftVote],
-                  )) {
-            final proposalId = event.proposalId;
-            if (proposalId != null) {
-              final eventKey = VotingVoteKey(
-                bundleIndex: event.bundleIndex ?? bundleIndex,
-                proposalId: proposalId,
-              );
-              final proofProgress = _monotonicProofProgress(
-                progress[eventKey]?.proofProgress,
-                event.proofProgress,
-              );
-              progress[eventKey] = VotingSessionProgress(
-                phase: event.phase,
-                bundleIndex: eventKey.bundleIndex,
-                proposalId: proposalId,
-                proofProgress: proofProgress,
-              );
-              _setStateForContext(
-                context,
-                (state.value ?? current).copyWith(
-                  phase: VotingSessionPhase.castingVotes,
-                  voteProgress: progress,
-                  currentVoteKey: eventKey,
-                  voteSubmissionCompletedCount: completedQuestions,
-                  voteSubmissionTotalCount: totalQuestions,
-                  voteSubmissionProgress: _voteSubmissionProgress(
-                    completedBundleTasks: completedBundleTasks,
-                    totalBundleTasks: totalBundleTasks,
-                    currentBundleProgress: proofProgress,
-                  ),
-                ),
-              );
-            }
-            final commitments = event.commitments;
-            if (commitments != null) {
-              _throwIfContextStale(context, 'vote-commitment-submit');
-              final vcTreePositions = await _submitVoteCommitments(
-                context,
-                commitments,
-              );
-              await _submitCommitmentShares(
-                context,
-                commitments,
-                vcTreePositions: vcTreePositions,
-                singleShare: timedDraftVote.singleShare,
-                completedQuestions: completedQuestions,
-                totalQuestions: totalQuestions,
-                voteSubmissionProgress: _voteSubmissionProgress(
-                  completedBundleTasks: completedBundleTasks,
-                  totalBundleTasks: totalBundleTasks,
-                  currentBundleProgress: _monotonicProofProgress(
-                    progress[key]?.proofProgress,
-                    0.95,
-                  ),
-                ),
-              );
-            }
-          }
-          completedBundleTasks++;
-          progress[key] = VotingSessionProgress(
-            phase: 'completed',
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-          );
-          _setStateForContext(
-            context,
-            (state.value ?? current).copyWith(
-              phase: VotingSessionPhase.castingVotes,
+              resumePlan: plan,
+              roundPlan: roundPlan,
               voteProgress: progress,
-              currentVoteKey: key,
-              voteSubmissionCompletedCount: completedQuestions,
-              voteSubmissionTotalCount: totalQuestions,
-              voteSubmissionProgress: _voteSubmissionProgress(
-                completedBundleTasks: completedBundleTasks,
-                totalBundleTasks: totalBundleTasks,
-              ),
             ),
           );
-          debugPrint(
-            '[zcash] Voting: vote flow completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId} '
-            'total=${formatElapsedSeconds(voteTimer.elapsed)}',
-          );
+          await _scheduleShareTracking(context, plan);
+          rethrow;
         }
+        completedBundleTasks += waveCompleted;
         completedQuestions++;
+        plan = await _loadResumePlan(context);
+        roundPlan = await _loadRoundPlan(context);
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.castingVotes,
+            resumePlan: plan,
+            roundPlan: roundPlan,
             voteProgress: progress,
             voteSubmissionCompletedCount: completedQuestions,
             voteSubmissionTotalCount: totalQuestions,
@@ -1399,7 +1319,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
       await _scheduleShareTracking(context, refreshedPlan);
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<List<int>?> _hotkeyForVoteCasting(
@@ -1774,17 +1694,493 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       proposalId: proposalId,
       message: message,
     );
+    final previousProgress = current.voteSubmissionProgress ?? 0;
+    final requestedProgress = voteSubmissionProgress ?? previousProgress;
+    final monotonicProgress = requestedProgress < previousProgress
+        ? previousProgress
+        : requestedProgress;
     _setStateForContext(
       context,
       current.copyWith(
         phase: VotingSessionPhase.castingVotes,
         voteProgress: progress,
-        currentVoteKey: key,
         voteSubmissionCompletedCount: completedQuestions,
         voteSubmissionTotalCount: totalQuestions,
-        voteSubmissionProgress: voteSubmissionProgress,
+        voteSubmissionProgress: monotonicProgress,
+        clearCurrentBundleIndex: true,
+        clearCurrentVoteKey: true,
       ),
     );
+  }
+
+  Future<int> _runVoteProposalWave({
+    required _VotingSessionContext context,
+    required VotingSessionState fallbackState,
+    required rust_wire.DraftVote draftVote,
+    required List<int> bundleIndexes,
+    required List<int> storedHotkeySecret,
+    required Map<VotingVoteKey, VotingSessionProgress> progress,
+    required int completedBundleTasks,
+    required int totalBundleTasks,
+    required int completedQuestions,
+    required int totalQuestions,
+  }) async {
+    if (bundleIndexes.isEmpty) return 0;
+    final rust = ref.read(votingRustApiProvider);
+    final waveTimer = Stopwatch()..start();
+    final proofWallTimer = Stopwatch()..start();
+    final proofElapsed = <int, Duration>{};
+    final failures = <_VoteWaveFailure>[];
+    var lastAggregateProgress =
+        _voteSubmissionProgress(
+          completedBundleTasks: completedBundleTasks,
+          totalBundleTasks: totalBundleTasks,
+        ) ??
+        0;
+
+    void publish(VotingSessionProgress update) {
+      final bundleIndex = update.bundleIndex;
+      final proposalId = update.proposalId;
+      if (bundleIndex == null || proposalId == null) return;
+      final key = VotingVoteKey(
+        bundleIndex: bundleIndex,
+        proposalId: proposalId,
+      );
+      progress[key] = update;
+      final aggregateProgress =
+          _aggregateVoteWaveProgress(
+            progress: progress,
+            proposalId: draftVote.proposalId,
+            bundleIndexes: bundleIndexes,
+            completedBundleTasks: completedBundleTasks,
+            totalBundleTasks: totalBundleTasks,
+          ) ??
+          lastAggregateProgress;
+      if (aggregateProgress > lastAggregateProgress) {
+        lastAggregateProgress = aggregateProgress;
+      }
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          phase: VotingSessionPhase.castingVotes,
+          voteProgress: Map<VotingVoteKey, VotingSessionProgress>.of(progress),
+          voteSubmissionCompletedCount: completedQuestions,
+          voteSubmissionTotalCount: totalQuestions,
+          voteSubmissionProgress: lastAggregateProgress,
+          clearCurrentBundleIndex: true,
+          clearCurrentVoteKey: true,
+        ),
+      );
+    }
+
+    _setStateForContext(
+      context,
+      (state.value ?? fallbackState).copyWith(
+        phase: VotingSessionPhase.syncingVoteTree,
+        clearCurrentBundleIndex: true,
+        clearCurrentVoteKey: true,
+      ),
+    );
+    final syncTimer = Stopwatch()..start();
+    final anchorHeight = await _syncVoteTreeWithFailover(
+      context: context,
+      bundleIndex: bundleIndexes.first,
+      proposalId: draftVote.proposalId,
+    );
+    debugPrint(
+      '[zcash] Voting: proposal wave tree sync completed '
+      'round=${context.round.roundId} proposal=${draftVote.proposalId} '
+      'bundles=${bundleIndexes.length} anchorHeight=$anchorHeight '
+      'elapsed=${formatElapsedSeconds(syncTimer.elapsed)}',
+    );
+
+    rust.warmVotingProvingCaches();
+    final timedDraftVote = _draftVoteForCurrentShareMode(context, draftVote);
+    final proofOutcomes = await _runBoundedBundleWork(
+      bundleIndexes,
+      concurrency: _delegationBundleConcurrency,
+      work: (bundleIndex) async {
+        _throwIfContextStale(context, 'vote-wave-proof-start');
+        final timer = Stopwatch()..start();
+        try {
+          final witness = await rust.generateVanWitness(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+            bundleIndex: bundleIndex,
+            anchorHeight: anchorHeight,
+          );
+          rust_wire.SignedVoteCommitmentsView? commitments;
+          await for (final event in rust.buildVoteCommitmentsWithProgress(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            network: context.network,
+            roundId: context.round.roundId,
+            bundleIndex: bundleIndex,
+            storedHotkeySecret: storedHotkeySecret,
+            vanWitness: witness,
+            draftVotes: [timedDraftVote],
+          )) {
+            _throwIfContextStale(context, 'vote-wave-proof-progress');
+            final proposalId = event.proposalId ?? draftVote.proposalId;
+            final key = VotingVoteKey(
+              bundleIndex: event.bundleIndex ?? bundleIndex,
+              proposalId: proposalId,
+            );
+            publish(
+              VotingSessionProgress(
+                phase: event.phase,
+                bundleIndex: key.bundleIndex,
+                proposalId: key.proposalId,
+                proofProgress: _monotonicProofProgress(
+                  progress[key]?.proofProgress,
+                  event.proofProgress,
+                ),
+              ),
+            );
+            commitments = event.commitments ?? commitments;
+          }
+          return _PreparedVoteWaveBundle(
+            bundleIndex: bundleIndex,
+            commitments:
+                commitments ??
+                (throw StateError(
+                  'Vote proof completed without commitment payload.',
+                )),
+            singleShare: timedDraftVote.singleShare,
+          );
+        } finally {
+          proofElapsed[bundleIndex] = timer.elapsed;
+        }
+      },
+    );
+    final serialProofDuration = proofElapsed.values.fold<Duration>(
+      Duration.zero,
+      (total, elapsed) => total + elapsed,
+    );
+    debugPrint(
+      '[zcash] Voting: proposal wave proof fan-in '
+      'round=${context.round.roundId} proposal=${draftVote.proposalId} '
+      'bundles=${bundleIndexes.length} concurrency=$_delegationBundleConcurrency '
+      'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
+      'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
+    );
+    _throwIfContextStale(context, 'vote-wave-proof-fan-in');
+
+    final submitted = <int, _SubmittedVoteWaveBundle>{};
+    for (final bundleIndex in bundleIndexes) {
+      final outcome = proofOutcomes[bundleIndex]!;
+      if (outcome.error != null) {
+        publish(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            message: outcome.error.toString(),
+          ),
+        );
+        failures.add(
+          _VoteWaveFailure(
+            bundleIndex: bundleIndex,
+            stage: 'proof',
+            error: outcome.error!,
+          ),
+        );
+        continue;
+      }
+      try {
+        _throwIfContextStale(context, 'vote-wave-submit');
+        final prepared = outcome.value!;
+        final txHashes = await _submitVoteCommitmentsWithoutConfirmation(
+          context,
+          prepared.commitments,
+        );
+        submitted[bundleIndex] = _SubmittedVoteWaveBundle(
+          prepared: prepared,
+          txHashes: txHashes,
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'submitted',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            proofProgress: 1,
+            message: txHashes[draftVote.proposalId],
+          ),
+        );
+      } catch (error) {
+        failures.add(
+          _VoteWaveFailure(
+            bundleIndex: bundleIndex,
+            stage: 'submission',
+            error: error,
+          ),
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            message: error.toString(),
+          ),
+        );
+        if (error is _StaleVotingSessionAction) break;
+      }
+    }
+
+    final confirmationOutcomes = await _runBoundedBundleWork(
+      submitted.keys.toList(growable: false),
+      concurrency: _delegationBundleConcurrency,
+      work: (bundleIndex) async {
+        final item = submitted[bundleIndex]!;
+        final confirmations = <int, VotingTxConfirmation>{};
+        final api = ref.read(
+          votingApiClientProvider(context.config.apiServers),
+        );
+        for (final entry in item.txHashes.entries) {
+          final confirmation = await _awaitTxConfirmation(
+            api,
+            entry.value,
+            context: context,
+          );
+          if (confirmation == null) {
+            throw StateError(
+              'Transaction ${entry.value} was not confirmed in time.',
+            );
+          }
+          if (confirmation.code != 0) {
+            throw StateError(
+              confirmation.log.isEmpty
+                  ? 'Vote commitment transaction failed.'
+                  : confirmation.log,
+            );
+          }
+          confirmations[entry.key] = confirmation;
+        }
+        return confirmations;
+      },
+    );
+
+    final confirmed = <int, _ConfirmedVoteWaveBundle>{};
+    for (final bundleIndex in submitted.keys) {
+      final outcome = confirmationOutcomes[bundleIndex]!;
+      if (outcome.error != null) {
+        failures.add(
+          _VoteWaveFailure(
+            bundleIndex: bundleIndex,
+            stage: 'confirmation',
+            error: outcome.error!,
+          ),
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            message: outcome.error.toString(),
+          ),
+        );
+        continue;
+      }
+      final item = submitted[bundleIndex]!;
+      try {
+        final vcTreePositions = await _persistVoteConfirmations(
+          context,
+          bundleIndex: bundleIndex,
+          txHashes: item.txHashes,
+          confirmations: outcome.value!,
+        );
+        confirmed[bundleIndex] = _ConfirmedVoteWaveBundle(
+          prepared: item.prepared,
+          vcTreePositions: vcTreePositions,
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'confirmed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            proofProgress: 1,
+            message: item.txHashes[draftVote.proposalId],
+          ),
+        );
+      } catch (error) {
+        failures.add(
+          _VoteWaveFailure(
+            bundleIndex: bundleIndex,
+            stage: 'confirmation persistence',
+            error: error,
+          ),
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            proofProgress:
+                progress[VotingVoteKey(
+                      bundleIndex: bundleIndex,
+                      proposalId: draftVote.proposalId,
+                    )]
+                    ?.proofProgress,
+            message: error.toString(),
+          ),
+        );
+      }
+    }
+
+    final shareOutcomes = await _runBoundedBundleWork(
+      confirmed.keys.toList(growable: false),
+      concurrency: _delegationBundleConcurrency,
+      work: (bundleIndex) async {
+        final item = confirmed[bundleIndex]!;
+        await _submitCommitmentShares(
+          context,
+          item.prepared.commitments,
+          vcTreePositions: item.vcTreePositions,
+          singleShare: item.prepared.singleShare,
+          completedQuestions: completedQuestions,
+          totalQuestions: totalQuestions,
+          voteSubmissionProgress: _aggregateVoteWaveProgress(
+            progress: progress,
+            proposalId: draftVote.proposalId,
+            bundleIndexes: bundleIndexes,
+            completedBundleTasks: completedBundleTasks,
+            totalBundleTasks: totalBundleTasks,
+          ),
+        );
+      },
+    );
+
+    var completed = 0;
+    for (final bundleIndex in confirmed.keys) {
+      final outcome = shareOutcomes[bundleIndex]!;
+      if (outcome.error != null) {
+        failures.add(
+          _VoteWaveFailure(
+            bundleIndex: bundleIndex,
+            stage: 'shares',
+            error: outcome.error!,
+          ),
+        );
+        publish(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+            message: outcome.error.toString(),
+          ),
+        );
+        continue;
+      }
+      completed++;
+      publish(
+        VotingSessionProgress(
+          phase: 'completed',
+          bundleIndex: bundleIndex,
+          proposalId: draftVote.proposalId,
+          proofProgress: 1,
+        ),
+      );
+    }
+
+    for (final failure in failures) {
+      if (failure.error is _StaleVotingSessionAction) throw failure.error;
+    }
+    if (failures.isNotEmpty) throw _VoteWaveBatchException(failures);
+    debugPrint(
+      '[zcash] Voting: proposal wave completed '
+      'round=${context.round.roundId} proposal=${draftVote.proposalId} '
+      'bundles=$completed elapsed=${formatElapsedSeconds(waveTimer.elapsed)}',
+    );
+    return completed;
+  }
+
+  double? _aggregateVoteWaveProgress({
+    required Map<VotingVoteKey, VotingSessionProgress> progress,
+    required int proposalId,
+    required List<int> bundleIndexes,
+    required int completedBundleTasks,
+    required int totalBundleTasks,
+  }) {
+    if (totalBundleTasks <= 0) return null;
+    var waveProgress = 0.0;
+    for (final bundleIndex in bundleIndexes) {
+      final item =
+          progress[VotingVoteKey(
+            bundleIndex: bundleIndex,
+            proposalId: proposalId,
+          )];
+      waveProgress += switch (item?.phase) {
+        'completed' => 1,
+        'confirmed' => 0.95,
+        'submitted' => 0.85,
+        'failed' => 0,
+        _ => (item?.proofProgress ?? 0).clamp(0.0, 1.0) * 0.8,
+      };
+    }
+    return ((completedBundleTasks + waveProgress) / totalBundleTasks)
+        .clamp(0.0, 1.0)
+        .toDouble();
+  }
+
+  Future<Map<int, String>> _submitVoteCommitmentsWithoutConfirmation(
+    _VotingSessionContext context,
+    rust_wire.SignedVoteCommitmentsView commitments,
+  ) async {
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
+    final txHashes = <int, String>{};
+    for (final commitment in commitments.commitments) {
+      final result = await api.submitVoteCommitment(
+        commitment: await _wireJsonMap(
+          rust.voteCommitmentWireJson(commitment: commitment.wire),
+        ),
+      );
+      if (result.code != 0) {
+        throw StateError(
+          result.log.isEmpty
+              ? 'Vote commitment transaction was rejected.'
+              : result.log,
+        );
+      }
+      if (result.txHash.isEmpty) {
+        throw StateError('Vote commitment response did not include tx_hash.');
+      }
+      await rust.markVoteSubmitted(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: commitments.bundleIndex,
+        proposalId: commitment.proposalId,
+        txHash: result.txHash,
+      );
+      txHashes[commitment.proposalId] = result.txHash;
+    }
+    return txHashes;
+  }
+
+  Future<Map<int, BigInt>> _persistVoteConfirmations(
+    _VotingSessionContext context, {
+    required int bundleIndex,
+    required Map<int, String> txHashes,
+    required Map<int, VotingTxConfirmation> confirmations,
+  }) async {
+    final rust = ref.read(votingRustApiProvider);
+    final vcTreePositions = <int, BigInt>{};
+    for (final entry in txHashes.entries) {
+      final confirmation = confirmations[entry.key]!;
+      final result = await rust.confirmVoteSubmission(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: bundleIndex,
+        proposalId: entry.key,
+        txHash: entry.value,
+        eventsJson: confirmation.eventsJson,
+      );
+      vcTreePositions[entry.key] = result.vcTreePosition;
+    }
+    return vcTreePositions;
   }
 
   Future<Map<int, BigInt>> _submitVoteCommitments(
@@ -3896,6 +4292,87 @@ class _DelegationBundleBatchException implements Exception {
         .join('; ');
     return 'Delegation bundle processing failed: $details';
   }
+}
+
+class _PreparedVoteWaveBundle {
+  const _PreparedVoteWaveBundle({
+    required this.bundleIndex,
+    required this.commitments,
+    required this.singleShare,
+  });
+
+  final int bundleIndex;
+  final rust_wire.SignedVoteCommitmentsView commitments;
+  final bool singleShare;
+}
+
+class _SubmittedVoteWaveBundle {
+  const _SubmittedVoteWaveBundle({
+    required this.prepared,
+    required this.txHashes,
+  });
+
+  final _PreparedVoteWaveBundle prepared;
+  final Map<int, String> txHashes;
+}
+
+class _ConfirmedVoteWaveBundle {
+  const _ConfirmedVoteWaveBundle({
+    required this.prepared,
+    required this.vcTreePositions,
+  });
+
+  final _PreparedVoteWaveBundle prepared;
+  final Map<int, BigInt> vcTreePositions;
+}
+
+class _VoteWaveFailure {
+  const _VoteWaveFailure({
+    required this.bundleIndex,
+    required this.stage,
+    required this.error,
+  });
+
+  final int bundleIndex;
+  final String stage;
+  final Object error;
+}
+
+class _VoteWaveBatchException implements Exception {
+  const _VoteWaveBatchException(this.failures);
+
+  final List<_VoteWaveFailure> failures;
+
+  @override
+  String toString() {
+    final details = failures
+        .map(
+          (failure) =>
+              'bundle ${failure.bundleIndex + 1} ${failure.stage}: '
+              '${failure.error}',
+        )
+        .join('; ');
+    return 'Vote proposal wave failed: $details';
+  }
+}
+
+class _PolledVoteRecovery {
+  const _PolledVoteRecovery({
+    required this.key,
+    required this.txHash,
+    required this.confirmation,
+  });
+
+  final VotingVoteKey key;
+  final String txHash;
+  final VotingTxConfirmation confirmation;
+}
+
+class _VoteConfirmationTimeout implements Exception {
+  const _VoteConfirmationTimeout({required this.key, required this.txHash});
+
+  final VotingVoteKey key;
+  final String txHash;
 }
 
 class _VotingSessionContext {

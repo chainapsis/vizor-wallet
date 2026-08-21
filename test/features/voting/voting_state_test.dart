@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
@@ -56,6 +57,34 @@ void main() {
       ),
       throwsUnsupportedError,
     );
+  });
+
+  test('session state exposes every active vote key', () {
+    const activeA = VotingVoteKey(bundleIndex: 0, proposalId: 7);
+    const activeB = VotingVoteKey(bundleIndex: 1, proposalId: 7);
+    const completed = VotingVoteKey(bundleIndex: 2, proposalId: 7);
+    final state = VotingSessionState(
+      roundId: 'round-1',
+      voteProgress: {
+        activeA: const VotingSessionProgress(
+          phase: 'proving',
+          bundleIndex: 0,
+          proposalId: 7,
+        ),
+        activeB: const VotingSessionProgress(
+          phase: 'witness',
+          bundleIndex: 1,
+          proposalId: 7,
+        ),
+        completed: const VotingSessionProgress(
+          phase: 'completed',
+          bundleIndex: 2,
+          proposalId: 7,
+        ),
+      },
+    );
+
+    expect(state.activeVoteKeys, {activeA, activeB});
   });
 
   test('round details reject fractional snapshot heights', () {
