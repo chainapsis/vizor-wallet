@@ -7007,6 +7007,9 @@ const _: fn() = || {
         let _: u32 = BundleLayout.bundle_count;
         let _: u64 = BundleLayout.eligible_weight;
         let _: u32 = BundleLayout.dropped_count;
+        let _: u32 = BundleLayout.privacy_trim_dropped_bundles;
+        let _: u32 = BundleLayout.privacy_trim_dropped_notes;
+        let _: u64 = BundleLayout.privacy_trim_dropped_value_zatoshi;
     }
     {
         let CompletedVoteChoiceView = None::<zcash_voting::wire::CompletedVoteChoiceView>.unwrap();
@@ -7564,10 +7567,12 @@ impl SseDecode for crate::api::voting::ApiVotingEligibility {
         let mut var_isEligible = <bool>::sse_decode(deserializer);
         let mut var_distinctNoteCount = <u32>::sse_decode(deserializer);
         let mut var_eligibleWeightZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
         return crate::api::voting::ApiVotingEligibility {
             is_eligible: var_isEligible,
             distinct_note_count: var_distinctNoteCount,
             eligible_weight_zatoshi: var_eligibleWeightZatoshi,
+            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
         };
     }
 }
@@ -7641,10 +7646,16 @@ impl SseDecode for zcash_voting::round::BundleLayout {
         let mut var_bundleCount = <u32>::sse_decode(deserializer);
         let mut var_eligibleWeight = <u64>::sse_decode(deserializer);
         let mut var_droppedCount = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedBundles = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedNotes = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
         return zcash_voting::round::BundleLayout {
             bundle_count: var_bundleCount,
             eligible_weight: var_eligibleWeight,
             dropped_count: var_droppedCount,
+            privacy_trim_dropped_bundles: var_privacyTrimDroppedBundles,
+            privacy_trim_dropped_notes: var_privacyTrimDroppedNotes,
+            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
         };
     }
 }
@@ -7744,6 +7755,7 @@ impl SseDecode for zcash_voting::config::ConfigConditionKind {
             2 => zcash_voting::config::ConfigConditionKind::DynamicConfigDecoded,
             3 => zcash_voting::config::ConfigConditionKind::DynamicSignaturesVerified,
             4 => zcash_voting::config::ConfigConditionKind::VersionsSupported,
+            5 => zcash_voting::config::ConfigConditionKind::DynamicMirrorFallbackUsed,
             _ => unreachable!("Invalid variant for ConfigConditionKind: {}", inner),
         };
     }
@@ -10824,6 +10836,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingEligibility 
             self.is_eligible.into_into_dart().into_dart(),
             self.distinct_note_count.into_into_dart().into_dart(),
             self.eligible_weight_zatoshi.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_value_zatoshi
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -10919,6 +10934,18 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::round::BundleLay
             self.0.bundle_count.into_into_dart().into_dart(),
             self.0.eligible_weight.into_into_dart().into_dart(),
             self.0.dropped_count.into_into_dart().into_dart(),
+            self.0
+                .privacy_trim_dropped_bundles
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .privacy_trim_dropped_notes
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .privacy_trim_dropped_value_zatoshi
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -11068,6 +11095,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::ConfigCo
             zcash_voting::config::ConfigConditionKind::DynamicConfigDecoded => 2.into_dart(),
             zcash_voting::config::ConfigConditionKind::DynamicSignaturesVerified => 3.into_dart(),
             zcash_voting::config::ConfigConditionKind::VersionsSupported => 4.into_dart(),
+            zcash_voting::config::ConfigConditionKind::DynamicMirrorFallbackUsed => 5.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13464,6 +13492,7 @@ impl SseEncode for crate::api::voting::ApiVotingEligibility {
         <bool>::sse_encode(self.is_eligible, serializer);
         <u32>::sse_encode(self.distinct_note_count, serializer);
         <u64>::sse_encode(self.eligible_weight_zatoshi, serializer);
+        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
     }
 }
 
@@ -13514,6 +13543,9 @@ impl SseEncode for zcash_voting::round::BundleLayout {
         <u32>::sse_encode(self.bundle_count, serializer);
         <u64>::sse_encode(self.eligible_weight, serializer);
         <u32>::sse_encode(self.dropped_count, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_bundles, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_notes, serializer);
+        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
     }
 }
 
@@ -13579,6 +13611,7 @@ impl SseEncode for zcash_voting::config::ConfigConditionKind {
                 zcash_voting::config::ConfigConditionKind::DynamicConfigDecoded => 2,
                 zcash_voting::config::ConfigConditionKind::DynamicSignaturesVerified => 3,
                 zcash_voting::config::ConfigConditionKind::VersionsSupported => 4,
+                zcash_voting::config::ConfigConditionKind::DynamicMirrorFallbackUsed => 5,
                 _ => {
                     unimplemented!("");
                 }

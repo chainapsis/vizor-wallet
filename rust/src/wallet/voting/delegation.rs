@@ -136,6 +136,55 @@ pub async fn setup_delegation_bundles(
         .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
 }
 
+/// Minimum voting eligibility plus the note value the privacy trim withholds.
+///
+/// Both come from one bundle plan. The withheld value is raw note value, not
+/// bundle-quantized voting weight, and it is reported separately from
+/// `dropped_count` (sub-ballot notes, already worth zero ballots).
+///
+/// This narrows the plan to the one field the API layer needs so bundle
+/// contents do not leak into the FRB boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VotingEligibilityReport {
+    pub eligibility: zcash_voting::MinimumVotingEligibility,
+    pub privacy_trim_dropped_value_zatoshi: u64,
+}
+
+/// Reports eligibility and the privacy-trim loss for an already-selected note set.
+///
+/// Split out from [`check_voting_eligibility`] so the planning behavior can be
+/// tested without lightwalletd note selection.
+///
+/// `seed_policy` is only what an unplanned round would be planned with. Once a
+/// round has a plan, its stored policy is authoritative, so the policy is
+/// resolved from round state rather than assumed from the seed -- otherwise the
+/// preview describes a plan the round would not actually derive.
+///
+/// # Errors
+///
+/// Returns an error if the round policy cannot be resolved or if any selected
+/// note row is malformed.
+fn voting_eligibility_report(
+    voting_db: &VotingDb,
+    round_id: &str,
+    note_infos: &[zcash_voting::types::NoteInfo],
+    seed_policy: BundlePolicy,
+) -> Result<VotingEligibilityReport, String> {
+    let bundle_policy = voting_db
+        .effective_bundle_policy(round_id, seed_policy)
+        .map_err(|e| e.to_string())?;
+    // One plan, so the reported weight and the reported loss cannot describe
+    // different bundle sets. This also applies the canonical duplicate-nullifier
+    // collapse rather than repeating it here.
+    let (eligibility, plan) =
+        zcash_voting::minimum_voting_eligibility_and_plan_for_notes(note_infos, bundle_policy)
+            .map_err(|e| e.to_string())?;
+    Ok(VotingEligibilityReport {
+        eligibility,
+        privacy_trim_dropped_value_zatoshi: plan.privacy_trim.dropped_value,
+    })
+}
+
 /// Select notes and check whether a wallet can vote without persisting bundles.
 ///
 /// The selected notes are taken at the round snapshot height. The result uses
@@ -144,16 +193,17 @@ pub async fn setup_delegation_bundles(
 ///
 /// # Errors
 ///
-/// Returns an error if lightwalletd note selection fails or if any selected
-/// note row is malformed.
+/// Returns an error if lightwalletd note selection fails, the round policy
+/// cannot be resolved, or any selected note row is malformed.
 pub async fn check_voting_eligibility(
     voting_db: &VotingDb,
     db_path: &str,
     lightwalletd_url: &str,
     network: zcash_voting::Network,
+    round_id: &str,
     snapshot_height: u64,
     bundle_policy: BundlePolicy,
-) -> Result<zcash_voting::MinimumVotingEligibility, String> {
+) -> Result<VotingEligibilityReport, String> {
     let selected = select_notes_with_lwd(
         voting_db,
         db_path,
@@ -164,9 +214,8 @@ pub async fn check_voting_eligibility(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let bundle_policy = whale_protected_bundle_policy(bundle_policy);
-    zcash_voting::minimum_voting_eligibility_for_notes(&note_infos, bundle_policy)
-        .map_err(|e| e.to_string())
+    let seed_policy = whale_protected_bundle_policy(bundle_policy);
+    voting_eligibility_report(voting_db, round_id, &note_infos, seed_policy)
 }
 
 /// Warms PIR state for a single delegation bundle.
@@ -486,6 +535,153 @@ mod tests {
         assert_eq!(protected_plan.len(), 2);
         assert!(protected_positions.contains(&vec![1, 2, 3]));
         assert!(protected_positions.contains(&vec![4]));
+
+        // The whale threshold and the privacy trim pull in opposite directions.
+        // They compose because a 1% / 1000 ZEC drop budget can never pay for a
+        // bundle sized near the 25,000 ZEC threshold, so splitting a whale never
+        // costs it the bundle the split just created.
+        let trim =
+            zcash_voting::note_bundling::chunk_notes_with_policy(&notes, policy).privacy_trim;
+        assert!(trim.is_empty());
+    }
+
+    /// Opens a fresh sidecar DB with the round row the report path looks up.
+    fn test_voting_db(temp_dir: &tempfile::TempDir) -> VotingDb {
+        let db_path = temp_dir.path().join("zcash_wallet.db");
+        let db = open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &zcash_voting::VotingRoundParams {
+                vote_round_id: ROUND_ID.to_string(),
+                snapshot_height: 100,
+                ea_pk: vec![1],
+                nc_root: vec![2; 32],
+                nullifier_imt_root: vec![3; 32],
+            },
+            None,
+        )
+        .unwrap();
+        db
+    }
+
+    /// Two 500 ZEC notes plus a 15-note 1 ZEC tail: the shape the trim exists for.
+    ///
+    /// Bundles pack five notes each, so this plans as 1003 / 5 / 5 / 2 ZEC.
+    fn whale_with_dust_tail_notes() -> Vec<zcash_voting::NoteInfo> {
+        let mut notes = vec![
+            note_with_value(1, 500 * ZATOSHI_PER_ZEC),
+            note_with_value(2, 500 * ZATOSHI_PER_ZEC),
+        ];
+        notes.extend((3..18).map(|position| note_with_value(position, ZATOSHI_PER_ZEC)));
+        notes
+    }
+
+    #[test]
+    fn voting_eligibility_report_surfaces_the_privacy_trim_for_a_dust_tail() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = test_voting_db(&temp_dir);
+        let notes = whale_with_dust_tail_notes();
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
+
+        let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
+
+        // Budget is 1% of 1015 ZEC, which pays for the 2 ZEC and 5 ZEC tail
+        // bundles and then hits the 2-bundle target.
+        assert_eq!(
+            report.privacy_trim_dropped_value_zatoshi,
+            7 * ZATOSHI_PER_ZEC
+        );
+        assert!(report.eligibility.is_eligible());
+        assert_eq!(
+            report.eligibility.eligible_weight,
+            1008 * ZATOSHI_PER_ZEC,
+            "the reported weight must be the post-trim weight"
+        );
+    }
+
+    #[test]
+    fn voting_eligibility_report_withholds_nothing_from_uniform_notes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = test_voting_db(&temp_dir);
+        // No single tail bundle fits the budget, so a uniform holder cannot be
+        // trimmed at all. This is a documented no-op case upstream; pin it so a
+        // policy change cannot start quietly costing these voters weight.
+        let notes: Vec<_> = (1..=20)
+            .map(|position| note_with_value(position, 50 * ZATOSHI_PER_ZEC))
+            .collect();
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
+
+        let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
+
+        assert_eq!(report.privacy_trim_dropped_value_zatoshi, 0);
+        assert_eq!(report.eligibility.eligible_weight, 1000 * ZATOSHI_PER_ZEC);
+    }
+
+    #[test]
+    fn voting_eligibility_report_matches_what_a_planned_round_actually_withheld() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = test_voting_db(&temp_dir);
+        let notes = whale_with_dust_tail_notes();
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
+        let layout = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, policy)
+            .unwrap();
+        assert!(layout.privacy_trim_dropped_value_zatoshi > 0);
+
+        let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
+
+        // The round stored a trimming policy, so the preview must agree with
+        // the plan storage holds. Deriving this from the bundle count alone
+        // would report zero for a round that genuinely withheld value.
+        assert_eq!(
+            report.privacy_trim_dropped_value_zatoshi,
+            layout.privacy_trim_dropped_value_zatoshi
+        );
+        assert_eq!(report.eligibility.eligible_weight, layout.eligible_weight);
+    }
+
+    #[test]
+    fn voting_eligibility_report_withholds_nothing_for_a_round_migrated_from_launch() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = test_voting_db(&temp_dir);
+        let notes = whale_with_dust_tail_notes();
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
+        db.ensure_bundles_with_policy(ROUND_ID, &notes, policy.with_max_privacy_bundles(None))
+            .unwrap();
+        // A round carried across the in-place schema upgrade has bundle rows
+        // but no stored policy, and re-derives without the trim.
+        db.conn()
+            .execute(
+                "UPDATE rounds SET bundle_policy_json = NULL WHERE round_id = ?1",
+                rusqlite::params![ROUND_ID],
+            )
+            .unwrap();
+
+        let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
+
+        // Warning these voters about weight they are not losing is the worse
+        // failure, so the preview must stay silent for them.
+        assert_eq!(report.privacy_trim_dropped_value_zatoshi, 0);
+        assert_eq!(report.eligibility.eligible_weight, 1015 * ZATOSHI_PER_ZEC);
+    }
+
+    #[test]
+    fn voting_eligibility_report_ignores_duplicate_nullifiers() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = test_voting_db(&temp_dir);
+        let mut notes = whale_with_dust_tail_notes();
+        notes.extend(whale_with_dust_tail_notes());
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
+
+        let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
+
+        // Duplicates must collapse before planning, or the trim preview would
+        // describe a different note set than the eligibility weight beside it.
+        assert_eq!(
+            report.privacy_trim_dropped_value_zatoshi,
+            7 * ZATOSHI_PER_ZEC
+        );
+        assert_eq!(report.eligibility.eligible_weight, 1008 * ZATOSHI_PER_ZEC);
     }
 
     #[test]

@@ -941,17 +941,23 @@ class ApiVotingEligibility {
   final int distinctNoteCount;
   final BigInt eligibleWeightZatoshi;
 
+  /// Raw note value the privacy trim withholds from this round, not its
+  /// bundle-quantized voting weight. Zero when nothing was withheld.
+  final BigInt privacyTrimDroppedValueZatoshi;
+
   const ApiVotingEligibility({
     required this.isEligible,
     required this.distinctNoteCount,
     required this.eligibleWeightZatoshi,
+    required this.privacyTrimDroppedValueZatoshi,
   });
 
   @override
   int get hashCode =>
       isEligible.hashCode ^
       distinctNoteCount.hashCode ^
-      eligibleWeightZatoshi.hashCode;
+      eligibleWeightZatoshi.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -960,7 +966,9 @@ class ApiVotingEligibility {
           runtimeType == other.runtimeType &&
           isEligible == other.isEligible &&
           distinctNoteCount == other.distinctNoteCount &&
-          eligibleWeightZatoshi == other.eligibleWeightZatoshi;
+          eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

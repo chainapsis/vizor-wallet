@@ -8839,12 +8839,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ApiVotingEligibility(
       isEligible: dco_decode_bool(arr[0]),
       distinctNoteCount: dco_decode_u_32(arr[1]),
       eligibleWeightZatoshi: dco_decode_u_64(arr[2]),
+      privacyTrimDroppedValueZatoshi: dco_decode_u_64(arr[3]),
     );
   }
 
@@ -9021,12 +9022,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BundleLayout dco_decode_bundle_layout(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return BundleLayout(
       bundleCount: dco_decode_u_32(arr[0]),
       eligibleWeight: dco_decode_u_64(arr[1]),
       droppedCount: dco_decode_u_32(arr[2]),
+      privacyTrimDroppedBundles: dco_decode_u_32(arr[3]),
+      privacyTrimDroppedNotes: dco_decode_u_32(arr[4]),
+      privacyTrimDroppedValueZatoshi: dco_decode_u_64(arr[5]),
     );
   }
 
@@ -11307,10 +11311,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isEligible = sse_decode_bool(deserializer);
     var var_distinctNoteCount = sse_decode_u_32(deserializer);
     var var_eligibleWeightZatoshi = sse_decode_u_64(deserializer);
+    var var_privacyTrimDroppedValueZatoshi = sse_decode_u_64(deserializer);
     return ApiVotingEligibility(
       isEligible: var_isEligible,
       distinctNoteCount: var_distinctNoteCount,
       eligibleWeightZatoshi: var_eligibleWeightZatoshi,
+      privacyTrimDroppedValueZatoshi: var_privacyTrimDroppedValueZatoshi,
     );
   }
 
@@ -11511,10 +11517,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleCount = sse_decode_u_32(deserializer);
     var var_eligibleWeight = sse_decode_u_64(deserializer);
     var var_droppedCount = sse_decode_u_32(deserializer);
+    var var_privacyTrimDroppedBundles = sse_decode_u_32(deserializer);
+    var var_privacyTrimDroppedNotes = sse_decode_u_32(deserializer);
+    var var_privacyTrimDroppedValueZatoshi = sse_decode_u_64(deserializer);
     return BundleLayout(
       bundleCount: var_bundleCount,
       eligibleWeight: var_eligibleWeight,
       droppedCount: var_droppedCount,
+      privacyTrimDroppedBundles: var_privacyTrimDroppedBundles,
+      privacyTrimDroppedNotes: var_privacyTrimDroppedNotes,
+      privacyTrimDroppedValueZatoshi: var_privacyTrimDroppedValueZatoshi,
     );
   }
 
@@ -14491,6 +14503,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isEligible, serializer);
     sse_encode_u_32(self.distinctNoteCount, serializer);
     sse_encode_u_64(self.eligibleWeightZatoshi, serializer);
+    sse_encode_u_64(self.privacyTrimDroppedValueZatoshi, serializer);
   }
 
   @protected
@@ -14686,6 +14699,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleCount, serializer);
     sse_encode_u_64(self.eligibleWeight, serializer);
     sse_encode_u_32(self.droppedCount, serializer);
+    sse_encode_u_32(self.privacyTrimDroppedBundles, serializer);
+    sse_encode_u_32(self.privacyTrimDroppedNotes, serializer);
+    sse_encode_u_64(self.privacyTrimDroppedValueZatoshi, serializer);
   }
 
   @protected

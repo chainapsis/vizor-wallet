@@ -5,6 +5,31 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
 void main() {
+  test('session state carries the privacy trim through copyWith', () {
+    final state = VotingSessionState(roundId: 'round-1');
+    expect(state.privacyTrimDroppedValueZatoshi, isNull);
+
+    final withTrim = state.copyWith(
+      privacyTrimDroppedValueZatoshi: BigInt.from(19000000),
+    );
+    expect(withTrim.privacyTrimDroppedValueZatoshi, BigInt.from(19000000));
+
+    // A later report of zero must be able to clear a stale warning: the
+    // authoritative bundle layout supersedes the pre-delegation preview.
+    final cleared = withTrim.copyWith(
+      privacyTrimDroppedValueZatoshi: BigInt.zero,
+    );
+    expect(cleared.privacyTrimDroppedValueZatoshi, BigInt.zero);
+
+    // An unrelated update must leave it alone.
+    expect(
+      cleared
+          .copyWith(eligibleWeightZatoshi: BigInt.one)
+          .privacyTrimDroppedValueZatoshi,
+      BigInt.zero,
+    );
+  });
+
   test('round details reject fractional snapshot heights', () {
     final status = VotingRoundStatus(
       roundId: 'round-1',

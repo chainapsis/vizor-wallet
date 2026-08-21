@@ -127,6 +127,9 @@ pub struct ApiVotingEligibility {
     pub is_eligible: bool,
     pub distinct_note_count: u32,
     pub eligible_weight_zatoshi: u64,
+    /// Raw note value the privacy trim withholds from this round, not its
+    /// bundle-quantized voting weight. Zero when nothing was withheld.
+    pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -687,21 +690,24 @@ pub async fn check_voting_eligibility(
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
-    let eligibility = delegation::check_voting_eligibility(
+    let report = delegation::check_voting_eligibility(
         &voting_db,
         &ctx.db_path,
         &ctx.lightwalletd_url,
         voting_network,
+        ctx.round_params.vote_round_id.as_str(),
         ctx.round_params.snapshot_height,
         bundle_policy,
     )
     .await?;
+    let eligibility = report.eligibility;
     let distinct_note_count = u32::try_from(eligibility.distinct_note_count)
         .map_err(|_| "distinct note count does not fit in u32".to_string())?;
     Ok(ApiVotingEligibility {
         is_eligible: eligibility.is_eligible(),
         distinct_note_count,
         eligible_weight_zatoshi: eligibility.eligible_weight,
+        privacy_trim_dropped_value_zatoshi: report.privacy_trim_dropped_value_zatoshi,
     })
 }
 
@@ -1920,10 +1926,18 @@ mod tests {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
+            privacy_trim_dropped_bundles: 1,
+            privacy_trim_dropped_notes: 4,
+            privacy_trim_dropped_value_zatoshi: 900,
         };
 
         assert_eq!(api.bundle_count, 2);
         assert_eq!(api.eligible_weight, 50);
+        // The privacy-trim totals are flat scalars so the Dart mirror stays a
+        // field-level delta instead of gaining a nested class.
+        assert_eq!(api.privacy_trim_dropped_bundles, 1);
+        assert_eq!(api.privacy_trim_dropped_notes, 4);
+        assert_eq!(api.privacy_trim_dropped_value_zatoshi, 900);
     }
 
     #[test]
@@ -2448,13 +2462,24 @@ mod tests {
             anchor_tree_state: test_tree_state(100),
         };
 
-        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected(
-            selected,
-            BundlePolicy::default(),
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-selection").unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+
+        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected_for_round(
+            selected, &db, ROUND_ID,
         )
         .unwrap();
 
         assert_eq!(api.note_count, 2);
+        // Two half-ballot notes fit one bundle, so nothing is trimmed.
+        assert_eq!(api.privacy_trim, Default::default());
         assert_eq!(api.eligible_weight_zatoshi, divisor);
         assert_eq!(api.snapshot_height, 100);
         assert_eq!(api.anchor_height, 100);

@@ -57,6 +57,12 @@ enum ConfigConditionKind {
   dynamicConfigDecoded,
   dynamicSignaturesVerified,
   versionsSupported,
+
+  /// A dynamic config mirror other than the first was used.
+  ///
+  /// Only emitted by [`resolve_dynamic_voting_config_from_attempts`], and
+  /// only when at least one earlier mirror was passed over.
+  dynamicMirrorFallbackUsed,
 }
 
 /// High-level meaning of a resolved config switch.
