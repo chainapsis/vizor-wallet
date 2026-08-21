@@ -371,6 +371,9 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
   });
 
+  /// Fire-and-forget Halo2 proving-key warm-up for voting proofs.
+  void warmVotingProvingCaches();
+
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
@@ -639,6 +642,11 @@ class FrbVotingRustApi implements VotingRustApi {
       storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
+  }
+
+  @override
+  void warmVotingProvingCaches() {
+    rust_api.warmVotingProvingCaches();
   }
 
   @override

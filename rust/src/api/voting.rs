@@ -1,4 +1,4 @@
-use std::{panic, path::Path, sync::Arc};
+use std::{panic, path::Path, sync::Arc, time::Instant};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -791,6 +791,15 @@ pub async fn precompute_delegation_pir(
     .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
+/// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
+///
+/// Safe to call repeatedly; only the first call starts work. Returns
+/// immediately so Dart can overlap warm-up with PIR resolve / bundle setup.
+#[flutter_rust_bridge::frb(sync)]
+pub fn warm_voting_proving_caches() {
+    delegation::start_proving_cache_warmup();
+}
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
@@ -810,14 +819,32 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
+    let total_started = Instant::now();
+    log::info!("[VOTING_PROVE] bundle={bundle_index} api-start");
     // Resolve static delegation inputs and validate the app-owned stored hotkey.
+    let static_inputs_started = Instant::now();
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} static-inputs elapsed={:.3}s",
+        static_inputs_started.elapsed().as_secs_f64()
+    );
+    let seed_started = Instant::now();
     let seed = seed_from_mnemonic(mnemonic)?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} seed elapsed={:.3}s",
+        seed_started.elapsed().as_secs_f64()
+    );
+    let hotkey_started = Instant::now();
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} hotkey elapsed={:.3}s",
+        hotkey_started.elapsed().as_secs_f64()
+    );
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
+    let lwd_started = Instant::now();
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -825,6 +852,11 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         voting_network,
     )
     .await?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s",
+        lwd_started.elapsed().as_secs_f64()
+    );
+    let prepare_params_started = Instant::now();
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -833,11 +865,16 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         bundle_index,
         bundle_policy,
     );
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} prepare-params elapsed={:.3}s",
+        prepare_params_started.elapsed().as_secs_f64()
+    );
 
     // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
-    let signed_result = delegation::build_prove_and_sign_delegation_payload(
+    let wallet_flow_started = Instant::now();
+    let delegation_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_url,
         ctx.pir_layout,
@@ -849,11 +886,27 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
             }
         },
     )
-    .await
-    .and_then(|bundle| {
+    .await;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} wallet-prove-sign elapsed={:.3}s",
+        wallet_flow_started.elapsed().as_secs_f64()
+    );
+    let conversion_started = Instant::now();
+    let signed_result = delegation_result.and_then(|bundle| {
         zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
-    emit_signed_delegation_result(sink.as_ref(), signed_result)
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} wire-conversion elapsed={:.3}s",
+        conversion_started.elapsed().as_secs_f64()
+    );
+    let emit_started = Instant::now();
+    let result = emit_signed_delegation_result(sink.as_ref(), signed_result);
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} emit elapsed={:.3}s total={:.3}s",
+        emit_started.elapsed().as_secs_f64(),
+        total_started.elapsed().as_secs_f64()
+    );
+    result
 }
 
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
@@ -1944,6 +1997,12 @@ mod tests {
         assert_eq!(hotkey_a.len(), 64);
         assert_eq!(hotkey_b.len(), 64);
         assert_ne!(hotkey_a, hotkey_b);
+    }
+
+    #[test]
+    fn warm_voting_proving_caches_is_idempotent() {
+        warm_voting_proving_caches();
+        warm_voting_proving_caches();
     }
 
     #[test]
