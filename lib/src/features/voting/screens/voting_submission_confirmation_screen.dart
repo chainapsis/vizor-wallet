@@ -511,6 +511,9 @@ class _ConfirmationScaffold extends StatelessWidget {
                         SizedBox(
                           width: double.infinity,
                           child: AppButton(
+                            key: const ValueKey(
+                              'voting_submission_done_button',
+                            ),
                             onPressed: doneEnabled
                                 ? onDone ?? () => context.go('/voting')
                                 : null,
