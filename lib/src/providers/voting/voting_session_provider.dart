@@ -1590,7 +1590,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
-      final submissions = <Future<_InitialShareSubmissionResult>>[];
+      // Validate every body before starting helper requests. Otherwise a later
+      // serialization failure could abandon already accepted submissions.
+      final preparedSubmissions = <_PreparedInitialShareSubmission>[];
       for (var payloadIndex = 0; payloadIndex < shares.length; payloadIndex++) {
         final share = shares[payloadIndex];
         final plan = plans[payloadIndex];
@@ -1617,10 +1619,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           totalQuestions: totalQuestions,
           voteSubmissionProgress: voteSubmissionProgress,
         );
-        submissions.add(
-          _submitInitialShareToHelpers(
-            api: api,
-            helperHealth: helperHealth,
+        preparedSubmissions.add(
+          _PreparedInitialShareSubmission(
             share: share,
             body: body,
             candidateServers: candidateServers,
@@ -1630,23 +1630,46 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
-      final results = await Future.wait(submissions);
+      final submissions = [
+        for (final prepared in preparedSubmissions)
+          _submitInitialShareToHelpers(
+            api: api,
+            helperHealth: helperHealth,
+            share: prepared.share,
+            body: prepared.body,
+            candidateServers: prepared.candidateServers,
+            targetCount: prepared.targetCount,
+            submitAt: prepared.submitAt,
+          ),
+      ];
       _InitialShareSubmissionResult? failedResult;
-      for (final result in results) {
+      Object? persistenceError;
+      StackTrace? persistenceStackTrace;
+      // Persist in completion order so accepted shares become durable promptly
+      // while Rust DB writes remain sequential.
+      await for (final result in Stream.fromFutures(submissions)) {
         if (result.acceptedServers.isEmpty) {
           failedResult ??= result;
           continue;
         }
-        await rust.recordShareDelegation(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          bundleIndex: commitments.bundleIndex,
-          proposalId: result.share.proposalId,
-          shareIndex: result.share.shareIndex,
-          sentToUrls: result.acceptedServers,
-          submitAt: result.submitAt,
-        );
+        try {
+          await rust.recordShareDelegation(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+            bundleIndex: commitments.bundleIndex,
+            proposalId: result.share.proposalId,
+            shareIndex: result.share.shareIndex,
+            sentToUrls: result.acceptedServers,
+            submitAt: result.submitAt,
+          );
+        } catch (error, stackTrace) {
+          persistenceError ??= error;
+          persistenceStackTrace ??= stackTrace;
+        }
+      }
+      if (persistenceError != null) {
+        Error.throwWithStackTrace(persistenceError, persistenceStackTrace!);
       }
       if (failedResult != null) {
         throw StateError(
@@ -3787,6 +3810,22 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     }
     await _refreshVotingEligibilityState(current: current, context: context);
   }
+}
+
+class _PreparedInitialShareSubmission {
+  const _PreparedInitialShareSubmission({
+    required this.share,
+    required this.body,
+    required this.candidateServers,
+    required this.targetCount,
+    required this.submitAt,
+  });
+
+  final rust_wire.VoteShareWire share;
+  final Map<String, dynamic> body;
+  final List<String> candidateServers;
+  final int targetCount;
+  final BigInt submitAt;
 }
 
 class _InitialShareSubmissionResult {
