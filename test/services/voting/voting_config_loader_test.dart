@@ -779,13 +779,16 @@ void main() {
         failures
             .where((failure) => failure.isIntegrityFailure)
             .map((failure) => failure.url),
-        contains(mirrorA),
+        [mirrorA],
       );
       expect(
-        failures.where(
-          (failure) => failure.kind == VotingConfigMirrorFailureKind.transport,
-        ),
-        isNotEmpty,
+        failures
+            .where(
+              (failure) =>
+                  failure.kind == VotingConfigMirrorFailureKind.transport,
+            )
+            .map((failure) => failure.url),
+        [mirrorB],
       );
     },
   );

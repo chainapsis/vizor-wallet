@@ -484,10 +484,10 @@ class VotingConfigLoader {
         );
       }
 
-      // Nothing has produced bytes yet, so there is nothing for Rust to
-      // authenticate. Skipping the call keeps transport failures out of the
-      // config layer entirely rather than round-tripping for a known error.
-      if (attempts.every((attempt) => attempt.bytes == null)) continue;
+      // This mirror produced no new bytes, so re-running Rust could only repeat
+      // an earlier mirror's rejection and incorrectly attribute that integrity
+      // failure to this transport-only mirror.
+      if (attempts.last.bytes == null) continue;
 
       try {
         best = await _resolveVotingConfigFromAttempts(
