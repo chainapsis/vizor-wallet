@@ -15,7 +15,6 @@ enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
-const _scheduledBlockProgressCap = 0.70;
 const _migrationEstimatedSecondsPerBlock = 75;
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';

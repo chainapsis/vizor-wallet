@@ -1032,7 +1032,7 @@ fn transition_stage(
 /// stage index, so independent branches remain untouched. Each affected stage
 /// returns to `AwaitingInputs` and can be re-anchored, proved, and promoted
 /// again with the same effecting-data transaction ID.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn reset_denomination_stage_for_reorg(
     conn: &Connection,
     run_id: &str,
@@ -1078,7 +1078,7 @@ pub(crate) fn reset_denomination_stage_for_reorg(
 }
 
 /// Reads the state of one stage by its stable order within the run.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn denomination_stage_status(
     conn: &Connection,
     run_id: &str,
@@ -1299,7 +1299,7 @@ pub(crate) fn denomination_stage_status_counts(
 
 /// Returns true only when the run has at least one stage and every stage is
 /// confirmed.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn all_denomination_stages_confirmed(
     conn: &Connection,
     run_id: &str,

@@ -756,7 +756,7 @@ fn retry_store_then_pending_migration_policy_rebuild_message(
     pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
 }
 
-pub fn propose_send(
+pub(crate) fn propose_send(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,

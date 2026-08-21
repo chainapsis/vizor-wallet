@@ -1,7 +1,3 @@
-// The public helper surface intentionally preserves the visibility of the
-// pre-split sync module while its result DTOs remain crate-internal.
-#![allow(private_interfaces)]
-
 use zcash_client_backend::{
     data_api::{
         chain::{scan_cached_blocks, CommitmentTreeRoot},
@@ -58,6 +54,7 @@ pub use pczt::{
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::propose_send;
 pub(crate) use send::{
     abandon_orchard_migration, advance_orchard_migration_preparation_for_run,
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
@@ -75,8 +72,8 @@ pub(crate) use send::{
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
-    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
-    ExecuteProposalResult, IronwoodMigrationResult,
+    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, ExecuteProposalResult,
+    IronwoodMigrationResult,
 };
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
@@ -100,14 +97,14 @@ pub(crate) use send::ShieldTransparentStatus;
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{
     decrypt_and_store_transaction, get_next_available_address,
-    get_previous_transaction_count_for_address, get_transaction_data_requests,
-    get_transaction_detail, get_transaction_history, get_wallet_balance, get_wallet_balances,
-    parse_address_request_kind, set_transaction_status, AddressRequestKind,
+    get_previous_transaction_count_for_address, parse_address_request_kind, set_transaction_status,
+    AddressRequestKind,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_oldest_mined_transaction_anchor,
-    get_unmined_txids_with_mined_output_evidence, ExportBirthdayAnchor, TransactionDetail,
+    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, get_transaction_data_requests,
+    get_transaction_detail, get_transaction_history, get_unmined_txids_with_mined_output_evidence,
+    get_wallet_balance, get_wallet_balances, ExportBirthdayAnchor, TransactionDetail,
     TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
     WalletBalanceAvailability,
 };
@@ -140,17 +137,6 @@ fn open_block_cache(cache_path: &str) -> Result<FsBlockDb, String> {
         .map_err(|e| format!("Failed to open block cache: {e:?}"))?;
     init_blockmeta_db(&mut db_cache).map_err(|e| format!("Failed to init block cache: {e}"))?;
     Ok(db_cache)
-}
-
-#[allow(dead_code)]
-fn get_first_account_id(db: &WalletDatabase) -> Result<zcash_client_sqlite::AccountUuid, String> {
-    let accounts = db
-        .get_account_ids()
-        .map_err(|e| format!("Failed to list accounts: {e}"))?;
-    accounts
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No accounts found in wallet".to_string())
 }
 
 // ======================== Sync ========================
@@ -272,7 +258,7 @@ pub(crate) struct ScanRangeInfo {
     pub priority: u8,
 }
 
-pub fn suggest_scan_ranges(
+pub(crate) fn suggest_scan_ranges(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<Vec<ScanRangeInfo>, String> {
@@ -426,7 +412,10 @@ fn wallet_scan_heights_in_snapshot(
     .map_err(|e: zcash_client_sqlite::error::SqliteClientError| format!("{e}"))
 }
 
-pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
+pub(crate) fn get_sync_progress(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<SyncProgress, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     match wallet_scan_heights(&mut db)? {
         Some((scanned_height, chain_tip_height)) => {

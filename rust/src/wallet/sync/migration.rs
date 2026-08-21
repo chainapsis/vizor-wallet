@@ -29,19 +29,20 @@ pub(crate) use split_plan::{
     plan_padded_denominations_without_refinement, SplitStageInput, SplitTerminalKind,
     DENOMINATION_SPLIT_ACTIONS,
 };
+#[cfg(test)]
+pub(crate) use stages::all_denomination_stages_confirmed;
 #[allow(unused_imports)]
 pub(crate) use stages::{
-    all_denomination_stages_confirmed, denomination_stage_chain_records,
-    denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
-    denomination_stages_for_run, expired_broadcasted_denomination_stage_count,
-    expired_unbroadcast_denomination_stage_count, insert_denomination_stages_with_tx,
-    locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
-    mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
-    promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
-    reset_denomination_stage_exact, reset_denomination_stage_for_reorg, DenominationStage,
-    DenominationStageChainRecord, DenominationStageInputRef, DenominationStageInsert,
-    DenominationStageOutputKind, DenominationStageOutputRef, DenominationStageStatus,
-    DenominationStageStatusCounts, PendingRawDenominationStage,
+    denomination_stage_chain_records, denomination_stage_expected_txids,
+    denomination_stage_status_counts, denomination_stages_for_run,
+    expired_broadcasted_denomination_stage_count, expired_unbroadcast_denomination_stage_count,
+    insert_denomination_stages_with_tx, locked_denomination_stage_input_outpoints,
+    mark_denomination_stage_broadcasted, mark_denomination_stage_confirmed_at,
+    pending_raw_denomination_stages, promote_awaiting_denomination_stage,
+    replace_denomination_stage_confirmation_identity, reset_denomination_stage_exact,
+    DenominationStage, DenominationStageChainRecord, DenominationStageInputRef,
+    DenominationStageInsert, DenominationStageOutputKind, DenominationStageOutputRef,
+    DenominationStageStatus, DenominationStageStatusCounts, PendingRawDenominationStage,
 };
 use stages::{STAGES_TABLE, STAGE_INPUTS_TABLE, STAGE_OUTPUTS_TABLE};
 
@@ -205,8 +206,6 @@ pub(crate) struct SignedMigrationPcztInsert {
 }
 
 pub(crate) struct SignedMigrationPczt {
-    #[allow(dead_code)]
-    pub message_id: String,
     pub child_index: u32,
     pub base_pczt: Vec<u8>,
     /// Decoded compact spend-authorization signatures for this child (see
@@ -1989,7 +1988,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     )
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn set_run_approved_schedule(
     db_path: &str,
     run_id: &str,
@@ -2033,21 +2032,6 @@ pub(crate) fn approved_schedule_for_run(
         .map_err(|e| format!("Read approved migration schedule: {e}"))?;
     serde_json::from_str(&schedule_json)
         .map_err(|e| format!("Decode approved migration schedule: {e}"))
-}
-
-#[allow(dead_code)]
-pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u64>, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let target_values_json = conn
-        .query_row(
-            &format!("SELECT target_values_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
-            params![run_id],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| format!("Read migration target values: {e}"))?;
-    serde_json::from_str(&target_values_json)
-        .map_err(|e| format!("Decode migration target values: {e}"))
 }
 
 pub(crate) fn signed_schedule_origin_for_run(
@@ -2607,7 +2591,6 @@ pub(crate) fn signed_child_pczts_for_run(
             .map_err(|e| format!("Decode signed migration PCZT metadata: {e}"))?;
 
         signed.push(SignedMigrationPczt {
-            message_id,
             child_index,
             base_pczt: base_pczt.to_vec(),
             sigs,
