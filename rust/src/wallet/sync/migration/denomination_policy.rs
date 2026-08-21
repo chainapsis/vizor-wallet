@@ -344,7 +344,7 @@ pub(crate) fn zip318_anchor_boundary_is_candidate_with_policy(
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> bool {
-    if anchor_boundary == 0 || anchor_boundary % anchor_bucket_modulus(network, timing_policy) != 0
+    if anchor_boundary == 0 || !anchor_boundary.is_multiple_of(anchor_bucket_modulus(network, timing_policy))
     {
         return false;
     }

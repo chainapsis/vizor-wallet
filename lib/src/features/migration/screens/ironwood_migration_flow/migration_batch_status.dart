@@ -108,6 +108,8 @@ class _MigrationBatchRow extends StatelessWidget {
   }
 }
 
+// Retained for the alternate batch-status composition.
+// ignore: unused_element
 class _MigrationStatusBatchPanel extends StatelessWidget {
   const _MigrationStatusBatchPanel({
     required this.values,
@@ -643,6 +645,8 @@ String _formatMigrationTotal(BigInt zatoshi) {
   return '$whole.$hundredths';
 }
 
+// Retained with the alternate batch-status composition above.
+// ignore: unused_element
 String _migrationSpendableBalanceLabel({
   required List<BigInt> values,
   required List<_MigrationBatchStatus> statuses,

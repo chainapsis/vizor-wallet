@@ -194,8 +194,14 @@ class _MobileMigrationPrimaryButton extends StatelessWidget {
   }
 }
 
+// Retained for the alternate analysis-progress composition.
+// ignore: unused_element
 class _MobileMigrationProgressTrack extends StatelessWidget {
-  const _MobileMigrationProgressTrack({required this.value, super.key});
+  const _MobileMigrationProgressTrack({
+    required this.value,
+    // ignore: unused_element_parameter
+    super.key,
+  });
 
   final double value;
 

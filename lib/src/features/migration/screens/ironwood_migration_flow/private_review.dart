@@ -818,6 +818,8 @@ class _MigrationStartRingPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
+// Retained for the alternate private-review composition.
+// ignore: unused_element
 class _MigrationBatchOverview extends StatelessWidget {
   const _MigrationBatchOverview({
     required this.values,

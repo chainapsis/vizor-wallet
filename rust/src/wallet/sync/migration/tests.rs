@@ -652,7 +652,7 @@ fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
 }
 
 fn insert_duplicate_broadcast_terminal_failure(conn: &rusqlite::Connection) {
-    ensure_schema(&conn).unwrap();
+    ensure_schema(conn).unwrap();
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}

@@ -35,7 +35,7 @@ fn get_orchard_migration_private_plan_for_targets(
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating migration plan")?;
     let mut orchard_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));
     if orchard_notes.is_empty() {
         return Ok(None);
@@ -276,7 +276,7 @@ pub(crate) fn get_orchard_migration_immediate_plan(
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating Immediate migration")?;
     let orchard_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     let input_values = orchard_notes
         .iter()
         .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))
@@ -599,7 +599,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
 
     let orchard_selected = if allow_replacing_local_spend {
         let available_notes =
-            select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+            select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
         let Some(selected) = available_notes.iter().find(|selected| {
             format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
                 && selected.output_index() as u32 == note_ref.output_index

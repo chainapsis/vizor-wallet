@@ -5,8 +5,12 @@ class _MobileMigrationRailSegment extends StatelessWidget {
     required this.width,
     required this.status,
     this.progress,
+    // Retained for the alternate morphing-track composition.
+    // ignore: unused_element_parameter
     this.height = _mobileMigrationPlanFinalBarHeight,
+    // ignore: unused_element_parameter
     this.morphProgress = 1,
+    // ignore: unused_element_parameter
     super.key,
   });
 
@@ -138,6 +142,8 @@ class _MobileMigrationRailSegmentPainter extends CustomPainter {
   }
 }
 
+// Retained for the alternate animated plan-summary composition.
+// ignore: unused_element
 class _MobileMigrationPartList extends StatelessWidget {
   const _MobileMigrationPartList({
     required this.transfers,

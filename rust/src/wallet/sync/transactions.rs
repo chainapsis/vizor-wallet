@@ -4,11 +4,12 @@
 //! helper that the FRB layer in `api/sync.rs` or the C FFI layer in
 //! `ffi.rs` calls per user action:
 //!
-//!   - Balance / address queries (`get_wallet_balance`,
-//!     `get_next_available_address`).
-//!   - Transaction list + on-chain enhancement requests
-//!     (`get_transaction_history`, `get_transaction_data_requests`,
-//!     `decrypt_and_store_transaction`, `set_transaction_status`).
+//! - Balance / address queries (`get_wallet_balance`,
+//!   `get_next_available_address`).
+//! - Transaction list + on-chain enhancement requests
+//!   (`get_transaction_history`, `get_transaction_data_requests`,
+//!   `decrypt_and_store_transaction`, `set_transaction_status`).
+//!
 //! None of these belong to the orchestration loop — the loop lives
 //! in `sync_engine/mod.rs`. They're one-shot lookups the UI drives
 //! directly, so extracting them into their own submodule keeps

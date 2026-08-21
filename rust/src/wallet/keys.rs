@@ -93,9 +93,8 @@ pub fn mnemonic_word_list() -> Vec<String> {
 }
 
 fn is_supported_mnemonic_word_count(count: usize) -> bool {
-    count >= MIN_MNEMONIC_WORD_COUNT
-        && count <= MAX_MNEMONIC_WORD_COUNT
-        && count % MNEMONIC_WORD_COUNT_STEP == 0
+    (MIN_MNEMONIC_WORD_COUNT..=MAX_MNEMONIC_WORD_COUNT).contains(&count)
+        && count.is_multiple_of(MNEMONIC_WORD_COUNT_STEP)
 }
 
 /// Convert a mnemonic phrase and optional BIP39 passphrase to a 64-byte seed.
@@ -1348,8 +1347,7 @@ mod tests {
     #[test]
     fn test_mnemonic_to_seed_rejects_unsupported_word_counts() {
         for count in [11, 13, 25] {
-            let phrase = std::iter::repeat("abandon")
-                .take(count)
+            let phrase = std::iter::repeat_n("abandon", count)
                 .collect::<Vec<_>>()
                 .join(" ");
             let error = match mnemonic_to_seed(&phrase) {

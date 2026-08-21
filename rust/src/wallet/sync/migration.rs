@@ -2749,7 +2749,7 @@ fn unpromoted_signed_child_note_outpoints_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<Vec<(String, u32)>, String> {
-    let pending = pending_migration_note_outpoints_with_conn(&conn, run_id)?;
+    let pending = pending_migration_note_outpoints_with_conn(conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT selected_note_json
@@ -5168,11 +5168,11 @@ fn update_run_after_pending_broadcast(
     run_id: &str,
     now: i64,
 ) -> Result<(), String> {
-    let needs_resign_remaining = count_pending_with_status(&tx, run_id, "needs_resign")?;
-    let scheduled_remaining = count_pending_with_status(&tx, run_id, "scheduled")?;
-    let pending_count = count_for_run(&tx, PENDING_TXS_TABLE, run_id)?;
-    let planned_count = planned_part_count_with_conn(&tx, run_id)?;
-    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(&tx, run_id)?;
+    let needs_resign_remaining = count_pending_with_status(tx, run_id, "needs_resign")?;
+    let scheduled_remaining = count_pending_with_status(tx, run_id, "scheduled")?;
+    let pending_count = count_for_run(tx, PENDING_TXS_TABLE, run_id)?;
+    let planned_count = planned_part_count_with_conn(tx, run_id)?;
+    let unpromoted_count = unpromoted_signed_child_pczt_count_with_conn(tx, run_id)?;
     let fully_materialized =
         planned_count > 0 && pending_count == planned_count && unpromoted_count == 0;
     let next_phase = if needs_resign_remaining > 0 {
@@ -5441,7 +5441,7 @@ fn prepared_notes_proof_ready_height_with_conn(
 
     let mut ready_height = 0u32;
     for txid in txids {
-        let Some(identity) = local_denomination_chain_identity(&conn, &txid)? else {
+        let Some(identity) = local_denomination_chain_identity(conn, &txid)? else {
             return Ok(None);
         };
         ready_height = ready_height.max(proof_ready_height_for_note_mined_height(
@@ -6283,9 +6283,11 @@ fn migration_preparation_transactions_for_run(
         // because the UI uses it to preserve transaction order; only its
         // completion forecast should continue moving until it is mined.
         let projected_height = effective_height.max(dependency_projection).max(
-            (state == MigrationPreparationTransactionState::Scheduled)
-                .then_some(current_scanned_height)
-                .unwrap_or(0),
+            if state == MigrationPreparationTransactionState::Scheduled {
+                current_scanned_height
+            } else {
+                0
+            },
         );
         let projected_completion_height = mined_height.map_or_else(
             || {
@@ -7435,7 +7437,7 @@ fn synced_orchard_confirmation_count(
             )
             .map_err(|e| format!("Read latest Orchard checkpoint: {e}"))?;
 
-        return Ok(latest_checkpoint
+        Ok(latest_checkpoint
             .map(|checkpoint| {
                 if checkpoint < height {
                     0
@@ -7444,7 +7446,7 @@ fn synced_orchard_confirmation_count(
                 }
             })
             .unwrap_or(0)
-            .min(denomination_confirmations_required()));
+            .min(denomination_confirmations_required()))
     }
 
     #[cfg(not(test))]

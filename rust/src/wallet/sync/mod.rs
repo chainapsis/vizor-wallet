@@ -723,12 +723,13 @@ mod tests {
     //! real wallet DB (note selection, fee computation, etc. are upstream of
     //! anything testable in isolation). Specifically:
     //!
-    //! * `discard_proposal` is idempotent and tolerates nonexistent IDs
+    //! - `discard_proposal` is idempotent and tolerates nonexistent IDs
     //!   (called from the Dart cancel path and possibly more than once).
-    //! * `create_pczt_from_proposal` returns a clean "not found" error for
+    //! - `create_pczt_from_proposal` returns a clean "not found" error for
     //!   an unknown ID instead of panicking or corrupting state — this is
     //!   the path that fires on a replay attempt after the proposal has
     //!   already been consumed.
+    //!
     //! A full insert→consume→replay test would require constructing a real
     //! `Proposal<WalletFeeRule, ReceivedNoteId>`, which in turn needs a
     //! live wallet DB with spendable notes and a lightwalletd chain tip.

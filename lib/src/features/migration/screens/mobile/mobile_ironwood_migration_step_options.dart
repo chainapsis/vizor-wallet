@@ -166,23 +166,35 @@ class _MobileMigrationOptionCard extends StatelessWidget {
 }
 
 const _mobileMigrationPlanRevealDuration = Duration(milliseconds: 2000);
+// Retained with the alternate animated plan-summary composition.
+// ignore: unused_element
 const _mobileMigrationReviewCompactContentHeight = 430.0;
+// ignore: unused_element
 const _mobileMigrationPlanBarMorphStartMilliseconds = 420;
+// ignore: unused_element
 const _mobileMigrationPlanBarMorphMilliseconds = 700;
+// ignore: unused_element
 const _mobileMigrationPlanBarStyleStaggerMilliseconds = 70;
+// ignore: unused_element
 const _mobileMigrationPlanBarStyleMaxDelayMilliseconds = 350;
 const _mobileMigrationPlanRowStartMilliseconds = 1200;
 const _mobileMigrationPlanRowStaggerMilliseconds = 70;
 const _mobileMigrationPlanRowMaxDelayMilliseconds = 350;
+// ignore: unused_element
 const _mobileMigrationPlanInitialBarWidth = 196.0;
+// ignore: unused_element
 const _mobileMigrationPlanInitialBarHeight = 12.0;
 const _mobileMigrationPlanFinalBarHeight = 20.0;
 const _mobileMigrationPlanBarGap = 8.0;
+// ignore: unused_element
 const _mobileMigrationPlanBarMorphCurve = Cubic(0.77, 0, 0.175, 1);
 const _mobileMigrationPartRowExtent = 48.0;
 const _mobileMigrationPartRowContentExtent = 24.0;
+// ignore: unused_element
 const _mobileMigrationPartListMaxHeight = 264.0;
+// ignore: unused_element
 const _mobileMigrationPlanSummaryLayoutGap = 41.0;
+// ignore: unused_element
 const _mobileMigrationPlanSummaryVisualOffset = 12.5;
 const _mobileMigrationPartLabelWidth = 70.0;
 const _mobileMigrationPartValueWidth = 130.0;

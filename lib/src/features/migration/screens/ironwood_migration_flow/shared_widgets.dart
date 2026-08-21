@@ -503,6 +503,8 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
   return fallbackScheduled;
 }
 
+// Retained for the alternate migration summary composition.
+// ignore: unused_element
 String _estimatedMigrationArrivalLabel(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) => migrationPlanCompletionDurationLabel(plan);
@@ -804,6 +806,8 @@ class _PoolMigrationHero extends StatelessWidget {
   }
 }
 
+// Retained for the alternate migration introduction composition.
+// ignore: unused_element
 class _ProcessCard extends StatelessWidget {
   const _ProcessCard({required this.steps});
 
@@ -912,6 +916,8 @@ class _ProcessStepNumber extends StatelessWidget {
   }
 }
 
+// Retained for the alternate migration introduction composition.
+// ignore: unused_element
 class _SpendAsFundsArriveCard extends StatelessWidget {
   const _SpendAsFundsArriveCard();
 
