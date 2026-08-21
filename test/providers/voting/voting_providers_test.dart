@@ -4544,6 +4544,61 @@ void main() {
     expect(rust.storedCommitmentBundles, ['0:7:2']);
   });
 
+  test('vote commitment submits all encrypted shares concurrently', () async {
+    final http = _GatedSharePostVotingHttpClient(
+      expectedShareCount: 3,
+      responses: votingHttpResponses(),
+    );
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 3,
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    await http.allSharePostsStarted.future;
+    expect(http.startedShareIndexes, {0, 1, 2});
+    expect(rust.recordedShares, isEmpty);
+
+    http.releaseSharePosts.complete();
+    await cast;
+
+    expect(rust.recordedShares.map((share) => share.shareIndex), [0, 1, 2]);
+  });
+
   test('ballot intent write failure aborts before vote submission', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
@@ -5929,6 +5984,35 @@ class _YieldingFakeVotingHttpClient extends FakeVotingHttpClient {
   }) async {
     await Future<void>.delayed(Duration.zero);
     return super.get(uri, headers: headers, timeout: timeout);
+  }
+}
+
+class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
+  _GatedSharePostVotingHttpClient({
+    required this.expectedShareCount,
+    super.responses,
+  });
+
+  final int expectedShareCount;
+  final Set<int> startedShareIndexes = {};
+  final Completer<void> allSharePostsStarted = Completer<void>();
+  final Completer<void> releaseSharePosts = Completer<void>();
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    if (uri.path == '/shielded-vote/v1/shares') {
+      startedShareIndexes.add(body['share_index'] as int);
+      if (startedShareIndexes.length == expectedShareCount &&
+          !allSharePostsStarted.isCompleted) {
+        allSharePostsStarted.complete();
+      }
+      await releaseSharePosts.future;
+    }
+    return super.postJson(uri, body, timeout: timeout);
   }
 }
 

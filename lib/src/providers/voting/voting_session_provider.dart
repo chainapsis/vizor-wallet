@@ -459,7 +459,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await for (final event
             in rust.buildProveAndSignDelegationPayloadWithProgress(
               ctx: _apiRoundContext(context),
-              pirServerUrl: pirEndpoint!.toString(),
+              pirServerUrl: _transportUrl(pirEndpoint!),
               mnemonic: mnemonic!,
               storedHotkeySecret: storedHotkeySecret!,
               bundleIndex: bundleIndex,
@@ -853,7 +853,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             in rust
                 .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                   ctx: _apiRoundContext(context),
-                  pirServerUrl: pirEndpoint!.toString(),
+                  pirServerUrl: _transportUrl(pirEndpoint!),
                   storedHotkeySecret: storedHotkeySecret!,
                   bundleIndex: bundleIndex,
                   keystoneSig: signature.sig,
@@ -1590,10 +1590,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
+      final submissions = <Future<_InitialShareSubmissionResult>>[];
       for (var payloadIndex = 0; payloadIndex < shares.length; payloadIndex++) {
         final share = shares[payloadIndex];
         final plan = plans[payloadIndex];
-        final acceptedServers = <String>[];
         final targetCount = plan.targetCount
             .clamp(1, serverUrls.length)
             .toInt();
@@ -1617,60 +1617,95 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           totalQuestions: totalQuestions,
           voteSubmissionProgress: voteSubmissionProgress,
         );
-        for (final serverUrl in candidateServers) {
-          if (acceptedServers.length >= targetCount) break;
-          try {
-            debugPrint(
-              '[zcash] Voting: submitting share '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl treePosition=${body['tree_position']} '
-              'submitAt=${plan.submitAt} target=$targetCount',
-            );
-            await api.submitShare(serverUrl: Uri.parse(serverUrl), share: body);
-            helperHealth.recordSuccess(serverUrl);
-            acceptedServers.add(serverUrl);
-            debugPrint(
-              '[zcash] Voting: share accepted '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
-            );
-          } catch (e) {
-            debugPrint(
-              '[zcash] Voting: share rejected '
-              'proposal=${share.proposalId} share=${share.shareIndex} '
-              'server=$serverUrl error=$e',
-            );
-            helperHealth.recordFailure(serverUrl);
-            // Recovery retries helpers that did not accept this share.
-          }
-        }
-        if (acceptedServers.isEmpty) {
-          throw StateError(
-            'No vote server accepted share ${share.shareIndex} '
-            'for proposal ${share.proposalId}.',
-          );
-        }
-        if (acceptedServers.length < targetCount) {
-          debugPrint(
-            '[zcash] Voting: share accepted by fewer helpers than planned '
-            'proposal=${share.proposalId} '
-            'share=${share.shareIndex} '
-            'accepted=${acceptedServers.length}/$targetCount',
-          );
-        }
+        submissions.add(
+          _submitInitialShareToHelpers(
+            api: api,
+            helperHealth: helperHealth,
+            share: share,
+            body: body,
+            candidateServers: candidateServers,
+            targetCount: targetCount,
+            submitAt: plan.submitAt,
+          ),
+        );
+      }
 
+      final results = await Future.wait(submissions);
+      _InitialShareSubmissionResult? failedResult;
+      for (final result in results) {
+        if (result.acceptedServers.isEmpty) {
+          failedResult ??= result;
+          continue;
+        }
         await rust.recordShareDelegation(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
           bundleIndex: commitments.bundleIndex,
-          proposalId: share.proposalId,
-          shareIndex: share.shareIndex,
-          sentToUrls: acceptedServers,
-          submitAt: plan.submitAt,
+          proposalId: result.share.proposalId,
+          shareIndex: result.share.shareIndex,
+          sentToUrls: result.acceptedServers,
+          submitAt: result.submitAt,
+        );
+      }
+      if (failedResult != null) {
+        throw StateError(
+          'No vote server accepted share ${failedResult.share.shareIndex} '
+          'for proposal ${failedResult.share.proposalId}.',
         );
       }
     }
+  }
+
+  Future<_InitialShareSubmissionResult> _submitInitialShareToHelpers({
+    required VotingApiClient api,
+    required VotingHelperHealthTracker helperHealth,
+    required rust_wire.VoteShareWire share,
+    required Map<String, dynamic> body,
+    required List<String> candidateServers,
+    required int targetCount,
+    required BigInt submitAt,
+  }) async {
+    final acceptedServers = <String>[];
+    for (final serverUrl in candidateServers) {
+      if (acceptedServers.length >= targetCount) break;
+      try {
+        debugPrint(
+          '[zcash] Voting: submitting share '
+          'proposal=${share.proposalId} share=${share.shareIndex} '
+          'server=$serverUrl treePosition=${body['tree_position']} '
+          'submitAt=$submitAt target=$targetCount',
+        );
+        await api.submitShare(serverUrl: Uri.parse(serverUrl), share: body);
+        helperHealth.recordSuccess(serverUrl);
+        acceptedServers.add(serverUrl);
+        debugPrint(
+          '[zcash] Voting: share accepted '
+          'proposal=${share.proposalId} share=${share.shareIndex} '
+          'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
+        );
+      } catch (e) {
+        debugPrint(
+          '[zcash] Voting: share rejected '
+          'proposal=${share.proposalId} share=${share.shareIndex} '
+          'server=$serverUrl error=$e',
+        );
+        helperHealth.recordFailure(serverUrl);
+        // Recovery retries helpers that did not accept this share.
+      }
+    }
+    if (acceptedServers.length < targetCount && acceptedServers.isNotEmpty) {
+      debugPrint(
+        '[zcash] Voting: share accepted by fewer helpers than planned '
+        'proposal=${share.proposalId} share=${share.shareIndex} '
+        'accepted=${acceptedServers.length}/$targetCount',
+      );
+    }
+    return _InitialShareSubmissionResult(
+      share: share,
+      submitAt: submitAt,
+      acceptedServers: acceptedServers,
+    );
   }
 
   Future<int> _syncVoteTreeWithFailover({
@@ -1688,7 +1723,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
-          nodeUrl: nodeUrl.toString(),
+          nodeUrl: _transportUrl(nodeUrl),
         );
       } catch (error) {
         lastError = error;
@@ -2476,7 +2511,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           .read(votingRustApiProvider)
           .precomputeDelegationPir(
             ctx: _apiRoundContext(context),
-            pirServerUrl: pirEndpoint.toString(),
+            pirServerUrl: _transportUrl(pirEndpoint),
             storedHotkeySecret: storedHotkeySecret,
             bundleIndex: bundleIndex,
           );
@@ -2514,6 +2549,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'round=${context.round.roundId} bundle=$bundleIndex',
     );
     await precompute;
+  }
+
+  String _transportUrl(Uri logicalUrl) {
+    return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
   }
 
   static String _delegationPirPrecomputeKey(
@@ -3752,6 +3791,18 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     }
     await _refreshVotingEligibilityState(current: current, context: context);
   }
+}
+
+class _InitialShareSubmissionResult {
+  const _InitialShareSubmissionResult({
+    required this.share,
+    required this.submitAt,
+    required this.acceptedServers,
+  });
+
+  final rust_wire.VoteShareWire share;
+  final BigInt submitAt;
+  final List<String> acceptedServers;
 }
 
 final votingSessionProvider =

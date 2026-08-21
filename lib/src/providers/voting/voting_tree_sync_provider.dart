@@ -86,13 +86,16 @@ class VotingTreePreSyncService {
       for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
         final nodeUrl = nodeUrls[attempt];
         try {
+          final transportUrl = _ref
+              .read(votingEndpointMapperProvider)
+              .map(nodeUrl);
           final height = await _ref
               .read(votingRustApiProvider)
               .syncVoteTree(
                 dbPath: dbPath,
                 accountUuid: accountUuid,
                 roundId: roundId,
-                nodeUrl: nodeUrl.toString(),
+                nodeUrl: transportUrl.toString(),
               );
           _completed.add(key);
           debugPrint(

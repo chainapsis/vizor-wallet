@@ -21,16 +21,24 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
+import '../../services/voting/voting_endpoint_mapper.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_http.dart';
 import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
 
 /// Transport shared by the voting service clients.
+final votingEndpointMapperProvider = Provider<VotingEndpointMapper>((ref) {
+  return VotingEndpointMapper.forBuild();
+});
+
 final votingHttpClientProvider = Provider<VotingHttpClient>((ref) {
-  final client = DartIoVotingHttpClient();
-  ref.onDispose(client.close);
-  return client;
+  final directClient = DartIoVotingHttpClient();
+  ref.onDispose(directClient.close);
+  return MappedVotingHttpClient(
+    directClient,
+    ref.watch(votingEndpointMapperProvider),
+  );
 });
 
 /// Loads the hash-pinned static config and dynamic voting config.
