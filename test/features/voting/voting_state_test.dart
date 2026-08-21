@@ -30,6 +30,34 @@ void main() {
     );
   });
 
+  test('session state snapshots delegation progress maps', () {
+    final progress = <int, VotingSessionProgress>{
+      0: const VotingSessionProgress(phase: 'proving', bundleIndex: 0),
+      1: const VotingSessionProgress(phase: 'submitted', bundleIndex: 1),
+    };
+    final state = VotingSessionState(
+      roundId: 'round-1',
+      delegationProgress: progress,
+    );
+
+    progress[0] = const VotingSessionProgress(
+      phase: 'confirmed',
+      bundleIndex: 0,
+    );
+    progress[2] = const VotingSessionProgress(phase: 'proving', bundleIndex: 2);
+
+    expect(state.delegationProgress[0]?.phase, 'proving');
+    expect(state.delegationProgress, isNot(contains(2)));
+    expect(state.activeDelegationBundleIndexes, {0});
+    expect(
+      () => state.delegationProgress[3] = const VotingSessionProgress(
+        phase: 'proving',
+        bundleIndex: 3,
+      ),
+      throwsUnsupportedError,
+    );
+  });
+
   test('round details reject fractional snapshot heights', () {
     final status = VotingRoundStatus(
       roundId: 'round-1',

@@ -9,7 +9,7 @@ use zip32::{fingerprint::SeedFingerprint, AccountId};
 use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
-use super::db::open_voting_db;
+use super::db::{open_voting_db, retry_voting_db_locks, with_voting_sidecar_write_lock};
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
@@ -76,10 +76,12 @@ where
         let reporter = zcash_voting::DelegationProgressBridge::new(move |progress| {
             proof_progress(progress);
         });
-        prepared
-            .prove(&proof_voting_db, &pir_client, &reporter)
-            .map(|_| ())
-            .map_err(|e| format!("delegate::prove failed: {e}"))
+        retry_voting_db_locks(|| {
+            prepared
+                .prove(&proof_voting_db, &pir_client, &reporter)
+                .map(|_| ())
+                .map_err(|e| format!("delegate::prove failed: {e}"))
+        })
     })
     .await
     .map_err(|e| format!("delegation proof task failed: {e}"))??;
@@ -330,9 +332,11 @@ where
     let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
         pczt_progress(progress);
     });
-    let delegation_setup = prepared_bundle
-        .setup(&voting_db, &setup_stages)
-        .map_err(|e| format!("delegate::setup failed: {e}"))?;
+    let delegation_setup = with_voting_sidecar_write_lock(db_path, || {
+        prepared_bundle
+            .setup(&voting_db, &setup_stages)
+            .map_err(|e| format!("delegate::setup failed: {e}"))
+    })?;
 
     prove_delegation_bundle(
         db_path,

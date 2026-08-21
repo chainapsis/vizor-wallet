@@ -1135,10 +1135,12 @@ pub fn mark_delegation_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        // Persist submission hash for this round/bundle key.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
-            .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Persist submission hash for this round/bundle key.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
+                .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1158,16 +1160,18 @@ pub fn confirm_delegation_submission(
 ) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
         let events = parse_tx_events_json(&events_json)?;
-        // Parse tx events and persist confirmation details for this bundle.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::confirmation::confirm_delegation_submission(
-            &db,
-            &round_id,
-            bundle_index,
-            &tx_hash,
-            &events,
-        )
-        .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Parse tx events and persist confirmation details for this bundle.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::confirmation::confirm_delegation_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                &tx_hash,
+                &events,
+            )
+            .map_err(|e| e.to_string())
+        })
     })
 }
 
