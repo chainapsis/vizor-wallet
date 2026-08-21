@@ -215,6 +215,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
+                  ensName: state.destinationEnsName,
                   emptyText: 'Add refund address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
@@ -260,6 +261,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
+                  ensName: state.destinationEnsName,
                   emptyText: 'Add recipient address...',
                   onTap: widget.onOpenDestinationAddress,
                 ),
@@ -646,6 +648,7 @@ class _AddressTrigger extends StatelessWidget {
     required this.emptyText,
     required this.onTap,
     this.contactName,
+    this.ensName,
   });
 
   final String value;
@@ -656,6 +659,12 @@ class _AddressTrigger extends StatelessWidget {
   /// (with the matched-contact user icon) instead of the truncated address.
   final String? contactName;
 
+  /// The `.eth` name [value] was resolved from, if any. When set (and no
+  /// saved-contact label takes priority) the chip shows `name (short
+  /// address)` instead of the bare truncated address, so the committed
+  /// destination stays legible as the name the user actually typed.
+  final String? ensName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -663,6 +672,8 @@ class _AddressTrigger extends StatelessWidget {
     final hasValue = trimmed.isNotEmpty;
     final name = contactName?.trim();
     final hasContact = hasValue && name != null && name.isNotEmpty;
+    final ens = ensName?.trim();
+    final hasEns = hasValue && !hasContact && ens != null && ens.isNotEmpty;
     final textStyle = AppTypography.labelLarge.copyWith(
       fontWeight: FontWeight.w600,
       color: colors.text.accent,
@@ -696,14 +707,16 @@ class _AddressTrigger extends StatelessWidget {
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        hasValue
-                            ? compactSwapAddress(
+                        !hasValue
+                            ? emptyText
+                            : hasEns
+                            ? '$ens (${compactSwapAddress(trimmed, prefixLength: 8, suffixLength: 6, separator: '...')})'
+                            : compactSwapAddress(
                                 trimmed,
                                 prefixLength: 8,
                                 suffixLength: 6,
                                 separator: '...',
-                              )
-                            : emptyText,
+                              ),
                         key: const ValueKey('swap_destination_value'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

@@ -46,7 +46,7 @@ class SendComposeView extends StatelessWidget {
     super.key,
     this.title = 'Send ZEC',
     this.recipientText = '',
-    this.recipientHint = 'Zcash address',
+    this.recipientHint = 'Zcash address or .eth',
     this.route = SendPoolRoute.unknown,
     this.amountText = '',
     this.amountHint = '0.00',

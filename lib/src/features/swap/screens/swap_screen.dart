@@ -336,12 +336,25 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         contacts:
                             ref.watch(addressBookProvider).value?.contacts ??
                             const [],
-                        onSubmitted: (value, remember) {
-                          if (remember) {
-                            unawaited(_rememberSwapAddress(value, swapState));
+                        onSubmitted: (value, remember) async {
+                          final ok = await swapNotifier.submitDestinationAddress(
+                            value,
+                          );
+                          if (ok) {
+                            // Remember the pinned resolved address (0x for an
+                            // ENS name; identical to the typed value for a
+                            // plain address), never the raw `.eth` name.
+                            if (remember) {
+                              unawaited(
+                                _rememberSwapAddress(
+                                  ref.read(swapStateProvider).destinationText,
+                                  swapState,
+                                ),
+                              );
+                            }
+                            _closeSwapModal();
                           }
-                          swapNotifier.updateDestination(value);
-                          _closeSwapModal();
+                          return ok;
                         },
                         onScan: _openAddressScanner,
                         onOpenContacts: _openAddressContactPicker,

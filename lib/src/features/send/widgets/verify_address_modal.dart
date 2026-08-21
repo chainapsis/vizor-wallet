@@ -38,6 +38,7 @@ class VerifyAddressModal extends StatelessWidget {
     this.contactName,
     this.contactProfilePictureId,
     this.previousTransactionCount,
+    this.ensName,
     this.unknownAddressKind = VerifyAddressModalAddressKind.shielded,
     super.key,
   }) : assert(
@@ -62,6 +63,11 @@ class VerifyAddressModal extends StatelessWidget {
 
   /// Saved contact avatar id ([VerifyAddressModalVariant.knownContact]).
   final String? contactProfilePictureId;
+
+  /// The `.eth` name the address was resolved from, if any. In the unknown
+  /// variant it headlines the name above the full (never hidden) address
+  /// grid.
+  final String? ensName;
 
   /// Optional "N previous transactions" sub-line under the contact name.
   /// Hidden when null while the caller is still loading or cannot provide a
@@ -116,7 +122,9 @@ class VerifyAddressModal extends StatelessWidget {
 
     switch (variant) {
       case VerifyAddressModalVariant.unknown:
-        final (iconName, title) = switch (unknownAddressKind) {
+        final ens = ensName?.trim();
+        final hasEns = ens != null && ens.isNotEmpty;
+        final (iconName, defaultTitle) = switch (unknownAddressKind) {
           VerifyAddressModalAddressKind.shielded => (
             AppIcons.shieldKeyholeOutline,
             'Unknown shielded address',
@@ -130,6 +138,7 @@ class VerifyAddressModal extends StatelessWidget {
             'Recipient address',
           ),
         };
+        final title = hasEns ? ens : defaultTitle;
         return Row(
           children: [
             ReviewInfoIconCircle(iconName: iconName),

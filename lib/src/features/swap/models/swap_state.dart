@@ -12,6 +12,8 @@ enum SwapAmountInputMode { token, fiat }
 
 enum SwapAmountInputSide { pay, receive }
 
+enum SwapDestinationResolveStatus { idle, resolving, failed }
+
 String? swapTokenAmountPrecisionError({
   required SwapAsset asset,
   required String amountText,
@@ -73,6 +75,9 @@ class SwapState {
     this.depositSubmitting = false,
     this.selectedIntentId,
     this.payMode = false,
+    this.destinationEnsName,
+    this.destinationResolveStatus = SwapDestinationResolveStatus.idle,
+    this.destinationResolveError,
     this.userExternalContactId,
   });
 
@@ -114,6 +119,13 @@ class SwapState {
   final String? selectedIntentId;
   final bool payMode;
   final String? userExternalContactId;
+
+  /// Set only when [destinationText] holds an address that was resolved from
+  /// this ENS name. Cleared by the provider whenever [destinationText] is
+  /// mutated by anything other than that resolution.
+  final String? destinationEnsName;
+  final SwapDestinationResolveStatus destinationResolveStatus;
+  final String? destinationResolveError;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -182,9 +194,22 @@ class SwapState {
   // address" — you have an Ethereum address that holds USDC), so name the
   // chain. Leading with it also keeps the relevant part visible in the narrow
   // modal field (the old "Refund address on the ET…" cut off the chain).
-  String get destinationFieldHint => direction.sendsZec
-      ? '${externalAsset.chainLabel} address or account'
-      : '${externalAsset.chainLabel} address';
+  // EVM chains additionally accept ENS names (`.eth`), so the hint mentions
+  // that alternative when the external asset lives on an EVM chain.
+  String get destinationFieldHint {
+    final network = AddressBookNetwork.tryFromChainTicker(
+      externalAsset.chainTicker,
+    );
+    final evm = network?.isEvm ?? false;
+    if (direction.sendsZec) {
+      return evm
+          ? '${externalAsset.chainLabel} address or .eth'
+          : '${externalAsset.chainLabel} address or account';
+    }
+    return evm
+        ? '${externalAsset.chainLabel} address or .eth'
+        : '${externalAsset.chainLabel} address';
+  }
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when
@@ -319,6 +344,9 @@ class SwapState {
     bool? depositSubmitting,
     String? selectedIntentId,
     bool? payMode,
+    String? destinationEnsName,
+    SwapDestinationResolveStatus? destinationResolveStatus,
+    String? destinationResolveError,
     String? userExternalContactId,
     bool clearReview = false,
     bool clearQuoteError = false,
@@ -327,6 +355,8 @@ class SwapState {
     bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
     bool clearPendingKeystoneSigningIntent = false,
+    bool clearDestinationEnsName = false,
+    bool clearDestinationResolveError = false,
     bool clearUserExternalContactId = false,
   }) {
     return SwapState(
@@ -379,6 +409,14 @@ class SwapState {
           ? null
           : selectedIntentId ?? this.selectedIntentId,
       payMode: payMode ?? this.payMode,
+      destinationEnsName: clearDestinationEnsName
+          ? null
+          : destinationEnsName ?? this.destinationEnsName,
+      destinationResolveStatus:
+          destinationResolveStatus ?? this.destinationResolveStatus,
+      destinationResolveError: clearDestinationResolveError
+          ? null
+          : destinationResolveError ?? this.destinationResolveError,
       userExternalContactId: clearUserExternalContactId
           ? null
           : userExternalContactId ?? this.userExternalContactId,

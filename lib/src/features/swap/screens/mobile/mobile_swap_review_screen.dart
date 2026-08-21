@@ -365,6 +365,7 @@ class _MobileSwapReviewScreenState
                             convertedFiatText: convertedFiatText,
                             expiresInText: _expiresInText,
                             expired: paymentQuoteExpired,
+                            ensName: swapState.destinationEnsName,
                           ),
                           for (final message in [
                             swapState.reviewAmountDifferenceWarning,
@@ -413,6 +414,7 @@ class _MobileSwapReviewScreenState
                           asset: quote.receiveAsset,
                           amount: quote.receiveAmount,
                         ),
+                        ensName: swapState.destinationEnsName,
                       ),
               ),
             ),

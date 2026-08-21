@@ -324,6 +324,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 feeText: _formatFee(widget.args.feeZatoshi),
                 isShieldedRecipient: widget.args.isShielded,
                 recipientAddressType: widget.args.addressType,
+                ensName: widget.args.recipientEnsName,
                 memoText: hasMemo ? memo : null,
                 memoExpanded: _messageExpanded,
                 confirmLabel: isHardware
@@ -344,6 +345,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 accountUuid: widget.args.proposalAccountUuid,
                 address: widget.args.address.trim(),
                 isShieldedAddress: widget.args.isShielded,
+                ensName: widget.args.recipientEnsName,
                 onClose: () => setState(() => _showVerifyAddress = false),
               ),
             if (keystonePhase != null)

@@ -12,6 +12,8 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/naming/ens_name.dart';
+import '../../../core/naming/ens_name_resolver.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -22,6 +24,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/ens_resolver_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -196,6 +199,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _contactPickerOpen = false;
   String? _error;
   String _addressType = '';
+  // ENS recipient resolution. A syntactically valid `.eth` name sets
+  // `_addressType = 'ens'` and skips Rust validation; the name is resolved to
+  // a Zcash address only on Review. `_resolvedRecipient` is the pinned
+  // resolved address that every downstream send/estimate/propose target must
+  // use — never the name. Editing the recipient clears all four.
+  String? _resolvedRecipient;
+  String? _recipientEnsName;
+  bool _resolvingRecipient = false;
+  String? _recipientResolveError;
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
   // Canonical wallet amount used for validation and Rust calls. The controller
@@ -314,12 +326,46 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  /// Effective recipient address: the pinned resolved Zcash address once a
+  /// `.eth` name resolves, otherwise the trimmed field text. This is what
+  /// every send/estimate/propose target must consume.
+  String get _effectiveRecipientAddress =>
+      _resolvedRecipient ?? _addressController.text.trim();
+
+  void _clearEnsResolution() {
+    _resolvedRecipient = null;
+    _recipientEnsName = null;
+    _resolvingRecipient = false;
+    _recipientResolveError = null;
+  }
+
+  String _mapEnsResolveError(EnsResolutionException e) {
+    switch (e.kind) {
+      case EnsResolutionFailure.noRecord:
+      case EnsResolutionFailure.notRegistered:
+        return 'Name has no usable Zcash address record';
+      case EnsResolutionFailure.network:
+        return 'Could not resolve name';
+      case EnsResolutionFailure.invalidName:
+        return e.message;
+    }
+  }
+
   Future<void> _validateAddress() async {
     final seq = ++_addressSeq;
     final addr = _addressController.text.trim();
     if (addr.isEmpty) {
       if (!mounted || seq != _addressSeq) return;
       setState(() => _addressType = '');
+      _handleAddressValidationSettled();
+      return;
+    }
+    // A well-formed `.eth` name is a valid recipient at this stage; it is
+    // resolved on Review, so skip the Rust bech32m validation (which would
+    // otherwise mark the name 'invalid').
+    if (isEnsName(addr)) {
+      if (!mounted || seq != _addressSeq) return;
+      setState(() => _addressType = 'ens');
       _handleAddressValidationSettled();
       return;
     }
@@ -360,6 +406,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     setState(() {
       _addressType = '';
       _error = null;
+      _clearEnsResolution();
       if (_isMaxMode) {
         _validateSeq++;
         _maxSeq++;
@@ -554,7 +601,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final quote = _maxQuote;
     if (quote == null) return false;
     return quote.accountUuid == widget.activeAccountUuid &&
-        quote.address == _addressController.text.trim() &&
+        quote.address == _effectiveRecipientAddress &&
         quote.memo == _effectiveMemo &&
         parseZecAmount(_amountText.trim()) == quote.amountZatoshi;
   }
@@ -612,6 +659,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
+    if (_addressType == 'ens' && _resolvedRecipient == null) {
+      return 'Continue to resolve the .eth name to use Max';
+    }
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
     if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
@@ -645,7 +695,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _resolveMaxEstimate(int seq) async {
     final accountUuid = widget.activeAccountUuid;
-    final address = _addressController.text.trim();
+    // Never estimate against an unresolved `.eth` name; only the resolved
+    // Zcash address (or a typed address) reaches the estimate call.
+    final address = _effectiveRecipientAddress;
     final memo = _effectiveMemo;
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
@@ -765,7 +817,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (address.isEmpty ||
         _addressType == 'invalid' ||
         _addressType == 'error' ||
+        _addressType == 'ens' ||
         _addressType.isEmpty) {
+      // For an unresolved `.eth` name there is no on-chain address to estimate
+      // against yet; keep the amount valid and defer the real fee to Review.
       setState(() => _amountError = null);
       return;
     }
@@ -805,7 +860,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
-                toAddress: address,
+                toAddress: _effectiveRecipientAddress,
                 amountZatoshi: zatoshi,
                 memo: memo.isNotEmpty ? memo : null,
               );
@@ -899,8 +954,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      final memo = _effectiveMemo;
-
       // Step 1: Propose transfer
       log('Send: proposing transfer');
       final accountUuid = widget.activeAccountUuid;
@@ -911,15 +964,99 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
+
+      // Resolve a `.eth` recipient to its Zcash address record before
+      // proposing. The RESOLVED address — never the name — is what reaches
+      // validateAddress/propose/broadcast, exactly as a typed address would.
+      var sendAddress = address;
+      var sendAddressType = _addressType;
+      if (isEnsName(address)) {
+        setState(() {
+          _resolvingRecipient = true;
+          _recipientResolveError = null;
+        });
+        final String resolved;
+        try {
+          resolved = await ref
+              .read(ensResolverProvider)
+              .resolveZcashAddress(normalizeEnsName(address));
+        } on EnsResolutionException catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _recipientResolveError = _mapEnsResolveError(e);
+            _resolvingRecipient = false;
+            _isSending = false;
+          });
+          return;
+        } catch (e) {
+          log('Send: ENS resolution error: $e');
+          if (!mounted) return;
+          setState(() {
+            _recipientResolveError = 'Could not resolve name';
+            _resolvingRecipient = false;
+            _isSending = false;
+          });
+          return;
+        }
+        // Validate the resolved address exactly as a typed address. A ZEC
+        // record that fails bech32m validation is unusable — fail closed.
+        final validation = await rust_sync.validateAddress(address: resolved);
+        if (!mounted) return;
+        if (!validation.isValid) {
+          setState(() {
+            _recipientResolveError =
+                'Name has no usable Zcash address record';
+            _resolvingRecipient = false;
+            _isSending = false;
+          });
+          return;
+        }
+        setState(() {
+          _resolvedRecipient = resolved;
+          _recipientEnsName = normalizeEnsName(address);
+          _addressType = validation.addressType;
+          _resolvingRecipient = false;
+        });
+        sendAddress = resolved;
+        sendAddressType = validation.addressType;
+      }
+
+      // Re-evaluate the hardware-TEX and shielded-only-memo guards against the
+      // RESOLVED address type. Before resolution the type is 'ens', so the
+      // earlier checks passed vacuously; a name resolving to a TEX/transparent
+      // address must be blocked or handled exactly as if that address had been
+      // typed directly (task-14 funds-safety review, finding 1). `_addressType`
+      // now reflects the resolved type, so these getters re-check correctly.
+      if (_isHardwareTexSend) {
+        setState(() {
+          _error = _hardwareTexUnsupportedText;
+          _isSending = false;
+        });
+        return;
+      }
+      if (_memoError != null) {
+        setState(() {
+          _error = _memoError;
+          _isSending = false;
+        });
+        return;
+      }
+
+      // Recompute the effective memo now that `_addressType` reflects the
+      // resolved type: a transparent-like recipient drops the memo exactly as a
+      // directly-typed transparent address would.
+      final memo = _effectiveMemo;
+
       final reviewArgs = await proposeSendTransfer(
         ref: ref,
         loadDbPath: ref.read(sendWalletDbPathProvider),
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
-        address: address,
-        addressType: _addressType,
+        address: sendAddress,
+        addressType: sendAddressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        recipientEnsName: _recipientEnsName,
       );
       activeProposalId = reviewArgs.proposalId;
 
@@ -1000,10 +1137,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     _addressController.edgeHighlightColor = null;
 
-    final addressTone = switch (_addressType) {
-      'invalid' || 'error' => AppTextFieldTone.destructive,
-      _ => AppTextFieldTone.neutral,
-    };
+    final addressTone = _recipientResolveError != null
+        ? AppTextFieldTone.destructive
+        : switch (_addressType) {
+            'invalid' || 'error' => AppTextFieldTone.destructive,
+            _ => AppTextFieldTone.neutral,
+          };
     // Live contact-match feedback: when the entered address is valid and
     // matches a saved contact (or one of the user's own accounts — the same
     // resolution the review screen shows), surface the name under the field
@@ -1022,22 +1161,34 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         matchedRecipientName = recipient.name;
       }
     }
-    final addressMessage = switch (_addressType) {
-      'invalid' => 'Invalid address',
-      'error' => 'Address validation failed',
-      _ => matchedRecipientName,
-    };
-    final addressMessageIcon = switch (_addressType) {
-      'invalid' || 'error' => AppIcon(
-        AppIcons.warning,
-        size: 16,
-        color: colors.text.destructive,
-      ),
-      _ =>
-        matchedRecipientName == null
-            ? null
-            : AppIcon(AppIcons.user, size: 16, color: colors.icon.brandCrimson),
-    };
+    final addressMessage =
+        _recipientResolveError ??
+        (_resolvingRecipient
+            ? 'Resolving name…'
+            : switch (_addressType) {
+                'invalid' => 'Invalid address',
+                'error' => 'Address validation failed',
+                'ens' => 'Resolves on review',
+                _ => matchedRecipientName,
+              });
+    final addressMessageIcon = _recipientResolveError != null
+        ? AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive)
+        : switch (_addressType) {
+            'invalid' || 'error' => AppIcon(
+              AppIcons.warning,
+              size: 16,
+              color: colors.text.destructive,
+            ),
+            'ens' => null,
+            _ =>
+              matchedRecipientName == null
+                  ? null
+                  : AppIcon(
+                      AppIcons.user,
+                      size: 16,
+                      color: colors.icon.brandCrimson,
+                    ),
+          };
     final addressHasText = _addressController.text.trim().isNotEmpty;
     final addressLeadingIcon = switch (_addressType) {
       'unified' || 'sapling' => AppIcons.shieldKeyhole,
@@ -1132,7 +1283,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 : null,
                             focusNode: _addressFocusNode,
                             controller: _addressController,
-                            hintText: 'Zcash address',
+                            hintText: 'Zcash address or .eth',
                             leading: AppIcon(
                               addressLeadingIcon,
                               size: 20,
@@ -1149,6 +1300,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               setState(() {
                                 _addressType = '';
                                 _error = null;
+                                _clearEnsResolution();
                                 if (_isMaxMode) {
                                   _validateSeq++;
                                   _maxSeq++;

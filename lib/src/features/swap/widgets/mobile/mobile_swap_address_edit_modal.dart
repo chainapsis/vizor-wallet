@@ -1,7 +1,9 @@
+import 'package:flutter/material.dart' show CircularProgressIndicator;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/naming/ens_name.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -11,6 +13,7 @@ import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../address_book/models/address_format_validator.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_models.dart';
+import '../../../../core/naming/ens_chains.dart';
 import '../swap_modal_controls.dart';
 
 /// Mobile address editor — built on [MobileModalScaffold] (the shared
@@ -38,7 +41,11 @@ class MobileSwapAddressEditModal extends StatefulWidget {
   });
 
   final SwapState state;
-  final void Function(String value, bool remember) onSubmitted;
+
+  /// Returns `true` when [value] was accepted (the modal should close);
+  /// `false` keeps the modal open so the caller can surface a resolve error
+  /// via [SwapState.destinationResolveStatus]/[SwapState.destinationResolveError].
+  final Future<bool> Function(String value, bool remember) onSubmitted;
   final void Function(String value, bool remember) onScan;
   final void Function(String value, bool remember) onOpenContacts;
   final VoidCallback onCancel;
@@ -96,11 +103,18 @@ class _MobileSwapAddressEditModalState
     super.dispose();
   }
 
-  void _submit() {
+  // A void-returning slot (VoidCallback for the action button, and the
+  // TextField's onSubmitted-string callback below) accepts a function
+  // returning Future<void>: the call site simply discards the result, so
+  // this can still await widget.onSubmitted without changing its own
+  // signature.
+  Future<void> _submit() async {
     // Guard the keyboard "done"/enter path the same way the primary button is
     // gated, so a malformed address cannot be committed by pressing enter.
+    // The modal does not pop itself on submit — the caller awaits
+    // onSubmitted and only closes the modal when it resolves `true`.
     if (!_canSubmit) return;
-    widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+    await widget.onSubmitted(_controller.text.trim(), _rememberAddress);
   }
 
   String get _initialAddressText =>
@@ -110,7 +124,20 @@ class _MobileSwapAddressEditModalState
     setState(() => _rememberAddress = !_rememberAddress);
   }
 
-  bool get _canSubmit => _formatError == null;
+  bool get _canSubmit =>
+      _formatError == null &&
+      widget.state.destinationResolveStatus !=
+          SwapDestinationResolveStatus.resolving;
+
+  /// True when the destination chain both is EVM and is one Vizor can
+  /// actually resolve ENS names against (see [chainSupportsEnsNames]), so a
+  /// `.eth` name typed here is submittable rather than a format error.
+  bool get _isEvmDestination {
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    return chainSupportsEnsNames(network);
+  }
 
   String? get _formatError {
     final trimmed = _controller.text.trim();
@@ -119,7 +146,21 @@ class _MobileSwapAddressEditModalState
       widget.state.externalAsset.chainTicker,
     );
     if (network == null) return null;
+    // A name is never a format error on a chain it can actually resolve on;
+    // on every other chain (including EVM chains Vizor can't resolve against)
+    // it keeps failing the normal address-format check.
+    if (isEnsName(trimmed) && _isEvmDestination) return null;
     return addressFormatIssue(network, trimmed);
+  }
+
+  /// The last resolve attempt's error, shown in the same message slot as
+  /// [_formatError] but taking priority over it — surfaced only while
+  /// [SwapState.destinationResolveStatus] is [SwapDestinationResolveStatus.failed].
+  String? get _resolveError {
+    return widget.state.destinationResolveStatus ==
+            SwapDestinationResolveStatus.failed
+        ? widget.state.destinationResolveError
+        : null;
   }
 
   /// Saved contact matching the entered address on the destination chain.
@@ -155,6 +196,10 @@ class _MobileSwapAddressEditModalState
         : 'Remember this address for refunds';
     final formatError = _formatError;
     final matchedContact = _matchedContact;
+    final resolveError = _resolveError;
+    final isResolving =
+        widget.state.destinationResolveStatus ==
+        SwapDestinationResolveStatus.resolving;
 
     // MobileModalScaffold supplies the title, the pinned close button and the
     // outer pt32/pb24/px16 padding, so this body owns only its vertical
@@ -185,6 +230,20 @@ class _MobileSwapAddressEditModalState
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (isResolving) ...[
+                    SizedBox(
+                      key: const ValueKey(
+                        'swap_destination_resolving_indicator',
+                      ),
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.icon.accent,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   SwapInlineIconButton(
                     key: const ValueKey('swap_address_contacts_button'),
                     iconName: AppIcons.users,
@@ -214,7 +273,20 @@ class _MobileSwapAddressEditModalState
           // opacity-0 error line the Figma _Modal Type holds.
           SizedBox(
             height: 16,
-            child: formatError != null
+            child: resolveError != null
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      resolveError,
+                      key: const ValueKey('swap_destination_resolve_error'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.text.destructive,
+                      ),
+                    ),
+                  )
+                : formatError != null
                 ? Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
