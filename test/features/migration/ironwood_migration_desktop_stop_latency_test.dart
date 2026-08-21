@@ -7,7 +7,6 @@
 // confirms the cancel.
 library;
 
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -267,7 +266,12 @@ AppBootstrapState _bootstrap() {
     initialLocation: '/home',
     initialAccountState: const AccountState(
       accounts: [
-        AccountInfo(uuid: _uuid, name: 'Software', order: 0, isSeedAnchor: true),
+        AccountInfo(
+          uuid: _uuid,
+          name: 'Software',
+          order: 0,
+          isSeedAnchor: true,
+        ),
       ],
       activeAccountUuid: _uuid,
       activeAddress: 'u1test',

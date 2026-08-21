@@ -47,13 +47,14 @@ final linuxUpdateRouteReadyProvider = Provider<bool>((ref) {
 /// Seam for the feed request so the route gating can be exercised without a
 /// network stack.
 final linuxUpdateCheckProvider = Provider<LinuxUpdateCheck>(
-  (ref) => () => fetchLinuxUpdate(
-    clientFactory: NetworkHttpClient.new,
-    repository: kVizorReleaseRepository,
-    flavor: kVizorReleaseFlavor,
-    arch: _linuxReleaseArch(),
-    currentBuildNumber: kVizorReleaseBuildNumber,
-  ),
+  (ref) =>
+      () => fetchLinuxUpdate(
+        clientFactory: NetworkHttpClient.new,
+        repository: kVizorReleaseRepository,
+        flavor: kVizorReleaseFlavor,
+        arch: _linuxReleaseArch(),
+        currentBuildNumber: kVizorReleaseBuildNumber,
+      ),
 );
 
 final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {

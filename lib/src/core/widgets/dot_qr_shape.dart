@@ -9,7 +9,10 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 /// patterns instead of the default squares. Shared by the receive and
 /// swap-deposit QR surfaces so they stay visually identical.
 class DotQrShape extends PrettyQrShape {
-  const DotQrShape({this.color = const Color(0xFF000000), this.finderReferenceDimension});
+  const DotQrShape({
+    this.color = const Color(0xFF000000),
+    this.finderReferenceDimension,
+  });
 
   final Color color;
 
@@ -53,7 +56,8 @@ class DotQrShape extends PrettyQrShape {
 
     for (final pattern in context.matrix.positionDetectionPatterns) {
       final center = context.estimatedBounds.topLeft.translate(
-        (pattern.left + PrettyQrPositionDetectionPattern.dimension / 2) * module,
+        (pattern.left + PrettyQrPositionDetectionPattern.dimension / 2) *
+            module,
         (pattern.top + PrettyQrPositionDetectionPattern.dimension / 2) * module,
       );
       context.canvas.drawCircle(center, visualModule * 3, ringPaint);

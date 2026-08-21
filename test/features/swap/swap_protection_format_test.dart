@@ -30,7 +30,11 @@ void main() {
       expect(formatSwapProtectionPercent(0.995), '1.0%');
       for (final value in [0.999, 0.9999, 0.995, 0.45, 0.5, 0.05, 1.0, 5.0]) {
         final out = formatSwapProtectionPercent(value);
-        expect(out.endsWith('.%'), isFalse, reason: '"$out" has a dangling dot');
+        expect(
+          out.endsWith('.%'),
+          isFalse,
+          reason: '"$out" has a dangling dot',
+        );
       }
     });
   });

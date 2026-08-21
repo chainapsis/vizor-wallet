@@ -64,7 +64,8 @@ extension NetworkPrivacyToggleActionX on NetworkPrivacyToggleAction {
   /// Assistive-technology label. Turning "Use Tor" off mid-connect is an escape
   /// from a wait, not a second transition, so it does not announce itself as
   /// one.
-  String get semanticsLabel => this == NetworkPrivacyToggleAction.cancelPendingTor
+  String get semanticsLabel =>
+      this == NetworkPrivacyToggleAction.cancelPendingTor
       ? 'Stop connecting to Tor'
       : 'Use Tor';
 }

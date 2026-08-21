@@ -58,7 +58,6 @@ void main() {
     });
   });
 
-
   test('preference read failure pauses native updates before launch', () async {
     final events = <String>[];
     try {
@@ -166,7 +165,6 @@ void main() {
       NetworkPrivacyConnectionStatus.connected,
     );
   });
-
 
   test('direct runtime configuration skips Tor directory lookup', () async {
     var directoryLookups = 0;
@@ -669,47 +667,50 @@ void main() {
     );
   });
 
-  test('a failed strict save aborts the enable before anything changes', () async {
-    final events = <String>[];
-    final runtime = _FakeRuntime(
-      events,
-      NetworkPrivacyConnectionStatus.connected,
-    );
-    final container = ProviderContainer(
-      overrides: [
-        networkPrivacyPreferenceStoreProvider.overrideWithValue(
-          _WriteFailingStore(events, failOn: true),
-        ),
-        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
-        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
-          _FakeNativeUpdateCoordinator(events),
-        ),
-        networkPrivacyDirectRequestGateProvider.overrideWithValue(
-          _FakeDirectRequestGate(events),
-        ),
-        networkPrivacyTransportRestartProvider.overrideWithValue((
-          update,
-        ) async {
-          events.add('restart');
-          await update();
-        }),
-      ],
-    );
-    addTearDown(container.dispose);
+  test(
+    'a failed strict save aborts the enable before anything changes',
+    () async {
+      final events = <String>[];
+      final runtime = _FakeRuntime(
+        events,
+        NetworkPrivacyConnectionStatus.connected,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          networkPrivacyPreferenceStoreProvider.overrideWithValue(
+            _WriteFailingStore(events, failOn: true),
+          ),
+          networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+          networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+            _FakeNativeUpdateCoordinator(events),
+          ),
+          networkPrivacyDirectRequestGateProvider.overrideWithValue(
+            _FakeDirectRequestGate(events),
+          ),
+          networkPrivacyTransportRestartProvider.overrideWithValue((
+            update,
+          ) async {
+            events.add('restart');
+            await update();
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+      await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
-    // Refused before the process changes: no fail-closed switch, no drain, no
-    // transport restart. Requests keep flowing directly, the saved route
-    // still says direct, and the updater preflight is undone — the toggle
-    // simply never happened, apart from the failure the user is shown.
-    expect(events, ['native:true', 'store:write-failed', 'native:false']);
-    expect(runtime.isTorEnabled(), isFalse);
-    final state = container.read(networkPrivacyProvider);
-    expect(state.torEnabled, isFalse);
-    expect(state.status, NetworkPrivacyConnectionStatus.failed);
-    expect(state.targetTorEnabled, isTrue);
-  });
+      // Refused before the process changes: no fail-closed switch, no drain, no
+      // transport restart. Requests keep flowing directly, the saved route
+      // still says direct, and the updater preflight is undone — the toggle
+      // simply never happened, apart from the failure the user is shown.
+      expect(events, ['native:true', 'store:write-failed', 'native:false']);
+      expect(runtime.isTorEnabled(), isFalse);
+      final state = container.read(networkPrivacyProvider);
+      expect(state.torEnabled, isFalse);
+      expect(state.status, NetworkPrivacyConnectionStatus.failed);
+      expect(state.targetTorEnabled, isTrue);
+    },
+  );
 
   test('a failed direct save still opens the direct request gate', () async {
     final events = <String>[];
@@ -912,7 +913,9 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+      await container
+          .read(networkPrivacyProvider.notifier)
+          .setTorEnabled(false);
       events.clear();
 
       // The activation was parked inside its native-updater call; releasing it
@@ -1044,9 +1047,8 @@ void main() {
           networkPrivacyDirectRequestGateProvider.overrideWithValue(
             _FakeDirectRequestGate(events),
           ),
-          networkPrivacyTransportRestartProvider.overrideWithValue((
-            update,
-          ) async => update(),
+          networkPrivacyTransportRestartProvider.overrideWithValue(
+            (update) async => update(),
           ),
         ],
       );
@@ -1056,7 +1058,9 @@ void main() {
         NetworkPrivacyConnectionStatus.connecting,
       );
 
-      await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+      await container
+          .read(networkPrivacyProvider.notifier)
+          .setTorEnabled(false);
       expect(
         container.read(networkPrivacyProvider).status,
         NetworkPrivacyConnectionStatus.off,
@@ -1441,4 +1445,3 @@ Future<void> _sendAppLifecycleState(AppLifecycleState state) async {
         (_) {},
       );
 }
-

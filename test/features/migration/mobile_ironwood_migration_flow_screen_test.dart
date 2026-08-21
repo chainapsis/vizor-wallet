@@ -7356,69 +7356,70 @@ void main() {
     );
   });
 
-  testWidgets('the backgrounding invitation discloses the direct route on Tor', (
-    tester,
-  ) async {
-    // The background transport is pinned direct by design, so the moment
-    // this screen invites a Tor user to background the app is the moment
-    // their coverage expectation and the wire part ways. iOS only: Android
-    // has no background migration lane to disclose.
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    _useMobileViewport(tester);
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(
-          ios: true,
-          getNotificationAuthorizationStatus: () async =>
-              IronwoodMigrationNotificationAuthorizationStatus.authorized,
-        ),
-        extraOverrides: [
-          networkPrivacyProvider.overrideWith(
-            _TorRouteNetworkPrivacyNotifier.new,
+  testWidgets(
+    'the backgrounding invitation discloses the direct route on Tor',
+    (tester) async {
+      // The background transport is pinned direct by design, so the moment
+      // this screen invites a Tor user to background the app is the moment
+      // their coverage expectation and the wire part ways. iOS only: Android
+      // has no background migration lane to disclose.
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
           ),
-        ],
-        status: _status(
-          phase: kIronwoodMigrationBroadcastingPhase,
-          nextActionHeight: 3_000_020,
-          targetValues: List<int>.filled(9, 100_000_000),
-          parts: [
-            for (var index = 0; index < 9; index++)
-              rust_sync.MigrationPartStatus(
-                partIndex: index,
-                valueZatoshi: BigInt.from(100_000_000),
-                state: index < 8
-                    ? rust_sync.MigrationPartState.completed
-                    : rust_sync.MigrationPartState.scheduled,
-                txidHex: 'tx-$index',
-                scheduledHeight: 3_000_000 + index,
-                confirmationCount: index < 8 ? 3 : 0,
-                confirmationTarget: 3,
-              ),
+          extraOverrides: [
+            networkPrivacyProvider.overrideWith(
+              _TorRouteNetworkPrivacyNotifier.new,
+            ),
           ],
+          status: _status(
+            phase: kIronwoodMigrationBroadcastingPhase,
+            nextActionHeight: 3_000_020,
+            targetValues: List<int>.filled(9, 100_000_000),
+            parts: [
+              for (var index = 0; index < 9; index++)
+                rust_sync.MigrationPartStatus(
+                  partIndex: index,
+                  valueZatoshi: BigInt.from(100_000_000),
+                  state: index < 8
+                      ? rust_sync.MigrationPartState.completed
+                      : rust_sync.MigrationPartState.scheduled,
+                  txidHex: 'tx-$index',
+                  scheduledHeight: 3_000_000 + index,
+                  confirmationCount: index < 8 ? 3 : 0,
+                  confirmationTarget: 3,
+                ),
+            ],
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
+          ),
         ),
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          scannedHeight: 3_000_000,
-          chainTipHeight: 3_000_000,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        'Next migration step expected in\n'
-        '~25 minutes.\n'
-        'Notifications are on. You can leave Vizor and check back later.\n'
-        'While Vizor is closed, migration continues over a direct '
-        'connection.',
-      ),
-      findsOneWidget,
-    );
-    debugDefaultTargetPlatformOverride = null;
-  });
+      expect(
+        find.text(
+          'Next migration step expected in\n'
+          '~25 minutes.\n'
+          'Notifications are on. You can leave Vizor and check back later.\n'
+          'While Vizor is closed, migration continues over a direct '
+          'connection.',
+        ),
+        findsOneWidget,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 
   testWidgets('keeps the actual batch number for Keystone broadcasting', (
     tester,

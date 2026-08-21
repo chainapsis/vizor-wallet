@@ -39,21 +39,25 @@ import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Tor bootstraps from the mobile app sandbox', (tester) async {
-    await RustLib.init();
-    final torDirectory = await getTorDataDirectoryPath();
+  testWidgets(
+    'Tor bootstraps from the mobile app sandbox',
+    (tester) async {
+      await RustLib.init();
+      final torDirectory = await getTorDataDirectoryPath();
 
-    rust_network_privacy.beginNetworkPrivacyEnable();
-    final status = await rust_network_privacy.configureNetworkPrivacy(
-      enabled: true,
-      torDirectory: torDirectory,
-    );
+      rust_network_privacy.beginNetworkPrivacyEnable();
+      final status = await rust_network_privacy.configureNetworkPrivacy(
+        enabled: true,
+        torDirectory: torDirectory,
+      );
 
-    expect(
-      status,
-      rust_types.NetworkPrivacyStatus.ready,
-      reason: 'bootstrap from $torDirectory did not reach ready',
-    );
-    expect(rust_network_privacy.isTorEnabled(), isTrue);
-  }, timeout: const Timeout(Duration(minutes: 5)));
+      expect(
+        status,
+        rust_types.NetworkPrivacyStatus.ready,
+        reason: 'bootstrap from $torDirectory did not reach ready',
+      );
+      expect(rust_network_privacy.isTorEnabled(), isTrue);
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 }

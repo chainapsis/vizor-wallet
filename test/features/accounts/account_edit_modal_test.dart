@@ -239,10 +239,9 @@ void main() {
 }
 
 Future<void> _loadAppFonts() async {
-  final geist =
-      FontLoader('Geist')
-        ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-        ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
 
   await geist.load();
 }

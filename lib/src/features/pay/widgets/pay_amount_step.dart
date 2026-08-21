@@ -415,11 +415,7 @@ class _PayAssetSelector extends StatelessWidget {
               ],
             ),
             const SizedBox(width: AppSpacing.xxs),
-            AppIcon(
-              AppIcons.expand,
-              size: 16,
-              color: colors.icon.regular,
-            ),
+            AppIcon(AppIcons.expand, size: 16, color: colors.icon.regular),
           ],
         ),
       ),

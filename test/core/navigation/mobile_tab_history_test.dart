@@ -34,14 +34,13 @@ void main() {
     expect(resolveMobileBackPath(ref, currentPath: '/activity'), '/settings');
   });
 
-  testWidgets(
-    'falls back to /home when the previous tab is the current route',
-    (tester) async {
-      // Reachable via Home->Activity->Settings then Settings Back go(/activity):
-      // the record still holds the current tab, which would make Back a no-op.
-      final ref = await pumpRef(tester);
-      ref.read(mobilePreviousTabPathProvider.notifier).record('/activity');
-      expect(resolveMobileBackPath(ref, currentPath: '/activity'), '/home');
-    },
-  );
+  testWidgets('falls back to /home when the previous tab is the current route', (
+    tester,
+  ) async {
+    // Reachable via Home->Activity->Settings then Settings Back go(/activity):
+    // the record still holds the current tab, which would make Back a no-op.
+    final ref = await pumpRef(tester);
+    ref.read(mobilePreviousTabPathProvider.notifier).record('/activity');
+    expect(resolveMobileBackPath(ref, currentPath: '/activity'), '/home');
+  });
 }

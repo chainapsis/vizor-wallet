@@ -53,9 +53,7 @@ void main() {
   testWidgets('iOS skips the inset when the content padding clears the '
       'home indicator', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    await tester.pumpWidget(
-      _host(bottomPadding: kIosHomeIndicatorClearance),
-    );
+    await tester.pumpWidget(_host(bottomPadding: kIosHomeIndicatorClearance));
 
     final screenBottom = tester.getBottomLeft(find.byType(Align)).dy;
     expect(tester.getBottomLeft(find.byKey(_childKey)).dy, screenBottom);

@@ -54,27 +54,29 @@ void main() {
     expect(valid.canReviewQuote, isTrue);
   });
 
-  test('blocks review when destination address format is invalid for chain',
-      () {
-    const state = SwapState(
-      direction: SwapDirection.zecToExternal,
-      amountText: '',
-      receiveAmountText: '105.123456',
-      destinationText: '0xrecipient',
-      externalAsset: SwapAsset.usdc,
-      reviewVisible: false,
-      intents: [],
-      quoteMode: SwapQuoteMode.exactOutput,
-    );
+  test(
+    'blocks review when destination address format is invalid for chain',
+    () {
+      const state = SwapState(
+        direction: SwapDirection.zecToExternal,
+        amountText: '',
+        receiveAmountText: '105.123456',
+        destinationText: '0xrecipient',
+        externalAsset: SwapAsset.usdc,
+        reviewVisible: false,
+        intents: [],
+        quoteMode: SwapQuoteMode.exactOutput,
+      );
 
-    expect(state.destinationAddressFormatError, isNotNull);
-    expect(state.canReviewQuote, isFalse);
+      expect(state.destinationAddressFormatError, isNotNull);
+      expect(state.canReviewQuote, isFalse);
 
-    final fixed = state.copyWith(destinationText: validEvmRecipient);
+      final fixed = state.copyWith(destinationText: validEvmRecipient);
 
-    expect(fixed.destinationAddressFormatError, isNull);
-    expect(fixed.canReviewQuote, isTrue);
-  });
+      expect(fixed.destinationAddressFormatError, isNull);
+      expect(fixed.canReviewQuote, isTrue);
+    },
+  );
 
   test('blocks review until the selected dynamic asset is supported', () {
     final savedBaseUsdc = SwapAsset.live(

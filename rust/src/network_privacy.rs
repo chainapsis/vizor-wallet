@@ -805,7 +805,8 @@ mod tests {
         acquired_rx.await.unwrap();
 
         let started = std::time::Instant::now();
-        let result = bootstrap_tor(&unusable_tor_directory(&temp), Duration::from_millis(100)).await;
+        let result =
+            bootstrap_tor(&unusable_tor_directory(&temp), Duration::from_millis(100)).await;
         let waited = started.elapsed();
 
         holder.abort();

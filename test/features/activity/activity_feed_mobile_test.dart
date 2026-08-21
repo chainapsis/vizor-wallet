@@ -48,7 +48,9 @@ void main() {
     );
   });
 
-  testWidgets('mobile sub-line icon uses the medium icon token', (tester) async {
+  testWidgets('mobile sub-line icon uses the medium icon token', (
+    tester,
+  ) async {
     await _pumpActivityFeed(
       tester,
       rows: [
