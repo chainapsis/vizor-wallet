@@ -6,6 +6,23 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.1.0-rc.5
+
+### Added
+- `VotingDb::effective_bundle_policy` is now public. A wallet that plans or
+  reports outside the `*_for_round` helpers -- because its seed policy is not
+  `BundlePolicy::default()` -- previously had no way to resolve a round's
+  authoritative policy, and reconstructing the rule from the bundle count alone
+  is wrong: a round planned by this binary stores a *trimming* policy, so
+  treating "has bundle rows" as "no trim" under-reports withheld value for
+  every round that was actually trimmed.
+- `minimum_voting_eligibility_and_plan_for_notes` is now public, returning the
+  eligibility status together with the `ChunkResult` it came from.
+  `minimum_voting_eligibility_for_notes` computes the plan and discards it, so a
+  wallet surfacing `PrivacyTrim` next to the eligible weight had to plan a
+  second time and repeat the canonical duplicate-nullifier collapse to do it --
+  two ways for the two numbers to start describing different note sets.
+
 ## v3.1.0-rc.4
 
 ### Changed

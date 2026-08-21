@@ -376,7 +376,18 @@ impl VotingDb {
     /// permanently reject the round. Only the trim is overridden, so the
     /// caller's note capacity and value threshold still apply -- those are
     /// what the persisted rows were planned with.
-    pub(crate) fn effective_bundle_policy(
+    ///
+    /// Wallets that plan or report outside the `*_for_round` helpers must
+    /// resolve the policy through this method rather than reusing the policy
+    /// they seeded the round with. `requested` is only a seed for a round that
+    /// has not been planned yet; once a plan is persisted the stored policy is
+    /// authoritative, and a caller still holding its seed will disagree with
+    /// what the round actually derives.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stored policy or bundle count cannot be read.
+    pub fn effective_bundle_policy(
         &self,
         round_id: &str,
         requested: BundlePolicy,
@@ -906,6 +917,51 @@ mod tests {
                 expected_notes.clone()
             );
         }
+    }
+
+    #[test]
+    fn effective_bundle_policy_keeps_a_stored_trimming_policy_for_planned_rounds() {
+        // The distinguishing case for wallets resolving the policy themselves.
+        // "Has bundle rows" alone does NOT mean "no trim": a round planned by
+        // this binary stored a trimming policy, and that stored policy wins.
+        // A caller that only checked the bundle count would report zero
+        // withheld value for a round that genuinely withheld some.
+        let db = test_db("wallet-stored-trimming-policy");
+        let big = 1_000 * crate::governance::BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| note(i, big)).collect();
+        notes.extend((3..23).map(|i| note(i, big / 500)));
+
+        let planned = db
+            .ensure_bundles_with_policy(ROUND_ID, &notes, BundlePolicy::default())
+            .unwrap();
+        assert!(planned.privacy_trim_dropped_value_zatoshi > 0);
+        assert!(db.get_bundle_count(ROUND_ID).unwrap() > 0);
+
+        let effective = db
+            .effective_bundle_policy(ROUND_ID, BundlePolicy::default())
+            .unwrap();
+
+        assert_eq!(
+            effective.max_privacy_bundles(),
+            BundlePolicy::default().max_privacy_bundles(),
+            "a stored trimming policy must survive, not be read as a migrated round"
+        );
+        assert_eq!(
+            crate::note_bundling::chunk_notes_with_policy(&notes, effective)
+                .privacy_trim
+                .dropped_value,
+            planned.privacy_trim_dropped_value_zatoshi
+        );
+    }
+
+    #[test]
+    fn effective_bundle_policy_returns_the_seed_for_an_unplanned_round() {
+        // Nothing planned yet, so the caller's seed is what the round would be
+        // planned with, threshold and all.
+        let db = test_db("wallet-unplanned-round");
+        let seed = BundlePolicy::default().with_bundle_addition_threshold(12_345);
+
+        assert_eq!(db.effective_bundle_policy(ROUND_ID, seed).unwrap(), seed);
     }
 
     #[test]

@@ -402,7 +402,19 @@ pub fn validate_minimum_voting_eligibility_for_notes(
     }
 }
 
-pub(crate) fn minimum_voting_eligibility_and_plan_for_notes(
+/// Returns the eligibility status and the bundle plan it was derived from.
+///
+/// [`minimum_voting_eligibility_for_notes`] reports only the weight that
+/// survives planning, so a wallet that also needs the privacy trim would have
+/// to plan a second time to see it. Planning twice is how the reported weight
+/// and the reported loss drift apart, and repeating the canonical
+/// duplicate-nullifier collapse in the wallet is how they start describing
+/// different note sets. Use this when both numbers are shown together.
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] if any note row is malformed.
+pub fn minimum_voting_eligibility_and_plan_for_notes(
     notes: &[NoteInfo],
     policy: BundlePolicy,
 ) -> Result<(MinimumVotingEligibility, ChunkResult), VotingError> {
@@ -627,6 +639,32 @@ mod tests {
             scope: 0,
             ufvk_str: String::new(),
         }
+    }
+
+    #[test]
+    fn eligibility_and_plan_describe_the_same_bundle_set() {
+        // The published pair exists so a wallet showing weight and withheld
+        // value together gets both from one plan. Pin that they agree, and
+        // that duplicate nullifiers collapse once for both.
+        let big = 1_000 * BALLOT_DIVISOR;
+        let mut notes: Vec<NoteInfo> = (0..3).map(|i| make_note(big, i)).collect();
+        notes.extend((3..23).map(|i| make_note(big / 500, i)));
+        notes.extend(notes.clone());
+
+        let (eligibility, plan) =
+            minimum_voting_eligibility_and_plan_for_notes(&notes, BundlePolicy::default()).unwrap();
+
+        assert!(plan.privacy_trim.dropped_value > 0, "fixture must trim");
+        assert_eq!(eligibility.eligible_weight, plan.eligible_weight);
+        assert_eq!(
+            eligibility.distinct_note_count,
+            plan.bundles.iter().map(Vec::len).sum::<usize>()
+        );
+        assert_eq!(
+            eligibility,
+            minimum_voting_eligibility_for_notes(&notes, BundlePolicy::default()).unwrap(),
+            "the pair must not report a different status than the single helper"
+        );
     }
 
     fn test_note_ref(value_zatoshi: u64, voting_weight_zatoshi: u64, position: u64) -> NoteRef {
