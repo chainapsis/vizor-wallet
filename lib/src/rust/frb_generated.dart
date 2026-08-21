@@ -19,7 +19,6 @@ import 'network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
-import 'third_party/zcash_voting/round.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/types.dart';
 import 'third_party/zcash_voting/vote.dart';
@@ -81,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1578850925;
+  int get rustContentHash => 582226879;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -994,15 +993,15 @@ abstract class RustLibApi extends BaseApi {
     String? roundId,
   });
 
-  Future<String> crateApiVotingResolveStaticVotingConfig({
+  Future<List<String>> crateApiVotingResolveStaticVotingConfig({
     required String source,
     required List<int> staticBytes,
   });
 
-  Future<VotingConfigResolution> crateApiVotingResolveVotingConfig({
+  Future<VotingConfigResolution> crateApiVotingResolveVotingConfigFromAttempts({
     required String source,
     required List<int> staticBytes,
-    required List<int> dynamicBytes,
+    required List<ApiDynamicConfigAttempt> attempts,
     ResolvedVotingConfig? previous,
   });
 
@@ -1070,7 +1069,7 @@ abstract class RustLibApi extends BaseApi {
     required PlatformInt64 status,
   });
 
-  Future<BundleLayout> crateApiVotingSetupDelegationBundles({
+  Future<ApiBundleLayout> crateApiVotingSetupDelegationBundles({
     required ApiVotingRoundContext ctx,
   });
 
@@ -7148,7 +7147,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<String> crateApiVotingResolveStaticVotingConfig({
+  Future<List<String>> crateApiVotingResolveStaticVotingConfig({
     required String source,
     required List<int> staticBytes,
   }) {
@@ -7166,7 +7165,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
+          decodeSuccessData: sse_decode_list_String,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingResolveStaticVotingConfigConstMeta,
@@ -7183,10 +7182,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<VotingConfigResolution> crateApiVotingResolveVotingConfig({
+  Future<VotingConfigResolution> crateApiVotingResolveVotingConfigFromAttempts({
     required String source,
     required List<int> staticBytes,
-    required List<int> dynamicBytes,
+    required List<ApiDynamicConfigAttempt> attempts,
     ResolvedVotingConfig? previous,
   }) {
     return handler.executeNormal(
@@ -7195,7 +7194,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(source, serializer);
           sse_encode_list_prim_u_8_loose(staticBytes, serializer);
-          sse_encode_list_prim_u_8_loose(dynamicBytes, serializer);
+          sse_encode_list_api_dynamic_config_attempt(attempts, serializer);
           sse_encode_opt_box_autoadd_resolved_voting_config(
             previous,
             serializer,
@@ -7211,17 +7210,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_voting_config_resolution,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiVotingResolveVotingConfigConstMeta,
-        argValues: [source, staticBytes, dynamicBytes, previous],
+        constMeta: kCrateApiVotingResolveVotingConfigFromAttemptsConstMeta,
+        argValues: [source, staticBytes, attempts, previous],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiVotingResolveVotingConfigConstMeta =>
+  TaskConstMeta get kCrateApiVotingResolveVotingConfigFromAttemptsConstMeta =>
       const TaskConstMeta(
-        debugName: "resolve_voting_config",
-        argNames: ["source", "staticBytes", "dynamicBytes", "previous"],
+        debugName: "resolve_voting_config_from_attempts",
+        argNames: ["source", "staticBytes", "attempts", "previous"],
       );
 
   @override
@@ -7655,7 +7654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<BundleLayout> crateApiVotingSetupDelegationBundles({
+  Future<ApiBundleLayout> crateApiVotingSetupDelegationBundles({
     required ApiVotingRoundContext ctx,
   }) {
     return handler.executeNormal(
@@ -7671,7 +7670,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_bundle_layout,
+          decodeSuccessData: sse_decode_api_bundle_layout,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingSetupDelegationBundlesConstMeta,
@@ -8729,6 +8728,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ApiBundleLayout(
+      bundleCount: dco_decode_u_32(arr[0]),
+      eligibleWeight: dco_decode_u_64(arr[1]),
+      droppedCount: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -8739,6 +8751,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       proofProgress: dco_decode_opt_box_autoadd_f_64(arr[1]),
       signedDelegationPayload:
           dco_decode_opt_box_autoadd_signed_delegation_payload_view(arr[2]),
+    );
+  }
+
+  @protected
+  ApiDynamicConfigAttempt dco_decode_api_dynamic_config_attempt(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ApiDynamicConfigAttempt(
+      url: dco_decode_String(arr[0]),
+      bytes: dco_decode_opt_list_prim_u_8_strict(arr[1]),
+      error: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
+  ApiDynamicConfigMirrorFailure dco_decode_api_dynamic_config_mirror_failure(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ApiDynamicConfigMirrorFailure(
+      url: dco_decode_String(arr[0]),
+      reason: dco_decode_String(arr[1]),
     );
   }
 
@@ -9015,19 +9054,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VoteShareWire dco_decode_box_autoadd_vote_share_wire(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_vote_share_wire(raw);
-  }
-
-  @protected
-  BundleLayout dco_decode_bundle_layout(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return BundleLayout(
-      bundleCount: dco_decode_u_32(arr[0]),
-      eligibleWeight: dco_decode_u_64(arr[1]),
-      droppedCount: dco_decode_u_32(arr[2]),
-    );
   }
 
   @protected
@@ -9454,6 +9480,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<AccountInfo> dco_decode_list_account_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_account_info).toList();
+  }
+
+  @protected
+  List<ApiDynamicConfigAttempt> dco_decode_list_api_dynamic_config_attempt(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_api_dynamic_config_attempt)
+        .toList();
+  }
+
+  @protected
+  List<ApiDynamicConfigMirrorFailure>
+  dco_decode_list_api_dynamic_config_mirror_failure(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_api_dynamic_config_mirror_failure)
+        .toList();
   }
 
   @protected
@@ -10928,11 +10973,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VotingConfigResolution dco_decode_voting_config_resolution(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return VotingConfigResolution(
       config: dco_decode_resolved_voting_config(arr[0]),
       switchKind: dco_decode_config_switch_kind(arr[1]),
+      skippedMirrors: dco_decode_list_api_dynamic_config_mirror_failure(arr[2]),
     );
   }
 
@@ -11174,6 +11220,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_bundleCount = sse_decode_u_32(deserializer);
+    var var_eligibleWeight = sse_decode_u_64(deserializer);
+    var var_droppedCount = sse_decode_u_32(deserializer);
+    return ApiBundleLayout(
+      bundleCount: var_bundleCount,
+      eligibleWeight: var_eligibleWeight,
+      droppedCount: var_droppedCount,
+    );
+  }
+
+  @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
     SseDeserializer deserializer,
   ) {
@@ -11187,6 +11246,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       proofProgress: var_proofProgress,
       signedDelegationPayload: var_signedDelegationPayload,
     );
+  }
+
+  @protected
+  ApiDynamicConfigAttempt sse_decode_api_dynamic_config_attempt(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_url = sse_decode_String(deserializer);
+    var var_bytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return ApiDynamicConfigAttempt(
+      url: var_url,
+      bytes: var_bytes,
+      error: var_error,
+    );
+  }
+
+  @protected
+  ApiDynamicConfigMirrorFailure sse_decode_api_dynamic_config_mirror_failure(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_url = sse_decode_String(deserializer);
+    var var_reason = sse_decode_String(deserializer);
+    return ApiDynamicConfigMirrorFailure(url: var_url, reason: var_reason);
   }
 
   @protected
@@ -11503,19 +11587,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_vote_share_wire(deserializer));
-  }
-
-  @protected
-  BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_bundleCount = sse_decode_u_32(deserializer);
-    var var_eligibleWeight = sse_decode_u_64(deserializer);
-    var var_droppedCount = sse_decode_u_32(deserializer);
-    return BundleLayout(
-      bundleCount: var_bundleCount,
-      eligibleWeight: var_eligibleWeight,
-      droppedCount: var_droppedCount,
-    );
   }
 
   @protected
@@ -12018,6 +12089,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <AccountInfo>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_account_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ApiDynamicConfigAttempt> sse_decode_list_api_dynamic_config_attempt(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ApiDynamicConfigAttempt>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_api_dynamic_config_attempt(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ApiDynamicConfigMirrorFailure>
+  sse_decode_list_api_dynamic_config_mirror_failure(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ApiDynamicConfigMirrorFailure>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_api_dynamic_config_mirror_failure(deserializer));
     }
     return ans_;
   }
@@ -14094,9 +14194,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_config = sse_decode_resolved_voting_config(deserializer);
     var var_switchKind = sse_decode_config_switch_kind(deserializer);
+    var var_skippedMirrors = sse_decode_list_api_dynamic_config_mirror_failure(
+      deserializer,
+    );
     return VotingConfigResolution(
       config: var_config,
       switchKind: var_switchKind,
+      skippedMirrors: var_skippedMirrors,
     );
   }
 
@@ -14390,6 +14494,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_bundle_layout(
+    ApiBundleLayout self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.bundleCount, serializer);
+    sse_encode_u_64(self.eligibleWeight, serializer);
+    sse_encode_u_32(self.droppedCount, serializer);
+  }
+
+  @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
     SseSerializer serializer,
@@ -14401,6 +14516,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.signedDelegationPayload,
       serializer,
     );
+  }
+
+  @protected
+  void sse_encode_api_dynamic_config_attempt(
+    ApiDynamicConfigAttempt self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.url, serializer);
+    sse_encode_opt_list_prim_u_8_strict(self.bytes, serializer);
+    sse_encode_opt_String(self.error, serializer);
+  }
+
+  @protected
+  void sse_encode_api_dynamic_config_mirror_failure(
+    ApiDynamicConfigMirrorFailure self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.url, serializer);
+    sse_encode_String(self.reason, serializer);
   }
 
   @protected
@@ -14678,14 +14814,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_vote_share_wire(self, serializer);
-  }
-
-  @protected
-  void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.bundleCount, serializer);
-    sse_encode_u_64(self.eligibleWeight, serializer);
-    sse_encode_u_32(self.droppedCount, serializer);
   }
 
   @protected
@@ -15058,6 +15186,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_account_info(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_api_dynamic_config_attempt(
+    List<ApiDynamicConfigAttempt> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_api_dynamic_config_attempt(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_api_dynamic_config_mirror_failure(
+    List<ApiDynamicConfigMirrorFailure> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_api_dynamic_config_mirror_failure(item, serializer);
     }
   }
 
@@ -16695,6 +16847,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_resolved_voting_config(self.config, serializer);
     sse_encode_config_switch_kind(self.switchKind, serializer);
+    sse_encode_list_api_dynamic_config_mirror_failure(
+      self.skippedMirrors,
+      serializer,
+    );
   }
 
   @protected

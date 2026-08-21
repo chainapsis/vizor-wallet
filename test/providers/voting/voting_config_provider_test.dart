@@ -7,8 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
-import 'package:zcash_wallet/src/rust/api/voting_config.dart'
-    as rust_config_api;
+import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
@@ -251,5 +250,6 @@ rust_config_api.VotingConfigResolution _resolution(
       conditions: const [],
     ),
     switchKind: switchKind,
+    skippedMirrors: const [],
   );
 }

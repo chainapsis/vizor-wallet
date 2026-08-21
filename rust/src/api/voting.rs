@@ -16,8 +16,8 @@ use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
-    ConfigSwitchKind, PirLayout, ResolveVotingConfigOptions, ResolvedVotingConfig,
-    ResolvedVotingConfigSummary,
+    ConfigSwitchKind, DynamicConfigAttempt, PirLayout, ResolveVotingConfigOptions,
+    ResolvedVotingConfig, ResolvedVotingConfigSummary,
 };
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
@@ -127,6 +127,28 @@ pub struct ApiVotingEligibility {
     pub is_eligible: bool,
     pub distinct_note_count: u32,
     pub eligible_weight_zatoshi: u64,
+}
+
+/// FRB-facing bundle layout for [`setup_delegation_bundles`].
+///
+/// Mirrors the three fields Vizor already consumes. The SDK's privacy-trim
+/// totals stay internal to `zcash_voting` so this mirrors PR does not need a
+/// `PrivacyTrim` (or flat trim-field) FRB regeneration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiBundleLayout {
+    pub bundle_count: u32,
+    pub eligible_weight: u64,
+    pub dropped_count: u32,
+}
+
+impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
+    fn from(layout: zcash_voting::wire::BundleLayout) -> Self {
+        Self {
+            bundle_count: layout.bundle_count,
+            eligible_weight: layout.eligible_weight,
+            dropped_count: layout.dropped_count,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -649,14 +671,14 @@ fn emit_signed_vote_result(
 /// initialization, note selection, or bundle layout persistence fails.
 pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
-) -> Result<zcash_voting::wire::BundleLayout, String> {
+) -> Result<ApiBundleLayout, String> {
     // Resolve static network + bundle policy inputs and open the sidecar DB.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
 
     // Select and persist reusable delegation bundles for this round/account.
-    delegation::setup_delegation_bundles(
+    let layout = delegation::setup_delegation_bundles(
         &voting_db,
         &ctx.db_path,
         zcash_voting::delegate::ResolveDelegationLwdParams {
@@ -668,7 +690,8 @@ pub async fn setup_delegation_bundles(
         ctx.session_json.as_deref(),
         bundle_policy,
     )
-    .await
+    .await?;
+    Ok(layout.into())
 }
 
 /// Check whether the account has enough selected notes to vote in this round.
@@ -1696,45 +1719,97 @@ pub fn set_ballot_intent(
     })
 }
 
+/// One wallet-side fetch outcome for a single dynamic config mirror.
+///
+/// Flat by necessity: the crate's [`DynamicConfigAttempt`] carries a
+/// `Result<Vec<u8>, String>`, which flutter_rust_bridge cannot represent as a
+/// struct field. Exactly one of `bytes` / `error` is expected to be set;
+/// `bytes: None` means this mirror did not produce usable bytes and `error`
+/// explains why for logging and diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDynamicConfigAttempt {
+    pub url: String,
+    pub bytes: Option<Vec<u8>>,
+    pub error: Option<String>,
+}
+
+impl From<ApiDynamicConfigAttempt> for DynamicConfigAttempt {
+    fn from(attempt: ApiDynamicConfigAttempt) -> Self {
+        match attempt.bytes {
+            Some(bytes) => DynamicConfigAttempt::fetched(attempt.url, bytes),
+            None => DynamicConfigAttempt::failed(
+                attempt.url,
+                attempt.error.unwrap_or_else(|| "fetch failed".to_string()),
+            ),
+        }
+    }
+}
+
+/// A dynamic config mirror the resolver passed over, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDynamicConfigMirrorFailure {
+    pub url: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VotingConfigResolution {
     pub config: ResolvedVotingConfig,
     pub switch_kind: ConfigSwitchKind,
+    /// Mirrors skipped before the one that resolved. Empty on the happy path.
+    pub skipped_mirrors: Vec<ApiDynamicConfigMirrorFailure>,
 }
 
-/// Authenticate the static voting config bytes and surface the dynamic URL.
+/// Authenticate the static voting config bytes and surface the dynamic mirrors.
 ///
 /// The wallet fetches the static trust anchor with its own transport and passes
 /// the bytes here. Rust verifies the hash pin and decodes the static config,
-/// returning the `dynamic_config_url` the wallet must fetch next before calling
-/// [`resolve_voting_config`]. Config errors are returned as a flat string.
+/// returning the ordered `dynamic_config_urls` the wallet must walk before
+/// calling [`resolve_voting_config_from_attempts`].
+///
+/// The returned list is always non-empty. A v1 static config names exactly one
+/// URL and yields a single entry, so the v1 path is unchanged; a v2 config
+/// yields its full mirror list, canonical origin first. Config errors are
+/// returned as a flat string.
 pub fn resolve_static_voting_config(
     source: String,
     static_bytes: Vec<u8>,
-) -> Result<String, String> {
+) -> Result<Vec<String>, String> {
     config::resolve_static_voting_config(&source, &static_bytes)
-        .map(|resolved| resolved.dynamic_config_url)
+        .map(|resolved| resolved.dynamic_config_urls)
         .map_err(|error| error.to_string())
 }
 
 /// Resolve and authenticate voting config from wallet-fetched bytes.
 ///
 /// The wallet owns transport: it fetches the static bytes, calls
-/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
-/// dynamic bytes, then passes both blobs here. Rust authenticates them and
-/// computes the config-switch classification against `previous`. Config errors
-/// are returned as a flat string; transport failures never reach this layer.
-pub fn resolve_voting_config(
+/// [`resolve_static_voting_config`] to learn the dynamic mirrors, fetches them
+/// in order, and passes the accumulated per-mirror outcomes here. Rust picks the
+/// first mirror that both decodes and authenticates, reports the ones it passed
+/// over, and computes the config-switch classification against `previous`.
+///
+/// Callers are expected to re-invoke this after each mirror fetch rather than
+/// gathering every mirror up front, so a healthy primary costs one request. A
+/// mirror that resolves but authenticates no rounds is deprioritized rather than
+/// skipped, so the caller should keep walking while `authenticated_rounds` is
+/// empty and accept the round-less resolution only once the list is exhausted.
+///
+/// Config errors are returned as a flat string; transport failures never reach
+/// this layer, they arrive as failed attempts.
+pub fn resolve_voting_config_from_attempts(
     source: String,
     static_bytes: Vec<u8>,
-    dynamic_bytes: Vec<u8>,
+    attempts: Vec<ApiDynamicConfigAttempt>,
     previous: Option<ResolvedVotingConfig>,
 ) -> Result<VotingConfigResolution, String> {
     let resolved_static = config::resolve_static_voting_config(&source, &static_bytes)
         .map_err(|error| error.to_string())?;
-    let next = config::resolve_dynamic_voting_config(
+    let (next, skipped) = config::resolve_dynamic_voting_config_from_attempts(
         resolved_static,
-        &dynamic_bytes,
+        attempts
+            .into_iter()
+            .map(DynamicConfigAttempt::from)
+            .collect(),
         ResolveVotingConfigOptions::default(),
     )
     .map_err(|error| error.to_string())?;
@@ -1748,6 +1823,13 @@ pub fn resolve_voting_config(
     Ok(VotingConfigResolution {
         config: next,
         switch_kind,
+        skipped_mirrors: skipped
+            .into_iter()
+            .map(|failure| ApiDynamicConfigMirrorFailure {
+                url: failure.url,
+                reason: failure.reason,
+            })
+            .collect(),
     })
 }
 
@@ -1916,14 +1998,18 @@ mod tests {
 
     #[test]
     fn api_bundle_setup_result_preserves_core_fields() {
-        let api = zcash_voting::wire::BundleLayout {
+        let api = ApiBundleLayout::from(zcash_voting::wire::BundleLayout {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
-        };
+            privacy_trim_dropped_bundles: 0,
+            privacy_trim_dropped_notes: 0,
+            privacy_trim_dropped_value_zatoshi: 0,
+        });
 
         assert_eq!(api.bundle_count, 2);
         assert_eq!(api.eligible_weight, 50);
+        assert_eq!(api.dropped_count, 0);
     }
 
     #[test]
@@ -2439,6 +2525,15 @@ mod tests {
     #[test]
     fn api_note_selection_result_preserves_core_fields() {
         let divisor = zcash_voting::governance::BALLOT_DIVISOR;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-selection").unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         let selected = zcash_voting::SelectedNotes {
             notes: vec![
                 test_note_ref(divisor / 2, divisor / 2, 3),
@@ -2448,9 +2543,8 @@ mod tests {
             anchor_tree_state: test_tree_state(100),
         };
 
-        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected(
-            selected,
-            BundlePolicy::default(),
+        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected_for_round(
+            selected, &db, ROUND_ID,
         )
         .unwrap();
 
@@ -3363,6 +3457,35 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("must be unique"));
+    }
+
+    #[test]
+    fn dynamic_config_attempt_dto_maps_both_outcomes() {
+        let fetched: DynamicConfigAttempt = ApiDynamicConfigAttempt {
+            url: "https://mirror.example/dynamic.json".to_string(),
+            bytes: Some(b"{}".to_vec()),
+            error: None,
+        }
+        .into();
+        assert_eq!(fetched.result.as_deref(), Ok(b"{}".as_slice()));
+
+        let failed: DynamicConfigAttempt = ApiDynamicConfigAttempt {
+            url: "https://mirror.example/dynamic.json".to_string(),
+            bytes: None,
+            error: Some("dns error".to_string()),
+        }
+        .into();
+        assert_eq!(failed.result.as_ref().unwrap_err(), "dns error");
+
+        // A caller that reports no bytes and no reason is still a failure, not
+        // an empty-bodied success that would reach the resolver as valid input.
+        let unexplained: DynamicConfigAttempt = ApiDynamicConfigAttempt {
+            url: "https://mirror.example/dynamic.json".to_string(),
+            bytes: None,
+            error: None,
+        }
+        .into();
+        assert!(unexplained.result.is_err());
     }
 
     fn test_vote_recovery_json(

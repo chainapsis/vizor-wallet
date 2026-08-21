@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../rust/api/voting_config.dart';
+import '../../rust/api/voting.dart';
 import '../../rust/third_party/zcash_voting/config.dart';
 import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
