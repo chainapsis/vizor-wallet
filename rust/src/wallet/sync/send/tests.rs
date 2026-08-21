@@ -1,6 +1,8 @@
 use super::super::migration;
 use super::*;
 
+use std::cell::{Cell, RefCell};
+
 use incrementalmerkletree::Position;
 use rusqlite::{params, Connection};
 use shardtree::store::ShardStore;
@@ -862,6 +864,267 @@ fn ordinary_send_policy_keeps_all_shielded_pools_without_migration() {
     assert!(policy.permits_shielded(ShieldedPool::Orchard));
     assert!(policy.permits_shielded(ShieldedPool::Ironwood));
     assert_eq!(policy.note_selection(), NoteSelection::PreferConsolidation);
+}
+
+struct RecordingConsolidationSource {
+    ordinary_selection_calls: Cell<usize>,
+    consolidation_excludes: RefCell<Vec<Vec<u32>>>,
+}
+
+fn consolidation_test_orchard_note(
+    note_id: u32,
+    txid_byte: u8,
+) -> ReceivedNote<u32, orchard::Note> {
+    let spending_key = orchard::keys::SpendingKey::from_bytes([19; 32]).unwrap();
+    let fvk = orchard::keys::FullViewingKey::from(&spending_key);
+    let recipient = fvk.address_at(note_id, orchard::keys::Scope::External);
+    let rho = orchard::note::Rho::from_bytes(&[txid_byte; 32]).unwrap();
+    let rseed = (0u8..=255)
+        .find_map(|byte| orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option())
+        .unwrap();
+    let note = orchard::Note::from_parts(
+        recipient,
+        orchard::value::NoteValue::from_raw(100_000),
+        rho,
+        rseed,
+        orchard::note::NoteVersion::V2,
+    )
+    .unwrap();
+    ReceivedNote::from_parts(
+        note_id,
+        TxId::from_bytes([txid_byte; 32]),
+        0,
+        note,
+        zip32::Scope::External,
+        Position::from(note_id as u64),
+        Some(BlockHeight::from_u32(20)),
+        None,
+    )
+}
+
+fn consolidation_test_sapling_note(
+    note_id: u32,
+    txid_byte: u8,
+) -> ReceivedNote<u32, sapling_crypto::Note> {
+    let spending_key = sapling_crypto::zip32::ExtendedSpendingKey::master(&[23; 32]);
+    let (_, recipient) = spending_key.default_address();
+    let note = sapling_crypto::Note::from_parts(
+        recipient,
+        sapling_crypto::value::NoteValue::from_raw(100_000),
+        sapling_crypto::Rseed::AfterZip212([31; 32]),
+    );
+    ReceivedNote::from_parts(
+        note_id,
+        TxId::from_bytes([txid_byte; 32]),
+        0,
+        note,
+        zip32::Scope::External,
+        Position::from(note_id as u64),
+        Some(BlockHeight::from_u32(20)),
+        None,
+    )
+}
+
+impl InputSource for RecordingConsolidationSource {
+    type Error = String;
+    type AccountId = u32;
+    type NoteRef = u32;
+
+    fn get_spendable_note(
+        &self,
+        _txid: &TxId,
+        _protocol: ShieldedPool,
+        _index: u32,
+        _target_height: TargetHeight,
+        _lock_filter: LockFilter<'_>,
+    ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        Ok(None)
+    }
+
+    fn anchor_computable(
+        &self,
+        _protocol: ShieldedPool,
+        _height: BlockHeight,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+
+    fn select_spendable_notes(
+        &self,
+        _account: Self::AccountId,
+        _target_value: TargetValue,
+        _sources: &[ShieldedPool],
+        _target_height: TargetHeight,
+        _confirmations_policy: ConfirmationsPolicy,
+        _exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        self.ordinary_selection_calls
+            .set(self.ordinary_selection_calls.get() + 1);
+        Ok(ReceivedNotes::empty())
+    }
+
+    fn select_spendable_notes_for_consolidation(
+        &self,
+        _account: Self::AccountId,
+        _value: Zatoshis,
+        source: ShieldedPool,
+        _target_height: TargetHeight,
+        _confirmations_policy: ConfirmationsPolicy,
+        exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
+        max_additional_notes: usize,
+    ) -> Result<ConsolidationNotes<Self::NoteRef>, Self::Error> {
+        assert_eq!(max_additional_notes, 4);
+        self.consolidation_excludes
+            .borrow_mut()
+            .push(exclude.to_vec());
+
+        match source {
+            ShieldedPool::Sapling => {
+                let funding = if exclude.contains(&10) {
+                    consolidation_test_sapling_note(11, 11)
+                } else {
+                    consolidation_test_sapling_note(10, 7)
+                };
+                Ok(ConsolidationNotes::from_parts(
+                    ReceivedNotes::new(vec![funding], vec![], vec![]),
+                    ReceivedNotes::empty(),
+                ))
+            }
+            ShieldedPool::Orchard => {
+                let funding = if exclude.contains(&7) {
+                    consolidation_test_orchard_note(9, 9)
+                } else {
+                    consolidation_test_orchard_note(7, 7)
+                };
+                let additional = consolidation_test_orchard_note(8, 8);
+                Ok(ConsolidationNotes::from_parts(
+                    ReceivedNotes::new(vec![], vec![funding], vec![]),
+                    ReceivedNotes::new(vec![], vec![additional], vec![]),
+                ))
+            }
+            ShieldedPool::Ironwood => Err("unused in this test".to_string()),
+        }
+    }
+
+    fn select_unspent_notes(
+        &self,
+        _account: Self::AccountId,
+        _sources: &[ShieldedPool],
+        _target_height: TargetHeight,
+        _exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        Ok(ReceivedNotes::empty())
+    }
+
+    fn get_account_metadata(
+        &self,
+        _account: Self::AccountId,
+        _selector: &NoteFilter,
+        _target_height: TargetHeight,
+        _exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
+    ) -> Result<AccountMeta, Self::Error> {
+        Err("unused in this test".to_string())
+    }
+}
+
+#[test]
+fn reserved_input_source_preserves_consolidation_selection_and_exclusions() {
+    let inner = RecordingConsolidationSource {
+        ordinary_selection_calls: Cell::new(0),
+        consolidation_excludes: RefCell::new(vec![]),
+    };
+    let reserved = BTreeSet::from([6]);
+    let migration_locks =
+        BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
+    let source = ReservedInputSource {
+        inner: &inner,
+        reserved: &reserved,
+        migration_locks: &migration_locks,
+    };
+
+    let selected = source
+        .select_spendable_notes_for_consolidation(
+            1,
+            Zatoshis::const_from_u64(50_000),
+            ShieldedPool::Orchard,
+            TargetHeight::from(BlockHeight::from_u32(100)),
+            ConfirmationsPolicy::MIN,
+            &[5],
+            LockFilter::Policy(&LockedInputPolicy::Exclude),
+            4,
+        )
+        .unwrap();
+    let (funding, additional) = selected.into_parts();
+
+    assert_eq!(inner.ordinary_selection_calls.get(), 0);
+    assert_eq!(
+        inner.consolidation_excludes.into_inner(),
+        vec![vec![5, 6], vec![5, 6, 7]],
+    );
+    assert_eq!(
+        funding
+            .orchard()
+            .iter()
+            .map(|note| *note.internal_note_id())
+            .collect::<Vec<_>>(),
+        vec![9],
+    );
+    assert_eq!(
+        additional
+            .orchard()
+            .iter()
+            .map(|note| *note.internal_note_id())
+            .collect::<Vec<_>>(),
+        vec![8],
+    );
+}
+
+#[test]
+fn reserved_input_source_does_not_apply_orchard_migration_locks_to_sapling() {
+    let inner = RecordingConsolidationSource {
+        ordinary_selection_calls: Cell::new(0),
+        consolidation_excludes: RefCell::new(vec![]),
+    };
+    let reserved = BTreeSet::new();
+    let migration_locks =
+        BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
+    let source = ReservedInputSource {
+        inner: &inner,
+        reserved: &reserved,
+        migration_locks: &migration_locks,
+    };
+
+    let selected = source
+        .select_spendable_notes_for_consolidation(
+            1,
+            Zatoshis::const_from_u64(50_000),
+            ShieldedPool::Sapling,
+            TargetHeight::from(BlockHeight::from_u32(100)),
+            ConfirmationsPolicy::MIN,
+            &[],
+            LockFilter::Policy(&LockedInputPolicy::Exclude),
+            4,
+        )
+        .unwrap();
+    let (funding, additional) = selected.into_parts();
+
+    assert_eq!(
+        inner.consolidation_excludes.into_inner(),
+        vec![Vec::<u32>::new()]
+    );
+    assert_eq!(
+        funding
+            .sapling()
+            .iter()
+            .map(|note| *note.internal_note_id())
+            .collect::<Vec<_>>(),
+        vec![10],
+    );
+    assert!(additional.sapling().is_empty());
 }
 
 fn migration_test_stage(
