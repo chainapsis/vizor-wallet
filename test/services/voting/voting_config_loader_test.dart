@@ -688,7 +688,144 @@ void main() {
   );
 
   test(
-    'a round-less dynamic mirror does not shadow one carrying rounds',
+    'a rescued hash-pin mismatch is still reported as an integrity failure',
+    () async {
+      final mirrors = kProductionStaticVotingConfigMirrors
+          .map(parseStaticVotingConfigSource)
+          .toList();
+      const dynamicUrl = 'https://voting.example/dynamic-voting-config.json';
+      final failures = <VotingConfigMirrorFailure>[];
+      final loader = VotingConfigLoader(
+        httpClient: FakeVotingHttpClient(
+          responses: {
+            mirrors[0].uri.toString(): 'tampered bytes',
+            mirrors[1].uri.toString(): '{"static":true}',
+            dynamicUrl: '{"dynamic":true}',
+          },
+        ),
+        sourceUrl: kProductionStaticVotingConfigSource,
+        onMirrorFailure: failures.add,
+        resolveStaticVotingConfig:
+            ({required source, required staticBytes}) async {
+              if (source == mirrors[0].raw) {
+                throw Exception('static config hash-pin mismatch');
+              }
+              return [dynamicUrl];
+            },
+        resolveVotingConfigFromAttempts:
+            ({
+              required source,
+              required staticBytes,
+              required attempts,
+              previous,
+            }) async => rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+              skippedMirrors: const [],
+            ),
+      );
+
+      // The load succeeds off the fallback origin, so its return value carries
+      // no trace of the pin mismatch. The side channel is the only record.
+      await loader.load();
+
+      expect(failures, hasLength(1));
+      expect(failures.single.stage, VotingConfigMirrorStage.staticAnchor);
+      expect(failures.single.kind, VotingConfigMirrorFailureKind.integrity);
+      expect(failures.single.isIntegrityFailure, isTrue);
+      expect(failures.single.url, mirrors[0].uri.toString());
+    },
+  );
+
+  test(
+    'a transport-preferred throw still reports the integrity failure it hides',
+    () async {
+      final staticUri = parseStaticVotingConfigSource(
+        kDefaultStaticVotingConfigSource,
+      ).uri;
+      const mirrorA = 'https://voting.example/dynamic-voting-config.json';
+      const mirrorB = 'https://mirror.example/dynamic-voting-config.json';
+      final failures = <VotingConfigMirrorFailure>[];
+      final loader = VotingConfigLoader(
+        httpClient: FakeVotingHttpClient(
+          responses: {
+            staticUri.toString(): '{}',
+            // Answers, but with bytes Rust rejects.
+            mirrorA: '{"a":true}',
+            mirrorB: textResponse('down', statusCode: 503),
+          },
+        ),
+        onMirrorFailure: failures.add,
+        resolveStaticVotingConfig:
+            ({required source, required staticBytes}) async => [
+              mirrorA,
+              mirrorB,
+            ],
+        resolveVotingConfigFromAttempts:
+            ({
+              required source,
+              required staticBytes,
+              required attempts,
+              previous,
+            }) async => throw Exception('dynamic config signature invalid'),
+      );
+
+      // The throw stays a transport exception so the caller keeps its
+      // last-good config rather than hard-failing on a flaky network...
+      await expectLater(loader.load(), throwsA(isA<VotingHttpException>()));
+
+      // ...but the integrity failure it hides is not lost with it.
+      expect(
+        failures
+            .where((failure) => failure.isIntegrityFailure)
+            .map((failure) => failure.url),
+        contains(mirrorA),
+      );
+      expect(
+        failures.where(
+          (failure) => failure.kind == VotingConfigMirrorFailureKind.transport,
+        ),
+        isNotEmpty,
+      );
+    },
+  );
+
+  test('an observer that throws cannot fail an otherwise good load', () async {
+    final mirrors = kProductionStaticVotingConfigMirrors
+        .map(parseStaticVotingConfigSource)
+        .toList();
+    const dynamicUrl = 'https://voting.example/dynamic-voting-config.json';
+    final loader = VotingConfigLoader(
+      httpClient: FakeVotingHttpClient(
+        responses: {
+          mirrors[0].uri.toString(): textResponse('down', statusCode: 503),
+          mirrors[1].uri.toString(): '{"static":true}',
+          dynamicUrl: '{"dynamic":true}',
+        },
+      ),
+      sourceUrl: kProductionStaticVotingConfigSource,
+      onMirrorFailure: (_) => throw StateError('observer exploded'),
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => [dynamicUrl],
+      resolveVotingConfigFromAttempts:
+          ({
+            required source,
+            required staticBytes,
+            required attempts,
+            previous,
+          }) async => rust_config_api.VotingConfigResolution(
+            config: _resolvedConfig(),
+            switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            skippedMirrors: const [],
+          ),
+    );
+
+    final resolution = await loader.load();
+    expect(resolution.config.authenticatedRounds, isNotEmpty);
+  });
+
+  test(
+    'a round-less primary ends the walk instead of costing a second fetch',
     () async {
       final staticUri = parseStaticVotingConfigSource(
         kDefaultStaticVotingConfigSource,
@@ -696,14 +833,15 @@ void main() {
       const mirrorA = 'https://voting.example/dynamic-voting-config.json';
       const mirrorB = 'https://mirror.example/dynamic-voting-config.json';
       var passes = 0;
+      final http = FakeVotingHttpClient(
+        responses: {
+          staticUri.toString(): '{}',
+          mirrorA: '{"a":true}',
+          mirrorB: '{"b":true}',
+        },
+      );
       final loader = VotingConfigLoader(
-        httpClient: FakeVotingHttpClient(
-          responses: {
-            staticUri.toString(): '{}',
-            mirrorA: '{"a":true}',
-            mirrorB: '{"b":true}',
-          },
-        ),
+        httpClient: http,
         resolveStaticVotingConfig:
             ({required source, required staticBytes}) async => [
               mirrorA,
@@ -719,7 +857,8 @@ void main() {
               passes += 1;
               return rust_config_api.VotingConfigResolution(
                 config: _resolvedConfig(
-                  // First pass resolves, but authenticates nothing.
+                  // The primary resolves, but authenticates nothing — prod's
+                  // normal steady state, not evidence that it is stale.
                   authenticatedRoundEaPks: passes == 1 ? const {} : null,
                 ),
                 switchKind: rust_config.ConfigSwitchKind.initialLoad,
@@ -729,53 +868,53 @@ void main() {
       );
 
       final resolution = await loader.load();
-      expect(passes, 2);
-      expect(resolution.config.authenticatedRounds, isNotEmpty);
-    },
-  );
-
-  test(
-    'a round-less resolution is accepted once mirrors are exhausted',
-    () async {
-      final staticUri = parseStaticVotingConfigSource(
-        kDefaultStaticVotingConfigSource,
-      ).uri;
-      const mirrorA = 'https://voting.example/dynamic-voting-config.json';
-      const mirrorB = 'https://mirror.example/dynamic-voting-config.json';
-      final loader = VotingConfigLoader(
-        httpClient: FakeVotingHttpClient(
-          responses: {
-            staticUri.toString(): '{}',
-            mirrorA: '{"a":true}',
-            mirrorB: '{"b":true}',
-          },
-        ),
-        resolveStaticVotingConfig:
-            ({required source, required staticBytes}) async => [
-              mirrorA,
-              mirrorB,
-            ],
-        resolveVotingConfigFromAttempts:
-            ({
-              required source,
-              required staticBytes,
-              required attempts,
-              previous,
-            }) async {
-              return rust_config_api.VotingConfigResolution(
-                config: _resolvedConfig(authenticatedRoundEaPks: const {}),
-                switchKind: rust_config.ConfigSwitchKind.initialLoad,
-                skippedMirrors: const [],
-              );
-            },
-      );
-
-      // Prod resolves with zero rounds today; that is a valid outcome, not an
-      // error, once no mirror is left to try.
-      final resolution = await loader.load();
+      // Round count is not a freshness signal, so the empty round set is the
+      // answer and mirror B is never fetched.
+      expect(passes, 1);
       expect(resolution.config.authenticatedRounds, isEmpty);
+      expect(
+        http.requests.map((request) => request.uri.toString()),
+        isNot(contains(mirrorB)),
+      );
     },
   );
+
+  test('a round-less resolution is accepted as a normal outcome', () async {
+    final staticUri = parseStaticVotingConfigSource(
+      kDefaultStaticVotingConfigSource,
+    ).uri;
+    const mirrorA = 'https://voting.example/dynamic-voting-config.json';
+    const mirrorB = 'https://mirror.example/dynamic-voting-config.json';
+    final loader = VotingConfigLoader(
+      httpClient: FakeVotingHttpClient(
+        responses: {
+          staticUri.toString(): '{}',
+          mirrorA: '{"a":true}',
+          mirrorB: '{"b":true}',
+        },
+      ),
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => [mirrorA, mirrorB],
+      resolveVotingConfigFromAttempts:
+          ({
+            required source,
+            required staticBytes,
+            required attempts,
+            previous,
+          }) async {
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(authenticatedRoundEaPks: const {}),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+              skippedMirrors: const [],
+            );
+          },
+    );
+
+    // Prod resolves with zero rounds today; that is a valid outcome, not an
+    // error and not a reason to keep walking.
+    final resolution = await loader.load();
+    expect(resolution.config.authenticatedRounds, isEmpty);
+  });
 
   test(
     'every dynamic mirror failing surfaces the first transport exception',

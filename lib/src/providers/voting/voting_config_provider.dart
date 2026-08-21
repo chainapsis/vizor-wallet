@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../rust/api/voting.dart';
 import '../../rust/third_party/zcash_voting/config.dart';
 import '../../services/voting/voting_retry.dart';
+import 'voting_config_mirror_integrity_provider.dart';
 import 'voting_config_source_provider.dart';
 import 'voting_rounds_provider.dart';
 import 'voting_service_providers.dart';
@@ -129,11 +130,15 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     final previousForSource = _previousResolvedSourceUrl == sourceUrl
         ? _previousResolvedConfig
         : null;
-    final resolution = await _loadWithConfigRetry(
-      () => ref
+    final resolution = await _loadWithConfigRetry(() {
+      // Per attempt, not per load: a retry that succeeds cleanly must not
+      // inherit the previous attempt's rejected mirrors, so the recorded set
+      // always describes how the config now in use was actually obtained.
+      ref.read(votingConfigMirrorIntegrityProvider.notifier).beginAttempt();
+      return ref
           .read(votingConfigLoaderProvider)
-          .load(previous: previousForSource),
-    );
+          .load(previous: previousForSource);
+    });
     if (!_isCurrentLoad(generation)) return null;
     return _commitResolution(resolution, sourceUrl: sourceUrl);
   }

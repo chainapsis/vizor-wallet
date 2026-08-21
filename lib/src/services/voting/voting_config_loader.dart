@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 import '../../core/config/network_config.dart';
@@ -92,6 +95,64 @@ class StaticVotingConfigSourceMalformed implements Exception {
 
   @override
   String toString() => 'StaticVotingConfigSourceMalformed: $message';
+}
+
+/// Which of the two mirrored fetch stages a mirror failure came from.
+enum VotingConfigMirrorStage { staticAnchor, dynamicConfig }
+
+/// Why a mirror was passed over.
+///
+/// The distinction is the point: [transport] means the origin never answered
+/// usable bytes, while [integrity] means it *did* answer and Rust rejected what
+/// it served — a hash-pin mismatch, a bad signature, an unsupported version.
+/// An [integrity] failure is the strongest tamper signal the wallet has, and it
+/// must stay visible even when a later mirror rescues the load.
+enum VotingConfigMirrorFailureKind { transport, integrity }
+
+/// One mirror the loader passed over, and why.
+///
+/// Reported through [VotingConfigLoader.onMirrorFailure] as a side channel:
+/// mirroring means a failure here is routinely survivable, so it must not be
+/// conflated with the load's own success or failure.
+class VotingConfigMirrorFailure {
+  const VotingConfigMirrorFailure({
+    required this.stage,
+    required this.url,
+    required this.kind,
+    required this.error,
+  });
+
+  final VotingConfigMirrorStage stage;
+
+  /// The mirror's transport URL, with any hash pin already stripped.
+  final String url;
+
+  final VotingConfigMirrorFailureKind kind;
+  final Object error;
+
+  bool get isIntegrityFailure =>
+      kind == VotingConfigMirrorFailureKind.integrity;
+
+  @override
+  String toString() =>
+      'VotingConfigMirrorFailure(${stage.name}, ${kind.name}, $url: $error)';
+}
+
+/// Classifies a per-mirror failure as transport or integrity.
+///
+/// Transport is the closed set of "the origin never gave us usable bytes"
+/// outcomes that [isRetryableVotingError] already reasons about. Everything
+/// else reached Rust with bytes in hand and was rejected there, so it is
+/// treated as an integrity failure — erring toward over-reporting a tamper
+/// signal rather than silently classifying a novel error as a network blip.
+VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
+  if (error is VotingHttpException ||
+      error is TimeoutException ||
+      error is SocketException ||
+      error is HttpException) {
+    return VotingConfigMirrorFailureKind.transport;
+  }
+  return VotingConfigMirrorFailureKind.integrity;
 }
 
 /// Parses and validates a wallet-provided static config source URL.
@@ -218,7 +279,14 @@ typedef _StaticSource = ({String raw, Uri uri, String? sha256Hex});
 /// Both stages are mirrored. The bundled trust anchor ships as an ordered list
 /// of hash-pinned URLs on independent origins, and the authenticated static
 /// config names its own ordered list of dynamic config mirrors. Each list is
-/// walked lazily, so a healthy primary costs exactly one request per stage.
+/// walked lazily and stops at the first mirror that answers, so a healthy
+/// primary costs exactly one request per stage.
+///
+/// Every mirror the walk passes over is reported through [onMirrorFailure],
+/// classified as transport or integrity. That channel exists because mirroring
+/// decouples "a mirror was rejected" from "the load failed": once a fallback
+/// rescues the load, the return value carries no trace that the canonical
+/// origin served bytes failing its hash pin.
 /// Mirroring widens availability only: the static hash pin still covers the
 /// trust anchor and every round is still authenticated against the static
 /// trusted keys, so a mirror can serve a stale round set but cannot forge one.
@@ -237,11 +305,21 @@ class VotingConfigLoader {
         rust_config_api.resolveStaticVotingConfig,
     ResolveVotingConfigFromAttemptsFn resolveVotingConfigFromAttempts =
         rust_config_api.resolveVotingConfigFromAttempts,
+    this.onMirrorFailure,
   }) : _sources = _resolveSources(sourceUrl),
        _httpClient = httpClient,
        _timeout = timeout,
        _resolveStaticVotingConfig = resolveStaticVotingConfig,
        _resolveVotingConfigFromAttempts = resolveVotingConfigFromAttempts;
+
+  /// Side channel for every mirror the loader passes over.
+  ///
+  /// Called for both stages and both failure kinds, including on loads that
+  /// ultimately succeed. Mirroring makes a rejected mirror survivable, so the
+  /// thrown error can no longer be the only record of one: a hash-pin mismatch
+  /// on the canonical origin is invisible in the return value precisely because
+  /// the fallback worked. Callers that care about tamper signals watch this.
+  final void Function(VotingConfigMirrorFailure failure)? onMirrorFailure;
 
   /// Ordered static trust-anchor mirrors to walk, canonical origin first.
   ///
@@ -334,8 +412,10 @@ class VotingConfigLoader {
       } catch (error, stackTrace) {
         firstError ??= error;
         firstStackTrace ??= stackTrace;
-        debugPrint(
-          '[zcash] Voting: static config mirror ${source.uri} failed: $error',
+        _reportMirrorFailure(
+          stage: VotingConfigMirrorStage.staticAnchor,
+          url: source.uri.toString(),
+          error: error,
         );
       }
     }
@@ -349,11 +429,26 @@ class VotingConfigLoader {
   /// Walks the dynamic mirrors, re-resolving after each fetch.
   ///
   /// Rust owns the preference rules, so every mirror gathered so far is handed
-  /// back on each pass rather than being judged here. A resolution that
-  /// authenticates rounds ends the walk; one that authenticates none is kept as
-  /// the best result so far but the next mirror is still tried, because a
-  /// round-less mirror must not shadow a healthy one. An empty authenticated
-  /// round set is a valid final outcome once the list is exhausted.
+  /// back on each pass rather than being judged here. Any resolution ends the
+  /// walk, including one that authenticates zero rounds.
+  ///
+  /// Round count is deliberately *not* a freshness proxy. An earlier revision
+  /// kept walking while the round set was empty so a stale mirror could not
+  /// shadow a healthy one, but that guard only ever covered the empty-to-first
+  /// -round transition: a mirror serving one stale round already ended the walk
+  /// ahead of a mirror serving five fresh ones. Meanwhile prod authenticates
+  /// zero rounds as its normal steady state, so the guard charged every prod
+  /// refresh a second fetch — an uncacheable `raw.githubusercontent.com`
+  /// request — to protect a single moment in the config's life. The dynamic
+  /// config carries no serial or timestamp, so no cheap rule does better;
+  /// stopping at the first answer restores "a healthy primary costs exactly one
+  /// request per stage" and shrinks the window in which a fallback mirror's
+  /// unsigned `vote_servers` / `pir_endpoints` are adopted at all.
+  ///
+  /// The cost is that a primary which resolves but has not yet picked up a
+  /// newly published round hides it until the primary catches up. That is
+  /// bounded: the canonical gateway is not edge-cached, and config loads are
+  /// event-driven, so the following refresh sees the round.
   Future<rust_config_api.VotingConfigResolution> _walkDynamicMirrors({
     required String source,
     required Uint8List staticBytes,
@@ -376,6 +471,11 @@ class VotingConfigLoader {
       } catch (error, stackTrace) {
         transportError ??= error;
         transportStackTrace ??= stackTrace;
+        _reportMirrorFailure(
+          stage: VotingConfigMirrorStage.dynamicConfig,
+          url: url,
+          error: error,
+        );
         attempts.add(
           rust_config_api.ApiDynamicConfigAttempt(
             url: url,
@@ -390,24 +490,36 @@ class VotingConfigLoader {
       if (attempts.every((attempt) => attempt.bytes == null)) continue;
 
       try {
-        final resolution = await _resolveVotingConfigFromAttempts(
+        best = await _resolveVotingConfigFromAttempts(
           source: source,
           staticBytes: staticBytes,
           attempts: attempts,
           previous: previous,
         );
-        best = resolution;
-        if (resolution.config.authenticatedRounds.isNotEmpty) break;
+        break;
       } catch (error, stackTrace) {
-        resolveError = error;
-        resolveStackTrace = stackTrace;
+        // First-wins, matching the static walk. Reporting the last mirror's
+        // rejection instead would make two outages with the same root cause
+        // read differently depending on mirror order, which is exactly the
+        // ambiguity that makes triage from user reports unreliable.
+        resolveError ??= error;
+        resolveStackTrace ??= stackTrace;
+        _reportMirrorFailure(
+          stage: VotingConfigMirrorStage.dynamicConfig,
+          url: url,
+          error: error,
+        );
       }
     }
 
     if (best != null) return best;
 
     // Every mirror failed. Prefer the transport failure so the caller's retry
-    // and last-good-config handling still recognizes an outage as retryable.
+    // and last-good-config handling still recognizes an outage as retryable —
+    // a bad mirror must not cost the user their last-good config while the
+    // network is merely down. The integrity failure is not lost by that choice:
+    // it already went out through [onMirrorFailure], which is why that channel
+    // exists rather than being inferred from the thrown error.
     if (transportError != null) {
       Error.throwWithStackTrace(transportError, transportStackTrace!);
     }
@@ -416,6 +528,38 @@ class VotingConfigLoader {
           StateError('static voting config named no dynamic config mirrors'),
       resolveStackTrace ?? StackTrace.current,
     );
+  }
+
+  /// Logs a passed-over mirror and forwards it to [onMirrorFailure].
+  ///
+  /// Never throws: a broken observer must not turn a survivable mirror failure
+  /// into a failed config load.
+  void _reportMirrorFailure({
+    required VotingConfigMirrorStage stage,
+    required String url,
+    required Object error,
+  }) {
+    final kind = classifyVotingConfigMirrorFailure(error);
+    debugPrint(
+      '[zcash] Voting: ${stage.name} mirror $url passed over '
+      '(${kind.name}): $error',
+    );
+    final observer = onMirrorFailure;
+    if (observer == null) return;
+    try {
+      observer(
+        VotingConfigMirrorFailure(
+          stage: stage,
+          url: url,
+          kind: kind,
+          error: error,
+        ),
+      );
+    } catch (observerError) {
+      debugPrint(
+        '[zcash] Voting: mirror failure observer threw: $observerError',
+      );
+    }
   }
 
   Future<Uint8List> _fetchBytes(Uri uri) async {

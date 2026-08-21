@@ -24,6 +24,7 @@ import '../../services/voting/voting_config_loader.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_http.dart';
 import '../../services/voting/voting_retry.dart';
+import 'voting_config_mirror_integrity_provider.dart';
 import 'voting_config_source_provider.dart';
 
 /// Transport shared by the voting service clients.
@@ -40,6 +41,9 @@ final votingConfigLoaderProvider = Provider<VotingConfigLoader>((ref) {
     httpClient: ref.watch(votingHttpClientProvider),
     sourceUrl: source?.sourceUrl,
     timeout: ref.watch(votingConfigLoaderTimeoutProvider),
+    onMirrorFailure: ref
+        .read(votingConfigMirrorIntegrityProvider.notifier)
+        .record,
   );
 });
 
