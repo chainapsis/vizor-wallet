@@ -4544,6 +4544,186 @@ void main() {
     expect(rust.storedCommitmentBundles, ['0:7:2']);
   });
 
+  test(
+    'vote commitment submits shares concurrently and persists completions',
+    () async {
+      final http = _GatedSharePostVotingHttpClient(
+        expectedShareCount: 3,
+        gatedShareIndexes: const {2},
+        responses: votingHttpResponses(),
+      );
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        commitmentShareCount: 3,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationTxHashes: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-0',
+              vanLeafPosition: null,
+            ),
+          ],
+          votes: [vote(bundleIndex: 0, proposalId: 7)],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      await http.allSharePostsStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
+      expect(http.startedShareIndexes, {0, 1, 2});
+      await _waitForRecordedShareCount(rust, 2);
+      expect(rust.recordedShares.map((share) => share.shareIndex).toSet(), {
+        0,
+        1,
+      });
+
+      http.releaseSharePosts.complete();
+      await cast;
+
+      expect(rust.recordedShares, hasLength(3));
+      expect(
+        rust.recordedShares.map((share) => share.shareIndex),
+        unorderedEquals([0, 1, 2]),
+      );
+    },
+  );
+
+  test('vote commitment validates all shares before submission', () async {
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 3,
+      failingVoteShareWireIndexes: const {2},
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    final sharePosts = http.requests.where(
+      (request) =>
+          request.method == 'POST' &&
+          request.uri.path == '/shielded-vote/v1/shares',
+    );
+    expect(sharePosts, isEmpty);
+    expect(rust.recordedShares, isEmpty);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('invalid vote share 2'));
+  });
+
+  test(
+    'vote commitment persists sibling shares after one persistence failure',
+    () async {
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        commitmentShareCount: 3,
+        failingRecordShareIndexes: const {1},
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationTxHashes: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-0',
+              vanLeafPosition: null,
+            ),
+          ],
+          votes: [vote(bundleIndex: 0, proposalId: 7)],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      expect(rust.recordShareAttempts, unorderedEquals([0, 1, 2]));
+      expect(
+        rust.recordedShares.map((share) => share.shareIndex),
+        unorderedEquals([0, 2]),
+      );
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.error?.message, contains('share persistence failed 1'));
+    },
+  );
+
   test('ballot intent write failure aborts before vote submission', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
@@ -5932,6 +6112,54 @@ class _YieldingFakeVotingHttpClient extends FakeVotingHttpClient {
   }
 }
 
+class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
+  _GatedSharePostVotingHttpClient({
+    required this.expectedShareCount,
+    required this.gatedShareIndexes,
+    super.responses,
+  });
+
+  final int expectedShareCount;
+  final Set<int> gatedShareIndexes;
+  final Set<int> startedShareIndexes = {};
+  final Completer<void> allSharePostsStarted = Completer<void>();
+  final Completer<void> releaseSharePosts = Completer<void>();
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    if (uri.path == '/shielded-vote/v1/shares') {
+      final shareIndex = body['share_index'] as int;
+      startedShareIndexes.add(shareIndex);
+      if (startedShareIndexes.length == expectedShareCount &&
+          !allSharePostsStarted.isCompleted) {
+        allSharePostsStarted.complete();
+      }
+      if (gatedShareIndexes.contains(shareIndex)) {
+        await releaseSharePosts.future;
+      }
+    }
+    return super.postJson(uri, body, timeout: timeout);
+  }
+}
+
+Future<void> _waitForRecordedShareCount(
+  FakeVotingRustApi rust,
+  int expectedCount,
+) async {
+  for (var i = 0; i < 100; i++) {
+    if (rust.recordedShares.length >= expectedCount) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail(
+    'Timed out waiting for $expectedCount recorded shares. '
+    'Saw ${rust.recordedShares.length}.',
+  );
+}
+
 class _CountingVotingRoundsNotifier extends VotingRoundsNotifier {
   int reloadCount = 0;
 
@@ -7258,6 +7486,8 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneSignatureBatchFailuresRemaining = 0,
     this.shareResubmissionError,
     this.nextShareTrackingDelayGate,
+    this.failingVoteShareWireIndexes = const {},
+    this.failingRecordShareIndexes = const {},
   });
 
   final Duration setupDelay;
@@ -7283,6 +7513,8 @@ class FakeVotingRustApi implements VotingRustApi {
   int keystoneSignatureBatchFailuresRemaining;
   final Object? shareResubmissionError;
   final Completer<void>? nextShareTrackingDelayGate;
+  final Set<int> failingVoteShareWireIndexes;
+  final Set<int> failingRecordShareIndexes;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -7297,6 +7529,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedVanPositions = <String>[];
   final operationLog = <String>[];
   final recordedShares = <_RecordedShare>[];
+  final recordShareAttempts = <int>[];
   final syncedVoteTrees = <String>[];
   final syncedVoteTreeNodeUrls = <String>[];
   final precomputedDelegationPir = <int>[];
@@ -7853,6 +8086,9 @@ class FakeVotingRustApi implements VotingRustApi {
     BigInt? vcTreePosition,
     required BigInt submitAt,
   }) async {
+    if (failingVoteShareWireIndexes.contains(share.shareIndex)) {
+      throw FormatException('invalid vote share ${share.shareIndex}');
+    }
     return jsonEncode({
       'vote_round_id': share.voteRoundId,
       'shares_hash': share.sharesHash,
@@ -8111,6 +8347,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<String> sentToUrls,
     required BigInt submitAt,
   }) async {
+    recordShareAttempts.add(shareIndex);
+    if (failingRecordShareIndexes.contains(shareIndex)) {
+      throw StateError('share persistence failed $shareIndex');
+    }
     operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
     recordedShares.add(
       _RecordedShare(

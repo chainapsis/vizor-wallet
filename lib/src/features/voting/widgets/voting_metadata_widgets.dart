@@ -255,6 +255,9 @@ class VotingProposalCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           for (final option in proposal.options) ...[
             _VotingProposalOptionRow(
+              key: ValueKey(
+                'voting_proposal_${proposal.id}_option_${option.index}',
+              ),
               option: option,
               selected: selectedChoice == option.index,
               enabled: enabled,
@@ -289,6 +292,7 @@ class VotingProposalCard extends StatelessWidget {
 
 class _VotingProposalOptionRow extends StatelessWidget {
   const _VotingProposalOptionRow({
+    super.key,
     required this.option,
     required this.selected,
     required this.enabled,

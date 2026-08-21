@@ -454,6 +454,7 @@ class _PollCard extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: AppButton(
+                key: ValueKey('voting_poll_action_${round.roundId}'),
                 onPressed: onAction,
                 variant: _actionButtonVariant(state),
                 size: AppButtonSize.medium,

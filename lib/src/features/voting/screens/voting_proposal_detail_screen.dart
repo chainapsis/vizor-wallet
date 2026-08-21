@@ -498,6 +498,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                           !widget.votingEligibilityConfirmed &&
                           widget.votingEligibilityErrorMessage != null;
                       return _ReviewAnswersButton(
+                        key: const ValueKey('voting_review_answers_button'),
                         enabled:
                             canRetryEligibility ||
                             isIneligible ||
@@ -809,6 +810,7 @@ class _PollSummary extends StatelessWidget {
 
 class _ReviewAnswersButton extends StatelessWidget {
   const _ReviewAnswersButton({
+    super.key,
     required this.enabled,
     required this.label,
     required this.onPressed,

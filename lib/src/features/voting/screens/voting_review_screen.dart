@@ -248,6 +248,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                   ),
                   child: Center(
                     child: AppButton(
+                      key: const ValueKey('voting_confirm_submit_button'),
                       onPressed: onSubmit,
                       variant: AppButtonVariant.primary,
                       minWidth: 240,
