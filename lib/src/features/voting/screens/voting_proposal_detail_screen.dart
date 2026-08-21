@@ -341,11 +341,27 @@ String? _votingEligibilityMessage(
   VotingSessionState state, {
   required bool preparing,
 }) {
-  if (state.hasConfirmedVotingEligibility) return null;
+  if (state.hasConfirmedVotingEligibility) {
+    return _privacyTrimNotice(state.privacyTrimDroppedValueZatoshi);
+  }
   final error = state.error;
   if (error != null) return friendlyVotingErrorText(error.message);
   if (preparing) return null;
   return 'Voting power unavailable.';
+}
+
+/// One quiet line for the voters whose voting power the privacy trim reduced.
+///
+/// Bundle planning drops a low-value tail so a holder does not stand out by the
+/// number of delegation submissions they emit. That withheld value is real
+/// voting power, so it is stated rather than silently discarded. Most voters
+/// have nothing withheld and see nothing.
+String? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
+  if (droppedValueZatoshi == null || droppedValueZatoshi <= BigInt.zero) {
+    return null;
+  }
+  return '${formatVotingPower(droppedValueZatoshi)} is left out of this vote '
+      'to keep your submission less identifiable.';
 }
 
 class _ActivePollContent extends StatefulWidget {

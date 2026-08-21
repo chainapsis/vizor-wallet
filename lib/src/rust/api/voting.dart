@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -803,23 +803,33 @@ Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
 
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
 ///
-/// Mirrors the three fields Vizor already consumes. The SDK's privacy-trim
-/// totals stay internal to `zcash_voting` so this mirrors PR does not need a
-/// `PrivacyTrim` (or flat trim-field) FRB regeneration.
+/// Keeps the SDK's flat privacy-trim totals on the existing layout boundary so
+/// Dart can surface withheld voting power without mirroring a nested policy.
 class ApiBundleLayout {
   final int bundleCount;
   final BigInt eligibleWeight;
   final int droppedCount;
+  final int privacyTrimDroppedBundles;
+  final int privacyTrimDroppedNotes;
+  final BigInt privacyTrimDroppedValueZatoshi;
 
   const ApiBundleLayout({
     required this.bundleCount,
     required this.eligibleWeight,
     required this.droppedCount,
+    required this.privacyTrimDroppedBundles,
+    required this.privacyTrimDroppedNotes,
+    required this.privacyTrimDroppedValueZatoshi,
   });
 
   @override
   int get hashCode =>
-      bundleCount.hashCode ^ eligibleWeight.hashCode ^ droppedCount.hashCode;
+      bundleCount.hashCode ^
+      eligibleWeight.hashCode ^
+      droppedCount.hashCode ^
+      privacyTrimDroppedBundles.hashCode ^
+      privacyTrimDroppedNotes.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -828,7 +838,11 @@ class ApiBundleLayout {
           runtimeType == other.runtimeType &&
           bundleCount == other.bundleCount &&
           eligibleWeight == other.eligibleWeight &&
-          droppedCount == other.droppedCount;
+          droppedCount == other.droppedCount &&
+          privacyTrimDroppedBundles == other.privacyTrimDroppedBundles &&
+          privacyTrimDroppedNotes == other.privacyTrimDroppedNotes &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi;
 }
 
 /// Progress event emitted while building, proving, and signing a delegation payload.
@@ -1033,17 +1047,23 @@ class ApiVotingEligibility {
   final int distinctNoteCount;
   final BigInt eligibleWeightZatoshi;
 
+  /// Raw note value the privacy trim withholds from this round, not its
+  /// bundle-quantized voting weight. Zero when nothing was withheld.
+  final BigInt privacyTrimDroppedValueZatoshi;
+
   const ApiVotingEligibility({
     required this.isEligible,
     required this.distinctNoteCount,
     required this.eligibleWeightZatoshi,
+    required this.privacyTrimDroppedValueZatoshi,
   });
 
   @override
   int get hashCode =>
       isEligible.hashCode ^
       distinctNoteCount.hashCode ^
-      eligibleWeightZatoshi.hashCode;
+      eligibleWeightZatoshi.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1052,7 +1072,9 @@ class ApiVotingEligibility {
           runtimeType == other.runtimeType &&
           isEligible == other.isEligible &&
           distinctNoteCount == other.distinctNoteCount &&
-          eligibleWeightZatoshi == other.eligibleWeightZatoshi;
+          eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

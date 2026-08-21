@@ -222,6 +222,13 @@ class VotingSessionState {
   final rust_wire.RoundPlanView? roundPlan;
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;
+
+  /// Raw note value the privacy trim withholds from this round.
+  ///
+  /// Null until a Rust call reports it; zero means nothing was withheld. The
+  /// eligibility preview fills it before delegation and the authoritative
+  /// bundle layout replaces it once setup has run.
+  final BigInt? privacyTrimDroppedValueZatoshi;
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
@@ -251,6 +258,7 @@ class VotingSessionState {
     this.roundPlan,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
+    this.privacyTrimDroppedValueZatoshi,
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
@@ -313,6 +321,7 @@ class VotingSessionState {
     bool clearRoundPlan = false,
     Uri? pirEndpoint,
     BigInt? eligibleWeightZatoshi,
+    BigInt? privacyTrimDroppedValueZatoshi,
     int? walletScannedHeight,
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
@@ -348,6 +357,8 @@ class VotingSessionState {
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
           eligibleWeightZatoshi ?? this.eligibleWeightZatoshi,
+      privacyTrimDroppedValueZatoshi:
+          privacyTrimDroppedValueZatoshi ?? this.privacyTrimDroppedValueZatoshi,
       walletScannedHeight: clearWalletSyncReadiness
           ? null
           : walletScannedHeight ?? this.walletScannedHeight,

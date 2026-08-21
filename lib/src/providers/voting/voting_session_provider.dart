@@ -753,6 +753,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+          privacyTrimDroppedValueZatoshi:
+              bundleSetup.privacyTrimDroppedValueZatoshi,
           keystoneSignatures: retainedSignatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -2896,6 +2898,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+        privacyTrimDroppedValueZatoshi:
+            bundleSetup.privacyTrimDroppedValueZatoshi,
         isHardwareAccount: context.isHardwareAccount,
       ),
     );
@@ -2936,6 +2940,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: eligibility.eligibleWeightZatoshi,
+        privacyTrimDroppedValueZatoshi:
+            eligibility.privacyTrimDroppedValueZatoshi,
         isHardwareAccount: context.isHardwareAccount,
         clearError: eligibility.isEligible,
       );
@@ -2964,6 +2970,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
+          privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
           isHardwareAccount: context.isHardwareAccount,
           error: VotingSessionError(message: message, cause: error),
         ),
@@ -3734,6 +3741,8 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             resumePlan: refreshedPlan,
             roundPlan: refreshedRoundPlan,
             eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+            privacyTrimDroppedValueZatoshi:
+                bundleSetup.privacyTrimDroppedValueZatoshi,
             isHardwareAccount: context.isHardwareAccount,
             clearError: true,
           ),

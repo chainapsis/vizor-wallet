@@ -7328,6 +7328,7 @@ class FakeVotingRustApi implements VotingRustApi {
   rust_config.PirLayout? lastPirLayout;
   int trustedRoundParamsCalls = 0;
   int eligibilityCheckCalls = 0;
+  BigInt privacyTrimDroppedValueZatoshi = BigInt.zero;
   int generateVotingHotkeyCalls = 0;
   int extractSpendAuthSignatureCalls = 0;
 
@@ -7379,6 +7380,9 @@ class FakeVotingRustApi implements VotingRustApi {
       bundleCount: bundleCount,
       eligibleWeight: BigInt.from(setupEligibleWeight),
       droppedCount: 0,
+      privacyTrimDroppedBundles: 0,
+      privacyTrimDroppedNotes: 0,
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 
@@ -7392,6 +7396,7 @@ class FakeVotingRustApi implements VotingRustApi {
       isEligible: eligibilityEligible ?? setupEligibleWeight > 0,
       distinctNoteCount: eligibilityDistinctNoteCount,
       eligibleWeightZatoshi: BigInt.from(setupEligibleWeight),
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 

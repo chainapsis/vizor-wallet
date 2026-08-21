@@ -12,15 +12,32 @@ class BundleLayout {
   final BigInt eligibleWeight;
   final int droppedCount;
 
+  /// Bundles removed by the privacy tail trim.
+  final int privacyTrimDroppedBundles;
+
+  /// Notes contained in bundles removed by the privacy tail trim.
+  final int privacyTrimDroppedNotes;
+
+  /// Raw value removed by the privacy tail trim.
+  final BigInt privacyTrimDroppedValueZatoshi;
+
   const BundleLayout({
     required this.bundleCount,
     required this.eligibleWeight,
     required this.droppedCount,
+    required this.privacyTrimDroppedBundles,
+    required this.privacyTrimDroppedNotes,
+    required this.privacyTrimDroppedValueZatoshi,
   });
 
   @override
   int get hashCode =>
-      bundleCount.hashCode ^ eligibleWeight.hashCode ^ droppedCount.hashCode;
+      bundleCount.hashCode ^
+      eligibleWeight.hashCode ^
+      droppedCount.hashCode ^
+      privacyTrimDroppedBundles.hashCode ^
+      privacyTrimDroppedNotes.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -29,5 +46,9 @@ class BundleLayout {
           runtimeType == other.runtimeType &&
           bundleCount == other.bundleCount &&
           eligibleWeight == other.eligibleWeight &&
-          droppedCount == other.droppedCount;
+          droppedCount == other.droppedCount &&
+          privacyTrimDroppedBundles == other.privacyTrimDroppedBundles &&
+          privacyTrimDroppedNotes == other.privacyTrimDroppedNotes &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi;
 }

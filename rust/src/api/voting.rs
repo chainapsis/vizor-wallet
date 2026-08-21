@@ -127,18 +127,23 @@ pub struct ApiVotingEligibility {
     pub is_eligible: bool,
     pub distinct_note_count: u32,
     pub eligible_weight_zatoshi: u64,
+    /// Raw note value the privacy trim withholds from this round, not its
+    /// bundle-quantized voting weight. Zero when nothing was withheld.
+    pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
 ///
-/// Mirrors the three fields Vizor already consumes. The SDK's privacy-trim
-/// totals stay internal to `zcash_voting` so this mirrors PR does not need a
-/// `PrivacyTrim` (or flat trim-field) FRB regeneration.
+/// Keeps the SDK's flat privacy-trim totals on the existing layout boundary so
+/// Dart can surface withheld voting power without mirroring a nested policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiBundleLayout {
     pub bundle_count: u32,
     pub eligible_weight: u64,
     pub dropped_count: u32,
+    pub privacy_trim_dropped_bundles: u32,
+    pub privacy_trim_dropped_notes: u32,
+    pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
 impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
@@ -147,6 +152,9 @@ impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
             bundle_count: layout.bundle_count,
             eligible_weight: layout.eligible_weight,
             dropped_count: layout.dropped_count,
+            privacy_trim_dropped_bundles: layout.privacy_trim_dropped_bundles,
+            privacy_trim_dropped_notes: layout.privacy_trim_dropped_notes,
+            privacy_trim_dropped_value_zatoshi: layout.privacy_trim_dropped_value_zatoshi,
         }
     }
 }
@@ -710,21 +718,24 @@ pub async fn check_voting_eligibility(
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
-    let eligibility = delegation::check_voting_eligibility(
+    let report = delegation::check_voting_eligibility(
         &voting_db,
         &ctx.db_path,
         &ctx.lightwalletd_url,
         voting_network,
+        ctx.round_params.vote_round_id.as_str(),
         ctx.round_params.snapshot_height,
         bundle_policy,
     )
     .await?;
+    let eligibility = report.eligibility;
     let distinct_note_count = u32::try_from(eligibility.distinct_note_count)
         .map_err(|_| "distinct note count does not fit in u32".to_string())?;
     Ok(ApiVotingEligibility {
         is_eligible: eligibility.is_eligible(),
         distinct_note_count,
         eligible_weight_zatoshi: eligibility.eligible_weight,
+        privacy_trim_dropped_value_zatoshi: report.privacy_trim_dropped_value_zatoshi,
     })
 }
 
@@ -2002,14 +2013,19 @@ mod tests {
             bundle_count: 2,
             eligible_weight: 50,
             dropped_count: 0,
-            privacy_trim_dropped_bundles: 0,
-            privacy_trim_dropped_notes: 0,
-            privacy_trim_dropped_value_zatoshi: 0,
+            privacy_trim_dropped_bundles: 1,
+            privacy_trim_dropped_notes: 4,
+            privacy_trim_dropped_value_zatoshi: 900,
         });
 
         assert_eq!(api.bundle_count, 2);
         assert_eq!(api.eligible_weight, 50);
         assert_eq!(api.dropped_count, 0);
+        // The privacy-trim totals are flat scalars so the Dart mirror stays a
+        // field-level delta instead of gaining a nested class.
+        assert_eq!(api.privacy_trim_dropped_bundles, 1);
+        assert_eq!(api.privacy_trim_dropped_notes, 4);
+        assert_eq!(api.privacy_trim_dropped_value_zatoshi, 900);
     }
 
     #[test]
@@ -2549,6 +2565,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(api.note_count, 2);
+        // Two half-ballot notes fit one bundle, so nothing is trimmed.
+        assert_eq!(api.privacy_trim, Default::default());
         assert_eq!(api.eligible_weight_zatoshi, divisor);
         assert_eq!(api.snapshot_height, 100);
         assert_eq!(api.anchor_height, 100);

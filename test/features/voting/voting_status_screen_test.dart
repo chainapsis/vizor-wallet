@@ -1769,6 +1769,60 @@ void main() {
     expect(find.text('Preparing voting power'), findsNothing);
   });
 
+  /// Pumps the proposal detail screen with a fixed privacy-trim result.
+  Future<void> pumpPollWithPrivacyTrim(
+    WidgetTester tester,
+    BigInt droppedZatoshi,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _VotingStatusRustApi(recoveryApi)
+      ..privacyTrimDroppedValueZatoshi = droppedZatoshi;
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  const privacyTrimNotice =
+      '0.19 ZEC is left out of this vote to keep your submission less '
+      'identifiable.';
+
+  testWidgets('poll shows no privacy trim notice when nothing was withheld', (
+    tester,
+  ) async {
+    // The ordinary voter loses nothing, so the meta row must look unchanged.
+    await pumpPollWithPrivacyTrim(tester, BigInt.zero);
+
+    expect(find.textContaining('is left out of this vote'), findsNothing);
+  });
+
+  testWidgets('poll warns when the privacy trim withheld voting power', (
+    tester,
+  ) async {
+    await pumpPollWithPrivacyTrim(tester, BigInt.from(19000000));
+
+    expect(find.text(privacyTrimNotice), findsOneWidget);
+    // The notice shares its slot with the eligibility failure message, so it
+    // must not drag the failure affordances in with it.
+    expect(find.text('Retry eligibility'), findsNothing);
+    expect(find.text('Voting power unavailable'), findsNothing);
+  });
+
   testWidgets('poll retries voting power from error state', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
     addTearDown(() async {
@@ -4275,6 +4329,7 @@ class _PendingVotingEligibilityRustApi extends _VotingStatusRustApi {
         isEligible: true,
         distinctNoteCount: 5,
         eligibleWeightZatoshi: BigInt.from(100),
+        privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
       ),
     );
   }
@@ -4303,6 +4358,7 @@ class _RetryableVotingPowerRustApi extends _VotingStatusRustApi {
       isEligible: true,
       distinctNoteCount: 5,
       eligibleWeightZatoshi: BigInt.from(100),
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 }
@@ -4320,6 +4376,7 @@ class _MinimumVotingEligibilityRustApi extends _VotingStatusRustApi {
       isEligible: false,
       distinctNoteCount: 2,
       eligibleWeightZatoshi: BigInt.from(100),
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 }
@@ -4483,6 +4540,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
   int eligibilityCheckCalls = 0;
+
+  /// Raw note value the privacy trim withholds. Zero for every fixture that
+  /// does not exercise the trim notice.
+  BigInt privacyTrimDroppedValueZatoshi = BigInt.zero;
   int keystoneDelegationRequestCalls = 0;
   int voteCommitmentCalls = 0;
 
@@ -4498,6 +4559,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       bundleCount: _persistedBundleCount,
       eligibleWeight: eligibleWeight,
       droppedCount: 0,
+      privacyTrimDroppedBundles: 0,
+      privacyTrimDroppedNotes: 0,
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 
@@ -4511,6 +4575,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       isEligible: eligibleWeight > BigInt.zero,
       distinctNoteCount: 5,
       eligibleWeightZatoshi: eligibleWeight,
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
     );
   }
 

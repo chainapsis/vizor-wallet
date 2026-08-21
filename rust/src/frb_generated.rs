@@ -7439,10 +7439,16 @@ impl SseDecode for crate::api::voting::ApiBundleLayout {
         let mut var_bundleCount = <u32>::sse_decode(deserializer);
         let mut var_eligibleWeight = <u64>::sse_decode(deserializer);
         let mut var_droppedCount = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedBundles = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedNotes = <u32>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
         return crate::api::voting::ApiBundleLayout {
             bundle_count: var_bundleCount,
             eligible_weight: var_eligibleWeight,
             dropped_count: var_droppedCount,
+            privacy_trim_dropped_bundles: var_privacyTrimDroppedBundles,
+            privacy_trim_dropped_notes: var_privacyTrimDroppedNotes,
+            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
         };
     }
 }
@@ -7599,10 +7605,12 @@ impl SseDecode for crate::api::voting::ApiVotingEligibility {
         let mut var_isEligible = <bool>::sse_decode(deserializer);
         let mut var_distinctNoteCount = <u32>::sse_decode(deserializer);
         let mut var_eligibleWeightZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_privacyTrimDroppedValueZatoshi = <u64>::sse_decode(deserializer);
         return crate::api::voting::ApiVotingEligibility {
             is_eligible: var_isEligible,
             distinct_note_count: var_distinctNoteCount,
             eligible_weight_zatoshi: var_eligibleWeightZatoshi,
+            privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
         };
     }
 }
@@ -10713,6 +10721,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiBundleLayout {
             self.bundle_count.into_into_dart().into_dart(),
             self.eligible_weight.into_into_dart().into_dart(),
             self.dropped_count.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_bundles
+                .into_into_dart()
+                .into_dart(),
+            self.privacy_trim_dropped_notes.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_value_zatoshi
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -10942,6 +10957,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingEligibility 
             self.is_eligible.into_into_dart().into_dart(),
             self.distinct_note_count.into_into_dart().into_dart(),
             self.eligible_weight_zatoshi.into_into_dart().into_dart(),
+            self.privacy_trim_dropped_value_zatoshi
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -13483,6 +13501,9 @@ impl SseEncode for crate::api::voting::ApiBundleLayout {
         <u32>::sse_encode(self.bundle_count, serializer);
         <u64>::sse_encode(self.eligible_weight, serializer);
         <u32>::sse_encode(self.dropped_count, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_bundles, serializer);
+        <u32>::sse_encode(self.privacy_trim_dropped_notes, serializer);
+        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
     }
 }
 
@@ -13588,6 +13609,7 @@ impl SseEncode for crate::api::voting::ApiVotingEligibility {
         <bool>::sse_encode(self.is_eligible, serializer);
         <u32>::sse_encode(self.distinct_note_count, serializer);
         <u64>::sse_encode(self.eligible_weight_zatoshi, serializer);
+        <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
     }
 }
 
