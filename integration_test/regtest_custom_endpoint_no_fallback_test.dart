@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -8,6 +9,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_onboarding_flow.dart';
@@ -24,6 +26,10 @@ const _networkFailure =
 const _endpointFailure =
     'Cannot reach the configured Zcash endpoint. Check your endpoint settings.';
 const _genericFailure = 'Sync failed. Retry sync to continue.';
+const _unavailableCustomEndpoint = 'http://127.0.0.1:19067';
+var _nextE2ePointer = 1000;
+
+int _takeE2ePointer() => _nextE2ePointer++;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -87,8 +93,20 @@ void main() {
         timeout: const Duration(seconds: 60),
       );
 
-      await tester.pump(const Duration(seconds: 2));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ZcashWalletApp)),
+      );
+      final failoverState = container.read(rpcEndpointFailoverProvider);
       expect(tester.any(find.text(_fallbackToast)), isFalse);
+      expect(failoverState.isUsingFallback, isFalse);
+      expect(
+        failoverState.current.effectivePresetId,
+        kCustomRpcEndpointPresetId,
+      );
+      expect(
+        failoverState.current.normalizedLightwalletdUrl,
+        _unavailableCustomEndpoint,
+      );
       _log('custom endpoint failed without fallback toast');
     },
     timeout: const Timeout(Duration(minutes: 3)),
@@ -97,7 +115,7 @@ void main() {
 
 Future<void> _configureUnavailableCustomPrimary() async {
   final storage = AppSecureStore.instance;
-  await storage.writePlain(kRpcEndpointUrlKey, 'http://127.0.0.1:19067');
+  await storage.writePlain(kRpcEndpointUrlKey, _unavailableCustomEndpoint);
   await storage.writePlain(kRpcEndpointPresetKey, kCustomRpcEndpointPresetId);
 }
 
@@ -145,16 +163,19 @@ Future<void> _stopRustWorkForCleanup() async {
 
 Future<void> _tapButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
-  await _pumpUntil(
-    tester,
-    () =>
-        tester.any(finder) &&
-        tester.widget<AppButton>(finder).onPressed != null,
-    description: '$key button to be enabled',
-  );
+  await _pumpUntil(tester, () {
+    final elements = finder.evaluate();
+    if (elements.isEmpty) return false;
+    final buttons = [
+      for (final element in elements)
+        if (element.widget case final AppButton button) button,
+    ];
+    if (buttons.isEmpty) return true;
+    return buttons.any((button) => button.onPressed != null);
+  }, description: '$key button to be enabled');
   await tester.ensureVisible(finder);
   await tester.pump(const Duration(milliseconds: 50));
-  await tester.tap(finder);
+  await tester.tap(finder, pointer: _takeE2ePointer());
   await tester.pump(const Duration(milliseconds: 250));
   _log('tapped $key');
 }
@@ -169,8 +190,18 @@ Future<void> _enterText(WidgetTester tester, Key key, String text) async {
     () => tester.any(editable),
     description: '$key editable text field',
   );
-  await tester.tap(editable);
+  await tester.tap(editable, pointer: _takeE2ePointer());
   await tester.enterText(editable, text);
+  await tester.pump(const Duration(milliseconds: 100));
+  final editableText = tester.widget<EditableText>(editable);
+  final actualText = editableText.controller.text;
+  if (actualText.isEmpty) {
+    fail('$key did not receive text input.');
+  }
+  // A pasted mnemonic is distributed across multiple controllers. Notify the
+  // field using the word it retained so integration-test platform timing
+  // cannot leave the submit state stale after that programmatic distribution.
+  editableText.onChanged?.call(actualText);
   await tester.pump(const Duration(milliseconds: 100));
   _log('entered text into $key');
 }
@@ -187,8 +218,8 @@ Future<void> _pumpUntil(
   while (DateTime.now().isBefore(end)) {
     try {
       if (condition()) return;
-    } catch (e) {
-      lastError = e;
+    } catch (error) {
+      lastError = error;
     }
     await tester.pump(const Duration(milliseconds: 100));
     await Future<void>.delayed(const Duration(milliseconds: 100));

@@ -873,6 +873,7 @@ class IronwoodMigrationCoordinator
         if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         _desktopOpenFallbackGate.observeEpochEntryHeight(entryHeight.toInt());
       } catch (error) {
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         // Status reconciliation and non-broadcast migration work may continue,
         // but the gate remains fail-closed for scheduled transfers until an
         // authoritative epoch-entry height can be read.
@@ -882,6 +883,7 @@ class IronwoodMigrationCoordinator
         );
       }
     }
+    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
 
     final service = ref.read(ironwoodMigrationServiceProvider);
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;

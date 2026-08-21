@@ -78,6 +78,7 @@ class _TestAppSecurityNotifier extends AppSecurityNotifier {
 Future<_EpochHarness> _startCoordinator({
   rust_sync.MigrationStatus? accountStatus,
   bool acceptScheduledBroadcast = false,
+  bool disposeDuringInitialHeightRead = false,
 }) async {
   final harness = _EpochHarness();
   final status = accountStatus ?? _completeStatus();
@@ -134,6 +135,10 @@ Future<_EpochHarness> _startCoordinator({
         // Each epoch's entry read observes a fresh tip (1_000, 1_001, ...) so
         // tests can prove which epoch's height flowed into a broadcast.
         harness.authoritativeHeightReads++;
+        if (disposeDuringInitialHeightRead) {
+          harness.container.dispose();
+          throw StateError('endpoint lookup failed after disposal');
+        }
         return BigInt.from(999 + harness.authoritativeHeightReads);
       }),
       ironwoodMigrationCoordinatorProvider.overrideWith(
@@ -145,14 +150,14 @@ Future<_EpochHarness> _startCoordinator({
     ],
   );
   harness.container = container;
-  addTearDown(container.dispose);
+  if (!disposeDuringInitialHeightRead) addTearDown(container.dispose);
   await container.read(accountProvider.future);
   final subscription = container.listen(
     ironwoodMigrationCoordinatorProvider,
     (_, _) {},
     fireImmediately: true,
   );
-  addTearDown(subscription.close);
+  if (!disposeDuringInitialHeightRead) addTearDown(subscription.close);
   harness.coordinator = container.read(
     ironwoodMigrationCoordinatorProvider.notifier,
   );
@@ -166,6 +171,13 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  test('stops a height refresh when its provider is disposed', () async {
+    await expectLater(
+      _startCoordinator(disposeDuringInitialHeightRead: true),
+      completes,
+    );
   });
 
   test('desktop visibility changes preserve the epoch', () async {
