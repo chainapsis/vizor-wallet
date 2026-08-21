@@ -627,6 +627,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
 ///
 /// Background migration uses this immediately before advancing an authorized
 /// run so a stale Keychain manifest cannot outlive account deletion.
+#[allow(dead_code)]
 pub(crate) fn account_exists(
     db_path: &str,
     network: WalletNetwork,

@@ -1,3 +1,7 @@
+// The public helper surface intentionally preserves the visibility of the
+// pre-split sync module while its result DTOs remain crate-internal.
+#![allow(private_interfaces)]
+
 use zcash_client_backend::{
     data_api::{
         chain::{scan_cached_blocks, CommitmentTreeRoot},
@@ -138,6 +142,7 @@ fn open_block_cache(cache_path: &str) -> Result<FsBlockDb, String> {
     Ok(db_cache)
 }
 
+#[allow(dead_code)]
 fn get_first_account_id(db: &WalletDatabase) -> Result<zcash_client_sqlite::AccountUuid, String> {
     let accounts = db
         .get_account_ids()

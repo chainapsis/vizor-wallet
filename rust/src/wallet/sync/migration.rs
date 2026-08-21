@@ -205,6 +205,7 @@ pub(crate) struct SignedMigrationPcztInsert {
 }
 
 pub(crate) struct SignedMigrationPczt {
+    #[allow(dead_code)]
     pub message_id: String,
     pub child_index: u32,
     pub base_pczt: Vec<u8>,
@@ -1988,6 +1989,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn set_run_approved_schedule(
     db_path: &str,
     run_id: &str,
@@ -2033,6 +2035,7 @@ pub(crate) fn approved_schedule_for_run(
         .map_err(|e| format!("Decode approved migration schedule: {e}"))
 }
 
+#[allow(dead_code)]
 pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u64>, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;

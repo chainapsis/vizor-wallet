@@ -7,6 +7,7 @@
 pub(crate) const ROUND_ID: &str =
     "0000000000000000000000000000000000000000000000000000000000000001";
 pub(crate) const TEST_ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
+#[allow(dead_code)]
 pub(crate) const TEST_MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 

@@ -141,6 +141,7 @@ pub(crate) struct SplitStagePlan {
 }
 
 impl SplitStagePlan {
+    #[allow(dead_code)]
     pub(crate) fn padding_actions(&self) -> usize {
         DENOMINATION_SPLIT_ACTIONS
             .checked_sub(self.requested_actions)

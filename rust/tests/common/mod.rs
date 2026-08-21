@@ -1,3 +1,6 @@
+// Each integration-test binary imports only the helpers it exercises.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex, MutexGuard};

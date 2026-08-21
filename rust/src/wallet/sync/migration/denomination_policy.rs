@@ -143,6 +143,7 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn proof_readiness_delay_blocks(
     network: WalletNetwork,
     estimated_mined_height: u32,
@@ -232,6 +233,7 @@ pub(crate) fn next_anchor_retry_height_after(
         .ok_or_else(|| "Migration proof retry height overflow".to_string())
 }
 
+#[allow(dead_code)]
 pub(crate) fn zip318_anchor_boundary_at_or_before(
     network: WalletNetwork,
     height: u32,
@@ -273,6 +275,7 @@ fn zip318_anchor_boundary_age(
         .then_some(age)
 }
 
+#[allow(dead_code)]
 pub(crate) fn zip318_anchor_candidate_boundaries(
     network: WalletNetwork,
     observed_anchor_height: u32,
@@ -319,6 +322,7 @@ pub(crate) fn zip318_anchor_candidate_boundaries_with_policy(
     candidates
 }
 
+#[allow(dead_code)]
 pub(crate) fn zip318_anchor_boundary_is_candidate(
     network: WalletNetwork,
     anchor_boundary: u32,
@@ -361,6 +365,7 @@ pub(crate) fn zip318_anchor_boundary_is_candidate_with_policy(
     zip318_anchor_boundary_age(network, timing_policy, latest_boundary, anchor_boundary).is_some()
 }
 
+#[allow(dead_code)]
 pub(crate) fn zip318_draw_anchor_boundary_for_note(
     network: WalletNetwork,
     observed_anchor_height: u32,
@@ -376,6 +381,7 @@ pub(crate) fn zip318_draw_anchor_boundary_for_note(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn zip318_draw_anchor_boundary_for_note_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
