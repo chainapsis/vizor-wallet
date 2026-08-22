@@ -952,19 +952,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       done = completedEligibilitySession;
     }
     if (_canCompleteSubmission(done)) {
-      // Helper reveal is background work. Awaiting it here keeps the status
-      // screen on "Finalizing submission" for every accepted-but-unrevealed
-      // share.
-      unawaited(
-        sessionNotifier.submitPendingShares().catchError((
-          Object error,
-          StackTrace stack,
-        ) {
-          debugPrint(
-            '[zcash] Voting: background share tracking failed: $error\n$stack',
-          );
-        }),
-      );
       _completeJob(key: key, generation: generation);
       return;
     }
@@ -1027,6 +1014,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   void _completeJob({required VotingSessionKey key, required int generation}) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
+    // Register live helper-share tracking before releasing the submission
+    // guard. Account delete/reset drain through the registry; they must not
+    // observe an unguarded in-flight pass.
+    _pinLiveShareTracking(key);
     _releaseGuard();
     _releaseSessionSubscription();
     ref.invalidate(votingSessionProvider(key.roundId));
@@ -1128,6 +1119,32 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (guard == null) return;
     _guard = null;
     ref.read(votingSubmissionGuardProvider.notifier).release(guard);
+  }
+
+  void _pinLiveShareTracking(VotingSessionKey key) {
+    final hasUnconfirmedShares =
+        _sessionForJob(
+          key,
+        )?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
+        false;
+    if (!hasUnconfirmedShares) return;
+    final sessionNotifier = ref.read(
+      votingSubmissionSessionProvider(key).notifier,
+    );
+    sessionNotifier.pinAutomaticShareTracking();
+    // Helper reveal is background work. Awaiting it in the job keeps the
+    // status screen on "Finalizing submission" for accepted-but-unrevealed
+    // shares. The registry, not the job guard, is the drain barrier.
+    unawaited(
+      sessionNotifier.submitPendingShares().catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        debugPrint(
+          '[zcash] Voting: background share tracking failed: $error\n$stack',
+        );
+      }),
+    );
   }
 
   void _scheduleCompletionPoll({
