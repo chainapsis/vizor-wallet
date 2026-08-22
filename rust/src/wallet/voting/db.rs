@@ -37,6 +37,24 @@ pub fn with_voting_sidecar_write_lock<T>(
     operation()
 }
 
+/// Opens a voting sidecar and runs one write-bearing operation under its lock.
+///
+/// Opening is part of the critical section because a fresh connection may run
+/// schema migration or update SQLite pragmas. The returned database handle can
+/// be reused for read-only or internally coordinated work after the lock is
+/// released.
+pub fn with_open_voting_db_write<T>(
+    db_path: &str,
+    account_uuid: &str,
+    operation: impl FnOnce(&zcash_voting::storage::VotingDb) -> Result<T, String>,
+) -> Result<(zcash_voting::storage::VotingDb, T), String> {
+    with_voting_sidecar_write_lock(db_path, || {
+        let db = open_voting_db(db_path, account_uuid)?;
+        let value = operation(&db)?;
+        Ok((db, value))
+    })
+}
+
 /// Retries a complete idempotent voting operation after SQLite writer races.
 ///
 /// Proof generation deliberately runs outside the sidecar write lock so up to
@@ -184,6 +202,96 @@ mod tests {
             writer.join().unwrap();
         }
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn locked_open_serializes_real_same_sidecar_writes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = Arc::new(
+            temp_dir
+                .path()
+                .join("zcash_wallet.db")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let start = Arc::new(Barrier::new(3));
+
+        let writers = (0..3)
+            .map(|writer| {
+                let db_path = Arc::clone(&db_path);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    with_open_voting_db_write(&db_path, "wallet-1", |db| {
+                        db.conn()
+                            .execute_batch(
+                                "CREATE TABLE IF NOT EXISTS concurrency_probe (
+                                    writer INTEGER NOT NULL
+                                 );",
+                            )
+                            .map_err(|error| error.to_string())?;
+                        db.conn()
+                            .execute(
+                                "INSERT INTO concurrency_probe (writer) VALUES (?1)",
+                                [writer],
+                            )
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    })
+                    .map(|_| ())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+
+        let db = open_voting_db(&db_path, "wallet-1").unwrap();
+        let count: u32 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM concurrency_probe", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn sidecar_write_locks_allow_different_wallets_to_overlap() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let start = Arc::new(Barrier::new(2));
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let writers = (0..2)
+            .map(|wallet| {
+                let db_path = temp_dir
+                    .path()
+                    .join(format!("wallet-{wallet}.db"))
+                    .to_string_lossy()
+                    .into_owned();
+                let start = Arc::clone(&start);
+                let active = Arc::clone(&active);
+                let max_active = Arc::clone(&max_active);
+                std::thread::spawn(move || {
+                    start.wait();
+                    with_open_voting_db_write(&db_path, "wallet-1", |_| {
+                        let now_active = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        max_active.fetch_max(now_active, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                    .unwrap();
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        assert_eq!(max_active.load(Ordering::SeqCst), 2);
     }
 
     #[test]
