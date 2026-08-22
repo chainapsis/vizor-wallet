@@ -823,7 +823,7 @@ pub(crate) fn propose_send(
         // Lock the selected inputs before exposing the proposal ID. This closes
         // the review-screen race where a migration could otherwise reserve the
         // same notes after proposal creation but before execution.
-        let lock_owner = LockOwner::random(&mut OsRng);
+        let lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
         let lock_expiry_height =
             send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
         let input_refs = proposal_input_refs(&proposal);
@@ -1815,14 +1815,14 @@ fn build_orchard_migration_immediate_pczt(
             .map_err(|_| "Bad Immediate migration output amount")?;
         let built = pczt_from_build_result(
             make_builder(amount)?
-                .build_for_pczt(rand_core::OsRng, &fee_rule)
+                .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
                 .map_err(|e| format!("Build Immediate migration PCZT failed: {e}"))?,
             network,
             account_derivation,
             orchard_inputs.len(),
             0,
         )?;
-        let input_lock_owner = LockOwner::random(&mut OsRng);
+        let input_lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
         let lock_expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
         // Persist the owner and output references before taking the DB locks,
         // exactly like ephemeral send-proposal locks. A Keystone Immediate
@@ -6157,7 +6157,7 @@ impl SpendProver for NoOpSpendProver {
         None
     }
 
-    fn create_proof<R: rand_core::RngCore>(
+    fn create_proof<R: voting_crypto_deps::rand::Rng>(
         &self,
         _circuit: circuit::Spend,
         _rng: &mut R,
@@ -6194,7 +6194,7 @@ impl OutputProver for NoOpOutputProver {
         }
     }
 
-    fn create_proof<R: rand_core::RngCore>(
+    fn create_proof<R: voting_crypto_deps::rand::Rng>(
         &self,
         _circuit: circuit::Output,
         _rng: &mut R,

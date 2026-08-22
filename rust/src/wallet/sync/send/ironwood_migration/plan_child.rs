@@ -418,7 +418,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     };
 
     let build_result = builder
-        .build_for_pczt(rand_core::OsRng, &fee_rule)
+        .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
@@ -737,7 +737,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     };
 
     let build_result = builder
-        .build_for_pczt(rand_core::OsRng, &fee_rule)
+        .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
         .map_err(|e| format!("Build exact-note migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(
