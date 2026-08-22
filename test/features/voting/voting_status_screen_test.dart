@@ -4305,6 +4305,12 @@ class _NoopVotingRustApi implements VotingRustApi {
   }
 
   @override
+  void warmVotingProvingCaches() {}
+
+  @override
+  void logVotingTiming({required String message}) {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

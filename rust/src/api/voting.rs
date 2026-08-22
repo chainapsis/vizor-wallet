@@ -791,6 +791,25 @@ pub async fn precompute_delegation_pir(
     .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
+/// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
+///
+/// Safe to call repeatedly; only the first call starts work. Returns
+/// immediately so Dart can overlap warm-up with PIR resolve / bundle setup.
+#[flutter_rust_bridge::frb(sync)]
+pub fn warm_voting_proving_caches() {
+    delegation::start_proving_cache_warmup();
+}
+
+/// Forwards a Dart-side vote-pipeline timing line into `frb_user` os_log.
+///
+/// Release Flutter builds do not surface `debugPrint` through `log show`, so
+/// cast-vote wall clocks that live in Dart (HTTP submit, confirmation wait,
+/// share posts, per-bundle chain summaries) go through this helper.
+#[flutter_rust_bridge::frb(sync)]
+pub fn log_voting_timing(message: String) {
+    let _ = message;
+}
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
@@ -1954,6 +1973,12 @@ mod tests {
         assert_eq!(hotkey_a.len(), 64);
         assert_eq!(hotkey_b.len(), 64);
         assert_ne!(hotkey_a, hotkey_b);
+    }
+
+    #[test]
+    fn warm_voting_proving_caches_is_idempotent() {
+        warm_voting_proving_caches();
+        warm_voting_proving_caches();
     }
 
     #[test]
