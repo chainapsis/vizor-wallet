@@ -500,7 +500,7 @@ fn create_padded_orchard_denomination_pczts(
             return Err("Padded denomination stage fee changed after planning".to_string());
         }
         let build_result = builder
-            .build_for_pczt(rand_core::OsRng, &fee_rule)
+            .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
             .map_err(|e| format!("Build padded denomination PCZT failed: {e}"))?;
         if u32::from(build_result.pczt_parts.expiry_height) != expiry_height {
             return Err("Padded denomination expiry changed during PCZT construction".to_string());
