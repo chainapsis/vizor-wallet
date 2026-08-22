@@ -104,7 +104,7 @@ pub async fn select_notes_with_lwd(
     let conn = rusqlite::Connection::open(db_path).map_err(|e| VotingError::Internal {
         message: format!("failed to open wallet database: {e}"),
     })?;
-    let wallet_db = WalletDb::from_connection(conn, network, SystemClock, rand::rngs::OsRng);
+    let wallet_db = WalletDb::from_connection(conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
     select_notes_with_wallet_db(
         &wallet_db,
         network,
@@ -513,7 +513,7 @@ mod tests {
         .unwrap();
 
         mark_scanned_through(&conn, 0, snapshot_height);
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let selected = select_notes_with_wallet_db(
             &db,
             network,
@@ -553,7 +553,7 @@ mod tests {
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 2, 10, divisor * 2, 4);
 
         mark_scanned_through(&conn, 0, snapshot_height);
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let selected = select_notes_with_wallet_db(
             &db,
             network,
@@ -593,7 +593,7 @@ mod tests {
         }
 
         mark_scanned_through(&conn, 0, snapshot_height);
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let selected = select_notes_with_wallet_db(
             &db,
             network,
@@ -621,7 +621,7 @@ mod tests {
         insert_orchard_note(&conn, account_ref, &orchard_fvk, 1, 8, 1, 3);
 
         mark_scanned_through(&conn, 0, snapshot_height - 1);
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let err = select_notes_with_wallet_db(
             &db,
             network,
@@ -645,7 +645,7 @@ mod tests {
         insert_orchard_note(&conn, account_ref, &orchard_fvk, 1, 8, 1, 3);
 
         mark_scanned_through(&conn, 0, snapshot_height);
-        let db = WalletDb::from_connection(&conn, wallet_network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, wallet_network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let err = select_notes_with_wallet_db(
             &db,
             crate::Network::Mainnet,
@@ -672,7 +672,7 @@ mod tests {
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 2, 8, divisor * 2, 4);
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 3, 16, divisor * 3, 1);
 
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let notes = select_snapshot_note_infos(
             &db,
             &account_uuid.expose_uuid().to_string(),
@@ -698,7 +698,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         let (account_uuid, _) = setup_test_account(&mut conn, network);
         mark_scanned_through(&conn, 0, snapshot_height);
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
 
         let err = select_notes_with_wallet_db(
             &db,
@@ -719,7 +719,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             crate::Network::Regtest,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         let err = select_snapshot_note_infos(
@@ -743,7 +743,7 @@ mod tests {
         let account_ref = account_internal_id(&conn, &account_uuid);
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 1, 8, divisor, 7);
 
-        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let account_uuid = account_uuid.expose_uuid().to_string();
         let hotkey = VotingHotkey::from_stored_secret(&[0x77; 64], network).unwrap();
         let round_params = crate::VotingRoundParams {
@@ -795,7 +795,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             crate::Network::Regtest,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let hotkey = VotingHotkey::from_stored_secret(&[0x77; 64], Network::Mainnet).unwrap();
         let target = RoundBoundVotingHotkeyTarget::from_validated_parts(
@@ -971,7 +971,7 @@ mod tests {
         orchard::keys::FullViewingKey,
     ) {
         let seed = SecretVec::new(vec![7u8; 32]);
-        let mut db = WalletDb::from_connection(conn, network, SystemClock, rand::rngs::OsRng);
+        let mut db = WalletDb::from_connection(conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec()))).unwrap();
 
         let sapling_height = network

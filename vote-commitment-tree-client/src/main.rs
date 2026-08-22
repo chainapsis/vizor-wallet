@@ -10,7 +10,6 @@ use std::{process, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use ff::PrimeField;
 use http_body_util::{BodyExt, Empty};
 use hyper::Request;
 use hyper_rustls::HttpsConnector;
@@ -18,7 +17,7 @@ use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::TokioExecutor,
 };
-use voting_crypto_deps::pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use vote_commitment_tree::{MerklePath, TreeClient, TreeSyncApi};
 use vote_commitment_tree_client::http_sync_api::HttpTreeSyncApi;

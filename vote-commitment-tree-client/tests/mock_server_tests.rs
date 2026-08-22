@@ -12,8 +12,7 @@ use std::{
 };
 
 use base64::prelude::*;
-use ff::PrimeField;
-use voting_crypto_deps::pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use vote_commitment_tree::{TreeClient, TreeSyncApi};
 use vote_commitment_tree_client::{

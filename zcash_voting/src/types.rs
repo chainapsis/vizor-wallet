@@ -2,8 +2,8 @@
 pub(crate) use crate::backend::{orchard, pasta_curves, zcash_client_backend, zcash_keys};
 use std::fmt;
 
-use ff::PrimeField;
 use orchard::note::{ExtractedNoteCommitment, NoteVersion};
+use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 use serde::{Deserialize, Serialize};
 use subtle::CtOption;
@@ -1054,7 +1054,7 @@ mod tests {
     use crate::governance::BALLOT_DIVISOR;
     use orchard::note::{ExtractedNoteCommitment, NoteVersion, Rho};
     use orchard::value::NoteValue;
-    use rand::rngs::OsRng;
+    use voting_crypto_deps::rand::rngs::OsRng;
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_protocol::consensus::TEST_NETWORK;
     use zip32::{AccountId, Scope};

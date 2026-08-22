@@ -7,9 +7,8 @@
 //! - `omitempty` means zero/nil fields may be absent
 
 use base64::prelude::*;
-use ff::PrimeField;
 use serde::Deserialize;
-use voting_crypto_deps::pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use vote_commitment_tree::sync_api::{BlockCommitments, BlockCommitmentsPage, TreeState};
 use vote_commitment_tree::MerkleHashVote;

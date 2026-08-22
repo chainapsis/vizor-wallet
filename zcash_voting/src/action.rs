@@ -1,8 +1,10 @@
 #[allow(unused_imports)]
 pub(crate) use crate::backend::{orchard, pasta_curves, pczt, zcash_keys, zcash_primitives};
-use ff::{Field, PrimeField};
 use pasta_curves::arithmetic::{CurveAffine, CurveExt};
-use pasta_curves::group::{Curve, Group, GroupEncoding};
+use pasta_curves::group::{
+    ff::{Field, PrimeField},
+    Curve, Group, GroupEncoding,
+};
 use pasta_curves::pallas;
 use rand::RngCore;
 use subtle::CtOption;
@@ -350,6 +352,7 @@ pub(crate) fn build_governance_pczt(
         .expect("validated as 32 bytes above");
 
     let mut rng = rand::thread_rng();
+    let mut crypto_rng = voting_crypto_deps::rand::rngs::OsRng;
     let shielded_protocol = VotingShieldedProtocol::for_branch_id(branch_id)?;
     let bundle_version = shielded_protocol.bundle_version();
 
@@ -426,7 +429,7 @@ pub(crate) fn build_governance_pczt(
         })?;
 
     // Sample van_comm_rand
-    let van_comm_rand_fp = pallas::Base::random(&mut rng);
+    let van_comm_rand_fp = pallas::Base::random(&mut crypto_rng);
     let van_comm_rand: [u8; 32] = van_comm_rand_fp.to_repr();
 
     // Compute VAN
@@ -524,7 +527,7 @@ pub(crate) fn build_governance_pczt(
         // Keep the metadata check below as a defensive layout assertion.
         let (mut pczt_bundle, bundle_meta) =
             builder
-                .build_for_pczt(&mut rng)
+                .build_for_pczt(&mut crypto_rng)
                 .map_err(|e| VotingError::Internal {
                     message: format!("Builder::build_for_pczt failed: {:?}", e),
                 })?;

@@ -125,7 +125,7 @@ Pre-launch wallet databases with older schema versions are reset when opened by
 this branch; callers that need to preserve test data should export it before
 upgrading the crate.
 
-The workspace uses the published `voting-circuits 0.10.2` release.
+The workspace uses the published `voting-circuits 0.10.3` release.
 
 ## Dependency Strategy
 
@@ -138,7 +138,7 @@ workspace member:
   `zcash_client_sqlite 0.22.0-rc.7`, `zcash_keys 0.16.1`,
   `zcash_primitives 0.30.0`, and `zcash_protocol 0.10.4`** from published
   librustzcash releases.
-- **`voting-circuits 0.10.2`** from
+- **`voting-circuits 0.10.3`** from
   [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
 

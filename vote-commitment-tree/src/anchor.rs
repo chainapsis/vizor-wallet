@@ -1,8 +1,7 @@
 //! Anchor type for committed vote commitment tree roots.
 
-use ff::PrimeField;
 use incrementalmerkletree::{Hashable, Level};
-use voting_crypto_deps::pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use crate::hash::{MerkleHashVote, TREE_DEPTH};
 

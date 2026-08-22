@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use ff::PrimeField;
+use voting_crypto_deps::pasta_curves::group::ff::PrimeField;
 
 use crate::backend::{orchard, pasta_curves, zcash_client_sqlite, zcash_keys};
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -395,7 +395,7 @@ fn example_sign_delegation_request(
     )
     .ok_or_else(|| anyhow::anyhow!("delegation alpha is not a valid Pallas scalar"))?;
     let rsk = ask.randomize(&alpha);
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = voting_crypto_deps::rand::rngs::OsRng;
     let sig = rsk.sign(&mut rng, &request.sighash);
     Ok(((&sig).into(), request.sighash))
 }

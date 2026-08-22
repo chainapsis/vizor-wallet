@@ -4,10 +4,9 @@
 
 use core::iter;
 
-use ff::PrimeField;
 use incrementalmerkletree::{Hashable, Level};
 use lazy_static::lazy_static;
-use voting_crypto_deps::pasta_curves::Fp;
+use voting_crypto_deps::pasta_curves::{group::ff::PrimeField, Fp};
 
 use crate::poseidon_hash;
 

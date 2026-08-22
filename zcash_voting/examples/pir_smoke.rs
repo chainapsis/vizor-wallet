@@ -9,7 +9,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use bytes::Bytes;
 use ed25519_dalek::{Signer, SigningKey};
-use ff::PrimeField;
 use http::{Method, Request};
 use http_body_util::{BodyExt, Full};
 use hyper_rustls::HttpsConnector;
@@ -20,6 +19,7 @@ use hyper_util::{
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
+use voting_crypto_deps::pasta_curves::group::ff::PrimeField;
 use voting_crypto_deps::pasta_curves::pallas::Base as Fp;
 use zcash_voting::config::{
     resolve_dynamic_voting_config, resolve_static_voting_config, PinnedConfigSource, PirLayout,

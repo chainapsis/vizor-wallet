@@ -353,7 +353,7 @@ mod pir_tests {
 mod tree_sync_tests {
     use super::*;
     pub(crate) use crate::backend::pasta_curves;
-    use ff::PrimeField;
+    use pasta_curves::group::ff::PrimeField;
     use pasta_curves::Fp;
     use std::{
         io::{Read, Write},
@@ -543,7 +543,7 @@ mod session_reset_tests {
     use super::*;
     pub(crate) use crate::backend::pasta_curves;
     use crate::storage::queries;
-    use ff::PrimeField;
+    use pasta_curves::group::ff::PrimeField;
     use pasta_curves::Fp;
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";

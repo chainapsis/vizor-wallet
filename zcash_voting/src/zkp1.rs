@@ -2,7 +2,6 @@
 pub(crate) use crate::backend::{halo2_proofs, orchard, pasta_curves, zcash_keys};
 use std::collections::HashMap;
 
-use ff::PrimeField;
 use halo2_proofs::{
     pasta::EqAffine,
     plonk,
@@ -17,8 +16,8 @@ use orchard::{
     value::NoteValue,
     NOTE_COMMITMENT_TREE_DEPTH,
 };
+use pasta_curves::group::ff::PrimeField;
 use pasta_curves::{pallas, vesta};
-use rand::rngs::OsRng;
 use voting_circuits::delegation::{
     build_delegation_bundle, delegation_cached_keys, ImtError, ImtProofData, ImtProvider,
     PrecomputedRandomness, RealNoteInput,
@@ -461,7 +460,7 @@ pub fn build_and_prove_delegation(
     };
 
     // Build the delegation bundle (circuit + instance).
-    let mut rng = OsRng;
+    let mut rng = voting_crypto_deps::rand::rngs::OsRng;
     let bundle = build_delegation_bundle(
         real_inputs,
         &fvk,
@@ -496,7 +495,7 @@ pub fn build_and_prove_delegation(
             .stack_size(DELEGATION_STACK_BYTES)
             .spawn_scoped(scope, move || -> Result<Vec<u8>, VotingError> {
                 let instance_refs: Vec<&[vesta::Scalar]> = vec![proof_instance.as_slice()];
-                let mut local_rng = OsRng;
+                let mut local_rng = voting_crypto_deps::rand::rngs::OsRng;
                 let mut transcript =
                     Blake2bWrite::<_, vesta::Affine, Challenge255<_>>::init(vec![]);
                 plonk::create_proof(
@@ -554,14 +553,15 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
 
-    use ff::Field;
     use incrementalmerkletree::{Hashable, Level};
     use orchard::{
         keys::Scope, note::commitment::ExtractedNoteCommitment, note::Rho, tree::MerkleHashOrchard,
         value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
     };
-    use rand::RngCore;
+    use pasta_curves::group::ff::Field;
+    use voting_crypto_deps::rand::Rng;
     use voting_circuits::delegation::SpacedLeafImtProvider;
+    use voting_crypto_deps::rand::rngs::OsRng;
 
     struct TestReporter {
         count: Arc<AtomicU32>,
@@ -669,7 +669,7 @@ mod tests {
         (ufvk_str, fvk)
     }
 
-    fn random_seed_for_rho(rho: &Rho, rng: &mut impl RngCore) -> RandomSeed {
+    fn random_seed_for_rho(rho: &Rho, rng: &mut impl Rng) -> RandomSeed {
         loop {
             let mut bytes = [0u8; 32];
             rng.fill_bytes(&mut bytes);
@@ -684,7 +684,7 @@ mod tests {
         address: orchard::Address,
         value: u64,
         version: NoteVersion,
-        rng: &mut impl RngCore,
+        rng: &mut impl Rng,
     ) -> orchard::Note {
         loop {
             let (_, _, dummy_parent) = orchard::Note::dummy(&mut *rng, None, NoteVersion::V2);

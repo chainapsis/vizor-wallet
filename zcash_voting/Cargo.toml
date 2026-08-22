@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "3.1.0-rc.5"
+version = "3.1.0-rc.6"
 edition = "2021"
 rust-version = "1.88"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
@@ -49,9 +49,6 @@ zakura = [
 test-fixtures = []
 
 [dependencies]
-ff = "0.13"
-group = "0.13"
-
 # Randomness
 rand = "0.8"
 
@@ -69,14 +66,14 @@ sha2 = "0.10"
 ed25519-dalek = "2"
 
 # PIR (private nullifier exclusion proofs).
-pir-client = { version = "=0.5.0", default-features = false }
+pir-client = { version = "=0.6.0", default-features = false }
 # Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
 # direct dependencies constrain the versions Cargo may resolve, but they do not
 # change whether upstream build scripts execute.
-pir-types = { version = "=0.4.0", default-features = false }
+pir-types = { version = "=0.5.0", default-features = false }
 valar-spiral-rs = { version = "=0.5.2", default-features = false }
 valar-ypir = { version = "=0.2.0", default-features = false }
-imt-tree = { version = "=0.3.0", default-features = false }
+imt-tree = { version = "=0.4.0", default-features = false }
 
 bytes = { version = "1" }
 http = { version = "1" }
@@ -88,8 +85,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.1", default-features = false }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.1", default-features = false, features = ["http"] }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.2", default-features = false }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.2", default-features = false, features = ["http"] }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -117,12 +114,12 @@ zcash_client_backend = { workspace = true, optional = true }
 zcash_client_sqlite = { workspace = true, optional = true }
 zcash_keys = { workspace = true, optional = true }
 zcash_primitives = { workspace = true, optional = true }
-zakura-orchard = { package = "zakura-orchard", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["circuit", "std", "unstable-voting-circuits"] }
-zakura-pczt = { package = "zakura-pczt", version = "0.1.0-rc0", optional = true, features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc1", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc1", default-features = false, optional = true, features = ["orchard"] }
-zakura-keys = { package = "zakura-keys", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["orchard"] }
-zakura-primitives = { package = "zakura-primitives", version = "1.0.0-rc.1", default-features = false, optional = true, features = ["std", "circuits"] }
+zakura-orchard = { package = "zakura-orchard", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["circuit", "std", "unstable-voting-circuits"] }
+zakura-pczt = { package = "zakura-pczt", version = "0.1.0-rc1", optional = true, features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc2", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc2", default-features = false, optional = true, features = ["orchard"] }
+zakura-keys = { package = "zakura-keys", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["orchard"] }
+zakura-primitives = { package = "zakura-primitives", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["std", "circuits"] }
 uuid = "1.23.1"
 
 [dev-dependencies]

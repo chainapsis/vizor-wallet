@@ -13,7 +13,7 @@ use crate::{
     },
     vote::{validate_recovery_bundle_vote_fields, VoteRecoveryBundle},
 };
-use ff::PrimeField;
+use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 
 pub use crate::types::ShareDelegationRecord as ShareRecord;

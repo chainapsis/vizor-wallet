@@ -6,7 +6,7 @@ pub(crate) use crate::backend::pasta_curves;
 use std::collections::HashSet;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use ff::PrimeField;
+use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 use rusqlite::{named_params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -667,7 +667,7 @@ fn internal_serialize(error: serde_json::Error) -> VotingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use group::{Group, GroupEncoding};
+    use pasta_curves::group::{Group, GroupEncoding};
     use rusqlite::params;
     use std::path::PathBuf;
 

@@ -319,9 +319,9 @@ mod tests {
     use super::*;
 
     pub(crate) use crate::backend::pasta_curves;
-    use ff::PrimeField;
     use incrementalmerkletree::frontier::{CommitmentTree, Frontier};
     use incrementalmerkletree::Retention;
+    use pasta_curves::group::ff::PrimeField;
     use pasta_curves::pallas;
     use zcash_client_backend::data_api::WalletCommitmentTrees;
     use zcash_client_backend::proto::service::TreeState;
@@ -435,7 +435,7 @@ mod tests {
         later_height: u32,
         marked_positions: &[Position],
     ) -> (
-        WalletDb<rusqlite::Connection, Network, SystemClock, rand::rngs::OsRng>,
+        WalletDb<rusqlite::Connection, Network, SystemClock, voting_crypto_deps::rand::rngs::OsRng>,
         Frontier<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
     ) {
         let max_position = marked_positions
@@ -450,7 +450,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             Network::TestNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         WalletMigrator::new()
@@ -489,7 +489,7 @@ mod tests {
         later_height: u32,
         marked_positions: &[Position],
     ) -> (
-        WalletDb<rusqlite::Connection, VotingNetwork, SystemClock, rand::rngs::OsRng>,
+        WalletDb<rusqlite::Connection, VotingNetwork, SystemClock, voting_crypto_deps::rand::rngs::OsRng>,
         Frontier<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
     ) {
         let max_position = marked_positions
@@ -504,7 +504,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             VotingNetwork::Regtest,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         WalletMigrator::new()
@@ -664,7 +664,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             Network::MainNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         let err = generate_note_witnesses(&voting_db, ROUND_ID, &notes, &wrong_network_wallet_db)
@@ -699,7 +699,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             Network::MainNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         let err = store_tree_state_and_generate_note_witnesses(
@@ -829,7 +829,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             Network::TestNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
 
         let err =

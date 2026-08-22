@@ -686,7 +686,7 @@ mod tests {
     use super::*;
     use crate::vote::SignedVoteCommitment;
     use crate::VotingHotkey;
-    use ff::PrimeField;
+    use pasta_curves::group::ff::PrimeField;
     use pasta_curves::pallas;
     use zcash_client_backend::proto::service::TreeState;
 

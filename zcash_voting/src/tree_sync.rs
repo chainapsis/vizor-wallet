@@ -36,7 +36,7 @@ impl From<(MerklePath, u32)> for VanWitness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::PrimeField;
+    use pasta_curves::group::ff::PrimeField;
     use pasta_curves::Fp;
     use std::sync::mpsc;
     use std::time::Duration;

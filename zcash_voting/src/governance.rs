@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 pub(crate) use crate::backend::{halo2_gadgets, orchard, pasta_curves};
-use ff::PrimeField;
+use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 use voting_circuits::delegation::{
     derive_nullifier_domain, gov_null_hash, rho_binding_hash, van_commitment_hash,

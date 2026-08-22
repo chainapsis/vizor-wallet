@@ -95,7 +95,7 @@ pub(crate) fn sign_cast_vote(
     anchor_height: u32,
     alpha_v: &[u8],
 ) -> Result<CastVoteSignature, VotingError> {
-    use ff::PrimeField;
+    use pasta_curves::group::ff::PrimeField;
 
     // Derive the voting hotkey SpendingKey from seed.
     let sk = crate::hotkey::spending_key_from_hotkey_seed(
@@ -137,8 +137,7 @@ pub(crate) fn sign_cast_vote(
     )?;
 
     // Sign
-    let mut rng = rand::rngs::OsRng;
-    let sig = rsk_v.sign(&mut rng, &sighash);
+    let sig = rsk_v.sign(voting_crypto_deps::rand::rngs::OsRng, &sighash);
     let sig_bytes: [u8; 64] = (&sig).into();
 
     Ok(CastVoteSignature {

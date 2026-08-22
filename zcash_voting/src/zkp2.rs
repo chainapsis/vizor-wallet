@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 pub(crate) use crate::backend::{orchard, pasta_curves};
-use ff::{Field, PrimeField};
-use group::{Curve, Group, GroupEncoding};
+use pasta_curves::group::{
+    ff::{Field, PrimeField},
+    Curve, Group, GroupEncoding,
+};
 use pasta_curves::pallas;
 
 use voting_circuits::vote_proof::build_vote_proof_from_delegation;
@@ -152,7 +154,7 @@ pub(crate) fn build_vote_commitment(
     progress.on_progress(0.10);
     // Generate spend-auth randomizer for the voting key.
     // The caller will need alpha_v to sign the TX2 sighash with rsk_v = ask_v.randomize(&alpha_v).
-    let alpha_v = pallas::Scalar::random(&mut rand::thread_rng());
+    let alpha_v = pallas::Scalar::random(&mut voting_crypto_deps::rand::rngs::OsRng);
     let sk_for_proof = sk.clone();
     let vote_bundle = std::thread::Builder::new()
         .name("vote-proof-build".to_string())

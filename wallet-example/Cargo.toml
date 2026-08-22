@@ -23,7 +23,6 @@ zakura = [
 anyhow = "1"
 base64 = "0.22"
 bytes = "1"
-ff = "0.13"
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1", "http2"] }

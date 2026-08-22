@@ -1372,7 +1372,7 @@ mod tests {
             Connection::open_in_memory().unwrap(),
             Network::Regtest,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let round_params = crate::VotingRoundParams {
             vote_round_id: "01".repeat(32),
@@ -1606,7 +1606,7 @@ mod tests {
         orchard::keys::FullViewingKey,
     ) {
         let seed = SecretVec::new(vec![7u8; 32]);
-        let mut db = WalletDb::from_connection(conn, network, SystemClock, rand::rngs::OsRng);
+        let mut db = WalletDb::from_connection(conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec()))).unwrap();
 
         let sapling_height = network
@@ -1716,11 +1716,11 @@ mod tests {
         );
 
         let wallet_db =
-            WalletDb::from_connection(&conn, Network::Regtest, SystemClock, rand::rngs::OsRng);
+            WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let voting_db = VotingDb::open_in_memory().unwrap();
         voting_db.set_wallet_id("prepare-delegation-bundle-test");
         let hotkey = test_regtest_voting_hotkey();
-        use group::GroupEncoding;
+        use pasta_curves::group::GroupEncoding;
         let ea_pk = pasta_curves::pallas::Point::from(voting_circuits::spend_auth_g_affine());
         let round_params = crate::VotingRoundParams {
             vote_round_id: "0101010101010101010101010101010101010101010101010101010101010101"
@@ -2148,7 +2148,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             zcash_protocol::consensus::Network::TestNetwork,
             zcash_client_sqlite::util::SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let err = load_account_keys(&db, "not-a-uuid")
             .unwrap_err()
@@ -2163,7 +2163,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             ZcashNetwork::TestNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let hotkey = test_voting_hotkey();
         let err = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
@@ -2187,7 +2187,7 @@ mod tests {
             rusqlite::Connection::open_in_memory().unwrap(),
             ZcashNetwork::TestNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let hotkey = test_voting_hotkey();
         let err = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
@@ -2217,7 +2217,7 @@ mod tests {
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 2, 8, divisor * 2, 3);
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 3, 16, divisor * 3, 11);
 
-        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let hotkey = test_regtest_voting_hotkey();
         let inputs = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
             wallet_db: &db,
@@ -2250,7 +2250,7 @@ mod tests {
     fn gather_delegation_wallet_inputs_rejects_empty_snapshot() {
         let mut conn = Connection::open_in_memory().unwrap();
         let (account_uuid, _) = setup_test_account_for_network(&mut conn, Network::Regtest);
-        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, rand::rngs::OsRng);
+        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
         let hotkey = test_regtest_voting_hotkey();
         let err = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
             wallet_db: &db,
@@ -2286,7 +2286,7 @@ mod tests {
             &conn,
             ZcashNetwork::TestNetwork,
             SystemClock,
-            rand::rngs::OsRng,
+            voting_crypto_deps::rand::rngs::OsRng,
         );
         let hotkey = VotingHotkey::from_stored_secret(&[0x77; 64], Network::Mainnet).unwrap();
         let err = gather_delegation_wallet_inputs(GatherDelegationWalletParams {

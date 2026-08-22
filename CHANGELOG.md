@@ -6,6 +6,25 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Unreleased
 
+## v3.1.0-rc.6
+
+### Changed
+- Updated the selectable cryptography facade to `voting-crypto-deps 0.1.2`,
+  voting circuits to `0.10.3`, the indexed Merkle tree to `imt-tree 0.4.0`,
+  and the PIR stack to `pir-types 0.5.0` and `pir-client 0.6.0`.
+- Released `vote-commitment-tree 0.5.2` and
+  `vote-commitment-tree-client 0.7.2` with backend-neutral field, group, and
+  randomness trait imports for the updated upstream and Zakura dependency
+  families.
+- Updated the Zakura wallet stack to `zakura-wallet-lib 0.1.0-rc2`,
+  `zakura-pczt 0.1.0-rc1`, `zakura-client-backend 0.1.0-rc2`,
+  `zakura-client-sqlite 0.1.0-rc2`, and the `zakura-orchard`, `zakura-keys`, and
+  `zakura-primitives` `1.0.0-rc.3` crypto family. These releases move the Zakura
+  backend to `ff 0.14`, `group 0.14`, and `rand_core 0.10`.
+- Routed the remaining test-only randomness imports through the selected backend
+  facade (`voting_crypto_deps::rand`) instead of a direct `rand 0.8` dependency, so
+  the same tests compile under both the upstream and Zakura families.
+
 ## v3.1.0-rc.5
 
 ### Added

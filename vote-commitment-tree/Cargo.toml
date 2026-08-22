@@ -1,6 +1,6 @@
 [package]
 name = "vote-commitment-tree"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "Append-only Poseidon Merkle tree for Vote Authority Notes and Vote Commitments in the Zcash shielded-voting protocol."
 license = "MIT OR Apache-2.0"
@@ -13,9 +13,8 @@ upstream = ["imt-tree/upstream", "voting-crypto-deps/upstream", "voting-circuits
 zakura = ["imt-tree/zakura", "voting-crypto-deps/zakura", "voting-circuits/zakura"]
 
 [dependencies]
-imt-tree = { version = "=0.3.0", default-features = false }
+imt-tree = { version = "=0.4.0", default-features = false }
 voting-crypto-deps = { workspace = true }
-ff = "0.13"
 anyhow = "1.0"
 incrementalmerkletree = "0.8.1"
 shardtree = "0.7"
