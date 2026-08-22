@@ -2614,7 +2614,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         .get_fee(&fee_rule)
         .unwrap();
     let builder = build_builder(output_value + u64::from(fee)).unwrap();
-    let build_result = builder.build_for_pczt(rand_core::OsRng, &fee_rule).unwrap();
+    let build_result = builder.build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule).unwrap();
 
     assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
     assert_eq!(
@@ -2688,7 +2688,7 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     let input_value = outputs.iter().sum::<u64>() + u64::from(fee);
     let build_result = build_builder(input_value)
         .unwrap()
-        .build_for_pczt(rand_core::OsRng, &fee_rule)
+        .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
         .unwrap();
     assert_eq!(
         u32::from(build_result.pczt_parts.expiry_height),

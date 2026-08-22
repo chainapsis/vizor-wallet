@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rand::rngs::OsRng;
+use voting_crypto_deps::rand::rngs::OsRng;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
 
 use crate::wallet::network::WalletNetwork;

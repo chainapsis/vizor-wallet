@@ -1310,7 +1310,7 @@ mod tests {
             creator::Creator, io_finalizer::IoFinalizer, prover::Prover, signer::Signer,
             updater::Updater,
         };
-        use rand_core::OsRng;
+        use voting_crypto_deps::rand::rngs::OsRng;
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
         use zcash_note_encryption::try_note_decryption;
         use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
