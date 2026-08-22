@@ -22,7 +22,39 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
-class VotingStatusScreen extends ConsumerStatefulWidget {
+typedef VotingStatusContentWrapper =
+    Widget Function(BuildContext context, Widget content);
+typedef VotingKeystoneStatusBuilder =
+    Widget Function(
+      BuildContext context,
+      VotingKeystoneStatusPresentation presentation,
+    );
+
+class VotingKeystoneStatusPresentation {
+  const VotingKeystoneStatusPresentation({
+    required this.bundleIndex,
+    required this.urParts,
+    required this.batchMemos,
+    required this.batchMessageCount,
+    required this.batchTotalCount,
+    required this.onSigned,
+    this.scanError,
+    this.canSkipRemainingBundles = false,
+    this.onSkipRemainingBundles,
+  });
+
+  final int bundleIndex;
+  final List<String> urParts;
+  final List<VotingKeystoneBatchMemo> batchMemos;
+  final int batchMessageCount;
+  final int batchTotalCount;
+  final String? scanError;
+  final bool canSkipRemainingBundles;
+  final Future<void> Function(List<int> responseCbor) onSigned;
+  final VoidCallback? onSkipRemainingBundles;
+}
+
+class VotingStatusScreen extends StatelessWidget {
   const VotingStatusScreen({
     super.key,
     required this.roundId,
@@ -33,10 +65,38 @@ class VotingStatusScreen extends ConsumerStatefulWidget {
   final String? accountUuid;
 
   @override
-  ConsumerState<VotingStatusScreen> createState() => _VotingStatusScreenState();
+  Widget build(BuildContext context) {
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingStatusView(roundId: roundId, accountUuid: accountUuid),
+      ),
+    );
+  }
 }
 
-class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
+class VotingStatusView extends ConsumerStatefulWidget {
+  const VotingStatusView({
+    super.key,
+    required this.roundId,
+    this.accountUuid,
+    this.requireCurrentRouteForConfirmation = false,
+    this.contentWrapper,
+    this.keystoneStatusBuilder,
+  });
+
+  final String roundId;
+  final String? accountUuid;
+  final bool requireCurrentRouteForConfirmation;
+  final VotingStatusContentWrapper? contentWrapper;
+  final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
+
+  @override
+  ConsumerState<VotingStatusView> createState() => _VotingStatusViewState();
+}
+
+class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   bool _startScheduled = false;
   int _startGeneration = 0;
   VotingSessionKey? _jobKey;
@@ -49,7 +109,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }
 
   @override
-  void didUpdateWidget(covariant VotingStatusScreen oldWidget) {
+  void didUpdateWidget(covariant VotingStatusView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId == widget.roundId &&
         oldWidget.accountUuid == widget.accountUuid) {
@@ -126,6 +186,18 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         .handleKeystoneBatchSignResponse(key, responseCbor);
   }
 
+  Future<void> _handleInlineKeystoneSignature(List<int> responseCbor) async {
+    final key = _selectedJobKey();
+    if (key == null || responseCbor.isEmpty) return;
+    await ref
+        .read(votingSubmissionJobsProvider.notifier)
+        .handleKeystoneBatchSignResponse(key, responseCbor);
+    if (!mounted || _selectedJobKey() != key) return;
+    final session = ref.read(votingSubmissionJobSessionProvider(key)).value;
+    final scanError = session?.keystoneScanError;
+    if (scanError != null) throw StateError(scanError);
+  }
+
   Future<void> _skipRemainingKeystoneBundles() async {
     final key = _selectedJobKey();
     if (key == null) return;
@@ -190,95 +262,116 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         job?.status == VotingSubmissionJobStatus.complete) {
       _scheduleConfirmationNavigation(selectedKey);
     }
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: session.when(
-          skipLoadingOnRefresh: false,
-          loading: () {
-            if (startError != null) {
-              return _StatusContent(
-                phase: VotingSessionPhase.error,
-                errorMessage: startError,
-                onRetry: _retry,
-              );
-            }
-            if (job?.status == VotingSubmissionJobStatus.error &&
-                job?.key?.roundId == widget.roundId) {
-              return _StatusContent(
-                phase: VotingSessionPhase.error,
-                errorMessage: job?.errorMessage,
-                onRetry: _retry,
-                onClear: _clearError,
-              );
-            }
-            return const VotingPaneLoading();
-          },
-          error: (error, _) => _StatusContent(
+    var usesPlatformKeystoneScreen = false;
+    final content = session.when(
+      skipLoadingOnRefresh: false,
+      loading: () {
+        if (startError != null) {
+          return _StatusContent(
             phase: VotingSessionPhase.error,
-            errorMessage: job?.errorMessage ?? _messageFromError(error),
+            errorMessage: startError,
             onRetry: _retry,
-            onClear: job?.status == VotingSubmissionJobStatus.error
-                ? _clearError
-                : null,
-          ),
-          data: (state) {
-            final localError = job?.errorMessage;
-            final submissionJobComplete =
-                job?.status == VotingSubmissionJobStatus.complete;
-            final submissionJobInFlight = job?.isInFlight ?? false;
-            final sessionCompleted = _hasCompletedSubmission(state);
-            final completedSubmission =
-                submissionJobComplete ||
-                (!submissionJobInFlight && sessionCompleted) ||
-                (submissionJobInFlight &&
-                    sessionCompleted &&
-                    _hasCompletedCurrentSubmissionProgress(state));
-            final phase = job?.status != VotingSubmissionJobStatus.error
-                ? _displayPhase(
-                    state.phase,
-                    completedSubmission: completedSubmission,
-                  )
-                : VotingSessionPhase.error;
-            return _StatusContent(
-              phase: phase,
-              voteSubmissionDetail: _voteSubmissionDetail(state),
-              voteSubmissionProgress: _voteSubmissionProgress(
-                state,
-                completedSubmission: completedSubmission,
-              ),
-              delegationProgress: _delegationProgress(state),
-              completedSubmission: completedSubmission,
-              submissionJobComplete: submissionJobComplete,
-              submissionJobInFlight: submissionJobInFlight,
-              softwareAccountRequired: job?.softwareAccountRequired ?? false,
-              isHardwareAccount: state.isHardwareAccount,
-              keystoneSigningBundleIndex:
-                  state.keystoneSigningRequest?.bundleIndex,
-              canSkipRemainingKeystoneBundles:
-                  state.canSkipRemainingKeystoneBundles,
-              keystoneUrParts: job?.keystoneUrParts ?? const [],
-              keystoneBatchMemos: job?.keystoneBatchMemos ?? const [],
-              keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
-              keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
-              keystoneQrError: job?.keystoneQrError,
-              keystoneScanError: state.keystoneScanError,
-              walletScannedHeight: state.walletScannedHeight,
-              walletSnapshotHeight: state.walletSnapshotHeight,
-              walletChainTipHeight: state.walletChainTipHeight,
-              errorMessage: _sessionErrorMessage(state, localError),
-              onRetry: _retry,
-              onClear: job?.status == VotingSubmissionJobStatus.error
-                  ? _clearError
-                  : null,
-              onScanKeystone: _scanKeystoneSignature,
-              onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
-            );
-          },
-        ),
+          );
+        }
+        if (job?.status == VotingSubmissionJobStatus.error &&
+            job?.key?.roundId == widget.roundId) {
+          return _StatusContent(
+            phase: VotingSessionPhase.error,
+            errorMessage: job?.errorMessage,
+            onRetry: _retry,
+            onClear: _clearError,
+          );
+        }
+        return const VotingPaneLoading();
+      },
+      error: (error, _) => _StatusContent(
+        phase: VotingSessionPhase.error,
+        errorMessage: job?.errorMessage ?? _messageFromError(error),
+        onRetry: _retry,
+        onClear: job?.status == VotingSubmissionJobStatus.error
+            ? _clearError
+            : null,
       ),
+      data: (state) {
+        final localError = job?.errorMessage;
+        final submissionJobComplete =
+            job?.status == VotingSubmissionJobStatus.complete;
+        final submissionJobInFlight = job?.isInFlight ?? false;
+        final sessionCompleted = _hasCompletedSubmission(state);
+        final completedSubmission =
+            submissionJobComplete ||
+            (!submissionJobInFlight && sessionCompleted) ||
+            (submissionJobInFlight &&
+                sessionCompleted &&
+                _hasCompletedCurrentSubmissionProgress(state));
+        final phase = job?.status != VotingSubmissionJobStatus.error
+            ? _displayPhase(
+                state.phase,
+                completedSubmission: completedSubmission,
+              )
+            : VotingSessionPhase.error;
+        final keystoneBuilder = widget.keystoneStatusBuilder;
+        final bundleIndex = state.keystoneSigningRequest?.bundleIndex;
+        final urParts = job?.keystoneUrParts ?? const <String>[];
+        if (keystoneBuilder != null &&
+            state.isHardwareAccount &&
+            phase == VotingSessionPhase.keystoneSigning &&
+            bundleIndex != null &&
+            urParts.isNotEmpty &&
+            job?.keystoneQrError == null) {
+          usesPlatformKeystoneScreen = true;
+          return keystoneBuilder(
+            context,
+            VotingKeystoneStatusPresentation(
+              bundleIndex: bundleIndex,
+              urParts: urParts,
+              batchMemos: job?.keystoneBatchMemos ?? const [],
+              batchMessageCount: job?.keystoneBatchMessageCount ?? 0,
+              batchTotalCount: job?.keystoneBatchTotalCount ?? 0,
+              scanError: state.keystoneScanError,
+              canSkipRemainingBundles: state.canSkipRemainingKeystoneBundles,
+              onSigned: _handleInlineKeystoneSignature,
+              onSkipRemainingBundles: _skipRemainingKeystoneBundles,
+            ),
+          );
+        }
+        return _StatusContent(
+          phase: phase,
+          voteSubmissionDetail: _voteSubmissionDetail(state),
+          voteSubmissionProgress: _voteSubmissionProgress(
+            state,
+            completedSubmission: completedSubmission,
+          ),
+          delegationProgress: _delegationProgress(state),
+          completedSubmission: completedSubmission,
+          submissionJobComplete: submissionJobComplete,
+          submissionJobInFlight: submissionJobInFlight,
+          softwareAccountRequired: job?.softwareAccountRequired ?? false,
+          isHardwareAccount: state.isHardwareAccount,
+          keystoneSigningBundleIndex: state.keystoneSigningRequest?.bundleIndex,
+          canSkipRemainingKeystoneBundles:
+              state.canSkipRemainingKeystoneBundles,
+          keystoneUrParts: job?.keystoneUrParts ?? const [],
+          keystoneBatchMemos: job?.keystoneBatchMemos ?? const [],
+          keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
+          keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
+          keystoneQrError: job?.keystoneQrError,
+          keystoneScanError: state.keystoneScanError,
+          walletScannedHeight: state.walletScannedHeight,
+          walletSnapshotHeight: state.walletSnapshotHeight,
+          walletChainTipHeight: state.walletChainTipHeight,
+          errorMessage: _sessionErrorMessage(state, localError),
+          onRetry: _retry,
+          onClear: job?.status == VotingSubmissionJobStatus.error
+              ? _clearError
+              : null,
+          onScanKeystone: _scanKeystoneSignature,
+          onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
+        );
+      },
     );
+    if (usesPlatformKeystoneScreen) return content;
+    return widget.contentWrapper?.call(context, content) ?? content;
   }
 
   VotingSessionPhase _displayPhase(
@@ -430,10 +523,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }
 
   void _scheduleConfirmationNavigation(VotingSessionKey key) {
+    if (!_canNavigateToConfirmation(key)) return;
     if (_confirmationNavigationScheduledFor == key) return;
     _confirmationNavigationScheduledFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !_canNavigateToConfirmation(key)) return;
       if (_selectedJobKey() != key) {
         if (_confirmationNavigationScheduledFor == key) {
           _confirmationNavigationScheduledFor = null;
@@ -455,10 +549,30 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         'round=${key.roundId} account=${key.accountUuid} error=$error',
       );
     }
-    if (!mounted || _selectedJobKey() != key) return;
+    if (!mounted ||
+        _selectedJobKey() != key ||
+        !_canNavigateToConfirmation(key)) {
+      return;
+    }
     context.go(
       votingSubmissionConfirmedRoute(key.roundId, accountUuid: key.accountUuid),
     );
+  }
+
+  bool _canNavigateToConfirmation(VotingSessionKey key) {
+    return !widget.requireCurrentRouteForConfirmation ||
+        _isCurrentStatusRoute(key);
+  }
+
+  bool _isCurrentStatusRoute(VotingSessionKey key) {
+    if (!mounted) return false;
+    final currentPath = GoRouter.of(
+      context,
+    ).routerDelegate.currentConfiguration.uri.path;
+    final statusPath = Uri.parse(
+      votingStatusRoute(key.roundId, accountUuid: key.accountUuid),
+    ).path;
+    return currentPath == statusPath;
   }
 }
 

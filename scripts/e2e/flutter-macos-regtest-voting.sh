@@ -25,6 +25,8 @@ GATEWAY_PORT="${E2E_VOTING_GATEWAY_PORT:-18080}"
 SLOW_HELPER_DELAY="${E2E_SLOW_HELPER_DELAY:-2.0}"
 SLOW_HELPER_MODE="${E2E_SLOW_HELPER_MODE:-0}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
+VIZOR_FORM_FACTOR="${VIZOR_FORM_FACTOR:-desktop}"
+VOTING_TEST_FILE="${E2E_VOTING_TEST_FILE:-integration_test/regtest_voting_test.dart}"
 # Deterministic secp256k1 scalar 1, used only by the disposable local chain.
 VOTE_MANAGER_PRIVATE_KEY="0000000000000000000000000000000000000000000000000000000000000001"
 
@@ -110,6 +112,8 @@ cargo build --release --manifest-path "$PIR_DIR/Cargo.toml" \
 echo "creating voting power through the real Orchard-to-Ironwood migration"
 IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   IRONWOOD_LIGHTWALLETD_PORT="$LWD_PORT" \
+  FLUTTER_DEVICE=macos \
+  VIZOR_FORM_FACTOR=desktop \
   E2E_TEST_FILE=integration_test/regtest_voting_ironwood_setup_test.dart \
   E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   E2E_ORCHARD_FUNDING_AMOUNT=0.13 \
@@ -248,7 +252,13 @@ STATIC_URL="https://config.vizor-vote.invalid/static-voting-config.json?checksum
 
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
-fvm flutter test integration_test/regtest_voting_test.dart -d "$FLUTTER_DEVICE" \
+flutter_test_command=(
+  fvm flutter test "$VOTING_TEST_FILE" -d "$FLUTTER_DEVICE"
+)
+if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
+  flutter_test_command+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+fi
+"${flutter_test_command[@]}" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \

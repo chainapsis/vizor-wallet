@@ -40,6 +40,7 @@ import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
+import '../../features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
@@ -286,6 +287,70 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileKeystoneShieldScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/voting',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileVotingAccountGuard(child: MobileVotingPollsScreen()),
+      ),
+    ),
+    GoRoute(
+      path: '/voting/poll/:roundId',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileVotingAccountGuard(
+          child: MobileVotingProposalDetailScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+          ),
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/voting/poll/:roundId/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileVotingAccountGuard(
+          child: MobileVotingReviewScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+          ),
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/voting/poll/:roundId/status',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileVotingAccountGuard(
+          child: MobileVotingStatusScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+            accountUuid: state.uri.queryParameters['account'],
+          ),
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/voting/poll/:roundId/submitted',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileVotingAccountGuard(
+          child: MobileVotingSubmissionConfirmationScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+            accountUuid: state.uri.queryParameters['account'],
+          ),
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/voting/poll/:roundId/results',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileVotingAccountGuard(
+          child: MobileVotingResultsScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+          ),
+        ),
       ),
     ),
     GoRoute(

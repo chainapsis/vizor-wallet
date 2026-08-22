@@ -117,6 +117,15 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.onCancel,
     this.signedPcztDecoder,
     this.scannerBuilder,
+    this.expectedSignedUrType = 'zcash-pczt',
+    this.unexpectedUrMessage,
+    this.recoverSignedCallbackErrorInScanner = false,
+    this.signingContextLabel,
+    this.requestDetails,
+    this.requestAuxiliaryActionLabel,
+    this.onRequestAuxiliaryAction,
+    this.showCancelAction = true,
+    this.allowQrContentScrolling = false,
     this.forceScannerActiveForTesting = false,
     this.startInScannerForTesting = false,
     this.onScanWindowForTesting,
@@ -139,6 +148,15 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final MobileKeystonePcztFriendlyError friendlyError;
   final MobileKeystonePcztDecoder? signedPcztDecoder;
   final MobileKeystonePcztScannerBuilder? scannerBuilder;
+  final String expectedSignedUrType;
+  final String? unexpectedUrMessage;
+  final bool recoverSignedCallbackErrorInScanner;
+  final String? signingContextLabel;
+  final Widget? requestDetails;
+  final String? requestAuxiliaryActionLabel;
+  final VoidCallback? onRequestAuxiliaryAction;
+  final bool showCancelAction;
+  final bool allowQrContentScrolling;
   final bool forceScannerActiveForTesting;
   final bool startInScannerForTesting;
   final ValueChanged<Rect>? onScanWindowForTesting;
@@ -321,6 +339,16 @@ class _MobileKeystonePcztSigningFlowState
     } catch (e, st) {
       log('${widget.logTag}._onSigned: ERROR: $e\n$st');
       if (!mounted) return;
+      if (widget.recoverSignedCallbackErrorInScanner) {
+        setState(() {
+          _decoding = false;
+          _scanSessionResetToken++;
+          _scanProgressStarted = false;
+          _scanProgress = 0;
+          _scanHint = widget.friendlyError(e);
+        });
+        return;
+      }
       _stopScannerIfActive();
       setState(() {
         _decoding = false;
@@ -333,7 +361,8 @@ class _MobileKeystonePcztSigningFlowState
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed transaction QR on Keystone, then scan again.'
+        ? widget.unexpectedUrMessage ??
+              'Open the signed transaction QR on Keystone, then scan again.'
         : 'Keep the QR code steady and fully visible.';
     if (_scanHint == message && !_scanProgressStarted) return;
     setState(() {
@@ -496,6 +525,18 @@ class _MobileKeystonePcztSigningFlowState
               titleColor: colors.text.accent,
               subtitleColor: colors.text.accent,
             ),
+            if (widget.signingContextLabel != null) ...[
+              const SizedBox(height: AppSpacing.xxs),
+              _KeystoneSigningContextBadge(
+                label: widget.signingContextLabel!,
+                foreground: colors.text.accent,
+                background: colors.background.neutralSubtleOpacity,
+              ),
+            ],
+            if (widget.requestDetails != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              widget.requestDetails!,
+            ],
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -513,22 +554,31 @@ class _MobileKeystonePcztSigningFlowState
                         .clamp(120.0, _mobileKeystoneQrFrameSize)
                         .toDouble();
 
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildQrFrame(frameSize: frameSize),
-                          const SizedBox(height: _mobileKeystoneQrPromptGap),
-                          if (message != null)
-                            _KeystoneSigningPromptText(
-                              text: message,
-                              color: isFailed
-                                  ? colors.text.destructive
-                                  : colors.text.primary,
-                            )
-                          else
-                            _KeystoneScanPrompt(color: colors.text.primary),
-                        ],
+                    final qrContent = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildQrFrame(frameSize: frameSize),
+                        const SizedBox(height: _mobileKeystoneQrPromptGap),
+                        if (message != null)
+                          _KeystoneSigningPromptText(
+                            text: message,
+                            color: isFailed
+                                ? colors.text.destructive
+                                : colors.text.primary,
+                          )
+                        else
+                          _KeystoneScanPrompt(color: colors.text.primary),
+                      ],
+                    );
+                    if (!widget.allowQrContentScrolling) {
+                      return Center(child: qrContent);
+                    }
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Center(child: qrContent),
                       ),
                     );
                   },
@@ -553,14 +603,28 @@ class _MobileKeystonePcztSigningFlowState
                     trailing: const AppIcon(AppIcons.chevronForward, size: 20),
                     child: const Text('Next step'),
                   ),
-                  const SizedBox(height: AppSpacing.s),
-                  AppButton(
-                    key: _key('cancel'),
-                    expand: true,
-                    variant: AppButtonVariant.ghost,
-                    onPressed: _cancel,
-                    child: const Text('Cancel'),
-                  ),
+                  if (widget.requestAuxiliaryActionLabel != null &&
+                      widget.onRequestAuxiliaryAction != null) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    AppButton(
+                      key: _key('auxiliary_action'),
+                      expand: true,
+                      constrainContent: true,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: widget.onRequestAuxiliaryAction,
+                      child: Text(widget.requestAuxiliaryActionLabel!),
+                    ),
+                  ],
+                  if (widget.showCancelAction) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    AppButton(
+                      key: _key('cancel'),
+                      expand: true,
+                      variant: AppButtonVariant.ghost,
+                      onPressed: _cancel,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -648,7 +712,8 @@ class _MobileKeystonePcztSigningFlowState
                   (AppTypography.displayLarge.height ?? 1) +
               AppSpacing.s +
               (AppTypography.bodyLarge.fontSize ?? 18) *
-                  (AppTypography.bodyLarge.height ?? 1);
+                  (AppTypography.bodyLarge.height ?? 1) +
+              (widget.signingContextLabel == null ? 0 : 30);
           // Space reserved for the caption + action row below the viewfinder.
           const chromeReserve =
               _mobileKeystoneScanMinCaptionGap +
@@ -751,7 +816,7 @@ class _MobileKeystonePcztSigningFlowState
               ) ??
               AnimatedUrScannerView(
                 controller: scanController,
-                expectedUrType: 'zcash-pczt',
+                expectedUrType: widget.expectedSignedUrType,
                 scanSessionResetToken: scanSessionResetToken,
                 // Constrain detection to the visible viewfinder (this full-screen
                 // scanner's viewfinder is positioned, not centred), so a QR is
@@ -817,6 +882,16 @@ class _MobileKeystonePcztSigningFlowState
                       titleColor: _mobileKeystoneLightText,
                       subtitleColor: _mobileKeystoneLightText,
                     ),
+                    if (widget.signingContextLabel != null) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      _KeystoneSigningContextBadge(
+                        label: widget.signingContextLabel!,
+                        foreground: _mobileKeystoneLightText,
+                        background: _mobileKeystoneLightText.withValues(
+                          alpha: 0.16,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1117,6 +1192,43 @@ class _KeystoneSigningTitle extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _KeystoneSigningContextBadge extends StatelessWidget {
+  const _KeystoneSigningContextBadge({
+    required this.label,
+    required this.foreground,
+    required this.background,
+  });
+
+  final String label;
+  final Color foreground;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodySmall.copyWith(
+            color: foreground,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

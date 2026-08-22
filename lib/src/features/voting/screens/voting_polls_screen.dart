@@ -31,14 +31,33 @@ const _votingBetaLabelCenterDx = 34.0;
 const _votingBetaLabelTopOffset = -10.0;
 const _votingHeaderTitleHeight = 33.0;
 
-class VotingPollsScreen extends ConsumerStatefulWidget {
+class VotingPollsScreen extends StatelessWidget {
   const VotingPollsScreen({super.key});
 
   @override
-  ConsumerState<VotingPollsScreen> createState() => _VotingPollsScreenState();
+  Widget build(BuildContext context) {
+    return const AppDesktopShell(
+      sidebar: AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingPollsView(showDesktopChrome: true),
+      ),
+    );
+  }
 }
 
-class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
+/// Shared poll-list behavior and cards. Platform screens own the surrounding
+/// navigation chrome.
+class VotingPollsView extends ConsumerStatefulWidget {
+  const VotingPollsView({required this.showDesktopChrome, super.key});
+
+  final bool showDesktopChrome;
+
+  @override
+  ConsumerState<VotingPollsView> createState() => _VotingPollsViewState();
+}
+
+class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
   bool _showSettings = false;
   bool _entryRefreshInFlight = true;
   bool _pollListRefreshInFlight = false;
@@ -69,49 +88,45 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       _handleExternalRefreshRequest();
     });
     final rounds = ref.watch(votingRoundsProvider);
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: Stack(
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AppPaneToolbar(backLinkMinWidth: 60),
-                _VotingHeader(onSettings: _openSettings),
-                Expanded(
-                  child: _entryRefreshInFlight && !rounds.hasValue
-                      ? const VotingPaneLoading()
-                      : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
-                            rounds.hasValue
-                      ? _buildRoundList(rounds.requireValue)
-                      : rounds.when(
-                          skipLoadingOnRefresh: false,
-                          skipLoadingOnReload: false,
-                          loading: () => const VotingPaneLoading(),
-                          error: (error, _) => _VotingMessage(
-                            title: "Couldn't load voting rounds",
-                            message: friendlyVotingErrorMessage(error),
-                            actionLabel: 'Try again',
-                            onAction: () => _reloadRoundsWithFreshConfig(),
-                          ),
-                          data: _buildRoundList,
-                        ),
-                ),
-              ],
+            if (widget.showDesktopChrome) ...[
+              const AppPaneToolbar(backLinkMinWidth: 60),
+              _VotingHeader(onSettings: _openSettings),
+            ],
+            Expanded(
+              child: _entryRefreshInFlight && !rounds.hasValue
+                  ? const VotingPaneLoading()
+                  : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
+                        rounds.hasValue
+                  ? _buildRoundList(rounds.requireValue)
+                  : rounds.when(
+                      skipLoadingOnRefresh: false,
+                      skipLoadingOnReload: false,
+                      loading: () => const VotingPaneLoading(),
+                      error: (error, _) => _VotingMessage(
+                        title: "Couldn't load voting rounds",
+                        message: friendlyVotingErrorMessage(error),
+                        actionLabel: 'Try again',
+                        onAction: () => _reloadRoundsWithFreshConfig(),
+                      ),
+                      data: _buildRoundList,
+                    ),
             ),
-            if (_showSettings)
-              AppPaneModalOverlay(
-                onDismiss: _closeSettings,
-                child: VotingConfigSettingsPanel(
-                  onClose: _closeSettings,
-                  onUpdated: _closeSettings,
-                ),
-              ),
           ],
         ),
-      ),
+        if (_showSettings)
+          AppPaneModalOverlay(
+            onDismiss: _closeSettings,
+            child: VotingConfigSettingsPanel(
+              onClose: _closeSettings,
+              onUpdated: _closeSettings,
+            ),
+          ),
+      ],
     );
   }
 
@@ -123,20 +138,28 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
+    final horizontalPadding = widget.showDesktopChrome
+        ? AppSpacing.md
+        : AppSpacing.sm;
     _preSyncVisibleRoundTrees(sortedItems);
     return VotingPaneListView.separated(
       maxWidth: 560,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
         AppSpacing.sm,
-        AppSpacing.md,
+        horizontalPadding,
         40,
       ),
       itemCount: sortedItems.length,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
+      separatorBuilder: (_, _) => SizedBox(
+        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.sm,
+      ),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
-        return _PollCard(round: round, onAction: () => _openRoundAction(round));
+        void onAction() => _openRoundAction(round);
+        return widget.showDesktopChrome
+            ? _DesktopPollCard(round: round, onAction: onAction)
+            : _MobilePollCard(round: round, onAction: onAction);
       },
     );
   }
@@ -367,11 +390,103 @@ class _VotingBetaLabel extends StatelessWidget {
   }
 }
 
-class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onAction});
+class _MobilePollCard extends StatelessWidget {
+  const _MobilePollCard({required this.round, required this.onAction});
 
   final VotingRoundView round;
   final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x00000000),
+      child: InkWell(
+        key: ValueKey('voting_poll_card_tap_${round.roundId}'),
+        onTap: onAction,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: Ink(
+          key: ValueKey('voting_poll_card_${round.roundId}'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.s,
+          ),
+          decoration: _mobilePollCardDecoration(context),
+          child: _PollCardContent(
+            round: round,
+            onAction: onAction,
+            titleGap: AppSpacing.s,
+            descriptionGap: AppSpacing.s,
+            actionGap: AppSpacing.sm,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopPollCard extends StatelessWidget {
+  const _DesktopPollCard({required this.round, required this.onAction});
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x00000000),
+      child: Ink(
+        key: ValueKey('voting_poll_card_${round.roundId}'),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: _desktopPollCardDecoration(context),
+        child: _PollCardContent(
+          round: round,
+          onAction: onAction,
+          titleGap: AppSpacing.sm,
+          descriptionGap: AppSpacing.md,
+          actionGap: AppSpacing.md,
+        ),
+      ),
+    );
+  }
+}
+
+BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
+  color: context.colors.background.ground,
+  borderRadius: BorderRadius.circular(AppRadii.medium),
+  border: Border.all(color: context.colors.border.subtle),
+);
+
+BoxDecoration _desktopPollCardDecoration(BuildContext context) => BoxDecoration(
+  color: context.colors.background.ground,
+  borderRadius: BorderRadius.circular(AppRadii.medium),
+  border: Border.all(color: context.colors.border.subtle),
+  boxShadow: const [
+    BoxShadow(
+      color: Color(0x0A231F20),
+      offset: Offset(0, 1),
+      blurRadius: 1,
+      spreadRadius: -0.5,
+    ),
+  ],
+);
+
+class _PollCardContent extends StatelessWidget {
+  const _PollCardContent({
+    required this.round,
+    required this.onAction,
+    required this.titleGap,
+    required this.descriptionGap,
+    required this.actionGap,
+  });
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+  final double titleGap;
+  final double descriptionGap;
+  final double actionGap;
 
   @override
   Widget build(BuildContext context) {
@@ -382,88 +497,69 @@ class _PollCard extends StatelessWidget {
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
-    return Material(
-      color: const Color(0x00000000),
-      child: Ink(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          border: Border.all(color: colors.border.subtle),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0x0A231F20),
-              offset: const Offset(0, 1),
-              blurRadius: 1,
-              spreadRadius: -0.5,
-            ),
-          ],
-        ),
-        child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StatusBadge(state: state),
-                const Spacer(),
-                if (dateLabel != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      dateLabel,
-                      textAlign: TextAlign.right,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
-                        height: 20 / 14,
-                        letterSpacing: 0,
-                      ),
-                    ),
+            _StatusBadge(state: state),
+            const Spacer(),
+            if (dateLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  dateLabel,
+                  textAlign: TextAlign.right,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.secondary,
+                    height: 20 / 14,
+                    letterSpacing: 0,
                   ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              title,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w600,
-                height: 24 / 16,
-                letterSpacing: 0,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              description.isEmpty ? round.roundId : description,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.primary,
-                height: 20 / 14,
-                letterSpacing: 0,
-              ),
-            ),
-            if (forumUri != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: VotingForumLinkButton(uri: forumUri),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            Align(
-              alignment: Alignment.centerRight,
-              child: AppButton(
-                key: ValueKey('voting_poll_action_${round.roundId}'),
-                onPressed: onAction,
-                variant: _actionButtonVariant(state),
-                size: AppButtonSize.medium,
-                child: Text(_actionLabel(state)),
-              ),
-            ),
           ],
         ),
-      ),
+        SizedBox(height: titleGap),
+        Text(
+          title,
+          style: AppTypography.headlineSmall.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+            height: 24 / 16,
+            letterSpacing: 0,
+          ),
+        ),
+        SizedBox(height: descriptionGap),
+        Text(
+          description.isEmpty ? round.roundId : description,
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.primary,
+            height: 20 / 14,
+            letterSpacing: 0,
+          ),
+        ),
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri),
+          ),
+        ],
+        SizedBox(height: actionGap),
+        Align(
+          alignment: Alignment.centerRight,
+          child: AppButton(
+            key: ValueKey('voting_poll_action_${round.roundId}'),
+            onPressed: onAction,
+            variant: _actionButtonVariant(state),
+            size: AppButtonSize.medium,
+            child: Text(_actionLabel(state)),
+          ),
+        ),
+      ],
     );
   }
 }

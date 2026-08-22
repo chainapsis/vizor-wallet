@@ -21,7 +21,7 @@ import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
-class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
+class VotingSubmissionConfirmationScreen extends StatelessWidget {
   const VotingSubmissionConfirmationScreen({
     super.key,
     required this.roundId,
@@ -32,12 +32,40 @@ class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   final String? accountUuid;
 
   @override
-  ConsumerState<VotingSubmissionConfirmationScreen> createState() =>
-      _VotingSubmissionConfirmationScreenState();
+  Widget build(BuildContext context) {
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingSubmissionConfirmationView(
+          roundId: roundId,
+          accountUuid: accountUuid,
+          showDesktopToolbar: true,
+        ),
+      ),
+    );
+  }
 }
 
-class _VotingSubmissionConfirmationScreenState
-    extends ConsumerState<VotingSubmissionConfirmationScreen> {
+class VotingSubmissionConfirmationView extends ConsumerStatefulWidget {
+  const VotingSubmissionConfirmationView({
+    super.key,
+    required this.roundId,
+    required this.showDesktopToolbar,
+    this.accountUuid,
+  });
+
+  final String roundId;
+  final String? accountUuid;
+  final bool showDesktopToolbar;
+
+  @override
+  ConsumerState<VotingSubmissionConfirmationView> createState() =>
+      _VotingSubmissionConfirmationViewState();
+}
+
+class _VotingSubmissionConfirmationViewState
+    extends ConsumerState<VotingSubmissionConfirmationView> {
   bool _isReturningToPolls = false;
   bool _refreshingVotingPower = false;
   bool _votingPowerRefreshAttempted = false;
@@ -51,7 +79,7 @@ class _VotingSubmissionConfirmationScreenState
   String? _returnErrorMessage;
 
   @override
-  void didUpdateWidget(covariant VotingSubmissionConfirmationScreen oldWidget) {
+  void didUpdateWidget(covariant VotingSubmissionConfirmationView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId == widget.roundId &&
         oldWidget.accountUuid == widget.accountUuid) {
@@ -80,36 +108,33 @@ class _VotingSubmissionConfirmationScreenState
     final session = jobKey == null
         ? ref.watch(votingSessionProvider(widget.roundId))
         : ref.watch(votingSubmissionJobSessionProvider(jobKey));
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: session.when(
-          skipLoadingOnRefresh: false,
-          loading: () => const VotingPaneStateView(child: VotingPaneLoading()),
-          error: (error, _) {
-            final cachedState = _lastSubmissionState;
-            if (cachedState != null) {
-              return _buildSubmissionContent(
-                state: cachedState,
-                jobKey: jobKey,
-                loadError: error,
-              );
-            }
-            return _ConfirmationScaffold(
-              confirmed: false,
-              title: 'Submission not complete',
-              pollTitle: 'Token holder voting',
-              message:
-                  "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
-              votingPower: 'Not available',
-            );
-          },
-          data: (state) {
-            return _buildSubmissionContent(state: state, jobKey: jobKey);
-          },
-        ),
-      ),
+    return session.when(
+      skipLoadingOnRefresh: false,
+      loading: () => widget.showDesktopToolbar
+          ? const VotingPaneStateView(child: VotingPaneLoading())
+          : const VotingPaneLoading(),
+      error: (error, _) {
+        final cachedState = _lastSubmissionState;
+        if (cachedState != null) {
+          return _buildSubmissionContent(
+            state: cachedState,
+            jobKey: jobKey,
+            loadError: error,
+          );
+        }
+        return _ConfirmationScaffold(
+          showDesktopToolbar: widget.showDesktopToolbar,
+          confirmed: false,
+          title: 'Submission not complete',
+          pollTitle: 'Token holder voting',
+          message:
+              "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
+          votingPower: 'Not available',
+        );
+      },
+      data: (state) {
+        return _buildSubmissionContent(state: state, jobKey: jobKey);
+      },
     );
   }
 
@@ -142,6 +167,7 @@ class _VotingSubmissionConfirmationScreenState
 
     if (!hasCompletedSubmission) {
       return _ConfirmationScaffold(
+        showDesktopToolbar: widget.showDesktopToolbar,
         confirmed: false,
         title: 'Submission not complete',
         pollTitle: pollTitle,
@@ -167,6 +193,7 @@ class _VotingSubmissionConfirmationScreenState
           !_refreshingVotingPower &&
           !isVotingEligibilityErrorText(latestRefreshMessage);
       return _ConfirmationScaffold(
+        showDesktopToolbar: widget.showDesktopToolbar,
         confirmed: false,
         title: 'Submission not complete',
         pollTitle: pollTitle,
@@ -185,6 +212,7 @@ class _VotingSubmissionConfirmationScreenState
       );
     }
     return _ConfirmationScaffold(
+      showDesktopToolbar: widget.showDesktopToolbar,
       confirmed: true,
       title: 'Submission confirmed!',
       pollTitle: pollTitle,
@@ -376,6 +404,7 @@ class _VotingSubmissionConfirmationScreenState
 
 class _ConfirmationScaffold extends StatelessWidget {
   const _ConfirmationScaffold({
+    required this.showDesktopToolbar,
     required this.confirmed,
     required this.title,
     required this.pollTitle,
@@ -390,6 +419,7 @@ class _ConfirmationScaffold extends StatelessWidget {
     this.returnErrorMessage,
   });
 
+  final bool showDesktopToolbar;
   final bool confirmed;
   final String title;
   final String pollTitle;
@@ -412,13 +442,13 @@ class _ConfirmationScaffold extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const AppPaneToolbar(),
+            if (showDesktopToolbar) const AppPaneToolbar(),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
+                padding: EdgeInsets.fromLTRB(
+                  showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                   0,
-                  AppSpacing.md,
+                  showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                   AppSpacing.md,
                 ),
                 child: Center(

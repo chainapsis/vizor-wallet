@@ -4613,6 +4613,155 @@ void main() {
     },
   );
 
+  test('share submission deprioritizes a degraded planner target', () async {
+    const helperA = 'https://helper-a.example';
+    const helperB = 'https://helper-b.example';
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': helperA, 'label': 'helper-a'},
+            {'url': helperB, 'label': 'helper-b'},
+          ],
+        ),
+      ),
+    );
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final helperHealth = VotingHelperHealthTracker(
+      failureThreshold: 1,
+      cooldown: const Duration(hours: 1),
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      helperHealthTracker: helperHealth,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    helperHealth.recordFailure(helperA);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    final sharePostHosts = http.requests
+        .where(
+          (request) =>
+              request.method == 'POST' &&
+              request.uri.path == '/shielded-vote/v1/shares',
+        )
+        .map((request) => request.uri.host)
+        .toList(growable: false);
+    expect(sharePostHosts, ['helper-b.example']);
+    expect(rust.recordedShares.single.sentToUrls, [helperB]);
+  });
+
+  test(
+    'share submission reorders remaining helpers after a concurrent failure',
+    () async {
+      const helperA = 'https://helper-a.example';
+      const helperB = 'https://helper-b.example';
+      const helperC = 'https://helper-c.example';
+      final http = _GatedSharePostVotingHttpClient(
+        expectedShareCount: 1,
+        gatedShareIndexes: const {0},
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': helperA, 'label': 'helper-a'},
+              {'url': helperB, 'label': 'helper-b'},
+              {'url': helperC, 'label': 'helper-c'},
+            ],
+          ),
+        ),
+      );
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final helperHealth = VotingHelperHealthTracker(
+        failureThreshold: 1,
+        cooldown: const Duration(hours: 1),
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationTxHashes: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-0',
+              vanLeafPosition: null,
+            ),
+          ],
+          votes: [vote(bundleIndex: 0, proposalId: 7)],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        helperHealthTracker: helperHealth,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      await http.allSharePostsStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
+      helperHealth.recordFailure(helperB);
+      http.releaseSharePosts.complete();
+      await cast;
+
+      final sharePostHosts = http.requests
+          .where(
+            (request) =>
+                request.method == 'POST' &&
+                request.uri.path == '/shielded-vote/v1/shares',
+          )
+          .map((request) => request.uri.host)
+          .toList(growable: false);
+      expect(sharePostHosts, ['helper-a.example', 'helper-c.example']);
+      expect(rust.recordedShares.single.sentToUrls, [helperA, helperC]);
+    },
+  );
+
   test('vote commitment validates all shares before submission', () async {
     final http = FakeVotingHttpClient(responses: votingHttpResponses());
     final rust = FakeVotingRustApi(

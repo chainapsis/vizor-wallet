@@ -24,18 +24,45 @@ import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
-class VotingProposalDetailScreen extends ConsumerStatefulWidget {
+class VotingProposalDetailScreen extends StatelessWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  ConsumerState<VotingProposalDetailScreen> createState() =>
-      _VotingProposalDetailScreenState();
+  Widget build(BuildContext context) {
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingProposalDetailView(
+          roundId: roundId,
+          showDesktopToolbar: true,
+        ),
+      ),
+    );
+  }
 }
 
-class _VotingProposalDetailScreenState
-    extends ConsumerState<VotingProposalDetailScreen> {
+/// Shared proposal/session behavior. Platform screens provide their own shell
+/// and navigation bar.
+class VotingProposalDetailView extends ConsumerStatefulWidget {
+  const VotingProposalDetailView({
+    required this.roundId,
+    required this.showDesktopToolbar,
+    super.key,
+  });
+
+  final String roundId;
+  final bool showDesktopToolbar;
+
+  @override
+  ConsumerState<VotingProposalDetailView> createState() =>
+      _VotingProposalDetailViewState();
+}
+
+class _VotingProposalDetailViewState
+    extends ConsumerState<VotingProposalDetailView> {
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
@@ -43,7 +70,7 @@ class _VotingProposalDetailScreenState
   String? _resultsRedirectRoundId;
 
   @override
-  void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
+  void didUpdateWidget(covariant VotingProposalDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
       _votingPowerPreparationStarted = false;
@@ -58,164 +85,156 @@ class _VotingProposalDetailScreenState
   Widget build(BuildContext context) {
     final roundId = widget.roundId;
     final session = ref.watch(votingSessionProvider(roundId));
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: session.when(
-          skipLoadingOnRefresh: false,
-          loading: () => const VotingPaneStateView(
-            backLinkMinWidth: 60,
-            child: VotingPaneLoading(),
-          ),
-          error: (error, _) => VotingPaneStateView(
-            backLinkMinWidth: 60,
-            child: _Message(
-              title: "Couldn't load voting round",
-              message: friendlyVotingErrorMessage(error),
-            ),
-          ),
-          data: (state) {
-            final round = state.round;
-            if (round == null) {
-              return const VotingPaneStateView(
-                backLinkMinWidth: 60,
-                child: _Message(
-                  title: 'Voting round unavailable',
-                  message: 'The selected voting round could not be loaded.',
-                ),
-              );
-            }
-            if (shouldPreSyncVotingTree(round.status)) {
-              unawaited(
-                ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
-              );
-            }
-            final accountUuid = state.accountUuid;
-            final proposals = proposalsFromRound(round);
-            final forumUri = votingRoundForumUriFromJson(round.rawJson);
-            final completedVote = _CompletedVote.fromPlan(state.roundPlan);
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
-            final hasConfirmedVotingEligibility =
-                state.hasConfirmedVotingEligibility;
-            final isVotingEligibilityPending = _isVotingEligibilityPending(
-              state,
-            );
-            final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
-              state.roundPlan,
-            );
-            _maybePrepareVotingPower(state);
-            // Foreground recovery takes precedence over the read-only voted view.
-            // Accepted helper shares may still be tracked after submission, but
-            // that background work should not keep this screen resumable.
-            if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
-              return _PendingVoteContent(
-                roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
-                    : round.title,
-                snapshotHeight: round.snapshotHeight,
-                description: _roundDescription(round.rawJson),
-                forumUri: forumUri,
-                roundId: roundId,
-                accountUuid: accountUuid,
-              );
-            }
-            if (completedVote != null &&
-                (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
-              return _VotedPollContent(
-                roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
-                    : round.title,
-                snapshotHeight: round.snapshotHeight,
-                description: _roundDescription(round.rawJson),
-                forumUri: forumUri,
-                votingPowerZatoshi: state.eligibleWeightZatoshi,
-                votingPowerPreparing: _votingPowerPreparationInFlight,
-                votedAt: completedVote.votedAt,
-                proposals: proposals,
-                choicesByProposalId: completedVote.choicesByProposalId,
-              );
-            }
-            if (pendingVote != null && hasConfirmedVotingEligibility) {
-              return _PendingVoteContent(
-                roundTitle: round.title.isEmpty
-                    ? 'Token holder voting'
-                    : round.title,
-                snapshotHeight: round.snapshotHeight,
-                description: _roundDescription(round.rawJson),
-                forumUri: forumUri,
-                roundId: roundId,
-                accountUuid: accountUuid,
-              );
-            }
-            if (votingPollListStatus(round.status) !=
-                    VotingPollListStatus.active &&
-                !hasBlockingRecovery) {
-              _redirectToResults(round.roundId);
-              return const VotingPaneStateView(
-                backLinkMinWidth: 60,
-                child: VotingPaneLoading(),
-              );
-            }
-            final draftKey = accountUuid == null
-                ? null
-                : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
-            final draft = draftKey == null
-                ? const VotingDraftState()
-                : ref.watch(votingDraftProvider(draftKey));
-            final votingPowerPreparing =
-                _votingPowerPreparationInFlight ||
-                (state.eligibleWeightZatoshi == null &&
-                    state.error == null &&
-                    _shouldPrepareVotingPower(state));
-            final votingEligibilityMessage = _votingEligibilityMessage(
-              state,
-              preparing: votingPowerPreparing,
-            );
-            final votingError = state.error;
-            final votingEligibilityError = votingError == null
-                ? false
-                : isVotingEligibilityErrorText(votingError.message);
-            _maybePrecomputeDelegationPir(state);
-            return _ActivePollContent(
-              roundId: roundId,
-              title: round.title.isEmpty ? 'Token holder voting' : round.title,
-              snapshotHeight: round.snapshotHeight,
-              description: _roundDescription(round.rawJson),
-              forumUri: forumUri,
-              endDate: _roundEndDate(round.rawJson),
-              votingPowerZatoshi: votingEligibilityError
-                  ? BigInt.zero
-                  : state.eligibleWeightZatoshi,
-              votingPowerPreparing: votingPowerPreparing,
-              votingEligibilityConfirmed: hasConfirmedVotingEligibility,
-              votingEligibilityMessage: votingEligibilityError
-                  ? null
-                  : votingEligibilityMessage,
-              votingEligibilityErrorMessage: votingEligibilityError
-                  ? votingEligibilityMessage
-                  : null,
-              onVotingEligibilityRetry: _retryVotingPowerPreparation,
-              proposals: proposals,
-              draft: draft,
-              onChoice: draftKey == null
-                  ? (_, _) {}
-                  : (proposalId, choice) {
-                      if (!hasConfirmedVotingEligibility) return;
-                      final notifier = ref.read(
-                        votingDraftProvider(draftKey).notifier,
-                      );
-                      if (choice == null) {
-                        notifier.clearChoice(proposalId);
-                      } else {
-                        notifier.setChoice(proposalId, choice);
-                      }
-                    },
-            );
-          },
+    return session.when(
+      skipLoadingOnRefresh: false,
+      loading: () => _stateView(const VotingPaneLoading()),
+      error: (error, _) => _stateView(
+        _Message(
+          title: "Couldn't load voting round",
+          message: friendlyVotingErrorMessage(error),
         ),
       ),
+      data: (state) {
+        final round = state.round;
+        if (round == null) {
+          return _stateView(
+            const _Message(
+              title: 'Voting round unavailable',
+              message: 'The selected voting round could not be loaded.',
+            ),
+          );
+        }
+        if (shouldPreSyncVotingTree(round.status)) {
+          unawaited(
+            ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
+          );
+        }
+        final accountUuid = state.accountUuid;
+        final proposals = proposalsFromRound(round);
+        final forumUri = votingRoundForumUriFromJson(round.rawJson);
+        final completedVote = _CompletedVote.fromPlan(state.roundPlan);
+        final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
+        final hasConfirmedVotingEligibility =
+            state.hasConfirmedVotingEligibility;
+        final isVotingEligibilityPending = _isVotingEligibilityPending(state);
+        final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+          state.roundPlan,
+        );
+        _maybePrepareVotingPower(state);
+        // Foreground recovery takes precedence over the read-only voted view.
+        // Accepted helper shares may still be tracked after submission, but
+        // that background work should not keep this screen resumable.
+        if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
+          return _PendingVoteContent(
+            showDesktopToolbar: widget.showDesktopToolbar,
+            roundTitle: round.title.isEmpty
+                ? 'Token holder voting'
+                : round.title,
+            snapshotHeight: round.snapshotHeight,
+            description: _roundDescription(round.rawJson),
+            forumUri: forumUri,
+            roundId: roundId,
+            accountUuid: accountUuid,
+          );
+        }
+        if (completedVote != null &&
+            (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
+          return _VotedPollContent(
+            showDesktopToolbar: widget.showDesktopToolbar,
+            roundTitle: round.title.isEmpty
+                ? 'Token holder voting'
+                : round.title,
+            snapshotHeight: round.snapshotHeight,
+            description: _roundDescription(round.rawJson),
+            forumUri: forumUri,
+            votingPowerZatoshi: state.eligibleWeightZatoshi,
+            votingPowerPreparing: _votingPowerPreparationInFlight,
+            votedAt: completedVote.votedAt,
+            proposals: proposals,
+            choicesByProposalId: completedVote.choicesByProposalId,
+          );
+        }
+        if (pendingVote != null && hasConfirmedVotingEligibility) {
+          return _PendingVoteContent(
+            showDesktopToolbar: widget.showDesktopToolbar,
+            roundTitle: round.title.isEmpty
+                ? 'Token holder voting'
+                : round.title,
+            snapshotHeight: round.snapshotHeight,
+            description: _roundDescription(round.rawJson),
+            forumUri: forumUri,
+            roundId: roundId,
+            accountUuid: accountUuid,
+          );
+        }
+        if (votingPollListStatus(round.status) != VotingPollListStatus.active &&
+            !hasBlockingRecovery) {
+          _redirectToResults(round.roundId);
+          return _stateView(const VotingPaneLoading());
+        }
+        final draftKey = accountUuid == null
+            ? null
+            : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
+        final draft = draftKey == null
+            ? const VotingDraftState()
+            : ref.watch(votingDraftProvider(draftKey));
+        final votingPowerPreparing =
+            _votingPowerPreparationInFlight ||
+            (state.eligibleWeightZatoshi == null &&
+                state.error == null &&
+                _shouldPrepareVotingPower(state));
+        final votingEligibilityMessage = _votingEligibilityMessage(
+          state,
+          preparing: votingPowerPreparing,
+        );
+        final votingError = state.error;
+        final votingEligibilityError = votingError == null
+            ? false
+            : isVotingEligibilityErrorText(votingError.message);
+        _maybePrecomputeDelegationPir(state);
+        return _ActivePollContent(
+          showDesktopToolbar: widget.showDesktopToolbar,
+          roundId: roundId,
+          title: round.title.isEmpty ? 'Token holder voting' : round.title,
+          snapshotHeight: round.snapshotHeight,
+          description: _roundDescription(round.rawJson),
+          forumUri: forumUri,
+          endDate: _roundEndDate(round.rawJson),
+          votingPowerZatoshi: votingEligibilityError
+              ? BigInt.zero
+              : state.eligibleWeightZatoshi,
+          votingPowerPreparing: votingPowerPreparing,
+          votingEligibilityConfirmed: hasConfirmedVotingEligibility,
+          votingEligibilityMessage: votingEligibilityError
+              ? null
+              : votingEligibilityMessage,
+          votingEligibilityErrorMessage: votingEligibilityError
+              ? votingEligibilityMessage
+              : null,
+          onVotingEligibilityRetry: _retryVotingPowerPreparation,
+          proposals: proposals,
+          draft: draft,
+          onChoice: draftKey == null
+              ? (_, _) {}
+              : (proposalId, choice) {
+                  if (!hasConfirmedVotingEligibility) return;
+                  final notifier = ref.read(
+                    votingDraftProvider(draftKey).notifier,
+                  );
+                  if (choice == null) {
+                    notifier.clearChoice(proposalId);
+                  } else {
+                    notifier.setChoice(proposalId, choice);
+                  }
+                },
+        );
+      },
     );
+  }
+
+  Widget _stateView(Widget child) {
+    if (!widget.showDesktopToolbar) return child;
+    return VotingPaneStateView(backLinkMinWidth: 60, child: child);
   }
 
   void _redirectToResults(String roundId) {
@@ -366,6 +385,7 @@ String? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
 
 class _ActivePollContent extends StatefulWidget {
   const _ActivePollContent({
+    required this.showDesktopToolbar,
     required this.roundId,
     required this.title,
     required this.snapshotHeight,
@@ -383,6 +403,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.onChoice,
   });
 
+  final bool showDesktopToolbar;
   final String roundId;
   final String title;
   final int snapshotHeight;
@@ -453,7 +474,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppPaneToolbar(backLinkMinWidth: 60),
+        if (widget.showDesktopToolbar)
+          const AppPaneToolbar(backLinkMinWidth: 60),
         Expanded(
           child: widget.proposals.isEmpty
               ? const _Message(
@@ -462,10 +484,10 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                 )
               : VotingPaneListView.separated(
                   maxWidth: 560,
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
+                  padding: EdgeInsets.fromLTRB(
+                    widget.showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                     AppSpacing.sm,
-                    AppSpacing.md,
+                    widget.showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                     AppSpacing.md,
                   ),
                   itemCount: widget.proposals.length + 2,
@@ -838,6 +860,7 @@ class _ReviewAnswersButton extends StatelessWidget {
 
 class _VotedPollContent extends StatelessWidget {
   const _VotedPollContent({
+    required this.showDesktopToolbar,
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
@@ -849,6 +872,7 @@ class _VotedPollContent extends StatelessWidget {
     required this.choicesByProposalId,
   });
 
+  final bool showDesktopToolbar;
   final String roundTitle;
   final int snapshotHeight;
   final String description;
@@ -864,12 +888,14 @@ class _VotedPollContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppPaneToolbar(),
+        if (showDesktopToolbar) const AppPaneToolbar(),
         Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              padding: EdgeInsets.symmetric(
+                horizontal: showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              ),
               child: _VotedPollHeader(
                 title: roundTitle,
                 snapshotHeight: snapshotHeight,
@@ -891,10 +917,10 @@ class _VotedPollContent extends StatelessWidget {
                 )
               : VotingPaneListView.separated(
                   maxWidth: 560,
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
+                  padding: EdgeInsets.fromLTRB(
+                    showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                     0,
-                    AppSpacing.md,
+                    showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                     AppSpacing.md,
                   ),
                   itemCount: proposals.length,
@@ -920,6 +946,7 @@ class _VotedPollContent extends StatelessWidget {
 
 class _PendingVoteContent extends StatelessWidget {
   const _PendingVoteContent({
+    required this.showDesktopToolbar,
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
@@ -928,6 +955,7 @@ class _PendingVoteContent extends StatelessWidget {
     required this.accountUuid,
   });
 
+  final bool showDesktopToolbar;
   final String roundTitle;
   final int snapshotHeight;
   final String description;
@@ -941,13 +969,13 @@ class _PendingVoteContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppPaneToolbar(),
+        if (showDesktopToolbar) const AppPaneToolbar(),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
+            padding: EdgeInsets.fromLTRB(
+              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
               0,
-              AppSpacing.md,
+              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
               AppSpacing.md,
             ),
             child: Column(

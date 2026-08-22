@@ -258,6 +258,7 @@ Widget _app(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
       ),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, state) =>
@@ -577,6 +578,45 @@ SwapIntentRecord _externalToZecActivityRecord({
 }
 
 void main() {
+  testWidgets('shows coinholder voting below actions and opens the flow', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(_syncedState(ironwoodBalance: BigInt.from(100000000))),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+    expect(entry, findsOneWidget);
+    expect(find.text('Coinholder voting'), findsOneWidget);
+    expect(
+      find.text('Use your ZEC to help shape the network.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(entry).dy,
+      greaterThan(
+        tester.getBottomLeft(find.byKey(const ValueKey('mobile_home_send'))).dy,
+      ),
+    );
+    final votingSurface = tester.widget<Container>(
+      find.descendant(of: entry, matching: find.byType(Container)).first,
+    );
+    final votingDecoration = votingSurface.decoration! as BoxDecoration;
+    expect(votingDecoration.boxShadow, isNull);
+    expect(votingDecoration.border, isNotNull);
+
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.text('voting route'), findsOneWidget);
+  });
+
   testWidgets('shows the Figma sync keep-awake prompt copy', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() async {
@@ -705,6 +745,9 @@ void main() {
     final receiveRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_receive')),
     );
+    final votingRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+    );
     final canvasRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_rest_canvas')),
     );
@@ -719,7 +762,7 @@ void main() {
     );
     expect(
       titleRect.top,
-      moreOrLessEquals(receiveRect.bottom + 36, epsilon: 0.1),
+      moreOrLessEquals(votingRect.bottom + 36, epsilon: 0.1),
     );
     expect(
       bodyRect.top - titleRect.bottom,

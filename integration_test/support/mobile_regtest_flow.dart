@@ -265,7 +265,15 @@ Future<void> cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
-  for (final name in [dbName, '$dbName-shm', '$dbName-wal']) {
+  for (final name in [
+    dbName,
+    '$dbName-shm',
+    '$dbName-wal',
+    '$dbName.voting',
+    '$dbName.voting-journal',
+    '$dbName.voting-shm',
+    '$dbName.voting-wal',
+  ]) {
     final file = File('${supportDir.path}${Platform.pathSeparator}$name');
     if (file.existsSync()) file.deleteSync();
   }
@@ -359,6 +367,11 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_customise_account_continue'),
+    timeout: const Duration(minutes: 2),
+  );
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),
@@ -397,6 +410,13 @@ Future<void> importWalletViaPaste(
   if (isFirstWallet) {
     await enterPasscode(tester, mobileE2ePasscode);
     await enterPasscode(tester, mobileE2ePasscode);
+  }
+  await tapAppButton(
+    tester,
+    const ValueKey('mobile_customise_account_continue'),
+    timeout: const Duration(minutes: 2),
+  );
+  if (isFirstWallet) {
     await tapWidget(
       tester,
       const ValueKey('mobile_biometrics_not_now'),

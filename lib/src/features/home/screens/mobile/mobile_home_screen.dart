@@ -1215,6 +1215,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                const SizedBox(height: AppSpacing.s),
+                _MobileVotingEntryCard(onTap: () => context.push('/voting')),
                 if (widget.ironwoodMigrationCta.visible) ...[
                   const SizedBox(height: AppSpacing.s),
                   MobileIronwoodMigrationBanner(
@@ -1302,6 +1304,86 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _MobileVotingEntryCard extends StatelessWidget {
+  const _MobileVotingEntryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: 'Open coinholder voting',
+      child: GestureDetector(
+        key: const ValueKey('mobile_home_coinholder_voting'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.s,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(color: colors.border.subtle),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: colors.background.inverse,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.endpoint,
+                    size: 20,
+                    color: colors.icon.inverse,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Coinholder voting',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Use your ZEC to help shape the network.',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s),
+              AppIcon(
+                AppIcons.chevronForward,
+                size: 20,
+                color: colors.icon.regular,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
