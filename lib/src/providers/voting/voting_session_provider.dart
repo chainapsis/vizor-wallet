@@ -385,8 +385,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = current.resumePlan ?? context.resumePlan;
-      var roundPlan = current.roundPlan ?? context.roundPlan;
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
@@ -396,8 +396,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = current.resumePlan ?? context.resumePlan;
-        roundPlan = current.roundPlan ?? context.roundPlan;
+        plan = context.resumePlan;
+        roundPlan = context.roundPlan;
       }
 
       final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
@@ -442,45 +442,59 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         progress: progress,
       );
       if (completedBundleIndexes == null) return;
-      completedBundleIndexes.addAll(
-        await _runDelegationBundleBatch(
+      try {
+        completedBundleIndexes.addAll(
+          await _runDelegationBundleBatch(
+            context: context,
+            fallbackState: current,
+            bundleIndexes: plan.pendingDelegationBundleIndexes,
+            progress: progress,
+            logLabel: 'software',
+            prove: (bundleIndex, publishProgress) async {
+              await _awaitDelegationPirPrecomputeIfRunning(
+                context,
+                bundleIndex,
+              );
+              _throwIfContextStale(context, 'delegation-proof');
+              rust_wire.SignedDelegationPayloadView? signedPayload;
+              await for (final event
+                  in rust.buildProveAndSignDelegationPayloadWithProgress(
+                    ctx: _apiRoundContext(context),
+                    pirServerUrl: _transportUrl(pirEndpoint!),
+                    mnemonic: mnemonic!,
+                    storedHotkeySecret: storedHotkeySecret!,
+                    bundleIndex: bundleIndex,
+                  )) {
+                _throwIfContextStale(context, 'delegation-proof-progress');
+                signedPayload = event.signedDelegationPayload ?? signedPayload;
+                publishProgress(
+                  VotingSessionProgress(
+                    phase: event.phase,
+                    bundleIndex: bundleIndex,
+                    proofProgress: _monotonicProofProgress(
+                      progress[bundleIndex]?.proofProgress,
+                      event.proofProgress,
+                    ),
+                  ),
+                );
+              }
+              return signedPayload ??
+                  (throw StateError(
+                    'Delegation proof completed without submission payload.',
+                  ));
+            },
+          ),
+        );
+      } on _StaleVotingSessionAction {
+        rethrow;
+      } catch (error, stackTrace) {
+        await _refreshDelegationPlansAfterBatchFailure(
           context: context,
           fallbackState: current,
-          bundleIndexes: plan.pendingDelegationBundleIndexes,
           progress: progress,
-          logLabel: 'software',
-          prove: (bundleIndex, publishProgress) async {
-            await _awaitDelegationPirPrecomputeIfRunning(context, bundleIndex);
-            _throwIfContextStale(context, 'delegation-proof');
-            rust_wire.SignedDelegationPayloadView? signedPayload;
-            await for (final event
-                in rust.buildProveAndSignDelegationPayloadWithProgress(
-                  ctx: _apiRoundContext(context),
-                  pirServerUrl: _transportUrl(pirEndpoint!),
-                  mnemonic: mnemonic!,
-                  storedHotkeySecret: storedHotkeySecret!,
-                  bundleIndex: bundleIndex,
-                )) {
-              _throwIfContextStale(context, 'delegation-proof-progress');
-              signedPayload = event.signedDelegationPayload ?? signedPayload;
-              publishProgress(
-                VotingSessionProgress(
-                  phase: event.phase,
-                  bundleIndex: bundleIndex,
-                  proofProgress: _monotonicProofProgress(
-                    progress[bundleIndex]?.proofProgress,
-                    event.proofProgress,
-                  ),
-                ),
-              );
-            }
-            return signedPayload ??
-                (throw StateError(
-                  'Delegation proof completed without submission payload.',
-                ));
-          },
-        ),
-      );
+        );
+        Error.throwWithStackTrace(error, stackTrace);
+      }
 
       final resumeTimer = Stopwatch()..start();
       debugPrint(
@@ -743,8 +757,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = current.resumePlan ?? context.resumePlan;
-      var roundPlan = current.roundPlan ?? context.roundPlan;
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
@@ -754,8 +768,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = current.resumePlan ?? context.resumePlan;
-        roundPlan = current.roundPlan ?? context.roundPlan;
+        plan = context.resumePlan;
+        roundPlan = context.roundPlan;
       }
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -807,56 +821,67 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
-      completedBundleIndexes.addAll(
-        await _runDelegationBundleBatch(
+      try {
+        completedBundleIndexes.addAll(
+          await _runDelegationBundleBatch(
+            context: context,
+            fallbackState: current,
+            bundleIndexes: plan.pendingDelegationBundleIndexes,
+            progress: progress,
+            logLabel: 'Keystone',
+            prove: (bundleIndex, publishProgress) async {
+              final signature = signatures[bundleIndex]!;
+              rust_wire.SignedDelegationPayloadView? signedPayload;
+              await for (final event
+                  in rust
+                      .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+                        ctx: _apiRoundContext(context),
+                        pirServerUrl: _transportUrl(pirEndpoint!),
+                        storedHotkeySecret: storedHotkeySecret!,
+                        bundleIndex: bundleIndex,
+                        keystoneSig: signature.sig,
+                        keystoneSighash: signature.sighash,
+                      )) {
+                _throwIfContextStale(
+                  context,
+                  'keystone-delegation-proof-progress',
+                );
+                signedPayload = event.signedDelegationPayload ?? signedPayload;
+                publishProgress(
+                  VotingSessionProgress(
+                    phase: event.phase,
+                    bundleIndex: bundleIndex,
+                    proofProgress: _monotonicProofProgress(
+                      progress[bundleIndex]?.proofProgress,
+                      event.proofProgress,
+                    ),
+                  ),
+                );
+              }
+              final submission =
+                  signedPayload ??
+                  (throw StateError(
+                    'Delegation proof completed without submission payload.',
+                  ));
+              _verifyKeystoneDelegationSignature(
+                submission: submission,
+                signature: signature,
+                bundleIndex: bundleIndex,
+              );
+              return submission;
+            },
+          ),
+        );
+      } on _StaleVotingSessionAction {
+        rethrow;
+      } catch (error, stackTrace) {
+        await _refreshDelegationPlansAfterBatchFailure(
           context: context,
           fallbackState: current,
-          bundleIndexes: plan.pendingDelegationBundleIndexes,
           progress: progress,
-          logLabel: 'Keystone',
-          prove: (bundleIndex, publishProgress) async {
-            final signature = signatures[bundleIndex]!;
-            rust_wire.SignedDelegationPayloadView? signedPayload;
-            await for (final event
-                in rust
-                    .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-                      ctx: _apiRoundContext(context),
-                      pirServerUrl: _transportUrl(pirEndpoint!),
-                      storedHotkeySecret: storedHotkeySecret!,
-                      bundleIndex: bundleIndex,
-                      keystoneSig: signature.sig,
-                      keystoneSighash: signature.sighash,
-                    )) {
-              _throwIfContextStale(
-                context,
-                'keystone-delegation-proof-progress',
-              );
-              signedPayload = event.signedDelegationPayload ?? signedPayload;
-              publishProgress(
-                VotingSessionProgress(
-                  phase: event.phase,
-                  bundleIndex: bundleIndex,
-                  proofProgress: _monotonicProofProgress(
-                    progress[bundleIndex]?.proofProgress,
-                    event.proofProgress,
-                  ),
-                ),
-              );
-            }
-            final submission =
-                signedPayload ??
-                (throw StateError(
-                  'Delegation proof completed without submission payload.',
-                ));
-            _verifyKeystoneDelegationSignature(
-              submission: submission,
-              signature: signature,
-              bundleIndex: bundleIndex,
-            );
-            return submission;
-          },
-        ),
-      );
+        );
+        Error.throwWithStackTrace(error, stackTrace);
+      }
 
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
@@ -1047,6 +1072,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
       for (final failure in voteRecoveryFailures) {
+        if (failure.error is _StaleVotingSessionAction) throw failure.error;
         final error = failure.error;
         if (error is _VoteConfirmationTimeout) {
           _setError(
@@ -2320,7 +2346,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final entry in submittedDelegationsByBundle.entries) {
       final bundleIndex = entry.key;
       final txHash = entry.value;
-      final confirmation = await _awaitTxConfirmation(api, txHash);
+      final confirmation = await _awaitTxConfirmation(
+        api,
+        txHash,
+        context: context,
+      );
       if (confirmation == null) {
         _setError(
           'Delegation transaction $txHash for bundle $bundleIndex is still '
@@ -2353,6 +2383,36 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     }
     return completedBundleIndexes;
+  }
+
+  Future<void> _refreshDelegationPlansAfterBatchFailure({
+    required _VotingSessionContext context,
+    required VotingSessionState fallbackState,
+    required Map<int, VotingSessionProgress> progress,
+  }) async {
+    try {
+      final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
+      _throwIfContextStale(context, 'delegation-batch-failure-refresh');
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
+          delegationProgress: Map<int, VotingSessionProgress>.of(progress),
+          clearCurrentBundleIndex: true,
+        ),
+      );
+    } on _StaleVotingSessionAction {
+      rethrow;
+    } catch (error, stackTrace) {
+      // Preserve the original bundle failure for the user. A later retry still
+      // reloads context from durable recovery state before doing any work.
+      debugPrint(
+        '[zcash] Voting: delegation recovery refresh failed '
+        'round=${context.round.roundId} error=$error\n$stackTrace',
+      );
+    }
   }
 
   Future<Set<int>> _runDelegationBundleBatch({
@@ -2636,6 +2696,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _throwIfContextStale(context, 'delegation-confirmation');
       }
       final confirmation = await api.getTxConfirmation(txHash);
+      if (context != null) {
+        _throwIfContextStale(context, 'delegation-confirmation-response');
+      }
       if (confirmation != null) {
         debugPrint(
           '[zcash] Voting: tx confirmation found txHash=$txHash '

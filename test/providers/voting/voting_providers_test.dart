@@ -1736,30 +1736,62 @@ void main() {
   });
 
   test('delegation drains siblings and preserves successful bundles', () async {
+    final proofErrors = <int, Object>{
+      1: StateError('injected bundle proof failure'),
+    };
+    final confirmed = <int, rust_frb_types.DelegationRecoveryView>{};
+    late FakeVotingRecoveryApi recoveryApi;
     final rust = FakeVotingRustApi(
       bundleCount: 3,
-      delegationStreamErrorsByBundle: {
-        1: StateError('injected bundle proof failure'),
+      delegationStreamErrorsByBundle: proofErrors,
+      onDelegationConfirmed: (bundleIndex, txHash, vanLeafPosition) {
+        confirmed[bundleIndex] = rust_frb_types.DelegationRecoveryView(
+          bundleIndex: bundleIndex,
+          phase: VotingWorkflowPhase.submittedDelegation,
+          txHash: txHash,
+          vanLeafPosition: vanLeafPosition,
+        );
+        recoveryApi.state = recoveryState(
+          bundleCount: 3,
+          delegationWorkflows: confirmed.values.toList(),
+        );
       },
     );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(bundleCount: 3),
+    recoveryApi = FakeVotingRecoveryApi(state: recoveryState(bundleCount: 3));
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
     );
-    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
     addTearDown(container.dispose);
 
     await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .delegatePendingBundles(mnemonic: kTestMnemonic);
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+    var state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.message, contains('bundle proof failure'));
+    expect(state.resumePlan?.pendingDelegationBundleIndexes, [1]);
     expect(rust.delegationBundleCalls, [0, 1, 2]);
     expect(rust.storedDelegationTxHashes, [
       '0:delegation-tx',
       '2:delegation-tx',
+    ]);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+
+    proofErrors.clear();
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+    state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.delegated);
+    expect(rust.delegationBundleCalls, [0, 1, 2, 1]);
+    expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 3);
+    expect(rust.storedDelegationTxHashes, [
+      '0:delegation-tx',
+      '2:delegation-tx',
+      '1:delegation-tx',
     ]);
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
@@ -2365,6 +2397,71 @@ void main() {
       '0:delegation-tx',
       '1:delegation-tx',
     ]);
+  });
+
+  test('hardware partial delegation retry skips confirmed siblings', () async {
+    final proofErrors = <int, Object>{
+      1: StateError('injected Keystone bundle proof failure'),
+    };
+    final confirmed = <int, rust_frb_types.DelegationRecoveryView>{};
+    late FakeVotingRecoveryApi recoveryApi;
+    final rust = FakeVotingRustApi(
+      bundleCount: 3,
+      keystoneDelegationStreamErrorsByBundle: proofErrors,
+      onDelegationConfirmed: (bundleIndex, txHash, vanLeafPosition) {
+        confirmed[bundleIndex] = rust_frb_types.DelegationRecoveryView(
+          bundleIndex: bundleIndex,
+          phase: VotingWorkflowPhase.submittedDelegation,
+          txHash: txHash,
+          vanLeafPosition: vanLeafPosition,
+        );
+        recoveryApi.state = recoveryState(
+          bundleCount: 3,
+          delegationWorkflows: confirmed.values.toList(),
+        );
+      },
+    );
+    for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++) {
+      rust.storedKeystoneSignatures[bundleIndex] =
+          rust_wire.KeystoneSignatureRecord(
+            bundleIndex: bundleIndex,
+            sig: Uint8List.fromList([3, bundleIndex]),
+            sighash: Uint8List.fromList([10, bundleIndex]),
+            rk: Uint8List.fromList([2, bundleIndex]),
+          );
+    }
+    recoveryApi = FakeVotingRecoveryApi(state: recoveryState(bundleCount: 3));
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      accountIsHardware: true,
+      hotkeyStore: FakeVotingHotkeyStore(const [42, 43, 44]),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.delegatePendingBundlesWithKeystoneSignatures();
+    var state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('Keystone bundle proof failure'));
+    expect(state.resumePlan?.pendingDelegationBundleIndexes, [1]);
+    expect(rust.keystoneProofBundleCalls, [0, 1, 2]);
+    expect(rust.storedKeystoneSignatures.keys, [0, 1, 2]);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+
+    proofErrors.clear();
+    await notifier.delegatePendingBundlesWithKeystoneSignatures();
+    state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.delegated);
+    expect(rust.keystoneProofBundleCalls, [0, 1, 2, 1]);
+    expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 3);
+    expect(rust.storedKeystoneSignatures.keys, [0, 1, 2]);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test(
@@ -4839,6 +4936,123 @@ void main() {
     expect(state.error?.message, contains('Retry to resume confirmation'));
     expect(rust.voteCommitBundleCalls, isEmpty);
   });
+
+  test(
+    'submitted vote recovery ignores a successful stale confirmation response',
+    () async {
+      final logs = <String>[];
+      final previousDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      addTearDown(() => debugPrint = previousDebugPrint);
+
+      final responses = votingHttpResponses();
+      responses['/shielded-vote/v1/tx/submitted-vote-tx'] =
+          responses['/shielded-vote/v1/tx/vote-tx']!;
+      final http = _GatedSubmittedVoteConfirmationHttpClient(
+        responses: responses,
+      );
+      final rust = FakeVotingRustApi();
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          votes: [vote(bundleIndex: 0, proposalId: 7)],
+          voteWorkflows: [
+            rust_frb_types.VoteRecoveryView(
+              bundleIndex: 0,
+              proposalId: 7,
+              choice: 0,
+              phase: VotingWorkflowPhase.submittedVote,
+              txHash: 'submitted-vote-tx',
+              vcTreePosition: null,
+              hasCommitmentBundle: true,
+            ),
+          ],
+          voteTxHashes: [
+            rust_frb_types.VoteRecoveryView(
+              bundleIndex: 0,
+              proposalId: 7,
+              choice: 0,
+              phase: VotingWorkflowPhase.submittedVote,
+              txHash: 'submitted-vote-tx',
+              vcTreePosition: null,
+              hasCommitmentBundle: false,
+            ),
+          ],
+          commitmentBundles: [
+            rust_frb_types.RecoverableCommitmentBundle(
+              bundleIndex: 0,
+              proposalId: 7,
+              commitmentBundleJson: '{"proposal_id":7}',
+              vcTreePosition: BigInt.zero,
+            ),
+          ],
+        ),
+      );
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        activeAccountUuidListenable: activeAccountProvider,
+        txConfirmationPolling: const VotingTxConfirmationPolling(
+          attempts: 2,
+          delay: Duration.zero,
+        ),
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+      addTearDown(() {
+        if (!http.releaseConfirmation.isCompleted) {
+          http.releaseConfirmation.complete();
+        }
+      });
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final casting = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: const []);
+      await http.confirmationStarted.future;
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      final switched = await container.read(
+        votingSessionProvider(kRoundId).future,
+      );
+      expect(switched.accountUuid, 'account-2');
+
+      http.releaseConfirmation.complete();
+      await casting;
+
+      expect(container.read(votingSessionProvider(kRoundId)).hasError, isFalse);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.accountUuid,
+        'account-2',
+      );
+      expect(
+        logs.any((line) => line.contains('session action failed')),
+        isFalse,
+        reason:
+            'stale recovery poll must rethrow _StaleVotingSessionAction, '
+            'not wrap it in _VoteWaveBatchException',
+      );
+      expect(
+        logs.any(
+          (line) =>
+              line.contains('ignored stale session update') &&
+              line.contains('reason=action'),
+        ),
+        isTrue,
+      );
+      expect(rust.operationLog, isNot(contains('mark_vote_confirmed:0:7')));
+    },
+  );
 
   test(
     'recovery-only vote confirmation does not rewrite ballot intents',
@@ -8116,6 +8330,28 @@ class _GatedVoteConfirmationHttpClient extends _UniqueVoteTxHttpClient {
   }
 }
 
+class _GatedSubmittedVoteConfirmationHttpClient extends FakeVotingHttpClient {
+  _GatedSubmittedVoteConfirmationHttpClient({required super.responses});
+
+  final Completer<void> confirmationStarted = Completer<void>();
+  final Completer<void> releaseConfirmation = Completer<void>();
+
+  @override
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
+    if (uri.path.endsWith('/tx/submitted-vote-tx')) {
+      if (!confirmationStarted.isCompleted) {
+        confirmationStarted.complete();
+      }
+      await releaseConfirmation.future;
+    }
+    return super.get(uri, headers: headers, timeout: timeout);
+  }
+}
+
 class _SeparatedVoteStagePoolsHttpClient extends _UniqueVoteTxHttpClient {
   _SeparatedVoteStagePoolsHttpClient({required super.responses});
 
@@ -8188,6 +8424,8 @@ class FakeVotingRustApi implements VotingRustApi {
     this.mismatchKeystoneSubmission = false,
     this.delegationStreamError,
     this.delegationStreamErrorsByBundle = const {},
+    this.keystoneDelegationStreamErrorsByBundle = const {},
+    this.onDelegationConfirmed,
     this.delegationProofGate,
     this.keystoneDelegationProofGate,
     this.voteCommitmentGate,
@@ -8218,6 +8456,9 @@ class FakeVotingRustApi implements VotingRustApi {
   final bool mismatchKeystoneSubmission;
   final Object? delegationStreamError;
   final Map<int, Object> delegationStreamErrorsByBundle;
+  final Map<int, Object> keystoneDelegationStreamErrorsByBundle;
+  final void Function(int bundleIndex, String txHash, int vanLeafPosition)?
+  onDelegationConfirmed;
   final Completer<void>? delegationProofGate;
   final Completer<void>? keystoneDelegationProofGate;
   final Completer<void>? voteCommitmentGate;
@@ -8581,6 +8822,8 @@ class FakeVotingRustApi implements VotingRustApi {
         signedDelegationPayload: null,
       );
       await keystoneDelegationProofGate?.future;
+      final error = keystoneDelegationStreamErrorsByBundle[bundleIndex];
+      if (error != null) throw error;
       final signature = storedKeystoneSignatures[bundleIndex];
       final rk = mismatchKeystoneSubmission
           ? const [99]
@@ -8712,6 +8955,7 @@ class FakeVotingRustApi implements VotingRustApi {
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
     );
+    onDelegationConfirmed?.call(bundleIndex, txHash, vanLeafPosition);
     return rust_wire.DelegationConfirmation(
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
