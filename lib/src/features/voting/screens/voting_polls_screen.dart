@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/voting/voting_config_provider.dart';
@@ -18,15 +16,11 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../voting_error_messages.dart';
 import '../voting_poll_ordering.dart';
-import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
-import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../widgets/voting_poll_card.dart';
 
-const _votingBetaLabelAsset = 'assets/illustrations/voting_beta_label.png';
-const _votingBetaLabelWidth = 42.0;
-const _votingBetaLabelHeight = 24.0;
 const _votingBetaLabelCenterDx = 34.0;
 const _votingBetaLabelTopOffset = -10.0;
 const _votingHeaderTitleHeight = 33.0;
@@ -90,7 +84,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                           skipLoadingOnRefresh: false,
                           skipLoadingOnReload: false,
                           loading: () => const VotingPaneLoading(),
-                          error: (error, _) => _VotingMessage(
+                          error: (error, _) => VotingMessage(
                             title: "Couldn't load voting rounds",
                             message: friendlyVotingErrorMessage(error),
                             actionLabel: 'Try again',
@@ -117,7 +111,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
 
   Widget _buildRoundList(List<VotingRoundView> items) {
     if (items.isEmpty) {
-      return const _VotingMessage(
+      return const VotingMessage(
         title: 'No voting rounds available',
         message: 'There are no token holder voting rounds to display yet.',
       );
@@ -136,7 +130,10 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
-        return _PollCard(round: round, onAction: () => _openRoundAction(round));
+        return VotingPollCard(
+          round: round,
+          onAction: () => _openRoundAction(round),
+        );
       },
     );
   }
@@ -197,9 +194,10 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 
   void _openRoundAction(VotingRoundView round) {
-    final state = _pollCardState(round);
+    final state = votingPollCardState(round);
     final route =
-        state == _PollCardState.tallying || state == _PollCardState.closed
+        state == VotingPollCardState.tallying ||
+            state == VotingPollCardState.closed
         ? votingResultsRoute(round.roundId)
         : votingPollRoute(round.roundId);
     _pushRoundRoute(route);
@@ -316,7 +314,7 @@ class _VotingHeader extends StatelessWidget {
                       top: _votingBetaLabelTopOffset,
                       child: Transform.translate(
                         offset: const Offset(_votingBetaLabelCenterDx, 0),
-                        child: const _VotingBetaLabel(),
+                        child: const VotingBetaLabel(),
                       ),
                     ),
                   ],
@@ -349,313 +347,3 @@ class _VotingHeader extends StatelessWidget {
   }
 }
 
-class _VotingBetaLabel extends StatelessWidget {
-  const _VotingBetaLabel();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      key: ValueKey('voting_header_beta_label'),
-      width: _votingBetaLabelWidth,
-      height: _votingBetaLabelHeight,
-      child: Image(
-        image: AssetImage(_votingBetaLabelAsset),
-        fit: BoxFit.contain,
-        semanticLabel: 'Beta',
-      ),
-    );
-  }
-}
-
-class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onAction});
-
-  final VotingRoundView round;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final title = round.title.isEmpty ? round.roundId : round.title;
-    final description = _roundDescription(round.rawJson);
-    final forumUri = votingRoundForumUriFromJson(round.rawJson);
-    final state = _pollCardState(round);
-    final dateLabel = _roundDateLabel(round.rawJson, state);
-
-    return Material(
-      color: const Color(0x00000000),
-      child: Ink(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          border: Border.all(color: colors.border.subtle),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0x0A231F20),
-              offset: const Offset(0, 1),
-              blurRadius: 1,
-              spreadRadius: -0.5,
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StatusBadge(state: state),
-                const Spacer(),
-                if (dateLabel != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      dateLabel,
-                      textAlign: TextAlign.right,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
-                        height: 20 / 14,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              title,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w600,
-                height: 24 / 16,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              description.isEmpty ? round.roundId : description,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.primary,
-                height: 20 / 14,
-                letterSpacing: 0,
-              ),
-            ),
-            if (forumUri != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: VotingForumLinkButton(uri: forumUri),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            Align(
-              alignment: Alignment.centerRight,
-              child: AppButton(
-                key: ValueKey('voting_poll_action_${round.roundId}'),
-                onPressed: onAction,
-                variant: _actionButtonVariant(state),
-                size: AppButtonSize.medium,
-                child: Text(_actionLabel(state)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.state});
-
-  final _PollCardState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = _statusLabel(state);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-      decoration: BoxDecoration(
-        color: _statusBackground(state),
-        border: Border.all(color: _statusBorder(state)),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(_statusIcon(state), size: 14, color: _statusText(state)),
-          const SizedBox(width: AppSpacing.xxs),
-          Text(
-            label,
-            style: AppTypography.labelLarge.copyWith(
-              color: _statusText(state),
-              height: 20 / 14,
-              letterSpacing: 0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VotingMessage extends StatelessWidget {
-  const _VotingMessage({
-    required this.title,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final String title;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: AppTypography.headlineSmall.copyWith(
-                color: context.colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              AppButton(
-                onPressed: onAction,
-                variant: AppButtonVariant.primary,
-                child: Text(actionLabel!),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _roundDescription(Map<String, dynamic> json) {
-  for (final key in const ['description', 'body', 'summary']) {
-    final value = json[key];
-    if (value != null && value.toString().trim().isNotEmpty) {
-      return value.toString().trim();
-    }
-  }
-  return '';
-}
-
-String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
-  final start = votingRoundStartDate(json);
-  final end = votingRoundEndDate(json);
-  if (end != null) {
-    final label = switch (state) {
-      _PollCardState.inProgress ||
-      _PollCardState.active ||
-      _PollCardState.voted => 'Closes',
-      _PollCardState.tallying || _PollCardState.closed => 'Closed',
-    };
-    return '$label ${formatMonthDay(end)}';
-  }
-  if (start != null) return 'Starts ${formatMonthDay(start)}';
-  return null;
-}
-
-String _statusLabel(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress => 'In progress',
-    _PollCardState.active => 'Active',
-    _PollCardState.voted => 'Voted',
-    _PollCardState.tallying => 'Tallying',
-    _PollCardState.closed => 'Closed',
-  };
-}
-
-String _statusIcon(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.voted => AppIcons.check,
-    _ => AppIcons.time,
-  };
-}
-
-Color _statusBackground(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress ||
-    _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFFECFDF3),
-    _PollCardState.tallying => const Color(0xFFFFFAEB),
-    _PollCardState.closed => const Color(0xFFF4F4F0),
-  };
-}
-
-Color _statusBorder(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress ||
-    _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFFABEFC6),
-    _PollCardState.tallying => const Color(0xFFFEDF89),
-    _PollCardState.closed => const Color(0xFFEBEBE6),
-  };
-}
-
-Color _statusText(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress ||
-    _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFF067647),
-    _PollCardState.tallying => const Color(0xFFB54708),
-    _PollCardState.closed => const Color(0xFF716C5D),
-  };
-}
-
-String _actionLabel(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress => 'Resume',
-    _PollCardState.active => 'Start voting',
-    _PollCardState.voted => 'Review',
-    _PollCardState.tallying || _PollCardState.closed => 'View results',
-  };
-}
-
-AppButtonVariant _actionButtonVariant(_PollCardState state) {
-  return switch (state) {
-    _PollCardState.inProgress ||
-    _PollCardState.active => AppButtonVariant.primary,
-    _PollCardState.voted ||
-    _PollCardState.tallying ||
-    _PollCardState.closed => AppButtonVariant.secondary,
-  };
-}
-
-enum _PollCardState { inProgress, active, voted, tallying, closed }
-
-_PollCardState _pollCardState(VotingRoundView round) {
-  return switch (votingPollListStatus(round.status)) {
-    VotingPollListStatus.active =>
-      round.inProgress
-          ? _PollCardState.inProgress
-          : round.voted
-          ? _PollCardState.voted
-          : _PollCardState.active,
-    VotingPollListStatus.tallying => _PollCardState.tallying,
-    VotingPollListStatus.closed => _PollCardState.closed,
-  };
-}
