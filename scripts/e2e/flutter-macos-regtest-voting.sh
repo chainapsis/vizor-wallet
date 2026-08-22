@@ -108,9 +108,15 @@ cargo build --release --manifest-path "$PIR_DIR/Cargo.toml" \
   -p pir-export --features cli -p nf-server --features serve
 
 echo "creating voting power through the real Orchard-to-Ironwood migration"
+# The iOS mobile lane overrides the setup and voting test files (and passes
+# VIZOR_FORM_FACTOR=mobile / FLUTTER_DEVICE=<udid> through the environment);
+# see scripts/e2e/flutter-ios-regtest-mobile-voting.sh.
+SETUP_TEST_FILE="${E2E_VOTING_SETUP_TEST_FILE:-integration_test/regtest_voting_ironwood_setup_test.dart}"
+VOTING_TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_voting_test.dart}"
+REUSE_MIGRATED_WALLET="${E2E_REUSE_MIGRATED_WALLET:-true}"
 IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   IRONWOOD_LIGHTWALLETD_PORT="$LWD_PORT" \
-  E2E_TEST_FILE=integration_test/regtest_voting_ironwood_setup_test.dart \
+  E2E_TEST_FILE="$SETUP_TEST_FILE" \
   E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   E2E_ORCHARD_FUNDING_AMOUNT=0.13 \
   E2E_ORCHARD_FUNDING_ZATOSHI=13000000 \
@@ -248,16 +254,22 @@ STATIC_URL="https://config.vizor-vote.invalid/static-voting-config.json?checksum
 
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
-fvm flutter test integration_test/regtest_voting_test.dart -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
-  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
-  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
-  --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
-  --dart-define=ZCASH_E2E_VOTING_STATIC_CONFIG_URL="$STATIC_URL" \
-  --dart-define=ZCASH_E2E_VOTE_ROUND_ID="$ROUND_ID" \
-  --dart-define=ZCASH_E2E_REUSE_MIGRATED_WALLET=true \
-  --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
+voting_test_args=(
+  "$VOTING_TEST_FILE" -d "$FLUTTER_DEVICE"
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest
+  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
+  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT"
+  --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT"
+  --dart-define=ZCASH_E2E_VOTING_STATIC_CONFIG_URL="$STATIC_URL"
+  --dart-define=ZCASH_E2E_VOTE_ROUND_ID="$ROUND_ID"
+  --dart-define=ZCASH_E2E_REUSE_MIGRATED_WALLET="$REUSE_MIGRATED_WALLET"
+  --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true
   --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+)
+if [[ "${VIZOR_FORM_FACTOR:-desktop}" == "mobile" ]]; then
+  voting_test_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+fi
+fvm flutter test "${voting_test_args[@]}"
 
 METRICS="$(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/metrics")"
 if [[ "$SLOW_HELPER_MODE" == "1" ]]; then
