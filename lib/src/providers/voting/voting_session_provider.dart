@@ -1928,132 +1928,140 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
 
+    final sharePool = _AsyncPermitPool(_delegationBundleConcurrency);
+    final shareOutcomeFutures = <int, Future<_BundleWorkOutcome<void>>>{};
     final confirmationOutcomes = await _runBoundedBundleWork(
       submitted.keys.toList(growable: false),
       concurrency: _delegationBundleConcurrency,
       work: (bundleIndex) async {
         final item = submitted[bundleIndex]!;
-        final confirmations = <int, VotingTxConfirmation>{};
-        final api = ref.read(
-          votingApiClientProvider(context.config.apiServers),
-        );
-        for (final entry in item.txHashes.entries) {
-          final confirmation = await _awaitTxConfirmation(
-            api,
-            entry.value,
-            context: context,
+        late final Map<int, VotingTxConfirmation> confirmations;
+        try {
+          confirmations = <int, VotingTxConfirmation>{};
+          final api = ref.read(
+            votingApiClientProvider(context.config.apiServers),
           );
-          if (confirmation == null) {
-            throw StateError(
-              'Transaction ${entry.value} was not confirmed in time.',
+          for (final entry in item.txHashes.entries) {
+            final confirmation = await _awaitTxConfirmation(
+              api,
+              entry.value,
+              context: context,
             );
+            if (confirmation == null) {
+              throw StateError(
+                'Transaction ${entry.value} was not confirmed in time.',
+              );
+            }
+            if (confirmation.code != 0) {
+              throw StateError(
+                confirmation.log.isEmpty
+                    ? 'Vote commitment transaction failed.'
+                    : confirmation.log,
+              );
+            }
+            confirmations[entry.key] = confirmation;
           }
-          if (confirmation.code != 0) {
-            throw StateError(
-              confirmation.log.isEmpty
-                  ? 'Vote commitment transaction failed.'
-                  : confirmation.log,
-            );
-          }
-          confirmations[entry.key] = confirmation;
+        } catch (error) {
+          throw _VoteWavePipelineFailure(stage: 'confirmation', error: error);
         }
-        return confirmations;
+
+        late final Map<int, BigInt> vcTreePositions;
+        try {
+          vcTreePositions = await _persistVoteConfirmations(
+            context,
+            bundleIndex: bundleIndex,
+            txHashes: item.txHashes,
+            confirmations: confirmations,
+          );
+          publish(
+            VotingSessionProgress(
+              phase: 'confirmed',
+              bundleIndex: bundleIndex,
+              proposalId: draftVote.proposalId,
+              proofProgress: 1,
+              message: item.txHashes[draftVote.proposalId],
+            ),
+          );
+        } catch (error) {
+          throw _VoteWavePipelineFailure(
+            stage: 'confirmation persistence',
+            error: error,
+          );
+        }
+
+        shareOutcomeFutures[bundleIndex] = _captureBundleWork(
+          () => sharePool.run(() async {
+            await _submitCommitmentShares(
+              context,
+              item.prepared.commitments,
+              vcTreePositions: vcTreePositions,
+              singleShare: item.prepared.singleShare,
+              completedQuestions: completedQuestions,
+              totalQuestions: totalQuestions,
+              voteSubmissionProgress: _aggregateVoteWaveProgress(
+                progress: progress,
+                proposalId: draftVote.proposalId,
+                bundleIndexes: bundleIndexes,
+                completedBundleTasks: completedBundleTasks,
+                totalBundleTasks: totalBundleTasks,
+              ),
+            );
+            publish(
+              VotingSessionProgress(
+                phase: 'completed',
+                bundleIndex: bundleIndex,
+                proposalId: draftVote.proposalId,
+                proofProgress: 1,
+              ),
+            );
+          }),
+        );
       },
     );
 
-    final confirmed = <int, _ConfirmedVoteWaveBundle>{};
     for (final bundleIndex in submitted.keys) {
       final outcome = confirmationOutcomes[bundleIndex]!;
-      if (outcome.error != null) {
-        failures.add(
-          _VoteWaveFailure(
-            bundleIndex: bundleIndex,
-            stage: 'confirmation',
-            error: outcome.error!,
-          ),
-        );
-        publish(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
-            message: outcome.error.toString(),
-          ),
-        );
-        continue;
-      }
-      final item = submitted[bundleIndex]!;
-      try {
-        final vcTreePositions = await _persistVoteConfirmations(
-          context,
+      if (outcome.error == null) continue;
+      final pipelineFailure = outcome.error is _VoteWavePipelineFailure
+          ? outcome.error as _VoteWavePipelineFailure
+          : _VoteWavePipelineFailure(
+              stage: 'confirmation',
+              error: outcome.error!,
+            );
+      failures.add(
+        _VoteWaveFailure(
           bundleIndex: bundleIndex,
-          txHashes: item.txHashes,
-          confirmations: outcome.value!,
-        );
-        confirmed[bundleIndex] = _ConfirmedVoteWaveBundle(
-          prepared: item.prepared,
-          vcTreePositions: vcTreePositions,
-        );
-        publish(
-          VotingSessionProgress(
-            phase: 'confirmed',
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
-            proofProgress: 1,
-            message: item.txHashes[draftVote.proposalId],
-          ),
-        );
-      } catch (error) {
-        failures.add(
-          _VoteWaveFailure(
-            bundleIndex: bundleIndex,
-            stage: 'confirmation persistence',
-            error: error,
-          ),
-        );
-        publish(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            proposalId: draftVote.proposalId,
-            proofProgress:
-                progress[VotingVoteKey(
-                      bundleIndex: bundleIndex,
-                      proposalId: draftVote.proposalId,
-                    )]
-                    ?.proofProgress,
-            message: error.toString(),
-          ),
-        );
-      }
+          stage: pipelineFailure.stage,
+          error: pipelineFailure.error,
+        ),
+      );
+      publish(
+        VotingSessionProgress(
+          phase: 'failed',
+          bundleIndex: bundleIndex,
+          proposalId: draftVote.proposalId,
+          proofProgress:
+              progress[VotingVoteKey(
+                    bundleIndex: bundleIndex,
+                    proposalId: draftVote.proposalId,
+                  )]
+                  ?.proofProgress,
+          message: pipelineFailure.error.toString(),
+        ),
+      );
     }
 
-    final shareOutcomes = await _runBoundedBundleWork(
-      confirmed.keys.toList(growable: false),
-      concurrency: _delegationBundleConcurrency,
-      work: (bundleIndex) async {
-        final item = confirmed[bundleIndex]!;
-        await _submitCommitmentShares(
-          context,
-          item.prepared.commitments,
-          vcTreePositions: item.vcTreePositions,
-          singleShare: item.prepared.singleShare,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: _aggregateVoteWaveProgress(
-            progress: progress,
-            proposalId: draftVote.proposalId,
-            bundleIndexes: bundleIndexes,
-            completedBundleTasks: completedBundleTasks,
-            totalBundleTasks: totalBundleTasks,
-          ),
-        );
-      },
+    final shareOutcomes = <int, _BundleWorkOutcome<void>>{};
+    await Future.wait(
+      shareOutcomeFutures.entries.map((entry) async {
+        shareOutcomes[entry.key] = await entry.value;
+      }),
     );
 
     var completed = 0;
-    for (final bundleIndex in confirmed.keys) {
-      final outcome = shareOutcomes[bundleIndex]!;
+    for (final bundleIndex in submitted.keys) {
+      final outcome = shareOutcomes[bundleIndex];
+      if (outcome == null) continue;
       if (outcome.error != null) {
         failures.add(
           _VoteWaveFailure(
@@ -2067,20 +2075,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             phase: 'failed',
             bundleIndex: bundleIndex,
             proposalId: draftVote.proposalId,
+            proofProgress:
+                progress[VotingVoteKey(
+                      bundleIndex: bundleIndex,
+                      proposalId: draftVote.proposalId,
+                    )]
+                    ?.proofProgress,
             message: outcome.error.toString(),
           ),
         );
         continue;
       }
       completed++;
-      publish(
-        VotingSessionProgress(
-          phase: 'completed',
-          bundleIndex: bundleIndex,
-          proposalId: draftVote.proposalId,
-          proofProgress: 1,
-        ),
-      );
     }
 
     for (final failure in failures) {
@@ -4252,6 +4258,52 @@ Future<Map<int, _BundleWorkOutcome<T>>> _runBoundedBundleWork<T>(
   return outcomes;
 }
 
+Future<_BundleWorkOutcome<T>> _captureBundleWork<T>(
+  Future<T> Function() work,
+) async {
+  try {
+    return _BundleWorkOutcome.success(await work());
+  } catch (error, stackTrace) {
+    return _BundleWorkOutcome.failure(error, stackTrace);
+  }
+}
+
+class _AsyncPermitPool {
+  _AsyncPermitPool(int concurrency)
+    : assert(concurrency > 0),
+      _availablePermits = concurrency;
+
+  int _availablePermits;
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+
+  Future<T> run<T>(Future<T> Function() work) async {
+    await _acquire();
+    try {
+      return await work();
+    } finally {
+      _release();
+    }
+  }
+
+  Future<void> _acquire() {
+    if (_availablePermits > 0) {
+      _availablePermits--;
+      return Future<void>.value();
+    }
+    final waiter = Completer<void>();
+    _waiters.addLast(waiter);
+    return waiter.future;
+  }
+
+  void _release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeFirst().complete();
+    } else {
+      _availablePermits++;
+    }
+  }
+}
+
 class _BundleWorkOutcome<T> {
   const _BundleWorkOutcome.success(this.value)
     : error = null,
@@ -4316,16 +4368,6 @@ class _SubmittedVoteWaveBundle {
   final Map<int, String> txHashes;
 }
 
-class _ConfirmedVoteWaveBundle {
-  const _ConfirmedVoteWaveBundle({
-    required this.prepared,
-    required this.vcTreePositions,
-  });
-
-  final _PreparedVoteWaveBundle prepared;
-  final Map<int, BigInt> vcTreePositions;
-}
-
 class _VoteWaveFailure {
   const _VoteWaveFailure({
     required this.bundleIndex,
@@ -4334,6 +4376,13 @@ class _VoteWaveFailure {
   });
 
   final int bundleIndex;
+  final String stage;
+  final Object error;
+}
+
+class _VoteWavePipelineFailure implements Exception {
+  const _VoteWavePipelineFailure({required this.stage, required this.error});
+
   final String stage;
   final Object error;
 }

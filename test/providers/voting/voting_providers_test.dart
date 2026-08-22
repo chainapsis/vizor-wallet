@@ -4093,6 +4093,166 @@ void main() {
   });
 
   test(
+    'proposal wave submits ready bundle shares while another confirms',
+    () async {
+      final confirmationResponse =
+          votingHttpResponses()['/shielded-vote/v1/tx/vote-tx']!;
+      final http = _GatedVoteConfirmationHttpClient(
+        responses: {
+          ...votingHttpResponses(),
+          '/shielded-vote/v1/tx/vote-tx-0': confirmationResponse,
+          '/shielded-vote/v1/tx/vote-tx-1': confirmationResponse,
+        },
+      );
+      final rust = FakeVotingRustApi(emitCommitments: true, bundleCount: 2);
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 2,
+          delegationTxHashes: [
+            for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++)
+              rust_frb_types.DelegationRecoveryView(
+                bundleIndex: bundleIndex,
+                phase: VotingWorkflowPhase.submittedDelegation,
+                txHash: 'delegation-$bundleIndex',
+                vanLeafPosition: null,
+              ),
+          ],
+          votes: [
+            for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++)
+              vote(bundleIndex: bundleIndex, proposalId: 7),
+          ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+      addTearDown(() {
+        if (!http.releaseSlowConfirmation.isCompleted) {
+          http.releaseSlowConfirmation.complete();
+        }
+      });
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      await http.slowConfirmationStarted.future;
+      for (var attempt = 0; attempt < 100; attempt++) {
+        if (rust.recordedShares.any((share) => share.bundleIndex == 1)) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        rust.recordedShares.any((share) => share.bundleIndex == 1),
+        isTrue,
+      );
+      expect(
+        rust.recordedShares.any((share) => share.bundleIndex == 0),
+        isFalse,
+      );
+      expect(rust.operationLog, contains('mark_vote_confirmed:1:7'));
+
+      http.releaseSlowConfirmation.complete();
+      await cast;
+
+      expect(rust.recordedShares.map((share) => share.bundleIndex).toSet(), {
+        0,
+        1,
+      });
+    },
+  );
+
+  test(
+    'proposal wave polls later bundles while the share pool is saturated',
+    () async {
+      final confirmationResponse =
+          votingHttpResponses()['/shielded-vote/v1/tx/vote-tx']!;
+      final http = _SeparatedVoteStagePoolsHttpClient(
+        responses: {
+          ...votingHttpResponses(),
+          for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+            '/shielded-vote/v1/tx/vote-tx-$bundleIndex': confirmationResponse,
+        },
+      );
+      final rust = FakeVotingRustApi(emitCommitments: true, bundleCount: 4);
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 4,
+          delegationTxHashes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              rust_frb_types.DelegationRecoveryView(
+                bundleIndex: bundleIndex,
+                phase: VotingWorkflowPhase.submittedDelegation,
+                txHash: 'delegation-$bundleIndex',
+                vanLeafPosition: null,
+              ),
+          ],
+          votes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              vote(bundleIndex: bundleIndex, proposalId: 7),
+          ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+      addTearDown(http.releaseShares);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      await http.firstThreeSharesStarted.future;
+      await http.fourthConfirmationStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
+
+      expect(http.sharePostCount, 3);
+      expect(http.maxConcurrentSharePosts, 3);
+
+      http.releaseShares();
+      await cast;
+
+      expect(http.sharePostCount, 4);
+      expect(http.maxConcurrentSharePosts, 3);
+      expect(rust.recordedShares.map((share) => share.bundleIndex).toSet(), {
+        0,
+        1,
+        2,
+        3,
+      });
+    },
+  );
+
+  test(
     'proposal wave serializes broadcasts and overlaps confirmations',
     () async {
       final http = _DelegationConcurrencyHttpClient(
@@ -7883,6 +8043,106 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
     } finally {
       _activeConfirmationGets--;
     }
+  }
+}
+
+class _UniqueVoteTxHttpClient extends FakeVotingHttpClient {
+  _UniqueVoteTxHttpClient({required super.responses});
+
+  var _votePostCount = 0;
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    if (!uri.path.endsWith('/cast-vote')) {
+      return super.postJson(uri, body, timeout: timeout);
+    }
+    requests.add(
+      FakeVotingHttpRequest('POST', uri, body: body, timeout: timeout),
+    );
+    return jsonResponse({
+      'tx_hash': 'vote-tx-${_votePostCount++}',
+      'code': 0,
+      'log': '',
+    });
+  }
+}
+
+class _GatedVoteConfirmationHttpClient extends _UniqueVoteTxHttpClient {
+  _GatedVoteConfirmationHttpClient({required super.responses});
+
+  final Completer<void> slowConfirmationStarted = Completer<void>();
+  final Completer<void> releaseSlowConfirmation = Completer<void>();
+
+  @override
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
+    if (uri.path.endsWith('/tx/vote-tx-0')) {
+      if (!slowConfirmationStarted.isCompleted) {
+        slowConfirmationStarted.complete();
+      }
+      await releaseSlowConfirmation.future;
+    }
+    return super.get(uri, headers: headers, timeout: timeout);
+  }
+}
+
+class _SeparatedVoteStagePoolsHttpClient extends _UniqueVoteTxHttpClient {
+  _SeparatedVoteStagePoolsHttpClient({required super.responses});
+
+  final Completer<void> firstThreeSharesStarted = Completer<void>();
+  final Completer<void> fourthConfirmationStarted = Completer<void>();
+  final Completer<void> _releaseSharePosts = Completer<void>();
+  var sharePostCount = 0;
+  var _activeSharePosts = 0;
+  var maxConcurrentSharePosts = 0;
+
+  void releaseShares() {
+    if (!_releaseSharePosts.isCompleted) _releaseSharePosts.complete();
+  }
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    if (!uri.path.endsWith('/shares')) {
+      return super.postJson(uri, body, timeout: timeout);
+    }
+    sharePostCount++;
+    _activeSharePosts++;
+    if (_activeSharePosts > maxConcurrentSharePosts) {
+      maxConcurrentSharePosts = _activeSharePosts;
+    }
+    if (sharePostCount == 3 && !firstThreeSharesStarted.isCompleted) {
+      firstThreeSharesStarted.complete();
+    }
+    try {
+      if (sharePostCount <= 3) await _releaseSharePosts.future;
+      return await super.postJson(uri, body, timeout: timeout);
+    } finally {
+      _activeSharePosts--;
+    }
+  }
+
+  @override
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
+    if (uri.path.endsWith('/tx/vote-tx-3') &&
+        !fourthConfirmationStarted.isCompleted) {
+      fourthConfirmationStarted.complete();
+    }
+    return super.get(uri, headers: headers, timeout: timeout);
   }
 }
 
