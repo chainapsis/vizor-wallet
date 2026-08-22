@@ -20,9 +20,11 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_share_outbox_service.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_outbox_provider.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
@@ -3028,10 +3030,90 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return null;
   }
 
+  /// Restage-is-truth sync with the iOS background share outbox: after every
+  /// tracking pass (and after the cast itself schedules tracking) the current
+  /// unconfirmed share set replaces the natively staged one, so shares the
+  /// foreground confirmed drop out and `sentToUrls` stay unioned. Best
+  /// effort — the foreground restorer remains the primary recovery path.
+  void _stageSharesInOutboxBestEffort(
+    _VotingSessionContext context,
+    VotingResumePlan plan,
+  ) {
+    final outbox = ref.read(votingShareOutboxProvider);
+    if (!outbox.isSupported) return;
+    unawaited(
+      _stageSharesInOutbox(outbox, context, plan).catchError((Object error) {
+        debugPrint('[zcash] Voting: share outbox staging failed: $error');
+      }),
+    );
+  }
+
+  Future<void> _stageSharesInOutbox(
+    VotingShareOutboxService outbox,
+    _VotingSessionContext context,
+    VotingResumePlan plan,
+  ) async {
+    final voteEnd = context.round.voteEndTime;
+    if (voteEnd == null) return;
+    final rust = ref.read(votingRustApiProvider);
+    final shares = <VotingShareOutboxShare>[];
+    for (final share in plan.unconfirmedShareDelegations) {
+      final bundle = plan.commitmentBundleFor(
+        VotingVoteKey(
+          bundleIndex: share.bundleIndex,
+          proposalId: share.proposalId,
+        ),
+      );
+      if (bundle == null) continue;
+      final recoveryBodyJson = await rust.recoveredVoteShareWireJson(
+        commitmentBundleJson: bundle.commitmentBundleJson,
+        proposalId: share.proposalId,
+        shareIndex: share.shareIndex,
+        vcTreePosition: bundle.vcTreePosition,
+        submitAt: BigInt.zero,
+      );
+      shares.add(
+        VotingShareOutboxShare(
+          bundleIndex: share.bundleIndex,
+          proposalId: share.proposalId,
+          shareIndex: share.shareIndex,
+          shareIdHex: bytesToHex(share.nullifier),
+          submitAtSeconds: share.submitAt,
+          createdAtSeconds: share.createdAt,
+          recoveryBodyJson: recoveryBodyJson,
+          sentToUrls: share.sentToUrls,
+        ),
+      );
+    }
+    final digests = await outbox.stageShareRound(
+      network: context.network,
+      accountUuid: context.accountUuid,
+      roundId: context.round.roundId,
+      voteEndSeconds: BigInt.from(voteEnd.millisecondsSinceEpoch ~/ 1000),
+      helperUrls: context.config.apiServers.all
+          .map((endpoint) => endpoint.toString())
+          .toList(growable: false),
+      prune: true,
+      shares: shares,
+    );
+    // An empty stage with prune clears the round natively; only live share
+    // sets are armed for background wakes.
+    if (digests == null || shares.isEmpty) return;
+    await outbox.armShareRound(
+      roundKey: VotingShareOutboxService.roundKey(
+        network: context.network,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+      ),
+      expectedDigests: digests,
+    );
+  }
+
   Future<void> _scheduleShareTracking(
     _VotingSessionContext context,
     VotingResumePlan plan,
   ) async {
+    _stageSharesInOutboxBestEffort(context, plan);
     if (!_ownsAutomaticShareTracking) {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;

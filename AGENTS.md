@@ -548,6 +548,13 @@ Swift BackgroundMigrationPreparationManager
 - Already-signed migration outbox transport remains background-capable. It may
   query the chain tip and broadcast exact signed bytes, but it never scans the
   wallet.
+- The iOS voting share outbox (`BackgroundVotingShareOutbox*`, BGProcessingTask
+  `com.keplr.vizor.voting-shares`) may only GET helper share-status and POST
+  exact staged share payloads to helper servers; it never reads the wallet DB
+  or the voting sidecar and never calls into Dart or Rust. The foreground
+  stages the current unconfirmed share set after every tracking pass
+  (restage-is-truth, `prune: true`) and reconciles the lane's receipts into
+  the sidecar before the share-tracking restorer runs.
 - Account DB mutations quiesce and drain native migration work before changing
   the wallet DB.
 - The removed general iOS background-sync identifier
@@ -567,6 +574,11 @@ policy-aware openers and fails closed while Tor is starting or broken.
   foreground's client, so routing that lane through the policy would only
   convert it into failures on a Tor wallet. The mobile settings card
   discloses this. Nothing in the foreground may use the pinned opener.
+- **The iOS voting share outbox is pinned direct too** (plain URLSession to
+  helper servers while Vizor is closed), following the same product decision
+  and the same settings-card disclosure. Note the privacy trade: unlike a
+  chain broadcast, a direct helper connection can link the device's IP to
+  voting-participation timing.
 - **The saved route may be stricter than the enforced route, never laxer.**
   The saved preference is all a fresh launch has to go on, so a toggle
   persists in whichever order keeps this true at every intermediate point:

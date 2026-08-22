@@ -186,13 +186,35 @@ class VotingRecoveryService {
     required rust_voting.ShareDelegationRecordView share,
     required List<String> newUrls,
   }) {
-    return _api.addSentServers(
+    return addSentServersForShareKey(
       dbPath: dbPath,
       accountUuid: accountUuid,
       roundId: share.roundId,
       bundleIndex: share.bundleIndex,
       proposalId: share.proposalId,
       shareIndex: share.shareIndex,
+      newUrls: newUrls,
+    );
+  }
+
+  /// Same as [addSentServersForShare] for callers that only hold the durable
+  /// share key (e.g. background outbox receipts) rather than a record view.
+  Future<void> addSentServersForShareKey({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required List<String> newUrls,
+  }) {
+    return _api.addSentServers(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
       newUrls: newUrls,
     );
   }

@@ -214,14 +214,16 @@ _MobileTorPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: 'Connected',
-      // iOS can continue Ironwood private migration through its native
-      // background task after Vizor closes. That task is pinned direct, so
-      // name the exception instead of weakening the foreground guarantee with
-      // "most". Android has no corresponding background migration lane.
+      // iOS can continue Ironwood private migration and scheduled
+      // voting-share delivery through native background tasks after Vizor
+      // closes. Those tasks are pinned direct, so name the exceptions instead
+      // of weakening the foreground guarantee with "most". Android has no
+      // corresponding background lanes.
       description: platform == TargetPlatform.iOS
           ? 'Vizor’s network requests go through Tor. Ironwood private '
-                'migration uses a direct connection while Vizor is closed. '
-                'Links opened in other apps use those apps’ network settings.'
+                'migration and scheduled voting-share delivery use a direct '
+                'connection while Vizor is closed. Links opened in other '
+                'apps use those apps’ network settings.'
           : 'Vizor’s network requests go through Tor. Links opened in other '
                 'apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,

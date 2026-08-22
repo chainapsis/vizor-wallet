@@ -12,6 +12,7 @@ import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_session_provider.dart';
+import 'voting_share_outbox_provider.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 
@@ -96,6 +97,17 @@ class VotingShareTrackingRestorer {
   }
 
   Future<void> _restoreTracked(VotingShareTrackingRegistry registry) async {
+    // Absorb background share-outbox receipts into the sidecar first, so the
+    // pending-share discovery below never re-submits work the iOS background
+    // lane already finished. Best effort: a failed reconcile only means a
+    // tolerated duplicate submission later.
+    try {
+      await _ref.read(votingShareOutboxReconcilerProvider).reconcile();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: share outbox reconcile failed: $error\n$stackTrace',
+      );
+    }
     var failed = false;
     try {
       final accounts = (await _ref.read(accountProvider.future)).accounts;

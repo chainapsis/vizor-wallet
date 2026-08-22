@@ -27,6 +27,7 @@ import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'voting/voting_share_outbox_provider.dart';
 import 'voting/voting_share_tracking_registry_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
 
@@ -615,6 +616,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         '$uuid after wallet deletion: $e\n$st',
       );
     }
+    // Best-effort: drops the account's staged background share work so the
+    // iOS outbox cannot transmit for a deleted account.
+    await ref
+        .read(votingShareOutboxProvider)
+        .revokeAccount(network: network, accountUuid: uuid);
     try {
       await _storage.deleteAccountMnemonic(uuid);
     } catch (e, st) {
@@ -787,6 +793,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
+    // Best-effort: the iOS background share outbox must not keep transmitting
+    // for a wallet that is being reset.
+    await ref.read(votingShareOutboxProvider).revokeAll();
 
     var dbDeleted = false;
     try {
