@@ -4234,9 +4234,32 @@ void main() {
       await http.fourthConfirmationStarted.future.timeout(
         const Duration(seconds: 1),
       );
+      const fourthKey = VotingVoteKey(bundleIndex: 3, proposalId: 7);
+      for (var attempt = 0; attempt < 100; attempt++) {
+        final fourthProgress = container
+            .read(votingSessionProvider(kRoundId))
+            .value
+            ?.voteProgress[fourthKey];
+        if (fourthProgress?.phase == 'confirmed') break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
 
       expect(http.sharePostCount, 3);
       expect(http.maxConcurrentSharePosts, 3);
+      final saturatedState = container
+          .read(votingSessionProvider(kRoundId))
+          .value!;
+      expect(saturatedState.voteProgress[fourthKey]?.phase, 'confirmed');
+      expect(saturatedState.voteSubmissionProgress, closeTo(0.95, 0.001));
+      for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++) {
+        final key = VotingVoteKey(bundleIndex: bundleIndex, proposalId: 7);
+        expect(
+          saturatedState.voteProgress[key]?.phase,
+          'submitting_shares',
+          reason: 'bundle $bundleIndex must remain visibly in flight',
+        );
+        expect(saturatedState.activeVoteKeys, contains(key));
+      }
 
       http.releaseShares();
       await cast;

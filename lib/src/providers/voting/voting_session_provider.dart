@@ -1409,6 +1409,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     rust_wire.SignedVoteCommitmentsView commitments, {
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
+    void Function(VotingSessionProgress progress)? publishProgress,
     required bool singleShare,
     required int completedQuestions,
     required int totalQuestions,
@@ -1473,15 +1474,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             submitAt: plan.submitAt,
           ),
         );
-        _setShareSubmissionProgress(
-          context: context,
-          bundleIndex: commitments.bundleIndex,
-          proposalId: share.proposalId,
-          message: bundleProgressMessage,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: voteSubmissionProgress,
-        );
+        if (publishProgress == null) {
+          _setShareSubmissionProgress(
+            context: context,
+            bundleIndex: commitments.bundleIndex,
+            proposalId: share.proposalId,
+            message: bundleProgressMessage,
+            completedQuestions: completedQuestions,
+            totalQuestions: totalQuestions,
+            voteSubmissionProgress: voteSubmissionProgress,
+          );
+        } else {
+          publishProgress(
+            VotingSessionProgress(
+              phase: 'submitting_shares',
+              bundleIndex: commitments.bundleIndex,
+              proposalId: share.proposalId,
+              message: bundleProgressMessage,
+            ),
+          );
+        }
         preparedSubmissions.add(
           _PreparedInitialShareSubmission(
             share: share,
@@ -1995,6 +2007,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               context,
               item.prepared.commitments,
               vcTreePositions: vcTreePositions,
+              publishProgress: publish,
               singleShare: item.prepared.singleShare,
               completedQuestions: completedQuestions,
               totalQuestions: totalQuestions,
@@ -2118,6 +2131,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           )];
       waveProgress += switch (item?.phase) {
         'completed' => 1,
+        'submitting_shares' => 0.95,
         'confirmed' => 0.95,
         'submitted' => 0.85,
         'failed' => 0,
