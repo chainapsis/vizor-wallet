@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../core/formatting/hex_codec.dart';
-import '../../core/layout/app_form_factor.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
@@ -29,11 +28,6 @@ import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
 final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
-
-@visibleForTesting
-bool automaticVotingShareTrackingEnabled() {
-  return kAppFormFactor == AppFormFactor.desktop;
-}
 
 /// The PCZT value-pool tag for Ironwood actions.
 ///
@@ -3746,7 +3740,7 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   void Function()? _closeShareTrackingKeepAlive;
 
   @override
-  bool get _ownsAutomaticShareTracking => automaticVotingShareTrackingEnabled();
+  bool get _ownsAutomaticShareTracking => true;
 
   @override
   bool _retainAutomaticShareTracking() {
