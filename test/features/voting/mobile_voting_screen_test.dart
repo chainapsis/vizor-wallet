@@ -2,8 +2,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 void main() {
@@ -28,6 +30,7 @@ void main() {
 
     expect(find.text('Coinholder voting'), findsOneWidget);
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
+    expect(find.bySemanticsLabel('Voting config settings'), findsOneWidget);
     final firstAction = find.byKey(
       const ValueKey('voting_poll_action_community-grants-2026'),
     );
@@ -37,5 +40,41 @@ void main() {
     );
     expect(card, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_settings_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const ValueKey('mobile_voting_config_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Voting config'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_voting_add_source')),
+      findsOneWidget,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('mobile_voting_config_sheet'))),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_show_test_rounds')),
+    );
+    await tester.pump();
+    expect(container.read(showTestVotingRoundsProvider).value, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_voting_add_source')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_source_name')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_voting_source_url')),
+      findsOneWidget,
+    );
   });
 }

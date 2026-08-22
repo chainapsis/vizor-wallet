@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
 import '../keystone_voting_scan_screen.dart';
 import '../voting_polls_screen.dart';
@@ -13,16 +14,20 @@ import '../voting_review_screen.dart';
 import '../voting_status_screen.dart';
 import '../voting_submission_confirmation_screen.dart';
 import '../../widgets/voting_pane_scroll_area.dart';
+import '../../widgets/mobile/mobile_voting_config_settings_sheet.dart';
 
 class MobileVotingPollsScreen extends StatelessWidget {
   const MobileVotingPollsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const _MobileVotingScaffold(
+    return _MobileVotingScaffold(
       title: 'Coinholder voting',
       fallbackPath: '/home',
-      child: VotingPollsView(showDesktopChrome: false),
+      trailing: _MobileVotingSettingsButton(
+        onTap: () => showMobileVotingConfigSettingsSheet(context),
+      ),
+      child: const VotingPollsView(showDesktopChrome: false),
     );
   }
 }
@@ -170,12 +175,14 @@ class _MobileVotingScaffold extends StatelessWidget {
     required this.child,
     this.fallbackPath = '/voting',
     this.horizontalPadding = 0,
+    this.trailing,
   });
 
   final String title;
   final Widget child;
   final String fallbackPath;
   final double horizontalPadding;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +199,7 @@ class _MobileVotingScaffold extends StatelessWidget {
         children: [
           MobileTopNav.back(
             title: title,
+            trailing: trailing,
             onBack: () {
               if (context.canPop()) {
                 context.pop();
@@ -202,6 +210,35 @@ class _MobileVotingScaffold extends StatelessWidget {
           ),
           Expanded(child: body),
         ],
+      ),
+    );
+  }
+}
+
+class _MobileVotingSettingsButton extends StatelessWidget {
+  const _MobileVotingSettingsButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Voting config settings',
+      button: true,
+      child: GestureDetector(
+        key: const ValueKey('mobile_voting_settings_button'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox.square(
+          dimension: 44,
+          child: Center(
+            child: AppIcon(
+              AppIcons.cog,
+              size: 22,
+              color: context.colors.icon.accent,
+            ),
+          ),
+        ),
       ),
     );
   }

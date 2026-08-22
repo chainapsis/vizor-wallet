@@ -217,6 +217,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-config',
+    description: 'Mobile voting config source modal',
+    builder: buildMobileVotingConfigUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-activity-default',
     description: 'Mobile Activity screen with deterministic transactions',
     builder: buildMobileActivityDefaultUseCase,

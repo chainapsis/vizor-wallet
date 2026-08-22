@@ -154,7 +154,11 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
-        return _PollCard(round: round, onAction: () => _openRoundAction(round));
+        return _PollCard(
+          round: round,
+          compact: !widget.showDesktopChrome,
+          onAction: () => _openRoundAction(round),
+        );
       },
     );
   }
@@ -386,9 +390,14 @@ class _VotingBetaLabel extends StatelessWidget {
 }
 
 class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onAction});
+  const _PollCard({
+    required this.round,
+    required this.compact,
+    required this.onAction,
+  });
 
   final VotingRoundView round;
+  final bool compact;
   final VoidCallback onAction;
 
   @override
@@ -404,7 +413,10 @@ class _PollCard extends StatelessWidget {
       color: const Color(0x00000000),
       child: Ink(
         key: ValueKey('voting_poll_card_${round.roundId}'),
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: compact ? AppSpacing.s : AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.medium),
@@ -441,7 +453,7 @@ class _PollCard extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
+            SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
             Text(
               title,
               style: AppTypography.headlineSmall.copyWith(
@@ -451,7 +463,7 @@ class _PollCard extends StatelessWidget {
                 letterSpacing: 0,
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
             Text(
               description.isEmpty ? round.roundId : description,
               maxLines: 4,
@@ -469,7 +481,7 @@ class _PollCard extends StatelessWidget {
                 child: VotingForumLinkButton(uri: forumUri),
               ),
             ],
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             Align(
               alignment: Alignment.centerRight,
               child: AppButton(

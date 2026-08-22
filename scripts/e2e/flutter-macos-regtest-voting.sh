@@ -112,6 +112,8 @@ cargo build --release --manifest-path "$PIR_DIR/Cargo.toml" \
 echo "creating voting power through the real Orchard-to-Ironwood migration"
 IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   IRONWOOD_LIGHTWALLETD_PORT="$LWD_PORT" \
+  FLUTTER_DEVICE=macos \
+  VIZOR_FORM_FACTOR=desktop \
   E2E_TEST_FILE=integration_test/regtest_voting_ironwood_setup_test.dart \
   E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   E2E_ORCHARD_FUNDING_AMOUNT=0.13 \
