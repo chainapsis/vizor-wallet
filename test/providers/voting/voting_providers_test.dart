@@ -5981,12 +5981,27 @@ void main() {
 
       expect(rust.precomputeStoredHotkeySecrets.single, [9, 9, 9]);
       expect(rust.setupCalls, 0);
+      expect(rust.warmVotingProvingCachesCalls, greaterThanOrEqualTo(1));
 
       precomputeGate.complete();
       await rust.precomputeFinished.future;
       await Future<void>.delayed(Duration.zero);
     },
   );
+
+  test('prepareDelegation warms proving caches before bundle setup', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+
+    expect(rust.warmVotingProvingCachesCalls, greaterThanOrEqualTo(1));
+    expect(rust.setupCalls, 1);
+  });
 
   test(
     'delegation PIR warmup skips cold plans without durable setup',
@@ -7684,6 +7699,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputedDelegationPir = <int>[];
   final precomputeStoredHotkeySecrets = <List<int>>[];
   final delegationStoredHotkeySecrets = <List<int>>[];
+  int warmVotingProvingCachesCalls = 0;
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
@@ -8060,6 +8076,14 @@ class FakeVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
     );
   }
+
+  @override
+  void warmVotingProvingCaches() {
+    warmVotingProvingCachesCalls++;
+  }
+
+  @override
+  void logVotingTiming({required String message}) {}
 
   @override
   Future<void> markDelegationSubmitted({

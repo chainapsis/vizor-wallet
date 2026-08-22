@@ -2531,14 +2531,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'round=${context.round.roundId} bundle=$bundleIndex',
     );
     try {
-      final result = await ref
-          .read(votingRustApiProvider)
-          .precomputeDelegationPir(
-            ctx: _apiRoundContext(context),
-            pirServerUrl: _transportUrl(pirEndpoint),
-            storedHotkeySecret: storedHotkeySecret,
-            bundleIndex: bundleIndex,
-          );
+      final rust = ref.read(votingRustApiProvider);
+      rust.warmVotingProvingCaches();
+      final result = await rust.precomputeDelegationPir(
+        ctx: _apiRoundContext(context),
+        pirServerUrl: _transportUrl(pirEndpoint),
+        storedHotkeySecret: storedHotkeySecret,
+        bundleIndex: bundleIndex,
+      );
       debugPrint(
         '[zcash] Voting: delegation PIR precompute completed '
         'round=${context.round.roundId} bundle=$bundleIndex '
@@ -2900,6 +2900,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _prepareDelegationUnlocked() async {
     final current = await future;
     final context = await _loadContext(_roundId);
+    ref.read(votingRustApiProvider).warmVotingProvingCaches();
     await _waitUntilWalletReadyForVoting(context);
     _setStateForContext(
       context,
