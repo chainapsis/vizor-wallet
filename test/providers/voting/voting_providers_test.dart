@@ -3213,6 +3213,10 @@ void main() {
             .guardForAccount('account-1'),
         isNull,
       );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        {startedKey},
+      );
       expect(rust.confirmedShares, isEmpty);
       expect(trackingGate.isCompleted, isFalse);
       await rust.shareTrackingFlagsStarted.future;
@@ -3220,7 +3224,18 @@ void main() {
         container.read(votingSubmissionJobProvider(startedKey)).status,
         VotingSubmissionJobStatus.complete,
       );
+
+      var drained = false;
+      final drain = container
+          .read(votingShareTrackingRegistryProvider)
+          .quiesceAndDrain(accountUuid: 'account-1')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+
       trackingGate.complete();
+      await drain;
+      expect(drained, isTrue);
     },
   );
 

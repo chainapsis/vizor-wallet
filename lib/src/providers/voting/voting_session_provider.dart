@@ -65,6 +65,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void _releaseAutomaticShareTracking() {}
 
+  /// Pins automatic helper-share tracking before a submission job can drop its
+  /// destructive-operation guard.
+  ///
+  /// Returns false when the registry is quiesced and new tracking must not
+  /// start. Account delete/reset drain through the registry, so the job must
+  /// register first when accepted shares still need confirmation.
+  bool pinAutomaticShareTracking() => _retainAutomaticShareTracking();
+
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
@@ -3785,6 +3793,8 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     if (_closeShareTrackingKeepAlive != null) return true;
     final registry = ref.read(votingShareTrackingRegistryProvider);
     final keepAlive = ref.keepAlive();
+    // Register before the submission job drops its guard so account
+    // delete/reset can drain this pass through the registry.
     if (!registry.register(
       key: _key,
       owner: this,
