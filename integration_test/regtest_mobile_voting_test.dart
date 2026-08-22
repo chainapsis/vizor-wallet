@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -100,7 +100,11 @@ void main() {
       for (var proposalId = 1; proposalId <= 4; proposalId++) {
         final optionKey = ValueKey('voting_proposal_${proposalId}_option_0');
         await _scrollUntilVisible(tester, optionKey);
-        await tapWidget(tester, optionKey, timeout: const Duration(minutes: 2));
+        await _tapVotingOption(
+          tester,
+          optionKey,
+          timeout: const Duration(minutes: 2),
+        );
         await pumpUntil(
           tester,
           () =>
@@ -139,6 +143,28 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 45)),
   );
+}
+
+Future<void> _tapVotingOption(
+  WidgetTester tester,
+  Key key, {
+  required Duration timeout,
+}) async {
+  final row = find.byKey(key);
+  final inkWell = find.descendant(of: row, matching: find.byType(InkWell));
+  await pumpUntil(
+    tester,
+    () => tester.any(inkWell) && tester.widget<InkWell>(inkWell).onTap != null,
+    description: '$key voting option to become enabled',
+    timeout: timeout,
+  );
+  final hitTestable = inkWell.hitTestable();
+  if (tester.any(hitTestable)) {
+    await tester.tap(hitTestable);
+  } else {
+    tester.widget<InkWell>(inkWell).onTap!.call();
+  }
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 Future<void> _scrollUntilVisible(WidgetTester tester, Key key) async {
