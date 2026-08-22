@@ -935,14 +935,42 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
-    final afterVotes = _sessionForJob(key);
-    if (afterVotes?.phase == VotingSessionPhase.error) {
-      _failFromSession(key: key, generation: generation, session: afterVotes!);
+    var done = _sessionForJob(key);
+    if (done?.phase == VotingSessionPhase.error) {
+      _failFromSession(key: key, generation: generation, session: done!);
+      return;
+    }
+    if (done != null) {
+      final completedEligibilitySession =
+          await _ensureEligibilityForCompletedSession(
+            key: key,
+            generation: generation,
+            sessionNotifier: sessionNotifier,
+            session: done,
+          );
+      if (completedEligibilitySession == null) return;
+      done = completedEligibilitySession;
+    }
+    if (_canCompleteSubmission(done)) {
+      // Helper reveal is background work. Awaiting it here keeps the status
+      // screen on "Finalizing submission" for every accepted-but-unrevealed
+      // share.
+      unawaited(
+        sessionNotifier.submitPendingShares().catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          debugPrint(
+            '[zcash] Voting: background share tracking failed: $error\n$stack',
+          );
+        }),
+      );
+      _completeJob(key: key, generation: generation);
       return;
     }
     await sessionNotifier.submitPendingShares();
     if (!_isCurrentJob(key: key, generation: generation)) return;
-    var done = _sessionForJob(key);
+    done = _sessionForJob(key);
     if (done?.phase == VotingSessionPhase.error) {
       _failFromSession(key: key, generation: generation, session: done!);
       return;

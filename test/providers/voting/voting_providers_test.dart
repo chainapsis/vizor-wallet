@@ -3170,7 +3170,11 @@ void main() {
         submitAt: BigInt.zero,
         createdAt: BigInt.one,
       );
-      final rust = FakeVotingRustApi();
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi(shareTrackingFlagsGate: trackingGate);
+      addTearDown(() {
+        if (!trackingGate.isCompleted) trackingGate.complete();
+      });
       final http = FakeVotingHttpClient(
         responses: votingHttpResponses(
           dynamicConfig: dynamicConfigJson(
@@ -3210,6 +3214,13 @@ void main() {
         isNull,
       );
       expect(rust.confirmedShares, isEmpty);
+      expect(trackingGate.isCompleted, isFalse);
+      await rust.shareTrackingFlagsStarted.future;
+      expect(
+        container.read(votingSubmissionJobProvider(startedKey)).status,
+        VotingSubmissionJobStatus.complete,
+      );
+      trackingGate.complete();
     },
   );
 
@@ -6138,6 +6149,60 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
+  test(
+    'session dispose skips process-local reset while a submission is guarded',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      final guard = container
+          .read(votingSubmissionGuardProvider.notifier)
+          .acquire(accountUuid: 'account-1', roundId: kRoundId);
+      addTearDown(
+        () => container
+            .read(votingSubmissionGuardProvider.notifier)
+            .release(guard),
+      );
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      container.invalidate(votingSessionProvider(kRoundId));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
+
+  test(
+    'submission session dispose skips process-local reset while guarded',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+      final guard = container
+          .read(votingSubmissionGuardProvider.notifier)
+          .acquire(accountUuid: key.accountUuid, roundId: key.roundId);
+      addTearDown(
+        () => container
+            .read(votingSubmissionGuardProvider.notifier)
+            .release(guard),
+      );
+
+      final subscription = container.listen(
+        votingSubmissionSessionProvider(key),
+        (_, _) {},
+      );
+      await container.read(votingSubmissionSessionProvider(key).future);
+      subscription.close();
+      container.invalidate(votingSubmissionSessionProvider(key));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
+
   test('hotkey failure moves session into error phase', () async {
     final rust = FakeVotingRustApi();
     final recoveryApi = FakeVotingRecoveryApi(
@@ -7635,6 +7700,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneSignatureBatchFailuresRemaining = 0,
     this.shareResubmissionError,
     this.nextShareTrackingDelayGate,
+    this.shareTrackingFlagsGate,
     this.failingVoteShareWireIndexes = const {},
     this.failingRecordShareIndexes = const {},
   });
@@ -7662,6 +7728,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int keystoneSignatureBatchFailuresRemaining;
   final Object? shareResubmissionError;
   final Completer<void>? nextShareTrackingDelayGate;
+  final Completer<void>? shareTrackingFlagsGate;
   final Set<int> failingVoteShareWireIndexes;
   final Set<int> failingRecordShareIndexes;
   int setupCalls = 0;
@@ -7692,6 +7759,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final nextShareTrackingDelayStarted = Completer<void>();
+  final shareTrackingFlagsStarted = Completer<void>();
   final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
@@ -8340,6 +8408,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) async {
+    if (!shareTrackingFlagsStarted.isCompleted) {
+      shareTrackingFlagsStarted.complete();
+    }
+    await shareTrackingFlagsGate?.future;
     final now = nowSeconds.toInt();
     final base = share.submitAt > BigInt.zero
         ? share.submitAt.toInt()
