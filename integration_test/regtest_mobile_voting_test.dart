@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 
 import 'support/mobile_regtest_flow.dart';
 
@@ -129,17 +129,69 @@ void main() {
         const ValueKey('voting_confirm_submit_button'),
       );
 
-      logE2e('waiting for real mobile vote proofs and receipt');
+      await pumpUntil(
+        tester,
+        () {
+          final job = container.read(votingSubmissionJobProvider(draftKey));
+          return job.isInFlight ||
+              job.status == VotingSubmissionJobStatus.error ||
+              job.status == VotingSubmissionJobStatus.complete;
+        },
+        description: 'mobile voting submission job to start',
+        timeout: const Duration(minutes: 2),
+      );
+      var job = container.read(votingSubmissionJobProvider(draftKey));
+      if (!job.isInFlight) {
+        fail('Voting submission did not start: ${job.errorMessage}');
+      }
+
+      logE2e('leaving the voting screen while submission continues');
+      for (var attempt = 0; attempt < 4; attempt++) {
+        if (tester.any(
+          find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+        )) {
+          break;
+        }
+        final back = find.bySemanticsLabel('Back').hitTestable();
+        await pumpUntil(
+          tester,
+          () => tester.any(back),
+          description: 'mobile voting back action ${attempt + 1}',
+        );
+        await tester.tap(back.last);
+        await tester.pump(const Duration(milliseconds: 400));
+      }
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('voting_submission_done_button')),
+          find.byKey(const ValueKey('mobile_home_coinholder_voting')),
         ),
-        description: 'confirmed mobile voting receipt',
+        description: 'mobile home after leaving voting submission',
+      );
+      expect(
+        container.read(votingSubmissionJobProvider(draftKey)).isInFlight,
+        isTrue,
+      );
+
+      logE2e('waiting off-screen for real mobile vote proofs and receipt');
+      await pumpUntil(
+        tester,
+        () {
+          job = container.read(votingSubmissionJobProvider(draftKey));
+          return job.status == VotingSubmissionJobStatus.complete ||
+              job.status == VotingSubmissionJobStatus.error;
+        },
+        description: 'off-screen mobile voting submission to finish',
         timeout: const Duration(minutes: 40),
       );
-      final done = find.byKey(const ValueKey('voting_submission_done_button'));
-      expect(tester.widget<AppButton>(done).onPressed, isNotNull);
+      if (job.status == VotingSubmissionJobStatus.error) {
+        fail('Off-screen voting submission failed: ${job.errorMessage}');
+      }
+      expect(job.status, VotingSubmissionJobStatus.complete);
+      expect(
+        find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+        findsOneWidget,
+      );
     },
     timeout: const Timeout(Duration(minutes: 45)),
   );
