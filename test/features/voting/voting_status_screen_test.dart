@@ -1039,7 +1039,9 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    // Confirmation navigation no longer waits for a second voting-power
+    // refresh; the job's eligibility check is enough to leave status.
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(recoveryApi.ballotIntents, isEmpty);
@@ -1142,7 +1144,9 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    // Confirmation navigation no longer waits for a second voting-power
+    // refresh; the job's eligibility check is enough to leave status.
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(
