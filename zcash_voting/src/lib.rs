@@ -88,6 +88,31 @@ pub use types::{
     MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
 };
 
+/// Warms the process-lifetime ZKP #2 proving-key cache.
+///
+/// The warm-up runs on a large-stack thread and is safe to call repeatedly.
+pub fn warm_zkp2_proving_cache() -> Result<(), VotingError> {
+    const KEYGEN_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+    std::thread::Builder::new()
+        .name("voting-vote-proof-cache-warmup".to_string())
+        .stack_size(KEYGEN_STACK_BYTES)
+        .spawn(|| {
+            voting_circuits::vote_proof::warm_vote_proof_keys().map_err(|e| {
+                VotingError::ProofFailed {
+                    message: format!("ZKP2 proving cache warm-up failed: {e}"),
+                }
+            })
+        })
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to spawn ZKP2 proving cache warm-up thread: {e}"),
+        })?
+        .join()
+        .map_err(|_| VotingError::Internal {
+            message: "ZKP2 proving cache warm-up thread panicked".to_string(),
+        })?
+}
+
 /// Warm process-lifetime proving-key caches used by on-device voting proofs.
 ///
 /// This is intentionally best-effort at the cache layer: callers should invoke

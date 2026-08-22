@@ -1491,6 +1491,7 @@ pub fn load_padded_cmx(
 // --- ZKP #2 inputs ---
 
 /// Data from delegation that ZKP #2 needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Zkp2DelegationData {
     pub gov_comm_rand: Vec<u8>,
     pub total_note_value: u64,
@@ -1503,6 +1504,29 @@ pub struct Zkp2DelegationData {
     /// cleared and acts as a structural invariant — it corresponds to the circuit's
     /// sentinel value rejected by the non-zero gate.
     pub proposal_authority: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VoteRowState {
+    pub choice: i64,
+    pub commitment: Option<Vec<u8>>,
+    pub tx_hash: Option<String>,
+    pub vc_tree_position: Option<i64>,
+    pub commitment_bundle_json: Option<String>,
+}
+
+/// Snapshot of persisted state needed to prepare or validate a single vote draft.
+///
+/// `ballot_intent` is `None` when no intent row exists for the proposal.
+/// `vote` is `None` when no votes row exists for `(bundle_index, proposal_id)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VotePreparationState {
+    pub network: Network,
+    pub zkp2: Zkp2DelegationData,
+    pub van_position: u32,
+    /// `(skipped, choice)` from `ballot_intent`, if present.
+    pub ballot_intent: Option<(bool, Option<u32>)>,
+    pub vote: Option<VoteRowState>,
 }
 
 /// Initial authority bitmask: all 16 bits set. Bit 0 is the dead sentinel
@@ -1564,6 +1588,96 @@ pub fn load_zkp2_inputs(
     Ok(Zkp2DelegationData {
         proposal_authority: authority,
         ..data
+    })
+}
+
+/// Load the read-only snapshot used before preparing or committing a vote.
+///
+/// Returns network, ZKP2 delegation inputs (including live `proposal_authority`),
+/// the bundle's confirmed VAN leaf position, optional ballot intent for
+/// `proposal_id`, and optional existing vote-row state for
+/// `(bundle_index, proposal_id)`.
+///
+/// Missing ballot-intent or votes rows yield `None` fields; they are not errors.
+///
+/// # Errors
+///
+/// - [`VotingError::InvalidInput`] if the round/bundle is missing, or the VAN
+///   leaf position is unset.
+/// - [`VotingError::Internal`] on SQL failures loading ballot intent or vote state.
+pub(crate) fn load_vote_preparation_state(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<VotePreparationState, VotingError> {
+    let network = load_round_network(conn, round_id, wallet_id)?;
+    let zkp2 = load_zkp2_inputs(conn, round_id, wallet_id, bundle_index)?;
+    let van_position = load_van_position(conn, round_id, wallet_id, bundle_index)?;
+    let ballot_intent = conn
+        .query_row(
+            "SELECT skipped, choice FROM ballot_intent
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND proposal_id = :proposal_id",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":proposal_id": proposal_id as i64,
+            },
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? != 0,
+                    row.get::<_, Option<i64>>(1)?.map(|choice| choice as u32),
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to load ballot intent before vote preparation: {e}"),
+        })?;
+    let vote = load_vote_row_state(conn, round_id, wallet_id, bundle_index, proposal_id)?;
+
+    Ok(VotePreparationState {
+        network,
+        zkp2,
+        van_position,
+        ballot_intent,
+        vote,
+    })
+}
+
+pub(crate) fn load_vote_row_state(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<Option<VoteRowState>, VotingError> {
+    conn.query_row(
+        "SELECT choice, commitment, tx_hash, vc_tree_position, commitment_bundle_json
+             FROM votes
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+        named_params! {
+            ":round_id": round_id,
+            ":wallet_id": wallet_id,
+            ":bundle_index": bundle_index as i64,
+            ":proposal_id": proposal_id as i64,
+        },
+        |row| {
+            Ok(VoteRowState {
+                choice: row.get(0)?,
+                commitment: row.get(1)?,
+                tx_hash: row.get(2)?,
+                vc_tree_position: row.get(3)?,
+                commitment_bundle_json: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to load vote state before vote preparation: {e}"),
     })
 }
 

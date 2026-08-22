@@ -4,7 +4,17 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v3.1.0-rc.7
+
+### Added
+- Added `prepare_commit`, `prepare_commit_batch`, `persist_prepared_commit`,
+  and `persist_prepared_commit_batch` so wallets can perform expensive ZKP #2
+  proving outside SQLite transactions, then atomically persist the prepared
+  result only if its vote-authority, ballot-intent, and current-vote state are
+  still unchanged. `prepare_commit_batch` takes a `VoteCommitBatch` for the
+  round, drafts, witness, and stage reporter.
+- Added `warm_zkp2_proving_cache` for callers that want to initialize the vote
+  proving parameters independently of the other proving caches.
 
 ## v3.1.0-rc.6
 

@@ -2,11 +2,13 @@ mod migrations;
 pub mod operations;
 pub mod queries;
 
-use std::sync::Mutex;
+use std::{sync::Mutex, time::Duration};
 
 use rusqlite::Connection;
 
 use crate::types::{Network, VotingError};
+
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Current phase of a voting round.
 ///
@@ -85,6 +87,10 @@ impl VotingDb {
             message: format!("failed to open database: {}", e),
         })?;
 
+        conn.busy_timeout(SQLITE_BUSY_TIMEOUT)
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to configure database busy timeout: {}", e),
+            })?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .map_err(|e| VotingError::Internal {
                 message: format!("failed to set pragmas: {}", e),
@@ -152,6 +158,43 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(version, 14);
+    }
+
+    #[test]
+    fn writes_wait_for_a_transient_external_writer() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "zcash-voting-busy-timeout-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        let path_string = path.to_string_lossy().into_owned();
+        let db = VotingDb::open(&path_string).unwrap();
+        db.conn()
+            .execute_batch("CREATE TABLE busy_timeout_probe (value INTEGER NOT NULL)")
+            .unwrap();
+
+        let lock = Connection::open(&path).unwrap();
+        lock.busy_timeout(SQLITE_BUSY_TIMEOUT).unwrap();
+        lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(400));
+            lock.execute_batch("ROLLBACK").unwrap();
+        });
+
+        let started = std::time::Instant::now();
+        db.conn()
+            .execute("INSERT INTO busy_timeout_probe (value) VALUES (1)", [])
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_millis(300));
+
+        release.join().unwrap();
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path_string}-shm"));
+        let _ = std::fs::remove_file(format!("{path_string}-wal"));
     }
 
     #[test]
