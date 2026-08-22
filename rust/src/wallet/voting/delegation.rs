@@ -9,7 +9,9 @@ use zip32::{fingerprint::SeedFingerprint, AccountId};
 use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
-use super::db::open_voting_db;
+use super::db::{
+    open_voting_db, with_open_voting_db_write, with_voting_sidecar_write_lock,
+};
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
@@ -108,14 +110,16 @@ pub async fn setup_delegation_bundles(
         round_params,
         round_name,
     } = lwd_params;
-    let round_context = zcash_voting::delegate::ensure_round_context(
-        voting_db,
-        network,
-        &round_params,
-        round_name,
-        session_json,
-    )
-    .map_err(|e| e.to_string())?;
+    let round_context = with_voting_sidecar_write_lock(db_path, || {
+        zcash_voting::delegate::ensure_round_context(
+            voting_db,
+            network,
+            &round_params,
+            round_name,
+            session_json,
+        )
+        .map_err(|e| e.to_string())
+    })?;
     let selected = select_notes_with_lwd(
         voting_db,
         db_path,
@@ -127,13 +131,15 @@ pub async fn setup_delegation_bundles(
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
     let bundle_policy = whale_protected_bundle_policy(bundle_policy);
-    voting_db
-        .ensure_bundles_with_skipped_suffix_with_policy(
-            round_params.vote_round_id.as_str(),
-            &note_infos,
-            bundle_policy,
-        )
-        .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
+    with_voting_sidecar_write_lock(db_path, || {
+        voting_db
+            .ensure_bundles_with_skipped_suffix_with_policy(
+                round_params.vote_round_id.as_str(),
+                &note_infos,
+                bundle_policy,
+            )
+            .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
+    })
 }
 
 /// Minimum voting eligibility plus the note value the privacy trim withholds.
@@ -411,19 +417,24 @@ pub async fn build_keystone_delegation_request(
     account_uuid: &str,
     prepare_params: PrepareDelegationBundleParams<'_>,
 ) -> Result<zcash_voting::delegate::KeystoneSigningRequest, String> {
-    let voting_db = open_voting_db(db_path, account_uuid)?;
     let wallet_db = open_wallet_db_for_read(
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
     let prepare_params = prepare_params_with_whale_protection(prepare_params);
-    let prepared =
-        zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
-            .map_err(|e| e.to_string())?;
-    let noop_stages = zcash_voting::NoopProgressReporter;
-    prepared
-        .keystone_request(&voting_db, &noop_stages)
-        .map_err(|e| format!("delegate::keystone_request failed: {e}"))
+    with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+        let prepared = zcash_voting::delegate::prepare_delegation_bundle(
+            voting_db,
+            &wallet_db,
+            prepare_params,
+        )
+        .map_err(|e| e.to_string())?;
+        let noop_stages = zcash_voting::NoopProgressReporter;
+        prepared
+            .keystone_request(voting_db, &noop_stages)
+            .map_err(|e| format!("delegate::keystone_request failed: {e}"))
+    })
+    .map(|(_, request)| request)
 }
 
 /// Build a delegation proof and assemble the submission using a Keystone signature.
