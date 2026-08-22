@@ -252,12 +252,13 @@ STATIC_URL="https://config.vizor-vote.invalid/static-voting-config.json?checksum
 
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
-form_factor_args=()
+flutter_test_command=(
+  fvm flutter test "$VOTING_TEST_FILE" -d "$FLUTTER_DEVICE"
+)
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
-  form_factor_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+  flutter_test_command+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
-fvm flutter test "$VOTING_TEST_FILE" -d "$FLUTTER_DEVICE" \
-  "${form_factor_args[@]}" \
+"${flutter_test_command[@]}" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
