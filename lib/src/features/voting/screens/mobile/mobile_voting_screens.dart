@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -191,22 +192,25 @@ class _MobileVotingScaffold extends StatelessWidget {
       color: context.colors.background.window,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            MobileTopNav.back(
-              title: title,
-              trailing: trailing,
-              onBack: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go(fallbackPath);
-                }
-              },
-            ),
-            Expanded(child: body),
-          ],
+        child: MobileBottomSafeArea(
+          bottomPadding: AppSpacing.md,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MobileTopNav.back(
+                title: title,
+                trailing: trailing,
+                onBack: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go(fallbackPath);
+                  }
+                },
+              ),
+              Expanded(child: body),
+            ],
+          ),
         ),
       ),
     );

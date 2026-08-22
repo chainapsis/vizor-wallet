@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
@@ -31,6 +32,13 @@ void main() {
     expect(find.text('Coinholder voting'), findsOneWidget);
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
     expect(find.bySemanticsLabel('Voting config settings'), findsOneWidget);
+    expect(find.byType(MobileBottomSafeArea), findsOneWidget);
+    expect(
+      tester
+          .widget<MobileBottomSafeArea>(find.byType(MobileBottomSafeArea))
+          .bottomPadding,
+      AppSpacing.md,
+    );
     final firstAction = find.byKey(
       const ValueKey('voting_poll_action_community-grants-2026'),
     );
