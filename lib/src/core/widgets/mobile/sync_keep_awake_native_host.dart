@@ -50,7 +50,7 @@ class _SyncKeepAwakeNativeHostState
   Widget build(BuildContext context) {
     if (kAppFormFactor == AppFormFactor.mobile) {
       _requestNativeState(
-        _isInForeground && ref.watch(syncKeepAwakeActiveProvider),
+        _isInForeground && ref.watch(appKeepAwakeActiveProvider),
       );
     }
     return widget.child;
@@ -74,7 +74,7 @@ class _SyncKeepAwakeNativeHostState
   void _handleLifecycleResume() {
     if (_isInForeground) return;
     _isInForeground = true;
-    _requestNativeState(ref.read(syncKeepAwakeActiveProvider));
+    _requestNativeState(ref.read(appKeepAwakeActiveProvider));
   }
 
   void _requestNativeState(bool enabled, {bool force = false}) {

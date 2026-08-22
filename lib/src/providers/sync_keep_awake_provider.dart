@@ -6,6 +6,7 @@ import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
 import 'app_security_provider.dart';
 import 'sync_provider.dart';
+import 'voting/voting_submission_guard_provider.dart';
 
 const kSyncKeepAwakePromptEtaThreshold = Duration(minutes: 1);
 const kSyncKeepAwakePrivacyIdleTimeout = Duration(minutes: 1);
@@ -371,3 +372,21 @@ Duration? _estimateFromRunPercentage(SyncState sync, Duration elapsed) {
   if (!remainingMicros.isFinite || remainingMicros < 0) return null;
   return Duration(microseconds: remainingMicros.round());
 }
+
+/// Vote submissions hold the screen awake unconditionally (no user setting):
+/// they are short and explicitly user-initiated, and on hardware accounts the
+/// screen must stay on while Keystone scans the animated QR. The sync
+/// privacy-lock overlay is deliberately not extended to voting — it would
+/// cover that QR mid-scan.
+final votingSubmissionKeepAwakeProvider = Provider<bool>((ref) {
+  if (ref.watch(appSecurityProvider).requiresUnlock) return false;
+  return ref.watch(votingSubmissionGuardProvider).isNotEmpty;
+});
+
+/// Union of every app-level reason to keep the screen awake. The native
+/// wakelock host watches this; the sync privacy lock keeps watching only the
+/// sync predicate.
+final appKeepAwakeActiveProvider = Provider<bool>((ref) {
+  return ref.watch(syncKeepAwakeActiveProvider) ||
+      ref.watch(votingSubmissionKeepAwakeProvider);
+});

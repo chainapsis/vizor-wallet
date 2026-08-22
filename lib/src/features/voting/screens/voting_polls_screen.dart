@@ -10,13 +10,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
-import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../voting_error_messages.dart';
+import '../voting_poll_list_driver.dart';
 import '../voting_poll_ordering.dart';
-import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 import '../widgets/voting_poll_card.dart';
@@ -32,29 +30,14 @@ class VotingPollsScreen extends ConsumerStatefulWidget {
   ConsumerState<VotingPollsScreen> createState() => _VotingPollsScreenState();
 }
 
-class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
+class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen>
+    with VotingPollListDriver {
   bool _showSettings = false;
-  bool _entryRefreshInFlight = true;
-  bool _pollListRefreshInFlight = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_wasPollListRecentlyRefreshed()) {
-        setState(() {
-          _entryRefreshInFlight = false;
-        });
-        _preSyncLoadedRounds();
-        return;
-      }
-      if (_isInitialPollListLoadInFlight()) {
-        _awaitInitialPollListLoad();
-        return;
-      }
-      _reloadRoundsWithFreshConfig(entryRefresh: true);
-    });
+    initPollListEntryRefresh();
   }
 
   @override
@@ -75,9 +58,9 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                 const AppPaneToolbar(backLinkMinWidth: 60),
                 _VotingHeader(onSettings: _openSettings),
                 Expanded(
-                  child: _entryRefreshInFlight && !rounds.hasValue
+                  child: entryRefreshInFlight && !rounds.hasValue
                       ? const VotingPaneLoading()
-                      : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
+                      : (pollListRefreshInFlight || entryRefreshInFlight) &&
                             rounds.hasValue
                       ? _buildRoundList(rounds.requireValue)
                       : rounds.when(
@@ -88,7 +71,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                             title: "Couldn't load voting rounds",
                             message: friendlyVotingErrorMessage(error),
                             actionLabel: 'Try again',
-                            onAction: () => _reloadRoundsWithFreshConfig(),
+                            onAction: () => reloadRoundsWithFreshConfig(),
                           ),
                           data: _buildRoundList,
                         ),
@@ -117,7 +100,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
-    _preSyncVisibleRoundTrees(sortedItems);
+    preSyncVisibleRoundTrees(sortedItems);
     return VotingPaneListView.separated(
       maxWidth: 560,
       padding: const EdgeInsets.fromLTRB(
@@ -138,119 +121,18 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
     );
   }
 
-  void _preSyncVisibleRoundTrees(Iterable<VotingRoundView> rounds) {
-    for (final round in rounds) {
-      if (!shouldPreSyncVotingTree(round.status)) continue;
-      unawaited(
-        ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
-      );
-      return;
-    }
-  }
-
-  void _preSyncLoadedRounds() {
-    unawaited(
-      ref
-          .read(votingRoundsProvider.future)
-          .then((rounds) {
-            if (!mounted) return;
-            _preSyncVisibleRoundTrees(rounds);
-          })
-          .catchError((Object error) {
-            debugPrint(
-              '[zcash] Voting: vote tree pre-sync skipped '
-              'reason=rounds-load-failed error=$error',
-            );
-          }),
-    );
-  }
-
-  bool _isInitialPollListLoadInFlight() {
-    final rounds = ref.read(votingRoundsProvider);
-    if (!rounds.isLoading || rounds.hasValue) return false;
-    if (!ref.exists(votingConfigProvider)) return false;
-    final config = ref.read(votingConfigProvider);
-    return config.isLoading && !config.hasValue;
-  }
-
-  void _awaitInitialPollListLoad() {
-    unawaited(() async {
-      try {
-        final rounds = await ref.read(votingRoundsProvider.future);
-        markVotingPollListRecentlyRefreshed();
-        if (mounted) {
-          _preSyncVisibleRoundTrees(rounds);
-        }
-      } catch (_) {
-        // The provider state already carries the load error for the UI.
-      } finally {
-        if (mounted) {
-          setState(() {
-            _entryRefreshInFlight = false;
-          });
-        }
-      }
-    }());
-  }
-
   void _openRoundAction(VotingRoundView round) {
-    final state = votingPollCardState(round);
-    final route =
-        state == VotingPollCardState.tallying ||
-            state == VotingPollCardState.closed
-        ? votingResultsRoute(round.roundId)
-        : votingPollRoute(round.roundId);
-    _pushRoundRoute(route);
-  }
-
-  void _pushRoundRoute(String route) {
     unawaited(
-      context.push(route).whenComplete(() {
+      context.push(pollRoundActionRoute(round)).whenComplete(() {
         if (!mounted) return;
-        _reloadRoundsWithFreshConfig();
-      }),
-    );
-  }
-
-  void _reloadRoundsWithFreshConfig({bool entryRefresh = false}) {
-    if (!entryRefresh && (_entryRefreshInFlight || _pollListRefreshInFlight)) {
-      return;
-    }
-    if (!entryRefresh && ref.read(votingRoundsProvider).hasValue) {
-      setState(() {
-        _pollListRefreshInFlight = true;
-      });
-    }
-    unawaited(
-      _refreshConfigAndReloadRounds().whenComplete(() {
-        if (!mounted) return;
-        setState(() {
-          if (entryRefresh) {
-            _entryRefreshInFlight = false;
-          }
-          _pollListRefreshInFlight = false;
-        });
+        reloadRoundsWithFreshConfig();
       }),
     );
   }
 
   void _handleExternalRefreshRequest() {
     if (!mounted) return;
-    _reloadRoundsWithFreshConfig();
-  }
-
-  bool _wasPollListRecentlyRefreshed() {
-    return wasVotingPollListRecentlyRefreshed();
-  }
-
-  Future<void> _refreshConfigAndReloadRounds() async {
-    await refreshVotingPollList(
-      config: ref.read(votingConfigProvider.notifier),
-      readRounds: () => ref.read(votingRoundsProvider.notifier),
-      shouldReload: () => mounted,
-    );
-    if (!mounted) return;
-    _preSyncLoadedRounds();
+    reloadRoundsWithFreshConfig();
   }
 
   void _openSettings() {
