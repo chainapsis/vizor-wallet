@@ -107,6 +107,25 @@ void main() {
     expect(paths, isNot(contains('/migration/private/review')));
   });
 
+  test('registers every voting route on the desktop-identical paths', () {
+    final paths = buildMobileRoutes(
+      entryRoutes: const [],
+    ).whereType<GoRoute>().map((route) => route.path).toList();
+
+    expect(
+      paths,
+      containsAll(const [
+        '/voting',
+        '/voting/poll/:roundId',
+        '/voting/poll/:roundId/review',
+        '/voting/poll/:roundId/status',
+        '/voting/poll/:roundId/submitted',
+        '/voting/poll/:roundId/results',
+        '/voting/keystone/scan',
+      ]),
+    );
+  });
+
   test('shows migration options while guarding private-only routes', () {
     final routes = buildMobileRoutes(
       entryRoutes: const [],

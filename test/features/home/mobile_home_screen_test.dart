@@ -705,6 +705,9 @@ void main() {
     final receiveRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_receive')),
     );
+    final votingRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_voting_entry')),
+    );
     final canvasRect = tester.getRect(
       find.byKey(const ValueKey('mobile_home_rest_canvas')),
     );
@@ -717,9 +720,15 @@ void main() {
       canvasRect.left,
       moreOrLessEquals(receiveRect.left + AppSpacing.xs, epsilon: 0.1),
     );
+    // The voting entry card sits below the action row; the empty-activity
+    // block keeps the Figma inner inset measured from the card above it.
+    expect(
+      votingRect.top,
+      moreOrLessEquals(receiveRect.bottom + AppSpacing.s, epsilon: 0.1),
+    );
     expect(
       titleRect.top,
-      moreOrLessEquals(receiveRect.bottom + 36, epsilon: 0.1),
+      moreOrLessEquals(votingRect.bottom + 36, epsilon: 0.1),
     );
     expect(
       bodyRect.top - titleRect.bottom,

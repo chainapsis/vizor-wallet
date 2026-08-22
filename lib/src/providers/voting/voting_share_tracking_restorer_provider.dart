@@ -21,7 +21,8 @@ typedef VotingPendingShareRoundLoader =
       required List<String> accountUuids,
     });
 
-@visibleForTesting
+/// Overridable seam over `list_pending_share_rounds`. Production consumers:
+/// the restorer's discovery pass and the home voting entry's attention probe.
 final votingPendingShareRoundLoaderProvider =
     Provider<VotingPendingShareRoundLoader>((ref) {
       return ({required dbPath, required accountUuids}) {

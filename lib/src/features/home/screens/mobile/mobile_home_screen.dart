@@ -22,12 +22,15 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/mobile_list_row.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
@@ -1238,6 +1241,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     },
                   ),
                 ],
+                if (activeAccountUuid != null) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  _VotingEntryCard(
+                    attentionCount:
+                        ref.watch(votingHomeAttentionProvider).value ?? 0,
+                    onTap: () => context.push('/voting'),
+                  ),
+                ],
               ],
             ),
             if (hasBalance && showPayEntry && showPayIntroduction) ...[
@@ -2187,6 +2198,54 @@ class _ImportingView extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Home entry into token holder voting. Always visible while an account
+/// exists (parity with the desktop sidebar item); the badge counts unexpired
+/// rounds with pending share work from the local sidecar only, so this card
+/// never triggers the network-bound round list load.
+class _VotingEntryCard extends StatelessWidget {
+  const _VotingEntryCard({required this.attentionCount, required this.onTap});
+
+  final int attentionCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileSurfaceCard(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      child: MobileListRow(
+        key: const ValueKey('mobile_home_voting_entry'),
+        leading: AppIcon(
+          AppIcons.scroll,
+          size: AppIconSize.medium,
+          color: colors.icon.regular,
+        ),
+        label: 'Vote',
+        trailing: attentionCount > 0
+            ? Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.background.neutralSubtleOpacity,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'Action needed',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              )
+            : null,
+        showChevron: true,
+        onTap: onTap,
       ),
     );
   }
