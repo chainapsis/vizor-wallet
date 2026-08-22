@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
@@ -28,6 +29,62 @@ void main() {
           .privacyTrimDroppedValueZatoshi,
       BigInt.zero,
     );
+  });
+
+  test('session state snapshots delegation progress maps', () {
+    final progress = <int, VotingSessionProgress>{
+      0: const VotingSessionProgress(phase: 'proving', bundleIndex: 0),
+      1: const VotingSessionProgress(phase: 'submitted', bundleIndex: 1),
+    };
+    final state = VotingSessionState(
+      roundId: 'round-1',
+      delegationProgress: progress,
+    );
+
+    progress[0] = const VotingSessionProgress(
+      phase: 'confirmed',
+      bundleIndex: 0,
+    );
+    progress[2] = const VotingSessionProgress(phase: 'proving', bundleIndex: 2);
+
+    expect(state.delegationProgress[0]?.phase, 'proving');
+    expect(state.delegationProgress, isNot(contains(2)));
+    expect(state.activeDelegationBundleIndexes, {0});
+    expect(
+      () => state.delegationProgress[3] = const VotingSessionProgress(
+        phase: 'proving',
+        bundleIndex: 3,
+      ),
+      throwsUnsupportedError,
+    );
+  });
+
+  test('session state exposes every active vote key', () {
+    const activeA = VotingVoteKey(bundleIndex: 0, proposalId: 7);
+    const activeB = VotingVoteKey(bundleIndex: 1, proposalId: 7);
+    const completed = VotingVoteKey(bundleIndex: 2, proposalId: 7);
+    final state = VotingSessionState(
+      roundId: 'round-1',
+      voteProgress: {
+        activeA: const VotingSessionProgress(
+          phase: 'proving',
+          bundleIndex: 0,
+          proposalId: 7,
+        ),
+        activeB: const VotingSessionProgress(
+          phase: 'witness',
+          bundleIndex: 1,
+          proposalId: 7,
+        ),
+        completed: const VotingSessionProgress(
+          phase: 'completed',
+          bundleIndex: 2,
+          proposalId: 7,
+        ),
+      },
+    );
+
+    expect(state.activeVoteKeys, {activeA, activeB});
   });
 
   test('round details reject fractional snapshot heights', () {

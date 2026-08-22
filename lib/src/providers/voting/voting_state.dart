@@ -276,13 +276,51 @@ class VotingSessionState {
     this.voteSubmissionTotalCount = 0,
     this.voteSubmissionProgress,
     this.error,
-  }) : pirDiagnostics = UnmodifiableListView(pirDiagnostics),
-       delegationProgress = UnmodifiableMapView(delegationProgress),
-       voteProgress = UnmodifiableMapView(voteProgress),
-       keystoneSignatures = UnmodifiableMapView(keystoneSignatures),
-       keystoneSigningRequests = UnmodifiableListView(keystoneSigningRequests);
+  }) : pirDiagnostics = UnmodifiableListView(
+         List<PirSnapshotEndpointDiagnostic>.of(pirDiagnostics),
+       ),
+       delegationProgress = UnmodifiableMapView(
+         Map<int, VotingSessionProgress>.of(delegationProgress),
+       ),
+       voteProgress = UnmodifiableMapView(
+         Map<VotingVoteKey, VotingSessionProgress>.of(voteProgress),
+       ),
+       keystoneSignatures = UnmodifiableMapView(
+         Map<int, rust_wire.KeystoneSignatureRecord>.of(keystoneSignatures),
+       ),
+       keystoneSigningRequests = UnmodifiableListView(
+         List<rust_delegate.KeystoneSigningRequest>.of(keystoneSigningRequests),
+       );
 
   bool get hasError => phase == VotingSessionPhase.error;
+
+  UnmodifiableSetView<int> get activeDelegationBundleIndexes =>
+      UnmodifiableSetView(
+        delegationProgress.entries
+            .where(
+              (entry) => !const {
+                'submitted',
+                'confirmed',
+                'failed',
+              }.contains(entry.value.phase),
+            )
+            .map((entry) => entry.key)
+            .toSet(),
+      );
+
+  UnmodifiableSetView<VotingVoteKey> get activeVoteKeys => UnmodifiableSetView(
+    voteProgress.entries
+        .where(
+          (entry) => !const {
+            'completed',
+            'confirmed',
+            'submitted',
+            'failed',
+          }.contains(entry.value.phase),
+        )
+        .map((entry) => entry.key)
+        .toSet(),
+  );
 
   bool get hasConfirmedVotingEligibility =>
       eligibleWeightZatoshi != null &&
