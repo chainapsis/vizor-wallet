@@ -1231,6 +1231,90 @@ void main() {
     },
   );
 
+  testWidgets(
+    'completed mobile status navigates before voting power refresh finishes',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final refreshGate = Completer<BigInt?>();
+      addTearDown(() {
+        if (!refreshGate.isCompleted) refreshGate.complete(null);
+      });
+      final completedState = VotingSessionState(
+        roundId: _roundId,
+        accountUuid: key.accountUuid,
+        phase: VotingSessionPhase.done,
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.complete,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(
+            key,
+          ).overrideWithValue(AsyncValue.data(completedState)),
+          votingSubmissionSessionProvider(key).overrideWith(
+            () => _BlockedRefreshVotingSubmissionSessionNotifier(
+              key,
+              completedState,
+              refreshGate,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      unawaited(
+        router.push(votingStatusRoute(_roundId, accountUuid: key.accountUuid)),
+      );
+      await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+      expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(refreshGate.isCompleted, isFalse);
+    },
+  );
+
   testWidgets('status screen shows finalizing step before job completion', (
     tester,
   ) async {
@@ -4165,6 +4249,24 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
 
   @override
   Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
+}
+
+class _BlockedRefreshVotingSubmissionSessionNotifier
+    extends VotingSubmissionSessionNotifier {
+  _BlockedRefreshVotingSubmissionSessionNotifier(
+    super.key,
+    this._state,
+    this._refreshGate,
+  );
+
+  final VotingSessionState _state;
+  final Completer<BigInt?> _refreshGate;
+
+  @override
+  Future<VotingSessionState> build() async => _state;
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() => _refreshGate.future;
 }
 
 class _FailingEligibilityVotingSessionNotifier
