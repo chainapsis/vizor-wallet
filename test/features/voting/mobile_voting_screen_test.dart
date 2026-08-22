@@ -56,6 +56,7 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_add_source')),
       findsOneWidget,
     );
+    expect(find.bySemanticsLabel('Edit Community'), findsOneWidget);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const ValueKey('mobile_voting_config_sheet'))),

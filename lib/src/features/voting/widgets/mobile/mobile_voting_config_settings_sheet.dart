@@ -38,6 +38,7 @@ class _MobileVotingConfigSettingsSheetState
   final _nameController = TextEditingController();
   final _urlController = TextEditingController();
   bool _showEditor = false;
+  String? _editingSourceId;
   bool _busy = false;
   String? _error;
 
@@ -76,9 +77,29 @@ class _MobileVotingConfigSettingsSheetState
       await _validateSource(url);
       await ref
           .read(votingConfigSourceProvider.notifier)
-          .saveSource(name: name, sourceUrl: url);
+          .saveSource(id: _editingSourceId, name: name, sourceUrl: url);
       await _refreshVoting();
       if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  void _openEditor([SavedVotingConfigSource? source]) {
+    setState(() {
+      _editingSourceId = source?.id;
+      _nameController.text = source?.name ?? '';
+      _urlController.text = source?.sourceUrl ?? '';
+      _showEditor = true;
+      _error = null;
+    });
+  }
+
+  void _closeEditor() {
+    setState(() {
+      _editingSourceId = null;
+      _nameController.clear();
+      _urlController.clear();
+      _showEditor = false;
+      _error = null;
     });
   }
 
@@ -198,6 +219,7 @@ class _MobileVotingConfigSettingsSheetState
                             url: saved.sourceUrl,
                             isDefault: false,
                           ),
+                    onEdit: _busy ? null : () => _openEditor(saved),
                     onDelete: _busy ? null : () => _deleteSource(saved),
                   ),
                 ],
@@ -257,12 +279,7 @@ class _MobileVotingConfigSettingsSheetState
                   AppButton(
                     expand: true,
                     variant: AppButtonVariant.ghost,
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                            _showEditor = false;
-                            _error = null;
-                          }),
+                    onPressed: _busy ? null : _closeEditor,
                     child: const Text('Cancel'),
                   ),
                 ] else
@@ -270,9 +287,7 @@ class _MobileVotingConfigSettingsSheetState
                     key: const ValueKey('mobile_voting_add_source'),
                     expand: true,
                     variant: AppButtonVariant.secondary,
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() => _showEditor = true),
+                    onPressed: _busy ? null : _openEditor,
                     child: const Text('Add custom source'),
                   ),
               ],
@@ -290,6 +305,7 @@ class _MobileSourceRow extends StatelessWidget {
     required this.subtitle,
     required this.selected,
     this.onTap,
+    this.onEdit,
     this.onDelete,
     super.key,
   });
@@ -298,6 +314,7 @@ class _MobileSourceRow extends StatelessWidget {
   final String subtitle;
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -356,6 +373,23 @@ class _MobileSourceRow extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onEdit != null)
+                Semantics(
+                  label: 'Edit $title',
+                  button: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onEdit,
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.s),
+                      child: AppIcon(
+                        AppIcons.options,
+                        size: 18,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ),
+                ),
               if (onDelete != null)
                 Semantics(
                   label: 'Delete $title',
