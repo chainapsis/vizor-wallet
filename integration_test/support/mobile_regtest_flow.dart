@@ -265,7 +265,15 @@ Future<void> cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
-  for (final name in [dbName, '$dbName-shm', '$dbName-wal']) {
+  for (final name in [
+    dbName,
+    '$dbName-shm',
+    '$dbName-wal',
+    '$dbName.voting',
+    '$dbName.voting-journal',
+    '$dbName.voting-shm',
+    '$dbName.voting-wal',
+  ]) {
     final file = File('${supportDir.path}${Platform.pathSeparator}$name');
     if (file.existsSync()) file.deleteSync();
   }
