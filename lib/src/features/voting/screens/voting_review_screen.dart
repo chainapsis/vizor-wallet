@@ -192,9 +192,17 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
         );
         final onSubmit = draft.isEmpty || !state.hasConfirmedVotingEligibility
             ? null
-            : () => context.go(
-                votingStatusRoute(widget.roundId, accountUuid: accountUuid),
-              );
+            : () {
+                final route = votingStatusRoute(
+                  widget.roundId,
+                  accountUuid: accountUuid,
+                );
+                if (widget.showDesktopToolbar) {
+                  context.go(route);
+                } else {
+                  context.pushReplacement(route);
+                }
+              };
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
