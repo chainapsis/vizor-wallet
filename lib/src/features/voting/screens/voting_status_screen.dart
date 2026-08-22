@@ -45,10 +45,16 @@ class VotingStatusScreen extends StatelessWidget {
 }
 
 class VotingStatusView extends ConsumerStatefulWidget {
-  const VotingStatusView({super.key, required this.roundId, this.accountUuid});
+  const VotingStatusView({
+    super.key,
+    required this.roundId,
+    this.accountUuid,
+    this.requireCurrentRouteForConfirmation = false,
+  });
 
   final String roundId;
   final String? accountUuid;
+  final bool requireCurrentRouteForConfirmation;
 
   @override
   ConsumerState<VotingStatusView> createState() => _VotingStatusViewState();
@@ -442,11 +448,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   void _scheduleConfirmationNavigation(VotingSessionKey key) {
-    if (!_isCurrentStatusRoute(key)) return;
+    if (!_canNavigateToConfirmation(key)) return;
     if (_confirmationNavigationScheduledFor == key) return;
     _confirmationNavigationScheduledFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_isCurrentStatusRoute(key)) return;
+      if (!mounted || !_canNavigateToConfirmation(key)) return;
       if (_selectedJobKey() != key) {
         if (_confirmationNavigationScheduledFor == key) {
           _confirmationNavigationScheduledFor = null;
@@ -468,12 +474,19 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         'round=${key.roundId} account=${key.accountUuid} error=$error',
       );
     }
-    if (!mounted || _selectedJobKey() != key || !_isCurrentStatusRoute(key)) {
+    if (!mounted ||
+        _selectedJobKey() != key ||
+        !_canNavigateToConfirmation(key)) {
       return;
     }
     context.go(
       votingSubmissionConfirmedRoute(key.roundId, accountUuid: key.accountUuid),
     );
+  }
+
+  bool _canNavigateToConfirmation(VotingSessionKey key) {
+    return !widget.requireCurrentRouteForConfirmation ||
+        _isCurrentStatusRoute(key);
   }
 
   bool _isCurrentStatusRoute(VotingSessionKey key) {
