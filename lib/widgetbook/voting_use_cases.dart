@@ -4,14 +4,18 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
+import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
 import '../src/providers/voting/voting_round_visibility_provider.dart';
 import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
+import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/rust/third_party/zcash_voting/config.dart';
+import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
 
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
@@ -48,6 +52,64 @@ Widget buildMobileVotingConfigUseCase(BuildContext context) {
     ),
   );
 }
+
+Widget buildMobileVotingKeystoneRequestUseCase(BuildContext context) {
+  return ProviderScope(
+    child: MobileKeystoneVotingSigningScreen(
+      presentation: _previewKeystonePresentation,
+      scannerBuilder: _previewVotingScanner,
+      forceScannerActiveForTesting: true,
+    ),
+  );
+}
+
+Widget buildMobileVotingKeystoneScannerUseCase(BuildContext context) {
+  return ProviderScope(
+    child: MobileKeystoneVotingSigningScreen(
+      presentation: _previewKeystonePresentation,
+      scannerBuilder: _previewVotingScanner,
+      forceScannerActiveForTesting: true,
+      startInScannerForTesting: true,
+    ),
+  );
+}
+
+Widget _previewVotingScanner(
+  BuildContext context,
+  ValueChanged<ScanResult> onComplete,
+  ValueChanged<int> onProgress,
+  Object? resetToken,
+) {
+  return const ColoredBox(color: Color(0xFF111515));
+}
+
+final _previewKeystonePresentation = VotingKeystoneStatusPresentation(
+  bundleIndex: 0,
+  urParts: const [_previewVotingKeystoneUr],
+  batchMemos: const [
+    VotingKeystoneBatchMemo(
+      bundleIndex: 0,
+      bundleCount: 3,
+      displayMemo: 'Amount: 1.25 ZEC\nProposal: Community grants',
+    ),
+    VotingKeystoneBatchMemo(
+      bundleIndex: 1,
+      bundleCount: 3,
+      displayMemo: 'Amount: 0.75 ZEC\nProposal: Network priorities',
+    ),
+  ],
+  batchMessageCount: 2,
+  batchTotalCount: 3,
+  canSkipRemainingBundles: true,
+  onSigned: _previewSignedVotingResponse,
+  onSkipRemainingBundles: _previewNoop,
+);
+
+Future<void> _previewSignedVotingResponse(List<int> _) async {}
+void _previewNoop() {}
+
+const _previewVotingKeystoneUr =
+    'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 class _PreviewVotingConfigNotifier extends VotingConfigNotifier {
   @override

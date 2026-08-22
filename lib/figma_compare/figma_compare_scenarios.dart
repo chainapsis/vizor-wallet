@@ -224,6 +224,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-keystone-request',
+    description: 'Mobile voting Keystone request QR step',
+    builder: buildMobileVotingKeystoneRequestUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-keystone-scanner',
+    description: 'Mobile voting Keystone signed-result scanner step',
+    builder: buildMobileVotingKeystoneScannerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-activity-default',
     description: 'Mobile Activity screen with deterministic transactions',
     builder: buildMobileActivityDefaultUseCase,

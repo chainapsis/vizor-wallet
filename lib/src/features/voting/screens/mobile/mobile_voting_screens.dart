@@ -6,8 +6,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../services/qr_scanner.dart';
-import '../../../keystone/widgets/keystone_qr_scanner_card.dart';
+import 'mobile_keystone_voting_signing_screen.dart';
 import '../voting_polls_screen.dart';
 import '../voting_proposal_detail_screen.dart';
 import '../voting_results_screen.dart';
@@ -76,14 +75,17 @@ class MobileVotingStatusScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
-      title: 'Submit vote',
-      horizontalPadding: AppSpacing.sm,
-      child: VotingStatusView(
-        roundId: roundId,
-        accountUuid: accountUuid,
-        requireCurrentRouteForConfirmation: true,
+    return VotingStatusView(
+      roundId: roundId,
+      accountUuid: accountUuid,
+      requireCurrentRouteForConfirmation: true,
+      contentWrapper: (_, content) => _MobileVotingScaffold(
+        title: 'Submit vote',
+        horizontalPadding: AppSpacing.sm,
+        child: content,
       ),
+      keystoneStatusBuilder: (_, presentation) =>
+          MobileKeystoneVotingSigningScreen(presentation: presentation),
     );
   }
 }
@@ -122,102 +124,6 @@ class MobileVotingResultsScreen extends StatelessWidget {
       title: 'Voting results',
       horizontalPadding: AppSpacing.sm,
       child: VotingResultsView(roundId: roundId, showDesktopToolbar: false),
-    );
-  }
-}
-
-class MobileKeystoneVotingScanScreen extends StatelessWidget {
-  const MobileKeystoneVotingScanScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const _MobileVotingScaffold(
-      title: 'Scan signature',
-      child: _MobileKeystoneVotingScanView(),
-    );
-  }
-}
-
-class _MobileKeystoneVotingScanView extends ConsumerStatefulWidget {
-  const _MobileKeystoneVotingScanView();
-
-  @override
-  ConsumerState<_MobileKeystoneVotingScanView> createState() =>
-      _MobileKeystoneVotingScanViewState();
-}
-
-class _MobileKeystoneVotingScanViewState
-    extends ConsumerState<_MobileKeystoneVotingScanView> {
-  bool _decoding = false;
-  String? _error;
-
-  void _handleScanComplete(ScanResult result) {
-    if (_decoding) return;
-    setState(() {
-      _decoding = true;
-      _error = null;
-    });
-    context.pop(result.data);
-  }
-
-  void _handleDecodeError(Object error) {
-    if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed voting QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
-    if (_error == message) return;
-    setState(() => _error = message);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.s,
-        AppSpacing.md,
-        AppSpacing.md,
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Scan voting signature',
-              style: AppTypography.displaySmall.copyWith(
-                color: colors.text.accent,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Hold the Keystone QR code steady in front of your camera',
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.base),
-            KeystoneQrScannerCard(
-              expectedUrType: 'zcash-batch-sig-result',
-              decoding: _decoding,
-              error: _error,
-              onProgress: (progress) {
-                if (!mounted) return;
-                setState(() {
-                  if (progress > 0) _error = null;
-                });
-              },
-              onDecodeError: _handleDecodeError,
-              onComplete: _handleScanComplete,
-              decodingLabel: 'Reading signature...',
-              unavailableMessage:
-                  'Keystone voting uses camera QR scanning only. Connect a camera and try again.',
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

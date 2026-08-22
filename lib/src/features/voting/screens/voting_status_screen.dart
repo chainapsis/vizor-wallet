@@ -22,6 +22,38 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
+typedef VotingStatusContentWrapper =
+    Widget Function(BuildContext context, Widget content);
+typedef VotingKeystoneStatusBuilder =
+    Widget Function(
+      BuildContext context,
+      VotingKeystoneStatusPresentation presentation,
+    );
+
+class VotingKeystoneStatusPresentation {
+  const VotingKeystoneStatusPresentation({
+    required this.bundleIndex,
+    required this.urParts,
+    required this.batchMemos,
+    required this.batchMessageCount,
+    required this.batchTotalCount,
+    required this.onSigned,
+    this.scanError,
+    this.canSkipRemainingBundles = false,
+    this.onSkipRemainingBundles,
+  });
+
+  final int bundleIndex;
+  final List<String> urParts;
+  final List<VotingKeystoneBatchMemo> batchMemos;
+  final int batchMessageCount;
+  final int batchTotalCount;
+  final String? scanError;
+  final bool canSkipRemainingBundles;
+  final Future<void> Function(List<int> responseCbor) onSigned;
+  final VoidCallback? onSkipRemainingBundles;
+}
+
 class VotingStatusScreen extends StatelessWidget {
   const VotingStatusScreen({
     super.key,
@@ -50,11 +82,15 @@ class VotingStatusView extends ConsumerStatefulWidget {
     required this.roundId,
     this.accountUuid,
     this.requireCurrentRouteForConfirmation = false,
+    this.contentWrapper,
+    this.keystoneStatusBuilder,
   });
 
   final String roundId;
   final String? accountUuid;
   final bool requireCurrentRouteForConfirmation;
+  final VotingStatusContentWrapper? contentWrapper;
+  final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
 
   @override
   ConsumerState<VotingStatusView> createState() => _VotingStatusViewState();
@@ -150,6 +186,18 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         .handleKeystoneBatchSignResponse(key, responseCbor);
   }
 
+  Future<void> _handleInlineKeystoneSignature(List<int> responseCbor) async {
+    final key = _selectedJobKey();
+    if (key == null || responseCbor.isEmpty) return;
+    await ref
+        .read(votingSubmissionJobsProvider.notifier)
+        .handleKeystoneBatchSignResponse(key, responseCbor);
+    if (!mounted || _selectedJobKey() != key) return;
+    final session = ref.read(votingSubmissionJobSessionProvider(key)).value;
+    final scanError = session?.keystoneScanError;
+    if (scanError != null) throw StateError(scanError);
+  }
+
   Future<void> _skipRemainingKeystoneBundles() async {
     final key = _selectedJobKey();
     if (key == null) return;
@@ -214,6 +262,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         job?.status == VotingSubmissionJobStatus.complete) {
       _scheduleConfirmationNavigation(selectedKey);
     }
+    var usesPlatformKeystoneScreen = false;
     final content = session.when(
       skipLoadingOnRefresh: false,
       loading: () {
@@ -261,6 +310,31 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                 completedSubmission: completedSubmission,
               )
             : VotingSessionPhase.error;
+        final keystoneBuilder = widget.keystoneStatusBuilder;
+        final bundleIndex = state.keystoneSigningRequest?.bundleIndex;
+        final urParts = job?.keystoneUrParts ?? const <String>[];
+        if (keystoneBuilder != null &&
+            state.isHardwareAccount &&
+            phase == VotingSessionPhase.keystoneSigning &&
+            bundleIndex != null &&
+            urParts.isNotEmpty &&
+            job?.keystoneQrError == null) {
+          usesPlatformKeystoneScreen = true;
+          return keystoneBuilder(
+            context,
+            VotingKeystoneStatusPresentation(
+              bundleIndex: bundleIndex,
+              urParts: urParts,
+              batchMemos: job?.keystoneBatchMemos ?? const [],
+              batchMessageCount: job?.keystoneBatchMessageCount ?? 0,
+              batchTotalCount: job?.keystoneBatchTotalCount ?? 0,
+              scanError: state.keystoneScanError,
+              canSkipRemainingBundles: state.canSkipRemainingKeystoneBundles,
+              onSigned: _handleInlineKeystoneSignature,
+              onSkipRemainingBundles: _skipRemainingKeystoneBundles,
+            ),
+          );
+        }
         return _StatusContent(
           phase: phase,
           voteSubmissionDetail: _voteSubmissionDetail(state),
@@ -296,7 +370,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
       },
     );
-    return content;
+    if (usesPlatformKeystoneScreen) return content;
+    return widget.contentWrapper?.call(context, content) ?? content;
   }
 
   VotingSessionPhase _displayPhase(

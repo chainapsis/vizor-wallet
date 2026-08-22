@@ -331,15 +331,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       ),
     ),
     GoRoute(
-      path: '/voting/keystone/scan',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: const MobileVotingAccountGuard(
-          child: MobileKeystoneVotingScanScreen(),
-        ),
-      ),
-    ),
-    GoRoute(
       path: '/voting/poll/:roundId/submitted',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,

@@ -119,7 +119,6 @@ void main() {
         '/voting/poll/:roundId',
         '/voting/poll/:roundId/review',
         '/voting/poll/:roundId/status',
-        '/voting/keystone/scan',
         '/voting/poll/:roundId/submitted',
         '/voting/poll/:roundId/results',
       }),
