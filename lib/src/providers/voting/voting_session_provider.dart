@@ -35,6 +35,10 @@ final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 /// account's Orchard key, but the action remains in the PCZT's Ironwood bundle.
 const _ironwoodPcztPool = 1;
 
+/// Cap for independent voting work pools: delegation proofs, vote proofs,
+/// share submission, and recovery polling.
+const _votingWorkConcurrency = 3;
+
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
   final status = round.status.trim().toLowerCase();
@@ -378,8 +382,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = current.resumePlan ?? context.resumePlan;
-      var roundPlan = current.roundPlan ?? context.roundPlan;
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
@@ -389,8 +393,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = current.resumePlan ?? context.resumePlan;
-        roundPlan = current.roundPlan ?? context.roundPlan;
+        plan = context.resumePlan;
+        roundPlan = context.roundPlan;
       }
 
       final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
@@ -414,7 +418,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
           resumePlan: plan,
-          currentBundleIndex: plan.pendingDelegationBundleIndexes.first,
+          clearCurrentBundleIndex: true,
           clearError: true,
         );
         _setStateForContext(context, nextState);
@@ -435,78 +439,58 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         progress: progress,
       );
       if (completedBundleIndexes == null) return;
-      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-        await _awaitDelegationPirPrecomputeIfRunning(context, bundleIndex);
-        final bundleTimer = Stopwatch()..start();
-        debugPrint(
-          '[zcash] Voting: delegation bundle start '
-          'round=${context.round.roundId} bundle=$bundleIndex',
-        );
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.delegating,
-            currentBundleIndex: bundleIndex,
+      try {
+        completedBundleIndexes.addAll(
+          await _runDelegationBundleBatch(
+            context: context,
+            fallbackState: current,
+            bundleIndexes: plan.pendingDelegationBundleIndexes,
+            progress: progress,
+            logLabel: 'software',
+            prove: (bundleIndex, publishProgress) async {
+              await _awaitDelegationPirPrecomputeIfRunning(
+                context,
+                bundleIndex,
+              );
+              _throwIfContextStale(context, 'delegation-proof');
+              rust_wire.SignedDelegationPayloadView? signedPayload;
+              await for (final event
+                  in rust.buildProveAndSignDelegationPayloadWithProgress(
+                    ctx: _apiRoundContext(context),
+                    pirServerUrl: _transportUrl(pirEndpoint!),
+                    mnemonic: mnemonic!,
+                    storedHotkeySecret: storedHotkeySecret!,
+                    bundleIndex: bundleIndex,
+                  )) {
+                _throwIfContextStale(context, 'delegation-proof-progress');
+                signedPayload = event.signedDelegationPayload ?? signedPayload;
+                publishProgress(
+                  VotingSessionProgress(
+                    phase: event.phase,
+                    bundleIndex: bundleIndex,
+                    proofProgress: _monotonicProofProgress(
+                      progress[bundleIndex]?.proofProgress,
+                      event.proofProgress,
+                    ),
+                  ),
+                );
+              }
+              return signedPayload ??
+                  (throw StateError(
+                    'Delegation proof completed without submission payload.',
+                  ));
+            },
           ),
         );
-        rust_wire.SignedDelegationPayloadView? signedDelegationPayload;
-        await for (final event
-            in rust.buildProveAndSignDelegationPayloadWithProgress(
-              ctx: _apiRoundContext(context),
-              pirServerUrl: _transportUrl(pirEndpoint!),
-              mnemonic: mnemonic!,
-              storedHotkeySecret: storedHotkeySecret!,
-              bundleIndex: bundleIndex,
-            )) {
-          signedDelegationPayload =
-              event.signedDelegationPayload ?? signedDelegationPayload;
-          final proofProgress = _monotonicProofProgress(
-            progress[bundleIndex]?.proofProgress,
-            event.proofProgress,
-          );
-          progress[bundleIndex] = VotingSessionProgress(
-            phase: event.phase,
-            bundleIndex: bundleIndex,
-            proofProgress: proofProgress,
-            message: null,
-          );
-          _setStateForContext(
-            context,
-            (state.value ?? current).copyWith(delegationProgress: progress),
-          );
-        }
-        debugPrint(
-          '[zcash] Voting: delegation proof stream completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${formatElapsedSeconds(bundleTimer.elapsed)}',
-        );
-        final submission = signedDelegationPayload;
-        if (submission == null) {
-          throw StateError(
-            'Delegation proof completed without submission payload.',
-          );
-        }
-        _throwIfContextStale(context, 'delegation-submit');
-        final result = await _submitAndConfirmDelegation(
+      } on _StaleVotingSessionAction {
+        rethrow;
+      } catch (error, stackTrace) {
+        await _refreshDelegationPlansAfterBatchFailure(
           context: context,
-          bundleIndex: bundleIndex,
-          submission: submission,
+          fallbackState: current,
+          progress: progress,
         );
-        debugPrint(
-          '[zcash] Voting: delegation bundle completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'leafIndex=${result.leafIndex} total=${formatElapsedSeconds(bundleTimer.elapsed)}',
-        );
-        completedBundleIndexes.add(bundleIndex);
-        progress[bundleIndex] = VotingSessionProgress(
-          phase: 'submitted',
-          bundleIndex: bundleIndex,
-          message: result.txHash,
-        );
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(delegationProgress: progress),
-        );
+        Error.throwWithStackTrace(error, stackTrace);
       }
 
       final resumeTimer = Stopwatch()..start();
@@ -540,7 +524,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<void> prepareKeystoneSigning() {
@@ -770,8 +754,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = current.resumePlan ?? context.resumePlan;
-      var roundPlan = current.roundPlan ?? context.roundPlan;
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
@@ -781,8 +765,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = current.resumePlan ?? context.resumePlan;
-        roundPlan = current.roundPlan ?? context.roundPlan;
+        plan = context.resumePlan;
+        roundPlan = context.roundPlan;
       }
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -824,89 +808,76 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
       }
-      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-        final signature = signatures[bundleIndex]!;
-        final bundleTimer = Stopwatch()..start();
-        debugPrint(
-          '[zcash] Voting: Keystone delegation bundle start '
-          'round=${context.round.roundId} bundle=$bundleIndex',
-        );
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.delegating,
-            keystoneSignatures: signatures,
-            clearKeystoneSigningRequest: true,
-            clearKeystoneScanError: true,
-            currentBundleIndex: bundleIndex,
+      _setStateForContext(
+        context,
+        (state.value ?? current).copyWith(
+          phase: VotingSessionPhase.delegating,
+          keystoneSignatures: signatures,
+          clearKeystoneSigningRequest: true,
+          clearKeystoneScanError: true,
+          clearCurrentBundleIndex: true,
+        ),
+      );
+      try {
+        completedBundleIndexes.addAll(
+          await _runDelegationBundleBatch(
+            context: context,
+            fallbackState: current,
+            bundleIndexes: plan.pendingDelegationBundleIndexes,
+            progress: progress,
+            logLabel: 'Keystone',
+            prove: (bundleIndex, publishProgress) async {
+              final signature = signatures[bundleIndex]!;
+              rust_wire.SignedDelegationPayloadView? signedPayload;
+              await for (final event
+                  in rust
+                      .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+                        ctx: _apiRoundContext(context),
+                        pirServerUrl: _transportUrl(pirEndpoint!),
+                        storedHotkeySecret: storedHotkeySecret!,
+                        bundleIndex: bundleIndex,
+                        keystoneSig: signature.sig,
+                        keystoneSighash: signature.sighash,
+                      )) {
+                _throwIfContextStale(
+                  context,
+                  'keystone-delegation-proof-progress',
+                );
+                signedPayload = event.signedDelegationPayload ?? signedPayload;
+                publishProgress(
+                  VotingSessionProgress(
+                    phase: event.phase,
+                    bundleIndex: bundleIndex,
+                    proofProgress: _monotonicProofProgress(
+                      progress[bundleIndex]?.proofProgress,
+                      event.proofProgress,
+                    ),
+                  ),
+                );
+              }
+              final submission =
+                  signedPayload ??
+                  (throw StateError(
+                    'Delegation proof completed without submission payload.',
+                  ));
+              _verifyKeystoneDelegationSignature(
+                submission: submission,
+                signature: signature,
+                bundleIndex: bundleIndex,
+              );
+              return submission;
+            },
           ),
         );
-
-        rust_wire.SignedDelegationPayloadView? signedDelegationPayload;
-        await for (final event
-            in rust
-                .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-                  ctx: _apiRoundContext(context),
-                  pirServerUrl: _transportUrl(pirEndpoint!),
-                  storedHotkeySecret: storedHotkeySecret!,
-                  bundleIndex: bundleIndex,
-                  keystoneSig: signature.sig,
-                  keystoneSighash: signature.sighash,
-                )) {
-          signedDelegationPayload =
-              event.signedDelegationPayload ?? signedDelegationPayload;
-          final proofProgress = _monotonicProofProgress(
-            progress[bundleIndex]?.proofProgress,
-            event.proofProgress,
-          );
-          progress[bundleIndex] = VotingSessionProgress(
-            phase: event.phase,
-            bundleIndex: bundleIndex,
-            proofProgress: proofProgress,
-            message: null,
-          );
-          _setStateForContext(
-            context,
-            (state.value ?? current).copyWith(delegationProgress: progress),
-          );
-        }
-        debugPrint(
-          '[zcash] Voting: Keystone delegation proof stream completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${formatElapsedSeconds(bundleTimer.elapsed)}',
-        );
-        final submission = signedDelegationPayload;
-        if (submission == null) {
-          throw StateError(
-            'Delegation proof completed without submission payload.',
-          );
-        }
-        _verifyKeystoneDelegationSignature(
-          submission: submission,
-          signature: signature,
-          bundleIndex: bundleIndex,
-        );
-        _throwIfContextStale(context, 'keystone-delegation-submit');
-        final result = await _submitAndConfirmDelegation(
+      } on _StaleVotingSessionAction {
+        rethrow;
+      } catch (error, stackTrace) {
+        await _refreshDelegationPlansAfterBatchFailure(
           context: context,
-          bundleIndex: bundleIndex,
-          submission: submission,
+          fallbackState: current,
+          progress: progress,
         );
-        debugPrint(
-          '[zcash] Voting: Keystone delegation bundle completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'leafIndex=${result.leafIndex} total=${formatElapsedSeconds(bundleTimer.elapsed)}',
-        );
-        completedBundleIndexes.add(bundleIndex);
-        progress[bundleIndex] = VotingSessionProgress(
-          phase: 'submitted',
-          bundleIndex: bundleIndex,
-          message: result.txHash,
-        );
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(delegationProgress: progress),
-        );
+        Error.throwWithStackTrace(error, stackTrace);
       }
 
       final refreshedPlan = await _loadResumePlan(context);
@@ -930,7 +901,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<void> castVotes({
@@ -1797,6 +1768,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return nextValue < previousValue ? previousValue : nextValue;
   }
 
+  /// Mirrors vote-pipeline timings into Rust os_log so Release `log show`
+  /// captures them (`subsystem == "frb_user"`, prefix `[VOTING_VOTE]`).
+  void _logVoteTiming(String message) {
+    debugPrint('[zcash] Voting: $message');
+    ref.read(votingRustApiProvider).logVotingTiming(message: message);
+  }
+
   List<String> _plannedShareServers({
     required List<String> plannedServers,
     required Iterable<String> fallbackServers,
@@ -1887,7 +1865,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         txHash: result.txHash,
       );
 
-      final confirmation = await _awaitTxConfirmation(api, result.txHash);
+      final confirmation = await _awaitTxConfirmation(
+        api,
+        result.txHash,
+        context: context,
+      );
       if (confirmation == null) {
         throw StateError(
           'Transaction ${result.txHash} was not confirmed in time.',
@@ -1962,7 +1944,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final entry in submittedDelegationsByBundle.entries) {
       final bundleIndex = entry.key;
       final txHash = entry.value;
-      final confirmation = await _awaitTxConfirmation(api, txHash);
+      final confirmation = await _awaitTxConfirmation(
+        api,
+        txHash,
+        context: context,
+      );
       if (confirmation == null) {
         _setError(
           'Delegation transaction $txHash for bundle $bundleIndex is still '
@@ -1997,7 +1983,225 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return completedBundleIndexes;
   }
 
-  Future<({String txHash, int leafIndex})> _submitAndConfirmDelegation({
+  Future<void> _refreshDelegationPlansAfterBatchFailure({
+    required _VotingSessionContext context,
+    required VotingSessionState fallbackState,
+    required Map<int, VotingSessionProgress> progress,
+  }) async {
+    try {
+      final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
+      _throwIfContextStale(context, 'delegation-batch-failure-refresh');
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
+          delegationProgress: Map<int, VotingSessionProgress>.of(progress),
+          clearCurrentBundleIndex: true,
+        ),
+      );
+    } on _StaleVotingSessionAction {
+      rethrow;
+    } catch (error, stackTrace) {
+      // Preserve the original bundle failure for the user. A later retry still
+      // reloads context from durable recovery state before doing any work.
+      debugPrint(
+        '[zcash] Voting: delegation recovery refresh failed '
+        'round=${context.round.roundId} error=$error\n$stackTrace',
+      );
+    }
+  }
+
+  Future<Set<int>> _runDelegationBundleBatch({
+    required _VotingSessionContext context,
+    required VotingSessionState fallbackState,
+    required List<int> bundleIndexes,
+    required Map<int, VotingSessionProgress> progress,
+    required Future<rust_wire.SignedDelegationPayloadView> Function(
+      int bundleIndex,
+      void Function(VotingSessionProgress progress) publishProgress,
+    )
+    prove,
+    required String logLabel,
+  }) async {
+    final batchTimer = Stopwatch()..start();
+    final proofWallTimer = Stopwatch()..start();
+    final timers = <int, Stopwatch>{};
+    final proofElapsed = <int, Duration>{};
+
+    void publishProgress(VotingSessionProgress update) {
+      final bundleIndex = update.bundleIndex;
+      if (bundleIndex == null) return;
+      progress[bundleIndex] = update;
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          phase: VotingSessionPhase.delegating,
+          delegationProgress: Map<int, VotingSessionProgress>.of(progress),
+          clearCurrentBundleIndex: true,
+        ),
+      );
+    }
+
+    final proofOutcomes = await _runBoundedBundleWork(
+      bundleIndexes,
+      concurrency: _votingWorkConcurrency,
+      work: (bundleIndex) async {
+        _throwIfContextStale(context, '$logLabel-proof-start');
+        final timer = Stopwatch()..start();
+        timers[bundleIndex] = timer;
+        debugPrint(
+          '[zcash] Voting: $logLabel delegation bundle start '
+          'round=${context.round.roundId} bundle=$bundleIndex',
+        );
+        try {
+          final submission = await prove(bundleIndex, publishProgress);
+          debugPrint(
+            '[zcash] Voting: $logLabel delegation proof stream completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          );
+          return submission;
+        } finally {
+          proofElapsed[bundleIndex] = timer.elapsed;
+        }
+      },
+    );
+    final serialProofDuration = proofElapsed.values.fold<Duration>(
+      Duration.zero,
+      (total, elapsed) => total + elapsed,
+    );
+    debugPrint(
+      '[zcash] Voting: $logLabel delegation proof fan-in '
+      'round=${context.round.roundId} bundles=${bundleIndexes.length} '
+      'concurrency=$_votingWorkConcurrency '
+      'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
+      'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
+    );
+
+    _throwIfContextStale(context, '$logLabel-proof-fan-in');
+    final failures = <_DelegationBundleFailure>[];
+    final submittedTxHashes = <int, String>{};
+
+    // Broadcasts remain serial because the vote server API does not expose an
+    // idempotency key. Persist each returned hash before starting the next one.
+    for (final bundleIndex in bundleIndexes) {
+      final proof = proofOutcomes[bundleIndex]!;
+      if (proof.error != null) {
+        publishProgress(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            message: proof.error.toString(),
+          ),
+        );
+        failures.add(
+          _DelegationBundleFailure(
+            bundleIndex: bundleIndex,
+            stage: 'proof',
+            error: proof.error!,
+          ),
+        );
+        continue;
+      }
+      try {
+        _throwIfContextStale(context, '$logLabel-delegation-submit');
+        final txHash = await _submitDelegation(
+          context: context,
+          bundleIndex: bundleIndex,
+          submission: proof.value!,
+        );
+        submittedTxHashes[bundleIndex] = txHash;
+        publishProgress(
+          VotingSessionProgress(
+            phase: 'submitted',
+            bundleIndex: bundleIndex,
+            message: txHash,
+          ),
+        );
+      } catch (error) {
+        publishProgress(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            message: error.toString(),
+          ),
+        );
+        failures.add(
+          _DelegationBundleFailure(
+            bundleIndex: bundleIndex,
+            stage: 'submission',
+            error: error,
+          ),
+        );
+        if (error is _StaleVotingSessionAction) break;
+      }
+    }
+
+    final confirmationOutcomes = await _runBoundedBundleWork(
+      submittedTxHashes.keys.toList(growable: false),
+      concurrency: _votingWorkConcurrency,
+      work: (bundleIndex) => _confirmDelegation(
+        context: context,
+        bundleIndex: bundleIndex,
+        txHash: submittedTxHashes[bundleIndex]!,
+      ),
+    );
+    final completed = <int>{};
+    for (final bundleIndex in submittedTxHashes.keys) {
+      final confirmation = confirmationOutcomes[bundleIndex]!;
+      if (confirmation.error != null) {
+        publishProgress(
+          VotingSessionProgress(
+            phase: 'failed',
+            bundleIndex: bundleIndex,
+            message: confirmation.error.toString(),
+          ),
+        );
+        failures.add(
+          _DelegationBundleFailure(
+            bundleIndex: bundleIndex,
+            stage: 'confirmation',
+            error: confirmation.error!,
+          ),
+        );
+        continue;
+      }
+      final result = confirmation.value!;
+      completed.add(bundleIndex);
+      publishProgress(
+        VotingSessionProgress(
+          phase: 'confirmed',
+          bundleIndex: bundleIndex,
+          message: result.txHash,
+        ),
+      );
+      debugPrint(
+        '[zcash] Voting: $logLabel delegation bundle completed '
+        'round=${context.round.roundId} bundle=$bundleIndex '
+        'leafIndex=${result.leafIndex} '
+        'total=${formatElapsedSeconds(timers[bundleIndex]!.elapsed)}',
+      );
+    }
+
+    for (final failure in failures) {
+      if (failure.error is _StaleVotingSessionAction) {
+        throw failure.error;
+      }
+    }
+    if (failures.isNotEmpty) {
+      throw _DelegationBundleBatchException(failures);
+    }
+    debugPrint(
+      '[zcash] Voting: $logLabel delegation batch completed '
+      'round=${context.round.roundId} bundles=${bundleIndexes.length} '
+      'elapsed=${formatElapsedSeconds(batchTimer.elapsed)}',
+    );
+    return completed;
+  }
+
+  Future<String> _submitDelegation({
     required _VotingSessionContext context,
     required int bundleIndex,
     required rust_wire.SignedDelegationPayloadView submission,
@@ -2039,12 +2243,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'round=${context.round.roundId} bundle=$bundleIndex '
       'txHash=${result.txHash}',
     );
+    return result.txHash;
+  }
 
-    final confirmation = await _awaitTxConfirmation(api, result.txHash);
+  Future<({String txHash, int leafIndex})> _confirmDelegation({
+    required _VotingSessionContext context,
+    required int bundleIndex,
+    required String txHash,
+  }) async {
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
+    final confirmation = await _awaitTxConfirmation(
+      api,
+      txHash,
+      context: context,
+    );
     if (confirmation == null) {
-      throw StateError(
-        'Transaction ${result.txHash} was not confirmed in time.',
-      );
+      throw StateError('Transaction $txHash was not confirmed in time.');
     }
     if (confirmation.code != 0) {
       throw StateError(
@@ -2058,29 +2273,29 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       accountUuid: context.accountUuid,
       roundId: context.round.roundId,
       bundleIndex: bundleIndex,
-      txHash: result.txHash,
+      txHash: txHash,
       eventsJson: confirmation.eventsJson,
     );
-    return (
-      txHash: result.txHash,
-      leafIndex: delegationConfirmation.vanLeafPosition,
-    );
+    return (txHash: txHash, leafIndex: delegationConfirmation.vanLeafPosition);
   }
 
   Future<VotingTxConfirmation?> _awaitTxConfirmation(
     VotingApiClient api,
-    String txHash,
-  ) async {
+    String txHash, {
+    _VotingSessionContext? context,
+  }) async {
     final polling = ref.read(votingTxConfirmationPollingProvider);
     final attempts = polling.attempts;
     final delay = polling.delay;
     final timer = Stopwatch()..start();
-    debugPrint('[zcash] Voting: tx confirmation wait start txHash=$txHash');
+    _logVoteTiming('tx confirmation wait start txHash=$txHash');
     for (var attempt = 0; attempt < attempts; attempt++) {
+      if (context != null) _throwIfContextStale(context, 'tx-confirmation');
       final confirmation = await api.getTxConfirmation(txHash);
+      if (context != null) _throwIfContextStale(context, 'tx-confirmation-response');
       if (confirmation != null) {
-        debugPrint(
-          '[zcash] Voting: tx confirmation found txHash=$txHash '
+        _logVoteTiming(
+          'tx confirmation found txHash=$txHash '
           'attempt=${attempt + 1} code=${confirmation.code} '
           'elapsed=${formatElapsedSeconds(timer.elapsed)}',
         );
@@ -2094,10 +2309,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
         }
         await Future<void>.delayed(delay);
+        if (context != null) _throwIfContextStale(context, 'tx-confirmation-delay');
       }
     }
-    debugPrint(
-      '[zcash] Voting: tx confirmation wait timed out txHash=$txHash '
+    _logVoteTiming(
+      'tx confirmation wait timed out txHash=$txHash '
       'elapsed=${formatElapsedSeconds(timer.elapsed)}',
     );
     return null;
@@ -3679,6 +3895,90 @@ class _RecoveredVoteWork {
       case _RecoveredVoteWorkKind.submitShares:
         return 'confirmed vote shares';
     }
+  }
+}
+
+Future<Map<int, _BundleWorkOutcome<T>>> _runBoundedBundleWork<T>(
+  List<int> bundleIndexes, {
+  required int concurrency,
+  required Future<T> Function(int bundleIndex) work,
+}) async {
+  if (bundleIndexes.isEmpty) return {};
+  final outcomes = <int, _BundleWorkOutcome<T>>{};
+  var nextIndex = 0;
+  final workerCount = concurrency < bundleIndexes.length
+      ? concurrency
+      : bundleIndexes.length;
+
+  Future<void> worker() async {
+    while (nextIndex < bundleIndexes.length) {
+      final bundleIndex = bundleIndexes[nextIndex++];
+      try {
+        outcomes[bundleIndex] = _BundleWorkOutcome.success(
+          await work(bundleIndex),
+        );
+      } catch (error, stackTrace) {
+        outcomes[bundleIndex] = _BundleWorkOutcome.failure(error, stackTrace);
+      }
+    }
+  }
+
+  await Future.wait(List.generate(workerCount, (_) => worker()));
+  return outcomes;
+}
+
+/// Serializes vote-tree syncs and batches concurrent requesters onto one call.
+///
+/// Two guarantees matter to callers:
+///
+/// * **Never concurrent.** `_syncVoteTreeWithFailover` resets round-global
+///   process state when it fails over to another node, so overlapping syncs
+///   could tear down state another bundle is mid-witness on.
+/// * **Never stale.** `fresh()` only resolves with the result of a sync that
+///   *started after* the call. A bundle that just recorded a vote confirmation
+///   therefore cannot be handed an anchor height from a sync that predates its
+///   new VAN leaf. Requests arriving while a sync runs are batched into the
+///   next one, so N bundles finishing a proposal together cost one round trip.
+
+class _BundleWorkOutcome<T> {
+  const _BundleWorkOutcome.success(this.value)
+    : error = null,
+      stackTrace = null;
+
+  const _BundleWorkOutcome.failure(this.error, this.stackTrace) : value = null;
+
+  final T? value;
+  final Object? error;
+  final StackTrace? stackTrace;
+}
+
+class _DelegationBundleFailure {
+  const _DelegationBundleFailure({
+    required this.bundleIndex,
+    required this.stage,
+    required this.error,
+  });
+
+  final int bundleIndex;
+  final String stage;
+  final Object error;
+}
+
+class _DelegationBundleBatchException implements Exception {
+  const _DelegationBundleBatchException(this.failures);
+
+  final List<_DelegationBundleFailure> failures;
+
+  @override
+  String toString() {
+    final details = failures
+        .map(
+          (failure) =>
+              'bundle ${failure.bundleIndex + 1} ${failure.stage}: '
+              '${failure.error}',
+        )
+        .join('; ');
+    return 'Delegation bundle processing failed: $details';
   }
 }
 
