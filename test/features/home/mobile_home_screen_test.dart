@@ -604,6 +604,12 @@ void main() {
         tester.getBottomLeft(find.byKey(const ValueKey('mobile_home_send'))).dy,
       ),
     );
+    final votingSurface = tester.widget<Container>(
+      find.descendant(of: entry, matching: find.byType(Container)).first,
+    );
+    final votingDecoration = votingSurface.decoration! as BoxDecoration;
+    expect(votingDecoration.boxShadow, isNull);
+    expect(votingDecoration.border, isNotNull);
 
     await tester.ensureVisible(entry);
     await tester.tap(entry);

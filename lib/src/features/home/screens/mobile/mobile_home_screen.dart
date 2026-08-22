@@ -1333,7 +1333,6 @@ class _MobileVotingEntryCard extends StatelessWidget {
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.medium),
             border: Border.all(color: colors.border.subtle),
-            boxShadow: appSurfaceShadow(colors),
           ),
           child: Row(
             children: [
