@@ -44,6 +44,8 @@ void main() {
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
+    final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
+    expect(cardDecoration.boxShadow, isNull);
     expect(
       tester
           .widget<InkWell>(

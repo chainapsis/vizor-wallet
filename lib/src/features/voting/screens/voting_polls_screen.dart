@@ -156,11 +156,10 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
       ),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
-        return _PollCard(
-          round: round,
-          compact: !widget.showDesktopChrome,
-          onAction: () => _openRoundAction(round),
-        );
+        void onAction() => _openRoundAction(round);
+        return widget.showDesktopChrome
+            ? _DesktopPollCard(round: round, onAction: onAction)
+            : _MobilePollCard(round: round, onAction: onAction);
       },
     );
   }
@@ -391,16 +390,103 @@ class _VotingBetaLabel extends StatelessWidget {
   }
 }
 
-class _PollCard extends StatelessWidget {
-  const _PollCard({
+class _MobilePollCard extends StatelessWidget {
+  const _MobilePollCard({required this.round, required this.onAction});
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x00000000),
+      child: InkWell(
+        key: ValueKey('voting_poll_card_tap_${round.roundId}'),
+        onTap: onAction,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: Ink(
+          key: ValueKey('voting_poll_card_${round.roundId}'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.s,
+          ),
+          decoration: _mobilePollCardDecoration(context),
+          child: _PollCardContent(
+            round: round,
+            onAction: onAction,
+            titleGap: AppSpacing.s,
+            descriptionGap: AppSpacing.s,
+            actionGap: AppSpacing.sm,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopPollCard extends StatelessWidget {
+  const _DesktopPollCard({required this.round, required this.onAction});
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x00000000),
+      child: Ink(
+        key: ValueKey('voting_poll_card_${round.roundId}'),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: _desktopPollCardDecoration(context),
+        child: _PollCardContent(
+          round: round,
+          onAction: onAction,
+          titleGap: AppSpacing.sm,
+          descriptionGap: AppSpacing.md,
+          actionGap: AppSpacing.md,
+        ),
+      ),
+    );
+  }
+}
+
+BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
+  color: context.colors.background.ground,
+  borderRadius: BorderRadius.circular(AppRadii.medium),
+  border: Border.all(color: context.colors.border.subtle),
+);
+
+BoxDecoration _desktopPollCardDecoration(BuildContext context) => BoxDecoration(
+  color: context.colors.background.ground,
+  borderRadius: BorderRadius.circular(AppRadii.medium),
+  border: Border.all(color: context.colors.border.subtle),
+  boxShadow: const [
+    BoxShadow(
+      color: Color(0x0A231F20),
+      offset: Offset(0, 1),
+      blurRadius: 1,
+      spreadRadius: -0.5,
+    ),
+  ],
+);
+
+class _PollCardContent extends StatelessWidget {
+  const _PollCardContent({
     required this.round,
-    required this.compact,
     required this.onAction,
+    required this.titleGap,
+    required this.descriptionGap,
+    required this.actionGap,
   });
 
   final VotingRoundView round;
-  final bool compact;
   final VoidCallback onAction;
+  final double titleGap;
+  final double descriptionGap;
+  final double actionGap;
 
   @override
   Widget build(BuildContext context) {
@@ -411,97 +497,69 @@ class _PollCard extends StatelessWidget {
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
-    return Material(
-      color: const Color(0x00000000),
-      child: InkWell(
-        key: ValueKey('voting_poll_card_tap_${round.roundId}'),
-        onTap: compact ? onAction : null,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        child: Ink(
-          key: ValueKey('voting_poll_card_${round.roundId}'),
-          padding: EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: compact ? AppSpacing.s : AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(color: colors.border.subtle),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0x0A231F20),
-                offset: const Offset(0, 1),
-                blurRadius: 1,
-                spreadRadius: -0.5,
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _StatusBadge(state: state),
-                  const Spacer(),
-                  if (dateLabel != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        dateLabel,
-                        textAlign: TextAlign.right,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.secondary,
-                          height: 20 / 14,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
-              Text(
-                title,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                  height: 24 / 16,
-                  letterSpacing: 0,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _StatusBadge(state: state),
+            const Spacer(),
+            if (dateLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  dateLabel,
+                  textAlign: TextAlign.right,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.secondary,
+                    height: 20 / 14,
+                    letterSpacing: 0,
+                  ),
                 ),
               ),
-              SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
-              Text(
-                description.isEmpty ? round.roundId : description,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.primary,
-                  height: 20 / 14,
-                  letterSpacing: 0,
-                ),
-              ),
-              if (forumUri != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: VotingForumLinkButton(uri: forumUri),
-                ),
-              ],
-              SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
-              Align(
-                alignment: Alignment.centerRight,
-                child: AppButton(
-                  key: ValueKey('voting_poll_action_${round.roundId}'),
-                  onPressed: onAction,
-                  variant: _actionButtonVariant(state),
-                  size: AppButtonSize.medium,
-                  child: Text(_actionLabel(state)),
-                ),
-              ),
-            ],
+          ],
+        ),
+        SizedBox(height: titleGap),
+        Text(
+          title,
+          style: AppTypography.headlineSmall.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+            height: 24 / 16,
+            letterSpacing: 0,
           ),
         ),
-      ),
+        SizedBox(height: descriptionGap),
+        Text(
+          description.isEmpty ? round.roundId : description,
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: colors.text.primary,
+            height: 20 / 14,
+            letterSpacing: 0,
+          ),
+        ),
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri),
+          ),
+        ],
+        SizedBox(height: actionGap),
+        Align(
+          alignment: Alignment.centerRight,
+          child: AppButton(
+            key: ValueKey('voting_poll_action_${round.roundId}'),
+            onPressed: onAction,
+            variant: _actionButtonVariant(state),
+            size: AppButtonSize.medium,
+            child: Text(_actionLabel(state)),
+          ),
+        ),
+      ],
     );
   }
 }
