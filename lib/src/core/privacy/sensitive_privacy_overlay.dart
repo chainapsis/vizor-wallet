@@ -19,6 +19,7 @@ bool get _supportsNativePrivacyShield => supportsNativePrivacyShield(
   isWeb: kIsWeb,
   isMacOS: !kIsWeb && Platform.isMacOS,
   isAndroid: !kIsWeb && Platform.isAndroid,
+  isIOS: !kIsWeb && Platform.isIOS,
 );
 
 @visibleForTesting
@@ -31,13 +32,23 @@ bool supportsPlatformPrivacySignals({
   return !isWeb && isMacOS;
 }
 
+/// Whether the platform can natively blank the app in OS screenshots and
+/// screen recordings via the `com.zcash.wallet/privacy_shield` channel.
+///
+/// - macOS suppresses Mission Control capture of the window.
+/// - Android sets `FLAG_SECURE`.
+/// - iOS re-parents the window layer into a `secureTextEntry` field's canvas
+///   (see `SecureScreenshotShield` in `ios/Runner/AppDelegate.swift`); the
+///   screenshot warning sheet stays as a secondary post-capture UX because
+///   iOS only notifies after the capture completes.
 @visibleForTesting
 bool supportsNativePrivacyShield({
   required bool isWeb,
   required bool isMacOS,
   required bool isAndroid,
+  required bool isIOS,
 }) {
-  return !isWeb && (isMacOS || isAndroid);
+  return !isWeb && (isMacOS || isAndroid || isIOS);
 }
 
 class MacOSPrivacyExposureEvent {
@@ -237,14 +248,14 @@ class SensitivePrivacyEnvironmentController
 
   @override
   void beginAuthPrompt() {
-    if (_authPromptActive) return;
+    if (_disposed || _authPromptActive) return;
     super.beginAuthPrompt();
     _syncSafety();
   }
 
   @override
   void endAuthPrompt() {
-    if (!_authPromptActive) return;
+    if (_disposed || !_authPromptActive) return;
     // The biometric sheet pushes the app to `inactive`; dropping suppression
     // now would flash the shield for the frames before `onResume`/`onShow`
     // arrives. Defer the release to the next foreground transition so

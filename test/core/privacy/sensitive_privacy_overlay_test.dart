@@ -17,12 +17,13 @@ void main() {
     expect(supportsPlatformPrivacySignals(isWeb: true, isMacOS: true), isFalse);
   });
 
-  test('native privacy shield supports macOS and Android', () {
+  test('native privacy shield supports macOS, Android, and iOS', () {
     expect(
       supportsNativePrivacyShield(
         isWeb: false,
         isMacOS: true,
         isAndroid: false,
+        isIOS: false,
       ),
       isTrue,
     );
@@ -31,6 +32,7 @@ void main() {
         isWeb: false,
         isMacOS: false,
         isAndroid: true,
+        isIOS: false,
       ),
       isTrue,
     );
@@ -39,11 +41,26 @@ void main() {
         isWeb: false,
         isMacOS: false,
         isAndroid: false,
+        isIOS: true,
+      ),
+      isTrue,
+    );
+    expect(
+      supportsNativePrivacyShield(
+        isWeb: false,
+        isMacOS: false,
+        isAndroid: false,
+        isIOS: false,
       ),
       isFalse,
     );
     expect(
-      supportsNativePrivacyShield(isWeb: true, isMacOS: true, isAndroid: true),
+      supportsNativePrivacyShield(
+        isWeb: true,
+        isMacOS: true,
+        isAndroid: true,
+        isIOS: true,
+      ),
       isFalse,
     );
   });
