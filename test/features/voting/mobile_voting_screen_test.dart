@@ -45,6 +45,16 @@ void main() {
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
     expect(
+      tester
+          .widget<InkWell>(
+            find.byKey(
+              const ValueKey('voting_poll_card_tap_community-grants-2026'),
+            ),
+          )
+          .onTap,
+      isNotNull,
+    );
+    expect(
       tester.getTopLeft(secondCard).dy - tester.getBottomLeft(card).dy,
       AppSpacing.sm,
     );

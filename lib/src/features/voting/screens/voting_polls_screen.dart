@@ -413,88 +413,93 @@ class _PollCard extends StatelessWidget {
 
     return Material(
       color: const Color(0x00000000),
-      child: Ink(
-        key: ValueKey('voting_poll_card_${round.roundId}'),
-        padding: EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: compact ? AppSpacing.s : AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          border: Border.all(color: colors.border.subtle),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0x0A231F20),
-              offset: const Offset(0, 1),
-              blurRadius: 1,
-              spreadRadius: -0.5,
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StatusBadge(state: state),
-                const Spacer(),
-                if (dateLabel != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      dateLabel,
-                      textAlign: TextAlign.right,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.secondary,
-                        height: 20 / 14,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
-            Text(
-              title,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w600,
-                height: 24 / 16,
-                letterSpacing: 0,
-              ),
-            ),
-            SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
-            Text(
-              description.isEmpty ? round.roundId : description,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.primary,
-                height: 20 / 14,
-                letterSpacing: 0,
-              ),
-            ),
-            if (forumUri != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: VotingForumLinkButton(uri: forumUri),
+      child: InkWell(
+        key: ValueKey('voting_poll_card_tap_${round.roundId}'),
+        onTap: compact ? onAction : null,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: Ink(
+          key: ValueKey('voting_poll_card_${round.roundId}'),
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: compact ? AppSpacing.s : AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(color: colors.border.subtle),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0x0A231F20),
+                offset: const Offset(0, 1),
+                blurRadius: 1,
+                spreadRadius: -0.5,
               ),
             ],
-            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
-            Align(
-              alignment: Alignment.centerRight,
-              child: AppButton(
-                key: ValueKey('voting_poll_action_${round.roundId}'),
-                onPressed: onAction,
-                variant: _actionButtonVariant(state),
-                size: AppButtonSize.medium,
-                child: Text(_actionLabel(state)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _StatusBadge(state: state),
+                  const Spacer(),
+                  if (dateLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        dateLabel,
+                        textAlign: TextAlign.right,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.secondary,
+                          height: 20 / 14,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-          ],
+              SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
+              Text(
+                title,
+                style: AppTypography.headlineSmall.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                  height: 24 / 16,
+                  letterSpacing: 0,
+                ),
+              ),
+              SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
+              Text(
+                description.isEmpty ? round.roundId : description,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.primary,
+                  height: 20 / 14,
+                  letterSpacing: 0,
+                ),
+              ),
+              if (forumUri != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: VotingForumLinkButton(uri: forumUri),
+                ),
+              ],
+              SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
+              Align(
+                alignment: Alignment.centerRight,
+                child: AppButton(
+                  key: ValueKey('voting_poll_action_${round.roundId}'),
+                  onPressed: onAction,
+                  variant: _actionButtonVariant(state),
+                  size: AppButtonSize.medium,
+                  child: Text(_actionLabel(state)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
