@@ -442,10 +442,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   void _scheduleConfirmationNavigation(VotingSessionKey key) {
+    if (!_isCurrentStatusRoute(key)) return;
     if (_confirmationNavigationScheduledFor == key) return;
     _confirmationNavigationScheduledFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !_isCurrentStatusRoute(key)) return;
       if (_selectedJobKey() != key) {
         if (_confirmationNavigationScheduledFor == key) {
           _confirmationNavigationScheduledFor = null;
@@ -467,10 +468,23 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         'round=${key.roundId} account=${key.accountUuid} error=$error',
       );
     }
-    if (!mounted || _selectedJobKey() != key) return;
+    if (!mounted || _selectedJobKey() != key || !_isCurrentStatusRoute(key)) {
+      return;
+    }
     context.go(
       votingSubmissionConfirmedRoute(key.roundId, accountUuid: key.accountUuid),
     );
+  }
+
+  bool _isCurrentStatusRoute(VotingSessionKey key) {
+    if (!mounted) return false;
+    final currentPath = GoRouter.of(
+      context,
+    ).routerDelegate.currentConfiguration.uri.path;
+    final statusPath = Uri.parse(
+      votingStatusRoute(key.roundId, accountUuid: key.accountUuid),
+    ).path;
+    return currentPath == statusPath;
   }
 }
 
