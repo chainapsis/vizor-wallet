@@ -1460,6 +1460,7 @@ where
     let network = keys::parse_network(&network)?;
     let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
 
+
     // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
     let commitment_result = tokio::task::spawn_blocking(move || {
         let reporter = zcash_voting::VoteCommitStageBridge::new(on_stage);
@@ -1470,16 +1471,23 @@ where
         )
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
 
-        zcash_voting::vote::commit_batch(
+        let prepared = zcash_voting::vote::prepare_commit_batch(
             &voting_db,
-            &round_id,
-            bundle_index,
-            &draft_votes,
-            &van_witness,
             zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            &reporter,
+            zcash_voting::vote::VoteCommitBatch {
+                round_id: &round_id,
+                bundle_index,
+                drafts: &draft_votes,
+                witness: &van_witness,
+                stages: &reporter,
+            },
         )
-        .map_err(|e| format!("vote commit batch failed: {e}"))
+        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
+        let persisted = db::with_voting_sidecar_write_lock(&db_path, || {
+            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
+                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
+        })?;
+        Ok(persisted)
     })
     .await
     .map_err(|e| format!("vote commitment task failed: {e}"))
