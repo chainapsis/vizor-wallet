@@ -1690,8 +1690,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required BigInt submitAt,
   }) async {
     final acceptedServers = <String>[];
-    for (final serverUrl in candidateServers) {
-      if (acceptedServers.length >= targetCount) break;
+    final remainingServers = LinkedHashSet<String>.of(candidateServers);
+    while (remainingServers.isNotEmpty &&
+        acceptedServers.length < targetCount) {
+      // Re-evaluate health before every attempt so failures observed by
+      // concurrent submissions can move a degraded helper behind healthy
+      // alternatives. The tracker still returns every helper when all are
+      // degraded, preserving the liveness fallback.
+      final serverUrl = helperHealth.candidateServers(remainingServers).first;
+      remainingServers.remove(serverUrl);
       try {
         debugPrint(
           '[zcash] Voting: submitting share '
