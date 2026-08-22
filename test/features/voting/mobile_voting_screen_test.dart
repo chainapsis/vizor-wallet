@@ -38,8 +38,16 @@ void main() {
     final card = find.byKey(
       const ValueKey('voting_poll_card_community-grants-2026'),
     );
+    final secondCard = find.byKey(
+      const ValueKey('voting_poll_card_network-priorities-2026'),
+    );
     expect(card, findsOneWidget);
+    expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
+    expect(
+      tester.getTopLeft(secondCard).dy - tester.getBottomLeft(card).dy,
+      AppSpacing.sm,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_voting_settings_button')),

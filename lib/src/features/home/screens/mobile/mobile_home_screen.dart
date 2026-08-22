@@ -1346,7 +1346,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
                 ),
                 child: Center(
                   child: AppIcon(
-                    AppIcons.coins,
+                    AppIcons.endpoint,
                     size: 20,
                     color: colors.icon.inverse,
                   ),

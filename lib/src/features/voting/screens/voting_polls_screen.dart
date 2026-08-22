@@ -151,7 +151,9 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
         40,
       ),
       itemCount: sortedItems.length,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
+      separatorBuilder: (_, _) => SizedBox(
+        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.sm,
+      ),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
         return _PollCard(
