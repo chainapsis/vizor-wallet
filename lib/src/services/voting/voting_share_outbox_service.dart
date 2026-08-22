@@ -45,16 +45,18 @@ class VotingShareOutboxService {
   }) async {
     if (!_supported) return null;
     try {
-      final result = await _channel
-          .invokeMapMethod<String, Object?>('stageShareRound', {
-            'network': network,
-            'accountUuid': accountUuid,
-            'roundId': roundId,
-            'voteEndSeconds': voteEndSeconds.toInt(),
-            'helperUrls': helperUrls,
-            'prune': prune,
-            'shares': [for (final share in shares) share.toChannelMap()],
-          });
+      final result = await _channel.invokeMapMethod<String, Object?>(
+        'stageShareRound',
+        {
+          'network': network,
+          'accountUuid': accountUuid,
+          'roundId': roundId,
+          'voteEndSeconds': voteEndSeconds.toInt(),
+          'helperUrls': helperUrls,
+          'prune': prune,
+          'shares': [for (final share in shares) share.toChannelMap()],
+        },
+      );
       if (result == null) return null;
       return {
         for (final entry in result.entries)

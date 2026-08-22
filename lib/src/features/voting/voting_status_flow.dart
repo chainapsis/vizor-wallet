@@ -315,8 +315,7 @@ class _VotingStatusFlowState extends ConsumerState<VotingStatusFlow> {
           submissionJobInFlight: submissionJobInFlight,
           softwareAccountRequired: job?.softwareAccountRequired ?? false,
           isHardwareAccount: state.isHardwareAccount,
-          keystoneSigningBundleIndex:
-              state.keystoneSigningRequest?.bundleIndex,
+          keystoneSigningBundleIndex: state.keystoneSigningRequest?.bundleIndex,
           canSkipRemainingKeystoneBundles:
               state.canSkipRemainingKeystoneBundles,
           keystoneUrParts: job?.keystoneUrParts ?? const [],

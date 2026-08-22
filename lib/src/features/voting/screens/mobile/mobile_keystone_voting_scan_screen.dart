@@ -61,10 +61,7 @@ class _MobileKeystoneVotingScanScreenState
       body: SafeArea(
         child: Column(
           children: [
-            MobileTopNav.back(
-              title: 'Scan voting signature',
-              onBack: _goBack,
-            ),
+            MobileTopNav.back(title: 'Scan voting signature', onBack: _goBack),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(

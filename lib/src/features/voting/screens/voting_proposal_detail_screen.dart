@@ -27,11 +27,11 @@ class VotingProposalDetailScreen extends StatelessWidget {
         child: VotingProposalDetailFlow(
           roundId: roundId,
           builder: (context, view) => switch (view) {
-            VotingDetailLoading() || VotingDetailRedirecting() =>
-              const VotingPaneStateView(
-                backLinkMinWidth: 60,
-                child: VotingPaneLoading(),
-              ),
+            VotingDetailLoading() ||
+            VotingDetailRedirecting() => const VotingPaneStateView(
+              backLinkMinWidth: 60,
+              child: VotingPaneLoading(),
+            ),
             VotingDetailMessage(:final title, :final message) =>
               VotingPaneStateView(
                 backLinkMinWidth: 60,
@@ -143,8 +143,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         endDate: view.endDate,
                         votingPowerZatoshi: view.votingPowerZatoshi,
                         votingPowerPreparing: view.votingPowerPreparing,
-                        votingEligibilityMessage:
-                            view.votingEligibilityMessage,
+                        votingEligibilityMessage: view.votingEligibilityMessage,
                       );
                     }
                     if (index == view.proposals.length + 1) {
@@ -508,9 +507,7 @@ class _PendingVoteContent extends StatelessWidget {
                             const SizedBox(height: AppSpacing.xs),
                             Align(
                               alignment: Alignment.centerRight,
-                              child: VotingForumLinkButton(
-                                uri: view.forumUri!,
-                              ),
+                              child: VotingForumLinkButton(uri: view.forumUri!),
                             ),
                           ],
                           const SizedBox(height: AppSpacing.md),

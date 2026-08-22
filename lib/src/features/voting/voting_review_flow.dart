@@ -184,8 +184,7 @@ class _VotingReviewFlowState extends ConsumerState<VotingReviewFlow> {
       data: (state) {
         final round = state.round;
         if (round != null &&
-            votingPollListStatus(round.status) !=
-                VotingPollListStatus.active) {
+            votingPollListStatus(round.status) != VotingPollListStatus.active) {
           _redirectToResults(round.roundId);
           return const VotingReviewRedirecting();
         }

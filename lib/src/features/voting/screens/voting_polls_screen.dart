@@ -228,4 +228,3 @@ class _VotingHeader extends StatelessWidget {
     );
   }
 }
-

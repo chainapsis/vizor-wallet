@@ -13,6 +13,7 @@ import UIKit
   ) -> Bool {
     FreshInstallKeychainCleaner.runIfNeeded()
     BackgroundMigrationManager.shared.registerBackgroundTask()
+    BackgroundVotingShareManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {
       // One-release tombstone for requests submitted by the removed general
@@ -44,6 +45,7 @@ import UIKit
     if #available(iOS 26.0, *) {
       BackgroundMigrationManager.shared.handoffToForeground()
     }
+    BackgroundVotingShareManager.shared.handoffToForeground()
     super.applicationWillEnterForeground(application)
   }
 
@@ -350,6 +352,103 @@ import UIKit
       }
     }
 
+    let backgroundVotingChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/background_voting",
+      binaryMessenger: messenger
+    )
+    backgroundVotingChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "stageShareRound":
+        do {
+          result(
+            try BackgroundVotingShareChannel.stageShareRound(
+              arguments: call.arguments
+            )
+          )
+        } catch {
+          result(self.backgroundVotingShareFlutterError(error))
+        }
+      case "armShareRound":
+        do {
+          try BackgroundVotingShareChannel.armShareRound(arguments: call.arguments)
+          // Armed state is persisted first; a scheduler submission failure is
+          // surfaced so Dart does not mistake an unscheduled round for a
+          // background-tracked one.
+          BackgroundVotingShareManager.shared.schedule { submitted in
+            result(submitted)
+          }
+        } catch {
+          result(self.backgroundVotingShareFlutterError(error))
+        }
+      case "hasShareRound":
+        do {
+          result(
+            try BackgroundVotingShareChannel.hasShareRound(arguments: call.arguments)
+          )
+        } catch {
+          result(self.backgroundVotingShareFlutterError(error))
+        }
+      case "listShareReceipts":
+        do {
+          result(try BackgroundVotingShareChannel.listShareReceipts())
+        } catch {
+          result(self.backgroundVotingShareFlutterError(error))
+        }
+      case "ackShareReceipts":
+        do {
+          try BackgroundVotingShareChannel.acknowledgeShareReceipts(
+            arguments: call.arguments
+          )
+          // Acknowledgement can retire the last runnable share; reschedule or
+          // cancel the pending wake accordingly.
+          BackgroundVotingShareManager.shared.cancelIfNoRunnableWork { _ in
+            result(true)
+          }
+        } catch {
+          result(self.backgroundVotingShareFlutterError(error))
+        }
+      case "revokeAccount":
+        guard let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing voting share account scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        BackgroundVotingShareManager.shared.revokeAccount(
+          network: network,
+          accountUuid: accountUuid
+        ) { success in
+          result(success)
+        }
+      case "revokeAll":
+        BackgroundVotingShareManager.shared.revokeAll { success in
+          result(success)
+        }
+      case "cancelIfNoRunnableWork":
+        BackgroundVotingShareManager.shared.cancelIfNoRunnableWork { cancelled in
+          result(cancelled)
+        }
+      #if DEBUG || targetEnvironment(simulator)
+        case "runShareOutboxOnceForTesting":
+          DispatchQueue.global(qos: .utility).async {
+            let outcome = BackgroundVotingShareManager.shared.runOnceForTesting()
+            DispatchQueue.main.async {
+              result(self.backgroundVotingShareRunResult(outcome))
+            }
+          }
+      #endif
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let networkPrivacyChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/network_privacy",
       binaryMessenger: messenger
@@ -565,6 +664,56 @@ import UIKit
         DispatchQueue.main.async { result(success) }
       }
     }
+  }
+
+  private func backgroundVotingShareFlutterError(_ error: Error) -> FlutterError {
+    // A conflicting round is a repairable state, not a generic failure: a
+    // round record exists but cannot accept the incoming shares. Dart
+    // distinguishes it by code so recovery can prune-restage instead of
+    // aborting.
+    if let outboxError = error as? BackgroundVotingShareOutboxError,
+      outboxError == .conflictingRound
+    {
+      return FlutterError(
+        code: "voting_share_outbox_conflicting_round",
+        message: String(describing: error),
+        details: nil
+      )
+    }
+    return FlutterError(
+      code: "voting_share_outbox_error",
+      message: String(describing: error),
+      details: nil
+    )
+  }
+
+  private func backgroundVotingShareRunResult(
+    _ runResult: BackgroundVotingShareOutboxRunResult
+  ) -> [String: Any?] {
+    var result: [String: Any?] = [
+      "hasArmedUnconfirmedWork": runResult.hasArmedUnconfirmedWork,
+      "nextActionableAtSeconds": runResult.nextActionableDate.map {
+        Int64($0.timeIntervalSince1970)
+      },
+    ]
+    switch runResult.transport {
+    case .noWork:
+      result["outcome"] = "noWork"
+    case .processed(let confirmed, let resubmitted, let expired, let failed):
+      result["outcome"] = "processed"
+      result["confirmed"] = confirmed
+      result["resubmitted"] = resubmitted
+      result["expired"] = expired
+      result["failed"] = failed
+    case .temporarilyUnavailable:
+      result["outcome"] = "temporarilyUnavailable"
+    case .cancelled:
+      result["outcome"] = "cancelled"
+    case .failed(let reason):
+      result["outcome"] = "failed"
+      result["error"] = reason
+    }
+    return result
   }
 
   private func backgroundMigrationFlutterError(_ error: Error) -> FlutterError {

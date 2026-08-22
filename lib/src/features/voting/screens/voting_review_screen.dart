@@ -22,11 +22,11 @@ class VotingReviewScreen extends StatelessWidget {
         child: VotingReviewFlow(
           roundId: roundId,
           builder: (context, view) => switch (view) {
-            VotingReviewLoading() || VotingReviewRedirecting() =>
-              const VotingPaneStateView(
-                backLinkMinWidth: 60,
-                child: VotingPaneLoading(),
-              ),
+            VotingReviewLoading() ||
+            VotingReviewRedirecting() => const VotingPaneStateView(
+              backLinkMinWidth: 60,
+              child: VotingPaneLoading(),
+            ),
             VotingReviewMessage(:final message) => VotingPaneStateView(
               backLinkMinWidth: 60,
               child: _Message(message),

@@ -16,7 +16,11 @@ const _votingBetaLabelHeight = 24.0;
 /// Round-list card shared by the desktop and mobile poll lists. Presentation
 /// only: the owning screen decides where the action navigates.
 class VotingPollCard extends StatelessWidget {
-  const VotingPollCard({super.key, required this.round, required this.onAction});
+  const VotingPollCard({
+    super.key,
+    required this.round,
+    required this.onAction,
+  });
 
   final VotingRoundView round;
   final VoidCallback onAction;
@@ -303,8 +307,8 @@ String votingPollCardActionLabel(VotingPollCardState state) {
     VotingPollCardState.inProgress => 'Resume',
     VotingPollCardState.active => 'Start voting',
     VotingPollCardState.voted => 'Review',
-    VotingPollCardState.tallying || VotingPollCardState.closed =>
-      'View results',
+    VotingPollCardState.tallying ||
+    VotingPollCardState.closed => 'View results',
   };
 }
 

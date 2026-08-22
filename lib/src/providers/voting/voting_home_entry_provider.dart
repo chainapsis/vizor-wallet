@@ -15,9 +15,7 @@ import 'voting_state.dart';
 /// Best effort: any failure reads as zero. Recomputed on unlock (via the
 /// security watch) and on app resume.
 final votingHomeAttentionProvider = FutureProvider<int>((ref) async {
-  final lifecycleListener = AppLifecycleListener(
-    onResume: ref.invalidateSelf,
-  );
+  final lifecycleListener = AppLifecycleListener(onResume: ref.invalidateSelf);
   ref.onDispose(lifecycleListener.dispose);
 
   if (ref.watch(appSecurityProvider).requiresUnlock) return 0;

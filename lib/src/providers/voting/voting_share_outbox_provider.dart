@@ -10,11 +10,10 @@ final votingShareOutboxProvider = Provider<VotingShareOutboxService>((ref) {
   return VotingShareOutboxService();
 });
 
-final votingShareOutboxReconcilerProvider = Provider<VotingShareOutboxReconciler>((
-  ref,
-) {
-  return VotingShareOutboxReconciler(ref);
-});
+final votingShareOutboxReconcilerProvider =
+    Provider<VotingShareOutboxReconciler>((ref) {
+      return VotingShareOutboxReconciler(ref);
+    });
 
 /// Applies background share-outbox receipts to the voting sidecar.
 ///

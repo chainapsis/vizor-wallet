@@ -9,7 +9,11 @@ import '../widgets/voting_pane_scroll_area.dart';
 import '../widgets/voting_status_widgets.dart';
 
 class VotingStatusScreen extends StatelessWidget {
-  const VotingStatusScreen({super.key, required this.roundId, this.accountUuid});
+  const VotingStatusScreen({
+    super.key,
+    required this.roundId,
+    this.accountUuid,
+  });
 
   final String roundId;
   final String? accountUuid;

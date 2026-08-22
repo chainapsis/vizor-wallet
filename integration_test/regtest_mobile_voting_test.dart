@@ -150,8 +150,14 @@ void main() {
         3: 0,
         4: 0,
       });
-      await tapAppButton(tester, const ValueKey('voting_review_answers_button'));
-      await tapAppButton(tester, const ValueKey('voting_confirm_submit_button'));
+      await tapAppButton(
+        tester,
+        const ValueKey('voting_review_answers_button'),
+      );
+      await tapAppButton(
+        tester,
+        const ValueKey('voting_confirm_submit_button'),
+      );
 
       logE2e('waiting for real delegation, commitment, and share proofs');
       await pumpUntil(

@@ -146,7 +146,10 @@ void main() {
 
     final router = _statusRouter();
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: _routerApp(router)),
+      UncontrolledProviderScope(
+        container: container,
+        child: _routerApp(router),
+      ),
     );
     // The active step renders an indeterminate spinner, so settle-based
     // pumping never converges; use fixed pumps throughout.

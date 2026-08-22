@@ -42,7 +42,7 @@ void main() {
     'proposalId': 9,
     'shareIndex': 1,
     'outcome': outcome,
-    if (url != null) 'url': url,
+    'url': ?url,
   };
 
   test('applies receipts to the sidecar and acks only applied ones', () async {
@@ -125,10 +125,9 @@ void main() {
     await container.read(votingShareOutboxReconcilerProvider).reconcile();
 
     final ack = calls.singleWhere((call) => call.method == 'ackShareReceipts');
-    expect(
-      ((ack.arguments as Map)['receiptIds'] as List).cast<String>(),
-      ['r-resubmitted'],
-    );
+    expect(((ack.arguments as Map)['receiptIds'] as List).cast<String>(), [
+      'r-resubmitted',
+    ]);
   });
 
   test('unsupported service skips the channel entirely', () async {

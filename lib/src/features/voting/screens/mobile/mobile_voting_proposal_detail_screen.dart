@@ -155,9 +155,8 @@ class _ActiveBody extends StatelessWidget {
                 AppSpacing.md,
               ),
               itemCount: view.proposals.length + 1,
-              separatorBuilder: (_, index) => SizedBox(
-                height: index == 0 ? AppSpacing.md : AppSpacing.xs,
-              ),
+              separatorBuilder: (_, index) =>
+                  SizedBox(height: index == 0 ? AppSpacing.md : AppSpacing.xs),
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return VotingPollSummary(
@@ -248,9 +247,8 @@ class _VotedBody extends StatelessWidget {
           AppSpacing.md,
         ),
         itemCount: view.proposals.length + 1,
-        separatorBuilder: (_, index) => SizedBox(
-          height: index == 0 ? AppSpacing.md : AppSpacing.s,
-        ),
+        separatorBuilder: (_, index) =>
+            SizedBox(height: index == 0 ? AppSpacing.md : AppSpacing.s),
         itemBuilder: (context, index) {
           if (index == 0) {
             return VotingVotedPollHeader(

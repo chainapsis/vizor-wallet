@@ -223,9 +223,7 @@ final votingShareTrackingRestorerProvider = Provider((ref) {
           onHide: () => unawaited(restorer.pause()),
           onResume: () => unawaited(restorer.resume()),
         )
-      : AppLifecycleListener(
-          onResume: () => unawaited(restorer.restore()),
-        );
+      : AppLifecycleListener(onResume: () => unawaited(restorer.restore()));
   ref.onDispose(() {
     registry.removeRestoreRequestListener(requestRestore);
     lifecycleListener.dispose();

@@ -490,9 +490,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/voting',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: const MobileVotingAccountGuard(
-          child: MobileVotingPollsScreen(),
-        ),
+        child: const MobileVotingAccountGuard(child: MobileVotingPollsScreen()),
       ),
     ),
     GoRoute(

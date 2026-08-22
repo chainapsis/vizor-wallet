@@ -164,9 +164,7 @@ class _SkipSignedBundlesSheet extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Unsigned bundles are skipped, which lowers voting power for this voting round.',
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.warning,
-            ),
+            style: AppTypography.bodySmall.copyWith(color: colors.text.warning),
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(

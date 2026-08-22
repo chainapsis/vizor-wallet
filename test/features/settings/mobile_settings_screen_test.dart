@@ -287,8 +287,9 @@ void main() {
       expect(
         description,
         'Vizor’s network requests go through Tor. Ironwood private migration '
-        'uses a direct connection while Vizor is closed. Links opened in other '
-        'apps use those apps’ network settings.',
+        'and scheduled voting-share delivery use a direct connection while '
+        'Vizor is closed. Links opened in other apps use those apps’ network '
+        'settings.',
       );
     } finally {
       debugDefaultTargetPlatformOverride = previousPlatformOverride;

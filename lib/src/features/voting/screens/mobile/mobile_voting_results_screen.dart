@@ -35,8 +35,9 @@ class MobileVotingResultsScreen extends StatelessWidget {
               child: VotingResultsFlow(
                 roundId: roundId,
                 builder: (context, view) => switch (view) {
-                  VotingResultsLoading() =>
-                    const Center(child: CircularProgressIndicator()),
+                  VotingResultsLoading() => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
                   VotingResultsMessage(:final message) => _Message(message),
                   VotingResultsPending() => const _Message(
                     'Results pending...',
