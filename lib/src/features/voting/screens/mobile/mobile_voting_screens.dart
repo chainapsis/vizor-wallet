@@ -192,24 +192,27 @@ class _MobileVotingScaffold extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
             child: child,
           );
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          MobileTopNav.back(
-            title: title,
-            trailing: trailing,
-            onBack: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go(fallbackPath);
-              }
-            },
-          ),
-          Expanded(child: body),
-        ],
+    return Material(
+      color: context.colors.background.window,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            MobileTopNav.back(
+              title: title,
+              trailing: trailing,
+              onBack: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(fallbackPath);
+                }
+              },
+            ),
+            Expanded(child: body),
+          ],
+        ),
       ),
     );
   }
