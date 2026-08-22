@@ -6,20 +6,39 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
-class KeystoneVotingScanScreen extends ConsumerStatefulWidget {
+class KeystoneVotingScanScreen extends StatelessWidget {
   const KeystoneVotingScanScreen({super.key});
 
   @override
-  ConsumerState<KeystoneVotingScanScreen> createState() =>
-      _KeystoneVotingScanScreenState();
+  Widget build(BuildContext context) {
+    return const AppDesktopShell(
+      sidebar: AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            AppPaneToolbar(),
+            Expanded(child: KeystoneVotingScanView()),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _KeystoneVotingScanScreenState
-    extends ConsumerState<KeystoneVotingScanScreen> {
+class KeystoneVotingScanView extends ConsumerStatefulWidget {
+  const KeystoneVotingScanView({super.key});
+
+  @override
+  ConsumerState<KeystoneVotingScanView> createState() =>
+      _KeystoneVotingScanViewState();
+}
+
+class _KeystoneVotingScanViewState
+    extends ConsumerState<KeystoneVotingScanView> {
   bool _decoding = false;
   String? _error;
 
@@ -28,7 +47,9 @@ class _KeystoneVotingScanScreenState
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+      if (kAppFormFactor == AppFormFactor.desktop) {
+        ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+      }
     });
   }
 
@@ -54,79 +75,51 @@ class _KeystoneVotingScanScreenState
     });
   }
 
-  void _goBack() {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    context.go('/voting');
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        // Back chevron sits 16px into the pane per the shared design rule
-        // (4px pane padding + AppBackLink's 12px internal inset); the centered
-        // content keeps md on the other sides.
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xxs,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.s,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
+      child: Center(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(label: 'Back', onTap: _goBack),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Scan voting signature',
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        'Hold the Keystone QR code steady in front of your camera',
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.base),
-                      KeystoneQrScannerCard(
-                        expectedUrType: 'zcash-batch-sig-result',
-                        decoding: _decoding,
-                        error: _error,
-                        onProgress: (progress) {
-                          if (!mounted) return;
-                          setState(() {
-                            if (progress > 0) _error = null;
-                          });
-                        },
-                        onDecodeError: _handleDecodeError,
-                        onComplete: _handleScanComplete,
-                        decodingLabel: 'Reading signature...',
-                        unavailableMessage:
-                            'Keystone voting uses camera QR scanning only. Connect a camera and try again.',
-                      ),
-                    ],
-                  ),
-                ),
+            Text(
+              'Scan voting signature',
+              style: AppTypography.displaySmall.copyWith(
+                color: colors.text.accent,
               ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Hold the Keystone QR code steady in front of your camera',
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.base),
+            KeystoneQrScannerCard(
+              expectedUrType: 'zcash-batch-sig-result',
+              decoding: _decoding,
+              error: _error,
+              onProgress: (progress) {
+                if (!mounted) return;
+                setState(() {
+                  if (progress > 0) _error = null;
+                });
+              },
+              onDecodeError: _handleDecodeError,
+              onComplete: _handleScanComplete,
+              decodingLabel: 'Reading signature...',
+              unavailableMessage:
+                  'Keystone voting uses camera QR scanning only. Connect a camera and try again.',
             ),
           ],
         ),

@@ -28,6 +28,7 @@ import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -934,6 +935,38 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
     syncState: _homeSyncedState(
       orchardBalance: BigInt.from(14312000000),
       recentTransactions: [_homeTx(1), _homeTx(2)],
+    ),
+  );
+}
+
+Widget buildMobileActivityDefaultUseCase(BuildContext context) {
+  final accountUuid = _accountsDesignState.activeAccountUuid;
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _homeBootstrap(_accountsDesignState),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountUuid,
+          initialState: _homeSyncedState(
+            orchardBalance: BigInt.from(14312000000),
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ),
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
+        return const [];
+      }),
+    ],
+    child: _MobilePreviewFrame(
+      child: MobileActivityScreen(
+        historyLoader: (_) async => [_homeTx(1), _homeTx(2), _homeTx(3)],
+      ),
     ),
   );
 }

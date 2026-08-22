@@ -9,6 +9,7 @@ import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
+import '../widgetbook/voting_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -205,6 +206,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-home-default',
     description: 'Mobile home with deterministic balance and activity',
     builder: buildMobileHomeDefaultUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-polls',
+    description: 'Mobile coinholder voting poll list with mock rounds',
+    builder: buildMobileVotingPollsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-default',
+    description: 'Mobile Activity screen with deterministic transactions',
+    builder: buildMobileActivityDefaultUseCase,
     desktop: false,
     mobile: true,
   ),

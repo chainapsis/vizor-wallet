@@ -35,21 +35,42 @@ final _roundTallyProvider = FutureProvider.autoDispose.family((
       .getRoundTally(roundId);
 });
 
-class VotingResultsScreen extends ConsumerStatefulWidget {
+class VotingResultsScreen extends StatelessWidget {
   const VotingResultsScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  ConsumerState<VotingResultsScreen> createState() =>
-      _VotingResultsScreenState();
+  Widget build(BuildContext context) {
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingResultsView(roundId: roundId, showDesktopToolbar: true),
+      ),
+    );
+  }
 }
 
-class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
+class VotingResultsView extends ConsumerStatefulWidget {
+  const VotingResultsView({
+    required this.roundId,
+    required this.showDesktopToolbar,
+    super.key,
+  });
+
+  final String roundId;
+  final bool showDesktopToolbar;
+
+  @override
+  ConsumerState<VotingResultsView> createState() => _VotingResultsViewState();
+}
+
+class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
   Timer? _pendingTallyRefreshTimer;
 
   @override
-  void didUpdateWidget(covariant VotingResultsScreen oldWidget) {
+  void didUpdateWidget(covariant VotingResultsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
       _clearPendingTallyRefresh();
@@ -67,101 +88,95 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
     final session = ref.watch(votingSessionProvider(widget.roundId));
     final tally = ref.watch(_roundTallyProvider(widget.roundId));
 
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const AppPaneToolbar(),
-            Expanded(
-              child: tally.when(
-                skipLoadingOnRefresh: false,
-                loading: () => const VotingPaneLoading(),
-                error: (error, _) {
-                  final round = session.value?.round;
-                  if (round != null &&
-                      _roundIsTallying(round) &&
-                      _isTallyNotReadyError(error)) {
-                    return _pendingResults();
-                  }
-                  _clearPendingTallyRefresh();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showDesktopToolbar) const AppPaneToolbar(),
+        Expanded(
+          child: tally.when(
+            skipLoadingOnRefresh: false,
+            loading: () => const VotingPaneLoading(),
+            error: (error, _) {
+              final round = session.value?.round;
+              if (round != null &&
+                  _roundIsTallying(round) &&
+                  _isTallyNotReadyError(error)) {
+                return _pendingResults();
+              }
+              _clearPendingTallyRefresh();
+              return _Message(
+                "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+              );
+            },
+            data: (result) {
+              final round = session.value?.round;
+              if (round == null) {
+                _clearPendingTallyRefresh();
+                if (session.hasError) {
                   return _Message(
-                    "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+                    "Couldn't load voting round details: "
+                    "${friendlyVotingErrorMessage(session.error!)}",
                   );
-                },
-                data: (result) {
-                  final round = session.value?.round;
-                  if (round == null) {
-                    _clearPendingTallyRefresh();
-                    if (session.hasError) {
-                      return _Message(
-                        "Couldn't load voting round details: "
-                        "${friendlyVotingErrorMessage(session.error!)}",
-                      );
-                    }
-                    return const VotingPaneLoading();
-                  }
-                  final proposals = proposalsFromRound(round);
-                  if (_isTallying(result.rawJson)) {
-                    return _pendingResults();
-                  }
-                  _clearPendingTallyRefresh();
-                  return VotingPaneScrollView(
-                    maxWidth: 560,
-                    scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _ResultsHeader(
-                          title: _roundTitle(round),
-                          snapshotHeight: round.snapshotHeight,
-                          description: _roundDescription(round) ?? '',
-                          forumUri: votingRoundForumUriFromJson(round.rawJson),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
-                          'Results',
-                          style: AppTypography.headlineSmall.copyWith(
-                            color: context.colors.text.accent,
+                }
+                return const VotingPaneLoading();
+              }
+              final proposals = proposalsFromRound(round);
+              if (_isTallying(result.rawJson)) {
+                return _pendingResults();
+              }
+              _clearPendingTallyRefresh();
+              return VotingPaneScrollView(
+                maxWidth: 560,
+                scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ResultsHeader(
+                      title: _roundTitle(round),
+                      snapshotHeight: round.snapshotHeight,
+                      description: _roundDescription(round) ?? '',
+                      forumUri: votingRoundForumUriFromJson(round.rawJson),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Results',
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    if (proposals.isEmpty)
+                      const _Message('No proposals in this round.')
+                    else
+                      for (var index = 0; index < proposals.length; index++)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: index == proposals.length - 1
+                                ? 0
+                                : AppSpacing.s,
+                          ),
+                          child: _ResultCard(
+                            key: ValueKey(
+                              'voting-result-card-${proposals[index].id}',
+                            ),
+                            proposal: proposals[index],
+                            tally: _proposalTally(
+                              result.rawJson,
+                              proposals[index].id,
+                            ),
+                            selectedChoice: _selectedChoiceForProposal(
+                              session.value,
+                              proposals[index].id,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.s),
-                        if (proposals.isEmpty)
-                          const _Message('No proposals in this round.')
-                        else
-                          for (var index = 0; index < proposals.length; index++)
-                            Padding(
-                              padding: EdgeInsets.only(
-                                bottom: index == proposals.length - 1
-                                    ? 0
-                                    : AppSpacing.s,
-                              ),
-                              child: _ResultCard(
-                                key: ValueKey(
-                                  'voting-result-card-${proposals[index].id}',
-                                ),
-                                proposal: proposals[index],
-                                tally: _proposalTally(
-                                  result.rawJson,
-                                  proposals[index].id,
-                                ),
-                                selectedChoice: _selectedChoiceForProposal(
-                                  session.value,
-                                  proposals[index].id,
-                                ),
-                              ),
-                            ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+                  ],
+                ),
+              );
+            },
+          ),
         ),
-      ),
+      ],
     );
   }
 

@@ -107,6 +107,25 @@ void main() {
     expect(paths, isNot(contains('/migration/private/review')));
   });
 
+  test('registers the complete mobile coinholder voting route tree', () {
+    final paths = buildMobileRoutes(
+      entryRoutes: const [],
+    ).whereType<GoRoute>().map((route) => route.path).toSet();
+
+    expect(
+      paths,
+      containsAll({
+        '/voting',
+        '/voting/poll/:roundId',
+        '/voting/poll/:roundId/review',
+        '/voting/poll/:roundId/status',
+        '/voting/keystone/scan',
+        '/voting/poll/:roundId/submitted',
+        '/voting/poll/:roundId/results',
+      }),
+    );
+  });
+
   test('shows migration options while guarding private-only routes', () {
     final routes = buildMobileRoutes(
       entryRoutes: const [],

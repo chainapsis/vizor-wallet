@@ -17,16 +17,38 @@ import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
-class VotingReviewScreen extends ConsumerStatefulWidget {
+class VotingReviewScreen extends StatelessWidget {
   const VotingReviewScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  ConsumerState<VotingReviewScreen> createState() => _VotingReviewScreenState();
+  Widget build(BuildContext context) {
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingReviewView(roundId: roundId, showDesktopToolbar: true),
+      ),
+    );
+  }
 }
 
-class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
+class VotingReviewView extends ConsumerStatefulWidget {
+  const VotingReviewView({
+    required this.roundId,
+    required this.showDesktopToolbar,
+    super.key,
+  });
+
+  final String roundId;
+  final bool showDesktopToolbar;
+
+  @override
+  ConsumerState<VotingReviewView> createState() => _VotingReviewViewState();
+}
+
+class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
   bool _precomputeStarted = false;
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
@@ -35,7 +57,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
   String? _resultsRedirectRoundId;
 
   @override
-  void didUpdateWidget(covariant VotingReviewScreen oldWidget) {
+  void didUpdateWidget(covariant VotingReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
       _precomputeStarted = false;
@@ -127,141 +149,132 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(votingSessionProvider(widget.roundId));
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: session.when(
-          skipLoadingOnRefresh: false,
-          loading: () => const VotingPaneStateView(
-            backLinkMinWidth: 60,
-            child: VotingPaneLoading(),
-          ),
-          error: (error, _) => VotingPaneStateView(
-            backLinkMinWidth: 60,
-            child: _Message(
-              "Couldn't load review: ${friendlyVotingErrorMessage(error)}",
-            ),
-          ),
-          data: (state) {
-            final round = state.round;
-            if (round != null &&
-                votingPollListStatus(round.status) !=
-                    VotingPollListStatus.active) {
-              _redirectToResults(round.roundId);
-              return const VotingPaneStateView(
-                backLinkMinWidth: 60,
-                child: VotingPaneLoading(),
+    return session.when(
+      skipLoadingOnRefresh: false,
+      loading: () => _stateView(const VotingPaneLoading()),
+      error: (error, _) => _stateView(
+        _Message("Couldn't load review: ${friendlyVotingErrorMessage(error)}"),
+      ),
+      data: (state) {
+        final round = state.round;
+        if (round != null &&
+            votingPollListStatus(round.status) != VotingPollListStatus.active) {
+          _redirectToResults(round.roundId);
+          return _stateView(const VotingPaneLoading());
+        }
+        _maybePrepareVotingPower(state);
+        _maybePrecomputeDelegationPir(state);
+        final proposals = round == null
+            ? <VotingProposalView>[]
+            : proposalsFromRound(round);
+        final roundForumUri = round == null
+            ? null
+            : votingRoundForumUriFromJson(round.rawJson);
+        final accountUuid = state.accountUuid;
+        final draft = accountUuid == null
+            ? const VotingDraftState()
+            : ref.watch(
+                votingDraftProvider(
+                  VotingSessionKey(
+                    roundId: widget.roundId,
+                    accountUuid: accountUuid,
+                  ),
+                ),
               );
-            }
-            _maybePrepareVotingPower(state);
-            _maybePrecomputeDelegationPir(state);
-            final proposals = round == null
-                ? <VotingProposalView>[]
-                : proposalsFromRound(round);
-            final roundForumUri = round == null
-                ? null
-                : votingRoundForumUriFromJson(round.rawJson);
-            final accountUuid = state.accountUuid;
-            final draft = accountUuid == null
-                ? const VotingDraftState()
-                : ref.watch(
-                    votingDraftProvider(
-                      VotingSessionKey(
-                        roundId: widget.roundId,
-                        accountUuid: accountUuid,
+        final votingPowerPreparing =
+            _votingPowerPreparationInFlight ||
+            (state.eligibleWeightZatoshi == null &&
+                state.error == null &&
+                _shouldPrepareVotingPower(state));
+        final eligibilityMessage = _votingEligibilityMessage(
+          state,
+          preparing: votingPowerPreparing,
+        );
+        final onSubmit = draft.isEmpty || !state.hasConfirmedVotingEligibility
+            ? null
+            : () => context.go(
+                votingStatusRoute(widget.roundId, accountUuid: accountUuid),
+              );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.showDesktopToolbar)
+              const AppPaneToolbar(backLinkMinWidth: 60),
+            Expanded(
+              child: VotingPaneScrollView(
+                maxWidth: 560,
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.showDesktopToolbar
+                      ? AppSpacing.md
+                      : AppSpacing.sm,
+                ),
+                scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Review your answers',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.displaySmall.copyWith(
+                        color: context.colors.text.accent,
+                        letterSpacing: 0,
                       ),
                     ),
-                  );
-            final votingPowerPreparing =
-                _votingPowerPreparationInFlight ||
-                (state.eligibleWeightZatoshi == null &&
-                    state.error == null &&
-                    _shouldPrepareVotingPower(state));
-            final eligibilityMessage = _votingEligibilityMessage(
-              state,
-              preparing: votingPowerPreparing,
-            );
-            final onSubmit =
-                draft.isEmpty || !state.hasConfirmedVotingEligibility
-                ? null
-                : () => context.go(
-                    votingStatusRoute(widget.roundId, accountUuid: accountUuid),
-                  );
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AppPaneToolbar(backLinkMinWidth: 60),
-                Expanded(
-                  child: VotingPaneScrollView(
-                    maxWidth: 560,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                    ),
-                    scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Review your answers',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.displaySmall.copyWith(
-                            color: context.colors.text.accent,
-                            letterSpacing: 0,
-                          ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (state.hasConfirmedVotingEligibility)
+                      for (final entry in proposals.asMap().entries) ...[
+                        VotingProposalCard(
+                          proposal: entry.value,
+                          fallbackForumUri: roundForumUri,
+                          selectedChoice: draft.choices[entry.value.id],
+                          readOnly: true,
+                          statusLabel: draft.choices[entry.value.id] == null
+                              ? 'Skipped'
+                              : null,
+                          titleCollapsedMaxLines: 1,
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        if (state.hasConfirmedVotingEligibility)
-                          for (final entry in proposals.asMap().entries) ...[
-                            VotingProposalCard(
-                              proposal: entry.value,
-                              fallbackForumUri: roundForumUri,
-                              selectedChoice: draft.choices[entry.value.id],
-                              readOnly: true,
-                              statusLabel: draft.choices[entry.value.id] == null
-                                  ? 'Skipped'
-                                  : null,
-                              titleCollapsedMaxLines: 1,
-                            ),
-                            if (entry.key != proposals.length - 1)
-                              const SizedBox(height: AppSpacing.s),
-                          ],
-                        if (state.hasConfirmedVotingEligibility &&
-                            draft.isEmpty) ...[
-                          const SizedBox(height: AppSpacing.xs),
-                          const _Message(
-                            'Choose at least one option before submitting.',
-                          ),
-                        ],
-                        if (eligibilityMessage != null) ...[
-                          const SizedBox(height: AppSpacing.xs),
-                          _Message(eligibilityMessage),
-                        ],
+                        if (entry.key != proposals.length - 1)
+                          const SizedBox(height: AppSpacing.s),
                       ],
-                    ),
-                  ),
+                    if (state.hasConfirmedVotingEligibility &&
+                        draft.isEmpty) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      const _Message(
+                        'Choose at least one option before submitting.',
+                      ),
+                    ],
+                    if (eligibilityMessage != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      _Message(eligibilityMessage),
+                    ],
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(
-                    top: AppSpacing.xs,
-                    bottom: AppSpacing.md,
-                  ),
-                  child: Center(
-                    child: AppButton(
-                      key: const ValueKey('voting_confirm_submit_button'),
-                      onPressed: onSubmit,
-                      variant: AppButtonVariant.primary,
-                      minWidth: 240,
-                      child: const Text('Confirm & submit'),
-                    ),
-                  ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(
+                top: AppSpacing.xs,
+                bottom: AppSpacing.md,
+              ),
+              child: Center(
+                child: AppButton(
+                  key: const ValueKey('voting_confirm_submit_button'),
+                  onPressed: onSubmit,
+                  variant: AppButtonVariant.primary,
+                  minWidth: 240,
+                  child: const Text('Confirm & submit'),
                 ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  Widget _stateView(Widget child) {
+    if (!widget.showDesktopToolbar) return child;
+    return VotingPaneStateView(backLinkMinWidth: 60, child: child);
   }
 }
 

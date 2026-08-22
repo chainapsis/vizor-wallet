@@ -31,14 +31,33 @@ const _votingBetaLabelCenterDx = 34.0;
 const _votingBetaLabelTopOffset = -10.0;
 const _votingHeaderTitleHeight = 33.0;
 
-class VotingPollsScreen extends ConsumerStatefulWidget {
+class VotingPollsScreen extends StatelessWidget {
   const VotingPollsScreen({super.key});
 
   @override
-  ConsumerState<VotingPollsScreen> createState() => _VotingPollsScreenState();
+  Widget build(BuildContext context) {
+    return const AppDesktopShell(
+      sidebar: AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingPollsView(showDesktopChrome: true),
+      ),
+    );
+  }
 }
 
-class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
+/// Shared poll-list behavior and cards. Platform screens own the surrounding
+/// navigation chrome.
+class VotingPollsView extends ConsumerStatefulWidget {
+  const VotingPollsView({required this.showDesktopChrome, super.key});
+
+  final bool showDesktopChrome;
+
+  @override
+  ConsumerState<VotingPollsView> createState() => _VotingPollsViewState();
+}
+
+class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
   bool _showSettings = false;
   bool _entryRefreshInFlight = true;
   bool _pollListRefreshInFlight = false;
@@ -69,49 +88,45 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       _handleExternalRefreshRequest();
     });
     final rounds = ref.watch(votingRoundsProvider);
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: Stack(
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AppPaneToolbar(backLinkMinWidth: 60),
-                _VotingHeader(onSettings: _openSettings),
-                Expanded(
-                  child: _entryRefreshInFlight && !rounds.hasValue
-                      ? const VotingPaneLoading()
-                      : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
-                            rounds.hasValue
-                      ? _buildRoundList(rounds.requireValue)
-                      : rounds.when(
-                          skipLoadingOnRefresh: false,
-                          skipLoadingOnReload: false,
-                          loading: () => const VotingPaneLoading(),
-                          error: (error, _) => _VotingMessage(
-                            title: "Couldn't load voting rounds",
-                            message: friendlyVotingErrorMessage(error),
-                            actionLabel: 'Try again',
-                            onAction: () => _reloadRoundsWithFreshConfig(),
-                          ),
-                          data: _buildRoundList,
-                        ),
-                ),
-              ],
+            if (widget.showDesktopChrome) ...[
+              const AppPaneToolbar(backLinkMinWidth: 60),
+              _VotingHeader(onSettings: _openSettings),
+            ],
+            Expanded(
+              child: _entryRefreshInFlight && !rounds.hasValue
+                  ? const VotingPaneLoading()
+                  : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
+                        rounds.hasValue
+                  ? _buildRoundList(rounds.requireValue)
+                  : rounds.when(
+                      skipLoadingOnRefresh: false,
+                      skipLoadingOnReload: false,
+                      loading: () => const VotingPaneLoading(),
+                      error: (error, _) => _VotingMessage(
+                        title: "Couldn't load voting rounds",
+                        message: friendlyVotingErrorMessage(error),
+                        actionLabel: 'Try again',
+                        onAction: () => _reloadRoundsWithFreshConfig(),
+                      ),
+                      data: _buildRoundList,
+                    ),
             ),
-            if (_showSettings)
-              AppPaneModalOverlay(
-                onDismiss: _closeSettings,
-                child: VotingConfigSettingsPanel(
-                  onClose: _closeSettings,
-                  onUpdated: _closeSettings,
-                ),
-              ),
           ],
         ),
-      ),
+        if (_showSettings)
+          AppPaneModalOverlay(
+            onDismiss: _closeSettings,
+            child: VotingConfigSettingsPanel(
+              onClose: _closeSettings,
+              onUpdated: _closeSettings,
+            ),
+          ),
+      ],
     );
   }
 
@@ -123,13 +138,16 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
+    final horizontalPadding = widget.showDesktopChrome
+        ? AppSpacing.md
+        : AppSpacing.sm;
     _preSyncVisibleRoundTrees(sortedItems);
     return VotingPaneListView.separated(
       maxWidth: 560,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
         AppSpacing.sm,
-        AppSpacing.md,
+        horizontalPadding,
         40,
       ),
       itemCount: sortedItems.length,
@@ -385,6 +403,7 @@ class _PollCard extends StatelessWidget {
     return Material(
       color: const Color(0x00000000),
       child: Ink(
+        key: ValueKey('voting_poll_card_${round.roundId}'),
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
           color: colors.background.ground,
