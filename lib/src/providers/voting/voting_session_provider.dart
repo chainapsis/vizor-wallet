@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../core/formatting/hex_codec.dart';
-import '../../core/layout/app_form_factor.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
@@ -32,7 +31,7 @@ final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
 @visibleForTesting
 bool automaticVotingShareTrackingEnabled() {
-  return kAppFormFactor == AppFormFactor.desktop;
+  return true;
 }
 
 /// The PCZT value-pool tag for Ironwood actions.

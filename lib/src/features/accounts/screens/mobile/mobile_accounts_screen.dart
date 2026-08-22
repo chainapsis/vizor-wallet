@@ -24,6 +24,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -494,7 +495,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (mounted) {
         showAppToast(
           context,
-          isLastAccount
+          e is VotingSubmissionInProgressException
+              ? e.message
+              : isLastAccount
               ? "Couldn't reset Vizor"
               : "Couldn't remove the account",
           iconName: AppIcons.cross,

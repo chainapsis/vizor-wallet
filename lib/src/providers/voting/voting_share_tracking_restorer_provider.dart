@@ -188,9 +188,7 @@ class VotingShareTrackingRestorer {
 }
 
 final votingShareTrackingRestorerProvider = Provider((ref) {
-  const enabled = kAppFormFactor == AppFormFactor.desktop;
-  final restorer = VotingShareTrackingRestorer(ref, enabled: enabled);
-  if (!enabled) return restorer;
+  final restorer = VotingShareTrackingRestorer(ref, enabled: true);
   final registry = ref.read(votingShareTrackingRegistryProvider);
   void requestRestore() => unawaited(restorer.restore());
   registry.addRestoreRequestListener(requestRestore);
@@ -202,9 +200,19 @@ final votingShareTrackingRestorerProvider = Provider((ref) {
     }
   });
   unawaited(restorer.restore());
-  final lifecycleListener = AppLifecycleListener(
-    onResume: () => unawaited(restorer.restore()),
-  );
+  // Desktop keeps share tracking running while hidden (the process stays
+  // alive), so resume only needs to re-run discovery. Mobile is
+  // foreground-only: backgrounding quiesces tracked work so iOS suspension
+  // cannot interrupt a share submission mid-flight, and resume undoes the
+  // quiesce before re-running discovery.
+  final lifecycleListener = kAppFormFactor == AppFormFactor.mobile
+      ? AppLifecycleListener(
+          onHide: () => unawaited(restorer.pause()),
+          onResume: () => unawaited(restorer.resume()),
+        )
+      : AppLifecycleListener(
+          onResume: () => unawaited(restorer.restore()),
+        );
   ref.onDispose(() {
     registry.removeRestoreRequestListener(requestRestore);
     lifecycleListener.dispose();
