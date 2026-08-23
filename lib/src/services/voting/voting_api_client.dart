@@ -228,21 +228,27 @@ class VotingApiClient {
   }
 
   Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
-    final response = await _withVoteServerFailover(
-      policy: _readRetryPolicy,
-      operation: (baseUrl) async {
-        final requestUri = _endpoint(['tx', txHash], baseUrl: baseUrl);
-        // Confirmation polling retries the complete lookup. Trying each server
-        // once per pass keeps one offline fallback from consuming the request
-        // timeout repeatedly before the next server gets a chance to answer.
-        final response = await _get(requestUri, timeout: _timeout);
-        if (response.statusCode != 404 && response.statusCode != 422) {
-          _throwIfNotSuccess(requestUri, response);
-        }
-        return response;
-      },
-      shouldTryNextCandidate: (response) => response.statusCode == 404,
-    );
+    final VotingHttpResponse response;
+    try {
+      response = await _withVoteServerFailover(
+        policy: _readRetryPolicy,
+        operation: (baseUrl) async {
+          final requestUri = _endpoint(['tx', txHash], baseUrl: baseUrl);
+          // Confirmation polling retries the complete lookup. Trying each
+          // server once per pass keeps one offline fallback from consuming the
+          // request timeout repeatedly before the next server gets a chance.
+          final response = await _get(requestUri, timeout: _timeout);
+          if (response.statusCode != 404 && response.statusCode != 422) {
+            _throwIfNotSuccess(requestUri, response);
+          }
+          return response;
+        },
+        shouldTryNextCandidate: (response) => response.statusCode == 404,
+      );
+    } catch (error) {
+      if (_readRetryPolicy.shouldRetry(error)) return null;
+      rethrow;
+    }
     if (response.statusCode == 404) return null;
     return VotingTxConfirmation.fromJson(
       _objectFromValue(jsonDecode(response.bodyText)),

@@ -559,7 +559,7 @@ void main() {
       final flakyFallbackHttp = FakeVotingHttpClient(
         responses: {
           'https://vote-primary.example/shielded-vote/v1/tx/flaky-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
+              timeoutResponse(),
           'https://vote-secondary.example/shielded-vote/v1/tx/flaky-tx':
               jsonResponse({'error': 'unavailable'}, statusCode: 503),
         },
