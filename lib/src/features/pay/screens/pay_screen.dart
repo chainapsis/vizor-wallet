@@ -182,7 +182,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
               returnTarget: SwapActivityReturnTarget.pay,
             ).toString(),
           );
-        case SwapStartedKeystoneSigning(:final intentId):
+        case SwapStartedHardwareSigning(:final intentId):
           context.go(
             swapActivityDetailUri(
               intentId: intentId,

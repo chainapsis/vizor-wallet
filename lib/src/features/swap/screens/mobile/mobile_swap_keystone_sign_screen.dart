@@ -15,7 +15,7 @@ import '../../../send/screens/mobile/mobile_send_screen.dart'
 import '../../../send/services/sapling_params.dart';
 import '../../models/swap_deposit_broadcast_result.dart';
 import '../../models/swap_activity_navigation.dart';
-import '../../models/swap_keystone_broadcast_result.dart';
+import '../../models/swap_hardware_broadcast_result.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../providers/swap_hardware_signing_service.dart';
@@ -44,7 +44,7 @@ sealed class MobileSwapKeystoneSignResult {
 class MobileSwapKeystoneSignSuccess extends MobileSwapKeystoneSignResult {
   const MobileSwapKeystoneSignSuccess(this.broadcast);
 
-  final SwapKeystoneBroadcastResult broadcast;
+  final SwapHardwareBroadcastResult broadcast;
 }
 
 class MobileSwapKeystoneSignFailure extends MobileSwapKeystoneSignResult {
@@ -252,7 +252,7 @@ class _MobileSwapKeystoneSignScreenState
     if (!context.mounted) return;
     await _completeWithBroadcast(
       context,
-      SwapKeystoneBroadcastResult(
+      SwapHardwareBroadcastResult(
         txHash: result.txid,
         status: result.status,
         message: result.message,
@@ -262,7 +262,7 @@ class _MobileSwapKeystoneSignScreenState
 
   Future<void> _completeWithBroadcast(
     BuildContext context,
-    SwapKeystoneBroadcastResult broadcast,
+    SwapHardwareBroadcastResult broadcast,
   ) async {
     if (!widget.args.startedFromReview) {
       if (!context.mounted) return;
@@ -272,7 +272,7 @@ class _MobileSwapKeystoneSignScreenState
 
     await ref
         .read(swapStateProvider.notifier)
-        .recordKeystoneDepositBroadcast(
+        .recordHardwareDepositBroadcast(
           intent: widget.args.intent,
           broadcast: broadcast,
         );
@@ -309,7 +309,7 @@ class _MobileSwapKeystoneSignScreenState
     if (widget.args.startedFromReview) {
       ref
           .read(swapStateProvider.notifier)
-          .clearPendingKeystoneSigningIntent(widget.args.intent.id);
+          .clearPendingHardwareSigningIntent(widget.args.intent.id);
       context.go(widget.args.returnTarget.path);
       return;
     }

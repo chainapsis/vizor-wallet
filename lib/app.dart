@@ -29,8 +29,13 @@ import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
+import 'src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/ledger/ledger_capability.dart';
+import 'src/features/ledger/services/ledger_account_service.dart';
+import 'src/features/ledger/services/ledger_operation_recovery.dart';
+import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
@@ -50,6 +55,8 @@ import 'src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import 'src/features/onboarding/keystone/keystone_scan_qr_screen.dart';
 import 'src/features/onboarding/keystone/keystone_select_account_screen.dart';
 import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
+import 'src/features/onboarding/ledger/ledger_connect_screen.dart';
+import 'src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
@@ -66,6 +73,7 @@ import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/send/services/send_flow.dart'
     show
+        resolveSendReviewRoutePayload,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider;
@@ -468,6 +476,86 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: const WelcomeScreen(showBackButton: true),
       transitionsBuilder: _onboardingFadeTransition,
     ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger',
+    redirect: (_, _) => ref.read(ledgerStaticCapabilityProvider).supported
+        ? null
+        : '/add-account',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const LedgerConnectScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/birthday',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerBirthdayArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: ImportWalletBirthdayScreen.ledger(
+          onBirthdaySelected: (birthdayHeight) async {
+            if (!context.mounted) return;
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: birthdayHeight,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/customise-account',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerCustomiseAccountArgs
+          ? null
+          : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerCustomiseAccountArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: CustomiseAccountScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: 'Wallet Birthday Height',
+            routePath: '/onboarding/ledger/birthday',
+            routeExtra: LedgerBirthdayArgs(account: args.account),
+          ),
+          onFinish: (name, profilePictureId) async {
+            await ref.read(ledgerAccountImporterProvider)(
+              name: name,
+              account: args.account,
+              birthdayHeight: args.birthdayHeight,
+              profilePictureId: profilePictureId,
+            );
+            if (!context.mounted) return;
+            context.go('/home');
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
   ),
   ShellRoute(
     pageBuilder: (context, state, child) => CustomTransitionPage<void>(
@@ -944,7 +1032,15 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(
     path: '/send/review',
     builder: (_, state) {
-      final args = state.extra;
+      final routeArgs = state.extra;
+      final args = resolveSendReviewRoutePayload(
+        routePayload: routeArgs,
+        retainedPayload: ref.read(sendStatusRoutePayloadProvider),
+        sendFlowId: state.uri.queryParameters['flow'],
+      );
+      if (routeArgs == null && args != null) {
+        log('Send review: restored route payload after router refresh');
+      }
       if (args is! SendReviewArgs) return const SendScreen();
       return SendReviewScreen(args: args);
     },
@@ -973,12 +1069,21 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       if (args is KeystoneBroadcastArgs) {
         return SendStatusScreen(args: args.reviewArgs, keystone: args);
       }
+      if (args is LedgerBroadcastArgs) {
+        return SendStatusScreen(args: args.reviewArgs, ledger: args);
+      }
       if (args is! SendReviewArgs) return const SendScreen();
       return SendStatusScreen(args: args);
     },
   ),
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
+  GoRoute(
+    path: '/settings/hardware-account',
+    builder: (_, state) => HardwareAccountDetailsScreen(
+      accountUuid: state.extra is String ? state.extra as String : null,
+    ),
+  ),
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
   GoRoute(
     path: '/settings/secret-passphrase',
@@ -1127,26 +1232,28 @@ class ZcashWalletApp extends ConsumerWidget {
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
                     child: IronwoodMigrationCoordinatorHost(
-                      child: IronwoodMigrationPrivacyLockHost(
-                        child: SyncKeepAwakeNativeHost(
-                          child: SyncKeepAwakePrivacyLockHost(
-                            child: SyncKeepAwakeInteractionListener(
-                              child: GestureDetector(
-                                onTap: () {
-                                  // Leaf-only: skip when the primary focus is a
-                                  // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                  // Unfocusing the scope itself strips the scope's
-                                  // "most-recently-focused child" memory, which leaves the
-                                  // next Tab with no deterministic starting point.
-                                  final primary =
-                                      FocusManager.instance.primaryFocus;
-                                  if (primary != null &&
-                                      primary is! FocusScopeNode) {
-                                    primary.unfocus();
-                                  }
-                                },
-                                behavior: HitTestBehavior.translucent,
-                                child: child!,
+                      child: LedgerOperationRecoveryHost(
+                        child: IronwoodMigrationPrivacyLockHost(
+                          child: SyncKeepAwakeNativeHost(
+                            child: SyncKeepAwakePrivacyLockHost(
+                              child: SyncKeepAwakeInteractionListener(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    // Leaf-only: skip when the primary focus is a
+                                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                    // Unfocusing the scope itself strips the scope's
+                                    // "most-recently-focused child" memory, which leaves the
+                                    // next Tab with no deterministic starting point.
+                                    final primary =
+                                        FocusManager.instance.primaryFocus;
+                                    if (primary != null &&
+                                        primary is! FocusScopeNode) {
+                                      primary.unfocus();
+                                    }
+                                  },
+                                  behavior: HitTestBehavior.translucent,
+                                  child: child!,
+                                ),
                               ),
                             ),
                           ),
@@ -1311,6 +1418,7 @@ class _WindowsUpdatePromptHostState
         path.startsWith('/import') ||
         path.startsWith('/import-keystone') ||
         path.startsWith('/send') ||
+        path.startsWith('/settings/hardware-account') ||
         path.startsWith('/settings/secret-passphrase') ||
         path.startsWith('/settings/viewing-key') ||
         path.startsWith('/settings/change-password')) {

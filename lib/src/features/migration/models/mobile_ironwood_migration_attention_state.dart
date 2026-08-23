@@ -46,7 +46,7 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
   rust_sync.MigrationStatus? status, {
   required int currentHeight,
   required int broadcastHeight,
-  required bool isHardware,
+  required bool isKeystone,
 }) {
   if (status == null) return null;
   final needsInputCount = status.parts
@@ -54,14 +54,14 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
       .length;
   if (needsInputCount > 0) {
     return MobileIronwoodMigrationAttention(
-      kind: isHardware
+      kind: isKeystone
           ? MobileIronwoodMigrationAttentionKind.signature
           : MobileIronwoodMigrationAttentionKind.continueMigration,
       count: needsInputCount,
     );
   }
   if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-    if (isHardware && migrationRequiresKeystoneSignature(status)) {
+    if (isKeystone && migrationRequiresKeystoneSignature(status)) {
       final signingPartIndices = status.currentSigningPartIndices;
       return MobileIronwoodMigrationAttention(
         kind: MobileIronwoodMigrationAttentionKind.signature,

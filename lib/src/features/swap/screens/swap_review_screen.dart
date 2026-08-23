@@ -100,7 +100,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
               returnTarget: returnTarget,
             ).toString(),
           );
-        case SwapStartedKeystoneSigning(:final intentId):
+        case SwapStartedHardwareSigning(:final intentId):
           context.go(
             swapActivityDetailUri(
               intentId: intentId,

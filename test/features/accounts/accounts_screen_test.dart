@@ -15,10 +15,13 @@ import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -297,7 +300,11 @@ void main() {
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Account details'), findsOneWidget);
+    expect(find.text('View viewing key'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
+      'Account details',
+      'View viewing key',
       'Copy address',
       'Send ZEC',
       'Edit account',
@@ -415,7 +422,7 @@ void main() {
     expect(find.text('secret passphrase route account-3'), findsOneWidget);
   });
 
-  testWidgets('hardware current account hides secret passphrase shortcut', (
+  testWidgets('hardware current account opens its safe account details', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -430,6 +437,8 @@ void main() {
           name: 'Keystone Vault',
           order: 0,
           isHardware: true,
+          birthdayHeight: 2500000,
+          zip32AccountIndex: 7,
         ),
       ],
       activeAccountUuid: 'hardware-account',
@@ -448,14 +457,149 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Account details'), findsOneWidget);
     // Unlike the secret passphrase, a UFVK export never grants spend
     // authority, so hardware accounts still get the viewing-key shortcut.
     expect(find.text('View viewing key'), findsOneWidget);
 
-    await tester.tap(find.text('View viewing key'));
+    _expectVerticalTextOrder(tester, const [
+      'Account details',
+      'View viewing key',
+      'Edit account',
+      'Copy address',
+      'Remove account',
+    ]);
+
+    await tester.tap(find.text('Account details'));
     await tester.pumpAndSettle();
 
-    expect(find.text('viewing key route hardware-account'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('hardware_account_details_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Keystone hardware wallet'), findsOneWidget);
+    expect(find.text('2500000'), findsOneWidget);
+    expect(find.text('7'), findsOneWidget);
+  });
+
+  testWidgets('Ledger account uses a Ledger-specific hardware badge', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'ledger-account',
+          name: 'Ledger Vault',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          birthdayHeight: 2600000,
+          zip32AccountIndex: 12,
+          ledgerConnectionPreference: LedgerConnectionPreference.automatic,
+          ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+          ledgerDeviceId: 'nano-x-id',
+          ledgerDeviceName: 'Rowan Ledger',
+          ledgerDeviceModel: 'Nano X',
+        ),
+      ],
+      activeAccountUuid: 'ledger-account',
+      activeAddress: 'u1ledgeraddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_ledger')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_keystone')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Account details'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger hardware wallet'), findsOneWidget);
+    expect(find.text('2600000'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('Connection preference'), findsOneWidget);
+    expect(find.text('Automatic'), findsOneWidget);
+    expect(find.text('Nano X'), findsOneWidget);
+    expect(find.text('Rowan Ledger'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_change_connection_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Ledger USB-only model disables Bluetooth preference', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'ledger-account',
+          name: 'Ledger Vault',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          zip32AccountIndex: 0,
+          ledgerConnectionPreference: LedgerConnectionPreference.usb,
+          ledgerLastTransport: LedgerConnectionTransport.usb,
+          ledgerDeviceModel: 'Nano S Plus',
+        ),
+      ],
+      activeAccountUuid: 'ledger-account',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Account details'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_change_connection_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Nano S Plus is not supported over Bluetooth by this Vizor build.',
+      ),
+      findsOneWidget,
+    );
+    final bluetoothButton = tester.widget<AppButton>(
+      find.ancestor(
+        of: find.text('Set up Bluetooth'),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(bluetoothButton.onPressed, isNull);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -1328,6 +1472,11 @@ Widget _accountsHarness({
         builder: (_, _) => const Text('settings route'),
       ),
       GoRoute(
+        path: '/settings/hardware-account',
+        builder: (_, state) =>
+            HardwareAccountDetailsScreen(accountUuid: state.extra as String?),
+      ),
+      GoRoute(
         path: '/settings/secret-passphrase',
         builder: (_, state) =>
             Text('secret passphrase route ${state.extra as String?}'),
@@ -1344,6 +1493,7 @@ Widget _accountsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       swapPendingIntentCountProvider.overrideWith((ref, accountUuid) async {
@@ -1441,6 +1591,8 @@ final _bootstrap = AppBootstrapState(
         name: 'Shielded Savings',
         order: 1,
         isHardware: true,
+        birthdayHeight: 2000000,
+        zip32AccountIndex: 1,
         profilePictureId: kDefaultProfilePictureId,
       ),
       AccountInfo(uuid: 'account-3', name: 'Travel Funds', order: 2),

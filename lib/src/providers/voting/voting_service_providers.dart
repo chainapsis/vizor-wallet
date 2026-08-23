@@ -222,6 +222,14 @@ final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
   },
 );
 
+/// Synchronous signer-kind lookup for vendor-specific voting capabilities.
+/// Hardware accounts without a persisted signer kind fail closed in the
+/// session layer instead of being routed to another vendor's signing flow.
+final votingAccountHardwareSignerKindProvider =
+    Provider<HardwareSignerKind? Function(String)>((ref) {
+      return ref.read(accountProvider.notifier).hardwareSignerKindForAccount;
+    });
+
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
   return ref.watch(rpcEndpointProvider);
@@ -763,6 +771,61 @@ final class _FrbVotingShareTrackingPassHandle
     if (isDisposed) return;
     _inner.dispose();
   }
+}
+
+/// Vendor-neutral app-layer names for the pinned voting crate's external
+/// signer storage and proof APIs. The crate types remain Keystone-named, but
+/// neither the durable records nor these operations require a Keystone device.
+extension VotingHardwareSignatureRustApi on VotingRustApi {
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildHardwareDelegationRequests({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<int> bundleIndices,
+  }) => buildKeystoneDelegationRequests(
+    ctx: ctx,
+    storedHotkeySecret: storedHotkeySecret,
+    bundleIndices: bundleIndices,
+  );
+
+  Future<rust_api.ApiKeystoneSignatureBatchResult> storeHardwareSignatures({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
+  }) => storeKeystoneSignaturesBatch(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    signatures: signatures,
+  );
+
+  Future<List<rust_voting.KeystoneSignatureRecord>> getHardwareSignatures({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+  }) => getKeystoneSignatures(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+  );
+
+  Stream<rust_api.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithHardwareSignatureWithProgress({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+    required List<int> signature,
+    required List<int> sighash,
+  }) => buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+    ctx: ctx,
+    pirServerUrls: pirServerUrls,
+    storedHotkeySecret: storedHotkeySecret,
+    bundleIndex: bundleIndex,
+    keystoneSig: signature,
+    keystoneSighash: sighash,
+  );
 }
 
 /// Production implementation backed by generated FRB calls.

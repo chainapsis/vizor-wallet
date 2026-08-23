@@ -13,7 +13,7 @@ import '../../send/services/sapling_params.dart';
 import '../../send/screens/keystone_send_scan_screen.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/swap_deposit_broadcast_result.dart';
-import '../models/swap_keystone_broadcast_result.dart';
+import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
 
@@ -27,7 +27,7 @@ class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
 
   final SwapIntent intent;
   final VoidCallback onCancel;
-  final Future<void> Function(SwapKeystoneBroadcastResult) onDepositBroadcast;
+  final Future<void> Function(SwapHardwareBroadcastResult) onDepositBroadcast;
 
   @override
   ConsumerState<SwapKeystoneSigningOverlay> createState() =>
@@ -240,7 +240,7 @@ class _SwapKeystoneSigningOverlayState
           'with tx=${_shortSwapValue(result.txid)}; recording txid for swap tracking',
         );
       }
-      final broadcast = SwapKeystoneBroadcastResult(
+      final broadcast = SwapHardwareBroadcastResult(
         txHash: result.txid,
         status: result.status,
         message: result.message,
