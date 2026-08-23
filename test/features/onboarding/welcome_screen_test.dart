@@ -162,6 +162,10 @@ void main() {
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('welcome_connect_ledger_button')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Back returns to the pushed accounts route', (tester) async {

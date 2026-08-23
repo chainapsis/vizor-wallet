@@ -11349,6 +11349,11 @@ ProviderContainer _sessionContainer({
       votingAccountIsHardwareProvider.overrideWithValue(
         (uuid) async => effectiveHardwareAccountUuids.contains(uuid),
       ),
+      votingAccountHardwareSignerKindProvider.overrideWithValue(
+        (uuid) => effectiveHardwareAccountUuids.contains(uuid)
+            ? HardwareSignerKind.keystone
+            : null,
+      ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(
           networkName: 'main',

@@ -1288,7 +1288,7 @@ class _MobileMigrationRedesignedStatusState
       widget.status,
       currentHeight: _currentHeight(),
       broadcastHeight: _currentBroadcastHeight(),
-      isHardware: widget.isHardware,
+      isKeystone: widget.isHardware,
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(

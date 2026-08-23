@@ -22,13 +22,15 @@ import '../../send/widgets/verify_address_modal.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_address_book_helpers.dart';
-import '../models/swap_keystone_broadcast_result.dart';
+import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/pay_deposit_transaction_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
+import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
+import 'swap_ledger_signing_overlay.dart';
 import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
@@ -36,7 +38,7 @@ import 'pay_activity_status_content.dart';
 import 'swap_status_page_content.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
-/// selection, status refresh, deposit submission, Keystone signing)
+/// selection, status refresh, deposit submission, hardware signing)
 /// is identical; only the widgets differ — desktop keeps the 400pt
 /// pane content, mobile renders the Figma mobile swap frames.
 enum SwapActivityDetailLayout { desktop, mobile }
@@ -60,8 +62,8 @@ class SwapActivityDetailSurface extends ConsumerStatefulWidget {
       _SwapActivityDetailSurfaceState();
 }
 
-class _SwapKeystoneSigningRequest {
-  const _SwapKeystoneSigningRequest({
+class _SwapHardwareSigningRequest {
+  const _SwapHardwareSigningRequest({
     required this.intent,
     required this.intentId,
     required this.accountUuid,
@@ -88,7 +90,7 @@ class _SwapActivityDetailSurfaceState
   final _toastOverlayContextKey = GlobalKey(
     debugLabel: 'swap_activity_toast_overlay_context',
   );
-  _SwapKeystoneSigningRequest? _keystoneSigningRequest;
+  _SwapHardwareSigningRequest? _hardwareSigningRequest;
   _PayRecipientOverlayRequest? _payRecipientOverlayRequest;
   String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
@@ -126,7 +128,7 @@ class _SwapActivityDetailSurfaceState
     final swapState = ref.read(swapStateProvider);
     final persistedIntent = _intentById(swapState.intents, intentId);
     final pendingIntent = widget.autoSignZecDeposit
-        ? _pendingKeystoneSigningIntentById(swapState, intentId)
+        ? _pendingHardwareSigningIntentById(swapState, intentId)
         : null;
     final intent = persistedIntent ?? pendingIntent;
     if (intent == null) return;
@@ -139,24 +141,34 @@ class _SwapActivityDetailSurfaceState
         intent.direction == SwapDirection.zecToExternal &&
         !(intent.depositTxHash?.trim().isNotEmpty ?? false);
     final request = needsAutoSign
-        ? _SwapKeystoneSigningRequest(
+        ? _SwapHardwareSigningRequest(
             intent: intent,
             intentId: intent.id,
             accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
-            removeUnsentIntentOnCancel: persistedIntent != null,
+            // Ledger provider intents are durable recovery checkpoints. Keep
+            // them visible in Activity when the user closes or rejects the
+            // device request so signing can be resumed before expiry.
+            removeUnsentIntentOnCancel:
+                persistedIntent != null &&
+                _hardwareSignerKindForIntent(intent) !=
+                    HardwareSignerKind.ledger,
             clearPendingIntentOnCancel: pendingIntent != null,
           )
         : null;
     if (request != null && widget.layout == SwapActivityDetailLayout.mobile) {
       setState(() => _initialIntentApplied = true);
-      unawaited(_openMobileKeystoneSigning(intent, request));
+      if (_hardwareSignerKindForIntent(intent) == HardwareSignerKind.ledger) {
+        unawaited(_openMobileLedgerSigning(intent, request));
+      } else {
+        unawaited(_openMobileKeystoneSigning(intent, request));
+      }
       return;
     }
 
     setState(() {
       _initialIntentApplied = true;
       if (request != null) {
-        _keystoneSigningRequest = request;
+        _hardwareSigningRequest = request;
       }
     });
   }
@@ -176,6 +188,14 @@ class _SwapActivityDetailSurfaceState
         account.uuid: account.isHardware,
     };
     return accountHardwareByUuid[accountUuid] ?? false;
+  }
+
+  HardwareSignerKind? _hardwareSignerKindForIntent(SwapIntent intent) {
+    final accountUuid = intent.accountUuid;
+    if (accountUuid == null || accountUuid.trim().isEmpty) return null;
+    return ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(accountUuid);
   }
 
   void _refreshStatus() {
@@ -227,26 +247,30 @@ class _SwapActivityDetailSurfaceState
   }
 
   void _signZecDeposit(SwapIntent intent) {
-    final request = _SwapKeystoneSigningRequest(
+    final request = _SwapHardwareSigningRequest(
       intent: intent,
       intentId: intent.id,
       accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
-      unawaited(_openMobileKeystoneSigning(intent, request));
+      if (_hardwareSignerKindForIntent(intent) == HardwareSignerKind.ledger) {
+        unawaited(_openMobileLedgerSigning(intent, request));
+      } else {
+        unawaited(_openMobileKeystoneSigning(intent, request));
+      }
       return;
     }
 
     setState(() {
-      _keystoneSigningRequest = request;
+      _hardwareSigningRequest = request;
     });
   }
 
-  void _closeKeystoneSigning({bool cleanupCancelledRequest = false}) {
-    final request = _keystoneSigningRequest;
-    setState(() => _keystoneSigningRequest = null);
+  void _closeHardwareSigning({bool cleanupCancelledRequest = false}) {
+    final request = _hardwareSigningRequest;
+    setState(() => _hardwareSigningRequest = null);
     if (!cleanupCancelledRequest || request == null) return;
-    _cleanupCancelledKeystoneSigningRequest(request);
+    _cleanupCancelledHardwareSigningRequest(request);
   }
 
   void _showPayRecipientAddress(String address, AddressBookContact? contact) {
@@ -263,13 +287,13 @@ class _SwapActivityDetailSurfaceState
     setState(() => _payRecipientOverlayRequest = null);
   }
 
-  void _cleanupCancelledKeystoneSigningRequest(
-    _SwapKeystoneSigningRequest request,
+  void _cleanupCancelledHardwareSigningRequest(
+    _SwapHardwareSigningRequest request,
   ) {
     if (request.clearPendingIntentOnCancel) {
       ref
           .read(swapStateProvider.notifier)
-          .clearPendingKeystoneSigningIntent(request.intentId);
+          .clearPendingHardwareSigningIntent(request.intentId);
       if (mounted) {
         context.go((widget.returnTarget ?? SwapActivityReturnTarget.swap).path);
       }
@@ -284,20 +308,20 @@ class _SwapActivityDetailSurfaceState
     }
   }
 
-  Future<void> _handleKeystoneDepositBroadcast(
+  Future<void> _handleHardwareDepositBroadcast(
     BuildContext context,
-    SwapKeystoneBroadcastResult result,
+    SwapHardwareBroadcastResult result,
   ) async {
-    final request = _keystoneSigningRequest;
+    final request = _hardwareSigningRequest;
     if (request == null) return;
-    await _submitKeystoneDepositBroadcast(context, request, result);
+    await _submitHardwareDepositBroadcast(context, request, result);
     if (!mounted) return;
-    _closeKeystoneSigning();
+    _closeHardwareSigning();
   }
 
   Future<void> _openMobileKeystoneSigning(
     SwapIntent intent,
-    _SwapKeystoneSigningRequest request,
+    _SwapHardwareSigningRequest request,
   ) async {
     final result = await context.push<MobileSwapKeystoneSignResult>(
       '/swap/keystone-sign',
@@ -305,32 +329,48 @@ class _SwapActivityDetailSurfaceState
     );
     if (!mounted) return;
     if (result == null) {
-      _cleanupCancelledKeystoneSigningRequest(request);
+      _cleanupCancelledHardwareSigningRequest(request);
       return;
     }
     switch (result) {
       case MobileSwapKeystoneSignSuccess(:final broadcast):
-        await _submitKeystoneDepositBroadcast(context, request, broadcast);
+        await _submitHardwareDepositBroadcast(context, request, broadcast);
       case MobileSwapKeystoneSignFailure(:final message):
         showAppToast(
           _toastContext(context),
           message,
           iconName: AppIcons.warning,
         );
-        _cleanupCancelledKeystoneSigningRequest(request);
+        _cleanupCancelledHardwareSigningRequest(request);
     }
   }
 
-  Future<void> _submitKeystoneDepositBroadcast(
+  Future<void> _openMobileLedgerSigning(
+    SwapIntent intent,
+    _SwapHardwareSigningRequest request,
+  ) async {
+    final result = await context.push<MobileSwapLedgerSignSuccess>(
+      '/swap/ledger-sign',
+      extra: MobileSwapLedgerSignArgs(intent: intent),
+    );
+    if (!mounted) return;
+    if (result == null) {
+      _cleanupCancelledHardwareSigningRequest(request);
+      return;
+    }
+    await _submitHardwareDepositBroadcast(context, request, result.broadcast);
+  }
+
+  Future<void> _submitHardwareDepositBroadcast(
     BuildContext context,
-    _SwapKeystoneSigningRequest request,
-    SwapKeystoneBroadcastResult result,
+    _SwapHardwareSigningRequest request,
+    SwapHardwareBroadcastResult result,
   ) async {
     final toastContext = _toastContext(context);
     if (request.clearPendingIntentOnCancel) {
       await ref
           .read(swapStateProvider.notifier)
-          .recordKeystoneDepositBroadcast(
+          .recordHardwareDepositBroadcast(
             intent: request.intent,
             broadcast: result,
           );
@@ -359,7 +399,7 @@ class _SwapActivityDetailSurfaceState
       (previous, next) {
         if (previous == next || !mounted) return;
         setState(() {
-          _keystoneSigningRequest = null;
+          _hardwareSigningRequest = null;
           _payRecipientOverlayRequest = null;
         });
         context.go('/activity');
@@ -377,16 +417,16 @@ class _SwapActivityDetailSurfaceState
     final activityDetailIntent =
         _intentById(state.intents, initialIntentId) ??
         (widget.autoSignZecDeposit
-            ? _pendingKeystoneSigningIntentById(state, initialIntentId)
+            ? _pendingHardwareSigningIntentById(state, initialIntentId)
             : null);
-    final keystoneSigningRequest = _keystoneSigningRequest;
-    final keystoneSigningIntent =
-        _intentById(state.intents, keystoneSigningRequest?.intentId) ??
-        _pendingKeystoneSigningIntentById(
+    final hardwareSigningRequest = _hardwareSigningRequest;
+    final hardwareSigningIntent =
+        _intentById(state.intents, hardwareSigningRequest?.intentId) ??
+        _pendingHardwareSigningIntentById(
           state,
-          keystoneSigningRequest?.intentId,
+          hardwareSigningRequest?.intentId,
         ) ??
-        keystoneSigningRequest?.intent;
+        hardwareSigningRequest?.intent;
     final holdInitialAutoSignContent =
         !_initialIntentApplied &&
         widget.autoSignZecDeposit &&
@@ -395,8 +435,8 @@ class _SwapActivityDetailSurfaceState
         activityDetailIntent.direction == SwapDirection.zecToExternal &&
         !(activityDetailIntent.depositTxHash?.trim().isNotEmpty ?? false);
     final hideTransientSigningContent =
-        keystoneSigningRequest?.clearPendingIntentOnCancel == true &&
-        activityDetailIntent?.id == keystoneSigningRequest?.intentId;
+        hardwareSigningRequest?.clearPendingIntentOnCancel == true &&
+        activityDetailIntent?.id == hardwareSigningRequest?.intentId;
 
     final Widget pageContent = activityDetailIntent == null
         ? const _SwapActivityMissingPanel()
@@ -432,15 +472,25 @@ class _SwapActivityDetailSurfaceState
             child: pageContent,
           ),
         ),
-        if (keystoneSigningRequest != null && keystoneSigningIntent != null)
+        if (hardwareSigningRequest != null && hardwareSigningIntent != null)
           Positioned.fill(
-            child: SwapKeystoneSigningOverlay(
-              intent: keystoneSigningIntent,
-              onCancel: () =>
-                  _closeKeystoneSigning(cleanupCancelledRequest: true),
-              onDepositBroadcast: (result) =>
-                  _handleKeystoneDepositBroadcast(context, result),
-            ),
+            child:
+                _hardwareSignerKindForIntent(hardwareSigningIntent) ==
+                    HardwareSignerKind.ledger
+                ? SwapLedgerSigningOverlay(
+                    intent: hardwareSigningIntent,
+                    onCancel: () =>
+                        _closeHardwareSigning(cleanupCancelledRequest: true),
+                    onDepositBroadcast: (result) =>
+                        _handleHardwareDepositBroadcast(context, result),
+                  )
+                : SwapKeystoneSigningOverlay(
+                    intent: hardwareSigningIntent,
+                    onCancel: () =>
+                        _closeHardwareSigning(cleanupCancelledRequest: true),
+                    onDepositBroadcast: (result) =>
+                        _handleHardwareDepositBroadcast(context, result),
+                  ),
           ),
         if (_payRecipientOverlayRequest case final request?)
           AppPaneModalOverlay(
@@ -517,12 +567,12 @@ SwapIntent? _intentById(List<SwapIntent> intents, String? intentId) {
   return null;
 }
 
-SwapIntent? _pendingKeystoneSigningIntentById(
+SwapIntent? _pendingHardwareSigningIntentById(
   SwapState state,
   String? intentId,
 ) {
   if (intentId == null) return null;
-  final pending = state.pendingKeystoneSigningIntent;
+  final pending = state.pendingHardwareSigningIntent;
   if (pending == null || pending.id != intentId) return null;
   return pending;
 }

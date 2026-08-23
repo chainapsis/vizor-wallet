@@ -26,6 +26,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vizor uses the camera to scan Keystone QR codes.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Vizor uses Bluetooth to connect to your Ledger hardware wallet.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

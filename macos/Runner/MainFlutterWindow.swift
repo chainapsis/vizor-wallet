@@ -952,8 +952,12 @@ class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
   private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+  private var ledgerBleHandler: LedgerMobileHandler?
+  private var ledgerBleMethodChannel: FlutterMethodChannel?
+  private var ledgerBleDiscoveryChannel: FlutterEventChannel?
 
   deinit {
+    ledgerBleHandler?.close()
     for observer in vizorWindowToolbarObservers {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -993,9 +997,34 @@ class MainFlutterWindow: NSWindow {
     NativeUpdatePrivacyChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
+    registerLedgerBleChannels(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func registerLedgerBleChannels(messenger: FlutterBinaryMessenger) {
+    ledgerBleHandler?.close()
+    let handler = LedgerMobileHandler()
+    ledgerBleHandler = handler
+
+    let methodChannel = FlutterMethodChannel(
+      name: LedgerMobileHandler.methodChannelName,
+      binaryMessenger: messenger
+    )
+    methodChannel.setMethodCallHandler { call, result in
+      handler.handle(call, result: result)
+    }
+    ledgerBleMethodChannel = methodChannel
+
+    let discoveryChannel = FlutterEventChannel(
+      name: LedgerMobileHandler.eventChannelName,
+      binaryMessenger: messenger
+    )
+    discoveryChannel.setStreamHandler(handler)
+    ledgerBleDiscoveryChannel = discoveryChannel
   }
 
   override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {

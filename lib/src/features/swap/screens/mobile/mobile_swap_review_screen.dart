@@ -24,6 +24,7 @@ import '../../widgets/mobile/mobile_swap_review_content.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import 'mobile_swap_keystone_sign_screen.dart';
+import 'mobile_swap_ledger_sign_screen.dart';
 
 const _keystoneSigningReviewInactiveDelay = Duration(milliseconds: 500);
 
@@ -198,11 +199,24 @@ class _MobileSwapReviewScreenState
               returnTarget: returnTarget,
             ).toString(),
           );
-        case SwapStartedKeystoneSigning(:final intentId):
+        case SwapStartedHardwareSigning(:final intentId):
           final pendingIntent = ref
               .read(swapStateProvider)
-              .pendingKeystoneSigningIntent;
+              .pendingHardwareSigningIntent;
           if (pendingIntent != null && pendingIntent.id == intentId) {
+            final signerKind = ref
+                .read(accountProvider.notifier)
+                .hardwareSignerKindForAccount(pendingIntent.accountUuid ?? '');
+            if (signerKind == HardwareSignerKind.ledger) {
+              await context.push<void>(
+                '/swap/ledger-sign',
+                extra: MobileSwapLedgerSignArgs.fromReview(
+                  intent: pendingIntent,
+                  returnTarget: returnTarget,
+                ),
+              );
+              return;
+            }
             final signingRoute = context.push<void>(
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
@@ -219,7 +233,7 @@ class _MobileSwapReviewScreenState
             if (path == (widget.payMode ? '/pay/review' : '/swap/review')) {
               ref
                   .read(swapStateProvider.notifier)
-                  .clearPendingKeystoneSigningIntent(intentId);
+                  .clearPendingHardwareSigningIntent(intentId);
               setState(() {
                 _keystoneSigningReviewInactive = true;
               });

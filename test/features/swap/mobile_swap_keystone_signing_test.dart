@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
@@ -230,6 +231,55 @@ void main() {
     expect(args.intent.id, _hardwareIntent.id);
   });
 
+  testWidgets('Ledger ZEC deposit opens its dedicated mobile signing route', (
+    tester,
+  ) async {
+    Object? capturedExtra;
+    final router = GoRouter(
+      initialLocation: '/activity/swap/${_hardwareIntent.id}',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+        GoRoute(
+          path: '/swap/keystone-sign',
+          builder: (_, _) =>
+              const SizedBox(key: ValueKey('mobile_swap_keystone_sign_route')),
+        ),
+        GoRoute(
+          path: '/swap/ledger-sign',
+          builder: (_, state) {
+            capturedExtra = state.extra;
+            return const SizedBox(
+              key: ValueKey('mobile_swap_ledger_sign_route'),
+            );
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(router, bootstrap: _ledgerBootstrap));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Deposit ZEC'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_swap_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_swap_keystone_sign_route')),
+      findsNothing,
+    );
+    expect(capturedExtra, isA<MobileSwapLedgerSignArgs>());
+  });
+
   testWidgets('auto-sign skips the mobile ZEC deposit page', (tester) async {
     Object? capturedExtra;
     final router = GoRouter(
@@ -270,6 +320,99 @@ void main() {
     expect(capturedExtra, isA<MobileSwapKeystoneSignArgs>());
     final args = capturedExtra! as MobileSwapKeystoneSignArgs;
     expect(args.intent.id, _hardwareIntent.id);
+  });
+
+  testWidgets('auto-sign resumes a pending Ledger deposit on Ledger route', (
+    tester,
+  ) async {
+    Object? capturedExtra;
+    final router = GoRouter(
+      initialLocation:
+          '/activity/swap/${_hardwareIntent.id}?$swapActivitySignQueryKey=$swapActivitySignZecDepositValue',
+      routes: [
+        GoRoute(
+          path: '/activity/swap/:swapId',
+          builder: (_, state) => SwapActivityDetailSurface(
+            intentId: state.pathParameters['swapId'] ?? '',
+            returnTarget: SwapActivityReturnTarget.activity,
+            autoSignZecDeposit: true,
+            layout: SwapActivityDetailLayout.mobile,
+          ),
+        ),
+        GoRoute(
+          path: '/swap/ledger-sign',
+          builder: (_, state) {
+            capturedExtra = state.extra;
+            return const SizedBox(
+              key: ValueKey('mobile_swap_ledger_sign_route'),
+            );
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(router, bootstrap: _ledgerBootstrap));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_swap_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(capturedExtra, isA<MobileSwapLedgerSignArgs>());
+  });
+
+  testWidgets('review-start Ledger swap never opens Keystone QR route', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    Object? capturedExtra;
+    final router = GoRouter(
+      initialLocation: '/swap/review',
+      routes: [
+        GoRoute(
+          path: '/swap/review',
+          builder: (_, _) => const MobileSwapReviewScreen(),
+        ),
+        GoRoute(
+          path: '/swap/ledger-sign',
+          builder: (_, state) {
+            capturedExtra = state.extra;
+            return const SizedBox(
+              key: ValueKey('mobile_swap_ledger_sign_route'),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/swap/keystone-sign',
+          builder: (_, _) =>
+              const SizedBox(key: ValueKey('mobile_swap_keystone_sign_route')),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        router,
+        bootstrap: _ledgerBootstrap,
+        swapNotifier: () => _ReviewStartSwapNotifier(_hardwareIntent),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm & swap'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_swap_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_swap_keystone_sign_route')),
+      findsNothing,
+    );
+    final args = capturedExtra! as MobileSwapLedgerSignArgs;
+    expect(args.startedFromReview, isTrue);
+    expect(args.returnTarget, SwapActivityReturnTarget.swap);
   });
 
   testWidgets('review-start hardware ZEC swap goes directly to signing route', (
@@ -646,6 +789,50 @@ void main() {
     );
   });
 
+  testWidgets('review-start Ledger pay uses Ledger route and pay target', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    Object? capturedExtra;
+    final router = GoRouter(
+      initialLocation: '/pay/review',
+      routes: [
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
+        ),
+        GoRoute(
+          path: '/swap/ledger-sign',
+          builder: (_, state) {
+            capturedExtra = state.extra;
+            return const SizedBox(
+              key: ValueKey('mobile_swap_ledger_sign_route'),
+            );
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        router,
+        bootstrap: _ledgerBootstrap,
+        swapNotifier: () => _ReviewStartSwapNotifier(_hardwareIntent),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm & pay'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_swap_ledger_sign_route')),
+      findsOneWidget,
+    );
+    final args = capturedExtra! as MobileSwapLedgerSignArgs;
+    expect(args.startedFromReview, isTrue);
+    expect(args.returnTarget, SwapActivityReturnTarget.pay);
+  });
+
   testWidgets('review-start pay signing cancel returns to the pay composer', (
     tester,
   ) async {
@@ -826,13 +1013,14 @@ Widget _app(
   SwapNotifier Function()? swapNotifier,
   SwapHardwareSigningService? hardwareSigningService,
   List<SwapIntent>? activityIntents,
+  AppBootstrapState? bootstrap,
 }) {
   final intents = activityIntents ?? [_hardwareIntent];
   final activityStore = _FakeSwapActivityStore(intents);
   final preferencesStore = _FakeSwapComposerPreferencesStore();
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       swapFeatureEnabledProvider.overrideWithValue(true),
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(),
@@ -926,19 +1114,19 @@ class _ReviewStartSwapNotifier extends SwapNotifier {
   Future<SwapStartResult?> startIntent() async {
     state = state.copyWith(
       reviewVisible: false,
-      pendingKeystoneSigningIntent: intent,
+      pendingHardwareSigningIntent: intent,
       startSubmitting: false,
       clearReview: true,
       clearStatusError: true,
       clearSelectedIntent: true,
     );
-    return SwapStartedKeystoneSigning(intent.id);
+    return SwapStartedHardwareSigning(intent.id);
   }
 
   @override
-  void clearPendingKeystoneSigningIntent(String intentId) {
+  void clearPendingHardwareSigningIntent(String intentId) {
     if (intentId == intent.id) pendingCleared = true;
-    state = state.copyWith(clearPendingKeystoneSigningIntent: true);
+    state = state.copyWith(clearPendingHardwareSigningIntent: true);
   }
 }
 
@@ -972,13 +1160,13 @@ class _PendingSigningSwapNotifier extends SwapNotifier {
       externalAsset: SwapAsset.usdc,
       reviewVisible: false,
       intents: [],
-    ).copyWith(pendingKeystoneSigningIntent: intent);
+    ).copyWith(pendingHardwareSigningIntent: intent);
   }
 
   @override
-  void clearPendingKeystoneSigningIntent(String intentId) {
+  void clearPendingHardwareSigningIntent(String intentId) {
     if (intentId == intent.id) pendingCleared = true;
-    state = state.copyWith(clearPendingKeystoneSigningIntent: true);
+    state = state.copyWith(clearPendingHardwareSigningIntent: true);
   }
 }
 
@@ -988,12 +1176,12 @@ class _ReviewSuccessSwapNotifier extends _PendingSigningSwapNotifier {
   SwapDepositBroadcastResult? recordedBroadcast;
 
   @override
-  Future<void> recordKeystoneDepositBroadcast({
+  Future<void> recordHardwareDepositBroadcast({
     required SwapIntent intent,
     required SwapDepositBroadcastResult broadcast,
   }) async {
     recordedBroadcast = broadcast;
-    clearPendingKeystoneSigningIntent(intent.id);
+    clearPendingHardwareSigningIntent(intent.id);
   }
 }
 
@@ -1007,6 +1195,32 @@ final _bootstrap = AppBootstrapState(
         order: 0,
         profilePictureId: kDefaultProfilePictureId,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1mobilehardware',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/activity/swap/${_hardwareIntent.id}',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        profilePictureId: kDefaultProfilePictureId,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
       ),
     ],
     activeAccountUuid: 'account-1',
@@ -1139,6 +1353,14 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
 
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
+    discardedDrafts.add(draft.proposalId);
+  }
+
+  @override
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  }) async {
     discardedDrafts.add(draft.proposalId);
   }
 

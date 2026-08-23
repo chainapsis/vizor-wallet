@@ -32,10 +32,16 @@ import '../widgets/send_verify_address_overlay.dart';
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
 class SendStatusScreen extends ConsumerStatefulWidget {
-  const SendStatusScreen({super.key, required this.args, this.keystone});
+  const SendStatusScreen({
+    super.key,
+    required this.args,
+    this.keystone,
+    this.ledger,
+  });
 
   final SendReviewArgs args;
   final KeystoneBroadcastArgs? keystone;
+  final LedgerBroadcastArgs? ledger;
 
   @override
   ConsumerState<SendStatusScreen> createState() => _SendStatusScreenState();
@@ -61,7 +67,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   @override
   void initState() {
     super.initState();
-    _proposalConsumed = widget.keystone != null;
+    _proposalConsumed = widget.keystone != null || widget.ledger != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -164,6 +170,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
+      ledger: widget.ledger,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );

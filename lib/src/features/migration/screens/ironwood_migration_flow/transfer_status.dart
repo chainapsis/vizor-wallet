@@ -2072,6 +2072,9 @@ String _privateMigrationStartErrorMessage(Object error) {
   if (lower.contains('secret storage') || lower.contains('unlocked session')) {
     return 'Unlock Vizor before starting migration.';
   }
+  if (lower.contains('ledger')) {
+    return 'Ledger private migration is excluded because the current flow requires batched signing.';
+  }
   if (lower.contains('sync')) {
     return 'Wait for sync to finish, then try again.';
   }

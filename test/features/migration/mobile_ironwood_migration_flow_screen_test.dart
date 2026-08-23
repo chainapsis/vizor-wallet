@@ -4696,7 +4696,7 @@ void main() {
         ),
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
-        isHardware: true,
+        isKeystone: true,
       )?.count,
       1,
     );
@@ -4769,7 +4769,7 @@ void main() {
         status,
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
-        isHardware: true,
+        isKeystone: true,
       )!;
       expect(attention.count, 40);
       return mobileIronwoodMigrationAttentionFingerprint(
@@ -5161,7 +5161,7 @@ void main() {
       status,
       currentHeight: 3_000_000,
       broadcastHeight: 3_000_000,
-      isHardware: true,
+      isKeystone: true,
     )!;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
       accountUuid: 'account-1',

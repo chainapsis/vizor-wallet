@@ -62,7 +62,13 @@ class _IronwoodMigrationPrivateReviewContentState
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
-      if (accountState.activeAccount?.isHardware ?? false) {
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount?.isLedger ?? false) {
+        throw StateError(
+          'Ledger private migration is excluded because the current flow requires batched signing.',
+        );
+      }
+      if (activeAccount?.isKeystone ?? false) {
         // A fully direct plan has no split stages, so the combined request
         // would carry zero messages, which Rust rejects. It signs nothing up
         // front: the legacy denomination completion accepts the empty set and
