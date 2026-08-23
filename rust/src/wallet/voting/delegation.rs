@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, OnceLock},
     thread::{self, JoinHandle},
     time::Instant,
 };
@@ -181,27 +181,12 @@ where
     let prepared = prepared.clone();
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
-        let worker_started = Instant::now();
-        log::info!(
-            "[VOTING_PROVE] bundle={bundle_index} worker-start queue_wait={:.3}s",
-            total_started.elapsed().as_secs_f64()
-        );
-        let db_started = Instant::now();
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
         let proof_wallet_db = open_wallet_db_for_read(
             &proof_db_path,
             wallet_network(prepared.network),
         )?;
-        log::info!(
-            "[VOTING_PROVE] bundle={bundle_index} db-open elapsed={:.3}s",
-            db_started.elapsed().as_secs_f64()
-        );
-        let pir_join_started = Instant::now();
         let pir_client = pir_connect.join()?;
-        log::info!(
-            "[VOTING_PROVE] bundle={bundle_index} pir-connect-join elapsed={:.3}s",
-            pir_join_started.elapsed().as_secs_f64()
-        );
 
         // Fetch/cache PIR rows before Halo2 prove so remaining keygen warm-up
         // can overlap the network round-trip when the early warm thread is still
@@ -218,23 +203,7 @@ where
             precompute_started.elapsed().as_secs_f64()
         );
 
-        let previous_event = Arc::new(Mutex::new(worker_started));
-        let event_clock = previous_event.clone();
         let reporter = zcash_voting::DelegationProgressBridge::new(move |progress| {
-            let now = Instant::now();
-            let step_elapsed = {
-                let mut previous = event_clock
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let elapsed = now.duration_since(*previous);
-                *previous = now;
-                elapsed
-            };
-            log::info!(
-                "[VOTING_PROVE] bundle={bundle_index} event={progress:?} step={:.3}s total={:.3}s",
-                step_elapsed.as_secs_f64(),
-                total_started.elapsed().as_secs_f64()
-            );
             proof_progress(progress);
         });
         let prove_started = Instant::now();
@@ -245,9 +214,8 @@ where
                 .map_err(|e| format!("delegate::prove failed: {e}"))
         })?;
         log::info!(
-            "[VOTING_PROVE] bundle={bundle_index} prepared-prove elapsed={:.3}s worker_total={:.3}s",
-            prove_started.elapsed().as_secs_f64(),
-            worker_started.elapsed().as_secs_f64()
+            "[VOTING_PROVE] bundle={bundle_index} prepared-prove elapsed={:.3}s",
+            prove_started.elapsed().as_secs_f64()
         );
         Ok::<_, String>(())
     })
@@ -496,31 +464,20 @@ where
     let total_started = Instant::now();
     let on_progress = Arc::new(on_progress);
     let account_uuid = prepare_params.account_uuid;
-    let bundle_index = prepare_params.bundle_index;
 
-    let validation_started = Instant::now();
     zcash_voting::validate_round_params(&prepare_params.lwd.round_params)
         .map_err(|e| format!("Invalid voting round params: {e}"))?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} validate-round elapsed={:.3}s",
-        validation_started.elapsed().as_secs_f64()
-    );
 
     // Overlap independent warm-ups with local preparation/PCZT setup.
     start_proving_cache_warmup();
     let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
 
     on_progress(DelegationProgress::SelectingNotes);
-    let db_open_started = Instant::now();
     let preparation = (|| {
         let wallet_db = open_wallet_db_for_read(
             db_path,
             wallet_network(prepare_params.voting_hotkey.network()),
         )?;
-        log::info!(
-            "[VOTING_PROVE] bundle={bundle_index} wallet-db-open elapsed={:.3}s",
-            db_open_started.elapsed().as_secs_f64()
-        );
         let prepare_params = prepare_params_with_whale_protection(prepare_params);
         let prepare_bundle_started = Instant::now();
         let pczt_progress = on_progress.clone();
@@ -586,14 +543,12 @@ where
         prepared_bundle.bundle_index,
         signing_started.elapsed().as_secs_f64()
     );
-    let assembly_started = Instant::now();
     let signed_bundle = prepared_bundle
         .signed_bundle(&voting_db, delegation_setup.pczt_bytes, signer)
         .map_err(|e| format!("delegate::signed_bundle failed: {e}"))?;
     log::info!(
-        "[VOTING_PROVE] bundle={} signed-bundle elapsed={:.3}s total={:.3}s",
+        "[VOTING_PROVE] bundle={} signed-bundle total={:.3}s",
         prepared_bundle.bundle_index,
-        assembly_started.elapsed().as_secs_f64(),
         total_started.elapsed().as_secs_f64()
     );
 

@@ -380,9 +380,6 @@ abstract interface class VotingRustApi {
   /// Fire-and-forget Halo2 proving-key warm-up for voting proofs.
   void warmVotingProvingCaches();
 
-  /// Forwards a vote-pipeline timing line into Rust `frb_user` os_log.
-  void logVotingTiming({required String message});
-
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
@@ -656,11 +653,6 @@ class FrbVotingRustApi implements VotingRustApi {
   @override
   void warmVotingProvingCaches() {
     rust_api.warmVotingProvingCaches();
-  }
-
-  @override
-  void logVotingTiming({required String message}) {
-    rust_api.logVotingTiming(message: message);
   }
 
   @override

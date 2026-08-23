@@ -9574,9 +9574,6 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  void logVotingTiming({required String message}) {}
-
-  @override
   Future<void> markDelegationSubmitted({
     required String dbPath,
     required String accountUuid,

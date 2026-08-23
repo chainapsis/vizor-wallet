@@ -1729,11 +1729,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return nextValue < previousValue ? previousValue : nextValue;
   }
 
-  /// Mirrors vote-pipeline timings into Rust os_log so Release `log show`
-  /// captures them (`subsystem == "frb_user"`, prefix `[VOTING_VOTE]`).
   void _logVoteTiming(String message) {
     debugPrint('[zcash] Voting: $message');
-    ref.read(votingRustApiProvider).logVotingTiming(message: message);
   }
 
   List<String> _plannedShareServers({
