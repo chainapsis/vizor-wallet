@@ -6109,12 +6109,12 @@ void main() {
     ]);
   });
 
-  test('helper preflight replaces an unavailable planned target', () async {
+  test('helper preflight overlaps confirmation and replaces target', () async {
     final helperUrls = [
       for (var i = 1; i <= 4; i++)
         {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
     ];
-    final http = FakeVotingHttpClient(
+    final http = _GatedVotingHttpClient(
       responses: {
         ...votingHttpResponses(
           dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
@@ -6124,6 +6124,9 @@ void main() {
         }, statusCode: 503),
       },
     );
+    const confirmationPath = '/shielded-vote/v1/tx/vote-tx';
+    const statusPath = '/shielded-vote/v1/status';
+    final confirmationGate = http.gateNextGet(confirmationPath);
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
       state: recoveryState(
@@ -6145,9 +6148,12 @@ void main() {
       recoveryApi: recoveryApi,
     );
     addTearDown(container.dispose);
+    addTearDown(() {
+      if (!confirmationGate.isCompleted) confirmationGate.complete();
+    });
 
     await container.read(votingSessionProvider(kRoundId).future);
-    await container
+    final submission = container
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(
           draftVotes: [
@@ -6160,6 +6166,16 @@ void main() {
             ),
           ],
         );
+    await http
+        .waitForGetCount(confirmationPath, 1)
+        .timeout(const Duration(seconds: 1));
+    await http
+        .waitForGetCount(statusPath, helperUrls.length)
+        .timeout(const Duration(seconds: 1));
+
+    expect(confirmationGate.isCompleted, isFalse);
+    confirmationGate.complete();
+    await submission;
 
     final statusHosts = http.requests
         .where(

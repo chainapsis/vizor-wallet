@@ -1764,6 +1764,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return [...responsive, ...unknown, ...unavailable];
   }
 
+  Future<void> _warmShareHelperPreflight({
+    required _VotingSessionContext context,
+    required VotingApiClient api,
+  }) async {
+    try {
+      await api.preflightHelpers(context.config.apiServers.all);
+    } catch (error) {
+      // Readiness is only an ordering hint. The just-in-time preflight and
+      // bounded share submission still provide the authoritative fallback.
+      debugPrint(
+        '[zcash] Voting: helper preflight warmup ignored error=$error',
+      );
+    }
+  }
+
   Future<Map<String, bool>> _preflightShareHelpers({
     required _VotingSessionContext context,
     required VotingApiClient api,
@@ -2319,6 +2334,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) async {
     final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
+    // Warm every configured helper while the commitment is broadcast and
+    // confirmed. The just-in-time preflight reuses this in-flight or cached
+    // result when it is still fresh, and refreshes it after the cache TTL.
+    unawaited(_warmShareHelperPreflight(context: context, api: api));
     final txHashes = <int, String>{};
     for (final commitment in commitments.commitments) {
       final result = await api.submitVoteCommitment(
@@ -2379,6 +2398,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) async {
     final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
+    unawaited(_warmShareHelperPreflight(context: context, api: api));
     final vcTreePositions = <int, BigInt>{};
     for (final commitment in commitments.commitments) {
       debugPrint(
