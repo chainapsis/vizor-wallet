@@ -283,30 +283,12 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         .skipRemainingKeystoneBundles(key);
   }
 
-  /// The platform progress screens' view of one ratcheted frame.
-  ///
-  /// Only the active step has a ring and a line of its own, and each step
-  /// reads the projection it owns.
-  VotingSubmissionProgressPresentation _submissionPresentation(
-    VotingProgressView progress, {
-    String? warning,
-  }) {
-    // Null until the delegation step has bundles to count.
-    final authority = progress.authorityOrNull;
-    return VotingSubmissionProgressPresentation(
-      activeStep: progress.step,
-      activeStepProgress: switch (progress.step) {
-        VotingSubmissionProgressStep.provingAuthority => authority?.fraction,
-        VotingSubmissionProgressStep.castingVotes => progress.ballot.fraction,
-        VotingSubmissionProgressStep.finalizing => null,
-      },
-      activeStepDetail: switch (progress.step) {
-        VotingSubmissionProgressStep.provingAuthority => authority?.detail,
-        VotingSubmissionProgressStep.castingVotes => progress.ballot.detail,
-        VotingSubmissionProgressStep.finalizing => null,
-      },
-      warning: warning,
-    );
+  Future<void> _cancelLedgerSigning() async {
+    final key = _selectedJobKey();
+    if (key == null) return;
+    await ref
+        .read(votingSubmissionJobsProvider.notifier)
+        .cancelLedgerSigning(key);
   }
 
   bool _hasCompletedSubmission(VotingSessionState? session) {
@@ -516,6 +498,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           submissionJobInFlight: submissionJobInFlight,
           softwareAccountRequired: job?.softwareAccountRequired ?? false,
           isHardwareAccount: state.isHardwareAccount,
+          isLedgerAccount: state.isLedgerAccount,
           keystoneSigningBundleIndex: state.keystoneSigningRequest?.bundleIndex,
           canSkipRemainingKeystoneBundles:
               state.canSkipRemainingKeystoneBundles,
@@ -525,6 +508,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
           keystoneScanError: state.keystoneScanError,
+          ledgerDisplayMemo: job?.ledgerDisplayMemo,
+          ledgerSigningBundleIndex: job?.ledgerBundleIndex,
+          ledgerSigningBundleCount: job?.ledgerBundleCount ?? 0,
           walletScannedHeight: state.walletScannedHeight,
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
@@ -536,6 +522,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
               : null,
           onScanKeystone: _scanKeystoneSignature,
           onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
+          onCancelLedger: _cancelLedgerSigning,
         );
       },
     );
@@ -787,6 +774,7 @@ class _StatusContent extends StatelessWidget {
     this.submissionJobInFlight = false,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
+    this.isLedgerAccount = false,
     this.keystoneSigningBundleIndex,
     this.canSkipRemainingKeystoneBundles = false,
     this.keystoneUrParts = const [],
@@ -795,6 +783,9 @@ class _StatusContent extends StatelessWidget {
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.keystoneScanError,
+    this.ledgerDisplayMemo,
+    this.ledgerSigningBundleIndex,
+    this.ledgerSigningBundleCount = 0,
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
@@ -804,6 +795,7 @@ class _StatusContent extends StatelessWidget {
     this.onClear,
     this.onScanKeystone,
     this.onSkipKeystoneBundles,
+    this.onCancelLedger,
   });
 
   final VotingSessionPhase phase;
@@ -824,6 +816,7 @@ class _StatusContent extends StatelessWidget {
   final bool submissionJobInFlight;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
+  final bool isLedgerAccount;
   final int? keystoneSigningBundleIndex;
   final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
@@ -832,6 +825,9 @@ class _StatusContent extends StatelessWidget {
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final String? keystoneScanError;
+  final String? ledgerDisplayMemo;
+  final int? ledgerSigningBundleIndex;
+  final int ledgerSigningBundleCount;
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
@@ -845,6 +841,7 @@ class _StatusContent extends StatelessWidget {
   final VoidCallback? onClear;
   final VoidCallback? onScanKeystone;
   final VoidCallback? onSkipKeystoneBundles;
+  final VoidCallback? onCancelLedger;
 
   @override
   Widget build(BuildContext context) {
@@ -925,11 +922,29 @@ class _StatusContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
+              if (isLedgerAccount &&
+                  submissionJobInFlight &&
+                  phase == VotingSessionPhase.ledgerSigning &&
+                  ledgerSigningBundleIndex != null) ...[
+                _LedgerVotingSigningPanel(
+                  displayMemo: ledgerDisplayMemo ?? '',
+                  bundleIndex: ledgerSigningBundleIndex!,
+                  bundleCount: ledgerSigningBundleCount,
+                  onCancel: onCancelLedger,
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
               if (isHardwareAccount)
                 _StepRow(
                   label: 'Signing with Keystone',
                   active: phase == VotingSessionPhase.keystoneSigning,
                   complete: _after(VotingSessionPhase.keystoneSigning),
+                ),
+              if (isLedgerAccount)
+                _StepRow(
+                  label: 'Signing with Ledger',
+                  active: phase == VotingSessionPhase.ledgerSigning,
+                  complete: _after(VotingSessionPhase.ledgerSigning),
                 ),
               _StepRow(
                 label: 'Proving voting authority',
@@ -1084,6 +1099,100 @@ class _WalletSyncProgressText extends StatelessWidget {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LedgerVotingSigningPanel extends StatelessWidget {
+  const _LedgerVotingSigningPanel({
+    required this.displayMemo,
+    required this.bundleIndex,
+    required this.bundleCount,
+    required this.onCancel,
+  });
+
+  final String displayMemo;
+  final int bundleIndex;
+  final int bundleCount;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
+    return DecoratedBox(
+      key: const ValueKey('ledger_voting_signing_panel'),
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            AppIcon(
+              AppIcons.ledgerBrand,
+              size: 40,
+              color: colors.icon.regular,
+              semanticLabel: 'Ledger',
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Approve voting delegation',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Bundle ${bundleIndex + 1} of $safeBundleCount',
+              key: const ValueKey('ledger_voting_bundle_progress'),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            if (displayMemo.trim().isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.surface.input.primary,
+                    border: Border.all(color: colors.border.subtle),
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    child: SelectableText(
+                      displayMemo,
+                      key: const ValueKey('ledger_voting_display_memo'),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(
+              key: const ValueKey('ledger_voting_cancel'),
+              onPressed: onCancel,
+              variant: AppButtonVariant.secondary,
+              child: const Text('Cancel'),
+            ),
           ],
         ),
       ),

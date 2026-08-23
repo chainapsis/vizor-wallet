@@ -91,7 +91,12 @@ _continuePrivateMigrationAfterNotificationGate(
     throw StateError('No active account is selected.');
   }
 
-  if (accountState.activeAccount?.isHardware ?? false) {
+  final activeAccount = accountState.activeAccount;
+  if (activeAccount?.isLedger ?? false) {
+    throw StateError('Ledger migration signing is available on desktop only.');
+  }
+
+  if (activeAccount?.isKeystone ?? false) {
     final service = ref.read(ironwoodMigrationServiceProvider);
     if (!_privatePlanUsesCombinedKeystoneSigning(plan)) {
       final request = await service.prepareKeystoneDenominationPrivateMigration(
@@ -287,15 +292,21 @@ class _MobileIronwoodMigrationStartScreenState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final isHardware = accountState.activeAccount?.isHardware ?? false;
-      if (isHardware && !_keystoneTwoRoundPlanSupported(plan)) {
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount?.isLedger ?? false) {
+        throw StateError(
+          'Ledger migration signing is available on desktop only.',
+        );
+      }
+      final isKeystone = activeAccount?.isKeystone ?? false;
+      if (isKeystone && !_keystoneTwoRoundPlanSupported(plan)) {
         throw StateError(
           'This migration needs more transactions than one Keystone '
           'signing request supports.',
         );
       }
 
-      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+      if (!isKeystone || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
         await ref
             .read(ironwoodMigrationServiceProvider)
             .savePrivateMigrationDraft(

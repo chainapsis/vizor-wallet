@@ -510,6 +510,35 @@ void main() {
     expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
   });
 
+  testWidgets('Ledger Immediate migration never enters Keystone signing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/immediate/review',
+        activeAccountIsHardware: true,
+        activeHardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ledger migration signing is not supported in this desktop PoC.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('keystone-immediate-sign-route'), findsNothing);
+  });
+
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
@@ -1338,6 +1367,40 @@ void main() {
 
     expect(softwareStarted, isFalse);
     expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
+  });
+
+  testWidgets('Ledger private migration never enters Keystone signing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        activeAccountIsHardware: true,
+        activeHardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openShuffleReview(tester);
+    await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ledger private migration is excluded because the current flow requires batched signing.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('keystone-combined-sign-route'), findsNothing);
+    expect(
+      find.textContaining('keystone-denomination-sign-route'),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -5370,6 +5433,7 @@ Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  HardwareSignerKind? activeHardwareSignerKind,
   bool realStatusRoute = false,
   OrchardMigrationStatusGetter? statusGetter,
   bool coordinatorAdvancing = false,
@@ -5513,7 +5577,10 @@ Widget _migrationOptionsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+        _bootstrapFor(
+          activeAccountIsHardware: activeAccountIsHardware,
+          activeHardwareSignerKind: activeHardwareSignerKind,
+        ),
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
@@ -6208,17 +6275,22 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-AppBootstrapState _bootstrapFor({required bool activeAccountIsHardware}) {
+AppBootstrapState _bootstrapFor({
+  required bool activeAccountIsHardware,
+  HardwareSignerKind? activeHardwareSignerKind,
+}) {
   if (!activeAccountIsHardware) return _bootstrap;
   return AppBootstrapState(
     initialLocation: _bootstrap.initialLocation,
-    initialAccountState: const AccountState(
+    initialAccountState: AccountState(
       accounts: [
         AccountInfo(
           uuid: 'account-1',
           name: 'Account 1',
           order: 0,
           isHardware: true,
+          hardwareSignerKind:
+              activeHardwareSignerKind ?? HardwareSignerKind.keystone,
           profilePictureId: kDefaultProfilePictureId,
         ),
       ],

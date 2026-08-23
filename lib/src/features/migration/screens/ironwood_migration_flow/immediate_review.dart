@@ -36,7 +36,13 @@ class _IronwoodMigrationImmediateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      if (accountState.activeAccount?.isHardware ?? false) {
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount?.isLedger ?? false) {
+        throw StateError(
+          'Ledger migration signing is not supported in this desktop PoC.',
+        );
+      }
+      if (activeAccount?.isKeystone ?? false) {
         if (!mounted) return;
         context.go('/migration/immediate/keystone/sign', extra: plan);
         return;
@@ -322,6 +328,9 @@ String _immediateMigrationStartErrorMessage(Object error) {
   }
   if (message.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
+  }
+  if (message.contains('ledger')) {
+    return 'Ledger migration signing is not supported in this desktop PoC.';
   }
   if (message.contains('keystone')) return "Couldn't prepare Keystone signing.";
   if (message.contains('sync')) {

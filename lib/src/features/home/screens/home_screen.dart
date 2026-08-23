@@ -50,6 +50,7 @@ import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
+import '../widgets/ledger_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -73,7 +74,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isShieldingBalance = false;
-  bool _showKeystoneShieldSigning = false;
+  HardwareSignerKind? _shieldHardwareSignerKind;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
   IronwoodMigrationAnnouncementState? _visibleIronwoodAnnouncement;
@@ -133,7 +134,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
     if (accountNotifier.isHardwareAccount(accountUuid)) {
       setState(() {
-        _showKeystoneShieldSigning = true;
+        _shieldHardwareSignerKind = accountNotifier
+            .hardwareSignerKindForAccount(accountUuid);
         _shieldBalanceError = null;
         _shieldBalanceErrorDetail = null;
       });
@@ -177,9 +179,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  void _closeKeystoneShieldSigning() {
+  void _closeHardwareShieldSigning() {
     setState(() {
-      _showKeystoneShieldSigning = false;
+      _shieldHardwareSignerKind = null;
     });
   }
 
@@ -412,10 +414,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
-          if (_showKeystoneShieldSigning)
+          if (_shieldHardwareSignerKind == HardwareSignerKind.keystone)
             KeystoneShieldSigningOverlay(
-              onCancel: _closeKeystoneShieldSigning,
-              onComplete: _closeKeystoneShieldSigning,
+              onCancel: _closeHardwareShieldSigning,
+              onComplete: _closeHardwareShieldSigning,
+            ),
+          if (_shieldHardwareSignerKind == HardwareSignerKind.ledger)
+            LedgerShieldSigningOverlay(
+              onCancel: _closeHardwareShieldSigning,
+              onComplete: _closeHardwareShieldSigning,
             ),
           if (visibleIronwoodAnnouncement != null)
             AppPaneModalOverlay(

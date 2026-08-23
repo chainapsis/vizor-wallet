@@ -45,6 +45,10 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       );
     }
 
+    if (ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false) {
+      return const _MobileMigrationRedirectHome();
+    }
+
     final data = ref.watch(ironwoodMigrationFlowDataProvider);
     if (data == null) return const _MobileMigrationRedirectHome();
     return _MobileIronwoodMigrationContent(
@@ -95,7 +99,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     }
     final isHardware =
         !previewMode &&
-        (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
+        (ref.watch(accountProvider).value?.activeAccount?.isKeystone ?? false);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks =>
@@ -216,6 +220,10 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    if (activeAccount?.isLedger ?? false) {
+      return const _MobileMigrationRedirectHome();
+    }
     final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
     final data = ref.watch(ironwoodMigrationFlowDataProvider);
 
@@ -237,9 +245,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         }
         final status = cta.status;
         final accountUuid = cta.accountUuid;
-        final isHardware =
-            ref.watch(accountProvider).value?.activeAccount?.isHardware ??
-            false;
+        final isHardware = activeAccount?.isKeystone ?? false;
         if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
             status == null ||
             accountUuid == null ||

@@ -17,6 +17,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
+import '../ledger/ledger_connect_screen.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -32,13 +33,24 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.onFinish,
     this.random,
     super.key,
-  });
+  }) : ledgerPresentation = false,
+       ledgerBackTarget = null;
 
-  final CustomiseAccountArgs args;
+  const CustomiseAccountScreen.ledger({
+    required this.onFinish,
+    required this.ledgerBackTarget,
+    this.random,
+    super.key,
+  }) : args = null,
+       ledgerPresentation = true;
+
+  final CustomiseAccountArgs? args;
 
   /// Optional preview/test seam. Production routes leave this null and use the
   /// account + password transaction owned by this screen.
   final CustomiseAccountFinishCallback? onFinish;
+  final bool ledgerPresentation;
+  final OnboardingBackTarget? ledgerBackTarget;
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
@@ -193,7 +205,7 @@ class _CustomiseAccountScreenState
   }
 
   OnboardingBackTarget? get _backTarget {
-    final args = widget.args;
+    final args = widget.args!;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
         label: 'Set Password',
@@ -243,7 +255,16 @@ class _CustomiseAccountScreenState
           )
         : null;
 
-    final pane = switch (widget.args.flow) {
+    if (widget.ledgerPresentation) {
+      return LedgerOnboardingShell(
+        activeStep: LedgerOnboardingStep.customiseAccount,
+        backTarget: _isSubmitting ? null : widget.ledgerBackTarget,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      );
+    }
+
+    final pane = switch (widget.args!.flow) {
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: _isSubmitting ? null : _backTarget,
         overlay: profilePictureOverlay,

@@ -9,6 +9,7 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_models.dart';
+import '../account_models.dart';
 
 /// Poll-list row consumed by the upcoming voting screens.
 class VotingRoundView {
@@ -76,6 +77,7 @@ enum VotingSessionPhase {
   loadingWitnesses,
   readyToDelegate,
   keystoneSigning,
+  ledgerSigning,
   delegating,
   delegated,
   readyToVote,
@@ -268,6 +270,7 @@ class VotingSessionState {
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
   final bool isHardwareAccount;
+  final HardwareSignerKind? hardwareSignerKind;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
@@ -275,6 +278,8 @@ class VotingSessionState {
   keystoneSignatures;
   final UnmodifiableListView<rust_delegate.KeystoneSigningRequest>
   keystoneSigningRequests;
+  final UnmodifiableListView<rust_delegate.KeystoneSigningRequest>
+  ledgerSigningRequests;
   final String? keystoneScanError;
 
   /// Why a bundle's delegation ended, when one did and the round carries on.
@@ -306,12 +311,14 @@ class VotingSessionState {
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
     this.isHardwareAccount = false,
+    this.hardwareSignerKind,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
     Map<int, rust_wire.KeystoneSignatureRecord> keystoneSignatures = const {},
     List<rust_delegate.KeystoneSigningRequest> keystoneSigningRequests =
         const [],
+    List<rust_delegate.KeystoneSigningRequest> ledgerSigningRequests = const [],
     this.keystoneScanError,
     this.terminalDelegationNotice,
     this.currentBundleIndex,
@@ -334,9 +341,18 @@ class VotingSessionState {
        ),
        keystoneSigningRequests = UnmodifiableListView(
          List<rust_delegate.KeystoneSigningRequest>.of(keystoneSigningRequests),
+       ),
+       ledgerSigningRequests = UnmodifiableListView(
+         List<rust_delegate.KeystoneSigningRequest>.of(ledgerSigningRequests),
        );
 
   bool get hasError => phase == VotingSessionPhase.error;
+
+  bool get isKeystoneAccount =>
+      isHardwareAccount && hardwareSignerKind == HardwareSignerKind.keystone;
+
+  bool get isLedgerAccount =>
+      isHardwareAccount && hardwareSignerKind == HardwareSignerKind.ledger;
 
   bool get hasConfirmedVotingEligibility =>
       eligibleWeightZatoshi != null &&
@@ -353,9 +369,12 @@ class VotingSessionState {
   rust_delegate.KeystoneSigningRequest? get keystoneSigningRequest =>
       keystoneSigningRequests.isEmpty ? null : keystoneSigningRequests.first;
 
+  rust_delegate.KeystoneSigningRequest? get ledgerSigningRequest =>
+      ledgerSigningRequests.isEmpty ? null : ledgerSigningRequests.first;
+
   bool get canSkipRemainingKeystoneBundles {
     final request = keystoneSigningRequest;
-    if (!isHardwareAccount ||
+    if (!isKeystoneAccount ||
         phase != VotingSessionPhase.keystoneSigning ||
         request == null ||
         request.bundleCount <= 1) {
@@ -380,12 +399,15 @@ class VotingSessionState {
     int? walletChainTipHeight,
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
+    HardwareSignerKind? hardwareSignerKind,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
     Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
     List<rust_delegate.KeystoneSigningRequest>? keystoneSigningRequests,
     bool clearKeystoneSigningRequest = false,
+    List<rust_delegate.KeystoneSigningRequest>? ledgerSigningRequests,
+    bool clearLedgerSigningRequest = false,
     String? keystoneScanError,
     String? terminalDelegationNotice,
     bool clearTerminalDelegationNotice = false,
@@ -423,6 +445,7 @@ class VotingSessionState {
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
       isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
+      hardwareSignerKind: hardwareSignerKind ?? this.hardwareSignerKind,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,
       voteProgress: voteProgress ?? this.voteProgress,
@@ -430,9 +453,9 @@ class VotingSessionState {
       keystoneSigningRequests: clearKeystoneSigningRequest
           ? const []
           : keystoneSigningRequests ?? this.keystoneSigningRequests,
-      terminalDelegationNotice: clearTerminalDelegationNotice
-          ? null
-          : terminalDelegationNotice ?? this.terminalDelegationNotice,
+      ledgerSigningRequests: clearLedgerSigningRequest
+          ? const []
+          : ledgerSigningRequests ?? this.ledgerSigningRequests,
       keystoneScanError: clearKeystoneScanError
           ? null
           : keystoneScanError ?? this.keystoneScanError,

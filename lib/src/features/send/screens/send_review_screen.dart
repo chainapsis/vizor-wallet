@@ -27,9 +27,13 @@ import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
+import '../../keystone/widgets/keystone_signing_modal.dart';
+import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_signed_operation_service.dart';
+import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
 import 'keystone_send_scan_screen.dart';
@@ -38,7 +42,14 @@ import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_content_view.dart';
 import '../widgets/send_verify_address_overlay.dart';
 
-export '../services/send_flow.dart' show KeystoneBroadcastArgs, SendReviewArgs;
+export '../services/send_flow.dart'
+    show KeystoneBroadcastArgs, LedgerBroadcastArgs, SendReviewArgs;
+
+enum _LedgerSendRecoveryAction {
+  retrySigning,
+  createNewTransaction,
+  retryCheckpoint,
+}
 
 class SendReviewScreen extends ConsumerStatefulWidget {
   const SendReviewScreen({super.key, required this.args});
@@ -60,7 +71,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   int _signingGeneration = 0;
   Future<Object?>? _proposalConsumption;
   bool _reviewRecoveryFailed = false;
-  bool _handoffToKeystone = false;
+  bool _handoffToHardware = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
   bool _showVerifyAddress = false;
@@ -74,6 +85,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   final List<List<int>> _keystoneSignatures = [];
   int _keystoneRound = 0;
   SaplingParamsStatus? _keystoneSaplingParams;
+  LedgerSigningModalPhase? _ledgerPhase;
+  LedgerSigningFailurePresentation? _ledgerFailure;
+  _LedgerSendRecoveryAction? _ledgerRecoveryAction;
+  int _ledgerAttemptGeneration = 0;
+  List<int>? _ledgerBasePczt;
+  Future<List<int>>? _ledgerBasePcztFuture;
+  List<int>? _ledgerRedactedPczt;
+  List<int>? _ledgerPcztWithProofs;
+  List<int>? _ledgerSignedPczt;
+  late final String _ledgerOperationId;
+  late final LedgerOperationCanceller _cancelLedgerOperation;
 
   @override
   void initState() {
@@ -81,6 +103,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     _reviewArgs = widget.args;
     _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     _syncNotifier = ref.read(syncProvider.notifier);
+    _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
+    _ledgerOperationId =
+        'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!_holdsPaymentUriBusySurface) {
@@ -98,7 +123,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    final discard = _handoffToKeystone ? null : _scheduleDiscard();
+    final hasUncheckpointedLedgerSignature =
+        _ledgerSignedPczt != null && !_handoffToHardware;
+    _ledgerAttemptGeneration++;
+    if (_ledgerPhase != null &&
+        !_handoffToHardware &&
+        !hasUncheckpointedLedgerSignature) {
+      unawaited(_cancelLedgerOperation());
+    }
+    final discard = _handoffToHardware || hasUncheckpointedLedgerSignature
+        ? null : _scheduleDiscard();
     _releasePaymentUriBusySurface(after: discard);
     super.dispose();
   }
@@ -158,10 +192,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     if (_cancelling || _proposalAbandoned) return;
-    final isHardware = ref
+    final signerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
-    if (isHardware) {
+        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
+    if (signerKind == HardwareSignerKind.ledger) {
+      _showLedgerSigningModal();
+      return;
+    }
+    if (signerKind == HardwareSignerKind.keystone) {
       _showKeystoneSigningModal();
       return;
     }
@@ -172,6 +210,329 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       sendStatusRouteLocation(_reviewArgs.sendFlowId),
       extra: _reviewArgs,
     );
+  }
+
+  void _showLedgerSigningModal() {
+    if (_ledgerPhase != null) return;
+    final generation = ++_ledgerAttemptGeneration;
+    setState(() {
+      _ledgerPhase = LedgerSigningModalPhase.preparing;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    unawaited(_prepareAndSignWithLedger(generation));
+  }
+
+  bool _isCurrentLedgerAttempt(int generation) {
+    return mounted && generation == _ledgerAttemptGeneration;
+  }
+
+  Future<void> _prepareAndSignWithLedger(int generation) async {
+    try {
+      final dbPath = await getWalletDbPath();
+      if (!_isCurrentLedgerAttempt(generation)) return;
+      final endpoint = ref.read(rpcEndpointProvider);
+      var saplingParams = await loadSaplingParamsStatus();
+      if (!_isCurrentLedgerAttempt(generation)) return;
+
+      if (_reviewArgs.needsSaplingParams && !saplingParams.complete) {
+        final confirmed = await _showDownloadPrompt();
+        if (!_isCurrentLedgerAttempt(generation)) return;
+        if (!confirmed) {
+          setState(() {
+            _ledgerPhase = null;
+            _ledgerFailure = null;
+            _ledgerRecoveryAction = null;
+          });
+          return;
+        }
+        await downloadMissingSaplingParams(
+          saplingParams,
+          log: (message) => log('SendReview Ledger: $message'),
+        );
+        if (!_isCurrentLedgerAttempt(generation)) return;
+        saplingParams = await loadSaplingParamsStatus();
+        if (!_isCurrentLedgerAttempt(generation)) return;
+      }
+
+      final pcztBytes = await _getOrCreateLedgerBasePczt(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+      );
+      if (!_isCurrentLedgerAttempt(generation)) return;
+
+      var redactedPczt = _ledgerRedactedPczt;
+      if (redactedPczt == null) {
+        final redacted = await rust_sync.redactPcztForSigner(
+          pcztBytes: pcztBytes,
+        );
+        if (!_isCurrentLedgerAttempt(generation)) return;
+        redactedPczt = List<int>.unmodifiable(redacted);
+        _ledgerRedactedPczt = redactedPczt;
+      }
+
+      var pcztWithProofs = _ledgerPcztWithProofs;
+      if (pcztWithProofs == null) {
+        final provedPczt = await rust_sync.addProofsToPczt(
+          pcztBytes: pcztBytes,
+          spendParamsPath: _reviewArgs.needsSaplingParams
+              ? saplingParams.spendPath
+              : null,
+          outputParamsPath: _reviewArgs.needsSaplingParams
+              ? saplingParams.outputPath
+              : null,
+        );
+        if (!_isCurrentLedgerAttempt(generation)) return;
+        pcztWithProofs = List<int>.unmodifiable(provedPczt);
+        _ledgerPcztWithProofs = pcztWithProofs;
+      }
+
+      setState(() {
+        _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
+      });
+      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
+        _reviewArgs.proposalAccountUuid,
+        redactedPczt,
+      );
+      if (!_isCurrentLedgerAttempt(generation)) return;
+      _ledgerSignedPczt = List<int>.unmodifiable(signedPczt);
+      setState(() {
+        _ledgerPhase = LedgerSigningModalPhase.saving;
+        _ledgerFailure = null;
+        _ledgerRecoveryAction = null;
+      });
+    } catch (e, st) {
+      log('SendReview._prepareAndSignWithLedger: ERROR: $e\n$st');
+      if (!_isCurrentLedgerAttempt(generation)) return;
+      _setLedgerPreSignatureFailure(e);
+      return;
+    }
+
+    await _checkpointSignedLedgerOperation(generation);
+  }
+
+  Future<List<int>> _getOrCreateLedgerBasePczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+  }) async {
+    final cachedPczt = _ledgerBasePczt;
+    if (cachedPczt != null) return cachedPczt;
+
+    final existingFuture = _ledgerBasePcztFuture;
+    if (existingFuture != null) return existingFuture;
+
+    final creationFuture = rust_sync
+        .createPcztFromProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: lightwalletdUrl,
+          network: network,
+          proposalId: _reviewArgs.proposalId,
+          sendFlowId: _reviewArgs.sendFlowId,
+        )
+        .then<List<int>>((createdPczt) {
+          final cached = List<int>.unmodifiable(createdPczt);
+          _ledgerBasePczt ??= cached;
+          return _ledgerBasePczt!;
+        });
+    _ledgerBasePcztFuture = creationFuture;
+    try {
+      return await creationFuture;
+    } finally {
+      if (identical(_ledgerBasePcztFuture, creationFuture)) {
+        _ledgerBasePcztFuture = null;
+      }
+    }
+  }
+
+  void _setLedgerPreSignatureFailure(Object error) {
+    final raw = error.toString();
+    final lower = raw.toLowerCase();
+    final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      ref.read(rpcEndpointProvider).networkName,
+    );
+    late final LedgerSigningFailurePresentation failure;
+    late final _LedgerSendRecoveryAction? action;
+
+    if (lower.contains('proposal not found') ||
+        lower.contains('send flow mismatch')) {
+      failure = const LedgerSigningFailurePresentation(
+        title: 'Transaction expired',
+        statusLabel: 'New transaction required',
+        message:
+            'This transaction can no longer be signed. Create and review a new transaction.',
+        showDeviceAppPrompt: false,
+        actionLabel: 'Create new transaction',
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
+    } else if (lower.contains('sapling')) {
+      failure = const LedgerSigningFailurePresentation(
+        title: 'Ledger signing unavailable',
+        statusLabel: 'Unsupported transaction',
+        message:
+            'This Ledger preview does not support Sapling inputs or outputs.',
+        showDeviceAppPrompt: false,
+      );
+      action = null;
+    } else {
+      final message =
+          lower.contains('rejected') ||
+              lower.contains('denied') ||
+              lower.contains('6985')
+          ? 'The transaction was rejected on your Ledger.'
+          : lower.contains('not found') ||
+                lower.contains('no device') ||
+                lower.contains('hid')
+          ? 'Connect and unlock your Ledger. $appInstruction'
+          : '$appInstruction Then try again.';
+      failure = LedgerSigningFailurePresentation(
+        title: 'Ledger signing failed',
+        statusLabel: 'Action needed',
+        message: message,
+        showDeviceAppPrompt: true,
+        actionLabel: 'Try again',
+      );
+      action = _LedgerSendRecoveryAction.retrySigning;
+    }
+
+    setState(() {
+      _ledgerPhase = LedgerSigningModalPhase.failed;
+      _ledgerFailure = failure;
+      _ledgerRecoveryAction = action;
+    });
+  }
+
+  Future<void> _checkpointSignedLedgerOperation(int generation) async {
+    final pcztWithProofs = _ledgerPcztWithProofs;
+    final signedPczt = _ledgerSignedPczt;
+    if (pcztWithProofs == null || signedPczt == null) return;
+
+    try {
+      await ref
+          .read(ledgerSignedOperationServiceProvider)
+          .checkpoint(
+            operationId: _ledgerOperationId,
+            accountUuid: _reviewArgs.proposalAccountUuid,
+            kind: LedgerSignedOperationKind.send,
+            pcztWithProofsBytes: pcztWithProofs,
+            pcztWithSignaturesBytes: signedPczt,
+          );
+    } catch (e, st) {
+      log('SendReview._checkpointSignedLedgerOperation: ERROR: $e\n$st');
+      if (!_isCurrentLedgerAttempt(generation)) return;
+      final terminal = isTerminalLedgerSignedOperationError(e);
+      setState(() {
+        _ledgerPhase = LedgerSigningModalPhase.failed;
+        _ledgerFailure = LedgerSigningFailurePresentation(
+          title: terminal
+              ? 'Signed transaction needs attention'
+              : 'Could not save signed transaction',
+          statusLabel: terminal ? 'Recovery required' : 'Signature preserved',
+          message: terminal
+              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
+              : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
+          showDeviceAppPrompt: false,
+          actionLabel: terminal ? null : 'Retry saving',
+        );
+        _ledgerRecoveryAction = terminal
+            ? null
+            : _LedgerSendRecoveryAction.retryCheckpoint;
+      });
+      return;
+    }
+
+    if (!_isCurrentLedgerAttempt(generation)) return;
+    _handoffToHardware = true;
+    setState(() {
+      _ledgerPhase = null;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    final statusArgs = LedgerBroadcastArgs(
+      reviewArgs: _reviewArgs,
+      operationId: _ledgerOperationId,
+    );
+    ref.read(sendStatusRoutePayloadProvider.notifier).retain(statusArgs);
+    if (!mounted) return;
+    context.go(
+      sendStatusRouteLocation(_reviewArgs.sendFlowId),
+      extra: statusArgs,
+    );
+  }
+
+  Future<void> _dismissLedgerSigningModal() async {
+    if (_ledgerPhase == null || _ledgerSignedPczt != null) return;
+    _ledgerAttemptGeneration++;
+    if (_showSaplingParamsPrompt) {
+      _resolveSaplingParamsDialog(false);
+    }
+    if (!mounted) return;
+    setState(() {
+      _ledgerPhase = null;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    try {
+      await _cancelLedgerOperation();
+    } catch (e, st) {
+      log('SendReview._dismissLedgerSigningModal: ERROR: $e\n$st');
+    }
+  }
+
+  void _retryLedgerSigning() {
+    if (_ledgerPhase != LedgerSigningModalPhase.failed ||
+        _ledgerRecoveryAction != _LedgerSendRecoveryAction.retrySigning ||
+        _ledgerSignedPczt != null) {
+      return;
+    }
+    final generation = ++_ledgerAttemptGeneration;
+    setState(() {
+      _ledgerPhase = LedgerSigningModalPhase.preparing;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    unawaited(_prepareAndSignWithLedger(generation));
+  }
+
+  void _retryLedgerCheckpoint() {
+    if (_ledgerPhase != LedgerSigningModalPhase.failed ||
+        _ledgerRecoveryAction != _LedgerSendRecoveryAction.retryCheckpoint ||
+        _ledgerSignedPczt == null) {
+      return;
+    }
+    final generation = ++_ledgerAttemptGeneration;
+    setState(() {
+      _ledgerPhase = LedgerSigningModalPhase.saving;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    unawaited(_checkpointSignedLedgerOperation(generation));
+  }
+
+  void _createNewLedgerTransaction() {
+    if (_ledgerRecoveryAction !=
+        _LedgerSendRecoveryAction.createNewTransaction) {
+      return;
+    }
+    _ledgerAttemptGeneration++;
+    _scheduleDiscard();
+    ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+    if (!mounted) return;
+    context.go('/send');
+  }
+
+  void _handleLedgerRecoveryAction() {
+    switch (_ledgerRecoveryAction) {
+      case _LedgerSendRecoveryAction.retrySigning:
+        _retryLedgerSigning();
+      case _LedgerSendRecoveryAction.createNewTransaction:
+        _createNewLedgerTransaction();
+      case _LedgerSendRecoveryAction.retryCheckpoint:
+        _retryLedgerCheckpoint();
+      case null:
+        return;
+    }
   }
 
   Future<void> _leaveReview(VoidCallback navigate) async {
@@ -525,7 +886,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
     if (!mounted) return;
 
-    _handoffToKeystone = true;
+    _handoffToHardware = true;
     _releasePaymentUriBusySurface();
     final statusArgs = KeystoneBroadcastArgs(
       reviewArgs: _reviewArgs,
@@ -541,9 +902,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isHardware = ref
+    final signerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
+        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
+    final isHardware = signerKind != null;
+    final isLedger = signerKind == HardwareSignerKind.ledger;
     final keystonePhase = _keystonePhase;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
@@ -666,7 +1029,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         onExpandMemo: _toggleMessageExpanded,
                       ),
               ),
-              if (_showVerifyAddress && keystonePhase == null)
+              if (_showVerifyAddress && keystonePhase == null && _ledgerPhase == null)
                 SendVerifyAddressOverlay(
                   accountUuid: _reviewArgs.proposalAccountUuid,
                   address: _reviewArgs.address.trim(),
@@ -710,6 +1073,25 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                     ),
                   ),
                 ),
+            if (_ledgerPhase case final ledgerPhase?)
+              AppPaneModalOverlay(
+                onDismiss: _ledgerSignedPczt == null
+                    ? () => unawaited(_dismissLedgerSigningModal())
+                    : () {},
+                child: LedgerSigningModal(
+                  accountUuid: _reviewArgs.proposalAccountUuid,
+                  phase: ledgerPhase,
+                  failure: _ledgerFailure,
+                  onCancel: _ledgerSignedPczt == null
+                      ? () => unawaited(_dismissLedgerSigningModal())
+                      : null,
+                  onFailureAction:
+                      ledgerPhase == LedgerSigningModalPhase.failed &&
+                          _ledgerRecoveryAction != null
+                      ? _handleLedgerRecoveryAction
+                      : null,
+                ),
+              ),
               if (_showSaplingParamsPrompt)
                 Positioned.fill(
                   child: SaplingParamsPrompt(

@@ -46,12 +46,17 @@ class _IronwoodMigrationPrivateStatusContentState
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
     final accountState = ref.watch(accountProvider).value;
-    final isHardware =
-        accountState?.accounts
-            .where((account) => account.uuid == widget.accountUuid)
-            .any((account) => account.isHardware) ??
-        false;
-    final action = _statusAction(status, isHardware: isHardware);
+    AccountInfo? account;
+    for (final candidate in accountState?.accounts ?? const <AccountInfo>[]) {
+      if (candidate.uuid == widget.accountUuid) {
+        account = candidate;
+        break;
+      }
+    }
+    final action = _statusAction(
+      status,
+      isKeystone: account?.isKeystone ?? false,
+    );
     final canUseAction = widget.accountUuid != null;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final syncState = ref.watch(syncProvider).asData?.value;
@@ -68,8 +73,13 @@ class _IronwoodMigrationPrivateStatusContentState
     final coordinatorError = widget.accountUuid == null
         ? null
         : coordinator.errors[widget.accountUuid!];
+    final ledgerSigningUnsupported =
+        (account?.isLedger ?? false) &&
+        migrationRequiresKeystoneSignature(status);
     final footerText = coordinatorError == null
-        ? presentation.footer
+        ? ledgerSigningUnsupported
+              ? 'Ledger private migration is not supported because this flow requires batched signing.'
+              : presentation.footer
         : _privateMigrationContinueErrorMessage(coordinatorError);
     final actionCallback = switch (action) {
       _StatusAction.needsInput || _StatusAction.retry =>
@@ -357,12 +367,12 @@ extension _StatusActionLabels on _StatusAction {
 
 _StatusAction _statusAction(
   rust_sync.MigrationStatus status, {
-  required bool isHardware,
+  required bool isKeystone,
 }) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
     kIronwoodMigrationReadyToMigratePhase =>
-      isHardware && migrationRequiresKeystoneSignature(status)
+      isKeystone && migrationRequiresKeystoneSignature(status)
           ? _StatusAction.needsInput
           : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
