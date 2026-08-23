@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -242,6 +242,44 @@ Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
 /// immediately so Dart can overlap warm-up with PIR resolve / bundle setup.
 void warmVotingProvingCaches() =>
     RustLib.instance.api.crateApiVotingWarmVotingProvingCaches();
+
+/// Warm the bundle-independent PIR proof cache for one account.
+///
+/// Fetches and caches IMT non-membership proofs for the account's eligible
+/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
+/// currently serves. Notes are planned with the same whale-protected default
+/// bundle policy round setup uses. The library prunes cache rows older than
+/// four weeks; `keep_roots` is accepted for FRB compatibility.
+///
+/// This is a background warm-up path: it needs no hotkey, no round rows, and
+/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
+/// height. The delegation prove path reads the same cache and still fetches
+/// anything missing, so skipping or failing this call only costs latency.
+///
+/// # Errors
+///
+/// Returns an error if the network string is invalid, the sidecar cannot be
+/// opened, the wallet is not scanned to the snapshot height, note selection
+/// fails, the PIR handshake fails, or a fetched proof does not verify.
+Future<ApiPirCacheWarmupResult> warmPirProofCache({
+  required String dbPath,
+  required String accountUuid,
+  required String network,
+  required String lightwalletdUrl,
+  required BigInt snapshotHeight,
+  required String pirServerUrl,
+  required PirLayout pirLayout,
+  required List<Uint8List> keepRoots,
+}) => RustLib.instance.api.crateApiVotingWarmPirProofCache(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  network: network,
+  lightwalletdUrl: lightwalletdUrl,
+  snapshotHeight: snapshotHeight,
+  pirServerUrl: pirServerUrl,
+  pirLayout: pirLayout,
+  keepRoots: keepRoots,
+);
 
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
@@ -1010,6 +1048,54 @@ class ApiPendingShareRound {
           accountUuid == other.accountUuid &&
           roundId == other.roundId &&
           sessionJson == other.sessionJson;
+}
+
+/// FRB-facing outcome of the bundle-independent PIR proof cache warm-up.
+class ApiPirCacheWarmupResult {
+  /// Eligible notes selected at the snapshot height.
+  final int noteCount;
+
+  /// Nullifiers that already had a cached proof under the served root.
+  final int cachedCount;
+
+  /// Proofs fetched from the PIR server during this warm-up.
+  final int fetchedCount;
+
+  /// IMT root the PIR server served, as 32 little-endian bytes. Compare with
+  /// the round's `nullifier_imt_root` to detect a stale snapshot.
+  final Uint8List servedRoot;
+
+  /// Cache rows evicted by automatic recency prune. Always `0` on this
+  /// crate pin: `precompute_pir_proofs` prunes internally and does not
+  /// report a count.
+  final int prunedCount;
+
+  const ApiPirCacheWarmupResult({
+    required this.noteCount,
+    required this.cachedCount,
+    required this.fetchedCount,
+    required this.servedRoot,
+    required this.prunedCount,
+  });
+
+  @override
+  int get hashCode =>
+      noteCount.hashCode ^
+      cachedCount.hashCode ^
+      fetchedCount.hashCode ^
+      servedRoot.hashCode ^
+      prunedCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiPirCacheWarmupResult &&
+          runtimeType == other.runtimeType &&
+          noteCount == other.noteCount &&
+          cachedCount == other.cachedCount &&
+          fetchedCount == other.fetchedCount &&
+          servedRoot == other.servedRoot &&
+          prunedCount == other.prunedCount;
 }
 
 /// Progress event emitted while building ZKP2 vote commitments.

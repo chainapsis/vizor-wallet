@@ -803,6 +803,80 @@ pub fn warm_voting_proving_caches() {
     delegation::start_proving_cache_warmup();
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// FRB-facing outcome of the bundle-independent PIR proof cache warm-up.
+pub struct ApiPirCacheWarmupResult {
+    /// Eligible notes selected at the snapshot height.
+    pub note_count: u32,
+    /// Nullifiers that already had a cached proof under the served root.
+    pub cached_count: u32,
+    /// Proofs fetched from the PIR server during this warm-up.
+    pub fetched_count: u32,
+    /// IMT root the PIR server served, as 32 little-endian bytes. Compare with
+    /// the round's `nullifier_imt_root` to detect a stale snapshot.
+    pub served_root: Vec<u8>,
+    /// Cache rows evicted by automatic recency prune. Always `0` on this
+    /// crate pin: `precompute_pir_proofs` prunes internally and does not
+    /// report a count.
+    pub pruned_count: u32,
+}
+
+impl From<delegation::PirCacheWarmupOutcome> for ApiPirCacheWarmupResult {
+    fn from(outcome: delegation::PirCacheWarmupOutcome) -> Self {
+        Self {
+            note_count: outcome.note_count,
+            cached_count: outcome.cached_count,
+            fetched_count: outcome.fetched_count,
+            served_root: outcome.served_root,
+            pruned_count: outcome.pruned_count,
+        }
+    }
+}
+
+/// Warm the bundle-independent PIR proof cache for one account.
+///
+/// Fetches and caches IMT non-membership proofs for the account's eligible
+/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
+/// currently serves. Notes are planned with the same whale-protected default
+/// bundle policy round setup uses. The library prunes cache rows older than
+/// four weeks; `keep_roots` is accepted for FRB compatibility.
+///
+/// This is a background warm-up path: it needs no hotkey, no round rows, and
+/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
+/// height. The delegation prove path reads the same cache and still fetches
+/// anything missing, so skipping or failing this call only costs latency.
+///
+/// # Errors
+///
+/// Returns an error if the network string is invalid, the sidecar cannot be
+/// opened, the wallet is not scanned to the snapshot height, note selection
+/// fails, the PIR handshake fails, or a fetched proof does not verify.
+pub async fn warm_pir_proof_cache(
+    db_path: String,
+    account_uuid: String,
+    network: String,
+    lightwalletd_url: String,
+    snapshot_height: u64,
+    pir_server_url: String,
+    pir_layout: PirLayout,
+    keep_roots: Vec<Vec<u8>>,
+) -> Result<ApiPirCacheWarmupResult, String> {
+    let wallet_network = keys::parse_network(&network)?;
+    let network = voting_network(wallet_network);
+    delegation::warm_pir_proof_cache(
+        &db_path,
+        &account_uuid,
+        &lightwalletd_url,
+        network,
+        snapshot_height,
+        &pir_server_url,
+        pir_layout,
+        keep_roots,
+    )
+    .await
+    .map(ApiPirCacheWarmupResult::from)
+}
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
