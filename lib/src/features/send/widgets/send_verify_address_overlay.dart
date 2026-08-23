@@ -66,6 +66,7 @@ class SendVerifyAddressOverlay extends ConsumerWidget {
     required this.address,
     required this.isShieldedAddress,
     required this.onClose,
+    this.ensName,
     super.key,
   });
 
@@ -80,6 +81,9 @@ class SendVerifyAddressOverlay extends ConsumerWidget {
 
   /// Dismiss handler — scrim tap, Escape, and the Close button.
   final VoidCallback onClose;
+
+  /// The `.eth` name [address] was resolved from, if any (display-only).
+  final String? ensName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -139,6 +143,10 @@ class SendVerifyAddressOverlay extends ConsumerWidget {
           SendReviewAddressRecipient() => null,
         },
         previousTransactionCount: previousTransactionCount,
+        ensName: switch (recipient) {
+          SendReviewContactRecipient() => null,
+          SendReviewAddressRecipient() => ensName,
+        },
         onClose: onClose,
       ),
     );

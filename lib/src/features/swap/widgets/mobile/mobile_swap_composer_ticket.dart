@@ -209,6 +209,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           : _AddressChip(
               value: state.destinationText,
               contactName: widget.destinationContactName,
+              ensName: state.destinationEnsName,
               emptyText: 'Add refund address...',
               onTap: widget.onOpenDestinationAddress,
             ),
@@ -255,6 +256,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           ? _AddressChip(
               value: state.destinationText,
               contactName: widget.destinationContactName,
+              ensName: state.destinationEnsName,
               emptyText: 'Add recipient address...',
               onTap: widget.onOpenDestinationAddress,
             )
@@ -607,6 +609,7 @@ class _AddressChip extends StatelessWidget {
     required this.emptyText,
     required this.onTap,
     this.contactName,
+    this.ensName,
   });
 
   final String value;
@@ -617,6 +620,12 @@ class _AddressChip extends StatelessWidget {
   /// (with the matched-contact user icon) instead of the truncated address.
   final String? contactName;
 
+  /// The `.eth` name [value] was resolved from, if any. When set (and no
+  /// saved-contact label takes priority) the chip shows `name (short
+  /// address)` instead of the bare truncated address, so the committed
+  /// destination stays legible as the name the user actually typed.
+  final String? ensName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -624,6 +633,8 @@ class _AddressChip extends StatelessWidget {
     final hasValue = trimmed.isNotEmpty;
     final name = contactName?.trim();
     final hasContact = hasValue && name != null && name.isNotEmpty;
+    final ens = ensName?.trim();
+    final hasEns = hasValue && !hasContact && ens != null && ens.isNotEmpty;
     return GestureDetector(
       key: const ValueKey('swap_address_summary'),
       behavior: HitTestBehavior.opaque,
@@ -649,14 +660,16 @@ class _AddressChip extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xxs),
                   Flexible(
                     child: Text(
-                      hasValue
-                          ? compactSwapAddress(
+                      !hasValue
+                          ? emptyText
+                          : hasEns
+                          ? '$ens (${compactSwapAddress(trimmed, prefixLength: 6, suffixLength: 4, separator: ' … ')})'
+                          : compactSwapAddress(
                               trimmed,
                               prefixLength: 6,
                               suffixLength: 4,
                               separator: ' … ',
-                            )
-                          : emptyText,
+                            ),
                       key: const ValueKey('swap_destination_value'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

@@ -29,6 +29,7 @@ class PayReviewStep extends StatelessWidget {
     required this.onShowFullAddress,
     required this.onConfirm,
     required this.onReviewAgain,
+    this.ensName,
     super.key,
   });
 
@@ -37,6 +38,11 @@ class PayReviewStep extends StatelessWidget {
 
   /// Saved contact matching the recipient, for the avatar + display name.
   final AddressBookContact? recipientContact;
+
+  /// The `.eth` name [recipientAddress] was resolved from, if any. When set
+  /// (and no saved contact takes priority) the "To" row shows
+  /// `name (short address)` instead of the bare compact address.
+  final String? ensName;
 
   final String? payingFiatText;
   final String? convertedFiatText;
@@ -68,6 +74,11 @@ class PayReviewStep extends StatelessWidget {
       separator: '...',
       maxLength: 19,
     );
+    final ens = ensName?.trim();
+    final hasEns = contact == null && ens != null && ens.isNotEmpty;
+    final recipientValueText =
+        contact?.label ??
+        (hasEns ? '$ens ($compactRecipient)' : compactRecipient);
     return Padding(
       key: const ValueKey('pay_review_step'),
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -100,7 +111,7 @@ class PayReviewStep extends StatelessWidget {
                   key: const ValueKey('pay_review_to_row'),
                   rowHeight: 76,
                   label: 'To',
-                  value: contact?.label ?? compactRecipient,
+                  value: recipientValueText,
                   valueStyle: valueStyle,
                   leading: contact != null
                       ? AppProfilePicture(
@@ -110,6 +121,8 @@ class PayReviewStep extends StatelessWidget {
                       : const ReviewInfoIconCircle(iconName: AppIcons.wallet),
                   bottomLeftText: contact != null
                       ? compactRecipient
+                      : hasEns
+                      ? null
                       : 'Unknown address',
                   trailingActionLabel: 'Show full address',
                   trailingActionKey: const ValueKey(

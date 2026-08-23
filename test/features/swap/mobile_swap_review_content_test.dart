@@ -32,6 +32,7 @@ MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
   String? userExternalContactId,
   SwapDirection direction = SwapDirection.zecToExternal,
+  String? ensName,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
@@ -58,6 +59,7 @@ MobileSwapReviewContent _content({
     expired: false,
     amountWarning: null,
     startError: null,
+    ensName: ensName,
   );
 }
 
@@ -102,6 +104,54 @@ void main() {
     expect(find.text('Treasury'), findsNothing);
     expect(find.text('Slippage tolerance'), findsOneWidget);
   });
+
+  testWidgets(
+    'header To: line shows the ENS name with the pinned resolved address',
+    (tester) async {
+      await tester.pumpWidget(_harness(_content(ensName: 'vitalik.eth')));
+
+      final compactAddress = compactSwapAddress(
+        '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
+        prefixLength: 6,
+        suffixLength: 5,
+        separator: ' ... ',
+      );
+      expect(find.text('To: vitalik.eth ($compactAddress)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'header To: line keeps a matched saved contact over an ENS name',
+    (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          _content(
+            ensName: 'vitalik.eth',
+            addressBookContacts: const [
+              AddressBookContact(
+                id: 'treasury',
+                label: 'Treasury',
+                network: AddressBookNetwork.ethereum,
+                address: '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
+                profilePictureId: 'default',
+                createdAtMs: 0,
+                updatedAtMs: 0,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final compactAddress = compactSwapAddress(
+        '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
+        prefixLength: 6,
+        suffixLength: 5,
+        separator: ' ... ',
+      );
+      expect(find.text('To: Treasury ($compactAddress)'), findsOneWidget);
+      expect(find.textContaining('vitalik.eth'), findsNothing);
+    },
+  );
 
   testWidgets('header To: line names a matched saved contact', (tester) async {
     await tester.pumpWidget(

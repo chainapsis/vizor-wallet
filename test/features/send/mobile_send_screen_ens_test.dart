@@ -1,0 +1,416 @@
+@Tags(['mobile'])
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/naming/ens_name_resolver.dart';
+import 'package:zcash_wallet/src/core/naming/ens_rpc_transport.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
+import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/ens_resolver_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
+const _resolvedShielded =
+    'u1resolvedzcashaddress0000000000000000000000000000000000000000000000000';
+const _resolvedShielded2 =
+    'u1resolvedzcashaddress2222222222222222222222222222222222222222222222222';
+// Resolved TEX address the fake resolver returns for the hardware-guard test.
+const _resolvedTex = 'tex1resolvedtexaddress00000000000000000000';
+const _ensName = 'alice.eth';
+const _hardwareTexUnsupportedText = 'Keystone does not support TEX sends yet.';
+
+int _proposeSendCalls = 0;
+String? _lastProposeToAddress;
+// Address type the fake validateAddress reports for a resolved address.
+String _nextAddressType = 'unified';
+
+void main() {
+  setUpAll(() {
+    RustLib.initMock(api: _RustApiFake());
+  });
+  tearDownAll(RustLib.dispose);
+
+  setUp(() {
+    _proposeSendCalls = 0;
+    _lastProposeToAddress = null;
+    _nextAddressType = 'unified';
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.views.first
+      ..physicalSize = const Size(520, 1100)
+      ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('recipient hint advertises .eth names', (tester) async {
+    await tester.pumpWidget(_app(resolver: _FakeEnsResolver()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Zcash address or .eth'), findsOneWidget);
+    expect(find.text('Zcash Address'), findsNothing);
+  });
+
+  testWidgets('resolves a .eth recipient and pins the resolved address', (
+    tester,
+  ) async {
+    final resolver = _FakeEnsResolver(result: _resolvedShielded);
+    await tester.pumpWidget(_app(resolver: resolver));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _ensName);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+
+    expect(resolver.calls, 1);
+    expect(resolver.lastName, _ensName);
+
+    // We are on the amount step now; drive to review and confirm.
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    // The review pins the ENS name headline over the resolved Zcash address.
+    expect(find.text(_ensName), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+
+    expect(_proposeSendCalls, 1);
+    // The RESOLVED Zcash address — never the name — reaches propose.
+    expect(_lastProposeToAddress, _resolvedShielded);
+    expect(_lastProposeToAddress, isNot(_ensName));
+  });
+
+  testWidgets(
+    'editing the recipient after a successful resolve clears the pin',
+    (tester) async {
+      final resolver = _FakeEnsResolver(result: _resolvedShielded);
+      await tester.pumpWidget(_app(resolver: resolver));
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, _ensName);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(resolver.calls, 1);
+
+      // Go back to the recipient step and edit the field. The onChanged clear
+      // must drop the pinned ENS name so a subsequent Continue re-resolves and
+      // propose does not reuse the stale resolved address.
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+
+      resolver.result = _resolvedShielded2;
+      await _enterAddress(tester, 'bob.eth');
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      expect(resolver.calls, 2);
+      expect(resolver.lastName, 'bob.eth');
+
+      await _enterAmount(tester, '1.5');
+      await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      // The freshly resolved address — never the stale first pin — reaches
+      // propose.
+      expect(_proposeSendCalls, 1);
+      expect(_lastProposeToAddress, _resolvedShielded2);
+      expect(_lastProposeToAddress, isNot(_resolvedShielded));
+    },
+  );
+
+  testWidgets(
+    'a .eth name resolving to TEX on a hardware account is blocked at Continue '
+    'and never reaches propose',
+    (tester) async {
+      final resolver = _FakeEnsResolver(result: _resolvedTex);
+      _nextAddressType = 'tex';
+      await tester.pumpWidget(
+        _app(resolver: resolver, bootstrap: _hardwareBootstrap()),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, _ensName);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      // The name resolved, but the re-evaluated hardware-TEX guard blocks the
+      // send: it stays on the recipient step, shows the unsupported message,
+      // and nothing reaches propose.
+      expect(resolver.calls, 1);
+      expect(_proposeSendCalls, 0);
+      expect(
+        find.byKey(const ValueKey('mobile_send_review_button')),
+        findsNothing,
+      );
+      expect(find.text(_hardwareTexUnsupportedText), findsOneWidget);
+    },
+  );
+
+  testWidgets('resolve failure keeps the recipient step and shows a message', (
+    tester,
+  ) async {
+    final resolver = _FakeEnsResolver(
+      error: const EnsResolutionException(
+        EnsResolutionFailure.noRecord,
+        'Name has no usable Zcash address record',
+      ),
+    );
+    await tester.pumpWidget(_app(resolver: resolver));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _ensName);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+
+    expect(_proposeSendCalls, 0);
+    // Still on the recipient step (amount step not shown yet).
+    expect(find.byKey(const ValueKey('mobile_send_review_button')), findsNothing);
+    expect(
+      find.text('Name has no usable Zcash address record'),
+      findsOneWidget,
+    );
+  });
+}
+
+Future<void> _enterAddress(WidgetTester tester, String address) async {
+  await tester.enterText(
+    find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_address_field')),
+      matching: find.byType(EditableText),
+    ),
+    address,
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _enterAmount(WidgetTester tester, String amount) async {
+  await tester.enterText(
+    find.byKey(const ValueKey('mobile_send_amount_input')),
+    amount,
+  );
+  await tester.pumpAndSettle();
+}
+
+Widget _app({
+  required EnsNameResolver resolver,
+  AppBootstrapState? bootstrap,
+}) {
+  final router = GoRouter(
+    initialLocation: '/send',
+    routes: [
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => MobileSendScreen(
+          loadWalletDbPath: () async => '/tmp/zcash-test',
+          openScanner: (_) async => null,
+        ),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, _) => const Text('send status'),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      ensResolverProvider.overrideWithValue(resolver),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(70),
+      // Pin the live price too: the amount step listens to
+      // zecLiveUsdUnitPriceProvider, which otherwise activates the live
+      // market-data refresh timer and makes pumpAndSettle never settle.
+      zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+      addressBookRepositoryProvider.overrideWithValue(
+        _FakeAddressBookRepository(const []),
+      ),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+AppBootstrapState _bootstrap() => AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+AppBootstrapState _hardwareBootstrap() => AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone 1',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+class _DummyTransport implements EnsRpcTransport {
+  @override
+  Future<String> ethCall({required String to, required String data}) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> ccipFetch({
+    required String url,
+    required String sender,
+    required String data,
+  }) async => throw UnimplementedError();
+}
+
+class _FakeEnsResolver extends EnsNameResolver {
+  _FakeEnsResolver({this.result, this.error}) : super(_DummyTransport());
+
+  String? result;
+  Object? error;
+  int calls = 0;
+  String? lastName;
+
+  @override
+  Future<String> resolveZcashAddress(String name) async {
+    calls++;
+    lastName = name;
+    final err = error;
+    if (err != null) throw err;
+    return result!;
+  }
+}
+
+class _FakeSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    spendableBalance: BigInt.from(500000000),
+    totalBalance: BigInt.from(500000000),
+  );
+}
+
+class _FakeAddressBookRepository implements AddressBookRepository {
+  _FakeAddressBookRepository(this.contacts);
+
+  final List<AddressBookContact> contacts;
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+}
+
+class _RustApiFake implements RustLibApi {
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {}
+
+  @override
+  Future<AddressValidationResult> crateApiSyncValidateAddress({
+    required String address,
+  }) async {
+    return AddressValidationResult(isValid: true, addressType: _nextAddressType);
+  }
+
+  @override
+  Future<BigInt> crateApiSyncEstimateFee({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    return BigInt.from(10000);
+  }
+
+  @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    _proposeSendCalls++;
+    _lastProposeToAddress = toAddress;
+    return ProposalResult(
+      proposalId: BigInt.one,
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(10000),
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}

@@ -388,7 +388,7 @@ void main() {
         ),
         const Size(361, 60),
       );
-      expect(find.text('Ethereum address'), findsOneWidget);
+      expect(find.text('Ethereum address or .eth'), findsOneWidget);
       expect(
         tester
             .getSize(find.byKey(const ValueKey('mobile_pay_recipient_qr_row')))

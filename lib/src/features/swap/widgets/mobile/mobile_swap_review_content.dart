@@ -35,6 +35,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.ensName,
     super.key,
   });
 
@@ -51,6 +52,12 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
+
+  /// The `.eth` name the committed destination/recipient address (on
+  /// [addressPlan]) was resolved from, if any. When set (and no saved
+  /// contact label takes priority) the destination line shows
+  /// `name (short address)` instead of the bare compact address.
+  final String? ensName;
 
   @override
   Widget build(BuildContext context) {
@@ -69,9 +76,16 @@ class MobileSwapReviewContent extends StatelessWidget {
       suffixLength: 5,
       separator: ' ... ',
     );
+    final ens = ensName?.trim();
+    final hasEns =
+        (externalContactLabel == null || externalContactLabel.isEmpty) &&
+        ens != null &&
+        ens.isNotEmpty;
     final externalAddressText =
         externalContactLabel == null || externalContactLabel.isEmpty
-        ? externalCompact
+        ? hasEns
+              ? '$ens ($externalCompact)'
+              : externalCompact
         : contactAddressDisplayText(
             label: externalContactLabel,
             compactAddress: externalCompact,

@@ -17,6 +17,9 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/naming/ens_name_resolver.dart';
+import 'package:zcash_wallet/src/core/naming/ens_rpc_transport.dart';
+import 'package:zcash_wallet/src/providers/ens_resolver_provider.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -287,6 +290,38 @@ void main() {
     );
   });
 
+  testWidgets(
+    'review summary shows the ENS name with the resolved address in the To: line',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '0.251 ZEC',
+            receiveAmountText: '999.99 USDC',
+            onCopy: (_) {},
+            ensName: 'vitalik.eth',
+          ),
+        ),
+      );
+
+      final receiveSide = find.byKey(
+        const ValueKey('swap_review_info_receive'),
+      );
+      expect(
+        find.descendant(
+          of: receiveSide,
+          matching: find.text(
+            'To: vitalik.eth (0x5290840 ... 4169ee7) on Ethereum',
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('review summary names the selected duplicate contact', (
     tester,
   ) async {
@@ -330,6 +365,42 @@ void main() {
       find.descendant(of: receiveSide, matching: find.textContaining('First')),
       findsNothing,
     );
+  });
+
+  testWidgets('review summary keeps a matched contact label over an ENS name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarnessWithOverlay(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          onCopy: (_) {},
+          ensName: 'vitalik.eth',
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final receiveSide = find.byKey(const ValueKey('swap_review_info_receive'));
+    expect(
+      find.descendant(
+        of: receiveSide,
+        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('vitalik.eth'), findsNothing);
   });
 
   testWidgets('review summary shows the refund address line with copy', (
@@ -402,6 +473,51 @@ void main() {
     expect(find.text('Guaranteed minimum'), findsNothing);
     expect(find.text('Swap fee'), findsNothing);
   });
+
+  testWidgets(
+    'pay review recipient pill shows the ENS name with the resolved address',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '4.0000 ZEC',
+            receiveAmountText: '100.00 USDC',
+            payMode: true,
+            ensName: 'vitalik.eth',
+          ),
+        ),
+      );
+
+      expect(
+        find.text('Ethereum · vitalik.eth (0x5290840 ... 4169ee7)'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'pay review recipient pill shows the bare address when no ENS name is set',
+    (tester) async {
+      await tester.pumpWidget(
+        _themeHarnessWithOverlay(
+          _reviewTestPage(
+            direction: SwapDirection.zecToExternal,
+            sellAsset: SwapAsset.zec,
+            receiveAsset: SwapAsset.usdc,
+            sellAmountText: '4.0000 ZEC',
+            receiveAmountText: '100.00 USDC',
+            payMode: true,
+          ),
+        ),
+      );
+
+      expect(find.text('Ethereum · 0x5290840 ... 4169ee7'), findsOneWidget);
+      expect(find.textContaining('vitalik.eth'), findsNothing);
+    },
+  );
 
   testWidgets('pay review action uses the output asset amount', (tester) async {
     await tester.pumpWidget(
@@ -2353,7 +2469,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ethereum address or account'), findsOneWidget);
+    expect(find.text('Ethereum address or .eth'), findsOneWidget);
     expect(find.text('NEAR or Ethereum address'), findsNothing);
 
     final modalRect = tester.getRect(
@@ -2879,6 +2995,51 @@ void main() {
       contains(saved.profilePictureId),
     );
   });
+
+  testWidgets(
+    'swap address modal remembers the RESOLVED address, not the ENS name',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const resolvedAddress = '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb';
+      final addressBookRepository = _FakeAddressBookRepository();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          addressBookRepository: addressBookRepository,
+          ensResolver: _FixedEnsNameResolver(resolvedAddress),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+      await tester.pumpAndSettle();
+      // Enter an ENS name, not a raw address.
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        'vitalik.eth',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_remember_toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_update_button')),
+      );
+      await tester.pumpAndSettle();
+
+      // The pinned resolved 0x address is saved, never the `.eth` name.
+      expect(addressBookRepository.contacts, hasLength(1));
+      final saved = addressBookRepository.contacts.single;
+      expect(saved.address, resolvedAddress);
+      expect(saved.address, isNot('vitalik.eth'));
+      expect(saved.network, AddressBookNetwork.ethereum);
+    },
+  );
 
   testWidgets('swap address modal warns when the address is already saved', (
     tester,
@@ -9372,6 +9533,7 @@ Widget _routerHarness(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
   AddressBookRepository? addressBookRepository,
+  EnsNameResolver? ensResolver,
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
@@ -9392,6 +9554,8 @@ Widget _routerHarness(
       addressBookRepositoryProvider.overrideWithValue(
         addressBookRepository ?? _FakeAddressBookRepository(),
       ),
+      if (ensResolver != null)
+        ensResolverProvider.overrideWithValue(ensResolver),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       syncProvider.overrideWith(
@@ -9478,6 +9642,35 @@ Widget _routerHarness(
       },
     ),
   );
+}
+
+/// Test resolver that returns a fixed 0x address for any `.eth` name, so a
+/// swap-screen widget test can exercise the resolve-then-remember path
+/// without touching the network.
+class _FixedEnsNameResolver extends EnsNameResolver {
+  _FixedEnsNameResolver(this._resolved) : super(_UnusedHarnessEnsTransport());
+
+  final String _resolved;
+
+  @override
+  Future<String> resolveEvmAddress(String name, {required int chainId}) async =>
+      _resolved;
+}
+
+class _UnusedHarnessEnsTransport implements EnsRpcTransport {
+  @override
+  Future<String> ethCall({required String to, required String data}) {
+    throw UnimplementedError('ethCall should not be called in this test');
+  }
+
+  @override
+  Future<String> ccipFetch({
+    required String url,
+    required String sender,
+    required String data,
+  }) {
+    throw UnimplementedError('ccipFetch should not be called in this test');
+  }
 }
 
 GoRoute _swapRoute() {
@@ -9658,11 +9851,13 @@ Widget _reviewTestPage({
   List<AddressBookContact> addressBookContacts = const [],
   String? userExternalContactId,
   bool payMode = false,
+  String? ensName,
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
     onCopy: onCopy,
     addressBookContacts: addressBookContacts,
+    ensName: ensName,
     userExternalContactId: userExternalContactId,
     quote: SwapQuote(
       direction: direction,
