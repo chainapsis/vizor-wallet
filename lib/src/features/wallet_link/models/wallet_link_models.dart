@@ -6,6 +6,7 @@ import '../../../providers/account_provider.dart';
 import '../wallet_link_config.dart';
 
 const kWalletLinkHardwareKindKeystone = 'keystone';
+const kWalletLinkHardwareKindLedger = 'ledger';
 const kWalletLinkSoftwareSecretVersion = 1;
 
 Map<String, Object?> walletLinkSoftwareRecoveryFields({
@@ -423,6 +424,7 @@ class WalletLinkTransferAccount {
       zip32AccountIndex: zip32AccountIndex!,
       isHardware: isHardware,
       isSeedAnchor: isSeedAnchor,
+      hardwareSignerKind: HardwareSignerKind.fromJson(effectiveHardwareKind),
       mnemonic: mnemonic,
       bip39Passphrase: bip39Passphrase,
       ufvk: ufvk,

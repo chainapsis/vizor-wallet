@@ -48,4 +48,89 @@ void main() {
 
     expect(account.isSeedAnchor, isFalse);
   });
+
+  test('legacy hardware accounts default to the Keystone signer', () {
+    final account = AccountInfo.fromJson({
+      'uuid': 'account-1',
+      'name': 'Legacy hardware',
+      'order': 0,
+      'isHardware': true,
+    });
+
+    expect(account.hardwareSignerKind, HardwareSignerKind.keystone);
+    expect(account.isKeystone, isTrue);
+    expect(account.isLedger, isFalse);
+  });
+
+  test('Ledger signer kind survives JSON persistence', () {
+    const account = AccountInfo(
+      uuid: 'account-1',
+      name: 'Ledger',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      birthdayHeight: 2500000,
+      zip32AccountIndex: 12,
+    );
+
+    final restored = AccountInfo.fromJson(account.toJson());
+
+    expect(restored.isHardware, isTrue);
+    expect(restored.hardwareSignerKind, HardwareSignerKind.ledger);
+    expect(restored.isLedger, isTrue);
+    expect(restored.isKeystone, isFalse);
+    expect(restored.birthdayHeight, 2500000);
+    expect(restored.zip32AccountIndex, 12);
+  });
+
+  test('Ledger connection metadata survives JSON persistence', () {
+    const account = AccountInfo(
+      uuid: 'account-1',
+      name: 'Ledger',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
+      ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+      ledgerDeviceId: 'device-id',
+      ledgerDeviceName: 'Rowan Ledger',
+      ledgerDeviceModel: 'Nano X',
+    );
+
+    final restored = AccountInfo.fromJson(account.toJson());
+
+    expect(
+      restored.ledgerConnectionPreference,
+      LedgerConnectionPreference.bluetooth,
+    );
+    expect(restored.ledgerLastTransport, LedgerConnectionTransport.bluetooth);
+    expect(restored.ledgerDeviceId, 'device-id');
+    expect(restored.ledgerDeviceName, 'Rowan Ledger');
+    expect(restored.ledgerDeviceModel, 'Nano X');
+  });
+
+  test('legacy Ledger accounts default to automatic connection selection', () {
+    final account = AccountInfo.fromJson({
+      'uuid': 'account-1',
+      'name': 'Ledger',
+      'order': 0,
+      'isHardware': true,
+      'hardwareSignerKind': 'ledger',
+    });
+
+    expect(
+      account.ledgerConnectionPreference,
+      LedgerConnectionPreference.automatic,
+    );
+    expect(account.ledgerLastTransport, isNull);
+    expect(account.ledgerDeviceId, isNull);
+  });
+
+  test('software accounts are neither Keystone nor Ledger accounts', () {
+    const account = AccountInfo(uuid: 'account-1', name: 'Software', order: 0);
+
+    expect(account.isHardware, isFalse);
+    expect(account.isKeystone, isFalse);
+    expect(account.isLedger, isFalse);
+  });
 }

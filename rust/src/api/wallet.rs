@@ -62,8 +62,17 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub birthday_height: u32,
+    pub zip32_account_index: Option<u32>,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    pub hardware_signer_kind: Option<String>,
+}
+
+/// Stored hardware signer metadata used to migrate pre-key_source accounts.
+pub struct LegacyHardwareAccount {
+    pub account_uuid: String,
+    pub hardware_signer_kind: String,
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -860,9 +869,11 @@ pub fn import_hardware_account(
     seed_fingerprint: Vec<u8>,
     zip32_index: u32,
     birthday_height: Option<u64>,
+    hardware_signer_kind: String,
 ) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let hardware_signer_kind = keys::HardwareSignerKind::parse(&hardware_signer_kind)?;
         let (account_uuid, unified_address) = keys::import_hardware_account(
             &db_path,
             network,
@@ -871,11 +882,32 @@ pub fn import_hardware_account(
             &seed_fingerprint,
             zip32_index,
             birthday_height,
+            hardware_signer_kind,
         )?;
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
         })
+    })
+}
+
+/// Backfill stored hardware accounts that predate authoritative Rust signer
+/// metadata.
+pub fn backfill_legacy_hardware_accounts(
+    db_path: String,
+    network: String,
+    accounts: Vec<LegacyHardwareAccount>,
+) -> Result<u32, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let accounts = accounts
+            .into_iter()
+            .map(|account| {
+                keys::HardwareSignerKind::parse(&account.hardware_signer_kind)
+                    .map(|kind| (account.account_uuid, kind))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        keys::backfill_legacy_hardware_accounts(&db_path, network, &accounts)
     })
 }
 
@@ -890,8 +922,11 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 uuid: a.uuid,
                 name: a.name,
                 unified_address: a.unified_address,
+                birthday_height: a.birthday_height,
+                zip32_account_index: a.zip32_account_index,
                 is_seed_anchor: a.is_seed_anchor,
                 is_hardware: a.is_hardware,
+                hardware_signer_kind: a.hardware_signer_kind.map(|kind| kind.as_str().to_string()),
             })
             .collect())
     })

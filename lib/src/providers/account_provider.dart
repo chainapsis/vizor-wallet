@@ -76,6 +76,7 @@ class LinkedWalletAccountImport {
     required this.zip32AccountIndex,
     required this.isHardware,
     required this.isSeedAnchor,
+    this.hardwareSignerKind,
     this.mnemonic,
     this.bip39Passphrase = '',
     this.ufvk,
@@ -89,6 +90,7 @@ class LinkedWalletAccountImport {
   final int zip32AccountIndex;
   final bool isHardware;
   final bool isSeedAnchor;
+  final HardwareSignerKind? hardwareSignerKind;
   final String? mnemonic;
   final String bip39Passphrase;
   final String? ufvk;
@@ -527,6 +529,56 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
+  }
+
+  Future<void> updateLedgerConnectionPreference(
+    String uuid,
+    LedgerConnectionPreference preference,
+  ) async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    final updated = prev.accounts
+        .map(
+          (account) => account.uuid == uuid
+              ? account.copyWith(ledgerConnectionPreference: preference)
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('updateLedgerConnectionPreference: $uuid → ${preference.name}');
+  }
+
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    final updated = prev.accounts
+        .map(
+          (account) => account.uuid == uuid
+              ? account.copyWith(
+                  ledgerLastTransport: transport,
+                  ledgerDeviceId: deviceId,
+                  ledgerDeviceName: deviceName,
+                  ledgerDeviceModel: deviceModel,
+                )
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('recordLedgerConnection: $uuid → ${transport.name}');
   }
 
   /// Remove an account from the wallet.
@@ -1006,6 +1058,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
         birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.keystone.name,
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;
@@ -1016,6 +1069,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
@@ -1032,6 +1088,81 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       log('importKeystoneAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Import a Ledger-backed account using the UFVK approved on the device.
+  Future<void> importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) async {
+    try {
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
+      final prev = state.value ?? const AccountState();
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+
+      final result = await rust_wallet.importHardwareAccount(
+        dbPath: dbPath,
+        network: network,
+        name: accountName,
+        ufvkString: ufvk,
+        seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index,
+        birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.ledger.name,
+      );
+      final accountUuid = result.accountUuid;
+      final address = result.unifiedAddress;
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: prev.accounts.length,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
+        ledgerLastTransport: connectionTransport,
+        ledgerDeviceId: ledgerDeviceId,
+        ledgerDeviceName: ledgerDeviceName,
+        ledgerDeviceModel: ledgerDeviceModel,
+        profilePictureId: normalizedProfilePictureId,
+      );
+      final updated = [...prev.accounts, newAccount];
+      await _saveAccounts(updated);
+      await _storage.writeString(_activeAccountKey, accountUuid);
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: accountUuid,
+          activeAddress: address,
+        ),
+      );
+      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+    } catch (e, st) {
+      log('importLedgerAccount: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -1081,6 +1212,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               seedFingerprint: input.seedFingerprint ?? const [],
               zip32Index: input.zip32AccountIndex,
               birthdayHeight: BigInt.from(input.birthdayHeight),
+              hardwareSignerKind:
+                  (input.hardwareSignerKind ?? HardwareSignerKind.keystone)
+                      .name,
             );
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
@@ -1128,6 +1262,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: input.name,
             order: nextOrder,
             isHardware: input.isHardware,
+            hardwareSignerKind: input.isHardware
+                ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
+                : null,
             isSeedAnchor: isSeedAnchor,
             profilePictureId: normalizeProfilePictureId(
               input.profilePictureId ?? kDefaultProfilePictureId,
@@ -1249,6 +1386,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     return false;
   }
+
+  HardwareSignerKind? hardwareSignerKindForAccount(String uuid) {
+    final accounts = state.value?.accounts ?? const <AccountInfo>[];
+    for (final account in accounts) {
+      if (account.uuid == uuid) return account.hardwareSignerKind;
+    }
+    return null;
+  }
+
+  bool isKeystoneAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.keystone;
+
+  bool isLedgerAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.ledger;
 
   /// Get the mnemonic for the active account.
   Future<String?> getActiveMnemonic() async {
