@@ -64,6 +64,8 @@ abstract final class AppIcons {
   static const key = 'key';
   static const keystone = 'keystone';
   static const keystoneScan = 'keystone_scan';
+  static const ledger = 'ledger';
+  static const ledgerBrand = 'ledger_brand';
   static const link = 'link';
   static const loader = 'loader';
   static const lock = 'lock';

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_error_messages.dart';
+import '../../features/ledger/services/ledger_signing_service.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
@@ -22,6 +23,7 @@ enum VotingSubmissionJobStatus {
   idle,
   running,
   waitingForKeystone,
+  waitingForLedger,
   complete,
   error,
 }
@@ -53,6 +55,9 @@ class VotingSubmissionJobState {
     this.keystoneBatchMessageCount = 0,
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
+    this.ledgerDisplayMemo,
+    this.ledgerBundleIndex,
+    this.ledgerBundleCount = 0,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
     this.pendingProposalOptionCounts = const {},
@@ -69,6 +74,9 @@ class VotingSubmissionJobState {
   final int keystoneBatchMessageCount;
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
+  final String? ledgerDisplayMemo;
+  final int? ledgerBundleIndex;
+  final int ledgerBundleCount;
   final List<rust_wire.DraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final Map<int, int> pendingProposalOptionCounts;
@@ -79,7 +87,8 @@ class VotingSubmissionJobState {
 
   bool get isInFlight =>
       status == VotingSubmissionJobStatus.running ||
-      status == VotingSubmissionJobStatus.waitingForKeystone;
+      status == VotingSubmissionJobStatus.waitingForKeystone ||
+      status == VotingSubmissionJobStatus.waitingForLedger;
 
   VotingSubmissionJobState copyWith({
     VotingSessionKey? key,
@@ -94,6 +103,11 @@ class VotingSubmissionJobState {
     int? keystoneBatchTotalCount,
     String? keystoneQrError,
     bool clearKeystoneQrError = false,
+    String? ledgerDisplayMemo,
+    bool clearLedgerDisplayMemo = false,
+    int? ledgerBundleIndex,
+    bool clearLedgerBundleIndex = false,
+    int? ledgerBundleCount,
     List<rust_wire.DraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
@@ -118,6 +132,13 @@ class VotingSubmissionJobState {
       keystoneQrError: clearKeystoneQrError
           ? null
           : keystoneQrError ?? this.keystoneQrError,
+      ledgerDisplayMemo: clearLedgerDisplayMemo
+          ? null
+          : ledgerDisplayMemo ?? this.ledgerDisplayMemo,
+      ledgerBundleIndex: clearLedgerBundleIndex
+          ? null
+          : ledgerBundleIndex ?? this.ledgerBundleIndex,
+      ledgerBundleCount: ledgerBundleCount ?? this.ledgerBundleCount,
       pendingDraftVotes: clearPendingDraftVotes
           ? null
           : pendingDraftVotes ?? this.pendingDraftVotes,
@@ -227,6 +248,12 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     await ref.read(votingSubmissionJobProvider(key).notifier).retry();
   }
 
+  Future<void> cancelLedgerSigning(VotingSessionKey key) {
+    return ref
+        .read(votingSubmissionJobProvider(key).notifier)
+        .cancelLedgerSigning();
+  }
+
   void dismiss(VotingSessionKey key) {
     final jobProvider = votingSubmissionJobProvider(key);
     if (ref.read(jobProvider).isInFlight) return;
@@ -308,6 +335,32 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key);
     _startJob(_key);
+  }
+
+  Future<void> cancelLedgerSigning() async {
+    final current = state;
+    if (current.status != VotingSubmissionJobStatus.waitingForLedger) return;
+    final key = current.key;
+    if (key == null) return;
+
+    // Invalidate first: a device result racing cancellation cannot be
+    // persisted or advance this job after the user has cancelled it.
+    final generation = ++_nextGeneration;
+    _cancelCompletionPoll();
+    _releaseGuard();
+    _releaseSessionSubscription();
+    _keystoneSigningRound = null;
+    state = VotingSubmissionJobState(
+      key: key,
+      status: VotingSubmissionJobStatus.error,
+      generation: generation,
+      errorMessage: 'Ledger voting approval was cancelled.',
+    );
+    try {
+      await ref.read(ledgerOperationCancellerProvider)();
+    } catch (error) {
+      debugPrint('[zcash] Voting: Ledger cancellation failed: $error');
+    }
   }
 
   void dismiss() {
@@ -416,7 +469,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         );
         return;
       }
-      await _submitAfterKeystoneSignatures(
+      await _submitAfterHardwareSignatures(
         sessionNotifier,
         key: key,
         generation: generation,
@@ -448,7 +501,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failFromSession(key: key, generation: generation, session: session!);
         return;
       }
-      await _submitAfterKeystoneSignatures(
+      await _submitAfterHardwareSignatures(
         sessionNotifier,
         key: key,
         generation: generation,
@@ -615,7 +668,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       if (activeSession.isHardwareAccount && needsDelegationSigning) {
-        _storePendingKeystoneState(
+        _storePendingHardwareState(
           key: key,
           generation: generation,
           draftVotes: draftVotes,
@@ -624,18 +677,26 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           pendingRecoveryWithoutDraft:
               canRecoverWithoutDraft || canPollDelegationWithoutDraft,
         );
-        await _prepareKeystoneSigning(
-          sessionNotifier,
-          key: key,
-          generation: generation,
-        );
+        if (activeSession.isLedgerAccount) {
+          await _prepareAndSignWithLedger(
+            sessionNotifier,
+            key: key,
+            generation: generation,
+          );
+        } else {
+          await _prepareKeystoneSigning(
+            sessionNotifier,
+            key: key,
+            generation: generation,
+          );
+        }
         return;
       }
 
       if (activeSession.isHardwareAccount &&
           (draftVotes.isNotEmpty || needsDelegation)) {
         if (needsDelegation) {
-          _storePendingKeystoneState(
+          _storePendingHardwareState(
             key: key,
             generation: generation,
             draftVotes: draftVotes,
@@ -644,10 +705,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             pendingRecoveryWithoutDraft:
                 canRecoverWithoutDraft || canPollDelegationWithoutDraft,
           );
-          await _submitAfterKeystoneSignatures(
+          await _submitAfterHardwareSignatures(
             sessionNotifier,
             key: key,
             generation: generation,
+            signerKind: activeSession.hardwareSignerKind,
           );
         } else {
           await _submitVotesAndShares(
@@ -746,10 +808,58 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       );
       return;
     }
-    await _submitAfterKeystoneSignatures(
+    await _submitAfterHardwareSignatures(
       sessionNotifier,
       key: key,
       generation: generation,
+    );
+  }
+
+  Future<void> _prepareAndSignWithLedger(
+    VotingSessionNotifier sessionNotifier, {
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    await sessionNotifier.prepareLedgerSigning();
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+
+    while (true) {
+      final session = _sessionForJob(key);
+      if (session == null) return;
+      if (session.phase == VotingSessionPhase.error) {
+        _failFromSession(key: key, generation: generation, session: session);
+        return;
+      }
+      final request = session.ledgerSigningRequest;
+      if (request == null) break;
+
+      state = state.copyWith(
+        status: VotingSubmissionJobStatus.waitingForLedger,
+        ledgerDisplayMemo: request.displayMemo,
+        ledgerBundleIndex: request.bundleIndex,
+        ledgerBundleCount: request.bundleCount,
+        keystoneUrParts: const [],
+        keystoneBatchMemos: const [],
+        keystoneBatchMessageCount: 0,
+        keystoneBatchTotalCount: 0,
+        clearKeystoneQrError: true,
+        clearErrorMessage: true,
+      );
+
+      final signatures = await ref.read(ledgerVotingPcztSignerProvider)(
+        key.accountUuid,
+        request.redactedPcztBytes,
+      );
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      await sessionNotifier.handleLedgerSignatures(signatures);
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+    }
+
+    await _submitAfterHardwareSignatures(
+      sessionNotifier,
+      key: key,
+      generation: generation,
+      signerKind: HardwareSignerKind.ledger,
     );
   }
 
@@ -765,6 +875,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.waitingForKeystone,
+      clearLedgerDisplayMemo: true,
+      clearLedgerBundleIndex: true,
+      ledgerBundleCount: 0,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
@@ -823,10 +936,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
   }
 
-  Future<void> _submitAfterKeystoneSignatures(
+  Future<void> _submitAfterHardwareSignatures(
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
+    HardwareSignerKind? signerKind,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final draftVotes = state.pendingDraftVotes;
@@ -842,7 +956,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
     if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
-      await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
+      if (signerKind == HardwareSignerKind.ledger) {
+        await sessionNotifier.delegatePendingBundlesWithLedgerSignatures();
+      } else {
+        await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
+      }
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final afterDelegation = _sessionForJob(key);
       if (afterDelegation?.phase == VotingSessionPhase.error) {
@@ -980,7 +1098,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _completeJob(key: key, generation: generation);
   }
 
-  void _storePendingKeystoneState({
+  void _storePendingHardwareState({
     required VotingSessionKey key,
     required int generation,
     required List<rust_wire.DraftVote> draftVotes,
@@ -1002,6 +1120,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _keystoneSigningRound = null;
     state = state.copyWith(
       status: VotingSubmissionJobStatus.running,
+      clearLedgerDisplayMemo: true,
+      clearLedgerBundleIndex: true,
+      ledgerBundleCount: 0,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],
       keystoneBatchMessageCount: 0,
@@ -1031,6 +1152,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
+      clearLedgerDisplayMemo: true,
+      clearLedgerBundleIndex: true,
+      ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
       pendingProposalOptionCounts: const {},
@@ -1070,6 +1194,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
+      clearLedgerDisplayMemo: true,
+      clearLedgerBundleIndex: true,
+      ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
       pendingProposalOptionCounts: const {},

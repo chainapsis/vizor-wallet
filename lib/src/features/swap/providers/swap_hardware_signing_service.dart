@@ -30,6 +30,14 @@ abstract interface class SwapHardwareSigningService {
 
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft});
 
+  /// Settles the proposal lock after a separately checkpointed Ledger
+  /// broadcast. A null or uncertain status keeps the lock until height expiry
+  /// so retrying the durable signed operation cannot race a second spend.
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  });
+
   /// Takes ownership of [draft]'s proposal lock on entry. The implementation
   /// must release it for definite completion/failure or retain it through its
   /// height expiry when broadcast acceptance is ambiguous.
@@ -225,6 +233,20 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
         'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$e',
       );
     }
+  }
+
+  @override
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  }) async {
+    if (status == null ||
+        status == 'broadcast_unknown' ||
+        status == 'broadcasted_storage_failed') {
+      await _retainPcztDraftLockUntilExpiry(draft: draft);
+      return;
+    }
+    await discardPcztDraft(draft: draft);
   }
 
   @override

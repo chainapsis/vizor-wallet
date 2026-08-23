@@ -978,6 +978,12 @@ class _AccountRowState extends State<_AccountRow> {
             _AccountRowMenuButton(
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
               showSendZec: widget.showSendZec,
+              onViewAccountDetails: widget.account.isHardware
+                  ? () => context.push(
+                      '/settings/hardware-account',
+                      extra: widget.account.uuid,
+                    )
+                  : null,
               onViewSecretPassphrase: widget.account.isHardware
                   ? null
                   : () => context.push(
@@ -1039,7 +1045,7 @@ class _AccountRowAvatar extends StatelessWidget {
             profilePictureId: account.profilePictureId,
             size: AppProfilePictureSize.large,
           ),
-          if (account.isHardware)
+          if (account.hardwareSignerKind case final signerKind?)
             Positioned(
               right: -5,
               bottom: 0,
@@ -1060,8 +1066,11 @@ class _AccountRowAvatar extends StatelessWidget {
                   height: 16,
                   child: Center(
                     child: AppIcon(
-                      AppIcons.keystone,
-                      size: 14,
+                      signerKind == HardwareSignerKind.keystone
+                          ? AppIcons.keystone
+                          : AppIcons.ledger,
+                      key: ValueKey('hardware_signer_badge_${signerKind.name}'),
+                      size: signerKind == HardwareSignerKind.ledger ? 16 : 14,
                       color: colors.icon.inverse,
                     ),
                   ),
@@ -1077,6 +1086,7 @@ class _AccountRowAvatar extends StatelessWidget {
 class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
     required this.showSendZec,
+    required this.onViewAccountDetails,
     required this.onViewSecretPassphrase,
     required this.onViewViewingKey,
     required this.onCopyAddress,
@@ -1089,6 +1099,7 @@ class _AccountRowMenuButton extends StatefulWidget {
   });
 
   final bool showSendZec;
+  final VoidCallback? onViewAccountDetails;
   final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
@@ -1157,6 +1168,9 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
                 data: appTheme,
                 child: _AccountContextMenu(
                   showSendZec: widget.showSendZec,
+                  onViewAccountDetails: widget.onViewAccountDetails == null
+                      ? null
+                      : _handleViewAccountDetails,
                   onViewSecretPassphrase: widget.onViewSecretPassphrase == null
                       ? null
                       : _handleViewSecretPassphrase,
@@ -1194,6 +1208,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleViewSecretPassphrase() {
     _hideMenu();
     widget.onViewSecretPassphrase?.call();
+  }
+
+  void _handleViewAccountDetails() {
+    _hideMenu();
+    widget.onViewAccountDetails?.call();
   }
 
   void _handleViewViewingKey() {
@@ -1270,6 +1289,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.showSendZec,
+    required this.onViewAccountDetails,
     required this.onViewSecretPassphrase,
     required this.onViewViewingKey,
     required this.onCopyAddress,
@@ -1283,6 +1303,7 @@ class _AccountContextMenu extends StatelessWidget {
   static const _width = 176.0;
 
   final bool showSendZec;
+  final VoidCallback? onViewAccountDetails;
   final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
@@ -1294,7 +1315,8 @@ class _AccountContextMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Every software account starts with the secret-passphrase shortcut;
+    // Every account starts with its matching identity shortcut: secret phrase
+    // for software accounts, safe account metadata for hardware accounts.
     // every account (software and hardware alike) gets the viewing-key
     // export right after it, since a UFVK never grants spend authority.
     // The remaining order follows Figma: current accounts get Edit account /
@@ -1303,6 +1325,14 @@ class _AccountContextMenu extends StatelessWidget {
     return AppContextMenu(
       width: _width,
       children: [
+        if (onViewAccountDetails != null) ...[
+          AppContextMenuItem(
+            iconName: AppIcons.wallet,
+            label: 'Account details',
+            onTap: onViewAccountDetails!,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+        ],
         if (onViewSecretPassphrase != null) ...[
           AppContextMenuItem(
             iconName: AppIcons.key,

@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -3620,6 +3621,116 @@ void main() {
     expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
+  testWidgets(
+    'Ledger voting persists sequential bundles and ignores a late cancelled result',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final recoveryApi = _MutableVotingRecoveryApi()
+        ..state = _recoveryState(bundleCount: 2);
+      final rust = _VotingStatusRustApi(
+        recoveryApi,
+        bundleCount: 2,
+        eligibilityWeightZatoshi: BigInt.from(200),
+        setupWeightPerBundle: BigInt.from(100),
+      );
+      final lateSecondSignature = Completer<List<LedgerVotingSignature>>();
+      final signedPczts = <List<int>>[];
+      var cancelCalls = 0;
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recoveryApi,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue((
+            _,
+            pcztBytes,
+          ) async {
+            signedPczts.add(List<int>.from(pcztBytes));
+            if (signedPczts.length == 2) {
+              return lateSecondSignature.future;
+            }
+            return [
+              LedgerVotingSignature(
+                pool: 1,
+                actionIndex: 0,
+                signature: List<int>.filled(64, signedPczts.length),
+              ),
+            ];
+          }),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {
+            cancelCalls++;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      const ledgerKey = VotingSessionKey(
+        roundId: _roundId,
+        accountUuid: 'ledger-1',
+      );
+      container.read(votingDraftProvider(ledgerKey).notifier).setChoice(1, 0);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Bundle 2 of 2'), attempts: 100);
+
+      expect(
+        find.byKey(const ValueKey('ledger_voting_signing_panel')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
+      expect(find.textContaining('may not display'), findsOneWidget);
+      expect(find.text('Scan signature'), findsNothing);
+      expect(rust.storedKeystoneSignatures.keys, {0});
+      expect(signedPczts, [
+        [2, 0],
+        [2, 1],
+      ]);
+
+      await tester.tap(find.byKey(const ValueKey('ledger_voting_cancel')));
+      await tester.pump();
+      expect(cancelCalls, 1);
+      expect(
+        find.text('Ledger voting approval was cancelled.'),
+        findsOneWidget,
+      );
+
+      lateSecondSignature.complete([
+        LedgerVotingSignature(
+          pool: 1,
+          actionIndex: 0,
+          signature: List<int>.filled(64, 2),
+        ),
+      ]);
+      await tester.pump();
+      expect(rust.storedKeystoneSignatures.keys, {0});
+
+      await tester.tap(find.text('Retry'));
+      await _pumpUntilCondition(
+        tester,
+        () => rust.storedKeystoneSignatures.length == 2,
+        attempts: 100,
+      );
+      expect(rust.storedKeystoneSignatures.keys, {0, 1});
+      expect(signedPczts, [
+        [2, 0],
+        [2, 1],
+        [2, 1],
+      ]);
+    },
+  );
+
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
     tester,
   ) async {
@@ -4520,10 +4631,28 @@ class _HardwareAccountNotifier extends AccountNotifier {
         name: 'Keystone',
         order: 0,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
       ),
     ],
     activeAccountUuid: 'hardware-1',
     activeAddress: 'u1hardwarevotingaddress',
+  );
+}
+
+class _LedgerAccountNotifier extends AccountNotifier {
+  @override
+  FutureOr<AccountState> build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'ledger-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'ledger-1',
+    activeAddress: 'u1ledgervotingaddress',
   );
 }
 
@@ -5240,7 +5369,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     final displayAmount = keystoneMemoZecByBundle[bundleIndex] ?? '0.00000100';
     return rust_delegate.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
-      redactedPcztBytes: Uint8List.fromList(const [2]),
+      redactedPcztBytes: Uint8List.fromList([2, bundleIndex]),
       pcztSighash: Uint8List.fromList(const [3]),
       rk: Uint8List.fromList(const [4]),
       actionIndex: 0,

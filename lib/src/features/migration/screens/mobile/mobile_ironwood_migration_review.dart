@@ -82,7 +82,13 @@ class _MobileMigrationFastReviewState
         throw StateError('No active account is selected.');
       }
 
-      if (accountState.activeAccount?.isHardware ?? false) {
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount?.isLedger ?? false) {
+        throw StateError(
+          'Ledger migration signing is available on desktop only.',
+        );
+      }
+      if (activeAccount?.isKeystone ?? false) {
         if (!mounted) return;
         context.go('/migration/immediate/keystone/sign', extra: plan);
         return;

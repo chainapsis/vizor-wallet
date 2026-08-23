@@ -33,6 +33,7 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
   final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
   var restartCount = 0;
+  var refreshAfterSendCount = 0;
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -48,6 +49,11 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
   @override
   Future<void> restartSync() async {
     restartCount++;
+  }
+
+  @override
+  Future<void> refreshAfterSend() async {
+    refreshAfterSendCount++;
   }
 }
 
@@ -933,6 +939,14 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }
 
   @override
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  }) async {
+    discardedDrafts.add(draft.proposalId);
+  }
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
     required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
@@ -951,6 +965,66 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       status: broadcastStatus,
       message: broadcastMessage,
     );
+  }
+}
+
+class _LedgerOperationCheckpoint {
+  const _LedgerOperationCheckpoint({
+    required this.operationId,
+    required this.proofs,
+    required this.signatures,
+  });
+
+  final String operationId;
+  final List<int> proofs;
+  final List<int> signatures;
+}
+
+class _FakeLedgerSignedOperationService
+    implements LedgerSignedOperationService {
+  final checkpoints = <_LedgerOperationCheckpoint>[];
+  final broadcasts = <String>[];
+  final acknowledged = <String>[];
+
+  @override
+  Future<void> checkpoint({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? externalRef,
+  }) async {
+    checkpoints.add(
+      _LedgerOperationCheckpoint(
+        operationId: operationId,
+        proofs: [...pcztWithProofsBytes],
+        signatures: [...pcztWithSignaturesBytes],
+      ),
+    );
+  }
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+
+  @override
+  Future<LedgerSignedOperationBroadcastResult> broadcast({
+    required String operationId,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    broadcasts.add(operationId);
+    return LedgerSignedOperationBroadcastResult(
+      operationId: operationId,
+      txid: 'hardware-broadcast-txid',
+      status: SwapDepositBroadcastStatus.broadcasted,
+      requiresAck: true,
+    );
+  }
+
+  @override
+  Future<void> acknowledge(String operationId) async {
+    acknowledged.add(operationId);
   }
 }
 

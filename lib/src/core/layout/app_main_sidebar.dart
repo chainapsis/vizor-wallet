@@ -476,7 +476,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                             activeAccount?.profilePictureId ??
                             kDefaultProfilePictureId,
                         balanceLabel: balanceLabel,
-                        showsKeystone: activeAccount?.isHardware ?? false,
+                        hardwareSignerKind: activeAccount?.hardwareSignerKind,
                         privacyModeEnabled: privacyModeEnabled,
                         onTogglePrivacyMode: () =>
                             ref.read(privacyModeProvider.notifier).toggle(),
@@ -498,7 +498,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                             kIronwoodMigrationWaitingDenomConfirmationsPhase)
                       _SidebarMigrationHomeSection(
                         status: migrationStatus!,
-                        isHardware: activeAccount?.isHardware ?? false,
+                        isKeystone: activeAccount?.isKeystone ?? false,
                         orchardBalance:
                             accountSync.displayOrchardHoldingsBalance,
                         ironwoodBalance:
@@ -603,7 +603,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 class _SidebarMigrationHomeSection extends StatelessWidget {
   const _SidebarMigrationHomeSection({
     required this.status,
-    required this.isHardware,
+    required this.isKeystone,
     required this.orchardBalance,
     required this.ironwoodBalance,
     required this.privacyModeEnabled,
@@ -613,7 +613,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
   });
 
   final rust_sync.MigrationStatus status;
-  final bool isHardware;
+  final bool isKeystone;
   final BigInt orchardBalance;
   final BigInt ironwoodBalance;
   final bool privacyModeEnabled;
@@ -626,7 +626,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
     final colors = context.colors;
     final signingPartIndices = status.currentSigningPartIndices;
     final needsInput =
-        isHardware &&
+        isKeystone &&
         status.phase == kIronwoodMigrationReadyToMigratePhase &&
         (signingPartIndices == null || signingPartIndices.isNotEmpty);
     final orchardLabel = hideAmountIfPrivacyMode(
@@ -926,7 +926,7 @@ class _SidebarAccountHeader extends StatelessWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.balanceLabel,
-    required this.showsKeystone,
+    required this.hardwareSignerKind,
     required this.privacyModeEnabled,
     required this.onTogglePrivacyMode,
     this.onCopyAddress,
@@ -937,7 +937,7 @@ class _SidebarAccountHeader extends StatelessWidget {
   final String accountName;
   final String profilePictureId;
   final String balanceLabel;
-  final bool showsKeystone;
+  final HardwareSignerKind? hardwareSignerKind;
   final bool privacyModeEnabled;
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback? onCopyAddress;
@@ -954,7 +954,7 @@ class _SidebarAccountHeader extends StatelessWidget {
           children: [
             _SidebarAccountAvatar(
               profilePictureId: profilePictureId,
-              showsKeystone: showsKeystone,
+              hardwareSignerKind: hardwareSignerKind,
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
@@ -1023,11 +1023,11 @@ class _SidebarAccountHeader extends StatelessWidget {
 class _SidebarAccountAvatar extends StatelessWidget {
   const _SidebarAccountAvatar({
     required this.profilePictureId,
-    required this.showsKeystone,
+    required this.hardwareSignerKind,
   });
 
   final String profilePictureId;
-  final bool showsKeystone;
+  final HardwareSignerKind? hardwareSignerKind;
 
   @override
   Widget build(BuildContext context) {
@@ -1042,7 +1042,7 @@ class _SidebarAccountAvatar extends StatelessWidget {
             profilePictureId: profilePictureId,
             size: AppProfilePictureSize.large,
           ),
-          if (showsKeystone)
+          if (hardwareSignerKind case final signerKind?)
             Positioned(
               right: -5,
               bottom: 0,
@@ -1062,8 +1062,11 @@ class _SidebarAccountAvatar extends StatelessWidget {
                 ),
                 child: Center(
                   child: AppIcon(
-                    AppIcons.keystone,
-                    size: 14,
+                    signerKind == HardwareSignerKind.keystone
+                        ? AppIcons.keystone
+                        : AppIcons.ledger,
+                    key: ValueKey('hardware_signer_badge_${signerKind.name}'),
+                    size: signerKind == HardwareSignerKind.ledger ? 16 : 14,
                     color: colors.text.inverse,
                   ),
                 ),
@@ -1401,7 +1404,7 @@ class _SidebarAccountPopoverRow extends StatelessWidget {
             children: [
               _SidebarAccountAvatar(
                 profilePictureId: account.profilePictureId,
-                showsKeystone: account.isHardware,
+                hardwareSignerKind: account.hardwareSignerKind,
               ),
               const SizedBox(width: AppSpacing.s),
               Expanded(

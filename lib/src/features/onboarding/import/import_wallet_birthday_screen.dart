@@ -15,6 +15,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../ledger/ledger_connect_screen.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'import_account_discovery_modal.dart';
@@ -25,6 +26,10 @@ import 'import_split_view.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
+typedef ImportBirthdaySelectedCallback = Future<void> Function(int height);
+
+enum ImportWalletBirthdayPresentation { importWallet, ledger }
+
 enum _ImportWalletSubmitPhase {
   idle,
   discoveringAccounts,
@@ -33,9 +38,19 @@ enum _ImportWalletSubmitPhase {
 }
 
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const ImportWalletBirthdayScreen({required this.args, super.key});
+  const ImportWalletBirthdayScreen({required this.args, super.key})
+    : presentation = ImportWalletBirthdayPresentation.importWallet,
+      onBirthdaySelected = null;
 
-  final ImportBirthdayArgs args;
+  const ImportWalletBirthdayScreen.ledger({
+    required this.onBirthdaySelected,
+    super.key,
+  }) : args = null,
+       presentation = ImportWalletBirthdayPresentation.ledger;
+
+  final ImportBirthdayArgs? args;
+  final ImportWalletBirthdayPresentation presentation;
+  final ImportBirthdaySelectedCallback? onBirthdaySelected;
 
   @override
   ConsumerState<ImportWalletBirthdayScreen> createState() =>
@@ -78,7 +93,7 @@ class _ImportWalletBirthdayScreenState
   @override
   void initState() {
     super.initState();
-    final initialBirthdayHeight = widget.args.initialBirthdayHeight;
+    final initialBirthdayHeight = widget.args?.initialBirthdayHeight;
     if (initialBirthdayHeight != null) {
       _activeTab = ImportBirthdayTab.blockHeight;
     }
@@ -305,7 +320,6 @@ class _ImportWalletBirthdayScreenState
   }
 
   Future<void> _submit({int? birthdayHeightOverride}) async {
-    final mnemonic = widget.args.mnemonic;
     final birthdayHeight = birthdayHeightOverride ?? _resolvedBirthdayHeight();
     if (_isSubmitting || birthdayHeight == null) {
       return;
@@ -317,6 +331,16 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
+      final onBirthdaySelected = widget.onBirthdaySelected;
+      if (onBirthdaySelected != null) {
+        await onBirthdaySelected(birthdayHeight);
+        if (!mounted) return;
+        setState(() => _submitPhase = _ImportWalletSubmitPhase.idle);
+        return;
+      }
+
+      final args = widget.args!;
+      final mnemonic = args.mnemonic;
       final security = ref.read(appSecurityProvider);
       if (!security.isPasswordConfigured) {
         final selectedAdditionalAccountIndices =
@@ -330,7 +354,7 @@ class _ImportWalletBirthdayScreenState
           '/import/set-password',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: mnemonic,
-            bip39Passphrase: widget.args.bip39Passphrase,
+            bip39Passphrase: args.bip39Passphrase,
             birthdayHeight: birthdayHeight,
             selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
           ),
@@ -346,7 +370,7 @@ class _ImportWalletBirthdayScreenState
       if (selectedAdditionalAccountIndices == null || !mounted) return;
       final setupArgs = SetPasswordScreenArgs.importWallet(
         mnemonic: mnemonic,
-        bip39Passphrase: widget.args.bip39Passphrase,
+        bip39Passphrase: args.bip39Passphrase,
         birthdayHeight: birthdayHeight,
         selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
       );
@@ -377,7 +401,7 @@ class _ImportWalletBirthdayScreenState
         .read(accountProvider.notifier)
         .discoverAdditionalSoftwareAccounts(
           mnemonic: mnemonic,
-          bip39Passphrase: widget.args.bip39Passphrase,
+          bip39Passphrase: widget.args!.bip39Passphrase,
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
@@ -446,6 +470,36 @@ class _ImportWalletBirthdayScreenState
     };
   }
 
+  Widget _buildPresentation({required Widget child, Widget? overlay}) {
+    if (widget.presentation == ImportWalletBirthdayPresentation.ledger) {
+      return LedgerOnboardingShell(
+        activeStep: LedgerOnboardingStep.birthday,
+        backTarget: const OnboardingBackTarget.route(
+          label: 'Connect Ledger',
+          routePath: '/onboarding/ledger',
+        ),
+        overlay: overlay,
+        child: child,
+      );
+    }
+
+    final args = widget.args!;
+    return ImportOnboardingTrailingPane(
+      backTarget: OnboardingBackTarget.callback(
+        label: ImportOnboardingStep.secretPassphrase.label,
+        onTap: () => context.go(
+          '/import',
+          extra: ImportSecretPassphraseArgs(
+            mnemonic: args.mnemonic,
+            bip39Passphrase: args.bip39Passphrase,
+          ),
+        ),
+      ),
+      overlay: overlay,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeTab = _activeTab;
@@ -461,17 +515,7 @@ class _ImportWalletBirthdayScreenState
             : 'Continue',
     };
 
-    return ImportOnboardingTrailingPane(
-      backTarget: OnboardingBackTarget.callback(
-        label: ImportOnboardingStep.secretPassphrase.label,
-        onTap: () => context.go(
-          '/import',
-          extra: ImportSecretPassphraseArgs(
-            mnemonic: widget.args.mnemonic,
-            bip39Passphrase: widget.args.bip39Passphrase,
-          ),
-        ),
-      ),
+    return _buildPresentation(
       overlay: _accountDiscoveryCandidates != null
           ? ImportAccountDiscoveryModal(
               accounts: _accountDiscoveryCandidates!,
@@ -630,8 +674,8 @@ class _ImportWalletBirthdayScreenState
     return ref
         .read(accountProvider.notifier)
         .previewSoftwareAccountTransparentBalance(
-          mnemonic: widget.args.mnemonic,
-          bip39Passphrase: widget.args.bip39Passphrase,
+          mnemonic: widget.args!.mnemonic,
+          bip39Passphrase: widget.args!.bip39Passphrase,
           accountIndex: account.zip32AccountIndex,
         );
   }

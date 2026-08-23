@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -386,6 +387,66 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets('Ledger broadcast uses the durable signed operation', (
+    tester,
+  ) async {
+    final args = _reviewArgs();
+    final operationService = _FakeLedgerSignedOperationService();
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Scan your Keystone QR Code'), findsNothing);
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(operationService.broadcasts, ['send:test-account:test-send-flow']);
+    expect(rustApi.storeCalls, isEmpty);
+  });
+
+  for (final status in ['broadcast_unknown', 'broadcasted_storage_failed']) {
+    testWidgets('Ledger $status retains the input lock without re-signing', (
+      tester,
+    ) async {
+      final args = _reviewArgs();
+      final operationService = _FakeLedgerSignedOperationService()
+        ..broadcastStatus = status
+        ..broadcastMessage = 'broadcast outcome requires reconciliation';
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          args,
+          ledger: LedgerBroadcastArgs(
+            reviewArgs: args,
+            operationId: 'send:test-account:test-send-flow',
+          ),
+          isHardware: true,
+          ledgerOperationService: operationService,
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      expect(operationService.broadcasts, ['send:test-account:test-send-flow']);
+      expect(rustApi.storeCalls, isEmpty);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(rustApi.retainCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.text('Confirm with Ledger'), findsNothing);
+    });
+  }
+
   testWidgets(
     'Keystone params rejection releases the retained input lock before broadcast',
     (tester) async {
@@ -668,7 +729,9 @@ ExecuteProposalResult _executeResult({
 Widget _harness(
   SendReviewArgs args, {
   KeystoneBroadcastArgs? keystone,
+  LedgerBroadcastArgs? ledger,
   bool isHardware = false,
+  LedgerSignedOperationService? ledgerOperationService,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -677,7 +740,8 @@ Widget _harness(
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
         path: '/send/status',
-        builder: (_, _) => SendStatusScreen(args: args, keystone: keystone),
+        builder: (_, _) =>
+            SendStatusScreen(args: args, keystone: keystone, ledger: ledger),
       ),
     ],
   );
@@ -694,12 +758,54 @@ Widget _harness(
       ),
       appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      ledgerSignedOperationServiceProvider.overrideWithValue(
+        ledgerOperationService ?? _FakeLedgerSignedOperationService(),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+class _FakeLedgerSignedOperationService
+    implements LedgerSignedOperationService {
+  final broadcasts = <String>[];
+  String broadcastStatus = 'broadcasted';
+  String? broadcastMessage;
+
+  @override
+  Future<void> checkpoint({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? externalRef,
+  }) async {}
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+
+  @override
+  Future<LedgerSignedOperationBroadcastResult> broadcast({
+    required String operationId,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    broadcasts.add(operationId);
+    return LedgerSignedOperationBroadcastResult(
+      operationId: operationId,
+      txid: _txid,
+      status: broadcastStatus,
+      message: broadcastMessage,
+      requiresAck: false,
+    );
+  }
+
+  @override
+  Future<void> acknowledge(String operationId) async {}
 }
 
 AppBootstrapState _bootstrap(bool isHardware) {

@@ -47,6 +47,7 @@ import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
+import 'mobile_ledger_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -336,9 +337,9 @@ class _IronwoodMigrationAttentionHostState
       cta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
       broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
-      isHardware: ref
+      isKeystone: ref
           .read(accountProvider.notifier)
-          .isHardwareAccount(accountUuid),
+          .isKeystoneAccount(accountUuid),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -911,7 +912,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isHardwareAccount(accountUuid)) {
+    final hardwareSignerKind = accountNotifier.hardwareSignerKindForAccount(
+      accountUuid,
+    );
+    if (hardwareSignerKind == HardwareSignerKind.ledger) {
+      final result = await context.push<MobileLedgerShieldResult>(
+        '/home/ledger-shield',
+      );
+      if (mounted && result != null) {
+        showAppToast(context, 'Shielding complete');
+      }
+      return;
+    }
+    if (hardwareSignerKind == HardwareSignerKind.keystone) {
       final result = await context.push<MobileKeystoneShieldResult>(
         '/home/keystone-shield',
       );
@@ -1001,11 +1014,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       widget.ironwoodMigrationCta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
       broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
-      isHardware:
+      isKeystone:
           activeAccountUuid != null &&
           ref
               .read(accountProvider.notifier)
-              .isHardwareAccount(activeAccountUuid),
+              .isKeystoneAccount(activeAccountUuid),
     );
 
     final uuid = activeAccountUuid;
