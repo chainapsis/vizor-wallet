@@ -249,7 +249,10 @@ class VotingApiClient {
   /// Posts one encrypted share directly to a helper server.
   ///
   /// The share map is expected to be the complete service JSON body produced
-  /// by the voting pipeline.
+  /// by the voting pipeline. This makes one transport attempt because the
+  /// caller already walks the remaining helper candidates after a failure.
+  /// Retrying an unresponsive helper here would delay that failover and a
+  /// timeout is ambiguous because the helper may have accepted the payload.
   Future<VotingShareSubmissionResult> submitShare({
     required Uri serverUrl,
     required Map<String, dynamic> share,
@@ -258,7 +261,6 @@ class VotingApiClient {
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
       timeout: _helperTimeout,
-      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }

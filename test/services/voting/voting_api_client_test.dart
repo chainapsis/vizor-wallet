@@ -834,7 +834,7 @@ void main() {
     expect(http.requests.single.timeout, const Duration(seconds: 5));
   });
 
-  test('retries helper share submission on transient timeout', () async {
+  test('does not retry initial helper submission after a timeout', () async {
     final delays = <Duration>[];
     final http = FakeVotingHttpClient(
       responses: {
@@ -855,14 +855,16 @@ void main() {
       delay: (delay) async => delays.add(delay),
     );
 
-    final result = await client.submitShare(
-      serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0, 'vote_round_id': hexRoundId},
+    await expectLater(
+      client.submitShare(
+        serverUrl: Uri.parse('https://helper.example'),
+        share: {'share_index': 0, 'vote_round_id': hexRoundId},
+      ),
+      throwsA(isA<TimeoutException>()),
     );
 
-    expect(result.status, 'queued');
-    expect(http.requests.length, 2);
-    expect(delays, const [Duration(milliseconds: 2)]);
+    expect(http.requests, hasLength(1));
+    expect(delays, isEmpty);
   });
 
   test('does not repeat a resubmission after an ambiguous timeout', () async {
