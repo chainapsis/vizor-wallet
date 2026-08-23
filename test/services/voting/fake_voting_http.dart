@@ -34,7 +34,7 @@ class FakeVotingHttpClient implements VotingHttpClient {
     return _responseFor(uri);
   }
 
-  VotingHttpResponse _responseFor(Uri uri) {
+  Future<VotingHttpResponse> _responseFor(Uri uri) async {
     final configured = responses[uri.toString()] ?? responses[uri.path];
     final response = configured is SequentialVotingHttpResponses
         ? configured.next()
@@ -47,6 +47,9 @@ class FakeVotingHttpClient implements VotingHttpClient {
     }
     if (response is Error) {
       throw response;
+    }
+    if (response is Future<VotingHttpResponse>) {
+      return response;
     }
     if (response is VotingHttpResponse) {
       return response;

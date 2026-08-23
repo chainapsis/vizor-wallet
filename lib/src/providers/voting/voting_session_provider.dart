@@ -1492,6 +1492,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '${shares.length} payload(s).',
         );
       }
+      final plannedServers = <String>{
+        for (final plan in plans) ...plan.targetServers,
+      };
+      final helperAvailability = await _preflightShareHelpers(
+        context: context,
+        api: api,
+        plannedServers: plannedServers,
+        configuredServers: serverUrls,
+      );
 
       // Validate every body before starting helper requests. Otherwise a later
       // serialization failure could abandon already accepted submissions.
@@ -1505,6 +1514,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final candidateServers = _plannedShareServers(
           plannedServers: plan.targetServers,
           fallbackServers: helperHealth.candidateServers(serverUrls),
+          helperAvailability: helperAvailability,
         );
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
@@ -1729,6 +1739,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   List<String> _plannedShareServers({
     required List<String> plannedServers,
     required Iterable<String> fallbackServers,
+    Map<String, bool> helperAvailability = const {},
   }) {
     final ordered = <String>{};
     for (final server in plannedServers) {
@@ -1737,7 +1748,64 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final server in fallbackServers) {
       if (server.trim().isNotEmpty) ordered.add(server);
     }
-    return ordered.toList(growable: false);
+    final responsive = <String>[];
+    final unknown = <String>[];
+    final unavailable = <String>[];
+    for (final server in ordered) {
+      final isReady = helperAvailability[server];
+      if (isReady == true) {
+        responsive.add(server);
+      } else if (isReady == false) {
+        unavailable.add(server);
+      } else {
+        unknown.add(server);
+      }
+    }
+    return [...responsive, ...unknown, ...unavailable];
+  }
+
+  Future<Map<String, bool>> _preflightShareHelpers({
+    required _VotingSessionContext context,
+    required VotingApiClient api,
+    required Iterable<String> plannedServers,
+    required List<String> configuredServers,
+  }) async {
+    _throwIfContextStale(context, 'helper-preflight-start');
+    final planned = plannedServers
+        .where((server) => server.trim().isNotEmpty)
+        .toSet();
+    if (planned.isEmpty) return const {};
+
+    final timer = Stopwatch()..start();
+    try {
+      final availability = <String, bool>{
+        ...await api.preflightHelpers(planned.map(Uri.parse)),
+      };
+      if (planned.any((server) => availability[server] == false)) {
+        final replacements = configuredServers.where(
+          (server) => !planned.contains(server),
+        );
+        availability.addAll(
+          await api.preflightHelpers(replacements.map(Uri.parse)),
+        );
+      }
+      _throwIfContextStale(context, 'helper-preflight-finished');
+      final readyCount = availability.values.where((ready) => ready).length;
+      final unavailableCount = availability.length - readyCount;
+      _logVoteTiming(
+        'helper preflight planned=${planned.length} '
+        'probed=${availability.length} ready=$readyCount '
+        'unavailable=$unavailableCount '
+        'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+      );
+      return Map<String, bool>.unmodifiable(availability);
+    } on _StaleVotingSessionAction {
+      rethrow;
+    } catch (error) {
+      _throwIfContextStale(context, 'helper-preflight-failed');
+      debugPrint('[zcash] Voting: helper preflight ignored error=$error');
+      return const {};
+    }
   }
 
   void _setShareSubmissionProgress({

@@ -6109,6 +6109,88 @@ void main() {
     ]);
   });
 
+  test('helper preflight replaces an unavailable planned target', () async {
+    final helperUrls = [
+      for (var i = 1; i <= 4; i++)
+        {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
+    ];
+    final http = FakeVotingHttpClient(
+      responses: {
+        ...votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
+        ),
+        'https://helper-1.example/shielded-vote/v1/status': jsonResponse({
+          'error': 'unavailable',
+        }, statusCode: 503),
+      },
+    );
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    final statusHosts = http.requests
+        .where(
+          (request) =>
+              request.method == 'GET' &&
+              request.uri.path == '/shielded-vote/v1/status',
+        )
+        .map((request) => request.uri.host);
+    expect(
+      statusHosts,
+      unorderedEquals([
+        'helper-1.example',
+        'helper-2.example',
+        'helper-3.example',
+        'helper-4.example',
+      ]),
+    );
+    final sharePostHosts = http.requests
+        .where(
+          (request) =>
+              request.method == 'POST' &&
+              request.uri.path == '/shielded-vote/v1/shares',
+        )
+        .map((request) => request.uri.host);
+    expect(sharePostHosts, ['helper-2.example', 'helper-3.example']);
+    expect(rust.recordedShares.single.sentToUrls, [
+      'https://helper-2.example',
+      'https://helper-3.example',
+    ]);
+  });
+
   test(
     'share submission schedules submit_at before last-moment buffer',
     () async {
@@ -8040,6 +8122,7 @@ Map<String, Object> votingHttpResponses({
     ],
   },
   '/shielded-vote/v1/cast-vote': {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+  '/shielded-vote/v1/status': {'status': 'ok'},
   '/shielded-vote/v1/shares': {'status': 'queued'},
   '/shielded-vote/v1/tx/vote-tx': {
     'height': 11,
