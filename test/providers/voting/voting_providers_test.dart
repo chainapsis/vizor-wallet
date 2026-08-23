@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
+import 'package:flutter_riverpod/misc.dart' show Override, ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_pir_warmup_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
@@ -7617,6 +7618,248 @@ void main() {
     expect(recoveryApi.ballotIntents, isEmpty);
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
+
+  Map<String, Object> warmupHttpResponses() =>
+      votingHttpResponses()
+        ..['/shielded-vote/v1/rounds'] = {
+          'rounds': [roundStatusJson(roundId: kRoundId)],
+        };
+
+  test(
+    'background PIR cache warmup warms active rounds without hotkey or setup',
+    () async {
+      final rust = FakeVotingRustApi();
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(
+        rust: rust,
+        hotkeyStore: hotkeyStore,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+
+      expect(rust.warmPirProofCacheAccountUuids, ['account-1']);
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+      // Every active round's expected nullifier IMT root survives pruning
+      // (roundStatusJson uses 32 bytes of 0x03).
+      expect(rust.warmPirProofCacheKeepRoots, [
+        [List<int>.filled(32, 3)],
+      ]);
+      // The warm-up path mints no hotkey and creates no round/bundle rows.
+      expect(rust.generateVotingHotkeyCalls, 0);
+      expect(hotkeyStore.hotkey, isNull);
+      expect(rust.setupCalls, 0);
+      expect(rust.precomputedDelegationPir, isEmpty);
+    },
+  );
+
+  test(
+    'background PIR cache warmup dedupes concurrent and repeated passes',
+    () async {
+      final rust = FakeVotingRustApi()..warmPirProofCacheGate = Completer();
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      );
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      final first = coordinator.maybeWarmActiveRounds();
+      final second = coordinator.maybeWarmActiveRounds();
+      await rust.warmPirProofCacheStarted.future;
+      rust.warmPirProofCacheGate!.complete();
+      await Future.wait([first, second]);
+
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+      // A completed snapshot is not re-warmed by a later pass.
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+    },
+  );
+
+  test(
+    'background PIR cache warmup skips a second pass within the min interval',
+    () async {
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(responses: warmupHttpResponses());
+      final container = _sessionContainer(rust: rust, http: http);
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      await coordinator.maybeWarmActiveRounds();
+      final roundListCalls = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+      expect(roundListCalls, greaterThan(0));
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+      // Polls -> round-detail entry must not fire another list/status burst.
+      await coordinator.maybeWarmActiveRounds();
+      expect(
+        http.requests
+            .where(
+              (request) =>
+                  request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+            )
+            .length,
+        roundListCalls,
+      );
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+    },
+  );
+
+  test(
+    'background PIR cache warmup min interval does not block a new account',
+    () async {
+      final rust = FakeVotingRustApi();
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        activeAccountUuidListenable: activeAccountProvider,
+      );
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheAccountUuids, ['account-1']);
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheAccountUuids, ['account-1', 'account-2']);
+    },
+  );
+
+  test(
+    'background PIR cache warmup failure is non-fatal and retried next pass',
+    () async {
+      final rust = FakeVotingRustApi()
+        ..warmPirProofCacheError = StateError('pir fetch failed');
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      );
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+      // The failed snapshot is not recorded as completed, so the next
+      // trigger retries immediately instead of waiting out the success
+      // min-interval.
+      rust.warmPirProofCacheError = null;
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+    },
+  );
+
+  test(
+    'background PIR cache warmup retries after a stale served root',
+    () async {
+      final rust = FakeVotingRustApi()
+        ..warmPirProofCacheServedRoot = Uint8List(32);
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      );
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+      rust.warmPirProofCacheServedRoot = Uint8List.fromList(
+        List<int>.filled(32, 3),
+      );
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+
+      // The matching response completes the snapshot, so later triggers are
+      // gated normally.
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+    },
+  );
+
+  test('background PIR cache warmup skips quietly when no PIR endpoint serves '
+      'the snapshot height', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      pirResolver: const FakePirResolver(
+        error: PirSnapshotNoMatchingEndpoint(
+          expectedSnapshotHeight: 123,
+          diagnostics: [],
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+  });
+
+  test(
+    'background PIR cache warmup gives up on wallet-sync timeout and retries '
+    'on the next trigger',
+    () async {
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        walletSyncReadinessChecker: readiness,
+        extraOverrides: [
+          votingPirWarmupSyncMaxWaitProvider.overrideWithValue(Duration.zero),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+
+      readiness.ready = true;
+      await coordinator.maybeWarmActiveRounds();
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+    },
+  );
+
+  test('background PIR cache warmup skips after account switch', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _GatedVotingWalletSyncReadinessChecker();
+    final activeAccountProvider =
+        NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      walletSyncReadinessChecker: readiness,
+      activeAccountUuidListenable: activeAccountProvider,
+    );
+    addTearDown(container.dispose);
+
+    final warmup = container
+        .read(votingPirWarmupProvider)
+        .maybeWarmActiveRounds();
+    await readiness.firstCheck.future;
+    container.read(activeAccountProvider.notifier).set('account-2');
+    readiness.allowReady();
+    await warmup;
+
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+  });
 }
 
 ProviderContainer _container({
@@ -7796,6 +8039,7 @@ ProviderContainer _sessionContainer({
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind Function(rust_config.ResolvedVotingConfig?)?
   configSwitchKind,
+  List<Override> extraOverrides = const [],
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -7906,6 +8150,7 @@ ProviderContainer _sessionContainer({
         votingTxConfirmationPollingProvider.overrideWithValue(
           txConfirmationPolling,
         ),
+      ...extraOverrides,
     ],
   );
 }
@@ -9421,6 +9666,14 @@ class FakeVotingRustApi implements VotingRustApi {
   final syncedVoteTreeNodeUrls = <String>[];
   final precomputedDelegationPir = <int>[];
   final precomputeStoredHotkeySecrets = <List<int>>[];
+  final warmPirProofCacheAccountUuids = <String>[];
+  final warmPirProofCacheSnapshotHeights = <int>[];
+  final warmPirProofCacheKeepRoots = <List<List<int>>>[];
+  final warmPirProofCachePirServerUrls = <String>[];
+  final warmPirProofCacheStarted = Completer<void>();
+  Completer<void>? warmPirProofCacheGate;
+  Object? warmPirProofCacheError;
+  Uint8List? warmPirProofCacheServedRoot;
   final delegationStoredHotkeySecrets = <List<int>>[];
   int warmVotingProvingCachesCalls = 0;
   final setupStarted = Completer<void>();
@@ -9860,6 +10113,40 @@ class FakeVotingRustApi implements VotingRustApi {
       fetchedCount: 1,
       bundleCount: bundleCount,
       bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) async {
+    warmPirProofCacheAccountUuids.add(accountUuid);
+    warmPirProofCacheSnapshotHeights.add(snapshotHeight.toInt());
+    warmPirProofCacheKeepRoots.add(
+      keepRoots.map((root) => List<int>.from(root)).toList(),
+    );
+    warmPirProofCachePirServerUrls.add(pirServerUrl);
+    if (!warmPirProofCacheStarted.isCompleted) {
+      warmPirProofCacheStarted.complete();
+    }
+    await warmPirProofCacheGate?.future;
+    final error = warmPirProofCacheError;
+    if (error != null) throw error;
+    return rust_api.ApiPirCacheWarmupResult(
+      noteCount: 2,
+      cachedCount: 0,
+      fetchedCount: 2,
+      servedRoot:
+          warmPirProofCacheServedRoot ??
+          Uint8List.fromList(List<int>.filled(32, 3)),
+      prunedCount: 0,
     );
   }
 

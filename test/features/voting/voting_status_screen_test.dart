@@ -4871,6 +4871,26 @@ class _NoopVotingRustApi implements VotingRustApi {
   void warmVotingProvingCaches() {}
 
   @override
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) async {
+    return rust_api.ApiPirCacheWarmupResult(
+      noteCount: 0,
+      cachedCount: 0,
+      fetchedCount: 0,
+      servedRoot: Uint8List(32),
+      prunedCount: 0,
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

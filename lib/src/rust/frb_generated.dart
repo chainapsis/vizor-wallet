@@ -80,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -351481858;
+  int get rustContentHash => -482306351;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1219,6 +1219,17 @@ abstract class RustLibApi extends BaseApi {
   });
 
   bool crateApiWalletWalletExists({required String dbPath});
+
+  Future<ApiPirCacheWarmupResult> crateApiVotingWarmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  });
 
   void crateApiVotingWarmVotingProvingCaches();
 
@@ -8705,6 +8716,71 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "wallet_exists", argNames: ["dbPath"]);
 
   @override
+  Future<ApiPirCacheWarmupResult> crateApiVotingWarmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_u_64(snapshotHeight, serializer);
+          sse_encode_String(pirServerUrl, serializer);
+          sse_encode_box_autoadd_pir_layout(pirLayout, serializer);
+          sse_encode_list_list_prim_u_8_strict(keepRoots, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 176,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_api_pir_cache_warmup_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingWarmPirProofCacheConstMeta,
+        argValues: [
+          dbPath,
+          accountUuid,
+          network,
+          lightwalletdUrl,
+          snapshotHeight,
+          pirServerUrl,
+          pirLayout,
+          keepRoots,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingWarmPirProofCacheConstMeta =>
+      const TaskConstMeta(
+        debugName: "warm_pir_proof_cache",
+        argNames: [
+          "dbPath",
+          "accountUuid",
+          "network",
+          "lightwalletdUrl",
+          "snapshotHeight",
+          "pirServerUrl",
+          "pirLayout",
+          "keepRoots",
+        ],
+      );
+
+  @override
   void crateApiVotingWarmVotingProvingCaches() {
     return handler.executeSync(
       SyncTask(
@@ -8713,7 +8789,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 176,
+            funcId: 177,
           )!;
         },
         codec: SseCodec(
@@ -8747,7 +8823,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 177,
+            funcId: 178,
             port: port_,
           );
         },
@@ -8784,7 +8860,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 178,
+            funcId: 179,
             port: port_,
           );
         },
@@ -9011,6 +9087,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiPirCacheWarmupResult dco_decode_api_pir_cache_warmup_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ApiPirCacheWarmupResult(
+      noteCount: dco_decode_u_32(arr[0]),
+      cachedCount: dco_decode_u_32(arr[1]),
+      fetchedCount: dco_decode_u_32(arr[2]),
+      servedRoot: dco_decode_list_prim_u_8_strict(arr[3]),
+      prunedCount: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -9168,6 +9259,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_box_autoadd_orchard_migration_private_plan(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_orchard_migration_private_plan(raw);
+  }
+
+  @protected
+  PirLayout dco_decode_box_autoadd_pir_layout(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_pir_layout(raw);
   }
 
   @protected
@@ -11543,6 +11640,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiPirCacheWarmupResult sse_decode_api_pir_cache_warmup_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_noteCount = sse_decode_u_32(deserializer);
+    var var_cachedCount = sse_decode_u_32(deserializer);
+    var var_fetchedCount = sse_decode_u_32(deserializer);
+    var var_servedRoot = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_prunedCount = sse_decode_u_32(deserializer);
+    return ApiPirCacheWarmupResult(
+      noteCount: var_noteCount,
+      cachedCount: var_cachedCount,
+      fetchedCount: var_fetchedCount,
+      servedRoot: var_servedRoot,
+      prunedCount: var_prunedCount,
+    );
+  }
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   ) {
@@ -11732,6 +11848,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_orchard_migration_private_plan(deserializer));
+  }
+
+  @protected
+  PirLayout sse_decode_box_autoadd_pir_layout(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_pir_layout(deserializer));
   }
 
   @protected
@@ -14828,6 +14950,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_pir_cache_warmup_result(
+    ApiPirCacheWarmupResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.noteCount, serializer);
+    sse_encode_u_32(self.cachedCount, serializer);
+    sse_encode_u_32(self.fetchedCount, serializer);
+    sse_encode_list_prim_u_8_strict(self.servedRoot, serializer);
+    sse_encode_u_32(self.prunedCount, serializer);
+  }
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -14984,6 +15119,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_orchard_migration_private_plan(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_pir_layout(
+    PirLayout self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_pir_layout(self, serializer);
   }
 
   @protected
