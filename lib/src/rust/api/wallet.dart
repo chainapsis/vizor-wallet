@@ -203,6 +203,7 @@ Future<AccountCreationResult> importHardwareAccount({
   required List<int> seedFingerprint,
   required int zip32Index,
   BigInt? birthdayHeight,
+  required String hardwareSignerKind,
 }) => RustLib.instance.api.crateApiWalletImportHardwareAccount(
   dbPath: dbPath,
   network: network,
@@ -211,6 +212,19 @@ Future<AccountCreationResult> importHardwareAccount({
   seedFingerprint: seedFingerprint,
   zip32Index: zip32Index,
   birthdayHeight: birthdayHeight,
+  hardwareSignerKind: hardwareSignerKind,
+);
+
+/// Backfill stored hardware accounts that predate authoritative Rust signer
+/// metadata.
+Future<int> backfillLegacyHardwareAccounts({
+  required String dbPath,
+  required String network,
+  required List<LegacyHardwareAccount> accounts,
+}) => RustLib.instance.api.crateApiWalletBackfillLegacyHardwareAccounts(
+  dbPath: dbPath,
+  network: network,
+  accounts: accounts,
 );
 
 /// List all accounts in the wallet database.
@@ -376,15 +390,21 @@ class AccountInfo {
   final String uuid;
   final String name;
   final String unifiedAddress;
+  final int birthdayHeight;
+  final int? zip32AccountIndex;
   final bool isSeedAnchor;
   final bool isHardware;
+  final String? hardwareSignerKind;
 
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
+    required this.birthdayHeight,
+    this.zip32AccountIndex,
     required this.isSeedAnchor,
     required this.isHardware,
+    this.hardwareSignerKind,
   });
 
   @override
@@ -392,8 +412,11 @@ class AccountInfo {
       uuid.hashCode ^
       name.hashCode ^
       unifiedAddress.hashCode ^
+      birthdayHeight.hashCode ^
+      zip32AccountIndex.hashCode ^
       isSeedAnchor.hashCode ^
-      isHardware.hashCode;
+      isHardware.hashCode ^
+      hardwareSignerKind.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -403,8 +426,11 @@ class AccountInfo {
           uuid == other.uuid &&
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
+          birthdayHeight == other.birthdayHeight &&
+          zip32AccountIndex == other.zip32AccountIndex &&
           isSeedAnchor == other.isSeedAnchor &&
-          isHardware == other.isHardware;
+          isHardware == other.isHardware &&
+          hardwareSignerKind == other.hardwareSignerKind;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -498,6 +524,28 @@ class ChainUpgradeStatus {
           nu63ActivationHeight == other.nu63ActivationHeight &&
           ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
           endpointMatchesNetwork == other.endpointMatchesNetwork;
+}
+
+/// Stored hardware signer metadata used to migrate pre-key_source accounts.
+class LegacyHardwareAccount {
+  final String accountUuid;
+  final String hardwareSignerKind;
+
+  const LegacyHardwareAccount({
+    required this.accountUuid,
+    required this.hardwareSignerKind,
+  });
+
+  @override
+  int get hashCode => accountUuid.hashCode ^ hardwareSignerKind.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LegacyHardwareAccount &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          hardwareSignerKind == other.hardwareSignerKind;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

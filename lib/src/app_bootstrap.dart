@@ -278,12 +278,30 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final rustAddressesByUuid = <String, String>{};
     if (rust_wallet.walletExists(dbPath: dbPath)) {
       try {
+        final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
+          storedAccounts,
+        );
+        if (legacyHardwareAccounts.isNotEmpty) {
+          await rust_wallet.backfillLegacyHardwareAccounts(
+            dbPath: dbPath,
+            network: network,
+            accounts: legacyHardwareAccounts,
+          );
+        }
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
           network: network,
         );
         rustAccounts = listed.indexed.map((entry) {
           final (index, account) = entry;
+          final hardwareSignerKind = HardwareSignerKind.fromJson(
+            account.hardwareSignerKind,
+          );
+          if (account.isHardware != (hardwareSignerKind != null)) {
+            throw StateError(
+              'Rust account ${account.uuid} returned inconsistent hardware signer metadata.',
+            );
+          }
           rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
           return mergeBootstrappedAccountInfo(
@@ -292,6 +310,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               name: account.name,
               order: index,
               isHardware: account.isHardware,
+              hardwareSignerKind: hardwareSignerKind,
+              birthdayHeight: account.birthdayHeight,
+              zip32AccountIndex: account.zip32AccountIndex,
               isSeedAnchor: account.isSeedAnchor,
             ),
             storedAccount: stored,
@@ -370,6 +391,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   }
 }
 
+@visibleForTesting
+List<rust_wallet.LegacyHardwareAccount> legacyHardwareAccountsForBackfill(
+  Iterable<AccountInfo> accounts,
+) => accounts
+    .where((account) => account.isHardware)
+    .map(
+      (account) => rust_wallet.LegacyHardwareAccount(
+        accountUuid: account.uuid,
+        hardwareSignerKind: account.hardwareSignerKind!.name,
+      ),
+    )
+    .toList(growable: false);
+
 String _walletDbMigrationFailureMessage(Object error) {
   final message = error.toString().toLowerCase();
   if (message.contains('seedrequired') ||
@@ -419,8 +453,10 @@ AccountInfo mergeBootstrappedAccountInfo({
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
     order: storedAccount?.order ?? order,
-    // Rust can recover Keystone accounts when older stored metadata lost this bit.
-    isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
+    isHardware: rustAccount.isHardware,
+    hardwareSignerKind: rustAccount.hardwareSignerKind,
+    birthdayHeight: rustAccount.birthdayHeight,
+    zip32AccountIndex: rustAccount.zip32AccountIndex,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
