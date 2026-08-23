@@ -69,6 +69,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void _releaseAutomaticShareTracking() {}
 
+  /// Pins automatic helper-share tracking before a submission job can drop its
+  /// destructive-operation guard.
+  ///
+  /// Returns false when the registry is quiesced and new tracking must not
+  /// start. Account delete/reset drain through the registry, so the job must
+  /// register first when accepted shares still need confirmation.
+  bool pinAutomaticShareTracking() => _retainAutomaticShareTracking();
+
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
@@ -139,13 +147,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (_disposeHandlerRegistered) return;
     _disposeHandlerRegistered = true;
     final rust = ref.read(votingRustApiProvider);
+    final guardNotifier = ref.read(votingSubmissionGuardProvider.notifier);
     ref.onDispose(() {
+      // Snapshot guards before listener teardown. Do not ref.read here:
+      // Riverpod forbids using this provider's Ref inside onDispose.
+      final context = _currentContext;
+      final ownsSubmission =
+          context != null &&
+          (_guardsOwnContext(_activeSubmissionGuards, context) ||
+              _guardsOwnContext(_guardNotifierState(guardNotifier), context));
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
       // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
       // keep account-wide vote-tree sync state reusable across rounds.
-      final context = _currentContext;
       _isDisposed = true;
       _advanceSessionGeneration();
       _delegationPirPrecomputes.clear();
@@ -153,7 +168,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _shareTrackingTimer?.cancel();
       _releaseAutomaticShareTracking();
       if (context == null) return;
-      if (_activeSubmissionOwnsContext(context)) {
+      if (ownsSubmission) {
         debugPrint(
           '[zcash] Voting: process-local state reset skipped '
           'round=${context.round.roundId} account=${context.accountUuid} '
@@ -2790,6 +2805,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (_automaticShareTrackingStopped) return Future.value();
     final inFlight = _shareTrackingPass;
     if (inFlight != null) return inFlight;
+    if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
+      return Future.value();
+    }
 
     late final Future<void> pass;
     pass = _startPendingSharePass().whenComplete(() {
@@ -2805,7 +2823,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _shareTrackingTimer = null;
       if (_automaticShareTrackingStopped) return;
       final current = await future;
+      if (_isDisposed || !ref.mounted) return;
       final context = await _loadContext(_roundId);
+      if (_shareTrackingCancelled(context)) {
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        return;
+      }
       _currentContext = context;
       var plan = await _loadResumePlan(context);
       var roundPlan = await _loadRoundPlan(context);
@@ -2854,6 +2877,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ? null
               : BigInt.from(voteEndSeconds),
         );
+        if (_shareTrackingCancelled(context)) {
+          _releaseAutomaticShareTrackingIfRoundExpired(context);
+          return;
+        }
         final readyForStatusCheck = (trackingFlags & 1) != 0;
         final overdueForRetry = (trackingFlags & 2) != 0;
 
@@ -2904,6 +2931,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
 
+      if (_shareTrackingCancelled(context)) {
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        return;
+      }
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
@@ -2950,6 +2981,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<String> configuredServerUrls,
     required Set<String> sentToUrls,
   }) async {
+    if (!ref.mounted || !_isCurrentContext(context)) return null;
     final rust = ref.read(votingRustApiProvider);
     final key = VotingVoteKey(
       bundleIndex: share.bundleIndex,
@@ -3165,10 +3197,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _shareTrackingCancelled(_VotingSessionContext context) {
-    return _automaticShareTrackingStopped ||
-        !_isCurrentContext(context) ||
+    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) {
+      return true;
+    }
+    return !_isCurrentContext(context) ||
         ref.read(appSecurityProvider).requiresUnlock ||
         !shouldTrackPendingVotingShares(context.round);
+  }
+
+  void _releaseAutomaticShareTrackingIfRoundExpired(
+    _VotingSessionContext context,
+  ) {
+    if (!shouldTrackPendingVotingShares(context.round)) {
+      _releaseAutomaticShareTracking();
+    }
   }
 
   Future<Uri?> _resolvePirEndpoint(_VotingSessionContext context) async {
@@ -4011,7 +4053,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _activeSubmissionOwnsContext(_VotingSessionContext context) {
-    for (final guard in _activeSubmissionGuards) {
+    return _guardsOwnContext(_activeSubmissionGuards, context) ||
+        _guardsOwnContext(
+          _guardNotifierState(ref.read(votingSubmissionGuardProvider.notifier)),
+          context,
+        );
+  }
+
+  static List<VotingSubmissionGuard> _guardNotifierState(
+    VotingSubmissionGuardNotifier notifier,
+  ) {
+    try {
+      return notifier.state;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static bool _guardsOwnContext(
+    List<VotingSubmissionGuard> guards,
+    _VotingSessionContext context,
+  ) {
+    for (final guard in guards) {
       if (guard.accountUuid == context.accountUuid &&
           guard.roundId == context.round.roundId) {
         return true;
@@ -4665,6 +4728,8 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     if (_closeShareTrackingKeepAlive != null) return true;
     final registry = ref.read(votingShareTrackingRegistryProvider);
     final keepAlive = ref.keepAlive();
+    // Register before the submission job drops its guard so account
+    // delete/reset can drain this pass through the registry.
     if (!registry.register(
       key: _key,
       owner: this,

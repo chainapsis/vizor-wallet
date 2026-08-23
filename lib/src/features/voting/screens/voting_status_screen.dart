@@ -9,7 +9,6 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/pir_snapshot_resolver.dart';
@@ -534,21 +533,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         }
         return;
       }
-      unawaited(_navigateToConfirmation(key));
+      _navigateToConfirmation(key);
     });
   }
 
-  Future<void> _navigateToConfirmation(VotingSessionKey key) async {
-    try {
-      await ref
-          .read(votingSubmissionSessionProvider(key).notifier)
-          .refreshEligibleWeight();
-    } catch (error) {
-      debugPrint(
-        '[zcash] Voting: pre-confirmation voting power refresh failed '
-        'round=${key.roundId} account=${key.accountUuid} error=$error',
-      );
-    }
+  void _navigateToConfirmation(VotingSessionKey key) {
     if (!mounted ||
         _selectedJobKey() != key ||
         !_canNavigateToConfirmation(key)) {

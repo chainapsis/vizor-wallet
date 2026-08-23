@@ -3367,7 +3367,11 @@ void main() {
         submitAt: BigInt.zero,
         createdAt: BigInt.one,
       );
-      final rust = FakeVotingRustApi();
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi(shareTrackingFlagsGate: trackingGate);
+      addTearDown(() {
+        if (!trackingGate.isCompleted) trackingGate.complete();
+      });
       final http = FakeVotingHttpClient(
         responses: votingHttpResponses(
           dynamicConfig: dynamicConfigJson(
@@ -3406,7 +3410,107 @@ void main() {
             .guardForAccount('account-1'),
         isNull,
       );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        {startedKey},
+      );
       expect(rust.confirmedShares, isEmpty);
+      expect(trackingGate.isCompleted, isFalse);
+      await rust.shareTrackingFlagsStarted.future;
+      expect(
+        container.read(votingSubmissionJobProvider(startedKey)).status,
+        VotingSubmissionJobStatus.complete,
+      );
+
+      var drained = false;
+      final drain = container
+          .read(votingShareTrackingRegistryProvider)
+          .quiesceAndDrain(accountUuid: 'account-1')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+
+      trackingGate.complete();
+      await drain;
+      expect(drained, isTrue);
+    },
+  );
+
+  test(
+    'share tracking releases its registration when the round expires',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final voteEndSeconds = nowSeconds + 2;
+      final acceptedShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi(shareTrackingFlagsGate: trackingGate);
+      addTearDown(() {
+        if (!trackingGate.isCompleted) trackingGate.complete();
+      });
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          roundStatus: roundStatusJson(
+            roundId: kRoundId,
+            voteEnd: voteEndSeconds,
+          ),
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://helper-a.example', 'label': 'helper-a'},
+            ],
+          ),
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(acceptedShare),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      await _waitForStoredVanPosition(rust, '0:0');
+      await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
+      await rust.shareTrackingFlagsStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      expect(registry.registeredKeys, {startedKey});
+
+      final waitUntilExpiry = DateTime.fromMillisecondsSinceEpoch(
+        voteEndSeconds * 1000,
+      ).difference(DateTime.now());
+      if (waitUntilExpiry > Duration.zero) {
+        await Future<void>.delayed(
+          waitUntilExpiry + const Duration(milliseconds: 50),
+        );
+      }
+      trackingGate.complete();
+      for (var i = 0; i < 100 && registry.registeredKeys.isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(registry.registeredKeys, isEmpty);
     },
   );
 
@@ -7176,6 +7280,60 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
+  test(
+    'session dispose skips process-local reset while a submission is guarded',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      final guard = container
+          .read(votingSubmissionGuardProvider.notifier)
+          .acquire(accountUuid: 'account-1', roundId: kRoundId);
+      addTearDown(
+        () => container
+            .read(votingSubmissionGuardProvider.notifier)
+            .release(guard),
+      );
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      container.invalidate(votingSessionProvider(kRoundId));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
+
+  test(
+    'submission session dispose skips process-local reset while guarded',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+      final guard = container
+          .read(votingSubmissionGuardProvider.notifier)
+          .acquire(accountUuid: key.accountUuid, roundId: key.roundId);
+      addTearDown(
+        () => container
+            .read(votingSubmissionGuardProvider.notifier)
+            .release(guard),
+      );
+
+      final subscription = container.listen(
+        votingSubmissionSessionProvider(key),
+        (_, _) {},
+      );
+      await container.read(votingSubmissionSessionProvider(key).future);
+      subscription.close();
+      container.invalidate(votingSubmissionSessionProvider(key));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
+
   test('hotkey failure moves session into error phase', () async {
     final rust = FakeVotingRustApi();
     final recoveryApi = FakeVotingRecoveryApi(
@@ -8869,6 +9027,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneSignatureBatchFailuresRemaining = 0,
     this.shareResubmissionError,
     this.nextShareTrackingDelayGate,
+    this.shareTrackingFlagsGate,
     this.failingVoteShareWireIndexes = const {},
     this.failingRecordShareIndexes = const {},
   });
@@ -8902,6 +9061,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int keystoneSignatureBatchFailuresRemaining;
   final Object? shareResubmissionError;
   final Completer<void>? nextShareTrackingDelayGate;
+  final Completer<void>? shareTrackingFlagsGate;
   final Set<int> failingVoteShareWireIndexes;
   final Set<int> failingRecordShareIndexes;
   int setupCalls = 0;
@@ -8939,6 +9099,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final nextShareTrackingDelayStarted = Completer<void>();
+  final shareTrackingFlagsStarted = Completer<void>();
   final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
@@ -9711,6 +9872,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) async {
+    if (!shareTrackingFlagsStarted.isCompleted) {
+      shareTrackingFlagsStarted.complete();
+    }
+    await shareTrackingFlagsGate?.future;
     final now = nowSeconds.toInt();
     final base = share.submitAt > BigInt.zero
         ? share.submitAt.toInt()
