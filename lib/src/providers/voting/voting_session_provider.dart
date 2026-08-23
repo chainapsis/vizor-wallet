@@ -2825,7 +2825,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       if (_isDisposed || !ref.mounted) return;
       final context = await _loadContext(_roundId);
-      if (_shareTrackingCancelled(context)) return;
+      if (_shareTrackingCancelled(context)) {
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        return;
+      }
       _currentContext = context;
       var plan = await _loadResumePlan(context);
       var roundPlan = await _loadRoundPlan(context);
@@ -2874,7 +2877,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ? null
               : BigInt.from(voteEndSeconds),
         );
-        if (_shareTrackingCancelled(context)) return;
+        if (_shareTrackingCancelled(context)) {
+          _releaseAutomaticShareTrackingIfRoundExpired(context);
+          return;
+        }
         final readyForStatusCheck = (trackingFlags & 1) != 0;
         final overdueForRetry = (trackingFlags & 2) != 0;
 
@@ -2925,7 +2931,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
 
-      if (_shareTrackingCancelled(context)) return;
+      if (_shareTrackingCancelled(context)) {
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        return;
+      }
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
@@ -3194,6 +3203,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return !_isCurrentContext(context) ||
         ref.read(appSecurityProvider).requiresUnlock ||
         !shouldTrackPendingVotingShares(context.round);
+  }
+
+  void _releaseAutomaticShareTrackingIfRoundExpired(
+    _VotingSessionContext context,
+  ) {
+    if (!shouldTrackPendingVotingShares(context.round)) {
+      _releaseAutomaticShareTracking();
+    }
   }
 
   Future<Uri?> _resolvePirEndpoint(_VotingSessionContext context) async {

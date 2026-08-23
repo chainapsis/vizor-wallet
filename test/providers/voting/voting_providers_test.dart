@@ -3436,6 +3436,84 @@ void main() {
     },
   );
 
+  test(
+    'share tracking releases its registration when the round expires',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final voteEndSeconds = nowSeconds + 2;
+      final acceptedShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi(shareTrackingFlagsGate: trackingGate);
+      addTearDown(() {
+        if (!trackingGate.isCompleted) trackingGate.complete();
+      });
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          roundStatus: roundStatusJson(
+            roundId: kRoundId,
+            voteEnd: voteEndSeconds,
+          ),
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://helper-a.example', 'label': 'helper-a'},
+            ],
+          ),
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(acceptedShare),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      await _waitForStoredVanPosition(rust, '0:0');
+      await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
+      await rust.shareTrackingFlagsStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      expect(registry.registeredKeys, {startedKey});
+
+      final waitUntilExpiry = DateTime.fromMillisecondsSinceEpoch(
+        voteEndSeconds * 1000,
+      ).difference(DateTime.now());
+      if (waitUntilExpiry > Duration.zero) {
+        await Future<void>.delayed(
+          waitUntilExpiry + const Duration(milliseconds: 50),
+        );
+      }
+      trackingGate.complete();
+      for (var i = 0; i < 100 && registry.registeredKeys.isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(registry.registeredKeys, isEmpty);
+    },
+  );
+
   test('share tracking failure fails the job and releases its guard', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final pendingShare = rust_frb_types.ShareDelegationRecordView(

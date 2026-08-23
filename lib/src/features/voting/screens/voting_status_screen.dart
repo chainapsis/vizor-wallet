@@ -555,7 +555,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
 
   bool _isCurrentStatusRoute(VotingSessionKey key) {
     if (!mounted) return false;
-    final currentPath = GoRouterState.of(context).uri.path;
+    final currentPath = GoRouter.of(
+      context,
+    ).routerDelegate.currentConfiguration.uri.path;
     final statusPath = Uri.parse(
       votingStatusRoute(key.roundId, accountUuid: key.accountUuid),
     ).path;
