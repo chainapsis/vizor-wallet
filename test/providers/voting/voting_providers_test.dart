@@ -6045,73 +6045,9 @@ void main() {
     expect(rust.recordedShares, isEmpty);
   });
 
-  test('initial share submission uses planned helper targets', () async {
+  test('initial shares replace an unavailable helper', () async {
     final helperUrls = [
       for (var i = 1; i <= 6; i++)
-        {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
-    ];
-    final http = FakeVotingHttpClient(
-      responses: votingHttpResponses(
-        dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
-      ),
-    );
-    final rust = FakeVotingRustApi(emitCommitments: true);
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
-    final container = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(container.dispose);
-
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
-
-    final sharePosts = http.requests.where(
-      (request) =>
-          request.method == 'POST' &&
-          request.uri.path == '/shielded-vote/v1/shares',
-    );
-    expect(sharePosts.map((request) => request.uri.host), [
-      'helper-1.example',
-      'helper-2.example',
-      'helper-3.example',
-    ]);
-    expect(rust.recordedShares.single.sentToUrls, [
-      'https://helper-1.example',
-      'https://helper-2.example',
-      'https://helper-3.example',
-    ]);
-  });
-
-  test('helper preflight overlaps confirmation and replaces target', () async {
-    final helperUrls = [
-      for (var i = 1; i <= 4; i++)
         {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
     ];
     final http = _GatedVotingHttpClient(
@@ -6180,8 +6116,7 @@ void main() {
     final statusHosts = http.requests
         .where(
           (request) =>
-              request.method == 'GET' &&
-              request.uri.path == '/shielded-vote/v1/status',
+              request.method == 'GET' && request.uri.path == statusPath,
         )
         .map((request) => request.uri.host);
     expect(
@@ -6191,19 +6126,25 @@ void main() {
         'helper-2.example',
         'helper-3.example',
         'helper-4.example',
+        'helper-5.example',
+        'helper-6.example',
       ]),
     );
-    final sharePostHosts = http.requests
-        .where(
-          (request) =>
-              request.method == 'POST' &&
-              request.uri.path == '/shielded-vote/v1/shares',
-        )
-        .map((request) => request.uri.host);
-    expect(sharePostHosts, ['helper-2.example', 'helper-3.example']);
+
+    final sharePosts = http.requests.where(
+      (request) =>
+          request.method == 'POST' &&
+          request.uri.path == '/shielded-vote/v1/shares',
+    );
+    expect(sharePosts.map((request) => request.uri.host), [
+      'helper-2.example',
+      'helper-3.example',
+      'helper-4.example',
+    ]);
     expect(rust.recordedShares.single.sentToUrls, [
       'https://helper-2.example',
       'https://helper-3.example',
+      'https://helper-4.example',
     ]);
   });
 

@@ -501,14 +501,14 @@ void main() {
   });
 
   test(
-    'tries tx confirmation fallbacks before returning null on 404',
+    'tries each tx confirmation server once before returning null',
     () async {
       final primary = Uri.parse('https://vote-primary.example');
       final secondary = Uri.parse('https://vote-secondary.example');
       final http = FakeVotingHttpClient(
         responses: {
           'https://vote-primary.example/shielded-vote/v1/tx/delegation-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
+              timeoutResponse(),
           'https://vote-secondary.example/shielded-vote/v1/tx/delegation-tx': {
             'height': '12',
             'code': 0,
@@ -579,50 +579,6 @@ void main() {
         'vote-primary.example',
         'vote-secondary.example',
       ]);
-    },
-  );
-
-  test(
-    'tries the next tx confirmation server without retrying a timeout',
-    () async {
-      final primary = Uri.parse('https://vote-primary.example');
-      final offline = Uri.parse('https://vote-offline.example');
-      final tertiary = Uri.parse('https://vote-tertiary.example');
-      final delays = <Duration>[];
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://vote-primary.example/shielded-vote/v1/tx/vote-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
-          'https://vote-offline.example/shielded-vote/v1/tx/vote-tx':
-              timeoutResponse(),
-          'https://vote-tertiary.example/shielded-vote/v1/tx/vote-tx': {
-            'height': '12',
-            'code': 0,
-            'log': '',
-            'events': const [],
-          },
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: primary,
-        fallbackBaseUrls: [offline, tertiary],
-        httpClient: http,
-        readRetryPolicy: VotingRetryPolicy.transientHttp(
-          name: 'test-confirmation-failover',
-          delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
-        ),
-        delay: (delay) async => delays.add(delay),
-      );
-
-      final confirmation = await client.getTxConfirmation('vote-tx');
-
-      expect(confirmation?.height, 12);
-      expect(http.requests.map((request) => request.uri.host), [
-        'vote-primary.example',
-        'vote-offline.example',
-        'vote-tertiary.example',
-      ]);
-      expect(delays, isEmpty);
     },
   );
 
@@ -835,88 +791,65 @@ void main() {
     expect(http.requests.single.timeout, const Duration(seconds: 5));
   });
 
-  test('preflights helpers concurrently and caches readiness', () async {
-    final primaryResponse = Completer<VotingHttpResponse>();
-    final secondaryResponse = Completer<VotingHttpResponse>();
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://helper-1.example/shielded-vote/v1/status':
-            primaryResponse.future,
-        'https://helper-2.example/shielded-vote/v1/status':
-            secondaryResponse.future,
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-      helperPreflightTimeout: const Duration(seconds: 1),
-    );
-
-    final pending = client.preflightHelpers([
-      Uri.parse('https://helper-1.example'),
-      Uri.parse('https://helper-2.example'),
-      Uri.parse('https://helper-1.example'),
-    ]);
-    await Future<void>.delayed(Duration.zero);
-
-    expect(http.requests.map((request) => request.uri.host), [
-      'helper-1.example',
-      'helper-2.example',
-    ]);
-    primaryResponse.complete(jsonResponse({'status': 'ok'}));
-    secondaryResponse.complete(jsonResponse({'status': 'ok'}));
-    expect(await pending, {
-      'https://helper-1.example': true,
-      'https://helper-2.example': true,
-    });
-
-    expect(
-      await client.preflightHelpers([Uri.parse('https://helper-1.example')]),
-      {'https://helper-1.example': true},
-    );
-    expect(http.requests, hasLength(2));
-    expect(
-      http.requests.map((request) => request.timeout),
-      everyElement(const Duration(seconds: 1)),
-    );
-  });
-
   test(
-    'preflight reports failed and malformed helpers as unavailable',
+    'preflights helpers concurrently and treats failures as unavailable',
     () async {
+      final primaryResponse = Completer<VotingHttpResponse>();
+      final secondaryResponse = Completer<VotingHttpResponse>();
+      final blackholedResponse = Completer<VotingHttpResponse>();
       final http = FakeVotingHttpClient(
         responses: {
-          'https://helper-1.example/shielded-vote/v1/status': jsonResponse({
-            'error': 'unavailable',
-          }, statusCode: 503),
-          'https://helper-2.example/shielded-vote/v1/status': {
-            'status': 'starting',
-          },
-          'https://helper-3.example/shielded-vote/v1/status': timeoutResponse(),
+          'https://helper-1.example/shielded-vote/v1/status':
+              primaryResponse.future,
+          'https://helper-2.example/shielded-vote/v1/status':
+              secondaryResponse.future,
+          'https://helper-3.example/shielded-vote/v1/status':
+              blackholedResponse.future,
         },
       );
       final client = VotingApiClient(
         baseUrl: Uri.parse('https://voting.valargroup.org'),
         httpClient: http,
+        helperPreflightTimeout: const Duration(milliseconds: 30),
       );
 
-      final readiness = await client.preflightHelpers([
+      final pending = client.preflightHelpers([
         Uri.parse('https://helper-1.example'),
         Uri.parse('https://helper-2.example'),
         Uri.parse('https://helper-3.example'),
       ]);
+      await Future<void>.delayed(Duration.zero);
 
-      expect(readiness.values, everyElement(isFalse));
+      expect(http.requests.map((request) => request.uri.host), [
+        'helper-1.example',
+        'helper-2.example',
+        'helper-3.example',
+      ]);
+      primaryResponse.complete(jsonResponse({'status': 'ok'}));
+      secondaryResponse.complete(jsonResponse({'status': 'starting'}));
+      expect(await pending, {
+        'https://helper-1.example': true,
+        'https://helper-2.example': false,
+        'https://helper-3.example': false,
+      });
+
+      expect(http.requests, hasLength(3));
+      expect(
+        http.requests.map((request) => request.timeout),
+        everyElement(const Duration(milliseconds: 30)),
+      );
     },
   );
 
-  test('retries fast transient initial helper failures', () async {
+  test('retries fast helper failures but not a blackholed attempt', () async {
     final delays = <Duration>[];
+    final blackholedResponse = Completer<VotingHttpResponse>();
     final http = FakeVotingHttpClient(
       responses: {
         'https://helper.example/shielded-vote/v1/shares':
             SequentialVotingHttpResponses([
               jsonResponse({'error': 'unavailable'}, statusCode: 503),
+              blackholedResponse.future,
               {'status': 'queued'},
             ]),
       },
@@ -924,34 +857,12 @@ void main() {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
       httpClient: http,
+      helperTimeout: const Duration(milliseconds: 30),
       helperRetryPolicy: VotingRetryPolicy.transientHttp(
         name: 'test-helper-retry',
-        delays: const [Duration(milliseconds: 2)],
+        delays: const [Duration(milliseconds: 2), Duration(milliseconds: 4)],
       ),
       delay: (delay) async => delays.add(delay),
-    );
-
-    final result = await client.submitShare(
-      serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0, 'vote_round_id': hexRoundId},
-    );
-
-    expect(result.status, 'queued');
-    expect(http.requests, hasLength(2));
-    expect(delays, const [Duration(milliseconds: 2)]);
-  });
-
-  test('bounds a blackholed initial helper to one total timeout', () async {
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://helper.example/shielded-vote/v1/shares':
-            Completer<VotingHttpResponse>().future,
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-      helperTimeout: const Duration(milliseconds: 30),
     );
     final timer = Stopwatch()..start();
 
@@ -963,41 +874,9 @@ void main() {
       throwsA(isA<TimeoutException>()),
     );
 
-    expect(http.requests, hasLength(1));
+    expect(http.requests, hasLength(2));
+    expect(delays, const [Duration(milliseconds: 2)]);
     expect(timer.elapsed, lessThan(const Duration(seconds: 1)));
-  });
-
-  test('does not retry initial helper submission after a timeout', () async {
-    final delays = <Duration>[];
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://helper.example/shielded-vote/v1/shares':
-            SequentialVotingHttpResponses([
-              timeoutResponse(),
-              {'status': 'queued'},
-            ]),
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-      helperRetryPolicy: VotingRetryPolicy.transientHttp(
-        name: 'test-helper-retry',
-        delays: const [Duration(milliseconds: 2)],
-      ),
-      delay: (delay) async => delays.add(delay),
-    );
-
-    await expectLater(
-      client.submitShare(
-        serverUrl: Uri.parse('https://helper.example'),
-        share: {'share_index': 0, 'vote_round_id': hexRoundId},
-      ),
-      throwsA(isA<TimeoutException>()),
-    );
-
-    expect(http.requests, hasLength(1));
-    expect(delays, isEmpty);
   });
 
   test('does not repeat a resubmission after an ambiguous timeout', () async {

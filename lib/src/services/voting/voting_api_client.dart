@@ -19,7 +19,6 @@ class VotingApiClient {
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
     Duration helperPreflightTimeout = const Duration(seconds: 2),
-    Duration helperPreflightTtl = const Duration(seconds: 10),
     VotingRetryPolicy? readRetryPolicy,
     VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
@@ -30,7 +29,6 @@ class VotingApiClient {
        _timeout = timeout,
        _helperTimeout = helperTimeout,
        _helperPreflightTimeout = helperPreflightTimeout,
-       _helperPreflightTtl = helperPreflightTtl,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
@@ -60,13 +58,10 @@ class VotingApiClient {
   final Duration _timeout;
   final Duration _helperTimeout;
   final Duration _helperPreflightTimeout;
-  final Duration _helperPreflightTtl;
   final VotingRetryPolicy _readRetryPolicy;
   final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
   final Future<void> Function(Duration delay) _delay;
-  final Map<String, _CachedHelperPreflight> _helperPreflightCache = {};
-  final Map<String, Future<bool>> _helperPreflightInFlight = {};
 
   /// Lists rounds from the vote server.
   ///
@@ -257,19 +252,13 @@ class VotingApiClient {
   /// Checks helper readiness concurrently without failing the voting flow.
   ///
   /// A helper is ready only when its public status endpoint returns a
-  /// successful `{"status":"ok"}` response. Results are cached briefly so
-  /// concurrent share batches do not repeatedly probe the same helpers.
+  /// successful `{"status":"ok"}` response.
   Future<Map<String, bool>> preflightHelpers(Iterable<Uri> serverUrls) async {
-    final uniqueServers = <String, Uri>{};
-    for (final serverUrl in serverUrls) {
-      uniqueServers.putIfAbsent(serverUrl.toString(), () => serverUrl);
-    }
     final entries = await Future.wait([
-      for (final entry in uniqueServers.entries)
-        _preflightHelper(
-          entry.key,
-          entry.value,
-        ).then((isReady) => MapEntry(entry.key, isReady)),
+      for (final serverUrl in serverUrls)
+        _probeHelper(
+          serverUrl,
+        ).then((isReady) => MapEntry(serverUrl.toString(), isReady)),
     ]);
     return Map<String, bool>.unmodifiable(Map.fromEntries(entries));
   }
@@ -278,9 +267,8 @@ class VotingApiClient {
   ///
   /// The share map is expected to be the complete service JSON body produced
   /// by the voting pipeline. Fast transient failures retain the helper retry
-  /// policy, but every attempt and backoff shares one [_helperTimeout] budget.
-  /// An ambiguous timeout is never retried against the same helper so the
-  /// caller can promptly move to another candidate.
+  /// policy. An ambiguous timeout is never retried against the same helper so
+  /// the caller can promptly move to another candidate.
   Future<VotingShareSubmissionResult> submitShare({
     required Uri serverUrl,
     required Map<String, dynamic> share,
@@ -385,32 +373,6 @@ class VotingApiClient {
     return jsonDecode(response.bodyText);
   }
 
-  Future<bool> _preflightHelper(String key, Uri serverUrl) async {
-    final current = DateTime.now();
-    final cached = _helperPreflightCache[key];
-    if (cached != null && current.isBefore(cached.expiresAt)) {
-      return cached.isReady;
-    }
-
-    final existing = _helperPreflightInFlight[key];
-    if (existing != null) return existing;
-
-    final probe = _probeHelper(serverUrl);
-    _helperPreflightInFlight[key] = probe;
-    try {
-      final isReady = await probe;
-      _helperPreflightCache[key] = _CachedHelperPreflight(
-        isReady: isReady,
-        expiresAt: DateTime.now().add(_helperPreflightTtl),
-      );
-      return isReady;
-    } finally {
-      if (identical(_helperPreflightInFlight[key], probe)) {
-        _helperPreflightInFlight.remove(key);
-      }
-    }
-  }
-
   Future<bool> _probeHelper(Uri serverUrl) async {
     final uri = _endpoint(['status'], baseUrl: serverUrl);
     try {
@@ -430,51 +392,25 @@ class VotingApiClient {
     Uri uri,
     Map<String, dynamic> body,
   ) async {
-    final budget = Stopwatch()..start();
-    Object? lastError;
-    StackTrace? lastStackTrace;
-    for (
-      var attempt = 0;
-      attempt <= _helperRetryPolicy.delays.length;
-      attempt++
-    ) {
-      final remaining = attempt == 0
-          ? _helperTimeout
-          : _helperTimeout - budget.elapsed;
-      if (remaining <= Duration.zero) {
-        if (lastError != null && lastStackTrace != null) {
-          Error.throwWithStackTrace(lastError, lastStackTrace);
-        }
-        throw TimeoutException(
-          'Helper submission budget exhausted for $uri',
-          _helperTimeout,
-        );
-      }
-      try {
+    final retryPolicy = VotingRetryPolicy(
+      name: '${_helperRetryPolicy.name}-initial',
+      delays: _helperRetryPolicy.delays,
+      shouldRetry: (error) =>
+          error is! TimeoutException && _helperRetryPolicy.shouldRetry(error),
+    );
+    final response = await _runRequestWithRetry(
+      retryPolicy: retryPolicy,
+      operation: () async {
         final response = await _post(
           uri,
           body,
-          timeout: remaining,
-        ).timeout(remaining);
+          timeout: _helperTimeout,
+        ).timeout(_helperTimeout);
         _throwIfNotSuccess(uri, response);
-        return jsonDecode(response.bodyText);
-      } catch (error, stackTrace) {
-        lastError = error;
-        lastStackTrace = stackTrace;
-        if (error is TimeoutException ||
-            attempt == _helperRetryPolicy.delays.length ||
-            !_helperRetryPolicy.shouldRetry(error)) {
-          rethrow;
-        }
-        final retryDelay = _helperRetryPolicy.delays[attempt];
-        final remainingAfterAttempt = _helperTimeout - budget.elapsed;
-        if (remainingAfterAttempt <= retryDelay) rethrow;
-        await _delay(retryDelay).timeout(remainingAfterAttempt);
-      }
-    }
-    throw StateError(
-      '${_helperRetryPolicy.name} retry exited unexpectedly: $lastError',
+        return response;
+      },
     );
+    return jsonDecode(response.bodyText);
   }
 
   Future<VotingHttpResponse> _get(Uri uri, {required Duration timeout}) {
@@ -567,16 +503,6 @@ class VotingApiClient {
     }
     return List<Uri>.unmodifiable(deduped);
   }
-}
-
-class _CachedHelperPreflight {
-  const _CachedHelperPreflight({
-    required this.isReady,
-    required this.expiresAt,
-  });
-
-  final bool isReady;
-  final DateTime expiresAt;
 }
 
 Map<String, dynamic> _objectFromValue(Object? value) {

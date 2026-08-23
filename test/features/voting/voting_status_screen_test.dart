@@ -1239,6 +1239,14 @@ void main() {
       addTearDown(() {
         if (!refreshGate.isCompleted) refreshGate.complete(null);
       });
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
       final completedState = VotingSessionState(
         roundId: _roundId,
         accountUuid: key.accountUuid,
@@ -1252,16 +1260,7 @@ void main() {
               const VotingSubmissionJobsState(jobKeys: [key]),
             ),
           ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.complete,
-                generation: 1,
-              ),
-            ),
-          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
           votingSubmissionJobSessionProvider(
             key,
           ).overrideWithValue(AsyncValue.data(completedState)),
@@ -1270,81 +1269,6 @@ void main() {
               key,
               completedState,
               refreshGate,
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      final router = GoRouter(
-        initialLocation: '/home',
-        routes: [
-          GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
-          GoRoute(
-            path: '/voting/poll/:roundId/status',
-            builder: (_, state) => VotingStatusView(
-              roundId: state.pathParameters['roundId']!,
-              accountUuid: state.uri.queryParameters['account'],
-              requireCurrentRouteForConfirmation: true,
-            ),
-          ),
-          GoRoute(
-            path: '/voting/poll/:roundId/submitted',
-            builder: (_, _) => const Text('submission confirmed route'),
-          ),
-        ],
-      );
-      addTearDown(router.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp.router(
-            routerConfig: router,
-            builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
-          ),
-        ),
-      );
-      unawaited(
-        router.pushReplacement(
-          votingStatusRoute(_roundId, accountUuid: key.accountUuid),
-        ),
-      );
-      await _pumpUntilFound(tester, find.text('submission confirmed route'));
-
-      expect(find.text('submission confirmed route'), findsOneWidget);
-      expect(refreshGate.isCompleted, isFalse);
-    },
-  );
-
-  testWidgets(
-    'completed mobile status navigates from an imperative voting stack',
-    (tester) async {
-      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
-        key,
-        const VotingSubmissionJobState(
-          key: key,
-          status: VotingSubmissionJobStatus.running,
-          generation: 1,
-        ),
-      );
-      final container = _statusContainer(
-        accountOverride: _MnemonicAccountNotifier.new,
-        overrides: [
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: key.accountUuid,
-                phase: VotingSessionPhase.done,
-              ),
             ),
           ),
         ],
@@ -1410,6 +1334,7 @@ void main() {
       await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
       expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(refreshGate.isCompleted, isFalse);
     },
   );
 

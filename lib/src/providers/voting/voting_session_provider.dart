@@ -1153,6 +1153,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             0,
             (total, work) => total + work.bundleIndexes.length,
           );
+      final helperAvailability = totalBundleTasks == 0
+          ? Future.value(const <String, bool>{})
+          : ref
+                .read(votingApiClientProvider(context.config.apiServers))
+                .preflightHelpers(context.config.apiServers.all);
       var completedBundleTasks = 0;
       var completedQuestions = 0;
       final startTiming = _roundShareTiming(context, _nowSeconds());
@@ -1233,6 +1238,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await _submitCommitmentShares(
           context,
           commitments,
+          helperAvailability: helperAvailability,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           shareIndexFilter: shareIndexFilter,
@@ -1285,6 +1291,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             totalBundleTasks: totalBundleTasks,
             completedQuestions: completedQuestions,
             totalQuestions: totalQuestions,
+            helperAvailability: helperAvailability,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1446,6 +1453,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _submitCommitmentShares(
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments, {
+    required Future<Map<String, bool>> helperAvailability,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
@@ -1463,6 +1471,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (serverUrls.isEmpty) {
       throw StateError('No vote servers configured for share submission.');
     }
+    final availableHelpers = await helperAvailability;
+    _throwIfContextStale(context, 'helper-preflight-finished');
 
     final timing = _roundShareTiming(context, _nowSeconds());
     final bundleProgressMessage = _bundleProgressMessage(
@@ -1492,16 +1502,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '${shares.length} payload(s).',
         );
       }
-      final plannedServers = <String>{
-        for (final plan in plans) ...plan.targetServers,
-      };
-      final helperAvailability = await _preflightShareHelpers(
-        context: context,
-        api: api,
-        plannedServers: plannedServers,
-        configuredServers: serverUrls,
-      );
-
       // Validate every body before starting helper requests. Otherwise a later
       // serialization failure could abandon already accepted submissions.
       final preparedSubmissions = <_PreparedInitialShareSubmission>[];
@@ -1514,7 +1514,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final candidateServers = _plannedShareServers(
           plannedServers: plan.targetServers,
           fallbackServers: helperHealth.candidateServers(serverUrls),
-          helperAvailability: helperAvailability,
+          helperAvailability: availableHelpers,
         );
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
@@ -1748,79 +1748,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final server in fallbackServers) {
       if (server.trim().isNotEmpty) ordered.add(server);
     }
-    final responsive = <String>[];
-    final unknown = <String>[];
-    final unavailable = <String>[];
-    for (final server in ordered) {
-      final isReady = helperAvailability[server];
-      if (isReady == true) {
-        responsive.add(server);
-      } else if (isReady == false) {
-        unavailable.add(server);
-      } else {
-        unknown.add(server);
-      }
-    }
-    return [...responsive, ...unknown, ...unavailable];
-  }
-
-  Future<void> _warmShareHelperPreflight({
-    required _VotingSessionContext context,
-    required VotingApiClient api,
-  }) async {
-    try {
-      await api.preflightHelpers(context.config.apiServers.all);
-    } catch (error) {
-      // Readiness is only an ordering hint. The just-in-time preflight and
-      // bounded share submission still provide the authoritative fallback.
-      debugPrint(
-        '[zcash] Voting: helper preflight warmup ignored error=$error',
-      );
-    }
-  }
-
-  Future<Map<String, bool>> _preflightShareHelpers({
-    required _VotingSessionContext context,
-    required VotingApiClient api,
-    required Iterable<String> plannedServers,
-    required List<String> configuredServers,
-  }) async {
-    _throwIfContextStale(context, 'helper-preflight-start');
-    final planned = plannedServers
-        .where((server) => server.trim().isNotEmpty)
-        .toSet();
-    if (planned.isEmpty) return const {};
-
-    final timer = Stopwatch()..start();
-    try {
-      final availability = <String, bool>{
-        ...await api.preflightHelpers(planned.map(Uri.parse)),
-      };
-      if (planned.any((server) => availability[server] == false)) {
-        final replacements = configuredServers.where(
-          (server) => !planned.contains(server),
-        );
-        availability.addAll(
-          await api.preflightHelpers(replacements.map(Uri.parse)),
-        );
-      }
-      _throwIfContextStale(context, 'helper-preflight-finished');
-      final readyCount = availability.values.where((ready) => ready).length;
-      final unavailableCount = availability.length - readyCount;
-      _logVoteTiming(
-        'helper preflight planned=${planned.length} '
-        'probed=${availability.length} ready=$readyCount '
-        'unavailable=$unavailableCount '
-        'elapsed=${formatElapsedSeconds(timer.elapsed)}',
-      );
-      return Map<String, bool>.unmodifiable(availability);
-    } on _StaleVotingSessionAction {
-      rethrow;
-    } catch (error) {
-      _throwIfContextStale(context, 'helper-preflight-failed');
-      debugPrint('[zcash] Voting: helper preflight ignored error=$error');
-      return const {};
-    }
+    return [
+      for (final readiness in const <bool?>[true, null, false])
+        for (final server in ordered)
+          if (helperAvailability[server] == readiness) server,
+    ];
   }
 
   void _setShareSubmissionProgress({
@@ -1894,6 +1826,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalBundleTasks,
     required int completedQuestions,
     required int totalQuestions,
+    required Future<Map<String, bool>> helperAvailability,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2218,6 +2151,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               await _submitCommitmentShares(
                 context,
                 commitments,
+                helperAvailability: helperAvailability,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,
@@ -2334,10 +2268,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) async {
     final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
-    // Warm every configured helper while the commitment is broadcast and
-    // confirmed. The just-in-time preflight reuses this in-flight or cached
-    // result when it is still fresh, and refreshes it after the cache TTL.
-    unawaited(_warmShareHelperPreflight(context: context, api: api));
     final txHashes = <int, String>{};
     for (final commitment in commitments.commitments) {
       final result = await api.submitVoteCommitment(
@@ -2398,7 +2328,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) async {
     final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
-    unawaited(_warmShareHelperPreflight(context: context, api: api));
     final vcTreePositions = <int, BigInt>{};
     for (final commitment in commitments.commitments) {
       debugPrint(

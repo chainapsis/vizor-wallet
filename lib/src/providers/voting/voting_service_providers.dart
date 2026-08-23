@@ -61,7 +61,7 @@ final votingApiRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
 });
 
-/// Total retry budget for an initial helper share submission.
+/// Timeout for one helper share request.
 final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 5);
 });
@@ -69,11 +69,6 @@ final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
 /// Timeout for one helper readiness probe.
 final votingHelperPreflightTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 2);
-});
-
-/// Short cache lifetime for helper readiness results shared by vote batches.
-final votingHelperPreflightTtlProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 10);
 });
 
 /// Delay before retrying a failed automatic helper-share tracking pass.
@@ -143,7 +138,6 @@ final votingApiClientProvider =
         timeout: ref.watch(votingApiRequestTimeoutProvider),
         helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
         helperPreflightTimeout: ref.watch(votingHelperPreflightTimeoutProvider),
-        helperPreflightTtl: ref.watch(votingHelperPreflightTtlProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
         helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
         broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
