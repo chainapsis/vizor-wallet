@@ -1687,7 +1687,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (attempt == nodeUrls.length - 1) {
           rethrow;
         }
-        await rust.resetVotingSessionState(
+        await rust.resetVoteTree(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
@@ -1806,10 +1806,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// the next proposal of the same bundle is proved.
   ///
   /// Different bundles own independent VAN chains, so they never wait on each
-  /// other. Only the CPU-heavy witness+proof step is capped
-  /// ([_votingWorkConcurrency]); a bundle parked on a block confirmation
-  /// holds no proof permit. Share submission is dispatched off the chain
-  /// because the VAN advance is already durable by then.
+  /// other. Witness materialization stays inside the serialized tree handoff;
+  /// only the CPU-heavy proof step is capped ([_votingWorkConcurrency]). A
+  /// bundle parked on a block confirmation holds no proof permit. Share
+  /// submission is dispatched off the chain because the VAN advance is already
+  /// durable by then.
   ///
   /// Returns the number of bundle tasks that completed through share
   /// submission. Throws [_VoteWaveBatchException] if any task failed.
@@ -1977,12 +1978,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             // own previous confirmation, so the coalescer only hands back one
             // that started after it.
             final syncTimer = Stopwatch()..start();
-            final anchorHeight = await treeSync.fresh();
-            _logVoteTiming(
-              'bundle=$bundleIndex proposal=${draft.proposalId} '
-              'tree-sync elapsed=${formatElapsedSeconds(syncTimer.elapsed)} '
-              'anchorHeight=$anchorHeight',
-            );
+            final witness = await treeSync.freshAndUse((anchorHeight) async {
+              _logVoteTiming(
+                'bundle=$bundleIndex proposal=${draft.proposalId} '
+                'tree-sync elapsed=${formatElapsedSeconds(syncTimer.elapsed)} '
+                'anchorHeight=$anchorHeight',
+              );
+              return rust.generateVanWitness(
+                dbPath: context.dbPath,
+                accountUuid: context.accountUuid,
+                roundId: context.round.roundId,
+                bundleIndex: bundleIndex,
+                anchorHeight: anchorHeight,
+              );
+            });
             // Re-evaluated per step: a long round can cross into the last-moment
             // buffer part way through a bundle's chain.
             final timedDraft = _draftVoteForCurrentShareMode(context, draft);
@@ -1991,13 +2000,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               _throwIfContextStale(context, 'vote-chain-proof-start');
               final timer = Stopwatch()..start();
               try {
-                final witness = await rust.generateVanWitness(
-                  dbPath: context.dbPath,
-                  accountUuid: context.accountUuid,
-                  roundId: context.round.roundId,
-                  bundleIndex: bundleIndex,
-                  anchorHeight: anchorHeight,
-                );
                 rust_wire.SignedVoteCommitmentsView? built;
                 await for (final event in rust.buildVoteCommitmentsWithProgress(
                   dbPath: context.dbPath,
@@ -4485,10 +4487,11 @@ Future<_BundleWorkOutcome<T>> _captureBundleWork<T>(
 ///
 /// Two guarantees matter to callers:
 ///
-/// * **Never concurrent.** `_syncVoteTreeWithFailover` resets round-global
-///   process state when it fails over to another node, so overlapping syncs
-///   could tear down state another bundle is mid-witness on.
-/// * **Never stale.** `fresh()` only resolves with the result of a sync that
+/// * **Protected handoff.** `_syncVoteTreeWithFailover` resets round-global
+///   process state when it fails over to another node, so the next sync cannot
+///   start until every caller served by the previous sync has materialized its
+///   witness.
+/// * **Never stale.** `freshAndUse()` only uses the result of a sync that
 ///   *started after* the call. A bundle that just recorded a vote confirmation
 ///   therefore cannot be handed an anchor height from a sync that predates its
 ///   new VAN leaf. Requests arriving while a sync runs are batched into the
@@ -4497,18 +4500,19 @@ class _VoteTreeSyncCoalescer {
   _VoteTreeSyncCoalescer(this._sync);
 
   final Future<int> Function() _sync;
-  final Queue<Completer<int>> _waiting = Queue<Completer<int>>();
+  final Queue<_VoteTreeSyncRequestBase> _waiting =
+      Queue<_VoteTreeSyncRequestBase>();
   bool _running = false;
 
-  Future<int> fresh() {
-    final waiter = Completer<int>();
-    _waiting.addLast(waiter);
+  Future<T> freshAndUse<T>(Future<T> Function(int anchorHeight) useTree) {
+    final request = _VoteTreeSyncRequest<T>(useTree);
+    _waiting.addLast(request);
     // Deferred so every requester in this turn joins the same sync — bundles
     // that finish a proposal together should cost one round trip, not N.
     // Delaying the start can only add requesters ahead of it, so the
     // "started after my call" guarantee still holds.
     scheduleMicrotask(_pump);
-    return waiter.future;
+    return request.future;
   }
 
   void _pump() {
@@ -4528,14 +4532,14 @@ class _VoteTreeSyncCoalescer {
     }
     attempt
         .then(
-          (anchorHeight) {
-            for (final waiter in batch) {
-              waiter.complete(anchorHeight);
-            }
+          (anchorHeight) async {
+            await Future.wait([
+              for (final request in batch) request.completeWith(anchorHeight),
+            ]);
           },
           onError: (Object error, StackTrace stackTrace) {
-            for (final waiter in batch) {
-              waiter.completeError(error, stackTrace);
+            for (final request in batch) {
+              request.completeError(error, stackTrace);
             }
           },
         )
@@ -4543,6 +4547,35 @@ class _VoteTreeSyncCoalescer {
           _running = false;
           scheduleMicrotask(_pump);
         });
+  }
+}
+
+abstract interface class _VoteTreeSyncRequestBase {
+  Future<void> completeWith(int anchorHeight);
+
+  void completeError(Object error, StackTrace stackTrace);
+}
+
+class _VoteTreeSyncRequest<T> implements _VoteTreeSyncRequestBase {
+  _VoteTreeSyncRequest(this._useTree);
+
+  final Future<T> Function(int anchorHeight) _useTree;
+  final Completer<T> _completer = Completer<T>();
+
+  Future<T> get future => _completer.future;
+
+  @override
+  Future<void> completeWith(int anchorHeight) async {
+    try {
+      _completer.complete(await _useTree(anchorHeight));
+    } catch (error, stackTrace) {
+      _completer.completeError(error, stackTrace);
+    }
+  }
+
+  @override
+  void completeError(Object error, StackTrace stackTrace) {
+    _completer.completeError(error, stackTrace);
   }
 }
 

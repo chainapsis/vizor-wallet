@@ -4604,6 +4604,91 @@ void main() {
     expect(rust.syncedVoteTrees.toSet(), {kRoundId});
   });
 
+  test('vote tree failover waits for prior sync witnesses', () async {
+    final rust = _WitnessHandoffVotingRustApi();
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': 'https://voting.example', 'label': 'primary'},
+            {'url': 'https://voting-failover.example', 'label': 'failover'},
+          ],
+        ),
+      ),
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 2,
+        delegationTxHashes: [
+          for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++)
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: bundleIndex,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-$bundleIndex',
+              vanLeafPosition: null,
+            ),
+        ],
+        votes: [
+          for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) ...[
+            vote(bundleIndex: bundleIndex, proposalId: 7),
+            vote(bundleIndex: bundleIndex, proposalId: 8),
+          ],
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+    addTearDown(rust.releaseFirstWitness);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _twoProposalDrafts());
+
+    await rust.firstWitnessStarted.future;
+    for (var attempt = 0; attempt < 100; attempt++) {
+      if (rust.operationLog.contains('mark_vote_confirmed:1:7')) break;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(rust.operationLog, contains('mark_vote_confirmed:1:7'));
+
+    // Bundle 1 has requested its next fresh sync, but bundle 0 is still using
+    // the tree produced by the first sync. Starting failover now would clear
+    // bundle 0's witness source before it can materialize the witness.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(rust.syncedVoteTreeNodeUrls, ['https://voting.example']);
+    expect(rust.resetVoteTreeCalls, isEmpty);
+
+    rust.releaseFirstWitness();
+    await cast;
+
+    expect(
+      rust.syncedVoteTreeNodeUrls,
+      containsAllInOrder([
+        'https://voting.example',
+        'https://voting.example',
+        'https://voting-failover.example',
+      ]),
+    );
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+    expect(
+      rust.operationLog
+          .where((entry) => entry.startsWith('mark_vote_submitted:'))
+          .toSet(),
+      {
+        'mark_vote_submitted:0:7',
+        'mark_vote_submitted:1:7',
+        'mark_vote_submitted:0:8',
+        'mark_vote_submitted:1:8',
+      },
+    );
+  });
+
   test('a slow bundle does not hold back the other bundles', () async {
     final confirmationResponse =
         votingHttpResponses()['/shielded-vote/v1/tx/vote-tx']!;
@@ -5622,7 +5707,8 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
-    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test('vote commitments submit shares and record recovery rows', () async {
@@ -9032,6 +9118,83 @@ class _SeparatedVoteStagePoolsHttpClient extends _UniqueVoteTxHttpClient {
       fourthConfirmationStarted.complete();
     }
     return super.get(uri, headers: headers, timeout: timeout);
+  }
+}
+
+class _WitnessHandoffVotingRustApi extends FakeVotingRustApi {
+  _WitnessHandoffVotingRustApi() : super(emitCommitments: true, bundleCount: 2);
+
+  final Completer<void> firstWitnessStarted = Completer<void>();
+  final Completer<void> _releaseFirstWitness = Completer<void>();
+  var _primarySyncCalls = 0;
+  var _firstWitnessReleased = false;
+  var _treeReady = false;
+
+  void releaseFirstWitness() {
+    if (!_releaseFirstWitness.isCompleted) {
+      _releaseFirstWitness.complete();
+    }
+  }
+
+  @override
+  Future<int> syncVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required String nodeUrl,
+  }) async {
+    if (nodeUrl == 'https://voting.example' && _primarySyncCalls++ == 1) {
+      syncedVoteTrees.add(roundId);
+      syncedVoteTreeNodeUrls.add(nodeUrl);
+      throw StateError('injected second primary tree-sync failure');
+    }
+    final height = await super.syncVoteTree(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      nodeUrl: nodeUrl,
+    );
+    _treeReady = true;
+    return height;
+  }
+
+  @override
+  Future<rust_vote.VanWitness> generateVanWitness({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int anchorHeight,
+  }) async {
+    if (bundleIndex == 0 && !_firstWitnessReleased) {
+      _firstWitnessReleased = true;
+      if (!firstWitnessStarted.isCompleted) firstWitnessStarted.complete();
+      await _releaseFirstWitness.future;
+    }
+    if (!_treeReady) {
+      throw StateError('vote tree cache reset before witness generation');
+    }
+    return super.generateVanWitness(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      anchorHeight: anchorHeight,
+    );
+  }
+
+  @override
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {
+    _treeReady = false;
+    await super.resetVoteTree(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+    );
   }
 }
 
