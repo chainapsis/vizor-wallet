@@ -1239,6 +1239,14 @@ void main() {
       addTearDown(() {
         if (!refreshGate.isCompleted) refreshGate.complete(null);
       });
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
       final completedState = VotingSessionState(
         roundId: _roundId,
         accountUuid: key.accountUuid,
@@ -1252,16 +1260,7 @@ void main() {
               const VotingSubmissionJobsState(jobKeys: [key]),
             ),
           ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.complete,
-                generation: 1,
-              ),
-            ),
-          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
           votingSubmissionJobSessionProvider(
             key,
           ).overrideWithValue(AsyncValue.data(completedState)),
@@ -1280,6 +1279,18 @@ void main() {
         initialLocation: '/home',
         routes: [
           GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+          GoRoute(
+            path: '/voting',
+            builder: (_, _) => const Text('voting route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId',
+            builder: (_, _) => const Text('poll route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/review',
+            builder: (_, _) => const Text('review route'),
+          ),
           GoRoute(
             path: '/voting/poll/:roundId/status',
             builder: (_, state) => VotingStatusView(
@@ -1305,11 +1316,21 @@ void main() {
           ),
         ),
       );
+
+      unawaited(router.push('/voting'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('poll route'));
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('review route'));
       unawaited(
         router.pushReplacement(
           votingStatusRoute(_roundId, accountUuid: key.accountUuid),
         ),
       );
+      await _pumpUntilFound(tester, find.text('Finalizing submission'));
+
+      jobNotifier.complete();
       await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
       expect(find.text('submission confirmed route'), findsOneWidget);

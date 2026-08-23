@@ -1153,6 +1153,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             0,
             (total, work) => total + work.bundleIndexes.length,
           );
+      final helperAvailability = totalBundleTasks == 0
+          ? Future.value(const <String, bool>{})
+          : ref
+                .read(votingApiClientProvider(context.config.apiServers))
+                .preflightHelpers(context.config.apiServers.all);
       var completedBundleTasks = 0;
       var completedQuestions = 0;
       final startTiming = _roundShareTiming(context, _nowSeconds());
@@ -1233,6 +1238,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await _submitCommitmentShares(
           context,
           commitments,
+          helperAvailability: helperAvailability,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           shareIndexFilter: shareIndexFilter,
@@ -1285,6 +1291,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             totalBundleTasks: totalBundleTasks,
             completedQuestions: completedQuestions,
             totalQuestions: totalQuestions,
+            helperAvailability: helperAvailability,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1446,6 +1453,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _submitCommitmentShares(
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments, {
+    required Future<Map<String, bool>> helperAvailability,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
@@ -1463,6 +1471,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (serverUrls.isEmpty) {
       throw StateError('No vote servers configured for share submission.');
     }
+    final availableHelpers = await helperAvailability;
+    _throwIfContextStale(context, 'helper-preflight-finished');
 
     final timing = _roundShareTiming(context, _nowSeconds());
     final bundleProgressMessage = _bundleProgressMessage(
@@ -1492,7 +1502,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '${shares.length} payload(s).',
         );
       }
-
       // Validate every body before starting helper requests. Otherwise a later
       // serialization failure could abandon already accepted submissions.
       final preparedSubmissions = <_PreparedInitialShareSubmission>[];
@@ -1505,6 +1514,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final candidateServers = _plannedShareServers(
           plannedServers: plan.targetServers,
           fallbackServers: helperHealth.candidateServers(serverUrls),
+          helperAvailability: availableHelpers,
         );
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
@@ -1729,6 +1739,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   List<String> _plannedShareServers({
     required List<String> plannedServers,
     required Iterable<String> fallbackServers,
+    Map<String, bool> helperAvailability = const {},
   }) {
     final ordered = <String>{};
     for (final server in plannedServers) {
@@ -1737,7 +1748,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final server in fallbackServers) {
       if (server.trim().isNotEmpty) ordered.add(server);
     }
-    return ordered.toList(growable: false);
+    return [
+      for (final readiness in const <bool?>[true, null, false])
+        for (final server in ordered)
+          if (helperAvailability[server] == readiness) server,
+    ];
   }
 
   void _setShareSubmissionProgress({
@@ -1811,6 +1826,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalBundleTasks,
     required int completedQuestions,
     required int totalQuestions,
+    required Future<Map<String, bool>> helperAvailability,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2135,6 +2151,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               await _submitCommitmentShares(
                 context,
                 commitments,
+                helperAvailability: helperAvailability,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,

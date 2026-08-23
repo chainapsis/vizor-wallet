@@ -6045,16 +6045,24 @@ void main() {
     expect(rust.recordedShares, isEmpty);
   });
 
-  test('initial share submission uses planned helper targets', () async {
+  test('initial shares replace an unavailable helper', () async {
     final helperUrls = [
       for (var i = 1; i <= 6; i++)
         {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
     ];
-    final http = FakeVotingHttpClient(
-      responses: votingHttpResponses(
-        dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
-      ),
+    final http = _GatedVotingHttpClient(
+      responses: {
+        ...votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
+        ),
+        'https://helper-1.example/shielded-vote/v1/status': jsonResponse({
+          'error': 'unavailable',
+        }, statusCode: 503),
+      },
     );
+    const confirmationPath = '/shielded-vote/v1/tx/vote-tx';
+    const statusPath = '/shielded-vote/v1/status';
+    final confirmationGate = http.gateNextGet(confirmationPath);
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
       state: recoveryState(
@@ -6076,9 +6084,12 @@ void main() {
       recoveryApi: recoveryApi,
     );
     addTearDown(container.dispose);
+    addTearDown(() {
+      if (!confirmationGate.isCompleted) confirmationGate.complete();
+    });
 
     await container.read(votingSessionProvider(kRoundId).future);
-    await container
+    final submission = container
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(
           draftVotes: [
@@ -6091,6 +6102,34 @@ void main() {
             ),
           ],
         );
+    await http
+        .waitForGetCount(confirmationPath, 1)
+        .timeout(const Duration(seconds: 1));
+    await http
+        .waitForGetCount(statusPath, helperUrls.length)
+        .timeout(const Duration(seconds: 1));
+
+    expect(confirmationGate.isCompleted, isFalse);
+    confirmationGate.complete();
+    await submission;
+
+    final statusHosts = http.requests
+        .where(
+          (request) =>
+              request.method == 'GET' && request.uri.path == statusPath,
+        )
+        .map((request) => request.uri.host);
+    expect(
+      statusHosts,
+      unorderedEquals([
+        'helper-1.example',
+        'helper-2.example',
+        'helper-3.example',
+        'helper-4.example',
+        'helper-5.example',
+        'helper-6.example',
+      ]),
+    );
 
     final sharePosts = http.requests.where(
       (request) =>
@@ -6098,14 +6137,14 @@ void main() {
           request.uri.path == '/shielded-vote/v1/shares',
     );
     expect(sharePosts.map((request) => request.uri.host), [
-      'helper-1.example',
       'helper-2.example',
       'helper-3.example',
+      'helper-4.example',
     ]);
     expect(rust.recordedShares.single.sentToUrls, [
-      'https://helper-1.example',
       'https://helper-2.example',
       'https://helper-3.example',
+      'https://helper-4.example',
     ]);
   });
 
@@ -8040,6 +8079,7 @@ Map<String, Object> votingHttpResponses({
     ],
   },
   '/shielded-vote/v1/cast-vote': {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+  '/shielded-vote/v1/status': {'status': 'ok'},
   '/shielded-vote/v1/shares': {'status': 'queued'},
   '/shielded-vote/v1/tx/vote-tx': {
     'height': 11,

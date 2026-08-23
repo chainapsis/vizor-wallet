@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
+import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
@@ -500,14 +501,14 @@ void main() {
   });
 
   test(
-    'tries tx confirmation fallbacks before returning null on 404',
+    'tries each tx confirmation server once before returning null',
     () async {
       final primary = Uri.parse('https://vote-primary.example');
       final secondary = Uri.parse('https://vote-secondary.example');
       final http = FakeVotingHttpClient(
         responses: {
           'https://vote-primary.example/shielded-vote/v1/tx/delegation-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
+              timeoutResponse(),
           'https://vote-secondary.example/shielded-vote/v1/tx/delegation-tx': {
             'height': '12',
             'code': 0,
@@ -558,7 +559,7 @@ void main() {
       final flakyFallbackHttp = FakeVotingHttpClient(
         responses: {
           'https://vote-primary.example/shielded-vote/v1/tx/flaky-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
+              timeoutResponse(),
           'https://vote-secondary.example/shielded-vote/v1/tx/flaky-tx':
               jsonResponse({'error': 'unavailable'}, statusCode: 503),
         },
@@ -576,8 +577,6 @@ void main() {
       );
       expect(flakyFallbackHttp.requests.map((request) => request.uri.host), [
         'vote-primary.example',
-        'vote-secondary.example',
-        'vote-secondary.example',
         'vote-secondary.example',
       ]);
     },
@@ -792,13 +791,65 @@ void main() {
     expect(http.requests.single.timeout, const Duration(seconds: 5));
   });
 
-  test('retries helper share submission on transient timeout', () async {
+  test(
+    'preflights helpers concurrently and treats failures as unavailable',
+    () async {
+      final primaryResponse = Completer<VotingHttpResponse>();
+      final secondaryResponse = Completer<VotingHttpResponse>();
+      final blackholedResponse = Completer<VotingHttpResponse>();
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://helper-1.example/shielded-vote/v1/status':
+              primaryResponse.future,
+          'https://helper-2.example/shielded-vote/v1/status':
+              secondaryResponse.future,
+          'https://helper-3.example/shielded-vote/v1/status':
+              blackholedResponse.future,
+        },
+      );
+      final client = VotingApiClient(
+        baseUrl: Uri.parse('https://voting.valargroup.org'),
+        httpClient: http,
+        helperPreflightTimeout: const Duration(milliseconds: 30),
+      );
+
+      final pending = client.preflightHelpers([
+        Uri.parse('https://helper-1.example'),
+        Uri.parse('https://helper-2.example'),
+        Uri.parse('https://helper-3.example'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(http.requests.map((request) => request.uri.host), [
+        'helper-1.example',
+        'helper-2.example',
+        'helper-3.example',
+      ]);
+      primaryResponse.complete(jsonResponse({'status': 'ok'}));
+      secondaryResponse.complete(jsonResponse({'status': 'starting'}));
+      expect(await pending, {
+        'https://helper-1.example': true,
+        'https://helper-2.example': false,
+        'https://helper-3.example': false,
+      });
+
+      expect(http.requests, hasLength(3));
+      expect(
+        http.requests.map((request) => request.timeout),
+        everyElement(const Duration(milliseconds: 30)),
+      );
+    },
+  );
+
+  test('retries fast helper failures but not a blackholed attempt', () async {
     final delays = <Duration>[];
+    final blackholedResponse = Completer<VotingHttpResponse>();
     final http = FakeVotingHttpClient(
       responses: {
         'https://helper.example/shielded-vote/v1/shares':
             SequentialVotingHttpResponses([
-              timeoutResponse(),
+              jsonResponse({'error': 'unavailable'}, statusCode: 503),
+              blackholedResponse.future,
               {'status': 'queued'},
             ]),
       },
@@ -806,21 +857,26 @@ void main() {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
       httpClient: http,
+      helperTimeout: const Duration(milliseconds: 30),
       helperRetryPolicy: VotingRetryPolicy.transientHttp(
         name: 'test-helper-retry',
-        delays: const [Duration(milliseconds: 2)],
+        delays: const [Duration(milliseconds: 2), Duration(milliseconds: 4)],
       ),
       delay: (delay) async => delays.add(delay),
     );
+    final timer = Stopwatch()..start();
 
-    final result = await client.submitShare(
-      serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 0, 'vote_round_id': hexRoundId},
+    await expectLater(
+      client.submitShare(
+        serverUrl: Uri.parse('https://helper.example'),
+        share: {'share_index': 0, 'vote_round_id': hexRoundId},
+      ),
+      throwsA(isA<TimeoutException>()),
     );
 
-    expect(result.status, 'queued');
-    expect(http.requests.length, 2);
+    expect(http.requests, hasLength(2));
     expect(delays, const [Duration(milliseconds: 2)]);
+    expect(timer.elapsed, lessThan(const Duration(seconds: 1)));
   });
 
   test('does not repeat a resubmission after an ambiguous timeout', () async {
