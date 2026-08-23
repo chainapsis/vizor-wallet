@@ -28,37 +28,40 @@ void main() {
     );
   });
 
-  test('mergeBootstrappedAccountInfo keeps stored UI metadata', () {
-    const rustAccount = AccountInfo(
-      uuid: 'account-1',
-      name: 'Rust Name',
-      order: 0,
-      isSeedAnchor: true,
-    );
-    const storedAccount = AccountInfo(
-      uuid: 'account-1',
-      name: 'Stored Name',
-      order: 9,
-      isHardware: true,
-      isSeedAnchor: false,
-      profilePictureId: 'pfp-04',
-      walletLinkSourceAccountUuid: 'desktop-account-1',
-    );
+  test(
+    'mergeBootstrappedAccountInfo keeps UI metadata but trusts Rust signer metadata',
+    () {
+      const rustAccount = AccountInfo(
+        uuid: 'account-1',
+        name: 'Rust Name',
+        order: 0,
+        isSeedAnchor: true,
+      );
+      const storedAccount = AccountInfo(
+        uuid: 'account-1',
+        name: 'Stored Name',
+        order: 9,
+        isHardware: true,
+        isSeedAnchor: false,
+        profilePictureId: 'pfp-04',
+        walletLinkSourceAccountUuid: 'desktop-account-1',
+      );
 
-    final merged = mergeBootstrappedAccountInfo(
-      rustAccount: rustAccount,
-      storedAccount: storedAccount,
-      order: 3,
-    );
+      final merged = mergeBootstrappedAccountInfo(
+        rustAccount: rustAccount,
+        storedAccount: storedAccount,
+        order: 3,
+      );
 
-    expect(merged.uuid, 'account-1');
-    expect(merged.name, 'Stored Name');
-    expect(merged.order, 9);
-    expect(merged.isHardware, isTrue);
-    expect(merged.isSeedAnchor, isTrue);
-    expect(merged.profilePictureId, 'pfp-04');
-    expect(merged.walletLinkSourceAccountUuid, 'desktop-account-1');
-  });
+      expect(merged.uuid, 'account-1');
+      expect(merged.name, 'Stored Name');
+      expect(merged.order, 9);
+      expect(merged.isHardware, isFalse);
+      expect(merged.isSeedAnchor, isTrue);
+      expect(merged.profilePictureId, 'pfp-04');
+      expect(merged.walletLinkSourceAccountUuid, 'desktop-account-1');
+    },
+  );
 
   test(
     'mergeBootstrappedAccountInfo normalizes legacy profile picture ids',
@@ -111,6 +114,7 @@ void main() {
       name: 'Rust Keystone',
       order: 1,
       isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.keystone,
     );
     const storedAccount = AccountInfo(
       uuid: 'account-3',
@@ -126,6 +130,65 @@ void main() {
 
     expect(merged.isHardware, isTrue);
     expect(merged.name, 'Stored Keystone');
+  });
+
+  test('mergeBootstrappedAccountInfo uses Rust Ledger signer kind', () {
+    const rustAccount = AccountInfo(
+      uuid: 'account-ledger',
+      name: 'Rust hardware',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      birthdayHeight: 2600000,
+      zip32AccountIndex: 7,
+    );
+    const storedAccount = AccountInfo(
+      uuid: 'account-ledger',
+      name: 'Ledger',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.keystone,
+      birthdayHeight: 1,
+      zip32AccountIndex: 99,
+    );
+
+    final merged = mergeBootstrappedAccountInfo(
+      rustAccount: rustAccount,
+      storedAccount: storedAccount,
+      order: 0,
+    );
+
+    expect(merged.hardwareSignerKind, HardwareSignerKind.ledger);
+    expect(merged.birthdayHeight, 2600000);
+    expect(merged.zip32AccountIndex, 7);
+  });
+
+  test('legacy hardware backfill preserves each stored signer kind', () {
+    const accounts = [
+      AccountInfo(uuid: 'software', name: 'Software', order: 0),
+      AccountInfo(
+        uuid: 'keystone',
+        name: 'Keystone',
+        order: 1,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+      ),
+      AccountInfo(
+        uuid: 'ledger',
+        name: 'Ledger',
+        order: 2,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ];
+
+    final backfill = legacyHardwareAccountsForBackfill(accounts);
+
+    expect(backfill, hasLength(2));
+    expect(backfill[0].accountUuid, 'keystone');
+    expect(backfill[0].hardwareSignerKind, 'keystone');
+    expect(backfill[1].accountUuid, 'ledger');
+    expect(backfill[1].hardwareSignerKind, 'ledger');
   });
 
   test('empty bootstrap has no password rotation recovery failure', () {
