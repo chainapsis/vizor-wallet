@@ -577,9 +577,51 @@ void main() {
       expect(flakyFallbackHttp.requests.map((request) => request.uri.host), [
         'vote-primary.example',
         'vote-secondary.example',
-        'vote-secondary.example',
-        'vote-secondary.example',
       ]);
+    },
+  );
+
+  test(
+    'tries the next tx confirmation server without retrying a timeout',
+    () async {
+      final primary = Uri.parse('https://vote-primary.example');
+      final offline = Uri.parse('https://vote-offline.example');
+      final tertiary = Uri.parse('https://vote-tertiary.example');
+      final delays = <Duration>[];
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/shielded-vote/v1/tx/vote-tx':
+              jsonResponse({'error': 'not found'}, statusCode: 404),
+          'https://vote-offline.example/shielded-vote/v1/tx/vote-tx':
+              timeoutResponse(),
+          'https://vote-tertiary.example/shielded-vote/v1/tx/vote-tx': {
+            'height': '12',
+            'code': 0,
+            'log': '',
+            'events': const [],
+          },
+        },
+      );
+      final client = VotingApiClient(
+        baseUrl: primary,
+        fallbackBaseUrls: [offline, tertiary],
+        httpClient: http,
+        readRetryPolicy: VotingRetryPolicy.transientHttp(
+          name: 'test-confirmation-failover',
+          delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
+        ),
+        delay: (delay) async => delays.add(delay),
+      );
+
+      final confirmation = await client.getTxConfirmation('vote-tx');
+
+      expect(confirmation?.height, 12);
+      expect(http.requests.map((request) => request.uri.host), [
+        'vote-primary.example',
+        'vote-offline.example',
+        'vote-tertiary.example',
+      ]);
+      expect(delays, isEmpty);
     },
   );
 
