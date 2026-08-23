@@ -20,6 +20,7 @@ ff = "0.14"
 jubjub = { package = "zakura-jubjub", version = "=1.0.0" }
 bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0" }
 rand_core = "0.6"
+secp256k1 = "0.29"
 
 # Key generation
 bip0039 = "0.12"
@@ -151,6 +152,8 @@ features = ["std"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
+ledger-transport = "0.11.0"
+ledger-transport-hid = "0.11.0"
 
 [dev-dependencies]
 tempfile = "3"

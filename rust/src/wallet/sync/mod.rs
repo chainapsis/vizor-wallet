@@ -26,6 +26,7 @@ mod broadcast;
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
+pub(crate) use pczt::preflight_orchard_spend_auth_signatures;
 mod proposal_locks;
 mod send;
 mod transactions;
