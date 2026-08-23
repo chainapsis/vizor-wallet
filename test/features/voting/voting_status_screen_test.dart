@@ -1318,6 +1318,102 @@ void main() {
   );
 
   testWidgets(
+    'completed mobile status navigates from an imperative voting stack',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.done,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+          GoRoute(
+            path: '/voting',
+            builder: (_, _) => const Text('voting route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId',
+            builder: (_, _) => const Text('poll route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/review',
+            builder: (_, _) => const Text('review route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+
+      unawaited(router.push('/voting'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('poll route'));
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('review route'));
+      unawaited(
+        router.pushReplacement(
+          votingStatusRoute(_roundId, accountUuid: key.accountUuid),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Finalizing submission'));
+
+      jobNotifier.complete();
+      await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+      expect(find.text('submission confirmed route'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'completed mobile status does not replace a route pushed above it',
     (tester) async {
       const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
