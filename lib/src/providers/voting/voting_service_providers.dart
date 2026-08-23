@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -377,6 +378,23 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
   });
 
+  /// Bundle-independent background PIR proof cache warm-up.
+  ///
+  /// Needs no hotkey, round rows, or bundles — only a wallet scanned to the
+  /// snapshot height and a PIR endpoint serving it. `keepRoots` should hold
+  /// every active round's `nullifier_imt_root`; the served root is kept
+  /// automatically.
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  });
+
   /// Fire-and-forget Halo2 proving-key warm-up for voting proofs.
   void warmVotingProvingCaches();
 
@@ -647,6 +665,29 @@ class FrbVotingRustApi implements VotingRustApi {
       pirServerUrl: pirServerUrl,
       storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) {
+    return rust_api.warmPirProofCache(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      network: network,
+      lightwalletdUrl: lightwalletdUrl,
+      snapshotHeight: snapshotHeight,
+      pirServerUrl: pirServerUrl,
+      pirLayout: pirLayout,
+      keepRoots: keepRoots,
     );
   }
 

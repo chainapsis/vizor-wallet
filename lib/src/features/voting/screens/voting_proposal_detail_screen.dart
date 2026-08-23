@@ -12,6 +12,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -69,6 +70,18 @@ class _VotingProposalDetailViewState
   String? _votingPowerPreparationKey;
   String? _delegationPirPrecomputeKey;
   String? _resultsRedirectRoundId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Second entry point for the background nullifier-proof warm-up, for
+      // users who deep-link into a round without visiting the polls list.
+      // The coordinator dedupes work already started from the polls screen.
+      unawaited(ref.read(votingPirWarmupProvider).maybeWarmActiveRounds());
+    });
+  }
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailView oldWidget) {

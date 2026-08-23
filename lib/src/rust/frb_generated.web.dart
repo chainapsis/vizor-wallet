@@ -98,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiPendingShareRound dco_decode_api_pending_share_round(dynamic raw);
 
   @protected
+  ApiPirCacheWarmupResult dco_decode_api_pir_cache_warmup_result(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
@@ -149,6 +152,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   OrchardMigrationPrivatePlan
   dco_decode_box_autoadd_orchard_migration_private_plan(dynamic raw);
+
+  @protected
+  PirLayout dco_decode_box_autoadd_pir_layout(dynamic raw);
 
   @protected
   ResolvedVotingConfig dco_decode_box_autoadd_resolved_voting_config(
@@ -901,6 +907,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiPirCacheWarmupResult sse_decode_api_pir_cache_warmup_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   );
@@ -968,6 +979,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_box_autoadd_orchard_migration_private_plan(
     SseDeserializer deserializer,
   );
+
+  @protected
+  PirLayout sse_decode_box_autoadd_pir_layout(SseDeserializer deserializer);
 
   @protected
   ResolvedVotingConfig sse_decode_box_autoadd_resolved_voting_config(
@@ -1911,6 +1925,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_pir_cache_warmup_result(
+    ApiPirCacheWarmupResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -1985,6 +2005,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_pir_layout(
+    PirLayout self,
     SseSerializer serializer,
   );
 

@@ -359,9 +359,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final pendingBundles = plan.pendingDelegationBundleIndexes;
     if (pendingBundles.isEmpty) {
+      // Fresh rounds (no durable bundles yet) land here by design: the
+      // bundle-independent background warm-up (votingPirWarmupProvider) has
+      // already cached the real-note PIR proofs, so the prove-time precompute
+      // only fetches the per-bundle padded-slot nullifiers.
       debugPrint(
         '[zcash] Voting: delegation PIR precompute skipped '
-        'round=${context.round.roundId} reason=no-pending-bundles',
+        'round=${context.round.roundId} reason=no-pending-bundles '
+        '(real-note proofs come from the background PIR cache warmup)',
       );
       return;
     }

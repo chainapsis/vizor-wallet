@@ -23,7 +23,8 @@ pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
 };
-use zcash_voting::selection::select_notes_with_lwd;
+use zcash_voting::lwd::anchor_tree_state_with_retry;
+use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
@@ -490,13 +491,13 @@ pub async fn precompute_delegation_pir(
     } = prepare_params;
 
     let db_path = db_path.to_string();
-    let pir_server_url = pir_server_url.to_string();
     let account_uuid = account_uuid.to_string();
     let session_json = session_json.map(str::to_string);
     let network = voting_hotkey.network();
     let stored_hotkey_secret = Zeroizing::new(voting_hotkey.stored_secret().to_vec());
 
     start_proving_cache_warmup();
+    let pir_connect = spawn_pir_connect(&pir_server_url, pir_layout)?;
 
     tokio::task::spawn_blocking(move || {
         let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
@@ -523,12 +524,11 @@ pub async fn precompute_delegation_pir(
                 )
                 .map_err(|e| e.to_string())
             })?;
-        let pir_client = zcash_voting::connect_pir_blocking(
-            pir_layout,
-            &pir_server_url,
-            Arc::new(zcash_voting::HyperTransport::new()),
-        )
-        .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+        // Join the dedicated connect thread rather than calling
+        // `connect_pir_blocking` here: that API builds a nested Tokio runtime,
+        // and `Runtime::new` / `block_on` from this `spawn_blocking` worker
+        // panics or deadlocks.
+        let pir_client = pir_connect.join()?;
         // Preserve parallel warm-up on the first attempt, but wait behind the
         // per-wallet writer coordinator if persistence loses a SQLite race.
         retry_voting_db_locks_coordinated(&db_path, || {
@@ -539,6 +539,168 @@ pub async fn precompute_delegation_pir(
     })
     .await
     .map_err(|e| format!("delegation PIR precompute task failed: {e}"))?
+}
+
+/// Outcome of the bundle-independent background PIR proof cache warm-up.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PirCacheWarmupOutcome {
+    /// Eligible notes selected at the snapshot height.
+    pub note_count: u32,
+    /// Nullifiers that already had a cached proof under the served root.
+    pub cached_count: u32,
+    /// Proofs fetched from the PIR server during this warm-up.
+    pub fetched_count: u32,
+    /// IMT root the PIR server served, as 32 little-endian bytes.
+    pub served_root: Vec<u8>,
+    /// Cache rows evicted by the library's automatic recency prune (currently
+    /// unused: `precompute_pir_proofs` prunes internally and does not report
+    /// a count). Kept so the FRB result shape stays stable.
+    pub pruned_count: u32,
+}
+
+/// Warms the bundle-independent PIR proof cache for the account's eligible
+/// notes at `snapshot_height`.
+///
+/// Unlike [`precompute_delegation_pir`] this needs no hotkey, no round rows,
+/// and no bundles — only a wallet scanned to the snapshot height and a PIR
+/// endpoint serving it. Notes are planned with the same whale-protected
+/// default [`BundlePolicy`] round setup uses, so a selected-note dust tail is
+/// not PIR-queried. The delegation prove path reads the same cache, so
+/// real-note proofs warmed here are never refetched at proving time; only the
+/// per-bundle padded-slot nullifiers still need a fetch there.
+///
+/// The library garbage-collects cache rows older than four weeks on each
+/// warm. `keep_roots` is accepted for FRB compatibility and is otherwise
+/// unused.
+///
+/// # Errors
+///
+/// Returns an error if the sidecar cannot be opened, the wallet is not scanned
+/// to the snapshot height, note selection fails, the PIR connect handshake
+/// fails, or a fetched proof does not verify under the served root.
+pub async fn warm_pir_proof_cache(
+    db_path: &str,
+    account_uuid: &str,
+    lightwalletd_url: &str,
+    network: zcash_voting::Network,
+    snapshot_height: u64,
+    pir_server_url: &str,
+    pir_layout: PirLayout,
+    _keep_roots: Vec<Vec<u8>>,
+) -> Result<PirCacheWarmupOutcome, String> {
+    let started = Instant::now();
+    // Overlap the PIR handshake with sidecar open, lightwalletd anchor, and
+    // note selection. Sidecar open (schema v15 migrate) and wallet-DB reads
+    // stay off the FRB async worker so poll-list / wallet-summary calls are
+    // not stuck behind a note scan or PIR fetch.
+    let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
+
+    let db_path = db_path.to_string();
+    let account_uuid = account_uuid.to_string();
+    let voting_db = match tokio::task::spawn_blocking({
+        let db_path = db_path.clone();
+        let account_uuid = account_uuid.clone();
+        move || open_voting_db(&db_path, &account_uuid)
+    })
+    .await
+    {
+        Ok(Ok(db)) => db,
+        Ok(Err(error)) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(error);
+        }
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting sidecar open task failed: {error}"));
+        }
+    };
+
+    let anchor_tree_state =
+        match anchor_tree_state_with_retry(lightwalletd_url, snapshot_height).await {
+            Ok(anchor) => anchor,
+            Err(error) => {
+                drain_pir_connect_after_error(pir_connect).await;
+                return Err(format!("voting note selection failed: {error}"));
+            }
+        };
+
+    let wallet_net = wallet_network(network);
+    let selected = match tokio::task::spawn_blocking({
+        let db_path = db_path.clone();
+        let account_uuid = account_uuid.clone();
+        move || {
+            let wallet_db = open_wallet_db_for_read(&db_path, wallet_net)?;
+            select_notes_with_wallet_db(
+                &wallet_db,
+                network,
+                &account_uuid,
+                snapshot_height,
+                anchor_tree_state,
+            )
+            .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    {
+        Ok(Ok(selected)) => selected,
+        Ok(Err(error)) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection failed: {error}"));
+        }
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection task failed: {error}"));
+        }
+    };
+    let note_infos = selected.voting_note_infos();
+    let note_count = u32::try_from(note_infos.len())
+        .map_err(|_| "selected note count does not fit in u32".to_string())?;
+
+    let warmup = thread::Builder::new()
+        .name("voting-pir-cache-warmup".to_string())
+        .spawn(move || {
+            let pir_client = pir_connect.join()?;
+            let bundle_policy = whale_protected_bundle_policy(BundlePolicy::default());
+            // The cache upserts are idempotent and run outside the process-local
+            // sidecar write lock, so a lost SQLite writer race is safely retried.
+            // `precompute_pir_proofs` also prunes rows older than four weeks.
+            // A dedicated OS thread is required: `PirClientBlocking::fetch_proofs`
+            // owns its own Tokio runtime, and `Runtime::block_on` from FRB's
+            // `spawn_blocking` pool deadlocks that runtime (wallet/poll UI
+            // then waits forever on later async FFI).
+            let result = retry_voting_db_locks(|| {
+                zcash_voting::precompute::precompute_pir_proofs(
+                    &voting_db,
+                    &note_infos,
+                    bundle_policy,
+                    network,
+                    &pir_client,
+                )
+                .map_err(|e| e.to_string())
+            })?;
+            log::info!(
+                "[VOTING_PIR_CACHE] warmup complete notes={note_count} cached={} fetched={} \
+                 elapsed={:.3}s",
+                result.cached_count,
+                result.fetched_count,
+                started.elapsed().as_secs_f64()
+            );
+            Ok(PirCacheWarmupOutcome {
+                note_count,
+                cached_count: result.cached_count,
+                fetched_count: result.fetched_count,
+                served_root: result.served_root,
+                pruned_count: 0,
+            })
+        })
+        .map_err(|e| format!("failed to spawn PIR proof cache warm-up thread: {e}"))?;
+    tokio::task::spawn_blocking(move || {
+        warmup
+            .join()
+            .map_err(|e| format!("PIR proof cache warm-up thread panicked: {e:?}"))?
+    })
+    .await
+    .map_err(|e| format!("PIR proof cache warm-up task failed: {e}"))?
 }
 
 /// Build, prove, and sign one delegation payload.
