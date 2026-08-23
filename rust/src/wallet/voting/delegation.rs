@@ -14,8 +14,8 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::{
-    open_voting_db, retry_voting_db_locks, with_open_voting_db_write,
-    with_voting_sidecar_write_lock,
+    open_voting_db, retry_voting_db_locks, retry_voting_db_locks_coordinated,
+    with_open_voting_db_write, with_voting_sidecar_write_lock,
 };
 
 use zcash_voting::config::PirLayout;
@@ -182,10 +182,8 @@ where
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
-        let proof_wallet_db = open_wallet_db_for_read(
-            &proof_db_path,
-            wallet_network(prepared.network),
-        )?;
+        let proof_wallet_db =
+            open_wallet_db_for_read(&proof_db_path, wallet_network(prepared.network))?;
         let pir_client = pir_connect.join()?;
 
         // Fetch/cache PIR rows before Halo2 prove so remaining keygen warm-up
@@ -207,7 +205,7 @@ where
             proof_progress(progress);
         });
         let prove_started = Instant::now();
-        retry_voting_db_locks(|| {
+        retry_voting_db_locks_coordinated(&proof_db_path, || {
             prepared
                 .prove(&proof_voting_db, &pir_client, &reporter)
                 .map(|_| ())

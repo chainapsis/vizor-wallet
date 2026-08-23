@@ -83,6 +83,27 @@ pub fn retry_voting_db_locks<T>(
     unreachable!("the bounded voting database retry loop always returns")
 }
 
+/// Retries an idempotent operation under the sidecar writer after a lock race.
+///
+/// The first attempt remains outside the coordinator so expensive proof work
+/// can run concurrently. If its final persistence loses a SQLite writer race,
+/// subsequent attempts hold the coordinator for the complete operation. This
+/// is intentionally an exceptional recovery path: it guarantees progress
+/// against other coordinated writers without serializing successful proofs.
+pub fn retry_voting_db_locks_coordinated<T>(
+    db_path: &str,
+    mut operation: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut first_attempt = true;
+    retry_voting_db_locks(|| {
+        if std::mem::replace(&mut first_attempt, false) {
+            operation()
+        } else {
+            with_voting_sidecar_write_lock(db_path, &mut operation)
+        }
+    })
+}
+
 /// Opens the voting sidecar database for a wallet and binds it to `account_uuid`.
 ///
 /// `db_path` is the main wallet database path; the voting DB is opened at the
@@ -308,5 +329,34 @@ mod tests {
 
         assert_eq!(result.unwrap(), 42);
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn coordinated_retry_only_locks_after_the_initial_writer_race() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir
+            .path()
+            .join("zcash_wallet.db")
+            .to_string_lossy()
+            .into_owned();
+        let attempts = AtomicUsize::new(0);
+
+        let result = retry_voting_db_locks_coordinated(&db_path, || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+            let lock = sidecar_write_lock(&db_path);
+            if attempt == 0 {
+                assert!(lock.try_lock().is_ok(), "first attempt must stay parallel");
+                Err("database is locked".to_string())
+            } else {
+                assert!(
+                    lock.try_lock().is_err(),
+                    "retry must hold the sidecar writer coordinator"
+                );
+                Ok(42)
+            }
+        });
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 }
