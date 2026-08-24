@@ -2431,20 +2431,16 @@ pub fn get_export_birthday_height(
     })
 }
 
-/// Returns the exact recovery birthday stored for one wallet account.
+/// Returns the earliest recovery birthday across every account in the wallet.
 ///
-/// Unlike [`get_export_birthday_height`], this does not substitute the oldest
-/// mined transaction. Voting uses the original birthday to determine whether
-/// the wallet could have scanned a historical round snapshot at all.
-pub fn get_account_birthday_height(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-) -> Result<u64, String> {
+/// Voting readiness is wallet-wide: the scan engine applies every registered
+/// account UFVK to each scanned block. The minimum wallet birthday therefore
+/// matches the scope of the scan frontier used by the readiness check.
+pub fn get_wallet_birthday_height(db_path: String, network: String) -> Result<u64, String> {
     catch(|| {
         let _network = parse_network_and_migrate(&db_path, &network)?;
-        wallet_sync::get_account_birthday_height(&db_path, &account_uuid)?
-            .ok_or_else(|| "Account birthday not found".to_string())
+        wallet_sync::get_wallet_birthday_height(&db_path)?
+            .ok_or_else(|| "Wallet birthday not found".to_string())
     })
 }
 

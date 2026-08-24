@@ -1132,7 +1132,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           .check(
             dbPath: dbPath,
             network: endpoint.networkName,
-            accountUuid: _key.accountUuid,
             snapshotHeight: snapshotHeight,
           );
       if (_walletSyncRecoveryGeneration != generation ||
@@ -1140,11 +1139,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       _walletSyncRecoveryFailureStreak = 0;
-      if (readiness.accountBirthdayAfterSnapshot) {
-        // Permanent per-account ineligibility: sync can never reach the
-        // snapshot for this account, so polling would run until dispose.
-        // The job stays in its error state; switching accounts or a manual
-        // retry (which re-runs the readiness gate) remains available.
+      if (readiness.walletBirthdayAfterSnapshot) {
+        // The shared scanner cannot reach a snapshot before the wallet's
+        // earliest birthday, so polling would run until dispose. A manual
+        // retry after restoring an earlier account re-runs this gate.
         _cancelWalletSyncRecovery();
         return;
       }

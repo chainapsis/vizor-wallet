@@ -383,19 +383,18 @@ class VotingWalletSyncReadiness {
     required this.scannedHeight,
     required this.snapshotHeight,
     required this.chainTipHeight,
-    required this.accountBirthdayHeight,
+    required this.walletBirthdayHeight,
   });
 
   final int scannedHeight;
   final int snapshotHeight;
   final int chainTipHeight;
-  final int accountBirthdayHeight;
+  final int walletBirthdayHeight;
 
-  bool get accountBirthdayAfterSnapshot =>
-      accountBirthdayHeight > snapshotHeight;
+  bool get walletBirthdayAfterSnapshot => walletBirthdayHeight > snapshotHeight;
 
   bool get isReady =>
-      !accountBirthdayAfterSnapshot && scannedHeight >= snapshotHeight;
+      !walletBirthdayAfterSnapshot && scannedHeight >= snapshotHeight;
 
   int get blocksRemaining {
     final remaining = snapshotHeight - scannedHeight;
@@ -407,7 +406,6 @@ abstract interface class VotingWalletSyncReadinessChecker {
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   });
 }
@@ -420,16 +418,11 @@ class FrbVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     final results = await Future.wait<Object>([
       rust_sync.getSyncStatus(dbPath: dbPath, network: network),
-      rust_sync.getAccountBirthdayHeight(
-        dbPath: dbPath,
-        network: network,
-        accountUuid: accountUuid,
-      ),
+      rust_sync.getWalletBirthdayHeight(dbPath: dbPath, network: network),
     ]);
     final status = results[0] as rust_sync.SyncProgress;
     final birthdayHeight = results[1] as BigInt;
@@ -437,7 +430,7 @@ class FrbVotingWalletSyncReadinessChecker
       scannedHeight: status.scannedHeight.toInt(),
       snapshotHeight: snapshotHeight,
       chainTipHeight: status.chainTipHeight.toInt(),
-      accountBirthdayHeight: birthdayHeight.toInt(),
+      walletBirthdayHeight: birthdayHeight.toInt(),
     );
   }
 }

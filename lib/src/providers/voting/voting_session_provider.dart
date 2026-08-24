@@ -3778,7 +3778,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
       final eligibilityError =
-          isVotingAccountBirthdayAfterSnapshot(error) ||
+          isVotingWalletBirthdayAfterSnapshot(error) ||
           isVotingEligibilityErrorText(message);
       _setStateForContext(
         context,
@@ -3948,8 +3948,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// not just the initial readiness gate, so
   /// readiness regressing mid-job (a rewind or reorg while eligibility or
   /// delegation is being prepared) still surfaces instead of parking the job
-  /// in waitingForWalletSync forever. Birthday-after-snapshot always throws:
-  /// it is a permanent per-account condition.
+  /// in waitingForWalletSync forever. Wallet-birthday-after-snapshot always
+  /// throws because the shared scanner cannot cover that snapshot.
   Future<void> _waitUntilWalletReadyForVoting(
     _VotingSessionContext context,
   ) async {
@@ -3969,18 +3969,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           .check(
             dbPath: context.dbPath,
             network: context.network,
-            accountUuid: context.accountUuid,
             snapshotHeight: context.round.snapshotHeight,
           );
       _throwIfContextStale(context, 'wallet-sync-readiness');
-      if (readiness.accountBirthdayAfterSnapshot) {
+      if (readiness.walletBirthdayAfterSnapshot) {
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
           waiting: false,
           retainReadiness: true,
         );
-        throw _VotingAccountBirthdayAfterSnapshot(readiness);
+        throw _VotingWalletBirthdayAfterSnapshot(readiness);
       }
       if (readiness.isReady) {
         _setWalletSyncReadinessState(
@@ -4073,7 +4072,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
         walletChainTipHeight: readiness.chainTipHeight,
-        walletAccountBirthdayHeight: readiness.accountBirthdayHeight,
+        walletBirthdayHeight: readiness.walletBirthdayHeight,
         walletSyncStalled: stalled,
         clearWalletSyncReadiness: !waiting && !stalled && !retainReadiness,
         clearError: true,
@@ -4831,19 +4830,19 @@ class _StaleVotingSessionAction implements Exception {
 bool isVotingWalletSyncStalled(Object? error) =>
     error is _VotingWalletSyncStalled;
 
-bool isVotingAccountBirthdayAfterSnapshot(Object? error) =>
-    error is _VotingAccountBirthdayAfterSnapshot;
+bool isVotingWalletBirthdayAfterSnapshot(Object? error) =>
+    error is _VotingWalletBirthdayAfterSnapshot;
 
 /// Whether a session error means this account is not eligible for the round.
 ///
 /// Classification is typed-first: conditions raised by our own Dart code
-/// (account birthday past the snapshot) are recognized by their cause type,
+/// (wallet birthday past the snapshot) are recognized by their cause type,
 /// so editing their user-facing copy cannot silently break the read-only
 /// not-eligible treatment. The text matcher remains the fallback for opaque
 /// Rust-side eligibility messages, which reach Dart as strings only.
 bool isVotingEligibilityError(VotingSessionError? error) =>
     error != null &&
-    (isVotingAccountBirthdayAfterSnapshot(error.cause) ||
+    (isVotingWalletBirthdayAfterSnapshot(error.cause) ||
         isVotingEligibilityErrorText(error.message));
 
 class _VotingWalletSyncStalled implements Exception {
@@ -4865,19 +4864,18 @@ class _VotingWalletSyncStalled implements Exception {
   }
 }
 
-class _VotingAccountBirthdayAfterSnapshot implements Exception {
-  const _VotingAccountBirthdayAfterSnapshot(this.readiness);
+class _VotingWalletBirthdayAfterSnapshot implements Exception {
+  const _VotingWalletBirthdayAfterSnapshot(this.readiness);
 
   final VotingWalletSyncReadiness readiness;
 
   @override
   String toString() {
-    return 'This account starts at birthday block '
-        '${formatBlockHeight(readiness.accountBirthdayHeight)}, after this '
+    return 'This wallet starts at birthday block '
+        '${formatBlockHeight(readiness.walletBirthdayHeight)}, after this '
         'voting round snapshot at block '
-        '${formatBlockHeight(readiness.snapshotHeight)}. Restore the account '
-        'with a birthday at or before the snapshot, or switch to another '
-        'eligible account.';
+        '${formatBlockHeight(readiness.snapshotHeight)}. Restore an account '
+        'with a birthday at or before the snapshot to vote.';
   }
 }
 

@@ -863,19 +863,17 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
-/// Returns the exact recovery birthday stored for one wallet account.
+/// Returns the earliest recovery birthday across every account in the wallet.
 ///
-/// Unlike [`get_export_birthday_height`], this does not substitute the oldest
-/// mined transaction. Voting uses the original birthday to determine whether
-/// the wallet could have scanned a historical round snapshot at all.
-Future<BigInt> getAccountBirthdayHeight({
+/// Voting readiness is wallet-wide: the scan engine applies every registered
+/// account UFVK to each scanned block. The minimum wallet birthday therefore
+/// matches the scope of the scan frontier used by the readiness check.
+Future<BigInt> getWalletBirthdayHeight({
   required String dbPath,
   required String network,
-  required String accountUuid,
-}) => RustLib.instance.api.crateApiSyncGetAccountBirthdayHeight(
+}) => RustLib.instance.api.crateApiSyncGetWalletBirthdayHeight(
   dbPath: dbPath,
   network: network,
-  accountUuid: accountUuid,
 );
 
 Future<BigInt> getBlockTime({

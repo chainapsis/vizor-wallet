@@ -2457,10 +2457,10 @@ void main() {
         child: _proposalHarness(),
       ),
     );
-    await _pumpUntilFound(tester, find.textContaining('Restore the account'));
+    await _pumpUntilFound(tester, find.textContaining('Restore an account'));
 
     expect(find.textContaining('after this voting round snapshot'), findsOne);
-    expect(find.textContaining('switch to another eligible account'), findsOne);
+    expect(find.textContaining('birthday at or before the snapshot'), findsOne);
     expect(find.text('Voting power 0 ZEC'), findsNothing);
     expect(find.text('Voting power unavailable'), findsNothing);
   });
@@ -5195,14 +5195,13 @@ class _FakeVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     return VotingWalletSyncReadiness(
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
-      accountBirthdayHeight: snapshotHeight,
+      walletBirthdayHeight: snapshotHeight,
     );
   }
 }
@@ -5215,14 +5214,13 @@ class _WaitingVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     return VotingWalletSyncReadiness(
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 50,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight + 40,
-      accountBirthdayHeight: snapshotHeight - 100,
+      walletBirthdayHeight: snapshotHeight - 100,
     );
   }
 }
@@ -5233,14 +5231,13 @@ class _BirthdayAfterSnapshotVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     return VotingWalletSyncReadiness(
       scannedHeight: snapshotHeight + 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight + 100,
-      accountBirthdayHeight: snapshotHeight + 1,
+      walletBirthdayHeight: snapshotHeight + 1,
     );
   }
 }

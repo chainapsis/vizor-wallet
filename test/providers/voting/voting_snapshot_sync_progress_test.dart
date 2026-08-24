@@ -2,8 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 /// walletSnapshotSyncProgress drives the percentage in the voting catch-up
-/// copy. Its numerator is the wallet-wide scan frontier while its baseline is
-/// the active account's birthday, so the two can disagree.
+/// copy. Its numerator and baseline are both wallet-wide scan values.
 void main() {
   VotingSessionState stateWith({
     required int? scanned,
@@ -14,20 +13,19 @@ void main() {
       roundId: 'round-1',
       walletScannedHeight: scanned,
       walletSnapshotHeight: snapshot,
-      walletAccountBirthdayHeight: birthday,
+      walletBirthdayHeight: birthday,
     );
   }
 
-  test('reports the fraction scanned since the account birthday', () {
+  test('reports the fraction scanned since the wallet birthday', () {
     final state = stateWith(scanned: 1_050, snapshot: 1_100, birthday: 1_000);
 
     expect(state.walletSnapshotSyncProgress, closeTo(0.5, 1e-9));
   });
 
-  test('is unknown while the wallet frontier trails the account birthday', () {
-    // A second, older account in the same wallet drags the wallet-wide
-    // frontier below this account's birthday. Reporting 0% here would pin
-    // the copy at zero for the whole backfill and then jump.
+  test('is unknown while the wallet frontier trails the wallet birthday', () {
+    // A rewind can temporarily put the frontier below the retained birthday.
+    // Reporting 0% here would pin the copy at zero and then jump.
     final state = stateWith(
       scanned: 2_100_000,
       snapshot: 2_950_000,
@@ -37,27 +35,36 @@ void main() {
     expect(state.walletSnapshotSyncProgress, isNull);
   });
 
-  test('is unknown for an account whose birthday is after the snapshot', () {
+  test('is unknown for a wallet whose birthday is after the snapshot', () {
     final state = stateWith(scanned: 3_000, snapshot: 1_000, birthday: 2_000);
 
     expect(state.walletSnapshotSyncProgress, isNull);
-    expect(state.walletAccountBirthdayAfterSnapshot, isTrue);
+    expect(state.walletBirthdayAfterSnapshot, isTrue);
   });
 
   test('is unknown until every height is known', () {
     expect(
-      stateWith(scanned: null, snapshot: 1_100, birthday: 1_000)
-          .walletSnapshotSyncProgress,
+      stateWith(
+        scanned: null,
+        snapshot: 1_100,
+        birthday: 1_000,
+      ).walletSnapshotSyncProgress,
       isNull,
     );
     expect(
-      stateWith(scanned: 1_050, snapshot: null, birthday: 1_000)
-          .walletSnapshotSyncProgress,
+      stateWith(
+        scanned: 1_050,
+        snapshot: null,
+        birthday: 1_000,
+      ).walletSnapshotSyncProgress,
       isNull,
     );
     expect(
-      stateWith(scanned: 1_050, snapshot: 1_100, birthday: null)
-          .walletSnapshotSyncProgress,
+      stateWith(
+        scanned: 1_050,
+        snapshot: 1_100,
+        birthday: null,
+      ).walletSnapshotSyncProgress,
       isNull,
     );
   });

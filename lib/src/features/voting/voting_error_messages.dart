@@ -10,11 +10,11 @@ bool isVotingEligibilityErrorText(String text) {
   return _noSpendableNotesPattern.firstMatch(message) != null ||
       _minimumVotingEligibilityPattern.firstMatch(message) != null ||
       lowerMessage.startsWith('this account is not eligible for this ') ||
-      // Account birthday after the round snapshot: permanent per-account
+      // Wallet birthday after the round snapshot: permanent wallet-wide
       // ineligibility. Surfaces holding the typed error use
       // isVotingEligibilityError (cause-based, copy-proof); this prefix is
       // the fallback for surfaces that only carry the message string.
-      lowerMessage.startsWith('this account starts at birthday block ') ||
+      lowerMessage.startsWith('this wallet starts at birthday block ') ||
       lowerMessage.startsWith(
         'voting requires at least one eligible shielded note bundle with 0.125 zec',
       ) ||

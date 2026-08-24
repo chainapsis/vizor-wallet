@@ -232,7 +232,7 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
-  final int? walletAccountBirthdayHeight;
+  final int? walletBirthdayHeight;
   final bool walletSyncStalled;
   final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
@@ -264,7 +264,7 @@ class VotingSessionState {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
-    this.walletAccountBirthdayHeight,
+    this.walletBirthdayHeight,
     this.walletSyncStalled = false,
     this.isHardwareAccount = false,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
@@ -304,12 +304,12 @@ class VotingSessionState {
       error == null &&
       phase != VotingSessionPhase.error;
 
-  /// A birthday past the snapshot means the account can never scan the
-  /// snapshot: permanent per-round ineligibility. Single source of truth for
+  /// A wallet birthday past the snapshot means no account can have caused the
+  /// wallet-wide scanner to cover the snapshot. Single source of truth for
   /// this boundary on session state; VotingWalletSyncReadiness holds the
   /// equivalent check for raw readiness data before it reaches state.
-  bool get walletAccountBirthdayAfterSnapshot {
-    final birthday = walletAccountBirthdayHeight;
+  bool get walletBirthdayAfterSnapshot {
+    final birthday = walletBirthdayHeight;
     final snapshot = walletSnapshotHeight;
     return birthday != null && snapshot != null && birthday > snapshot;
   }
@@ -317,16 +317,12 @@ class VotingSessionState {
   double? get walletSnapshotSyncProgress {
     final scanned = walletScannedHeight;
     final snapshot = walletSnapshotHeight;
-    final birthday = walletAccountBirthdayHeight;
+    final birthday = walletBirthdayHeight;
     if (scanned == null || snapshot == null || birthday == null) return null;
     // No progress to report for a permanently ineligible account.
-    if (walletAccountBirthdayAfterSnapshot) return null;
-    // The scanned height is the wallet-wide scan frontier, while the
-    // baseline is this account's birthday. With an older account in the
-    // same wallet the frontier can sit below the baseline, where the
-    // fraction is not just imprecise but meaningless — it would pin at 0%
-    // for the whole backfill and then jump. Report unknown instead, and let
-    // the copy fall back to its progressless wording.
+    if (walletBirthdayAfterSnapshot) return null;
+    // Both the scanned height and birthday are wallet-wide, so the fraction
+    // describes the contiguous range the shared scanner must cover.
     if (scanned < birthday) return null;
     final total = snapshot - birthday;
     if (total <= 0) return scanned >= snapshot ? 1 : null;
@@ -368,7 +364,7 @@ class VotingSessionState {
     int? walletScannedHeight,
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
-    int? walletAccountBirthdayHeight,
+    int? walletBirthdayHeight,
     bool? walletSyncStalled,
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
@@ -413,9 +409,9 @@ class VotingSessionState {
       walletChainTipHeight: clearWalletSyncReadiness
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
-      walletAccountBirthdayHeight: clearWalletSyncReadiness
+      walletBirthdayHeight: clearWalletSyncReadiness
           ? null
-          : walletAccountBirthdayHeight ?? this.walletAccountBirthdayHeight,
+          : walletBirthdayHeight ?? this.walletBirthdayHeight,
       walletSyncStalled: clearWalletSyncReadiness
           ? false
           : walletSyncStalled ?? this.walletSyncStalled,

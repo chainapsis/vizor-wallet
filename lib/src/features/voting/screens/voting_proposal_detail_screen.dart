@@ -194,8 +194,8 @@ class _VotingProposalDetailViewState
         final votingError = state.error;
         final votingEligibilityError = isVotingEligibilityError(votingError);
         final birthdayAfterSnapshot =
-            isVotingAccountBirthdayAfterSnapshot(votingError?.cause) ||
-            state.walletAccountBirthdayAfterSnapshot;
+            isVotingWalletBirthdayAfterSnapshot(votingError?.cause) ||
+            state.walletBirthdayAfterSnapshot;
         _maybePrecomputeDelegationPir(state);
         return _ActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,

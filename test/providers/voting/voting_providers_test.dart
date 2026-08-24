@@ -1465,13 +1465,13 @@ void main() {
             scannedHeight: 122,
             snapshotHeight: 123,
             chainTipHeight: 130,
-            accountBirthdayHeight: 100,
+            walletBirthdayHeight: 100,
           ),
           VotingWalletSyncReadiness(
             scannedHeight: 123,
             snapshotHeight: 123,
             chainTipHeight: 130,
-            accountBirthdayHeight: 100,
+            walletBirthdayHeight: 100,
           ),
         ],
       );
@@ -1534,91 +1534,112 @@ void main() {
     expect(state.error, isNull);
   });
 
-  test('engine progress signal defers stall while scan frontier is pinned', () async {
-    final rust = FakeVotingRustApi();
-    // The frontier (scannedHeight) never moves until ready, which alone would
-    // blow the 12ms stall budget across 10 checks; real engine progress must
-    // keep resetting the budget instead.
-    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
-    var enginePercentage = 0.0;
-    final observedStalls = <bool>[];
-    final container = _sessionContainer(
-      rust: rust,
-      walletSyncReadinessChecker: readiness,
-      walletSyncProgressSample: () {
-        enginePercentage += 0.01;
-        return VotingWalletSyncProgressSample(
-          percentage: enginePercentage,
-          scannedHeight: 100,
-          isSyncing: true,
-        );
-      },
-      walletSyncPollInterval: const Duration(milliseconds: 5),
-      walletSyncMaxWait: const Duration(milliseconds: 12),
-    );
-    addTearDown(container.dispose);
-    final subscription = container.listen(votingSessionProvider(kRoundId), (
-      _,
-      next,
-    ) {
-      final value = next.value;
-      if (value != null) observedStalls.add(value.walletSyncStalled);
-    });
-    addTearDown(subscription.close);
+  test(
+    'engine progress signal defers stall while scan frontier is pinned',
+    () async {
+      final rust = FakeVotingRustApi();
+      // The frontier (scannedHeight) never moves until ready, which alone would
+      // blow the 12ms stall budget across 10 checks; real engine progress must
+      // keep resetting the budget instead.
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      var enginePercentage = 0.0;
+      final observedStalls = <bool>[];
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncProgressSample: () {
+          enginePercentage += 0.01;
+          return VotingWalletSyncProgressSample(
+            percentage: enginePercentage,
+            scannedHeight: 100,
+            isSyncing: true,
+          );
+        },
+        walletSyncPollInterval: const Duration(milliseconds: 5),
+        walletSyncMaxWait: const Duration(milliseconds: 12),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(votingSessionProvider(kRoundId), (
+        _,
+        next,
+      ) {
+        final value = next.value;
+        if (value != null) observedStalls.add(value.walletSyncStalled);
+      });
+      addTearDown(subscription.close);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    final prepared = container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .prepareDelegation();
-    await Future<void>.delayed(const Duration(milliseconds: 60));
-    readiness.ready = true;
-    await prepared;
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
+      await container.read(votingSessionProvider(kRoundId).future);
+      final prepared = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      readiness.ready = true;
+      await prepared;
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-    expect(observedStalls, isNot(contains(true)));
-    expect(state.phase, VotingSessionPhase.readyToDelegate);
-    expect(state.error, isNull);
-  });
+      expect(observedStalls, isNot(contains(true)));
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.error, isNull);
+    },
+  );
 
-  test('session-level stall keeps waiting and recovers automatically', () async {
-    final rust = FakeVotingRustApi();
-    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
-    final container = _sessionContainer(
-      rust: rust,
-      walletSyncReadinessChecker: readiness,
-      walletSyncPollInterval: const Duration(milliseconds: 5),
-      walletSyncMaxWait: Duration.zero,
-    );
-    addTearDown(container.dispose);
+  test(
+    'session-level stall keeps waiting and recovers automatically',
+    () async {
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 5),
+        walletSyncMaxWait: Duration.zero,
+      );
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    final prepared = container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .prepareDelegation();
+      await container.read(votingSessionProvider(kRoundId).future);
+      final prepared = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
 
-    VotingSessionState? stalledState;
-    for (var attempt = 0; attempt < 200; attempt++) {
-      final value = container.read(votingSessionProvider(kRoundId)).value;
-      if (value != null && value.walletSyncStalled) {
-        stalledState = value;
-        break;
+      VotingSessionState? stalledState;
+      for (var attempt = 0; attempt < 200; attempt++) {
+        final value = container.read(votingSessionProvider(kRoundId)).value;
+        if (value != null && value.walletSyncStalled) {
+          stalledState = value;
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
       }
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
-    expect(stalledState, isNotNull);
-    expect(stalledState!.phase, VotingSessionPhase.waitingForWalletSync);
-    expect(stalledState.error, isNull);
+      expect(stalledState, isNotNull);
+      expect(stalledState!.phase, VotingSessionPhase.waitingForWalletSync);
+      expect(stalledState.error, isNull);
 
-    readiness.ready = true;
-    await prepared;
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
+      readiness.ready = true;
+      await prepared;
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-    expect(state.phase, VotingSessionPhase.readyToDelegate);
-    expect(state.walletSyncStalled, isFalse);
-    expect(state.error, isNull);
-  });
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.walletSyncStalled, isFalse);
+      expect(state.error, isNull);
+    },
+  );
 
-  test('account birthday after snapshot fails without starting sync', () async {
+  test(
+    'wallet-wide coverage is ready when its earliest birthday is before snapshot',
+    () {
+      const readiness = VotingWalletSyncReadiness(
+        scannedHeight: 500,
+        snapshotHeight: 123,
+        chainTipHeight: 500,
+        walletBirthdayHeight: 100,
+      );
+
+      expect(readiness.walletBirthdayAfterSnapshot, isFalse);
+      expect(readiness.isReady, isTrue);
+    },
+  );
+
+  test('wallet birthday after snapshot fails without starting sync', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
       responses: const [
@@ -1626,7 +1647,7 @@ void main() {
           scannedHeight: 500,
           snapshotHeight: 123,
           chainTipHeight: 500,
-          accountBirthdayHeight: 200,
+          walletBirthdayHeight: 200,
         ),
       ],
     );
@@ -1647,11 +1668,11 @@ void main() {
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.message, contains('birthday block 200'));
     expect(state.error?.message, contains('snapshot at block 123'));
-    // Permanent per-account ineligibility must classify as an eligibility
+    // Permanent wallet-wide ineligibility must classify as an eligibility
     // error so screens show the read-only treatment instead of a retry
     // affordance that can never succeed. Classification is typed (by cause),
     // so it survives copy edits to the message.
-    expect(isVotingAccountBirthdayAfterSnapshot(state.error?.cause), isTrue);
+    expect(isVotingWalletBirthdayAfterSnapshot(state.error?.cause), isTrue);
     expect(isVotingEligibilityError(state.error), isTrue);
     // Birthday after snapshot also means there is no snapshot progress to
     // report from the retained heights.
@@ -1676,7 +1697,9 @@ void main() {
         VotingSubmissionJobStatus.error,
       );
       expect(
-        harness.container.read(votingSubmissionJobProvider(harness.key)).errorMessage,
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
         contains('has not advanced'),
       );
       expect(harness.rust.voteCommitmentKeys, isEmpty);
@@ -1687,11 +1710,15 @@ void main() {
 
       expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
       expect(
-        harness.container.read(votingSubmissionJobProvider(harness.key)).errorMessage,
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
         isNot('Choose at least one vote before submitting.'),
       );
       expect(
-        harness.container.read(votingSubmissionJobProvider(harness.key)).generation,
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
         greaterThan(1),
       );
     },
@@ -1824,64 +1851,61 @@ void main() {
     },
   );
 
-  test(
-    'stalled submission defers automatic retry until unlock',
-    () async {
-      final security = _MutableVotingSecurityNotifier(
-        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
-      );
-      final harness = await _draftBearingStallHarness(securityNotifier: security);
-      addTearDown(harness.container.dispose);
+  test('stalled submission defers automatic retry until unlock', () async {
+    final security = _MutableVotingSecurityNotifier(
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+    );
+    final harness = await _draftBearingStallHarness(securityNotifier: security);
+    addTearDown(harness.container.dispose);
 
-      final startedKey = await harness.container
-          .read(votingSubmissionJobsProvider.notifier)
-          .start(kRoundId);
-      expect(startedKey, harness.key);
-      await _waitForJobStatus(
-        harness.container,
-        harness.key,
-        VotingSubmissionJobStatus.error,
-      );
-      final stalled = harness.container.read(
-        votingSubmissionJobProvider(harness.key),
-      );
-      expect(stalled.errorMessage, contains('has not advanced'));
-      expect(stalled.softwareAccountRequired, isFalse);
-      expect(harness.rust.voteCommitmentKeys, isEmpty);
-      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
-      final stalledGeneration = stalled.generation;
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+    final stalled = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(stalled.errorMessage, contains('has not advanced'));
+    expect(stalled.softwareAccountRequired, isFalse);
+    expect(harness.rust.voteCommitmentKeys, isEmpty);
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
+    final stalledGeneration = stalled.generation;
 
-      security.setUnlocked(false);
-      harness.readiness.ready = true;
-      for (var attempt = 0; attempt < 20; attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+    security.setUnlocked(false);
+    harness.readiness.ready = true;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
 
-      final stillStalled = harness.container.read(
-        votingSubmissionJobProvider(harness.key),
-      );
-      expect(stillStalled.status, VotingSubmissionJobStatus.error);
-      expect(stillStalled.errorMessage, contains('has not advanced'));
-      expect(stillStalled.softwareAccountRequired, isFalse);
-      expect(stillStalled.generation, stalledGeneration);
-      expect(harness.rust.voteCommitmentKeys, isEmpty);
-      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
+    final stillStalled = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(stillStalled.status, VotingSubmissionJobStatus.error);
+    expect(stillStalled.errorMessage, contains('has not advanced'));
+    expect(stillStalled.softwareAccountRequired, isFalse);
+    expect(stillStalled.generation, stalledGeneration);
+    expect(harness.rust.voteCommitmentKeys, isEmpty);
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
 
-      security.setUnlocked(true);
-      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+    security.setUnlocked(true);
+    await _waitForVoteCommitmentKey(harness.rust, '0:7');
 
-      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
-      final recovered = harness.container.read(
-        votingSubmissionJobProvider(harness.key),
-      );
-      expect(recovered.softwareAccountRequired, isFalse);
-      expect(
-        recovered.errorMessage,
-        isNot('Choose at least one vote before submitting.'),
-      );
-      expect(recovered.generation, greaterThan(stalledGeneration));
-    },
-  );
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
+    final recovered = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(recovered.softwareAccountRequired, isFalse);
+    expect(
+      recovered.errorMessage,
+      isNot('Choose at least one vote before submitting.'),
+    );
+    expect(recovered.generation, greaterThan(stalledGeneration));
+  });
 
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
@@ -1891,13 +1915,13 @@ void main() {
           scannedHeight: 122,
           snapshotHeight: 123,
           chainTipHeight: 130,
-          accountBirthdayHeight: 100,
+          walletBirthdayHeight: 100,
         ),
         VotingWalletSyncReadiness(
           scannedHeight: 123,
           snapshotHeight: 123,
           chainTipHeight: 130,
-          accountBirthdayHeight: 100,
+          walletBirthdayHeight: 100,
         ),
       ],
     );
@@ -9452,7 +9476,6 @@ class FakeVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     final index = calls;
@@ -9464,7 +9487,7 @@ class FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
-      accountBirthdayHeight: snapshotHeight,
+      walletBirthdayHeight: snapshotHeight,
     );
   }
 }
@@ -9482,7 +9505,6 @@ class _GatedVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     if (!firstCheck.isCompleted) firstCheck.complete();
@@ -9490,7 +9512,7 @@ class _GatedVotingWalletSyncReadinessChecker
       scannedHeight: _ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
-      accountBirthdayHeight: snapshotHeight - 10,
+      walletBirthdayHeight: snapshotHeight - 10,
     );
   }
 }
@@ -9515,7 +9537,6 @@ class _MutableVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     calls++;
@@ -9525,7 +9546,7 @@ class _MutableVotingWalletSyncReadinessChecker
       scannedHeight: isReady ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
-      accountBirthdayHeight: birthdayAfterSnapshot
+      walletBirthdayHeight: birthdayAfterSnapshot
           ? snapshotHeight + 10
           : snapshotHeight - 10,
     );
@@ -9545,7 +9566,6 @@ class _ProgressiveVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
-    required String accountUuid,
     required int snapshotHeight,
   }) async {
     calls++;
@@ -9556,7 +9576,7 @@ class _ProgressiveVotingWalletSyncReadinessChecker
       scannedHeight: scannedHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight + 10,
-      accountBirthdayHeight: snapshotHeight - readyAfterChecks - 10,
+      walletBirthdayHeight: snapshotHeight - readyAfterChecks - 10,
     );
   }
 }

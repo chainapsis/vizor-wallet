@@ -795,10 +795,7 @@ pub(crate) fn get_export_birthday_anchor(
         .ok_or_else(|| "Account birthday not found".to_string())
 }
 
-pub(crate) fn get_account_birthday_height(
-    db_path: &str,
-    account_uuid: &str,
-) -> Result<Option<u64>, String> {
+fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
     let account_id = parse_account_uuid(account_uuid)?;
     let conn = open_readonly_conn(db_path)?;
     let mut stmt = conn
@@ -813,6 +810,15 @@ pub(crate) fn get_account_birthday_height(
         },
     )
     .optional()
+    .map_err(|e| format!("Query error: {e}"))
+}
+
+pub(crate) fn get_wallet_birthday_height(db_path: &str) -> Result<Option<u64>, String> {
+    let conn = open_readonly_conn(db_path)?;
+    conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
+        row.get::<_, Option<u32>>(0)
+            .map(|height| height.map(u64::from))
+    })
     .map_err(|e| format!("Query error: {e}"))
 }
 
@@ -3068,6 +3074,17 @@ mod tests {
             get_account_birthday_height(db.path().to_str().unwrap(), &account.to_string()).unwrap();
 
         assert_eq!(got, Some(123_456));
+    }
+
+    #[test]
+    fn wallet_birthday_height_returns_earliest_account_birthday() {
+        let db = fresh_history_db();
+        set_account_birthday(&db, test_account_uuid(), 80_000);
+        set_account_birthday(&db, second_test_account_uuid(), 120_000);
+
+        let got = get_wallet_birthday_height(db.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(got, Some(80_000));
     }
 
     #[test]
