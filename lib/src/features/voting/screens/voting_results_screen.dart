@@ -133,6 +133,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
               _clearPendingTallyRefresh();
               return VotingPaneScrollView(
                 maxWidth: 560,
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.showDesktopToolbar ? 0 : AppSpacing.sm,
+                ),
                 scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

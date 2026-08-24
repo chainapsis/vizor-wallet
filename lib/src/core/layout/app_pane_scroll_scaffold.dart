@@ -199,6 +199,8 @@ class AppPaneScrollbar extends StatefulWidget {
     required this.builder,
     this.controller,
     this.scrollbarKey,
+    this.crossAxisMargin = 6,
+    this.scrollbarOrientation = ScrollbarOrientation.right,
     super.key,
   });
 
@@ -212,6 +214,12 @@ class AppPaneScrollbar extends StatefulWidget {
 
   /// Key applied to the underlying [RawScrollbar] (for tests).
   final Key? scrollbarKey;
+
+  /// Distance between the scrollbar thumb and the selected pane edge.
+  final double crossAxisMargin;
+
+  /// Edge where the vertical scrollbar thumb is painted.
+  final ScrollbarOrientation scrollbarOrientation;
 
   @override
   State<AppPaneScrollbar> createState() => _AppPaneScrollbarState();
@@ -292,8 +300,9 @@ class _AppPaneScrollbarState extends State<AppPaneScrollbar> {
           thumbVisibility: _isHovered && _canScroll,
           thickness: 6,
           radius: const Radius.circular(AppRadii.full),
-          crossAxisMargin: 6,
+          crossAxisMargin: widget.crossAxisMargin,
           mainAxisMargin: 12,
+          scrollbarOrientation: widget.scrollbarOrientation,
           thumbColor: context.colors.surface.scrollbarThumb,
           child: ScrollConfiguration(
             behavior: ScrollConfiguration.of(

@@ -5,6 +5,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
+import '../../widgets/voting_pane_scroll_area.dart';
 import '../voting_status_screen.dart';
 
 class MobileVotingSubmissionProgressScreen extends StatelessWidget {
@@ -38,94 +39,103 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: kMobileTopNavHeight),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.s,
-                      ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          const scrollContentHeight = 740.0;
-                          return SingleChildScrollView(
-                            child: SizedBox(
-                              width: constraints.maxWidth,
-                              height: scrollContentHeight,
-                              child: Stack(
-                                key: const ValueKey(
-                                  'mobile_voting_submission_progress_content',
-                                ),
-                                fit: StackFit.expand,
-                                children: [
-                                  Positioned(
-                                    top: 30,
-                                    left: 0,
-                                    right: 0,
-                                    child: Text(
-                                      'Don’t leave this window.',
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodyLarge.copyWith(
-                                        color: colors.text.accent,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const scrollContentHeight = 740.0;
+                        return VotingPaneScrollbar(
+                          scrollbarKey: const ValueKey(
+                            'mobile_voting_submission_progress_scrollbar',
+                          ),
+                          builder: (context, controller) => SingleChildScrollView(
+                            controller: controller,
+                            primary: false,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.sm,
+                                vertical: AppSpacing.s,
+                              ),
+                              child: SizedBox(
+                                height: scrollContentHeight,
+                                child: Stack(
+                                  key: const ValueKey(
+                                    'mobile_voting_submission_progress_content',
                                   ),
-                                  Positioned(
-                                    top: 163,
-                                    left: 0,
-                                    right: 0,
-                                    child: Center(
-                                      child: MobileTransactionProgressBadge(
-                                        phase: MobileTransactionProgressPhase
-                                            .inProgress,
-                                        inProgressCircleColor:
-                                            colors.background.inverse,
-                                        inProgressIconColor:
-                                            colors.icon.inverse,
-                                        progressIconKey: const ValueKey(
-                                          'mobile_voting_submission_loader',
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Positioned(
+                                      top: 30,
+                                      left: 0,
+                                      right: 0,
+                                      child: Text(
+                                        'Don’t leave this window.',
+                                        textAlign: TextAlign.center,
+                                        style: AppTypography.bodyLarge.copyWith(
+                                          color: colors.text.accent,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  Positioned(
-                                    top: 291,
-                                    left: 0,
-                                    right: 0,
-                                    child: Text(
-                                      'Submitting votes...',
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.displayLarge
-                                          .copyWith(color: colors.text.accent),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: 380,
-                                    left: 0,
-                                    right: 0,
-                                    child: _VotingSubmissionSteps(
-                                      activeStep: activeStep,
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: 552,
-                                    left: 33,
-                                    right: 33,
-                                    child: Text(
-                                      'Generating zero-knowledge proofs can take '
-                                      'about 60 seconds, closing now may lose '
-                                      'in-flight proof work.',
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodyMedium.copyWith(
-                                        color: colors.text.primary,
+                                    Positioned(
+                                      top: 163,
+                                      left: 0,
+                                      right: 0,
+                                      child: Center(
+                                        child: MobileTransactionProgressBadge(
+                                          phase: MobileTransactionProgressPhase
+                                              .inProgress,
+                                          inProgressCircleColor:
+                                              colors.background.inverse,
+                                          inProgressIconColor:
+                                              colors.icon.inverse,
+                                          progressIconKey: const ValueKey(
+                                            'mobile_voting_submission_loader',
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    Positioned(
+                                      top: 291,
+                                      left: 0,
+                                      right: 0,
+                                      child: Text(
+                                        'Submitting votes...',
+                                        textAlign: TextAlign.center,
+                                        style: AppTypography.displayLarge
+                                            .copyWith(
+                                              color: colors.text.accent,
+                                            ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 380,
+                                      left: 0,
+                                      right: 0,
+                                      child: _VotingSubmissionSteps(
+                                        activeStep: activeStep,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 552,
+                                      left: 33,
+                                      right: 33,
+                                      child: Text(
+                                        'Generating zero-knowledge proofs can take '
+                                        'about 60 seconds, closing now may lose '
+                                        'in-flight proof work.',
+                                        textAlign: TextAlign.center,
+                                        style: AppTypography.bodyMedium
+                                            .copyWith(
+                                              color: colors.text.primary,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],

@@ -108,6 +108,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
     required this.roundId,
     this.accountUuid,
     this.requireCurrentRouteForConfirmation = false,
+    this.contentHorizontalPadding = 0,
     this.contentWrapper,
     this.submissionProgressBuilder,
     this.keystoneStatusBuilder,
@@ -116,6 +117,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
   final String roundId;
   final String? accountUuid;
   final bool requireCurrentRouteForConfirmation;
+  final double contentHorizontalPadding;
   final VotingStatusContentWrapper? contentWrapper;
   final VotingSubmissionProgressBuilder? submissionProgressBuilder;
   final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
@@ -297,6 +299,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         if (startError != null) {
           return _StatusContent(
             phase: VotingSessionPhase.error,
+            horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: startError,
             onRetry: _retry,
           );
@@ -305,6 +308,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             job?.key?.roundId == widget.roundId) {
           return _StatusContent(
             phase: VotingSessionPhase.error,
+            horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
             onRetry: _retry,
             onClear: _clearError,
@@ -322,6 +326,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       },
       error: (error, _) => _StatusContent(
         phase: VotingSessionPhase.error,
+        horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
         onRetry: _retry,
         onClear: job?.status == VotingSubmissionJobStatus.error
@@ -395,6 +400,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         }
         return _StatusContent(
           phase: phase,
+          horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail: _voteSubmissionDetail(state),
           voteSubmissionProgress: voteSubmissionProgress,
           delegationProgress: _delegationProgress(state),
@@ -695,6 +701,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
 class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
+    this.horizontalPadding = 0,
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
@@ -722,6 +729,7 @@ class _StatusContent extends StatelessWidget {
   });
 
   final VotingSessionPhase phase;
+  final double horizontalPadding;
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
@@ -750,7 +758,10 @@ class _StatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (softwareAccountRequired) {
-      return const _SoftwareAccountRequiredContent();
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        child: const _SoftwareAccountRequiredContent(),
+      );
     }
     final voteStepComplete =
         completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
@@ -768,7 +779,10 @@ class _StatusContent extends StatelessWidget {
         return VotingPaneCenteredScrollView(
           maxWidth: 560,
           minHeight: minHeight,
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: AppSpacing.md,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

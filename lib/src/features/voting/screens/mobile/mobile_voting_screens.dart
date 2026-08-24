@@ -92,13 +92,11 @@ class MobileVotingStatusScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       requireCurrentRouteForConfirmation: true,
+      contentHorizontalPadding: AppSpacing.sm,
       submissionProgressBuilder: (_, activeStep) =>
           MobileVotingSubmissionProgressScreen(activeStep: activeStep),
-      contentWrapper: (_, content) => MobileVotingScaffold(
-        title: 'Submit vote',
-        horizontalPadding: AppSpacing.sm,
-        child: content,
-      ),
+      contentWrapper: (_, content) =>
+          MobileVotingScaffold(title: 'Submit vote', child: content),
       keystoneStatusBuilder: (_, presentation) =>
           MobileKeystoneVotingSigningScreen(presentation: presentation),
     );
@@ -138,7 +136,6 @@ class MobileVotingResultsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
       title: 'Voting results',
-      horizontalPadding: AppSpacing.sm,
       child: VotingResultsView(roundId: roundId, showDesktopToolbar: false),
     );
   }
