@@ -145,6 +145,81 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('selecting a mobile option preserves option layout', (
+    tester,
+  ) async {
+    const proposalId = 101;
+    const firstOptionKey = ValueKey('voting_proposal_${proposalId}_option_0');
+    const secondOptionKey = ValueKey('voting_proposal_${proposalId}_option_1');
+    const longLabel =
+        'A long voting option whose available width must remain stable';
+    int? selectedChoice;
+
+    await _pumpMobileFixture(
+      tester,
+      (_) => StatefulBuilder(
+        builder: (context, setState) => MobileVotingScaffold(
+          title: 'Coinholder voting',
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: VotingProposalCard(
+              proposal: const VotingProposalView(
+                id: proposalId,
+                title: 'Stable option geometry',
+                description: 'Selection must not move surrounding content.',
+                options: [
+                  VotingOptionView(index: 0, label: longLabel),
+                  VotingOptionView(
+                    index: 1,
+                    label: 'Option with details',
+                    description:
+                        'This option verifies that a taller row also stays fixed.',
+                  ),
+                ],
+              ),
+              selectedChoice: selectedChoice,
+              onChoice: (choice) => setState(() => selectedChoice = choice),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final card = find.byType(VotingProposalCard);
+    final firstOption = find.byKey(firstOptionKey);
+    final secondOption = find.byKey(secondOptionKey);
+    final label = find.text(longLabel);
+    final initialCardRect = tester.getRect(card);
+    final initialFirstOptionRect = tester.getRect(firstOption);
+    final initialSecondOptionRect = tester.getRect(secondOption);
+    final initialLabelRect = tester.getRect(label);
+
+    await tester.tap(firstOption);
+    await tester.pumpAndSettle();
+
+    expect(tester.getRect(card), initialCardRect);
+    expect(tester.getRect(firstOption), initialFirstOptionRect);
+    expect(tester.getRect(secondOption), initialSecondOptionRect);
+    expect(tester.getRect(label), initialLabelRect);
+    expect(
+      find.byKey(const ValueKey('voting_selected_choice_indicator')),
+      findsOneWidget,
+    );
+
+    await tester.tap(secondOption);
+    await tester.pumpAndSettle();
+
+    expect(tester.getRect(card), initialCardRect);
+    expect(tester.getRect(firstOption), initialFirstOptionRect);
+    expect(tester.getRect(secondOption), initialSecondOptionRect);
+    expect(tester.getRect(label), initialLabelRect);
+    expect(
+      find.byKey(const ValueKey('voting_selected_choice_indicator')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('voted mobile state retains the no-proposals explanation', (
     tester,
   ) async {

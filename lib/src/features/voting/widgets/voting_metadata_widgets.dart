@@ -493,13 +493,14 @@ class _MobileVotingProposalOption extends StatelessWidget {
             : onDisabledTap,
         child: Container(
           height: description.isEmpty ? 48 : 94,
-          padding: EdgeInsets.all(selected ? 10 : AppSpacing.s),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: colors.background.base,
             borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: selected
-                ? Border.all(color: colors.border.strong, width: 2)
-                : null,
+            border: Border.all(
+              color: selected ? colors.border.strong : Colors.transparent,
+              width: 2,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -521,15 +522,20 @@ class _MobileVotingProposalOption extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (selected) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    AppIcon(
-                      AppIcons.checkCircle,
-                      key: const ValueKey('voting_selected_choice_indicator'),
-                      size: 20,
-                      color: colors.icon.accent,
-                    ),
-                  ],
+                  const SizedBox(width: AppSpacing.xs),
+                  SizedBox.square(
+                    dimension: 20,
+                    child: selected
+                        ? AppIcon(
+                            AppIcons.checkCircle,
+                            key: const ValueKey(
+                              'voting_selected_choice_indicator',
+                            ),
+                            size: 20,
+                            color: colors.icon.accent,
+                          )
+                        : null,
+                  ),
                 ],
               ),
               if (description.isNotEmpty) ...[
