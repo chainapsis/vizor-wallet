@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
-import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
@@ -77,8 +76,6 @@ Widget _app(
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     swapFeatureEnabledProvider.overrideWithValue(swapFeatureEnabled),
     // The coin bob loops forever, which would break pumpAndSettle here;
-    // motion itself is covered by pay_floating_badge_test.
-    payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
     // Funded so the home tab shows the Send action used by the push
     // test.
     syncProvider.overrideWith(
@@ -353,9 +350,6 @@ void main() {
         overrides: [
           paySelectedAssetStoreProvider.overrideWithValue(payAssetStore),
           swapIntentProvider.overrideWithValue(swapProvider),
-          payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
-            false,
-          ),
         ],
       ),
     );
@@ -431,9 +425,6 @@ void main() {
             swapPriceRefreshIntervalProvider.overrideWithValue(
               const Duration(seconds: 5),
             ),
-            payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
-              false,
-            ),
           ],
         ),
       );
@@ -487,9 +478,6 @@ void main() {
         router,
         overrides: [
           paySelectedAssetStoreProvider.overrideWithValue(payAssetStore),
-          payIntroductionBadgePersistenceEnabledProvider.overrideWithValue(
-            false,
-          ),
         ],
       ),
     );

@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use std::{
+    sync::{Arc, OnceLock},
+    thread::{self, JoinHandle},
+    time::Instant,
+};
 
 use ff::PrimeField;
 use secrecy::{ExposeSecret, SecretVec};
@@ -9,7 +13,10 @@ use zip32::{fingerprint::SeedFingerprint, AccountId};
 use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
-use super::db::open_voting_db;
+use super::db::{
+    open_voting_db, retry_voting_db_locks_coordinated, with_open_voting_db_write,
+    with_voting_sidecar_write_lock,
+};
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
@@ -22,6 +29,10 @@ use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
 const WHALE_PROTECTION_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 25_000 * ZATOSHI_PER_ZEC;
+// Matches zcash_voting / voting-circuits keygen warm-up threads.
+const PROVING_CACHE_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+static PROVING_CACHE_WARMUP_STARTED: OnceLock<()> = OnceLock::new();
 
 /// Start a new bundle before adding a note would cross the whale threshold.
 ///
@@ -38,11 +49,115 @@ fn prepare_params_with_whale_protection<'a>(
     prepare_params
 }
 
+/// Start process-lifetime Halo2 proving-key warm-up if it has not started yet.
+///
+/// Returns immediately. The first proof that needs keys blocks on the shared
+/// cache until this warm-up (or an inline cold keygen) finishes.
+pub fn start_proving_cache_warmup() {
+    if PROVING_CACHE_WARMUP_STARTED.set(()).is_err() {
+        return;
+    }
+    let spawn_result = thread::Builder::new()
+        .name("voting-proving-cache-warmup".to_string())
+        .stack_size(PROVING_CACHE_STACK_BYTES)
+        .spawn(|| {
+            let started = Instant::now();
+            log::info!("[VOTING_PROVE] proving-cache warmup start");
+            zcash_voting::warm_proving_caches();
+            log::info!(
+                "[VOTING_PROVE] proving-cache warmup complete elapsed={:.3}s",
+                started.elapsed().as_secs_f64()
+            );
+        });
+    if let Err(error) = spawn_result {
+        log::warn!(
+            "[VOTING_PROVE] proving-cache warmup spawn failed: {error}; \
+             prove will keygen inline if needed"
+        );
+    }
+}
+
+struct OwnedResultThread<T> {
+    name: &'static str,
+    handle: Option<JoinHandle<Result<T, String>>>,
+}
+
+impl<T> OwnedResultThread<T> {
+    fn new(name: &'static str, handle: JoinHandle<Result<T, String>>) -> Self {
+        Self {
+            name,
+            handle: Some(handle),
+        }
+    }
+
+    fn join(mut self) -> Result<T, String> {
+        self.handle
+            .take()
+            .expect("owned result thread can only be joined once")
+            .join()
+            .map_err(|_| format!("{} thread panicked", self.name))?
+    }
+}
+
+impl<T> Drop for OwnedResultThread<T> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            if handle.join().is_err() {
+                log::warn!(
+                    "[VOTING_PROVE] {} thread panicked while draining",
+                    self.name
+                );
+            }
+        }
+    }
+}
+
+type PirConnectThread = OwnedResultThread<zcash_voting::PirClientBlocking>;
+
+fn spawn_pir_connect(
+    pir_server_url: &str,
+    pir_layout: PirLayout,
+) -> Result<PirConnectThread, String> {
+    let pir_server_url = pir_server_url.to_string();
+    let handle = thread::Builder::new()
+        .name("voting-pir-connect".to_string())
+        .spawn(move || {
+            let started = Instant::now();
+            log::info!("[VOTING_PROVE] pir-connect start");
+            let client = zcash_voting::connect_pir_blocking(
+                pir_layout,
+                &pir_server_url,
+                Arc::new(zcash_voting::HyperTransport::new()),
+            )
+            .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+            log::info!(
+                "[VOTING_PROVE] pir-connect complete elapsed={:.3}s",
+                started.elapsed().as_secs_f64()
+            );
+            Ok(client)
+        })
+        .map_err(|e| format!("failed to spawn PIR connect thread: {e}"))?;
+    Ok(OwnedResultThread::new("PIR connect", handle))
+}
+
+async fn drain_pir_connect_after_error(handle: PirConnectThread) {
+    match tokio::task::spawn_blocking(move || handle.join()).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => {
+            log::warn!("[VOTING_PROVE] PIR connect also failed while draining: {error}");
+        }
+        Err(error) => {
+            log::warn!("[VOTING_PROVE] PIR connect drain task failed: {error}");
+        }
+    }
+}
+
 /// Completes the proof phase for a previously prepared delegation bundle.
 ///
-/// Opens the voting database for `account_uuid`, connects to `pir_server_url`,
-/// then runs bundle proving on a blocking worker thread while forwarding
-/// `DelegationProgress` updates to `on_progress`.
+/// Opens the voting database for `account_uuid`, optionally joins an in-flight
+/// PIR connect, warms PIR rows when needed, then runs bundle proving on a
+/// blocking worker thread while forwarding `DelegationProgress` updates to
+/// `on_progress`.
 ///
 /// # Errors
 ///
@@ -51,38 +166,64 @@ fn prepare_params_with_whale_protection<'a>(
 /// the spawned blocking task is cancelled or panics.
 async fn prove_delegation_bundle<F>(
     db_path: &str,
-    pir_server_url: &str,
-    pir_layout: PirLayout,
     account_uuid: &str,
     prepared: &PreparedDelegationBundle,
+    pir_connect: PirConnectThread,
     on_progress: Arc<F>,
 ) -> Result<(), String>
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
+    let total_started = Instant::now();
     let proof_db_path = db_path.to_string();
-    let proof_pir_server_url = pir_server_url.to_string();
     let proof_account_uuid = account_uuid.to_string();
+    let bundle_index = prepared.bundle_index;
     let prepared = prepared.clone();
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
-        let pir_client = zcash_voting::connect_pir_blocking(
-            pir_layout,
-            &proof_pir_server_url,
-            Arc::new(zcash_voting::HyperTransport::new()),
-        )
-        .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+        let proof_wallet_db =
+            open_wallet_db_for_read(&proof_db_path, wallet_network(prepared.network))?;
+        let pir_client = pir_connect.join()?;
+
+        // Fetch/cache PIR rows before Halo2 prove so remaining keygen warm-up
+        // can overlap the network round-trip when the early warm thread is still
+        // running. Keep the first attempt parallel; only a SQLite writer-race
+        // retry joins the per-wallet coordinator.
+        let precompute_started = Instant::now();
+        retry_voting_db_locks_coordinated(&proof_db_path, || {
+            prepared
+                .precompute(&proof_voting_db, &proof_wallet_db, &pir_client)
+                .map(|_| ())
+                .map_err(|e| format!("delegate::precompute failed: {e}"))
+        })?;
+        log::info!(
+            "[VOTING_PROVE] bundle={bundle_index} pir-precompute elapsed={:.3}s",
+            precompute_started.elapsed().as_secs_f64()
+        );
+
         let reporter = zcash_voting::DelegationProgressBridge::new(move |progress| {
             proof_progress(progress);
         });
-        prepared
-            .prove(&proof_voting_db, &pir_client, &reporter)
-            .map(|_| ())
-            .map_err(|e| format!("delegate::prove failed: {e}"))
+        let prove_started = Instant::now();
+        retry_voting_db_locks_coordinated(&proof_db_path, || {
+            prepared
+                .prove(&proof_voting_db, &pir_client, &reporter)
+                .map(|_| ())
+                .map_err(|e| format!("delegate::prove failed: {e}"))
+        })?;
+        log::info!(
+            "[VOTING_PROVE] bundle={bundle_index} prepared-prove elapsed={:.3}s",
+            prove_started.elapsed().as_secs_f64()
+        );
+        Ok::<_, String>(())
     })
     .await
     .map_err(|e| format!("delegation proof task failed: {e}"))??;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} complete total={:.3}s",
+        total_started.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 
@@ -108,14 +249,16 @@ pub async fn setup_delegation_bundles(
         round_params,
         round_name,
     } = lwd_params;
-    let round_context = zcash_voting::delegate::ensure_round_context(
-        voting_db,
-        network,
-        &round_params,
-        round_name,
-        session_json,
-    )
-    .map_err(|e| e.to_string())?;
+    let round_context = with_voting_sidecar_write_lock(db_path, || {
+        zcash_voting::delegate::ensure_round_context(
+            voting_db,
+            network,
+            &round_params,
+            round_name,
+            session_json,
+        )
+        .map_err(|e| e.to_string())
+    })?;
     let selected = select_notes_with_lwd(
         voting_db,
         db_path,
@@ -127,13 +270,15 @@ pub async fn setup_delegation_bundles(
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
     let bundle_policy = whale_protected_bundle_policy(bundle_policy);
-    voting_db
-        .ensure_bundles_with_skipped_suffix_with_policy(
-            round_params.vote_round_id.as_str(),
-            &note_infos,
-            bundle_policy,
-        )
-        .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
+    with_voting_sidecar_write_lock(db_path, || {
+        voting_db
+            .ensure_bundles_with_skipped_suffix_with_policy(
+                round_params.vote_round_id.as_str(),
+                &note_infos,
+                bundle_policy,
+            )
+            .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
+    })
 }
 
 /// Minimum voting eligibility plus the note value the privacy trim withholds.
@@ -251,13 +396,14 @@ pub async fn precompute_delegation_pir(
     let network = voting_hotkey.network();
     let stored_hotkey_secret = Zeroizing::new(voting_hotkey.stored_secret().to_vec());
 
+    start_proving_cache_warmup();
+
     tokio::task::spawn_blocking(move || {
         let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
             stored_hotkey_secret.as_slice(),
             network,
         )
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
-        let voting_db = open_voting_db(&db_path, &account_uuid)?;
         let wallet_db = open_wallet_db_for_read(&db_path, wallet_network(voting_hotkey.network()))?;
         let prepare_params = PrepareDelegationBundleParams {
             lwd,
@@ -268,21 +414,28 @@ pub async fn precompute_delegation_pir(
             bundle_policy,
         };
         let prepare_params = prepare_params_with_whale_protection(prepare_params);
-        let prepared = zcash_voting::delegate::prepare_delegation_bundle(
-            &voting_db,
-            &wallet_db,
-            prepare_params,
-        )
-        .map_err(|e| e.to_string())?;
+        let (voting_db, prepared) =
+            with_open_voting_db_write(&db_path, &account_uuid, |voting_db| {
+                zcash_voting::delegate::prepare_delegation_bundle(
+                    voting_db,
+                    &wallet_db,
+                    prepare_params,
+                )
+                .map_err(|e| e.to_string())
+            })?;
         let pir_client = zcash_voting::connect_pir_blocking(
             pir_layout,
             &pir_server_url,
             Arc::new(zcash_voting::HyperTransport::new()),
         )
         .map_err(|e| format!("connect to PIR server failed: {e}"))?;
-        prepared
-            .precompute(&voting_db, &wallet_db, &pir_client)
-            .map_err(|e| e.to_string())
+        // Preserve parallel warm-up on the first attempt, but wait behind the
+        // per-wallet writer coordinator if persistence loses a SQLite race.
+        retry_voting_db_locks_coordinated(&db_path, || {
+            prepared
+                .precompute(&voting_db, &wallet_db, &pir_client)
+                .map_err(|e| e.to_string())
+        })
     })
     .await
     .map_err(|e| format!("delegation PIR precompute task failed: {e}"))?
@@ -309,51 +462,96 @@ pub async fn build_prove_and_sign_delegation_payload<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
+    let total_started = Instant::now();
     let on_progress = Arc::new(on_progress);
     let account_uuid = prepare_params.account_uuid;
 
     zcash_voting::validate_round_params(&prepare_params.lwd.round_params)
         .map_err(|e| format!("Invalid voting round params: {e}"))?;
+
+    // Overlap independent warm-ups with local preparation/PCZT setup.
+    start_proving_cache_warmup();
+    let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
+
     on_progress(DelegationProgress::SelectingNotes);
-    let voting_db = open_voting_db(db_path, account_uuid)?;
-    let wallet_db = open_wallet_db_for_read(
-        db_path,
-        wallet_network(prepare_params.voting_hotkey.network()),
-    )?;
-    let prepare_params = prepare_params_with_whale_protection(prepare_params);
-
-    let prepared_bundle =
-        zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
+    let preparation = (|| {
+        let wallet_db = open_wallet_db_for_read(
+            db_path,
+            wallet_network(prepare_params.voting_hotkey.network()),
+        )?;
+        let prepare_params = prepare_params_with_whale_protection(prepare_params);
+        let prepare_bundle_started = Instant::now();
+        let pczt_progress = on_progress.clone();
+        let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
+            pczt_progress(progress);
+        });
+        with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+            let prepared_bundle = zcash_voting::delegate::prepare_delegation_bundle(
+                voting_db,
+                &wallet_db,
+                prepare_params,
+            )
             .map_err(|e| e.to_string())?;
-
-    let pczt_progress = on_progress.clone();
-    let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
-        pczt_progress(progress);
-    });
-    let delegation_setup = prepared_bundle
-        .setup(&voting_db, &setup_stages)
-        .map_err(|e| format!("delegate::setup failed: {e}"))?;
-
+            log::info!(
+                "[VOTING_PROVE] bundle={} prepare-bundle elapsed={:.3}s",
+                prepared_bundle.bundle_index,
+                prepare_bundle_started.elapsed().as_secs_f64()
+            );
+            let pczt_setup_started = Instant::now();
+            let delegation_setup = prepared_bundle
+                .setup(voting_db, &setup_stages)
+                .map_err(|e| format!("delegate::setup failed: {e}"))?;
+            log::info!(
+                "[VOTING_PROVE] bundle={} pczt-setup elapsed={:.3}s",
+                prepared_bundle.bundle_index,
+                pczt_setup_started.elapsed().as_secs_f64()
+            );
+            Ok((prepared_bundle, delegation_setup))
+        })
+    })();
+    let (voting_db, (prepared_bundle, delegation_setup)) = match preparation {
+        Ok(value) => value,
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(error);
+        }
+    };
+    let prove_started = Instant::now();
     prove_delegation_bundle(
         db_path,
-        pir_server_url,
-        pir_layout,
         account_uuid,
         &prepared_bundle,
+        pir_connect,
         on_progress.clone(),
     )
     .await?;
+    log::info!(
+        "[VOTING_PROVE] bundle={} prove-only elapsed={:.3}s",
+        prepared_bundle.bundle_index,
+        prove_started.elapsed().as_secs_f64()
+    );
 
     on_progress(DelegationProgress::SigningPayload);
+    let signing_started = Instant::now();
     let signing_request = prepared_bundle
         .signing_request(&voting_db)
         .map_err(|e| format!("delegation signing request failed: {e}"))?;
     let (sig, sighash) = sign_delegation_request(seed, signing_request)
         .map_err(|e| format!("delegation signing failed: {e}"))?;
     let signer = zcash_voting::delegate::PreparedSigner::signature(sig, sighash);
+    log::info!(
+        "[VOTING_PROVE] bundle={} signing elapsed={:.3}s",
+        prepared_bundle.bundle_index,
+        signing_started.elapsed().as_secs_f64()
+    );
     let signed_bundle = prepared_bundle
         .signed_bundle(&voting_db, delegation_setup.pczt_bytes, signer)
         .map_err(|e| format!("delegate::signed_bundle failed: {e}"))?;
+    log::info!(
+        "[VOTING_PROVE] bundle={} signed-bundle total={:.3}s",
+        prepared_bundle.bundle_index,
+        total_started.elapsed().as_secs_f64()
+    );
 
     on_progress(DelegationProgress::PayloadReady);
     Ok(signed_bundle)
@@ -411,19 +609,24 @@ pub async fn build_keystone_delegation_request(
     account_uuid: &str,
     prepare_params: PrepareDelegationBundleParams<'_>,
 ) -> Result<zcash_voting::delegate::KeystoneSigningRequest, String> {
-    let voting_db = open_voting_db(db_path, account_uuid)?;
     let wallet_db = open_wallet_db_for_read(
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
     let prepare_params = prepare_params_with_whale_protection(prepare_params);
-    let prepared =
-        zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
-            .map_err(|e| e.to_string())?;
-    let noop_stages = zcash_voting::NoopProgressReporter;
-    prepared
-        .keystone_request(&voting_db, &noop_stages)
-        .map_err(|e| format!("delegate::keystone_request failed: {e}"))
+    with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+        let prepared = zcash_voting::delegate::prepare_delegation_bundle(
+            voting_db,
+            &wallet_db,
+            prepare_params,
+        )
+        .map_err(|e| e.to_string())?;
+        let noop_stages = zcash_voting::NoopProgressReporter;
+        prepared
+            .keystone_request(voting_db, &noop_stages)
+            .map_err(|e| format!("delegate::keystone_request failed: {e}"))
+    })
+    .map(|(_, request)| request)
 }
 
 /// Build a delegation proof and assemble the submission using a Keystone signature.
@@ -451,22 +654,33 @@ where
 {
     let on_progress = Arc::new(on_progress);
 
+    start_proving_cache_warmup();
+    let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
+
     on_progress(DelegationProgress::SelectingNotes);
-    let voting_db = open_voting_db(db_path, account_uuid)?;
-    let wallet_db = open_wallet_db_for_read(
-        db_path,
-        wallet_network(prepare_params.voting_hotkey.network()),
-    )?;
-    let prepare_params = prepare_params_with_whale_protection(prepare_params);
-    let prepared_bundle =
-        zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
-            .map_err(|e| e.to_string())?;
+    let preparation = (|| {
+        let wallet_db = open_wallet_db_for_read(
+            db_path,
+            wallet_network(prepare_params.voting_hotkey.network()),
+        )?;
+        let prepare_params = prepare_params_with_whale_protection(prepare_params);
+        with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+            zcash_voting::delegate::prepare_delegation_bundle(voting_db, &wallet_db, prepare_params)
+                .map_err(|e| e.to_string())
+        })
+    })();
+    let (voting_db, prepared_bundle) = match preparation {
+        Ok(value) => value,
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(error);
+        }
+    };
     prove_delegation_bundle(
         db_path,
-        pir_server_url,
-        pir_layout,
         account_uuid,
         &prepared_bundle,
+        pir_connect,
         on_progress.clone(),
     )
     .await?;
@@ -495,7 +709,10 @@ mod tests {
         primitives::redpallas::{Signature, SpendAuth, VerificationKey},
     };
     use secrecy::ExposeSecret;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Barrier, Mutex,
+    };
     use zip32::{fingerprint::SeedFingerprint, AccountId};
 
     fn note_with_value(position: u64, value: u64) -> zcash_voting::NoteInfo {
@@ -735,6 +952,50 @@ mod tests {
 
         assert!(err.contains("Invalid voting round params"));
         assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn start_proving_cache_warmup_is_idempotent() {
+        start_proving_cache_warmup();
+        start_proving_cache_warmup();
+        assert!(PROVING_CACHE_WARMUP_STARTED.get().is_some());
+    }
+
+    #[test]
+    fn owned_result_thread_joins_success_error_and_panic() {
+        let success = OwnedResultThread::new("test", std::thread::spawn(|| Ok(7)));
+        assert_eq!(success.join().unwrap(), 7);
+
+        let failure =
+            OwnedResultThread::<u32>::new("test", std::thread::spawn(|| Err("failed".to_string())));
+        assert_eq!(failure.join().unwrap_err(), "failed");
+
+        let panic =
+            OwnedResultThread::<u32>::new("test", std::thread::spawn(|| panic!("injected panic")));
+        assert_eq!(panic.join().unwrap_err(), "test thread panicked");
+    }
+
+    #[test]
+    fn dropping_owned_result_thread_drains_it() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Barrier::new(2));
+        let active_for_thread = Arc::clone(&active);
+        let started_for_thread = Arc::clone(&started);
+        let guard = OwnedResultThread::new(
+            "test",
+            std::thread::spawn(move || {
+                active_for_thread.fetch_add(1, Ordering::SeqCst);
+                started_for_thread.wait();
+                std::thread::sleep(std::time::Duration::from_millis(25));
+                active_for_thread.fetch_sub(1, Ordering::SeqCst);
+                Ok(())
+            }),
+        );
+        started.wait();
+
+        drop(guard);
+
+        assert_eq!(active.load(Ordering::SeqCst), 0);
     }
 
     #[test]

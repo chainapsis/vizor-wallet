@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show ThemeMode;
@@ -368,6 +369,17 @@ void main() {
     );
   });
 
+  test(
+    'account deletion drains live share tracking before the wallet mutation',
+    () => _expectAccountDeletionDrainsLiveShareTracking(),
+  );
+
+  test(
+    'mobile account deletion drains live share tracking before the wallet mutation',
+    () => _expectAccountDeletionDrainsLiveShareTracking(),
+    tags: ['mobile'],
+  );
+
   test('drain failures resume tracking after destructive mutations', () async {
     final shareTracking = VotingShareTrackingRegistry();
     var restoreRequests = 0;
@@ -539,6 +551,70 @@ class _AccountMutationRustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
+  FlutterSecureStorage.setMockInitialValues({});
+  final supportDirectory = Directory.systemTemp.createTempSync(
+    'vizor-account-share-drain',
+  );
+  addTearDown(() {
+    if (supportDirectory.existsSync()) {
+      supportDirectory.deleteSync(recursive: true);
+    }
+  });
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (call) async {
+        if (call.method == 'getApplicationSupportDirectory') {
+          return supportDirectory.path;
+        }
+        throw MissingPluginException('Unexpected path provider call.');
+      });
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+  });
+
+  final shareTracking = VotingShareTrackingRegistry();
+  final drainStarted = Completer<void>();
+  final drainGate = Completer<void>();
+  expect(
+    shareTracking.register(
+      key: const VotingSessionKey(
+        accountUuid: 'account-2',
+        roundId: 'round-delete',
+      ),
+      owner: Object(),
+      stopAndDrain: () async {
+        if (!drainStarted.isCompleted) drainStarted.complete();
+        await drainGate.future;
+      },
+    ),
+    isTrue,
+  );
+
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+      votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final removal = container
+      .read(accountProvider.notifier)
+      .removeAccount('account-2');
+  await drainStarted.future;
+  expect(_rustApi.deletedAccountUuids, isEmpty);
+  expect(shareTracking.isQuiesced('account-2'), isTrue);
+
+  drainGate.complete();
+  await removal;
+
+  expect(_rustApi.deletedAccountUuids, ['account-2']);
+  expect(shareTracking.isQuiesced('account-2'), isFalse);
 }
 
 AppBootstrapState _bootstrapWithAccounts() {

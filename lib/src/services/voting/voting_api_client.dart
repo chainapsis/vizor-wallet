@@ -18,6 +18,7 @@ class VotingApiClient {
     List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
+    Duration helperPreflightTimeout = const Duration(seconds: 2),
     VotingRetryPolicy? readRetryPolicy,
     VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
@@ -27,6 +28,7 @@ class VotingApiClient {
        _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
        _helperTimeout = helperTimeout,
+       _helperPreflightTimeout = helperPreflightTimeout,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
@@ -55,6 +57,7 @@ class VotingApiClient {
   final VotingHttpClient _httpClient;
   final Duration _timeout;
   final Duration _helperTimeout;
+  final Duration _helperPreflightTimeout;
   final VotingRetryPolicy _readRetryPolicy;
   final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
@@ -225,42 +228,60 @@ class VotingApiClient {
   }
 
   Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
-    final response = await _withVoteServerFailover(
-      policy: _readRetryPolicy,
-      operation: (baseUrl) {
-        final requestUri = _endpoint(['tx', txHash], baseUrl: baseUrl);
-        return _runRequestWithRetry(
-          retryPolicy: _readRetryPolicy,
-          operation: () async {
-            final response = await _get(requestUri, timeout: _timeout);
-            if (response.statusCode != 404 && response.statusCode != 422) {
-              _throwIfNotSuccess(requestUri, response);
-            }
-            return response;
-          },
-        );
-      },
-      shouldTryNextCandidate: (response) => response.statusCode == 404,
-    );
+    final VotingHttpResponse response;
+    try {
+      response = await _withVoteServerFailover(
+        policy: _readRetryPolicy,
+        operation: (baseUrl) async {
+          final requestUri = _endpoint(['tx', txHash], baseUrl: baseUrl);
+          // Confirmation polling retries the complete lookup. Trying each
+          // server once per pass keeps one offline fallback from consuming the
+          // request timeout repeatedly before the next server gets a chance.
+          final response = await _get(requestUri, timeout: _timeout);
+          if (response.statusCode != 404 && response.statusCode != 422) {
+            _throwIfNotSuccess(requestUri, response);
+          }
+          return response;
+        },
+        shouldTryNextCandidate: (response) => response.statusCode == 404,
+      );
+    } catch (error) {
+      if (_readRetryPolicy.shouldRetry(error)) return null;
+      rethrow;
+    }
     if (response.statusCode == 404) return null;
     return VotingTxConfirmation.fromJson(
       _objectFromValue(jsonDecode(response.bodyText)),
     );
   }
 
+  /// Checks helper readiness concurrently without failing the voting flow.
+  ///
+  /// A helper is ready only when its public status endpoint returns a
+  /// successful `{"status":"ok"}` response.
+  Future<Map<String, bool>> preflightHelpers(Iterable<Uri> serverUrls) async {
+    final entries = await Future.wait([
+      for (final serverUrl in serverUrls)
+        _probeHelper(
+          serverUrl,
+        ).then((isReady) => MapEntry(serverUrl.toString(), isReady)),
+    ]);
+    return Map<String, bool>.unmodifiable(Map.fromEntries(entries));
+  }
+
   /// Posts one encrypted share directly to a helper server.
   ///
   /// The share map is expected to be the complete service JSON body produced
-  /// by the voting pipeline.
+  /// by the voting pipeline. Fast transient failures retain the helper retry
+  /// policy. An ambiguous timeout is never retried against the same helper so
+  /// the caller can promptly move to another candidate.
   Future<VotingShareSubmissionResult> submitShare({
     required Uri serverUrl,
     required Map<String, dynamic> share,
   }) async {
-    final decoded = await _postJson(
+    final decoded = await _postInitialShareJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
-      timeout: _helperTimeout,
-      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -352,6 +373,46 @@ class VotingApiClient {
       operation: () async {
         final response = await _post(uri, body, timeout: timeout ?? _timeout);
         _throwIfNotSuccess(uri, response, allowStatusCodes: allowStatusCodes);
+        return response;
+      },
+    );
+    return jsonDecode(response.bodyText);
+  }
+
+  Future<bool> _probeHelper(Uri serverUrl) async {
+    final uri = _endpoint(['status'], baseUrl: serverUrl);
+    try {
+      final response = await _get(
+        uri,
+        timeout: _helperPreflightTimeout,
+      ).timeout(_helperPreflightTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) return false;
+      final status = _objectFromValue(jsonDecode(response.bodyText))['status'];
+      return status?.toString().trim().toLowerCase() == 'ok';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Object?> _postInitialShareJson(
+    Uri uri,
+    Map<String, dynamic> body,
+  ) async {
+    final retryPolicy = VotingRetryPolicy(
+      name: '${_helperRetryPolicy.name}-initial',
+      delays: _helperRetryPolicy.delays,
+      shouldRetry: (error) =>
+          error is! TimeoutException && _helperRetryPolicy.shouldRetry(error),
+    );
+    final response = await _runRequestWithRetry(
+      retryPolicy: retryPolicy,
+      operation: () async {
+        final response = await _post(
+          uri,
+          body,
+          timeout: _helperTimeout,
+        ).timeout(_helperTimeout);
+        _throwIfNotSuccess(uri, response);
         return response;
       },
     );
