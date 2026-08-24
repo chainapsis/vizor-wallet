@@ -1872,6 +1872,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // Cast-vote broadcasts stay one-at-a-time across all bundles; only the
     // confirmation wait that follows them overlaps.
     final broadcastPool = _AsyncPermitPool(1);
+    _VotingStartedFromAnotherWallet? crossWalletBroadcastAbort;
     final sharePool = _AsyncPermitPool(_votingWorkConcurrency);
     final shareOutcomeFutures =
         <VotingVoteKey, Future<_BundleWorkOutcome<void>>>{};
@@ -2063,12 +2064,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           try {
             _throwIfContextStale(context, 'vote-chain-submit');
             final submitTimer = Stopwatch()..start();
-            txHashes = await broadcastPool.run(
-              () => _submitVoteCommitmentsWithoutConfirmation(
-                context,
-                commitments,
-              ),
-            );
+            txHashes = await broadcastPool.run(() async {
+              final abort = crossWalletBroadcastAbort;
+              if (abort != null) throw abort;
+              try {
+                return await _submitVoteCommitmentsWithoutConfirmation(
+                  context,
+                  commitments,
+                );
+              } on _VotingStartedFromAnotherWallet catch (error) {
+                // Set the shared abort before releasing the single broadcast
+                // permit, so already queued bundle chains cannot submit after
+                // this round is known to have started from another wallet.
+                crossWalletBroadcastAbort ??= error;
+                rethrow;
+              }
+            });
             _logVoteTiming(
               'bundle=$bundleIndex proposal=${key.proposalId} '
               'submit elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',

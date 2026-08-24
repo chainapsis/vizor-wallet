@@ -4239,6 +4239,59 @@ void main() {
     expect(rust.storedVoteTxHashes, isEmpty);
   });
 
+  test('spent nullifier stops queued vote bundle broadcasts', () async {
+    final responses = votingHttpResponses();
+    responses['/shielded-vote/v1/cast-vote'] = {
+      'tx_hash': 'rejected-vote-tx',
+      'code': 1,
+      'log': 'nullifier already spent: abc123',
+    };
+    responses['/shielded-vote/v1/tx/rejected-vote-tx'] = jsonResponse({
+      'error': 'not found',
+    }, statusCode: 404);
+    final http = FakeVotingHttpClient(responses: responses);
+    final rust = FakeVotingRustApi(emitCommitments: true, bundleCount: 3);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 3,
+        delegationTxHashes: [
+          for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: bundleIndex,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-$bundleIndex',
+              vanLeafPosition: null,
+            ),
+        ],
+        votes: [
+          for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+            vote(bundleIndex: bundleIndex, proposalId: 7),
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(
+      state.error?.message,
+      "You've begun voting on this round from another wallet. You must use "
+      'that wallet to see your voting status',
+    );
+    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+    expect(rust.storedVoteTxHashes, isEmpty);
+  });
+
   test(
     'spent nullifier rejection resumes when its tx already landed',
     () async {
