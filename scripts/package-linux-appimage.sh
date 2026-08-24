@@ -164,7 +164,7 @@ DESKTOP_FILE="$APPDIR/$APP_ID.desktop"
 cp "$BUNDLE_DIR/data/applications/$APP_ID.desktop" "$DESKTOP_FILE"
 sed -i \
   -e "s/^Name=.*/Name=$APP_NAME/" \
-  -e "s/^Exec=.*/Exec=$BINARY_NAME/" \
+  -e "s/^Exec=.*/Exec=$BINARY_NAME %u/" \
   -e "s/^Icon=.*/Icon=$APP_ID/" \
   -e "s/^Categories=.*/Categories=Office;Finance;/" \
   -e "s/^StartupWMClass=.*/StartupWMClass=$APP_ID/" \
@@ -177,7 +177,7 @@ set_desktop_exec() {
   local file
   for file in "$DESKTOP_FILE" "$APPDIR_APPLICATIONS_DIR/$APP_ID.desktop"; do
     if [[ -e "$file" ]]; then
-      sed -i -e "s/^Exec=.*/Exec=$exec_name/" "$file"
+      sed -i -e "s/^Exec=.*/Exec=$exec_name %u/" "$file"
     fi
   done
 }
