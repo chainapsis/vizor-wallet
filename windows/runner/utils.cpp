@@ -10,7 +10,9 @@
 #include <iostream>
 #include <utility>
 
-bool HasPaymentLinkUriPrefix(const std::string& value) {
+namespace {
+
+bool MatchesPaymentLinkTarget(const std::string& value) {
   constexpr char prefix[] = "vizor://payment-link";
   constexpr size_t prefix_length = sizeof(prefix) - 1;
   if (value.size() < prefix_length) {
@@ -23,12 +25,18 @@ bool HasPaymentLinkUriPrefix(const std::string& value) {
       return false;
     }
   }
-  return true;
+  if (value.size() == prefix_length) {
+    return true;
+  }
+  const char boundary = value[prefix_length];
+  return boundary == '?' || boundary == '/' || boundary == '#';
 }
+
+}  // namespace
 
 bool IsPaymentLinkUri(const std::string& value) {
   return value.size() <= kMaxIncomingUriBytes &&
-         HasPaymentLinkUriPrefix(value);
+         MatchesPaymentLinkTarget(value);
 }
 
 bool AppendPaymentLinkIfAccepted(std::vector<std::string>* uris,
@@ -88,7 +96,7 @@ std::vector<std::string> ExtractPaymentLinkUriArguments(
   std::vector<std::string> remaining_arguments;
   remaining_arguments.reserve(arguments->size());
   for (auto& argument : *arguments) {
-    if (HasPaymentLinkUriPrefix(argument)) {
+    if (MatchesPaymentLinkTarget(argument)) {
       if (had_payment_link_argument != nullptr) {
         *had_payment_link_argument = true;
       }

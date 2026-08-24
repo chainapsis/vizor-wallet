@@ -28,7 +28,6 @@ std::vector<std::string> ExtractPaymentLinkUriArguments(
     std::vector<std::string>* arguments, bool* had_payment_link_argument);
 bool AppendPaymentLinkIfAccepted(std::vector<std::string>* uris,
                                  std::string value);
-bool HasPaymentLinkUriPrefix(const std::string& value);
 bool IsPaymentLinkUri(const std::string& value);
 
 #endif  // RUNNER_UTILS_H_
