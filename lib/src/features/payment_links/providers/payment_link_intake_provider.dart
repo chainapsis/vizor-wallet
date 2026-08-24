@@ -32,12 +32,10 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
     try {
       final link = VizorPaymentLink.parse(rawUri);
       final pendingLinks = state.pendingLinks;
+      // Account and birthday identify a reusable claim wallet, not a duplicate
+      // user intent. Only an identical versioned payload can be coalesced.
       final duplicate = pendingLinks.any(
-        (pending) =>
-            pending.network == link.network &&
-            pending.address == link.address &&
-            pending.mnemonic == link.mnemonic &&
-            pending.birthdayHeight == link.birthdayHeight,
+        (pending) => pending.hasSameCanonicalPayload(link),
       );
       if (duplicate) {
         state = PaymentLinkIntakeState(pendingLinks: pendingLinks);

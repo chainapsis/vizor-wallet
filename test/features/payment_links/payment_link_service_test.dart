@@ -139,7 +139,7 @@ void main() {
     );
   });
 
-  test('claim wallet directory is deterministic without exposing its secret', () {
+  test('claim wallet cache identity uses the account and birthday only', () {
     final link = _link();
     final sameLinkName = paymentLinkClaimWalletDirectoryName(link);
     final differentSecretName = paymentLinkClaimWalletDirectoryName(
@@ -165,10 +165,23 @@ void main() {
         createdAt: link.createdAt,
       ),
     );
+    final differentSharePayloadName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: link.network,
+        address: link.address,
+        amountZatoshi: link.amountZatoshi + BigInt.one,
+        mnemonic: link.mnemonic,
+        birthdayHeight: link.birthdayHeight,
+        label: '${link.label} updated',
+        createdAt: link.createdAt.add(const Duration(seconds: 1)),
+        presentation: const PaymentLinkPresentation(message: 'Updated'),
+      ),
+    );
 
     expect(paymentLinkClaimWalletDirectoryName(link), sameLinkName);
     expect(differentSecretName, isNot(sameLinkName));
     expect(differentBirthdayName, isNot(sameLinkName));
+    expect(differentSharePayloadName, sameLinkName);
     expect(sameLinkName, isNot(contains(link.address)));
     expect(sameLinkName, isNot(contains('abandon')));
   });

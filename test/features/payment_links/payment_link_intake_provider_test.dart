@@ -118,22 +118,30 @@ void main() {
     );
   });
 
-  test('keeps a corrected claim birthday in the intake queue', () {
+  test('only coalesces links with the same complete canonical payload', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
     final original = _link();
-    final corrected = _link(birthdayHeight: original.birthdayHeight - 1);
+    final changedPayloads = <VizorPaymentLink>[
+      _link(amountZatoshi: original.amountZatoshi + BigInt.one),
+      _link(birthdayHeight: original.birthdayHeight - 1),
+      _link(label: '${original.label} updated'),
+      _link(createdAt: original.createdAt.add(const Duration(seconds: 1))),
+      _link(presentation: const PaymentLinkPresentation(message: 'Updated')),
+    ];
 
     notifier.receive(original.toUri().toString());
-    notifier.receive(corrected.toUri().toString());
+    for (final changed in changedPayloads) {
+      notifier.receive(changed.toUri().toString());
+    }
 
     expect(
       container
           .read(paymentLinkIntakeProvider)
           .pendingLinks
-          .map((link) => link.birthdayHeight),
-      [original.birthdayHeight, corrected.birthdayHeight],
+          .map((link) => link.toUri().fragment),
+      [original, ...changedPayloads].map((link) => link.toUri().fragment),
     );
   });
 
@@ -165,16 +173,21 @@ void main() {
 
 VizorPaymentLink _link({
   String address = 'u1paymentlinkaddress',
+  BigInt? amountZatoshi,
   int birthdayHeight = 3_456_789,
+  String label = 'Payment link',
+  DateTime? createdAt,
+  PaymentLinkPresentation? presentation,
 }) {
   return VizorPaymentLink(
     network: 'main',
     address: address,
-    amountZatoshi: BigInt.from(100000),
+    amountZatoshi: amountZatoshi ?? BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
     birthdayHeight: birthdayHeight,
-    label: 'Payment link',
-    createdAt: DateTime.utc(2026, 8, 5, 12),
+    label: label,
+    createdAt: createdAt ?? DateTime.utc(2026, 8, 5, 12),
+    presentation: presentation,
   );
 }

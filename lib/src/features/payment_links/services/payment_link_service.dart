@@ -141,6 +141,10 @@ int validatePaymentLinkClaimBirthday({
   return advertisedBirthdayHeight;
 }
 
+/// Claim databases are cached by the fields that determine the recovered
+/// account and its scan range. Share-payload fields such as amount, label,
+/// timestamp, and presentation deliberately do not participate, so a corrected
+/// payload can reuse already-scanned state.
 @visibleForTesting
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
