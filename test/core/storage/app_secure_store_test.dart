@@ -105,6 +105,40 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
+  test(
+    'payment-link recovery stays encrypted across password rotation',
+    () async {
+      const recoveryPayload =
+          '{"link":"vizor://payment-link?p=secret-mnemonic-payload"}';
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(
+        kPaymentLinkRecoveryStorageKey,
+        recoveryPayload,
+      );
+
+      final storedBeforeRotation = await store.readPlain(
+        kPaymentLinkRecoveryStorageKey,
+      );
+      expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
+
+      final didChange = await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+
+      expect(didChange, isTrue);
+      store.clearSessionPassword();
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkRecoveryStorageKey,
+          requireUnlockedSession: true,
+        ),
+        recoveryPayload,
+      );
+    },
+  );
+
   test('readAccountMnemonicBytes returns mutable mnemonic bytes', () async {
     await store.configurePassword(_oldPassword);
     await store.writeAccountMnemonic(_accountUuid, _mnemonic);

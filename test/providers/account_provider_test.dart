@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -58,6 +59,35 @@ void main() {
       '.receive.redb',
     ]);
   });
+
+  test(
+    'wallet reset cleanup removes only payment-link claim directories',
+    () async {
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-payment-link-reset',
+      );
+      addTearDown(() {
+        if (supportDirectory.existsSync()) {
+          supportDirectory.deleteSync(recursive: true);
+        }
+      });
+      final claimDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}'
+        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'a').join()}',
+      )..createSync();
+      final unrelatedDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}'
+        '${kPaymentLinkClaimWalletDirectoryPrefix}draft',
+      )..createSync();
+
+      await deletePaymentLinkClaimWalletDirectories(
+        resolveSupportDirectory: () async => supportDirectory,
+      );
+
+      expect(claimDirectory.existsSync(), isFalse);
+      expect(unrelatedDirectory.existsSync(), isTrue);
+    },
+  );
 
   test(
     'wallet reset clears the tor data directory and route preference',
