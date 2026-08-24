@@ -198,13 +198,20 @@ bool LaunchCleanInstanceAndForwardPaymentLinks(
 
   const ULONGLONG deadline =
       ::GetTickCount64() + kCleanLaunchForwardTimeoutMs;
+  bool child_exited = false;
   while (::GetTickCount64() < deadline) {
-    if (ForwardPaymentLinksToProcess(process_info.value.dwProcessId, uris)) {
+    if (!child_exited &&
+        ForwardPaymentLinksToProcess(process_info.value.dwProcessId, uris)) {
       return true;
     }
-    if (::WaitForSingleObject(process_info.value.hProcess, 100) ==
-        WAIT_OBJECT_0) {
-      return false;
+    if (ForwardPaymentLinksToRunningInstance(uris)) {
+      return true;
+    }
+    if (child_exited) {
+      ::Sleep(100);
+    } else if (::WaitForSingleObject(process_info.value.hProcess, 100) ==
+               WAIT_OBJECT_0) {
+      child_exited = true;
     }
   }
   return false;
