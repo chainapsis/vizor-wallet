@@ -14,16 +14,16 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::{
-    open_voting_db, retry_voting_db_locks_coordinated, with_open_voting_db_write,
-    with_voting_sidecar_write_lock,
+    open_voting_db, retry_voting_db_locks, retry_voting_db_locks_coordinated,
+    with_open_voting_db_write, with_voting_sidecar_write_lock,
 };
+use super::transport::fetch_snapshot_tree_state;
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
 };
-use zcash_voting::lwd::anchor_tree_state_with_retry;
 use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
@@ -607,14 +607,14 @@ pub async fn warm_pir_proof_cache(
         }
     };
 
-    let anchor_tree_state =
-        match anchor_tree_state_with_retry(lightwalletd_url, snapshot_height).await {
-            Ok(anchor) => anchor,
-            Err(error) => {
-                drain_pir_connect_after_error(pir_connect).await;
-                return Err(format!("voting note selection failed: {error}"));
-            }
-        };
+    let anchor_tree_state = match fetch_snapshot_tree_state(lightwalletd_url, snapshot_height).await
+    {
+        Ok(anchor) => anchor,
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection failed: {error}"));
+        }
+    };
 
     let wallet_net = wallet_network(network);
     let selected = match tokio::task::spawn_blocking({
