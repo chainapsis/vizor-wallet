@@ -227,7 +227,15 @@ class VotingApiClient {
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
 
-  Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
+  /// Fetches a transaction confirmation from the configured vote servers.
+  ///
+  /// Confirmation polling treats exhausted transient failures as not yet
+  /// confirmed. Set [requireDefinitiveResult] when `null` must mean that a
+  /// server actually returned 404; transient failures are then rethrown.
+  Future<VotingTxConfirmation?> getTxConfirmation(
+    String txHash, {
+    bool requireDefinitiveResult = false,
+  }) async {
     final VotingHttpResponse response;
     try {
       response = await _withVoteServerFailover(
@@ -244,9 +252,12 @@ class VotingApiClient {
           return response;
         },
         shouldTryNextCandidate: (response) => response.statusCode == 404,
+        returnFallbackResultOnRetryableError: !requireDefinitiveResult,
       );
     } catch (error) {
-      if (_readRetryPolicy.shouldRetry(error)) return null;
+      if (!requireDefinitiveResult && _readRetryPolicy.shouldRetry(error)) {
+        return null;
+      }
       rethrow;
     }
     if (response.statusCode == 404) return null;
@@ -451,6 +462,7 @@ class VotingApiClient {
     required VotingRetryPolicy policy,
     required Future<T> Function(Uri baseUrl) operation,
     bool Function(T result)? shouldTryNextCandidate,
+    bool returnFallbackResultOnRetryableError = true,
   }) async {
     final candidates = [_baseUrl, ..._fallbackBaseUrls];
     Object? lastError;
@@ -471,7 +483,9 @@ class VotingApiClient {
         lastError = error;
         final retryable = policy.shouldRetry(error);
         if (attempt == candidates.length - 1 || !retryable) {
-          if (hasFallbackResult && retryable) {
+          if (hasFallbackResult &&
+              retryable &&
+              returnFallbackResultOnRetryableError) {
             return fallbackResult;
           }
           rethrow;

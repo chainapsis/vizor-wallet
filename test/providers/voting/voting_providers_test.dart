@@ -4239,6 +4239,38 @@ void main() {
     expect(rust.storedVoteTxHashes, isEmpty);
   });
 
+  test('spent nullifier keeps its diagnostic when tx lookup fails', () async {
+    final responses = votingHttpResponses();
+    responses['/shielded-vote/v1/cast-vote'] = {
+      'tx_hash': 'unverified-vote-tx',
+      'code': 1,
+      'log': 'nullifier already spent: abc123',
+    };
+    responses['/shielded-vote/v1/tx/unverified-vote-tx'] = timeoutResponse();
+    final http = FakeVotingHttpClient(responses: responses);
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('nullifier already spent: abc123'));
+    expect(
+      state.error?.message,
+      isNot(contains("You've begun voting on this round")),
+    );
+    expect(rust.storedVoteTxHashes, isEmpty);
+  });
+
   test('spent nullifier stops queued vote bundle broadcasts', () async {
     final responses = votingHttpResponses();
     responses['/shielded-vote/v1/cast-vote'] = {

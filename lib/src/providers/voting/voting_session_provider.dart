@@ -4735,7 +4735,16 @@ Future<void> _requireAcceptedVotingTransaction(
   if (result.code == 0) return;
   if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
       result.txHash.isNotEmpty) {
-    final confirmation = await api.getTxConfirmation(result.txHash);
+    final VotingTxConfirmation? confirmation;
+    try {
+      confirmation = await api.getTxConfirmation(
+        result.txHash,
+        requireDefinitiveResult: true,
+      );
+    } catch (_) {
+      // A failed lookup cannot prove that another wallet submitted the vote.
+      throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
+    }
     if (confirmation == null) {
       throw const _VotingStartedFromAnotherWallet();
     }
