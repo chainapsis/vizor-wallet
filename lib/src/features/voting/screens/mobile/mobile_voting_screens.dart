@@ -124,7 +124,7 @@ class MobileVotingReviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
-      title: 'Review vote',
+      title: 'Review your answers',
       child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
     );
   }

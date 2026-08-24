@@ -17,6 +17,11 @@ import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
+const _mobileReviewActionExtent =
+    AppSpacing.xs + AppButtonSizing.largeHeight + AppSpacing.md;
+const _mobileReviewScrollBottomPadding =
+    _mobileReviewActionExtent + AppSpacing.md;
+
 class VotingReviewScreen extends StatelessWidget {
   const VotingReviewScreen({super.key, required this.roundId});
 
@@ -203,60 +208,96 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
                   context.pushReplacement(route);
                 }
               };
+        final reviewContent = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.showDesktopToolbar) ...[
+              Text(
+                'Review your answers',
+                textAlign: TextAlign.center,
+                style: AppTypography.displaySmall.copyWith(
+                  color: context.colors.text.accent,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            if (state.hasConfirmedVotingEligibility)
+              for (final entry in proposals.asMap().entries) ...[
+                VotingProposalCard(
+                  proposal: entry.value,
+                  fallbackForumUri: roundForumUri,
+                  selectedChoice: draft.choices[entry.value.id],
+                  readOnly: true,
+                  statusLabel: draft.choices[entry.value.id] == null
+                      ? 'Skipped'
+                      : null,
+                  titleCollapsedMaxLines: 1,
+                ),
+                if (entry.key != proposals.length - 1)
+                  const SizedBox(height: AppSpacing.s),
+              ],
+            if (state.hasConfirmedVotingEligibility && draft.isEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              const _Message('Choose at least one option before submitting.'),
+            ],
+            if (eligibilityMessage != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _Message(eligibilityMessage),
+            ],
+          ],
+        );
+        final submitButton = AppButton(
+          key: const ValueKey('voting_confirm_submit_button'),
+          onPressed: onSubmit,
+          variant: AppButtonVariant.primary,
+          minWidth: 240,
+          child: const Text('Confirm & submit'),
+        );
+        if (!widget.showDesktopToolbar) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              VotingPaneScrollView(
+                key: const ValueKey('mobile_voting_review_scroll'),
+                maxWidth: 560,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.s,
+                  AppSpacing.sm,
+                  0,
+                ),
+                scrollPadding: const EdgeInsets.only(
+                  bottom: _mobileReviewScrollBottomPadding,
+                ),
+                child: reviewContent,
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Padding(
+                  key: const ValueKey('mobile_voting_review_action'),
+                  padding: const EdgeInsets.only(
+                    top: AppSpacing.xs,
+                    bottom: AppSpacing.md,
+                  ),
+                  child: Center(child: submitButton),
+                ),
+              ),
+            ],
+          );
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.showDesktopToolbar)
-              const AppPaneToolbar(backLinkMinWidth: 60),
+            const AppPaneToolbar(backLinkMinWidth: 60),
             Expanded(
               child: VotingPaneScrollView(
                 maxWidth: 560,
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.showDesktopToolbar
-                      ? AppSpacing.md
-                      : AppSpacing.sm,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Review your answers',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.displaySmall.copyWith(
-                        color: context.colors.text.accent,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (state.hasConfirmedVotingEligibility)
-                      for (final entry in proposals.asMap().entries) ...[
-                        VotingProposalCard(
-                          proposal: entry.value,
-                          fallbackForumUri: roundForumUri,
-                          selectedChoice: draft.choices[entry.value.id],
-                          readOnly: true,
-                          statusLabel: draft.choices[entry.value.id] == null
-                              ? 'Skipped'
-                              : null,
-                          titleCollapsedMaxLines: 1,
-                        ),
-                        if (entry.key != proposals.length - 1)
-                          const SizedBox(height: AppSpacing.s),
-                      ],
-                    if (state.hasConfirmedVotingEligibility &&
-                        draft.isEmpty) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      const _Message(
-                        'Choose at least one option before submitting.',
-                      ),
-                    ],
-                    if (eligibilityMessage != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      _Message(eligibilityMessage),
-                    ],
-                  ],
-                ),
+                child: reviewContent,
               ),
             ),
             Padding(
@@ -264,15 +305,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
                 top: AppSpacing.xs,
                 bottom: AppSpacing.md,
               ),
-              child: Center(
-                child: AppButton(
-                  key: const ValueKey('voting_confirm_submit_button'),
-                  onPressed: onSubmit,
-                  variant: AppButtonVariant.primary,
-                  minWidth: 240,
-                  child: const Text('Confirm & submit'),
-                ),
-              ),
+              child: Center(child: submitButton),
             ),
           ],
         );

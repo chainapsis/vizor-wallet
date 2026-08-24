@@ -1758,6 +1758,94 @@ void main() {
     tags: ['mobile'],
   );
 
+  testWidgets(
+    'mobile review fills the viewport and clears its pinned submit action',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final round = _roundStatusJson()
+        ..['proposals'] = [
+          for (var i = 1; i <= 6; i++)
+            _proposalJson(i, 'Review proposal $i', ['Yes', 'No']),
+        ];
+      final http = FakeVotingHttpClient(
+        responses: _votingHttpResponses()
+          ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        http: http,
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+      );
+      addTearDown(container.dispose);
+      final draftNotifier = container.read(
+        votingDraftProvider(_draftKey).notifier,
+      );
+      for (var i = 1; i <= 6; i++) {
+        draftNotifier.setChoice(i, 0);
+      }
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review your answers'), findsOneWidget);
+      expect(find.text('Review vote'), findsNothing);
+      final reviewScroll = find.byKey(
+        const ValueKey('mobile_voting_review_scroll'),
+      );
+      final submitButton = find.byKey(
+        const ValueKey('voting_confirm_submit_button'),
+      );
+      final scrollable = find.descendant(
+        of: reviewScroll,
+        matching: find.byType(Scrollable),
+      );
+      expect(reviewScroll, findsOneWidget);
+      expect(submitButton, findsOneWidget);
+      expect(scrollable, findsOneWidget);
+      expect(
+        tester.getBottomLeft(reviewScroll).dy,
+        greaterThan(tester.getBottomLeft(submitButton).dy),
+      );
+      final initialButtonRect = tester.getRect(submitButton);
+      final scrollableState = tester.state<ScrollableState>(scrollable);
+
+      await tester.dragFrom(
+        Offset(AppSpacing.sm, tester.getCenter(submitButton).dy),
+        const Offset(0, -100),
+      );
+      await tester.pumpAndSettle();
+
+      expect(scrollableState.position.pixels, greaterThan(0));
+      expect(tester.getRect(submitButton), initialButtonRect);
+
+      scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(submitButton), initialButtonRect);
+      expect(
+        tester.getBottomLeft(find.byType(VotingProposalCard).last).dy,
+        lessThanOrEqualTo(tester.getTopLeft(submitButton).dy - AppSpacing.md),
+      );
+      expect(tester.takeException(), isNull);
+    },
+    tags: ['mobile'],
+  );
+
   testWidgets('proposal detail shows completed vote with stale local draft', (
     tester,
   ) async {
