@@ -472,7 +472,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               await for (final event
                   in rust.buildProveAndSignDelegationPayloadWithProgress(
                     ctx: _apiRoundContext(context),
-                    pirServerUrl: _transportUrl(pirEndpoint!),
+                    pirServerUrls: _delegationPirTransportUrls(
+                      state.value ?? current,
+                    ),
                     mnemonic: mnemonic!,
                     storedHotkeySecret: storedHotkeySecret!,
                     bundleIndex: bundleIndex,
@@ -848,7 +850,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                   in rust
                       .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                         ctx: _apiRoundContext(context),
-                        pirServerUrl: _transportUrl(pirEndpoint!),
+                        pirServerUrls: _delegationPirTransportUrls(
+                          state.value ?? current,
+                        ),
                         storedHotkeySecret: storedHotkeySecret!,
                         bundleIndex: bundleIndex,
                         keystoneSig: signature.sig,
@@ -3320,6 +3324,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
   }
 
+  List<String> _delegationPirTransportUrls(VotingSessionState session) {
+    final selected = session.pirEndpoint;
+    if (selected == null) return const [];
+
+    final candidates = <String>[_transportUrl(selected)];
+    final seen = <String>{selected.toString()};
+    for (final diagnostic in session.pirDiagnostics) {
+      if (diagnostic.matched && seen.add(diagnostic.endpoint.toString())) {
+        candidates.add(_transportUrl(diagnostic.endpoint));
+      }
+    }
+    return candidates;
+  }
+
   static String _delegationPirPrecomputeKey(
     _VotingSessionContext context,
     int bundleIndex,
@@ -3999,10 +4017,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
+  /// Preserves resolved PIR diagnostics unless the error supplies replacements.
   void _setError(
     String message, {
     Object? cause,
-    List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
+    List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
   }) {
     if (!_canUpdateSessionUi(context)) return;
@@ -4013,7 +4032,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         error: VotingSessionError(
           message: message,
           cause: cause,
-          pirDiagnostics: pirDiagnostics,
+          pirDiagnostics: pirDiagnostics ?? const [],
         ),
         pirDiagnostics: pirDiagnostics,
       ),

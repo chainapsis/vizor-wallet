@@ -158,7 +158,7 @@ abstract class RustLibApi extends BaseApi {
   Stream<ApiDelegationProofEvent>
   crateApiVotingBuildProveAndSignDelegationPayloadWithProgress({
     required ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -167,7 +167,7 @@ abstract class RustLibApi extends BaseApi {
   Stream<ApiDelegationProofEvent>
   crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
@@ -1623,7 +1623,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Stream<ApiDelegationProofEvent>
   crateApiVotingBuildProveAndSignDelegationPayloadWithProgress({
     required ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -1635,7 +1635,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
-            sse_encode_String(pirServerUrl, serializer);
+            sse_encode_list_String(pirServerUrls, serializer);
             sse_encode_String(mnemonic, serializer);
             sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_u_32(bundleIndex, serializer);
@@ -1658,7 +1658,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
               kCrateApiVotingBuildProveAndSignDelegationPayloadWithProgressConstMeta,
           argValues: [
             ctx,
-            pirServerUrl,
+            pirServerUrls,
             mnemonic,
             storedHotkeySecret,
             bundleIndex,
@@ -1677,7 +1677,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "build_prove_and_sign_delegation_payload_with_progress",
         argNames: [
           "ctx",
-          "pirServerUrl",
+          "pirServerUrls",
           "mnemonic",
           "storedHotkeySecret",
           "bundleIndex",
@@ -1689,7 +1689,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Stream<ApiDelegationProofEvent>
   crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
@@ -1702,7 +1702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
-            sse_encode_String(pirServerUrl, serializer);
+            sse_encode_list_String(pirServerUrls, serializer);
             sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_u_32(bundleIndex, serializer);
             sse_encode_list_prim_u_8_loose(keystoneSig, serializer);
@@ -1726,7 +1726,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
               kCrateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgressConstMeta,
           argValues: [
             ctx,
-            pirServerUrl,
+            pirServerUrls,
             storedHotkeySecret,
             bundleIndex,
             keystoneSig,
@@ -1747,7 +1747,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             "build_prove_delegation_payload_with_keystone_signature_with_progress",
         argNames: [
           "ctx",
-          "pirServerUrl",
+          "pirServerUrls",
           "storedHotkeySecret",
           "bundleIndex",
           "keystoneSig",
