@@ -145,35 +145,19 @@ void main() {
         fail('Voting submission did not start: ${job.errorMessage}');
       }
 
-      logE2e('leaving the voting screen while submission continues');
-      for (var attempt = 0; attempt < 4; attempt++) {
-        if (tester.any(
-          find.byKey(const ValueKey('mobile_home_coinholder_voting')),
-        )) {
-          break;
-        }
-        final back = find.bySemanticsLabel('Back').hitTestable();
-        await pumpUntil(
-          tester,
-          () => tester.any(back),
-          description: 'mobile voting back action ${attempt + 1}',
-        );
-        await tester.tap(back.last);
-        await tester.pump(const Duration(milliseconds: 400));
-      }
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('mobile_home_coinholder_voting')),
-        ),
-        description: 'mobile home after leaving voting submission',
-      );
-      expect(
-        container.read(votingSubmissionJobProvider(draftKey)).isInFlight,
-        isTrue,
-      );
+      logE2e('waiting on the voting progress screen for submission');
+      await pumpUntil(tester, () {
+        job = container.read(votingSubmissionJobProvider(draftKey));
+        return tester.any(
+              find.byKey(
+                const ValueKey('mobile_voting_submission_progress_content'),
+              ),
+            ) ||
+            job.status == VotingSubmissionJobStatus.complete ||
+            job.status == VotingSubmissionJobStatus.error;
+      }, description: 'mobile voting submission progress screen');
 
-      logE2e('waiting off-screen for real mobile vote proofs and receipt');
+      logE2e('waiting for real mobile vote proofs and receipt');
       await pumpUntil(
         tester,
         () {
@@ -181,13 +165,33 @@ void main() {
           return job.status == VotingSubmissionJobStatus.complete ||
               job.status == VotingSubmissionJobStatus.error;
         },
-        description: 'off-screen mobile voting submission to finish',
+        description: 'mobile voting submission to finish',
         timeout: const Duration(minutes: 40),
       );
       if (job.status == VotingSubmissionJobStatus.error) {
-        fail('Off-screen voting submission failed: ${job.errorMessage}');
+        fail('Voting submission failed: ${job.errorMessage}');
       }
       expect(job.status, VotingSubmissionJobStatus.complete);
+
+      const submittedTitleKey = ValueKey('mobile_voting_submitted_title');
+      const submittedHomeButtonKey = ValueKey(
+        'mobile_voting_submitted_home_button',
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.byKey(submittedHomeButtonKey)),
+        description: 'mobile voted confirmation screen',
+        timeout: const Duration(minutes: 2),
+      );
+      expect(find.byKey(submittedTitleKey), findsOneWidget);
+      await tapAppButton(tester, submittedHomeButtonKey);
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+        ),
+        description: 'mobile home after completed voting submission',
+      );
       expect(
         find.byKey(const ValueKey('mobile_home_coinholder_voting')),
         findsOneWidget,

@@ -30,6 +30,16 @@ void main() {
       tester.widget<RawScrollbar>(find.byType(RawScrollbar)).thumbVisibility,
       isFalse,
     );
+    expect(
+      tester.widget<RawScrollbar>(find.byType(RawScrollbar)).crossAxisMargin,
+      6,
+    );
+    expect(
+      tester
+          .widget<RawScrollbar>(find.byType(RawScrollbar))
+          .scrollbarOrientation,
+      ScrollbarOrientation.right,
+    );
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);

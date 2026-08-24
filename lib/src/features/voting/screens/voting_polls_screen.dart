@@ -152,7 +152,7 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
       ),
       itemCount: sortedItems.length,
       separatorBuilder: (_, _) => SizedBox(
-        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.sm,
+        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.md,
       ),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
@@ -403,21 +403,20 @@ class _MobilePollCard extends StatelessWidget {
       child: InkWell(
         key: ValueKey('voting_poll_card_tap_${round.roundId}'),
         onTap: onAction,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.pressed) ? Colors.transparent : null,
+        ),
         child: Ink(
           key: ValueKey('voting_poll_card_${round.roundId}'),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
-            vertical: AppSpacing.s,
+            vertical: AppSpacing.md,
           ),
           decoration: _mobilePollCardDecoration(context),
-          child: _PollCardContent(
-            round: round,
-            onAction: onAction,
-            titleGap: AppSpacing.s,
-            descriptionGap: AppSpacing.s,
-            actionGap: AppSpacing.sm,
-          ),
+          child: _MobilePollCardContent(round: round, onAction: onAction),
         ),
       ),
     );
@@ -455,9 +454,135 @@ class _DesktopPollCard extends StatelessWidget {
 
 BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
   color: context.colors.background.ground,
-  borderRadius: BorderRadius.circular(AppRadii.medium),
-  border: Border.all(color: context.colors.border.subtle),
+  borderRadius: BorderRadius.circular(AppRadii.large),
+  boxShadow: [
+    BoxShadow(
+      color: context.colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+  ],
 );
+
+class _MobilePollCardContent extends StatelessWidget {
+  const _MobilePollCardContent({required this.round, required this.onAction});
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final title = round.title.isEmpty ? round.roundId : round.title;
+    final description = _roundDescription(round.rawJson);
+    final previewDescription = _mobileRoundDescription(description);
+    final forumUri = votingRoundForumUriFromJson(round.rawJson);
+    final state = _pollCardState(round);
+    final dateLabel = _roundDateLabel(round.rawJson, state);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          previewDescription.isEmpty ? round.roundId : previewDescription,
+          key: ValueKey('voting_poll_description_${round.roundId}'),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        ),
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.s),
+        Container(height: 1.5, color: colors.border.subtle),
+        const SizedBox(height: AppSpacing.s),
+        Row(
+          children: [
+            Expanded(
+              child: _MobilePollStatus(state: state, dateLabel: dateLabel),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            AppButton(
+              key: ValueKey('voting_poll_action_${round.roundId}'),
+              onPressed: onAction,
+              variant: _actionButtonVariant(state),
+              size: AppButtonSize.mediumLarge,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: Text(_actionLabel(state)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MobilePollStatus extends StatelessWidget {
+  const _MobilePollStatus({required this.state, required this.dateLabel});
+
+  final _PollCardState state;
+  final String? dateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final voted = state == _PollCardState.voted;
+    final displayedDate = dateLabel?.startsWith('Closed ') == true
+        ? dateLabel!.substring('Closed '.length)
+        : dateLabel;
+    final statusColor = voted
+        ? context.colors.text.positiveStrong
+        : context.colors.text.accent;
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        children: [
+          if (voted) ...[
+            AppIcon(AppIcons.checkCircle, size: 20, color: statusColor),
+            const SizedBox(width: AppSpacing.xxs),
+          ],
+          Flexible(
+            child: Text(
+              _statusLabel(state),
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodySmall.copyWith(
+                color: statusColor,
+                fontWeight: FontWeight.w500,
+                height: 16 / 14,
+                letterSpacing: -0.06,
+              ),
+            ),
+          ),
+          if (displayedDate != null && constraints.maxWidth >= 120) ...[
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                displayedDate,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.primary,
+                  fontWeight: FontWeight.w400,
+                  height: 16 / 14,
+                  letterSpacing: -0.06,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 BoxDecoration _desktopPollCardDecoration(BuildContext context) => BoxDecoration(
   color: context.colors.background.ground,
@@ -659,6 +784,20 @@ String _roundDescription(Map<String, dynamic> json) {
   return '';
 }
 
+String _mobileRoundDescription(String description) {
+  final normalized = description
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .trim();
+  if (normalized.isEmpty) return '';
+
+  return normalized
+      .split(RegExp(r'\n(?:[ \t]*\n)+'))
+      .map((paragraph) => paragraph.replaceAll(RegExp(r'[ \t\n]+'), ' ').trim())
+      .where((paragraph) => paragraph.isNotEmpty)
+      .join('\n');
+}
+
 String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
   final start = votingRoundStartDate(json);
   final end = votingRoundEndDate(json);
@@ -725,7 +864,7 @@ Color _statusText(_PollCardState state) {
 String _actionLabel(_PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress => 'Resume',
-    _PollCardState.active => 'Start voting',
+    _PollCardState.active => 'Vote',
     _PollCardState.voted => 'Review',
     _PollCardState.tallying || _PollCardState.closed => 'View results',
   };

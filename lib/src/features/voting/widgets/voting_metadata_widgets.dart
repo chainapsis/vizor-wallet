@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -184,6 +185,19 @@ class VotingProposalCard extends StatelessWidget {
             label: 'Choice $selectedChoice',
           )
         : null;
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return _MobileVotingProposalCard(
+        proposal: proposal,
+        selectedChoice: selectedChoice,
+        forumUri: forumUri,
+        enabled: enabled,
+        readOnly: readOnly,
+        statusLabel: statusLabel,
+        missingSelectedOption: missingSelectedOption,
+        onDisabledOptionTap: onDisabledOptionTap,
+        onChoice: onChoice,
+      );
+    }
     final titleStyle = AppTypography.headlineSmall.copyWith(
       color: colors.text.accent,
       fontWeight: FontWeight.w600,
@@ -290,6 +304,265 @@ class VotingProposalCard extends StatelessWidget {
   }
 }
 
+class _MobileVotingProposalCard extends StatelessWidget {
+  const _MobileVotingProposalCard({
+    required this.proposal,
+    required this.selectedChoice,
+    required this.forumUri,
+    required this.enabled,
+    required this.readOnly,
+    required this.statusLabel,
+    required this.missingSelectedOption,
+    required this.onDisabledOptionTap,
+    required this.onChoice,
+  });
+
+  final VotingProposalView proposal;
+  final int? selectedChoice;
+  final Uri? forumUri;
+  final bool enabled;
+  final bool readOnly;
+  final String? statusLabel;
+  final VotingOptionView? missingSelectedOption;
+  final VoidCallback? onDisabledOptionTap;
+  final ValueChanged<int?>? onChoice;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final options = [...proposal.options, ?missingSelectedOption];
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (proposal.zipBadges.isNotEmpty ||
+              forumUri != null ||
+              statusLabel != null) ...[
+            MobileVotingProposalMetadataRow(
+              zipBadges: proposal.zipBadges,
+              forumUri: forumUri,
+              statusLabel: statusLabel,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          Text(
+            proposal.title,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+              height: 24 / 16,
+              letterSpacing: -0.24,
+            ),
+          ),
+          if (proposal.description.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              proposal.description.trim(),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+                height: 21 / 14,
+                letterSpacing: -0.21,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          for (var index = 0; index < options.length; index++) ...[
+            _MobileVotingProposalOption(
+              key: ValueKey(
+                'voting_proposal_${proposal.id}_option_${options[index].index}',
+              ),
+              option: options[index],
+              selected: selectedChoice == options[index].index,
+              enabled: enabled,
+              readOnly: readOnly,
+              onDisabledTap: onDisabledOptionTap,
+              onTap: () {
+                final callback = onChoice;
+                if (callback == null) return;
+                callback(
+                  selectedChoice == options[index].index
+                      ? null
+                      : options[index].index,
+                );
+              },
+            ),
+            if (index != options.length - 1)
+              const SizedBox(height: AppSpacing.s),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class MobileVotingProposalMetadataRow extends StatelessWidget {
+  const MobileVotingProposalMetadataRow({
+    required this.zipBadges,
+    required this.forumUri,
+    required this.statusLabel,
+    super.key,
+  });
+
+  final List<String> zipBadges;
+  final Uri? forumUri;
+  final String? statusLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final metadataLabels = [...zipBadges, ?statusLabel];
+    return SizedBox(
+      height: forumUri == null ? 21 : 24,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  for (var index = 0; index < metadataLabels.length; index++)
+                    TextSpan(
+                      text:
+                          '${index == 0 ? '' : '   '}${metadataLabels[index]}',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: index < zipBadges.length
+                            ? context.colors.text.primary
+                            : context.colors.text.secondary,
+                        height: 16 / 14,
+                        letterSpacing: -0.06,
+                      ),
+                    ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (forumUri != null)
+            VotingForumLinkButton(uri: forumUri!, size: AppButtonSize.small),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileVotingProposalOption extends StatelessWidget {
+  const _MobileVotingProposalOption({
+    super.key,
+    required this.option,
+    required this.selected,
+    required this.enabled,
+    required this.readOnly,
+    required this.onDisabledTap,
+    required this.onTap,
+  });
+
+  final VotingOptionView option;
+  final bool selected;
+  final bool enabled;
+  final bool readOnly;
+  final VoidCallback? onDisabledTap;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final interactive = enabled && !readOnly;
+    final description = option.description.trim();
+    return Opacity(
+      opacity: enabled || readOnly ? 1 : 0.56,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.pressed) ? Colors.transparent : null,
+        ),
+        onTap: interactive
+            ? onTap
+            : readOnly
+            ? null
+            : onDisabledTap,
+        child: Container(
+          height: description.isEmpty ? 48 : 94,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: colors.background.base,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: selected ? colors.border.strong : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w500,
+                        height: 16 / 14,
+                        letterSpacing: -0.06,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  SizedBox.square(
+                    dimension: 20,
+                    child: selected
+                        ? AppIcon(
+                            AppIcons.checkCircle,
+                            key: const ValueKey(
+                              'voting_selected_choice_indicator',
+                            ),
+                            size: 20,
+                            color: colors.icon.accent,
+                          )
+                        : null,
+                  ),
+                ],
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: colors.text.primary,
+                    height: 21 / 14,
+                    letterSpacing: -0.21,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VotingProposalOptionRow extends StatelessWidget {
   const _VotingProposalOptionRow({
     super.key,
@@ -385,6 +658,9 @@ class _VotingProposalOptionRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Text(
                 trailingLabel,
+                key: trailingLabel == 'Selected'
+                    ? const ValueKey('voting_selected_choice_indicator')
+                    : null,
                 style: AppTypography.bodySmall.copyWith(
                   color: (enabled || readOnly) && selected
                       ? palette.text
@@ -404,12 +680,20 @@ class VotingExpandableText extends StatefulWidget {
     required this.text,
     required this.style,
     this.collapsedMaxLines = 2,
+    this.collapsedLabel = 'View more',
+    this.expandedLabel = 'View less',
+    this.buttonAlignment = Alignment.centerRight,
+    this.showToggleWhenNotOverflowing = false,
     super.key,
   });
 
   final String text;
   final TextStyle style;
   final int collapsedMaxLines;
+  final String collapsedLabel;
+  final String expandedLabel;
+  final AlignmentGeometry buttonAlignment;
+  final bool showToggleWhenNotOverflowing;
 
   @override
   State<VotingExpandableText> createState() => _VotingExpandableTextState();
@@ -440,24 +724,27 @@ class _VotingExpandableTextState extends State<VotingExpandableText> {
           maxWidth: constraints.maxWidth,
           maxLines: widget.collapsedMaxLines,
         );
+        final showToggle = canExpand || widget.showToggleWhenNotOverflowing;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               text,
-              maxLines: _expanded || !canExpand
+              maxLines: _expanded || !showToggle
                   ? null
                   : widget.collapsedMaxLines,
-              overflow: _expanded || !canExpand
+              overflow: _expanded || !showToggle
                   ? TextOverflow.visible
                   : TextOverflow.ellipsis,
               style: widget.style,
             ),
-            if (canExpand)
+            if (showToggle)
               Align(
-                alignment: Alignment.centerRight,
+                alignment: widget.buttonAlignment,
                 child: _VotingViewMoreButton(
                   expanded: _expanded,
+                  collapsedLabel: widget.collapsedLabel,
+                  expandedLabel: widget.expandedLabel,
                   onPressed: () {
                     setState(() {
                       _expanded = !_expanded;
@@ -492,10 +779,14 @@ bool _textExceedsMaxLines({
 class _VotingViewMoreButton extends StatelessWidget {
   const _VotingViewMoreButton({
     required this.expanded,
+    required this.collapsedLabel,
+    required this.expandedLabel,
     required this.onPressed,
   });
 
   final bool expanded;
+  final String collapsedLabel;
+  final String expandedLabel;
   final VoidCallback onPressed;
 
   @override
@@ -510,7 +801,7 @@ class _VotingViewMoreButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              expanded ? 'View less' : 'View more',
+              expanded ? expandedLabel : collapsedLabel,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
                 height: 20 / 14,

@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_formatters.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
@@ -1335,6 +1336,9 @@ void main() {
       await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
       expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await _pumpUntilFound(tester, find.text('poll route'));
       expect(refreshGate.isCompleted, isFalse);
     },
   );
@@ -1650,6 +1654,253 @@ void main() {
 
     expect(find.text('View less'), findsOneWidget);
   });
+
+  testWidgets(
+    'mobile poll exit clears its draft before the same poll is reopened',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      const otherDraftKey = VotingSessionKey(
+        roundId: 'another-round',
+        accountUuid: 'account-1',
+      );
+      await persistence.save(
+        otherDraftKey,
+        const VotingDraftState(choices: {9: 1}),
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(otherDraftKey)).choices, {9: 1});
+
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsNothing,
+      );
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile poll exit clears its persisted draft while the session loads',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      await persistence.save(
+        _draftKey,
+        const VotingDraftState(choices: {1: 0}),
+      );
+      final sessionGate = Completer<VotingSessionState>();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        draftPersistence: persistence,
+        overrides: [
+          votingSessionProvider(_roundId).overrideWith(
+            () => _BlockingVotingSessionNotifier(sessionGate.future),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(
+        tester,
+        find.byType(MobileVotingProposalDetailScreen),
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile review back preserves choices until the poll itself is exited',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review answers'));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('Review answers'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile review fills the viewport and clears its pinned submit action',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final round = _roundStatusJson()
+        ..['proposals'] = [
+          for (var i = 1; i <= 6; i++)
+            _proposalJson(i, 'Review proposal $i', ['Yes', 'No']),
+        ];
+      final http = FakeVotingHttpClient(
+        responses: _votingHttpResponses()
+          ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        http: http,
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+      );
+      addTearDown(container.dispose);
+      final draftNotifier = container.read(
+        votingDraftProvider(_draftKey).notifier,
+      );
+      for (var i = 1; i <= 6; i++) {
+        draftNotifier.setChoice(i, 0);
+      }
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review your answers'), findsOneWidget);
+      expect(find.text('Review vote'), findsNothing);
+      final reviewScroll = find.byKey(
+        const ValueKey('mobile_voting_review_scroll'),
+      );
+      final submitButton = find.byKey(
+        const ValueKey('voting_confirm_submit_button'),
+      );
+      final scrollable = find.descendant(
+        of: reviewScroll,
+        matching: find.byType(Scrollable),
+      );
+      expect(reviewScroll, findsOneWidget);
+      expect(submitButton, findsOneWidget);
+      expect(scrollable, findsOneWidget);
+      final submitButtonWidget = tester.widget<AppButton>(submitButton);
+      expect(submitButtonWidget.expand, isTrue);
+      expect(submitButtonWidget.minWidth, isNull);
+      expect(tester.getTopLeft(submitButton).dx, AppSpacing.sm);
+      expect(tester.getTopRight(submitButton).dx, 393 - AppSpacing.sm);
+      expect(
+        tester.getBottomLeft(reviewScroll).dy,
+        greaterThan(tester.getBottomLeft(submitButton).dy),
+      );
+      final initialButtonRect = tester.getRect(submitButton);
+      final scrollableState = tester.state<ScrollableState>(scrollable);
+
+      await tester.dragFrom(
+        Offset(AppSpacing.xs, tester.getCenter(submitButton).dy),
+        const Offset(0, -100),
+      );
+      await tester.pumpAndSettle();
+
+      expect(scrollableState.position.pixels, greaterThan(0));
+      expect(tester.getRect(submitButton), initialButtonRect);
+
+      scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(submitButton), initialButtonRect);
+      expect(
+        tester.getBottomLeft(find.byType(VotingProposalCard).last).dy,
+        lessThanOrEqualTo(tester.getTopLeft(submitButton).dy - AppSpacing.md),
+      );
+      expect(tester.takeException(), isNull);
+    },
+    tags: ['mobile'],
+  );
 
   testWidgets('proposal detail shows completed vote with stale local draft', (
     tester,
@@ -3825,6 +4076,7 @@ ProviderContainer _statusContainer({
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   Duration walletSyncPollInterval = Duration.zero,
   Duration? walletSyncMaxWait,
+  VotingDraftPersistence? draftPersistence,
   List<Override> overrides = const [],
 }) {
   final effectiveHttp =
@@ -3920,7 +4172,7 @@ ProviderContainer _statusContainer({
         VotingRecoveryService(api: recoveryApi ?? _FakeVotingRecoveryApi()),
       ),
       votingDraftPersistenceProvider.overrideWithValue(
-        _MemoryVotingDraftPersistence(),
+        draftPersistence ?? _MemoryVotingDraftPersistence(),
       ),
       votingPirResolverProvider.overrideWithValue(
         const _MatchedPirSnapshotResolver(),
@@ -3943,6 +4195,33 @@ ProviderContainer _statusContainer({
       ),
       ...overrides,
     ],
+  );
+}
+
+GoRouter _mobileProposalRouter() {
+  return GoRouter(
+    initialLocation: '/voting',
+    routes: [
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, state) => MobileVotingProposalDetailScreen(
+          roundId: state.pathParameters['roundId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
+        builder: (_, state) =>
+            MobileVotingReviewScreen(roundId: state.pathParameters['roundId']!),
+      ),
+    ],
+  );
+}
+
+Widget _mobileProposalApp(GoRouter router) {
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -4568,6 +4847,15 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
 
   @override
   Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
+}
+
+class _BlockingVotingSessionNotifier extends VotingSessionNotifier {
+  _BlockingVotingSessionNotifier(this._future) : super(_roundId);
+
+  final Future<VotingSessionState> _future;
+
+  @override
+  Future<VotingSessionState> build() => _future;
 }
 
 class _BlockedRefreshVotingSubmissionSessionNotifier

@@ -1256,63 +1256,70 @@ class _MobileVotingEntryCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 72),
+          constraints: const BoxConstraints(minHeight: 77),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
             vertical: AppSpacing.s,
           ),
           decoration: BoxDecoration(
             color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(color: colors.border.subtle),
+            borderRadius: BorderRadius.circular(AppRadii.large),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colors.background.inverse,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            border: Border.all(color: const Color(0x12FFFFFF), width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppIcon(
+                  AppIcons.coinholderVoting,
+                  size: 20,
+                  color: colors.icon.accent,
                 ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.endpoint,
-                    size: 20,
-                    color: colors.icon.inverse,
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Coinholder voting',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          AppIcon(
+                            AppIcons.chevronForward,
+                            size: 20,
+                            color: colors.icon.accent,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Help to shape the network',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                          height: 17 / 16,
+                          letterSpacing: -0.04,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Coinholder voting',
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Use your ZEC to help shape the network.',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: 20,
-                color: colors.icon.regular,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -4,9 +4,16 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/core/profile_pictures.dart';
 import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
+import '../src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
+import '../src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
+import '../src/features/voting/screens/voting_proposal_detail_screen.dart';
+import '../src/features/voting/screens/voting_results_screen.dart';
 import '../src/features/voting/screens/voting_status_screen.dart';
+import '../src/features/voting/voting_flow_models.dart';
+import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
@@ -49,6 +56,117 @@ Widget buildMobileVotingConfigUseCase(BuildContext context) {
     child: const MobileModalOverlay(
       background: MobileVotingPollsScreen(),
       child: MobileVotingConfigSettingsSheet(),
+    ),
+  );
+}
+
+Widget buildMobileVotingVotedUseCase(BuildContext context) {
+  return MobileVotingScaffold(
+    title: 'Voted',
+    child: VotingVotedPollContent(
+      showDesktopToolbar: false,
+      roundTitle: '[TEST] Very Serious Snack Governance 3',
+      snapshotHeight: 3543600,
+      description:
+          'A silly sample round for testing the shielded vote builder without '
+          'using real governance content.',
+      forumUri: null,
+      votingPowerZatoshi: BigInt.from(37500000),
+      votingPowerPreparing: false,
+      votedAt: DateTime(2026, 8, 24),
+      proposals: const [_previewSnackProposal],
+      choicesByProposalId: const {1: 1},
+    ),
+  );
+}
+
+Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
+  return const MobileVotingScaffold(
+    title: 'Coinholder voting',
+    child: SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: VotingProposalCard(proposal: _previewSnackProposal),
+    ),
+  );
+}
+
+Widget buildMobileVotingProposalSelectedUseCase(BuildContext context) {
+  return const MobileVotingScaffold(
+    title: 'Coinholder voting',
+    child: SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: VotingProposalCard(
+        proposal: _previewSnackProposal,
+        selectedChoice: 1,
+      ),
+    ),
+  );
+}
+
+Widget buildMobileVotingResultsUseCase(BuildContext context) {
+  return const MobileVotingScaffold(
+    title: 'Voting results',
+    child: SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: VotingResultCard(
+        proposal: _previewSnackResultProposal,
+        tally: {1: 2640.96, 2: 1040.96, 3: 240.96},
+        selectedChoice: 2,
+        profilePictureId: kDefaultProfilePictureId,
+      ),
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.delegating,
+      activeStepProgress: 0.25,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.castingVotes,
+      activeStepProgress: 0.6,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionFinalizingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.finalizing,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmittedUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingSubmittedScreen(onDone: _previewNoop),
+  );
+}
+
+Widget _mobileVotingFullPagePreview(BuildContext context, Widget child) {
+  final mediaQuery = MediaQuery.of(context);
+  const safeArea = EdgeInsets.only(top: 55);
+  return SizedBox(
+    width: 393,
+    height: 852,
+    child: MediaQuery(
+      data: mediaQuery.copyWith(
+        size: const Size(393, 852),
+        padding: safeArea,
+        viewPadding: safeArea,
+      ),
+      child: child,
     ),
   );
 }
@@ -201,26 +319,106 @@ const _previewSourceState = VotingConfigSourceState(
 
 const _previewVotingRounds = [
   VotingRoundView(
-    roundId: 'community-grants-2026',
-    title: 'Community Grants Renewal',
+    roundId: 'snack-governance-active',
+    title: '[TEST] Very Serious Snack Governance 3',
     status: 'active',
     rawJson: {
       'description':
-          'Choose how the next community grants pool should support Zcash '
-          'builders and public goods.',
-      'end_time': '2026-09-02T12:00:00Z',
+          'Welcome\n\nThis poll resolves outstanding NU7 scope questions '
+          'following the early-2026 sentiment polling. Already in NU7, '
+          'established by prior consensus.',
+      'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
   VotingRoundView(
-    roundId: 'network-priorities-2026',
-    title: 'Network Priorities',
-    status: 'closed',
+    roundId: 'snack-governance-voted',
+    title: '[TEST] Very Serious Snack Governance 3',
+    status: 'active',
     voted: true,
     rawJson: {
       'description':
-          'Rank the ecosystem priorities that should guide the next funding '
-          'cycle.',
-      'end_time': '2026-08-14T12:00:00Z',
+          'A silly sample round for testing the shielded vote builder without '
+          'using real governance content.',
+      'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
+    },
+  ),
+  VotingRoundView(
+    roundId: 'snack-governance-closed',
+    title: '[TEST] Very Serious Snack Governance 3',
+    status: 'closed',
+    rawJson: {
+      'description':
+          'A silly sample round for testing the shielded vote builder without '
+          'using real governance content.',
+      'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
 ];
+
+const _previewSnackProposal = VotingProposalView(
+  id: 1,
+  title: 'Official Snack of the Next Team Sync',
+  description:
+      'Which snack should be recognized as the official snack of the next '
+      'team sync?',
+  zipNumber: 'ZIP-2033 ZIP-2033',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label: 'Option 1',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 2,
+      label: 'Option 2',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 3,
+      label: 'Option 3',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+  ],
+);
+
+const _previewSnackResultProposal = VotingProposalView(
+  id: 1,
+  title: 'Official Snack of the Next Team Sync',
+  description:
+      'Which snack should be recognized as the official snack of the next '
+      'team sync?',
+  zipNumber: 'ZIP-2033 ZIP-2033',
+  forumUrl: 'https://forum.zcashcommunity.com/t/snack-governance',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label: 'Option 1',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 2,
+      label: 'Option 2',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 3,
+      label: 'Option 3',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+  ],
+);
