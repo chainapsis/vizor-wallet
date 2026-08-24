@@ -168,18 +168,19 @@ const _accountState = AccountState(
   activeAddress: 'u1homeaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
-  initialLocation: '/home',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
+AppBootstrapState _bootstrap({AccountState accountState = _accountState}) =>
+    AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 Widget _app(
   SyncState syncState, {
@@ -202,6 +203,7 @@ Widget _app(
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
   AppThemeData theme = AppThemeData.dark,
+  AccountState accountState = _accountState,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -236,6 +238,13 @@ Widget _app(
         GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/home/ledger-shield',
+        builder: (_, _) => const Text(
+          'ledger shield route',
+          key: ValueKey('mobile_ledger_shield_route'),
+        ),
+      ),
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
@@ -274,7 +283,9 @@ Widget _app(
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       if (migrationCompletion != null || migrationCompletionFuture != null)
         ironwoodMigrationCompletionProvider.overrideWith(
           (ref) =>
@@ -1874,7 +1885,7 @@ void main() {
         status,
         currentHeight: currentHeight,
         broadcastHeight: currentHeight,
-        isHardware: false,
+        isKeystone: false,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',
@@ -2100,6 +2111,44 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Shield'), findsOneWidget);
+  });
+
+  testWidgets('Ledger shielding opens the dedicated mobile Ledger route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          transparentBalance: BigInt.from(242000000),
+          canShieldTransparentBalance: true,
+        ),
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1homeaddress',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_shield_route')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('animates transparent balance tray away before removal', (

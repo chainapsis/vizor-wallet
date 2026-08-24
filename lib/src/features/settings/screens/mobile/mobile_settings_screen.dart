@@ -53,7 +53,8 @@ class MobileSettingsScreen extends ConsumerWidget {
     const settingsRowStyle = AppTypography.labelLarge;
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
-    final seedPhraseEnabled = account != null && !account.isHardware;
+    final isHardwareAccount = account?.isHardware ?? false;
+    final seedPhraseEnabled = account != null && !isHardwareAccount;
     final viewingKeyEnabled = account != null;
 
     return SafeArea(
@@ -83,19 +84,36 @@ class MobileSettingsScreen extends ConsumerWidget {
                 _SettingsGroup(
                   title: 'Account',
                   rows: [
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_seed_row'),
-                      leading: _RowIcon(AppIcons.key),
-                      label: 'Secret Passphrase',
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      enabled: seedPhraseEnabled,
-                      onTap: seedPhraseEnabled
-                          ? () => context.push('/settings/seed-phrase')
-                          : null,
-                    ),
+                    if (isHardwareAccount)
+                      MobileListRow(
+                        key: const ValueKey(
+                          'mobile_settings_hardware_account_row',
+                        ),
+                        leading: _RowIcon(AppIcons.wallet),
+                        label: 'Account Details',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => context.push(
+                          '/settings/hardware-account',
+                          extra: account!.uuid,
+                        ),
+                      )
+                    else
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_seed_row'),
+                        leading: _RowIcon(AppIcons.key),
+                        label: 'Secret Passphrase',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        enabled: seedPhraseEnabled,
+                        onTap: seedPhraseEnabled
+                            ? () => context.push('/settings/seed-phrase')
+                            : null,
+                      ),
                     MobileListRow(
                       key: const ValueKey('mobile_settings_viewing_key_row'),
                       leading: _RowIcon(AppIcons.eye),

@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
@@ -191,6 +192,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MobileSendScreen), findsNothing);
     expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('hardware account details pushes as a Cupertino page', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+
+    unawaited(
+      router.push<void>('/settings/hardware-account', extra: 'account-1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MobileHardwareAccountDetailsScreen), findsOneWidget);
+    final route = ModalRoute.of(
+      tester.element(find.byType(MobileHardwareAccountDetailsScreen)),
+    );
+    expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
   });
 
   testWidgets('send amount and review routes push Cupertino pages', (
@@ -561,6 +581,12 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
 
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {}
+
+  @override
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  }) async {}
 
   @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
