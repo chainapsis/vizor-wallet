@@ -52,6 +52,18 @@ void main() {
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
+    final description = tester.widget<Text>(
+      find.byKey(
+        const ValueKey('voting_poll_description_snack-governance-active'),
+      ),
+    );
+    expect(
+      description.data,
+      'A silly sample round for testing the shielded vote builder without '
+      'using real governance content.',
+    );
+    expect(description.maxLines, 3);
+    expect(description.overflow, TextOverflow.ellipsis);
     final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
     expect(cardDecoration.boxShadow, isNotEmpty);
     final cardTap = tester.widget<InkWell>(

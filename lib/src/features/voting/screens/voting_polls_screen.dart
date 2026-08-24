@@ -470,6 +470,7 @@ class _MobilePollCardContent extends StatelessWidget {
     final colors = context.colors;
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
+    final compactDescription = description.replaceAll(RegExp(r'\s+'), ' ');
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
@@ -485,7 +486,8 @@ class _MobilePollCardContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         Text(
-          description.isEmpty ? round.roundId : description,
+          compactDescription.isEmpty ? round.roundId : compactDescription,
+          key: ValueKey('voting_poll_description_${round.roundId}'),
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),

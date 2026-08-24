@@ -322,7 +322,7 @@ const _previewVotingRounds = [
     status: 'active',
     rawJson: {
       'description':
-          'A silly sample round for testing the shielded vote builder without '
+          'A silly sample round for testing the shielded vote builder\n\nwithout '
           'using real governance content.',
       'vote_end_time': '2026-08-24T12:00:00Z',
     },
