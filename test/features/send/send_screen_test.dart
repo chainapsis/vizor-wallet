@@ -807,7 +807,7 @@ void main() {
     expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
   });
 
-  testWidgets('hardware TEX sends are blocked inline before proposal', (
+  testWidgets('hardware TEX sends can proceed to proposal', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -828,19 +828,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Keystone does not support TEX sends yet.'),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('send_cta_warning')), findsOneWidget);
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsNothing);
 
     await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
 
-    expect(rustApi.proposeSendCalls, 0);
+    expect(rustApi.proposeSendCalls, 1);
   });
 
-  testWidgets('hardware TEX address explains unsupported state before amount', (
+  testWidgets('hardware TEX address remains available before amount', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -861,11 +857,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'send_amount_field'), isEmpty);
-    expect(
-      find.text('Keystone does not support TEX sends yet.'),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('send_cta_warning')), findsOneWidget);
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsNothing);
     expect(find.text('Shielded → Shielded'), findsNothing);
     expect(find.text('Shielded → Transparent'), findsNothing);
     expect(rustApi.proposeSendCalls, 0);

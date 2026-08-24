@@ -181,8 +181,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldGap = AppSpacing.s;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
-  static const _hardwareTexUnsupportedText =
-      'Keystone does not support TEX sends yet.';
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -540,15 +538,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       '$_insufficientBalanceText including fee';
   String _insufficientBalanceWithFeeText(String feeText) =>
       '$_insufficientBalanceText (fee: $feeText)';
-  bool get _isHardwareTexSend =>
-      _isTexAddress && widget.activeAccountIsHardware;
-
   bool get _showAmountError =>
-      _amountError != null &&
-      _amountError!.trim().isNotEmpty &&
-      _amountError != _hardwareTexUnsupportedText;
-  String? get _ctaWarningText =>
-      _isHardwareTexSend ? _hardwareTexUnsupportedText : null;
+      _amountError != null && _amountError!.trim().isNotEmpty;
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -575,7 +566,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       !_isResolvingMax &&
       _hasValidAddress &&
       _isAmountValid &&
-      !_isHardwareTexSend &&
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
@@ -613,7 +603,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
-    if (_isHardwareTexSend) return _hardwareTexUnsupportedText;
     return _memoError;
   }
 
@@ -770,10 +759,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    if (_isHardwareTexSend) {
-      setState(() => _amountError = _hardwareTexUnsupportedText);
-      return;
-    }
     if (zatoshi > available) {
       setState(() => _amountError = _insufficientBalanceText);
       return;
@@ -866,13 +851,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      if (_isHardwareTexSend) {
-        setState(() {
-          _error = _hardwareTexUnsupportedText;
-          _isSending = false;
-        });
-        return;
-      }
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';
@@ -1314,13 +1292,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           if (_error != null) ...[
                             const SizedBox(height: AppSpacing.xs),
                             _SendGlobalError(message: _error!),
-                          ],
-                          if (_error == null && _ctaWarningText != null) ...[
-                            const SizedBox(height: AppSpacing.xs),
-                            _SendGlobalError(
-                              key: const ValueKey('send_cta_warning'),
-                              message: _ctaWarningText!,
-                            ),
                           ],
                         ],
                       ),
@@ -1856,7 +1827,7 @@ List<BoxShadow> _sendInputSurfaceShadow(AppColors colors) {
 }
 
 class _SendGlobalError extends StatelessWidget {
-  const _SendGlobalError({super.key, required this.message});
+  const _SendGlobalError({required this.message});
 
   final String message;
 

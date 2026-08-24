@@ -1,8 +1,8 @@
 //! Hardware-wallet PCZT pipeline.
 //!
 //! Software sends are handled by `sync/send.rs`. This module owns the
-//! three-PCZT pipeline the hardware (Keystone) send flow uses, which
-//! matches the `zcash-android-wallet-sdk` / Zashi pattern:
+//! PCZT pipeline used by Keystone signing. A proposal is IO-finalized, proved
+//! locally, redacted for the signer, and returned with device signatures.
 //!
 //! ```text
 //!   1. create_pczt_from_proposal                      → base PCZT (phone)
@@ -17,38 +17,29 @@
 //!                 → device signs Orchard spend_auth_sig
 //!                 → signed PCZT back to phone          → pcztWithSignatures
 //!                                                            │
-//!   3. extract_and_broadcast_pczt(                             │
-//!        pcztWithProofs, pcztWithSignatures,                   │
-//!        spend_params?, output_params?,                        │
-//!      )                                               → finalize transparent spends
-//!                                                        + extract tx + txid ◄┘
+//!   3. store_and_broadcast_signed_pczts_for_proposal(          │
+//!        [pcztWithProofs...], [pcztWithSignatures...],         │
+//!      )                                               → validate/finalize all
+//!                                                        + atomic store
+//!                                                        + ordered broadcast ◄┘
 //! ```
 //!
 //! ## Critical invariants (each of these was a real regression at some point)
 //!
-//! 1. **`extract_and_broadcast_pczt` broadcasts before it persists.**
-//!    Extract the `Transaction` in-memory, send it to the network,
-//!    and *only then* write it to the wallet DB. The naive
-//!    store-then-broadcast path leaves the wallet unrecoverable when
-//!    lightwalletd rejects the tx: the DB thinks the notes are
-//!    spent, the network has no record, and the user has to
-//!    manually rescue the wallet.
+//! 1. **Send validates every returned PCZT before touching the DB or network.**
+//!    For TEX, round 2 must contain exactly one transparent input spending the
+//!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
+//!    shielded or transparent signatures are rejected before persistence.
 //!
-//! 2. **Local storage failure after a successful broadcast must not
-//!    surface as a send failure.** Primary store path is
-//!    `extract_and_store_transaction_from_pczt` (preserves rich
-//!    PCZT recipient/memo metadata). On failure, fall back to
-//!    `decrypt_and_store_transaction` — the same path sync uses when
-//!    it discovers one of our sent txs on-chain. Spent notes still
-//!    get marked spent via nullifier matching; only the PCZT-only
-//!    display metadata is lost. Only if both paths fail do we
-//!    return an error — and the error explains the tx is on the
-//!    network and not to retry.
+//! 2. **The complete Send set is atomically stored before broadcast.** Each
+//!    rich PCZT-aware store participates in one outer WalletDb transaction. A
+//!    later failure rolls back earlier writes; after commit, normal pending
+//!    recovery owns retries.
 //!
 //! 3. **Sapling params must be passed to BOTH `add_proofs_to_pczt`
-//!    AND `extract_and_broadcast_pczt` whenever the PCZT contains a
+//!    AND the final store/broadcast call whenever the PCZT contains a
 //!    Sapling bundle.** `add_proofs_to_pczt` uses `LocalTxProver` to
-//!    build Sapling output proofs; `extract_and_broadcast_pczt`
+//!    build Sapling output proofs; finalization
 //!    uses `LocalTxProver::verifying_keys()` to validate the
 //!    extracted transaction and to let
 //!    `extract_and_store_transaction_from_pczt` store it. If the
@@ -57,8 +48,7 @@
 //!    user sees a cryptic error after already downloading 50MB of
 //!    params and approving on the device. The Dart call site in
 //!    `send_screen.dart` threads
-//!    `proposal.needsSaplingParams ? spendPath : null` into both —
-//!    keep it that way.
+//!    `proposal.needsSaplingParams ? spendPath : null` into both.
 //!
 //! 4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths,
 //!    while its wallet-input lock remains releasable until the flow
@@ -66,17 +56,23 @@
 //!    proposal at the top. A second call with the same `proposal_id`
 //!    returns "Proposal not found (expired or already consumed)".
 //!    `discard_proposal` is idempotent and releases the retained
-//!    owner-scoped input lock after hardware cancel, definite failure,
-//!    or successful transaction storage. An uncertain broadcast retains
-//!    the wallet lock until expiry via
-//!    `retain_proposal_lock_until_expiry`.
+//!    owner-scoped input lock after hardware cancel or pre-store failure.
+//!    Successful atomic storage finishes proposal bookkeeping before network
+//!    I/O because the pending transactions now own recovery.
 
 use std::convert::Infallible;
 use std::sync::OnceLock;
 
-use zcash_client_backend::data_api::OutputLockStore;
+use transparent::address::TransparentAddress;
+use transparent::bundle::{OutPoint, TxOut};
+use transparent::keys::TransparentKeyScope;
+use zcash_address::{ToAddress, ZcashAddress};
+use zcash_client_backend::data_api::{Account, OutputLockStore, WalletRead};
+use zcash_client_backend::proposal::{Proposal, Step, StepOutputIndex};
+use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::transaction::{builder::BundlePadding, Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
@@ -90,6 +86,161 @@ pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+}
+
+pub struct TexPcztPair {
+    pub pczts: Vec<Vec<u8>>,
+    pub signer_pczts: Vec<Vec<u8>>,
+}
+
+pub struct StoreAndBroadcastPcztsResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
+}
+
+impl StoreAndBroadcastPcztsResult {
+    const BROADCASTED: &'static str = "broadcasted";
+    const PENDING_BROADCAST: &'static str = "pending_broadcast";
+    const BROADCAST_UNKNOWN: &'static str = "broadcast_unknown";
+    const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
+    const EXPIRED: &'static str = "expired";
+}
+
+#[derive(Debug)]
+enum AtomicPcztStoreError {
+    Sqlite(rusqlite::Error),
+    Store(String),
+}
+
+impl From<rusqlite::Error> for AtomicPcztStoreError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Sqlite(error)
+    }
+}
+
+impl std::fmt::Display for AtomicPcztStoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sqlite(error) => write!(formatter, "{error}"),
+            Self::Store(error) => formatter.write_str(error),
+        }
+    }
+}
+
+fn singleton_proposal(
+    source: &Proposal<super::send::WalletFeeRule, zcash_client_sqlite::ReceivedNoteId>,
+    step: Step<zcash_client_sqlite::ReceivedNoteId>,
+) -> Result<Proposal<super::send::WalletFeeRule, zcash_client_sqlite::ReceivedNoteId>, String> {
+    Proposal::multi_step(
+        source.fee_rule().clone(),
+        source.min_target_height(),
+        source.confirmations_policy(),
+        nonempty::NonEmpty::singleton(step),
+    )
+    .map(|proposal| proposal.with_proposed_version(source.proposed_version()))
+    .map_err(|e| format!("Build TEX PCZT step proposal: {e}"))
+}
+
+fn tex_ephemeral_output_index<F>(
+    outputs: &[TxOut],
+    expected_value: zcash_protocol::value::Zatoshis,
+    mut address_scope: F,
+) -> Result<usize, String>
+where
+    F: FnMut(&TransparentAddress) -> Result<Option<TransparentKeyScope>, String>,
+{
+    let mut matches = Vec::new();
+    for (index, output) in outputs.iter().enumerate() {
+        if output.value() != expected_value {
+            continue;
+        }
+        let Some(address) = output.recipient_address() else {
+            continue;
+        };
+        if address_scope(&address)? == Some(TransparentKeyScope::EPHEMERAL) {
+            matches.push(index);
+        }
+    }
+    if matches.len() != 1 {
+        return Err("TEX ephemeral output is not uniquely identifiable".to_string());
+    }
+    Ok(matches[0])
+}
+
+fn transparent_output_user_address(
+    network: WalletNetwork,
+    output: &pczt::transparent::Output,
+) -> Result<String, String> {
+    let script = zcash_script::script::PubKey::parse(&zcash_script::script::Code(
+        output.script_pubkey().clone(),
+    ))
+    .map_err(|_| "TEX PCZT has an invalid transparent output script")?;
+    let address = TransparentAddress::from_script_pubkey(&script)
+        .ok_or("TEX PCZT has an unsupported transparent output script")?;
+    Ok(match address {
+        TransparentAddress::PublicKeyHash(hash) => {
+            ZcashAddress::from_transparent_p2pkh(network.network_type(), hash).encode()
+        }
+        TransparentAddress::ScriptHash(hash) => {
+            ZcashAddress::from_transparent_p2sh(network.network_type(), hash).encode()
+        }
+    })
+}
+
+/// Produces the signer-only view accepted by Keystone's transparent-output
+/// checker. ZIP 320 stores an ephemeral output without `user_address`, while a
+/// TEX payment stores its `tex1...` address. Keystone instead requires every
+/// transparent output to carry the matching legacy t-address. The first round
+/// also needs its BIP 44 metadata so the device displays the ephemeral output
+/// as wallet-owned change rather than as a payment.
+fn prepare_tex_pczt_for_keystone(
+    pczt_bytes: &[u8],
+    network: WalletNetwork,
+    owned_output_derivation: Option<(usize, [u8; 33], transparent::pczt::Bip32Derivation)>,
+) -> Result<Vec<u8>, String> {
+    use pczt::roles::updater::Updater;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse TEX PCZT: {e:?}"))?;
+    let output_addresses = pczt
+        .transparent()
+        .outputs()
+        .iter()
+        .map(|output| transparent_output_user_address(network, output))
+        .collect::<Result<Vec<_>, _>>()?;
+    if owned_output_derivation
+        .as_ref()
+        .is_some_and(|(index, _, _)| *index >= output_addresses.len())
+    {
+        return Err("TEX ephemeral signer metadata references a missing output".to_string());
+    }
+
+    let mut owned_output_derivation = owned_output_derivation;
+    let pczt = Updater::new(pczt)
+        .update_transparent_with(|mut updater| {
+            for (index, user_address) in output_addresses.into_iter().enumerate() {
+                let derivation = match owned_output_derivation.as_ref() {
+                    Some((owned_index, _, _)) if *owned_index == index => {
+                        owned_output_derivation.take()
+                    }
+                    _ => None,
+                };
+                updater.update_output_with(index, |mut output| {
+                    output.set_user_address(user_address);
+                    if let Some((_, pubkey, derivation)) = derivation {
+                        output.set_bip32_derivation(pubkey, derivation);
+                    }
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })
+        .map_err(|e| format!("Prepare TEX PCZT for Keystone: {e:?}"))?
+        .finish();
+
+    serialize_signer_view(apply_signer_redaction(pczt, false))
 }
 
 impl ExtractAndBroadcastPcztResult {
@@ -350,6 +501,234 @@ pub async fn create_pczt_from_proposal(
     }
 }
 
+/// Creates the two dependent ZIP-320 PCZTs used by Keystone's non-batch
+/// signer. The first PCZT fixes the ephemeral output and therefore its txid;
+/// the second replaces the proposal's prior-step reference with that exact
+/// outpoint while retaining the wallet's ephemeral BIP32 metadata.
+pub async fn create_tex_pczts_from_proposal(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<TexPcztPair, String> {
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::wallet::OvkPolicy;
+
+    let stored = consume_stored_proposal(
+        proposal_id,
+        send_flow_id,
+        "Proposal not found (expired or already consumed)",
+    )?;
+    if stored.proposal.steps().len() != 2 {
+        let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
+        return Err("Keystone TEX signing requires exactly two proposal steps".to_string());
+    }
+    let proposal_lock = match stored_proposal_lock(stored.proposal_id, &stored.send_flow_id) {
+        Ok(lock) => lock,
+        Err(error) => {
+            let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
+            return Err(error);
+        }
+    };
+    if proposal_lock.db_path != db_path || proposal_lock.network != network {
+        let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
+        return Err("Proposal belongs to a different wallet database or network".to_string());
+    }
+    let live_expiry_height = match super::send::live_send_expiry_height(
+        lightwalletd_url,
+        zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
+    )
+    .await
+    {
+        Ok(height) => height,
+        Err(error) => {
+            let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
+            return Err(error);
+        }
+    };
+
+    let result = with_wallet_db_write_lock("pczt.create_tex_pczts_from_proposal", || {
+        let current_lock = stored_proposal_lock(stored.proposal_id, &stored.send_flow_id)?;
+        if current_lock.owner != proposal_lock.owner
+            || current_lock.db_path != proposal_lock.db_path
+            || current_lock.network != proposal_lock.network
+        {
+            return Err(
+                "Hardware proposal input lock changed while refreshing chain tip".to_string(),
+            );
+        }
+        let mut db = open_wallet_db(db_path, network)?;
+        db.lock_outputs(
+            &super::send::proposal_input_refs(&stored.proposal),
+            current_lock.owner,
+            live_expiry_height,
+        )
+        .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
+        super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
+
+        let first_step = stored.proposal.steps().first().clone();
+        let first_proposal = singleton_proposal(&stored.proposal, first_step.clone())?;
+        let first_pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            stored.account_id,
+            OvkPolicy::Sender,
+            &first_proposal,
+            Some(live_expiry_height),
+            BundlePadding::DEFAULT,
+        )
+        .map_err(|e| format!("Create TEX PCZT step 1 failed: {e}"))?;
+
+        let second_source = stored.proposal.steps().last();
+        if second_source.prior_step_inputs().len() != 1 {
+            return Err("TEX proposal step 2 must spend exactly one prior output".to_string());
+        }
+        let prior = second_source.prior_step_inputs()[0];
+        if prior.step_index() != 0 {
+            return Err("TEX proposal step 2 references the wrong prior step".to_string());
+        }
+        let expected_value = match prior.output_index() {
+            StepOutputIndex::Change(index) => first_step
+                .balance()
+                .proposed_change()
+                .get(index)
+                .filter(|change| change.is_ephemeral())
+                .map(|change| change.value())
+                .ok_or("TEX proposal does not reference ephemeral change")?,
+            StepOutputIndex::Payment(_) => {
+                return Err("TEX proposal must reference ephemeral change".to_string())
+            }
+        };
+        let first_effects = first_pczt
+            .clone()
+            .into_effects()
+            .map_err(|e| format!("Extract TEX PCZT step 1 effects: {e:?}"))?;
+        let outputs = &first_effects
+            .transparent_bundle()
+            .ok_or("TEX PCZT step 1 has no transparent output")?
+            .vout;
+        let output_index = tex_ephemeral_output_index(outputs, expected_value, |address| {
+            db.get_transparent_address_metadata(stored.account_id, address)
+                .map(|metadata| metadata.and_then(|metadata| metadata.source().scope()))
+                .map_err(|e| format!("Read TEX ephemeral address metadata: {e}"))
+        })?;
+        let txout = outputs
+            .get(output_index)
+            .ok_or("TEX ephemeral output index is missing from transaction effects")?;
+        let ephemeral_address = txout
+            .recipient_address()
+            .ok_or("TEX ephemeral output has an unsupported script")?;
+        let address_metadata = db
+            .get_transparent_address_metadata(stored.account_id, &ephemeral_address)
+            .map_err(|e| format!("Read TEX ephemeral address metadata: {e}"))?
+            .ok_or("TEX ephemeral address metadata is missing")?;
+        let scope = address_metadata
+            .source()
+            .scope()
+            .filter(|scope| *scope == TransparentKeyScope::EPHEMERAL)
+            .ok_or("TEX output is not derived from the ephemeral scope")?;
+        let address_index = address_metadata
+            .source()
+            .address_index()
+            .ok_or("TEX ephemeral output address index is missing")?;
+        let account = db
+            .get_account(stored.account_id)
+            .map_err(|e| format!("Read TEX account: {e}"))?
+            .ok_or("TEX account is missing")?;
+        let account_derivation = account
+            .source()
+            .key_derivation()
+            .ok_or("TEX hardware account derivation metadata is missing")?;
+        let transparent_fvk = account
+            .ufvk()
+            .and_then(|ufvk| ufvk.transparent())
+            .ok_or("TEX hardware account has no transparent viewing key")?;
+        let ephemeral_pubkey = transparent_fvk
+            .derive_address_pubkey(scope, address_index)
+            .map_err(|e| format!("Derive TEX ephemeral public key: {e}"))?
+            .serialize();
+        let hardened = 1 << 31;
+        let ephemeral_derivation = transparent::pczt::Bip32Derivation::parse(
+            account_derivation.seed_fingerprint().to_bytes(),
+            vec![
+                44 | hardened,
+                network.network_type().coin_type() | hardened,
+                u32::from(account_derivation.account_index()) | hardened,
+                2,
+                address_index.index(),
+            ],
+        )
+        .map_err(|e| format!("Build TEX ephemeral BIP 44 derivation: {e:?}"))?;
+        let first_bytes = first_pczt
+            .serialize()
+            .map_err(|e| format!("Serialize TEX PCZT step 1: {e:?}"))?;
+        let first_signer_bytes = prepare_tex_pczt_for_keystone(
+            &first_bytes,
+            network,
+            Some((output_index, ephemeral_pubkey, ephemeral_derivation)),
+        )?;
+        let first_txid = txid_from_io_finalized_pczt(&first_bytes)?;
+        let explicit_input = WalletTransparentOutput::from_parts(
+            OutPoint::new(*first_txid.as_ref(), output_index as u32),
+            txout.clone(),
+            None,
+            Some(()),
+            Some(TransparentKeyScope::EPHEMERAL),
+            None,
+        )
+        .ok_or("TEX ephemeral output has an unsupported script")?;
+        let second_step = Step::from_parts(
+            &[],
+            second_source.transaction_request().clone(),
+            second_source.payment_pools().clone(),
+            vec![explicit_input],
+            second_source.shielded_inputs().cloned(),
+            second_source.anchor_height(),
+            vec![],
+            second_source.balance().clone(),
+            second_source.is_shielding(),
+            network.is_nu_active(
+                zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
+                zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
+            ),
+        )
+        .map_err(|e| format!("Build TEX PCZT step 2: {e}"))?;
+        let second_proposal = singleton_proposal(&stored.proposal, second_step)?;
+        let second_pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            stored.account_id,
+            OvkPolicy::Sender,
+            &second_proposal,
+            Some(live_expiry_height),
+            BundlePadding::DEFAULT,
+        )
+        .map_err(|e| format!("Create TEX PCZT step 2 failed: {e}"))?;
+        let second_inputs = second_pczt.transparent().inputs();
+        if second_inputs.len() != 1
+            || second_inputs[0].prevout_txid() != first_txid.as_ref()
+            || *second_inputs[0].prevout_index() != output_index as u32
+        {
+            return Err("TEX PCZT step 2 does not spend the exact step 1 output".to_string());
+        }
+        let second_bytes = second_pczt
+            .serialize()
+            .map_err(|e| format!("Serialize TEX PCZT step 2: {e:?}"))?;
+        let second_signer_bytes = prepare_tex_pczt_for_keystone(&second_bytes, network, None)?;
+
+        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
+        Ok(TexPcztPair {
+            pczts: vec![first_bytes, second_bytes],
+            signer_pczts: vec![first_signer_bytes, second_signer_bytes],
+        })
+    });
+    if result.is_err() {
+        let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
+    }
+    result
+}
+
 /// Release a stored proposal without executing it. Called from the
 /// Dart send flow when the user cancels before
 /// [`create_pczt_from_proposal`] (e.g. dismisses the confirmation
@@ -516,15 +895,16 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
 fn redact_pczt_for_signer_inner(pczt_bytes: &[u8], for_batch: bool) -> Result<Vec<u8>, String> {
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
 
-    let redacted = apply_signer_redaction(pczt, for_batch);
+    serialize_signer_view(apply_signer_redaction(pczt, for_batch))
+}
 
-    if *redacted.global().tx_version() == 5 {
-        pczt::v1::Pczt::try_from(redacted)
+fn serialize_signer_view(pczt: pczt::Pczt) -> Result<Vec<u8>, String> {
+    if *pczt.global().tx_version() == 5 {
+        pczt::v1::Pczt::try_from(pczt)
             .map_err(|e| format!("Serialize legacy PCZT for signer: {e:?}"))
             .map(|v1| v1.serialize())
     } else {
-        redacted
-            .serialize()
+        pczt.serialize()
             .map_err(|e| format!("Serialize PCZT for signer: {e:?}"))
     }
 }
@@ -615,6 +995,31 @@ fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
         .map_err(|e| format!("Combine PCZTs: {e:?}"))
 }
 
+fn ensure_signed_pczt_matches_base(proofs: &[u8], sigs: &[u8]) -> Result<(), String> {
+    let expected = txid_from_io_finalized_pczt(proofs)?;
+    let actual = txid_from_io_finalized_pczt(sigs)?;
+    if expected != actual {
+        return Err("Signed PCZT transaction effects do not match the requested PCZT".to_string());
+    }
+    Ok(())
+}
+
+fn ensure_tex_pczt_dependency(proofs: &[Vec<u8>]) -> Result<(), String> {
+    if proofs.len() != 2 {
+        return Ok(());
+    }
+    let first_txid = txid_from_io_finalized_pczt(&proofs[0])?;
+    let second = pczt::Pczt::parse(&proofs[1])
+        .map_err(|error| format!("Parse TEX PCZT round 2: {error:?}"))?;
+    let inputs = second.transparent().inputs();
+    if inputs.len() != 1 || inputs[0].prevout_txid() != first_txid.as_ref() {
+        return Err(
+            "TEX signed PCZT round 2 does not spend the exact round 1 transaction".to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// Load the Sapling spend/output verifying keys from local params files, when
 /// both paths are provided. Migration PCZTs are Orchard/Ironwood-only and pass
 /// `None`; see invariant (3) in the module docstring for when params are
@@ -686,8 +1091,293 @@ pub(crate) fn extract_transaction_from_pczt(
     output_params_path: Option<&str>,
 ) -> Result<ExtractedPcztTransaction, String> {
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+    ensure_signed_pczt_matches_base(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?;
     let combined = combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?;
     finalize_and_extract(combined, sapling_vks.as_ref())
+}
+
+struct PreparedSignedPczt {
+    combined: pczt::Pczt,
+    extracted: ExtractedPcztTransaction,
+}
+
+fn release_pczt_proposal_after_failure<T>(
+    proposal_id: u64,
+    send_flow_id: &str,
+    error: String,
+) -> Result<T, String> {
+    match finish_stored_proposal(proposal_id, send_flow_id, true) {
+        Ok(()) => Err(error),
+        Err(cleanup_error) => Err(format!(
+            "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+        )),
+    }
+}
+
+fn prepare_signed_pczts(
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<Vec<PreparedSignedPczt>, String> {
+    if proofs.is_empty() || proofs.len() != signatures.len() {
+        return Err("Invalid signed PCZT round count".to_string());
+    }
+    ensure_tex_pczt_dependency(proofs)?;
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+    let mut seen = std::collections::HashSet::new();
+    let prepared = proofs
+        .iter()
+        .zip(signatures)
+        .enumerate()
+        .map(|(index, (proof, signature))| {
+            ensure_signed_pczt_matches_base(proof, signature)?;
+            let combined = combine_pczts(proof, signature)?;
+            let extracted = finalize_and_extract(combined.clone(), sapling_vks.as_ref())
+                .map_err(|error| format!("Validate signed PCZT round {}: {error}", index + 1))?;
+            if !seen.insert(extracted.txid) {
+                return Err("Duplicate signed PCZT transaction".to_string());
+            }
+            Ok(PreparedSignedPczt {
+                combined,
+                extracted,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if prepared.len() == 2 {
+        let second_inputs = prepared[1]
+            .extracted
+            .tx
+            .transparent_bundle()
+            .map(|bundle| bundle.vin.as_slice())
+            .unwrap_or_default();
+        if second_inputs.len() != 1
+            || second_inputs[0].prevout().hash() != prepared[0].extracted.txid.as_ref()
+        {
+            return Err(
+                "TEX signed PCZT round 2 does not spend the exact round 1 transaction".to_string(),
+            );
+        }
+    }
+    Ok(prepared)
+}
+
+/// Validates every signed PCZT, atomically persists the complete ordered set,
+/// and only then broadcasts it in dependency order. The outer SQLite
+/// transaction is significant: the transactional `WalletDb` implementation
+/// makes each PCZT-aware store participate in the same commit, so a later
+/// failure rolls back every earlier item.
+pub async fn store_and_broadcast_signed_pczts_for_proposal(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proposal_id: u64,
+    send_flow_id: &str,
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
+
+    let proposal_lock = match stored_proposal_lock(proposal_id, send_flow_id) {
+        Ok(lock) => lock,
+        Err(error) => {
+            return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+        }
+    };
+    if proposal_lock.db_path != db_path || proposal_lock.network != network {
+        return release_pczt_proposal_after_failure(
+            proposal_id,
+            send_flow_id,
+            "Proposal belongs to a different wallet database or network".to_string(),
+        );
+    }
+
+    // This performs all correlation, dependency, signature, proof, and
+    // finalization checks before either the DB or the network is touched.
+    let prepared =
+        match prepare_signed_pczts(proofs, signatures, spend_params_path, output_params_path) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+            }
+        };
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+
+    let store_result = with_wallet_db_write_lock("pczt.store_signed_pczts", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        db.transactionally(|transactional_db| {
+            for (index, item) in prepared.iter().enumerate() {
+                let consensus_branch_id = *item.combined.global().consensus_branch_id();
+                let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
+                extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+                    transactional_db,
+                    item.combined.clone(),
+                    sapling_vks.as_ref().map(|(spend, output)| (spend, output)),
+                    Some(&orchard_vk),
+                )
+                .map_err(|error| {
+                    AtomicPcztStoreError::Store(format!(
+                        "Store signed PCZT round {}: {error}",
+                        index + 1
+                    ))
+                })?;
+            }
+            Ok::<(), AtomicPcztStoreError>(())
+        })
+        .map_err(|error| format!("Atomically store signed PCZTs: {error}"))
+    });
+    if let Err(error) = store_result {
+        return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+    }
+
+    // Successful wallet storage supersedes the proposal-level input lock. The
+    // stored pending transactions now own recovery, exactly as in the mnemonic
+    // execute path, so this bookkeeping must finish before network I/O.
+    if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+        log::warn!("keystone: transactions stored but proposal lock bookkeeping failed: {error}");
+    }
+
+    let txids = prepared
+        .iter()
+        .map(|item| item.extracted.txid.to_string())
+        .collect::<Vec<_>>();
+    let txids_joined = txids.join(",");
+    let total_count = prepared.len() as u32;
+
+    // Storage deliberately precedes network access so an unavailable route
+    // still leaves the complete signed set recoverable. Once a route exists,
+    // restore the old hardware-send live-tip guard before attempting either
+    // dependency: an already-expired set is terminal and must not be reported
+    // as pending automatic retry.
+    let mut expiry_client = match crate::wallet::sync_engine::open_isolated_lwd_channel(
+        lightwalletd_url,
+    )
+    .await
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return Ok(StoreAndBroadcastPcztsResult {
+                txids: txids_joined,
+                status: StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string(),
+                broadcasted_count: 0,
+                total_count,
+                message: Some(format!(
+                    "All transactions are stored locally. Failed to open the broadcast route before checking expiry: {error}"
+                )),
+            });
+        }
+    };
+    let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
+        Ok(latest) => latest,
+        Err(error) => {
+            return Ok(StoreAndBroadcastPcztsResult {
+                txids: txids_joined,
+                status: StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string(),
+                broadcasted_count: 0,
+                total_count,
+                message: Some(format!(
+                    "All transactions are stored locally. Failed to read the chain tip before checking expiry: {error}"
+                )),
+            });
+        }
+    };
+    if let Some(error) = prepared.iter().find_map(|item| {
+        pczt_broadcast_expiry_error(
+            &item.extracted.txid,
+            u32::from(item.extracted.tx.expiry_height()),
+            latest.height,
+        )
+    }) {
+        return Ok(StoreAndBroadcastPcztsResult {
+            txids: txids_joined,
+            status: StoreAndBroadcastPcztsResult::EXPIRED.to_string(),
+            broadcasted_count: 0,
+            total_count,
+            message: Some(format!(
+                "{error} The signed transactions remain stored locally, but they will not be retried."
+            )),
+        });
+    }
+    drop(expiry_client);
+
+    for (index, item) in prepared.iter().enumerate() {
+        let mut client = match crate::wallet::sync_engine::open_isolated_lwd_channel(
+            lightwalletd_url,
+        )
+        .await
+        {
+            Ok(client) => client,
+            Err(error) => {
+                return Ok(StoreAndBroadcastPcztsResult {
+                    txids: txids_joined,
+                    status: if index == 0 {
+                        StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string()
+                    } else {
+                        StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
+                    },
+                    broadcasted_count: index as u32,
+                    total_count,
+                    message: Some(format!(
+                        "All transactions are stored locally. Failed to open the broadcast route for transaction {} of {}: {error}",
+                        index + 1,
+                        prepared.len()
+                    )),
+                });
+            }
+        };
+        let response = match crate::wallet::sync_engine::send_transaction_with_status(
+            &mut client,
+            &item.extracted.raw_tx,
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                return Ok(StoreAndBroadcastPcztsResult {
+                    txids: txids_joined,
+                    status: if index == 0 {
+                        StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN.to_string()
+                    } else {
+                        StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
+                    },
+                    broadcasted_count: index as u32,
+                    total_count,
+                    message: Some(format!(
+                        "Transaction {} of {} is stored locally, but its broadcast result is unknown: {error}",
+                        index + 1,
+                        prepared.len()
+                    )),
+                });
+            }
+        };
+        if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
+            return Ok(StoreAndBroadcastPcztsResult {
+                txids: txids_joined,
+                status: if index == 0 {
+                    StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string()
+                } else {
+                    StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
+                },
+                broadcasted_count: index as u32,
+                total_count,
+                message: Some(format!(
+                    "Transaction {} of {} is stored locally but was rejected: {error}",
+                    index + 1,
+                    prepared.len()
+                )),
+            });
+        }
+    }
+
+    Ok(StoreAndBroadcastPcztsResult {
+        txids: txids_joined,
+        status: StoreAndBroadcastPcztsResult::BROADCASTED.to_string(),
+        broadcasted_count: total_count,
+        total_count,
+        message: None,
+    })
 }
 
 /// Applies externally-produced Orchard-protocol spend-authorization
@@ -1129,13 +1819,209 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
+    use zcash_client_backend::data_api::{WalletRead, WalletWrite};
     use zcash_client_backend::proto::service::SendResponse;
+    use zcash_protocol::consensus::BlockHeight;
 
     fn send_response(error_code: i32, error_message: &str) -> SendResponse {
         SendResponse {
             error_code,
             error_message: error_message.to_string(),
         }
+    }
+
+    #[test]
+    fn tex_ephemeral_output_selection_uses_wallet_scope_not_value_alone() {
+        let expected_value = zcash_protocol::value::Zatoshis::const_from_u64(50_000);
+        let ordinary_address = TransparentAddress::PublicKeyHash([1; 20]);
+        let ephemeral_address = TransparentAddress::PublicKeyHash([2; 20]);
+        let outputs = vec![
+            TxOut::new(expected_value, ordinary_address.script().into()),
+            TxOut::new(expected_value, ephemeral_address.script().into()),
+        ];
+
+        let selected = tex_ephemeral_output_index(&outputs, expected_value, |address| {
+            Ok(if address == &ephemeral_address {
+                Some(TransparentKeyScope::EPHEMERAL)
+            } else {
+                Some(TransparentKeyScope::EXTERNAL)
+            })
+        })
+        .unwrap();
+
+        assert_eq!(selected, 1);
+    }
+
+    #[test]
+    fn tex_keystone_signer_view_normalizes_transparent_output_metadata() {
+        use ::transparent::keys::{AccountPrivKey, IncomingViewingKey, NonHardenedChildIndex};
+        use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, updater::Updater};
+        use zcash_primitives::transaction::{
+            builder::{BuildConfig, Builder},
+            fees::zip317,
+        };
+
+        let network = WalletNetwork::Main;
+        let seed = [7u8; 32];
+        let account = AccountPrivKey::from_seed(&network, &seed, zip32::AccountId::ZERO).unwrap();
+        let account_pubkey = account.to_account_pubkey();
+        let (source_address, source_index) = account_pubkey
+            .derive_external_ivk()
+            .unwrap()
+            .default_address();
+        let source_pubkey = account_pubkey
+            .derive_address_pubkey(TransparentKeyScope::EXTERNAL, source_index)
+            .unwrap();
+        let ephemeral_index = NonHardenedChildIndex::ZERO;
+        let ephemeral_address = account_pubkey
+            .derive_ephemeral_ivk()
+            .unwrap()
+            .derive_ephemeral_address(ephemeral_index)
+            .unwrap();
+        let ephemeral_pubkey = account_pubkey
+            .derive_address_pubkey(TransparentKeyScope::EPHEMERAL, ephemeral_index)
+            .unwrap()
+            .serialize();
+
+        let coin = TxOut::new(
+            zcash_protocol::value::Zatoshis::const_from_u64(1_000_000),
+            source_address.script().into(),
+        );
+        let mut builder = Builder::new(
+            network,
+            10_000_000.into(),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: None,
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        builder
+            .add_transparent_p2pkh_input(source_pubkey, OutPoint::new([1; 32], 0), coin)
+            .unwrap();
+        builder
+            .add_transparent_output(
+                &ephemeral_address,
+                zcash_protocol::value::Zatoshis::const_from_u64(990_000),
+            )
+            .unwrap();
+        let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(
+                voting_crypto_deps::rand::rngs::OsRng,
+                &zip317::FeeRule::standard(),
+            )
+            .unwrap();
+        let base = IoFinalizer::new(Creator::build_from_parts(pczt_parts).unwrap())
+            .finalize_io()
+            .unwrap();
+        let base_bytes = base.clone().serialize().unwrap();
+
+        let seed_fingerprint = [8u8; 32];
+        let hardened = 1 << 31;
+        let path = vec![
+            44 | hardened,
+            133 | hardened,
+            hardened,
+            2,
+            ephemeral_index.index(),
+        ];
+        let derivation =
+            transparent::pczt::Bip32Derivation::parse(seed_fingerprint, path.clone()).unwrap();
+        let first_signer = prepare_tex_pczt_for_keystone(
+            &base_bytes,
+            network,
+            Some((0, ephemeral_pubkey, derivation)),
+        )
+        .unwrap();
+        let expected_t_address = match ephemeral_address {
+            TransparentAddress::PublicKeyHash(hash) => {
+                ZcashAddress::from_transparent_p2pkh(network.network_type(), hash).encode()
+            }
+            TransparentAddress::ScriptHash(_) => unreachable!(),
+        };
+        pczt::roles::verifier::Verifier::new(pczt::Pczt::parse(&first_signer).unwrap())
+            .with_transparent::<Infallible, _>(|bundle| {
+                let output = &bundle.outputs()[0];
+                assert_eq!(
+                    output.user_address().as_deref(),
+                    Some(expected_t_address.as_str())
+                );
+                let stored = output.bip32_derivation().get(&ephemeral_pubkey).unwrap();
+                assert_eq!(stored.seed_fingerprint(), &seed_fingerprint);
+                assert_eq!(
+                    stored
+                        .derivation_path()
+                        .iter()
+                        .map(|child| child.index() | u32::from(child.is_hardened()) * hardened)
+                        .collect::<Vec<_>>(),
+                    path
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let tex_address = match ephemeral_address {
+            TransparentAddress::PublicKeyHash(hash) => {
+                ZcashAddress::from_tex(network.network_type(), hash).encode()
+            }
+            TransparentAddress::ScriptHash(_) => unreachable!(),
+        };
+        let tex_base = Updater::new(base)
+            .update_transparent_with(|mut updater| {
+                updater.update_output_with(0, |mut output| {
+                    output.set_user_address(tex_address);
+                    Ok(())
+                })
+            })
+            .unwrap()
+            .finish()
+            .serialize()
+            .unwrap();
+        let second_signer = prepare_tex_pczt_for_keystone(&tex_base, network, None).unwrap();
+        pczt::roles::verifier::Verifier::new(pczt::Pczt::parse(&second_signer).unwrap())
+            .with_transparent::<Infallible, _>(|bundle| {
+                assert_eq!(
+                    bundle.outputs()[0].user_address().as_deref(),
+                    Some(expected_t_address.as_str())
+                );
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn outer_wallet_transaction_rolls_back_prior_write_on_later_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let phrase = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&phrase).unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(100),
+            "test",
+        )
+        .unwrap();
+
+        let mut db = open_wallet_db(db_path, WalletNetwork::Regtest).unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
+        let result = db.transactionally(|transactional_db| {
+            // Exercise a prior wallet write inside the same outer WalletDb
+            // transaction primitive used by the production PCZT store loop.
+            transactional_db
+                .update_chain_tip(BlockHeight::from_u32(120))
+                .map_err(|error| AtomicPcztStoreError::Store(error.to_string()))?;
+            // A later store error must roll back the earlier wallet write.
+            Err::<(), AtomicPcztStoreError>(AtomicPcztStoreError::Store(
+                "forced second-round store failure".to_string(),
+            ))
+        });
+        assert!(result.is_err());
+        assert_eq!(db.chain_height().unwrap(), Some(BlockHeight::from_u32(110)));
     }
 
     #[test]
@@ -1299,10 +2185,10 @@ mod tests {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.
         use super::super::{
-            apply_sigs_and_extract, extract_compact_sigs_from_signed_pczt,
-            extract_transaction_from_pczt, ironwood_orchard_proving_key,
-            preflight_orchard_spend_auth_signatures, redact_pczt_for_signer,
-            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
+            apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
+            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
+            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
+            redact_pczt_for_signer, set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -1310,8 +2196,8 @@ mod tests {
             creator::Creator, io_finalizer::IoFinalizer, prover::Prover, signer::Signer,
             updater::Updater,
         };
-        use voting_crypto_deps::rand::rngs::OsRng;
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
+        use voting_crypto_deps::rand::rngs::OsRng;
         use zcash_note_encryption::try_note_decryption;
         use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
         use zcash_protocol::{
@@ -1606,6 +2492,78 @@ mod tests {
             let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
 
             assert_eq!(pre_signature_txid, extracted.txid);
+        }
+
+        #[test]
+        fn signed_pczt_correlation_rejects_a_swapped_transaction() {
+            let (first, ..) = build_migration_base_pczt();
+            let (second, ..) = build_migration_base_pczt();
+            assert_ne!(
+                txid_from_io_finalized_pczt(&first).unwrap(),
+                txid_from_io_finalized_pczt(&second).unwrap()
+            );
+
+            let error = ensure_signed_pczt_matches_base(&first, &second).unwrap_err();
+            assert!(error.contains("transaction effects do not match"));
+        }
+
+        #[test]
+        fn extraction_rejects_a_missing_transparent_signature() {
+            use ::transparent::{
+                bundle::{OutPoint, TxOut},
+                keys::{AccountPrivKey, IncomingViewingKey, TransparentKeyScope},
+            };
+            use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+
+            let (first, ..) = build_migration_base_pczt();
+            let first_txid = txid_from_io_finalized_pczt(&first).unwrap();
+            let account =
+                AccountPrivKey::from_seed(&Nu6_3Network, &[1; 32], zip32::AccountId::ZERO).unwrap();
+            let (address, index) = account
+                .to_account_pubkey()
+                .derive_external_ivk()
+                .unwrap()
+                .default_address();
+            let pubkey = account
+                .to_account_pubkey()
+                .derive_address_pubkey(TransparentKeyScope::EXTERNAL, index)
+                .unwrap();
+            let coin = TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into());
+            let mut builder = Builder::new(
+                Nu6_3Network,
+                10_000_000.into(),
+                BuildConfig::Standard {
+                    sapling_anchor: None,
+                    orchard_anchor: None,
+                    ironwood_anchor: None,
+                    orchard_padding: BundlePadding::DEFAULT,
+                    ironwood_padding: BundlePadding::DEFAULT,
+                },
+            );
+            builder
+                .add_transparent_p2pkh_input(pubkey, OutPoint::new(*first_txid.as_ref(), 1), coin)
+                .unwrap();
+            builder
+                .add_transparent_output(&address, Zatoshis::const_from_u64(990_000))
+                .unwrap();
+            let PcztResult { pczt_parts, .. } = builder
+                .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+                .unwrap();
+            let unsigned = IoFinalizer::new(Creator::build_from_parts(pczt_parts).unwrap())
+                .finalize_io()
+                .unwrap()
+                .serialize()
+                .unwrap();
+
+            ensure_tex_pczt_dependency(&[first.clone(), unsigned.clone()]).unwrap();
+            let reversed = ensure_tex_pczt_dependency(&[unsigned.clone(), first]).unwrap_err();
+            assert!(reversed.contains("does not spend the exact round 1 transaction"));
+
+            let error = match extract_transaction_from_pczt(&unsigned, &unsigned, None, None) {
+                Ok(_) => panic!("transparent input must be signed"),
+                Err(error) => error,
+            };
+            assert!(error.contains("Finalize transparent spends"));
         }
 
         #[test]

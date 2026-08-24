@@ -6000,6 +6000,7 @@ where
             return ResubmitStats::default();
         }
     };
+    let candidates = order_resubmittable_transactions(candidates);
 
     if candidates.is_empty() {
         return ResubmitStats::default();
@@ -6016,7 +6017,9 @@ where
         failed: 0,
     };
 
-    for tx in &candidates {
+    let mut succeeded_txids = HashSet::<Vec<u8>>::new();
+    for candidate in &candidates {
+        let tx = &candidate.tx;
         // Cancel-check at the top of every iteration: this is
         // the tightest window we can afford between "user pressed
         // cancel" and "we stop sending more transactions". The
@@ -6029,6 +6032,14 @@ where
                 stats.attempted,
             );
             break;
+        }
+        if !resubmit_dependencies_succeeded(candidate, &succeeded_txids) {
+            log::warn!(
+                "resubmit: deferring {} because an in-set parent was not accepted in this pass",
+                hex::encode(&tx.txid_bytes),
+            );
+            stats.failed += 1;
+            continue;
         }
 
         let txid_hex = hex::encode(&tx.txid_bytes);
@@ -6045,6 +6056,7 @@ where
                     tx.raw_tx.len(),
                 );
                 stats.succeeded += 1;
+                succeeded_txids.insert(tx.txid_bytes.clone());
             }
             Err(first_err) => {
                 // One retry, matching zcash-android-wallet-sdk's
@@ -6071,6 +6083,7 @@ where
                     Ok(()) => {
                         log::info!("resubmit: {txid_hex} ok on retry");
                         stats.succeeded += 1;
+                        succeeded_txids.insert(tx.txid_bytes.clone());
                     }
                     Err(retry_err) => {
                         log::warn!(
@@ -6092,6 +6105,136 @@ where
     );
 
     stats
+}
+
+/// Orders pending transactions so every in-set transparent parent is sent
+/// before its child. The DB query intentionally has no ordering contract, so
+/// unrelated ready transactions are selected by txid for deterministic passes.
+struct OrderedResubmittableTx {
+    tx: super::transactions::ResubmittableTx,
+    parent_txids: Vec<Vec<u8>>,
+}
+
+fn resubmit_dependencies_succeeded(
+    candidate: &OrderedResubmittableTx,
+    succeeded_txids: &HashSet<Vec<u8>>,
+) -> bool {
+    candidate
+        .parent_txids
+        .iter()
+        .all(|txid| succeeded_txids.contains(txid))
+}
+
+fn order_resubmittable_transactions(
+    candidates: Vec<super::transactions::ResubmittableTx>,
+) -> Vec<OrderedResubmittableTx> {
+    use zcash_protocol::consensus::BranchId;
+
+    let mut by_txid = HashMap::<Vec<u8>, usize>::new();
+    let mut parsed = Vec::with_capacity(candidates.len());
+    for (index, candidate) in candidates.iter().enumerate() {
+        if by_txid.contains_key(&candidate.txid_bytes) {
+            log::warn!(
+                "resubmit: duplicate candidate txid while dependency-ordering: {}",
+                hex::encode(&candidate.txid_bytes),
+            );
+        } else {
+            by_txid.insert(candidate.txid_bytes.clone(), index);
+        }
+        let transaction = match zcash_primitives::transaction::Transaction::read(
+            candidate.raw_tx.as_slice(),
+            BranchId::Sapling,
+        ) {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                log::warn!(
+                    "resubmit: cannot dependency-order candidate {}: {error}",
+                    hex::encode(&candidate.txid_bytes),
+                );
+                parsed.push(None);
+                continue;
+            }
+        };
+        if transaction.txid().as_ref() != candidate.txid_bytes.as_slice() {
+            log::warn!(
+                "resubmit: candidate txid does not match raw transaction: {}",
+                hex::encode(&candidate.txid_bytes)
+            );
+            parsed.push(None);
+            continue;
+        }
+        parsed.push(Some(transaction));
+    }
+
+    let mut indegree = vec![0usize; candidates.len()];
+    let mut parent_txids = vec![Vec::<Vec<u8>>::new(); candidates.len()];
+    let mut children = vec![Vec::<usize>::new(); candidates.len()];
+    for (child_index, transaction) in parsed.iter().enumerate() {
+        let mut parents = HashSet::new();
+        let Some(transaction) = transaction else {
+            continue;
+        };
+        if let Some(bundle) = transaction.transparent_bundle() {
+            for input in &bundle.vin {
+                if let Some(parent_index) = by_txid.get(input.prevout().hash().as_slice()) {
+                    if *parent_index == child_index {
+                        log::warn!(
+                            "resubmit: pending transaction appears to spend itself: {}",
+                            hex::encode(&candidates[child_index].txid_bytes),
+                        );
+                    }
+                    parents.insert(*parent_index);
+                }
+            }
+        }
+        indegree[child_index] = parents.len();
+        for parent_index in parents {
+            parent_txids[child_index].push(candidates[parent_index].txid_bytes.clone());
+            children[parent_index].push(child_index);
+        }
+        parent_txids[child_index].sort();
+    }
+
+    let mut ready = BTreeSet::<(Vec<u8>, usize)>::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        if indegree[index] == 0 {
+            ready.insert((candidate.txid_bytes.clone(), index));
+        }
+    }
+    let mut order = Vec::with_capacity(candidates.len());
+    while let Some((_, index)) = ready.pop_first() {
+        order.push(index);
+        for child_index in &children[index] {
+            indegree[*child_index] -= 1;
+            if indegree[*child_index] == 0 {
+                ready.insert((candidates[*child_index].txid_bytes.clone(), *child_index));
+            }
+        }
+    }
+    if order.len() != candidates.len() {
+        log::warn!(
+            "resubmit: pending transaction dependency cycle detected; deferring the cyclic set"
+        );
+        let emitted = order.iter().copied().collect::<HashSet<_>>();
+        let mut unresolved = (0..candidates.len())
+            .filter(|index| !emitted.contains(index))
+            .collect::<Vec<_>>();
+        unresolved.sort_by(|left, right| {
+            candidates[*left]
+                .txid_bytes
+                .cmp(&candidates[*right].txid_bytes)
+        });
+        order.extend(unresolved);
+    }
+
+    let mut candidates = candidates.into_iter().map(Some).collect::<Vec<_>>();
+    order
+        .into_iter()
+        .map(|index| OrderedResubmittableTx {
+            tx: candidates[index].take().expect("unique topological index"),
+            parent_txids: std::mem::take(&mut parent_txids[index]),
+        })
+        .collect()
 }
 
 /// ZIP-317 change-strategy / input-selector factory used by both

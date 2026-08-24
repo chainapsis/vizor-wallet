@@ -187,9 +187,11 @@ void main() {
   testWidgets('Keystone broadcast extracts the PCZT pair and succeeds', (
     tester,
   ) async {
-    rustApi.extractResult = const ExtractAndBroadcastPcztResult(
-      txid: _txid,
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: _txid,
       status: 'broadcasted',
+      broadcastedCount: 1,
+      totalCount: 1,
     );
 
     await _setDesktopViewport(tester);
@@ -198,8 +200,12 @@ void main() {
         _reviewArgs(),
         keystone: KeystoneBroadcastArgs(
           reviewArgs: _reviewArgs(),
-          pcztWithProofsBytes: const [3, 3, 3],
-          pcztWithSignaturesBytes: const [9, 9],
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
         ),
         isHardware: true,
       ),
@@ -212,14 +218,170 @@ void main() {
     await _flushBroadcast(tester);
 
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(rustApi.extractCalls, hasLength(1));
-    expect(rustApi.extractCalls.single.$1, const [3, 3, 3]);
-    expect(rustApi.extractCalls.single.$2, const [9, 9]);
+    expect(rustApi.storeCalls, hasLength(1));
+    expect(rustApi.storeCalls.single.$1, const [
+      [3, 3, 3],
+    ]);
+    expect(rustApi.storeCalls.single.$2, const [
+      [9, 9],
+    ]);
     // needsSaplingParams=false -> no Sapling params threaded to extraction.
-    expect(rustApi.extractCalls.single.$3, isNull);
-    // The replayable proposal is already consumed, but discard also releases
-    // the owner-scoped wallet-input lock retained for the hardware round trip.
-    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(rustApi.storeCalls.single.$3, isNull);
+    expect(rustApi.storeCalls.single.$4, BigInt.one);
+    expect(rustApi.storeCalls.single.$5, 'test-send-flow');
+    expect(rustApi.discardCalls, isEmpty);
+    expect(rustApi.retainCalls, isEmpty);
+  });
+
+  testWidgets('TEX reports tx1 uncertainty without claiming nothing was sent', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: '$_txid,second-txid',
+      status: 'broadcast_unknown',
+      broadcastedCount: 0,
+      totalCount: 2,
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(address: _texAddress, addressType: 'tex'),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+          pcztWithProofs: const [
+            [1],
+            [2],
+          ],
+          pcztWithSignatures: const [
+            [3],
+            [4],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(rustApi.storeCalls, hasLength(1));
+    expect(rustApi.storeCalls.single.$1, const [
+      [1],
+      [2],
+    ]);
+    expect(rustApi.retainCalls, isEmpty);
+    expect(find.textContaining('may have reached the network'), findsOneWidget);
+  });
+
+  testWidgets('TEX reports accepted tx1 with dependent tx2 pending', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: '$_txid,second-txid',
+      status: 'partial_broadcast',
+      broadcastedCount: 1,
+      totalCount: 2,
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(address: _texAddress, addressType: 'tex'),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+          pcztWithProofs: const [
+            [1],
+            [2],
+          ],
+          pcztWithSignatures: const [
+            [3],
+            [4],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(
+      find.textContaining('first transaction was accepted'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('will retry automatically'), findsOneWidget);
+  });
+
+  testWidgets('TEX broadcasts both validated steps in dependency order', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: '$_txid,$_secondTxid',
+      status: 'broadcasted',
+      broadcastedCount: 2,
+      totalCount: 2,
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(address: _texAddress, addressType: 'tex'),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+          pcztWithProofs: const [
+            [1],
+            [2],
+          ],
+          pcztWithSignatures: const [
+            [3],
+            [4],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(rustApi.storeCalls.single.$1, const [
+      [1],
+      [2],
+    ]);
+    expect(rustApi.storeCalls.single.$2, const [
+      [3],
+      [4],
+    ]);
+    expect(find.text(truncatedTxid(_secondTxid)), findsOneWidget);
+    expect(find.text(truncatedTxid(_txid)), findsNothing);
+  });
+
+  testWidgets('TEX validates both signatures before broadcasting step 1', (
+    tester,
+  ) async {
+    rustApi.storeError = Exception('missing transparent signature');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(address: _texAddress, addressType: 'tex'),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+          pcztWithProofs: const [
+            [1],
+            [2],
+          ],
+          pcztWithSignatures: const [
+            [3],
+            [4],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(rustApi.storeCalls, hasLength(1));
+    expect(rustApi.discardCalls, isEmpty);
   });
 
   testWidgets(
@@ -251,14 +413,18 @@ void main() {
           args: args,
           keystone: KeystoneBroadcastArgs(
             reviewArgs: args,
-            pcztWithProofsBytes: const [3, 3, 3],
-            pcztWithSignaturesBytes: const [9, 9],
+            pcztWithProofs: const [
+              [3, 3, 3],
+            ],
+            pcztWithSignatures: const [
+              [9, 9],
+            ],
           ),
           confirmSaplingParamsDownload: () async => false,
         ),
       );
 
-      expect(rustApi.extractCalls, isEmpty);
+      expect(rustApi.storeCalls, isEmpty);
       expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
       expect(outcome?.phase, SendBroadcastPhase.failed);
       expect(outcome?.proposalConsumed, isTrue);
@@ -284,13 +450,15 @@ void main() {
     ]);
   });
 
-  for (final status in ['broadcast_unknown', 'broadcasted_storage_failed']) {
-    testWidgets('Keystone $status retains the input lock until expiry', (
+  for (final status in ['broadcast_unknown', 'pending_broadcast']) {
+    testWidgets('Keystone $status is already stored for pending recovery', (
       tester,
     ) async {
-      rustApi.extractResult = ExtractAndBroadcastPcztResult(
-        txid: _txid,
+      rustApi.storeResult = StoreAndBroadcastPcztsResult(
+        txids: _txid,
         status: status,
+        broadcastedCount: 0,
+        totalCount: 1,
         message: 'broadcast outcome requires conservative locking',
       );
 
@@ -300,8 +468,12 @@ void main() {
           _reviewArgs(),
           keystone: KeystoneBroadcastArgs(
             reviewArgs: _reviewArgs(),
-            pcztWithProofsBytes: const [3, 3, 3],
-            pcztWithSignaturesBytes: const [9, 9],
+            pcztWithProofs: const [
+              [3, 3, 3],
+            ],
+            pcztWithSignatures: const [
+              [9, 9],
+            ],
           ),
           isHardware: true,
         ),
@@ -310,13 +482,95 @@ void main() {
       await _flushBroadcast(tester);
 
       expect(rustApi.discardCalls, isEmpty);
-      expect(rustApi.retainCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(rustApi.retainCalls, isEmpty);
     });
   }
+
+  testWidgets('Keystone rejection reports locally stored retry state', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: _txid,
+      status: 'pending_broadcast',
+      broadcastedCount: 0,
+      totalCount: 1,
+      message: 'Broadcast rejected: mempool full',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(),
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(
+      find.textContaining('stored locally but was rejected'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('until it expires'), findsOneWidget);
+  });
+
+  testWidgets('expired Keystone signing is terminal and does not promise retry', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: _txid,
+      status: 'expired',
+      broadcastedCount: 0,
+      totalCount: 1,
+      message: 'Hardware signing request expired before broadcast',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(),
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(
+      find.text(
+        'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('will retry automatically'), findsNothing);
+    expect(find.text('Tx ID'), findsNothing);
+    expect(rustApi.discardCalls, isEmpty);
+  });
 }
 
 const _txid =
     'd6e03b5276de779d532791a82a28da7fb6b60524bf5996f4d7629cd794682c01';
+
+const _secondTxid =
+    '1c826497dc926d4f6f99bf42506b6f7bda82a282a89127539d77ed6725b30e6d';
 
 const _address =
     'u1tvg4akwn3gk64h6dfe0000000000000000005j3eds7qfhzek6scgcn8fh5';
@@ -512,10 +766,12 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   final retainCalls = <(BigInt, String)>[];
-  final extractCalls = <(List<int>, List<int>, String?)>[];
+  final storeCalls =
+      <(List<List<int>>, List<List<int>>, String?, BigInt, String)>[];
+  Object? storeError;
   ExecuteProposalResult? executeResult;
   Object? executeError;
-  ExtractAndBroadcastPcztResult? extractResult;
+  StoreAndBroadcastPcztsResult? storeResult;
   int discardFailuresRemaining = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
@@ -523,10 +779,11 @@ class _RustApiFake implements RustLibApi {
   void reset() {
     discardCalls.clear();
     retainCalls.clear();
-    extractCalls.clear();
+    storeCalls.clear();
+    storeError = null;
     executeResult = null;
     executeError = null;
-    extractResult = null;
+    storeResult = null;
     discardFailuresRemaining = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
@@ -586,21 +843,27 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
-  Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
+  Future<StoreAndBroadcastPcztsResult>
+  crateApiSyncStoreAndBroadcastSignedPcztsForProposal({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required List<int> pcztWithProofsBytes,
-    required List<int> pcztWithSignaturesBytes,
+    required BigInt proposalId,
+    required String sendFlowId,
+    required List<Uint8List> pcztWithProofs,
+    required List<Uint8List> pcztWithSignatures,
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    extractCalls.add((
-      pcztWithProofsBytes,
-      pcztWithSignaturesBytes,
+    storeCalls.add((
+      pcztWithProofs.map((bytes) => bytes.toList()).toList(),
+      pcztWithSignatures.map((bytes) => bytes.toList()).toList(),
       spendParamsPath,
+      proposalId,
+      sendFlowId,
     ));
-    return extractResult!;
+    if (storeError case final error?) throw error;
+    return storeResult!;
   }
 
   @override
