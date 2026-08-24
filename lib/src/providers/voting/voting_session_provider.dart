@@ -3930,7 +3930,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// wait continues automatically. The submission session overrides it to
   /// true because it owns the recovery poll that turns the resulting error
   /// back into a retry — see [VotingSubmissionSessionNotifier].
-  bool get failsOnWalletSyncStall => false;
+  ///
+  /// This getter is the only switch: the wait helper takes no override, so a
+  /// caller cannot opt one submission-owned wait back out and reintroduce
+  /// the silently-parked job this replaced.
+  bool get _failsOnWalletSyncStall => false;
 
   /// Waits until wallet scan reaches the round snapshot.
   ///
@@ -3939,17 +3943,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// stalled, and clears the mark as soon as progress resumes — so the
   /// "voting continues automatically" copy holds for every session-level
   /// caller. Waits owned by the submission job instead throw, because it
-  /// owns an automatic recovery loop for the resulting error; that applies
-  /// to *every* wait it initiates, not just the initial readiness gate, so
+  /// owns an automatic recovery loop for the resulting error (see
+  /// [_failsOnWalletSyncStall]); that applies to *every* wait it initiates,
+  /// not just the initial readiness gate, so
   /// readiness regressing mid-job (a rewind or reorg while eligibility or
   /// delegation is being prepared) still surfaces instead of parking the job
   /// in waitingForWalletSync forever. Birthday-after-snapshot always throws:
   /// it is a permanent per-account condition.
   Future<void> _waitUntilWalletReadyForVoting(
-    _VotingSessionContext context, {
-    bool? failOnStall,
-  }) async {
-    final failsOnStall = failOnStall ?? failsOnWalletSyncStall;
+    _VotingSessionContext context,
+  ) async {
+    final failsOnStall = _failsOnWalletSyncStall;
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final noProgressTimer = Stopwatch()..start();
@@ -4891,7 +4895,7 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   /// readiness gate: the submission job turns the error into its recovery
   /// poll and a retry, so a stall must never park the job silently.
   @override
-  bool get failsOnWalletSyncStall => true;
+  bool get _failsOnWalletSyncStall => true;
 
   @override
   bool _retainAutomaticShareTracking() {
