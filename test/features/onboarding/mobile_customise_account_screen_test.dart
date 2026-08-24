@@ -12,6 +12,8 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -363,6 +365,82 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('passcode route'), findsNothing);
+  });
+
+  testWidgets('imports Ledger account with name, avatar, and birthday', (
+    tester,
+  ) async {
+    String? importedName;
+    String? importedProfilePictureId;
+    LedgerDeviceAccount? importedAccount;
+    int? importedBirthdayHeight;
+    const account = LedgerDeviceAccount(
+      ufvk: 'uview-ledger',
+      seedFingerprint: [1, 2, 3],
+      accountIndex: 7,
+      appVersion: '3.9.2',
+    );
+    final router = GoRouter(
+      initialLocation: '/customise',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const Text('birthday route')),
+        GoRoute(
+          path: '/customise',
+          builder: (_, _) => const MobileLedgerCustomiseAccountScreen(
+            args: LedgerCustomiseAccountArgs(
+              account: account,
+              birthdayHeight: 2500000,
+            ),
+          ),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ledgerAccountImporterProvider.overrideWithValue(({
+            required name,
+            required account,
+            required birthdayHeight,
+            required profilePictureId,
+          }) async {
+            importedName = name;
+            importedAccount = account;
+            importedBirthdayHeight = birthdayHeight;
+            importedProfilePictureId = profilePictureId;
+          }),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.bySemanticsLabel('Back'), findsOneWidget);
+    expect(
+      tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+      isTrue,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+      'Ledger savings',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(importedName, 'Ledger savings');
+    expect(importedAccount, same(account));
+    expect(importedBirthdayHeight, 2500000);
+    expect(importedProfilePictureId, isNotEmpty);
+    expect(find.text('home route'), findsOneWidget);
   });
 
   testWidgets('creates the initial account with the selected persona', (

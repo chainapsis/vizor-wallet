@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../../features/accounts/screens/hardware_account_details_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
+import '../../features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
@@ -25,11 +27,13 @@ import '../../features/address_book/screens/mobile/mobile_address_book_screen.da
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import '../../features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
+import '../../features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
+import '../../features/swap/screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../features/send/services/send_flow.dart'
-    show KeystoneBroadcastArgs, SendReviewArgs;
+    show KeystoneBroadcastArgs, LedgerBroadcastArgs, SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../rust/api/sync.dart' as rust_sync;
@@ -98,6 +102,15 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     // the bottom tab bar is hidden while they're open. Absolute paths
     // match the desktop routes for the shared redirect guard and deep
     // links.
+    GoRoute(
+      path: '/settings/hardware-account',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileHardwareAccountDetailsScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+    ),
     GoRoute(
       path: '/settings/seed-phrase',
       pageBuilder: (context, state) => CupertinoPage(
@@ -188,6 +201,10 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             args: extra.reviewArgs,
             keystone: extra,
           ),
+          LedgerBroadcastArgs() => MobileSendStatusScreen(
+            args: extra.reviewArgs,
+            ledger: extra,
+          ),
           SendReviewArgs() => MobileSendStatusScreen(args: extra),
           _ => const MobileSendScreen(useRouteSteps: true),
         };
@@ -207,6 +224,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final extra = state.extra;
         final child = extra is MobileSwapKeystoneSignArgs
             ? MobileSwapKeystoneSignScreen(args: extra)
+            : const MobileSwapScreen();
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
+    ),
+    GoRoute(
+      path: '/swap/ledger-sign',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is MobileSwapLedgerSignArgs
+            ? MobileSwapLedgerSignScreen(args: extra)
             : const MobileSwapScreen();
         return CupertinoPage(key: state.pageKey, child: child);
       },
@@ -291,6 +318,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       ),
     ),
     GoRoute(
+      path: '/send/ledger-sign',
+      pageBuilder: (context, state) {
+        final extra = state.extra;
+        final child = extra is SendReviewArgs
+            ? MobileLedgerSendSignScreen(args: extra)
+            : const MobileSendScreen(useRouteSteps: true);
+        return CupertinoPage(key: state.pageKey, child: child);
+      },
+    ),
+    GoRoute(
       path: '/home/keystone-shield',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
@@ -359,6 +396,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             roundId: state.pathParameters['roundId'] ?? '',
           ),
         ),
+      ),
+    ),
+    GoRoute(
+      path: '/home/ledger-shield',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileLedgerShieldScreen(),
       ),
     ),
     GoRoute(

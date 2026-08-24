@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -34,6 +35,9 @@ AccountInfo _account(
   String name, {
   bool isSeedAnchor = false,
   bool isHardware = false,
+  HardwareSignerKind? hardwareSignerKind,
+  int? birthdayHeight,
+  int? zip32AccountIndex,
 }) => AccountInfo(
   uuid: uuid,
   name: name,
@@ -41,6 +45,9 @@ AccountInfo _account(
   profilePictureId: kDefaultProfilePictureId,
   isSeedAnchor: isSeedAnchor,
   isHardware: isHardware,
+  hardwareSignerKind: hardwareSignerKind,
+  birthdayHeight: birthdayHeight,
+  zip32AccountIndex: zip32AccountIndex,
 );
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
@@ -73,6 +80,12 @@ Widget _app(
       GoRoute(
         path: '/add-account',
         builder: (_, _) => const Text('add account route'),
+      ),
+      GoRoute(
+        path: '/settings/hardware-account',
+        builder: (_, state) => MobileHardwareAccountDetailsScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+        ),
       ),
       GoRoute(
         path: '/settings/seed-phrase',
@@ -396,6 +409,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Account details'), findsNothing);
     expect(
       find.ancestor(
         of: find.text('View secret phrase'),
@@ -419,34 +433,68 @@ void main() {
     expect(find.text('seed phrase route b'), findsOneWidget);
   });
 
-  testWidgets('hardware account menu hides the secret passphrase shortcut', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        AccountState(
-          accounts: [
-            _account('a', 'Knight', isSeedAnchor: true),
-            _account('b', 'Keystone', isHardware: true),
-          ],
-          activeAccountUuid: 'a',
+  for (final (kind, signerName, birthday, accountIndex) in const [
+    (HardwareSignerKind.keystone, 'Keystone', 2500000, 7),
+    (HardwareSignerKind.ledger, 'Ledger', 2600000, 12),
+  ]) {
+    testWidgets('$signerName account menu opens safe account details', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          AccountState(
+            accounts: [
+              _account('a', 'Knight', isSeedAnchor: true),
+              _account(
+                'b',
+                '$signerName Vault',
+                isHardware: true,
+                hardwareSignerKind: kind,
+                birthdayHeight: birthday,
+                zip32AccountIndex: accountIndex,
+              ),
+            ],
+            activeAccountUuid: 'a',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
-      findsNothing,
-    );
-    // Unlike the secret passphrase, a UFVK export never grants spend
-    // authority, so hardware accounts still get the viewing-key shortcut.
-    expect(find.text('View viewing key'), findsOneWidget);
-  });
+      expect(find.text('View secret phrase'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
+        findsNothing,
+      );
+      expect(find.text('Account details'), findsOneWidget);
+      expect(find.text('View viewing key'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_account_details')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('hardware_account_details_screen')),
+        findsOneWidget,
+      );
+      expect(find.text('$signerName hardware wallet'), findsOneWidget);
+      expect(find.text('$birthday'), findsOneWidget);
+      expect(find.text('$accountIndex'), findsOneWidget);
+      expect(find.textContaining('recovery phrase'), findsOneWidget);
+      expect(find.text('View secret phrase'), findsNothing);
+      if (kind == HardwareSignerKind.ledger) {
+        expect(find.text('Connection preference'), findsOneWidget);
+        expect(find.text('Bluetooth'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('ledger_change_connection_button')),
+          findsNothing,
+        );
+      }
+    });
+  }
 
   testWidgets('account menu opens its viewing key export', (tester) async {
     await tester.pumpWidget(
