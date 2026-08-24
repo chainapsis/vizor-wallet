@@ -5,10 +5,15 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 /// tracker reports progress, so the tracker decides whether a wedged sync is
 /// caught and whether a healthy one is left alone.
 void main() {
-  VotingWalletSyncProgressSample sample(double percentage, int scannedHeight) {
+  VotingWalletSyncProgressSample sample(
+    double percentage,
+    int scannedHeight, {
+    bool isSyncing = true,
+  }) {
     return VotingWalletSyncProgressSample(
       percentage: percentage,
       scannedHeight: scannedHeight,
+      isSyncing: isSyncing,
     );
   }
 
@@ -49,6 +54,33 @@ void main() {
     expect(tracker.observe(sample(0.2, 300)), isFalse);
     expect(tracker.observe(sample(0.0, 300)), isFalse, reason: 'restart');
     expect(tracker.observe(sample(0.2, 300)), isFalse, reason: 'replay');
+  });
+
+  test('an idle engine reporting a reset is not a new scan epoch', () {
+    final tracker = VotingWalletSyncProgressTracker();
+
+    expect(tracker.observe(sample(0.4, 500)), isFalse, reason: 'priming');
+    expect(tracker.observe(sample(0.5, 600)), isTrue);
+
+    // Locking the wallet cancels sync and republishes zeroed sync state.
+    // That is work stopping, not a rewind: it must not count as progress,
+    // and it must not lower the percentage mark — otherwise replays after
+    // the lock would read as progress and reset the stall budget.
+    expect(
+      tracker.observe(sample(0.0, 0, isSyncing: false)),
+      isFalse,
+      reason: 'lock reset',
+    );
+    expect(
+      tracker.observe(sample(0.5, 600, isSyncing: false)),
+      isFalse,
+      reason: 'replay after lock',
+    );
+    expect(tracker.observe(sample(0.5, 600)), isFalse, reason: 'replay');
+
+    // A running engine at a lower height is still a genuine new epoch.
+    expect(tracker.observe(sample(0.0, 100)), isTrue, reason: 'rewind');
+    expect(tracker.observe(sample(0.1, 200)), isTrue);
   });
 
   test('a null sample is not progress', () {

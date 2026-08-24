@@ -278,10 +278,16 @@ class VotingWalletSyncProgressSample {
   const VotingWalletSyncProgressSample({
     required this.percentage,
     required this.scannedHeight,
+    required this.isSyncing,
   });
 
   final double percentage;
   final int scannedHeight;
+
+  /// Whether the engine is actually running. Sync state is also republished
+  /// from a standing start when work *stops* — locking the wallet resets it
+  /// to zeroed values — so a sample from an idle engine describes no work.
+  final bool isSyncing;
 }
 
 /// Samples the sync engine's own progress. The readiness checker's scanned
@@ -300,6 +306,7 @@ final votingWalletSyncProgressSampleProvider =
           return VotingWalletSyncProgressSample(
             percentage: sync.percentage,
             scannedHeight: sync.scannedHeight,
+            isSyncing: sync.isSyncing,
           );
         } catch (_) {
           return null;
@@ -341,7 +348,14 @@ class VotingWalletSyncProgressTracker {
       return false;
     }
     if (sample.scannedHeight < maxScannedHeight) {
-      // New scan epoch: rebase both marks onto it. The rewind itself is
+      // Only a running engine can start a new scan epoch. An idle engine
+      // reporting a lower height is a state reset, not work — locking the
+      // wallet republishes zeroed sync state while sync is cancelled — and
+      // rebasing onto it would both count the lock as progress and lower
+      // the percentage mark, letting later replays read as progress.
+      if (!sample.isSyncing) return false;
+      // New scan epoch (rescan from an older birthday, reorg rewind,
+      // tail repair): rebase both marks onto it. The rewind itself is
       // engine activity, so it counts as progress.
       _maxPercentage = sample.percentage;
       _maxScannedHeight = sample.scannedHeight;

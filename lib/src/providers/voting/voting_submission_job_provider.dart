@@ -1121,6 +1121,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _walletSyncRecoveryInFlight) {
       return;
     }
+    if (ref.read(appSecurityProvider).requiresUnlock) {
+      // Sync cannot advance while locked, so polling readiness would spin
+      // for the whole lock. Wait for unlock instead — the retry itself also
+      // needs the unlocked spending secret.
+      _armWalletSyncRecoveryRetryOnUnlock();
+      return;
+    }
     _walletSyncRecoveryInFlight = true;
     try {
       // votingWalletDbPathProvider memoizes the resolve, so the 2s poll
@@ -1149,8 +1156,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       if (readiness.isReady) {
+        // The wallet can lock while the readiness check is in flight; the
+        // retry needs the unlocked spending secret.
         if (ref.read(appSecurityProvider).requiresUnlock) {
-          // Retry needs the unlocked spending secret; resume once on unlock.
           _armWalletSyncRecoveryRetryOnUnlock();
           return;
         }

@@ -321,6 +321,13 @@ class VotingSessionState {
     if (scanned == null || snapshot == null || birthday == null) return null;
     // No progress to report for a permanently ineligible account.
     if (walletAccountBirthdayAfterSnapshot) return null;
+    // The scanned height is the wallet-wide scan frontier, while the
+    // baseline is this account's birthday. With an older account in the
+    // same wallet the frontier can sit below the baseline, where the
+    // fraction is not just imprecise but meaningless — it would pin at 0%
+    // for the whole backfill and then jump. Report unknown instead, and let
+    // the copy fall back to its progressless wording.
+    if (scanned < birthday) return null;
     final total = snapshot - birthday;
     if (total <= 0) return scanned >= snapshot ? 1 : null;
     return ((scanned - birthday) / total).clamp(0.0, 1.0).toDouble();

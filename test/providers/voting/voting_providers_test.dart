@@ -1550,6 +1550,7 @@ void main() {
         return VotingWalletSyncProgressSample(
           percentage: enginePercentage,
           scannedHeight: 100,
+          isSyncing: true,
         );
       },
       walletSyncPollInterval: const Duration(milliseconds: 5),
@@ -1779,6 +1780,47 @@ void main() {
         harness.container.read(votingSubmissionJobProvider(harness.key)).status,
         VotingSubmissionJobStatus.error,
       );
+    },
+  );
+
+  test(
+    'stalled-recovery polling waits for unlock instead of spinning',
+    () async {
+      final security = _MutableVotingSecurityNotifier(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+      );
+      var syncStartCalls = 0;
+      final harness = await _draftBearingStallHarness(
+        securityNotifier: security,
+        walletSyncStarter: () => syncStartCalls++,
+      );
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+
+      // Locking while the wallet is still short of the snapshot: sync cannot
+      // advance, so recovery must park on the unlock signal rather than
+      // re-checking readiness and kicking sync every tick.
+      security.setUnlocked(false);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      final whileLocked = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(syncStartCalls, whileLocked, reason: 'no polling while locked');
+
+      // Unlock resumes recovery, which retries once sync reaches the
+      // snapshot.
+      harness.readiness.ready = true;
+      security.setUnlocked(true);
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
     },
   );
 
