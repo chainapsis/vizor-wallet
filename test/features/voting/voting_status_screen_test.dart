@@ -1712,6 +1712,53 @@ void main() {
   );
 
   testWidgets(
+    'mobile poll exit clears its persisted draft while the session loads',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      await persistence.save(
+        _draftKey,
+        const VotingDraftState(choices: {1: 0}),
+      );
+      final sessionGate = Completer<VotingSessionState>();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        draftPersistence: persistence,
+        overrides: [
+          votingSessionProvider(_roundId).overrideWith(
+            () => _BlockingVotingSessionNotifier(sessionGate.future),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(
+        tester,
+        find.byType(MobileVotingProposalDetailScreen),
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
     'mobile review back preserves choices until the poll itself is exited',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -4654,6 +4701,15 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
 
   @override
   Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
+}
+
+class _BlockingVotingSessionNotifier extends VotingSessionNotifier {
+  _BlockingVotingSessionNotifier(this._future) : super(_roundId);
+
+  final Future<VotingSessionState> _future;
+
+  @override
+  Future<VotingSessionState> build() => _future;
 }
 
 class _BlockedRefreshVotingSubmissionSessionNotifier

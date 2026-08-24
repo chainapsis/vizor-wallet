@@ -100,9 +100,21 @@ class _MobileVotingProposalDetailScreenState
 
   Future<void> _clearDraftForExit() async {
     if (_draftExitCleanupStarted) return;
-    _draftExitCleanupStarted = true;
-    final draftKey = _draftKey;
+    final activeAccountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
+    final draftKey =
+        _draftKey ??
+        (activeAccountUuid == null || activeAccountUuid.isEmpty
+            ? null
+            : VotingSessionKey(
+                roundId: widget.roundId,
+                accountUuid: activeAccountUuid,
+              ));
     if (draftKey == null) return;
+    _draftExitCleanupStarted = true;
+    _draftKey = draftKey;
     final notifier = ref.read(votingDraftProvider(draftKey).notifier);
     try {
       await notifier.clearAll();
