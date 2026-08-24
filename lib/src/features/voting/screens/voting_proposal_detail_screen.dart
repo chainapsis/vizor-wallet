@@ -194,10 +194,7 @@ class _VotingProposalDetailViewState
         final votingEligibilityError = isVotingEligibilityError(votingError);
         final birthdayAfterSnapshot =
             isVotingAccountBirthdayAfterSnapshot(votingError?.cause) ||
-            (state.walletAccountBirthdayHeight != null &&
-                state.walletSnapshotHeight != null &&
-                state.walletAccountBirthdayHeight! >
-                    state.walletSnapshotHeight!);
+            state.walletAccountBirthdayAfterSnapshot;
         _maybePrecomputeDelegationPir(state);
         return _ActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
@@ -225,6 +222,8 @@ class _VotingProposalDetailViewState
           votingEligibilityErrorMessage: votingEligibilityError
               ? votingEligibilityMessage
               : null,
+          walletSyncWaiting:
+              state.phase == VotingSessionPhase.waitingForWalletSync,
           onVotingEligibilityRetry: _retryVotingPowerPreparation,
           proposals: proposals,
           draft: draft,
@@ -416,6 +415,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.answersEditable,
     required this.votingEligibilityMessage,
     required this.votingEligibilityErrorMessage,
+    required this.walletSyncWaiting,
     required this.onVotingEligibilityRetry,
     required this.proposals,
     required this.draft,
@@ -440,6 +440,11 @@ class _ActivePollContent extends StatefulWidget {
   final bool answersEditable;
   final String? votingEligibilityMessage;
   final String? votingEligibilityErrorMessage;
+
+  /// The session is waiting for wallet sync to reach the round snapshot. The
+  /// eligibility message then carries sync-progress copy, not a failure, so
+  /// no retry affordance may be offered (voting continues automatically).
+  final bool walletSyncWaiting;
   final VoidCallback onVotingEligibilityRetry;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
@@ -488,7 +493,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   }
 
   bool get _canRetryVotingEligibility {
-    return !widget.votingEligibilityConfirmed &&
+    return !widget.walletSyncWaiting &&
+        !widget.votingEligibilityConfirmed &&
         !widget.votingPowerPreparing &&
         widget.votingEligibilityMessage != null &&
         widget.votingEligibilityErrorMessage == null;

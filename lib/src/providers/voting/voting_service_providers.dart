@@ -237,29 +237,38 @@ final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
 /// higher-priority ranges near the chain tip scan first, so frontier movement
 /// alone under-reports a healthy catch-up.
 ///
-/// Only forward movement changes the emitted value. Sync percentage drops to
-/// zero every time the engine restarts an attempt, so a crash-looping sync
-/// that never commits new scan work oscillates without advancing; counting
-/// those oscillations as progress would keep resetting the stall budget and
-/// mask a wedged sync from the submission job's failure path. Increases are
-/// commit-backed (percentage rises only when unscanned ranges shrink), so
-/// they are the only samples that tick the signal forward.
+/// Only movement past the highest value ever observed ticks the signal.
+/// A restarting sync replays old values: Dart resets the percentage to zero
+/// on every startSync, and the engine's pre-batch progress events re-emit a
+/// percentage computed from persisted state before any new scan work
+/// commits — so a crash-looping sync oscillates through previously seen
+/// values without advancing. Comparing against high-water marks makes those
+/// replays inert (a re-rise to a value already reached is not progress),
+/// which keeps a wedged sync from resetting the stall budget forever and
+/// masking itself from the submission job's failure path. Genuinely new work
+/// pushes percentage or scanned height past the marks and still ticks.
 final votingWalletSyncProgressSignalProvider = Provider<Object? Function()>((
   ref,
 ) {
-  double? lastPercentage;
-  int? lastScannedHeight;
+  var primed = false;
+  var maxPercentage = 0.0;
+  var maxScannedHeight = 0;
   var forwardTicks = 0;
   return () {
     try {
       final sync = ref.read(syncProvider).value;
       if (sync == null) return null;
       final advanced =
-          (lastPercentage != null && sync.percentage > lastPercentage!) ||
-          (lastScannedHeight != null &&
-              sync.scannedHeight > lastScannedHeight!);
-      lastPercentage = sync.percentage;
-      lastScannedHeight = sync.scannedHeight;
+          primed &&
+          (sync.percentage > maxPercentage ||
+              sync.scannedHeight > maxScannedHeight);
+      if (!primed || sync.percentage > maxPercentage) {
+        maxPercentage = sync.percentage;
+      }
+      if (!primed || sync.scannedHeight > maxScannedHeight) {
+        maxScannedHeight = sync.scannedHeight;
+      }
+      primed = true;
       if (advanced) forwardTicks++;
       return forwardTicks;
     } catch (_) {

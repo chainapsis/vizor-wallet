@@ -291,6 +291,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Timer? _walletSyncRecoveryTimer;
   bool _walletSyncRecoveryInFlight = false;
   int _walletSyncRecoveryFailureStreak = 0;
+  String? _walletSyncRecoveryDbPath;
   bool _walletSyncRecoveryRetryOnUnlock = false;
   int _nextGeneration = 0;
 
@@ -1123,7 +1124,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     _walletSyncRecoveryInFlight = true;
     try {
-      final dbPath = await ref.read(votingWalletDbPathProvider).call();
+      // The db path is stable for the life of one armed recovery; resolving
+      // it per tick would pay a support-directory lookup plus a keychain
+      // read every 2 seconds for nothing.
+      final dbPath = _walletSyncRecoveryDbPath ??= await ref
+          .read(votingWalletDbPathProvider)
+          .call();
       final endpoint = ref.read(votingRpcEndpointConfigProvider);
       final readiness = await ref
           .read(votingWalletSyncReadinessCheckerProvider)
@@ -1138,6 +1144,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       _walletSyncRecoveryFailureStreak = 0;
+      if (readiness.accountBirthdayAfterSnapshot) {
+        // Permanent per-account ineligibility: sync can never reach the
+        // snapshot for this account, so polling would run until dispose.
+        // The job stays in its error state; switching accounts or a manual
+        // retry (which re-runs the readiness gate) remains available.
+        _cancelWalletSyncRecovery();
+        return;
+      }
       if (readiness.isReady) {
         if (ref.read(appSecurityProvider).requiresUnlock) {
           // Retry needs the unlocked spending secret; resume once on unlock.
@@ -1202,6 +1216,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoverySnapshotHeight = null;
     _walletSyncRecoveryFailureStreak = 0;
     _walletSyncRecoveryRetryOnUnlock = false;
+    _walletSyncRecoveryDbPath = null;
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {

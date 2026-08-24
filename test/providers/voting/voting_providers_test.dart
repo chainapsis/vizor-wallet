@@ -1691,6 +1691,44 @@ void main() {
   );
 
   test(
+    'stalled-recovery polling stops for a birthday-ineligible account',
+    () async {
+      var syncStartCalls = 0;
+      final harness = await _draftBearingStallHarness(
+        walletSyncStarter: () => syncStartCalls++,
+      );
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+
+      // Auto-recovery is armed: each poll tick kicks the sync starter.
+      final before = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(syncStartCalls, greaterThan(before));
+
+      // The account becomes permanently ineligible for the round snapshot;
+      // recovery must cancel itself instead of polling until dispose.
+      harness.readiness.birthdayAfterSnapshot = true;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      final after = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(syncStartCalls, after, reason: 'recovery stopped polling');
+      expect(
+        harness.container.read(votingSubmissionJobProvider(harness.key)).status,
+        VotingSubmissionJobStatus.error,
+      );
+    },
+  );
+
+  test(
     'stalled submission defers automatic retry until unlock',
     () async {
       final security = _MutableVotingSecurityNotifier(
@@ -8285,6 +8323,7 @@ class _DraftBearingStallHarness {
 
 Future<_DraftBearingStallHarness> _draftBearingStallHarness({
   AppSecurityNotifier? securityNotifier,
+  void Function()? walletSyncStarter,
 }) async {
   final rust = FakeVotingRustApi(emitCommitments: true);
   final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
@@ -8329,6 +8368,7 @@ Future<_DraftBearingStallHarness> _draftBearingStallHarness({
     ),
     draftPersistence: draftPersistence,
     walletSyncReadinessChecker: readiness,
+    walletSyncStarter: walletSyncStarter,
     walletSyncMaxWait: Duration.zero,
     walletSyncPollInterval: Duration.zero,
   );
@@ -9359,6 +9399,7 @@ class _MutableVotingWalletSyncReadinessChecker
   _MutableVotingWalletSyncReadinessChecker({required this.ready});
 
   bool ready;
+  bool birthdayAfterSnapshot = false;
 
   @override
   Future<VotingWalletSyncReadiness> check({
@@ -9371,7 +9412,9 @@ class _MutableVotingWalletSyncReadinessChecker
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
-      accountBirthdayHeight: snapshotHeight - 10,
+      accountBirthdayHeight: birthdayAfterSnapshot
+          ? snapshotHeight + 10
+          : snapshotHeight - 10,
     );
   }
 }

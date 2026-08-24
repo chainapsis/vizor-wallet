@@ -4,12 +4,13 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 
 /// The voting stall detector resets its no-progress budget whenever this
-/// signal changes, so the signal must move only on commit-backed forward
-/// progress. A crash-looping sync drops its percentage to zero on every
-/// restart; counting those oscillations as progress would keep the
-/// submission job from ever reporting a stall.
+/// signal changes, so the signal must move only past its high-water marks.
+/// A crash-looping sync replays previously seen values (Dart resets the
+/// percentage on every restart and the engine's pre-batch events re-emit a
+/// percentage computed from persisted state before any new commit); if those
+/// replays ticked the signal, the submission job could never report a stall.
 void main() {
-  test('sync progress signal ticks only on forward movement', () async {
+  test('sync progress signal ticks only past its high-water marks', () async {
     final container = ProviderContainer(
       overrides: [syncProvider.overrideWith(_MutableSyncNotifier.new)],
     );
@@ -24,29 +25,35 @@ void main() {
 
     notifier.setProgress(percentage: 0.3, scannedHeight: 100);
     final afterRise = signal();
-    expect(afterRise, isNot(equals(initial)), reason: 'a rise ticks');
+    expect(afterRise, isNot(equals(initial)), reason: 'a new high ticks');
     expect(signal(), afterRise, reason: 'unchanged sample does not tick');
 
-    // Restart churn: percentage resets to zero, then sits flat because a
-    // wedged attempt commits nothing and so emits no progress events.
+    // Restart churn: percentage resets to zero, then the wedged attempt
+    // replays its pre-batch percentage without committing new work. The
+    // replayed value never exceeds the high-water mark, so no tick.
     notifier.setProgress(percentage: 0.0, scannedHeight: 100);
     expect(signal(), afterRise, reason: 'a restart drop does not tick');
-    notifier.setProgress(percentage: 0.0, scannedHeight: 100);
-    expect(signal(), afterRise, reason: 'flat after a restart does not tick');
+    notifier.setProgress(percentage: 0.3, scannedHeight: 100);
+    expect(
+      signal(),
+      afterRise,
+      reason: 'a replayed pre-batch percentage does not tick',
+    );
 
-    // A rise after a restart is commit-backed (progress events fire only
-    // when a scan batch commits), so it counts again.
-    notifier.setProgress(percentage: 0.05, scannedHeight: 100);
+    // Committed new work pushes past the mark and counts again.
+    notifier.setProgress(percentage: 0.35, scannedHeight: 100);
     expect(signal(), isNot(equals(afterRise)));
 
-    // Scanned-height movement alone also counts as progress; a height drop
-    // (restart) does not.
+    // Scanned-height movement past its own mark also counts as progress; a
+    // drop or a replay of an already-seen height does not.
     final beforeHeight = signal();
-    notifier.setProgress(percentage: 0.05, scannedHeight: 150);
+    notifier.setProgress(percentage: 0.35, scannedHeight: 150);
     final afterHeightRise = signal();
     expect(afterHeightRise, isNot(equals(beforeHeight)));
-    notifier.setProgress(percentage: 0.05, scannedHeight: 0);
+    notifier.setProgress(percentage: 0.35, scannedHeight: 40);
     expect(signal(), afterHeightRise, reason: 'height drop does not tick');
+    notifier.setProgress(percentage: 0.35, scannedHeight: 150);
+    expect(signal(), afterHeightRise, reason: 'replayed height does not tick');
   });
 }
 

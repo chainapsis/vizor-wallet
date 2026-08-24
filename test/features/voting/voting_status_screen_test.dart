@@ -2121,6 +2121,20 @@ void main() {
     expect(find.text(syncCopy), findsOneWidget);
     expect(_reviewAnswersButton(tester).onPressed, isNull);
 
+    // A freshly mounted screen during an ongoing sync wait (driven by
+    // another owner, so no local preparation is in flight) must not offer a
+    // retry: the wait continues automatically. An enabled no-op
+    // 'Retry eligibility' button used to render in exactly this state.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: KeyedSubtree(key: UniqueKey(), child: _proposalHarness()),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text(syncCopy));
+    expect(find.text('Retry eligibility'), findsNothing);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
     readiness.ready = true;
     await _pumpUntilCondition(
       tester,

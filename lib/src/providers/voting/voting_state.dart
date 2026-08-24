@@ -304,14 +304,23 @@ class VotingSessionState {
       error == null &&
       phase != VotingSessionPhase.error;
 
+  /// A birthday past the snapshot means the account can never scan the
+  /// snapshot: permanent per-round ineligibility. Single source of truth for
+  /// this boundary on session state; VotingWalletSyncReadiness holds the
+  /// equivalent check for raw readiness data before it reaches state.
+  bool get walletAccountBirthdayAfterSnapshot {
+    final birthday = walletAccountBirthdayHeight;
+    final snapshot = walletSnapshotHeight;
+    return birthday != null && snapshot != null && birthday > snapshot;
+  }
+
   double? get walletSnapshotSyncProgress {
     final scanned = walletScannedHeight;
     final snapshot = walletSnapshotHeight;
     final birthday = walletAccountBirthdayHeight;
     if (scanned == null || snapshot == null || birthday == null) return null;
-    // A birthday past the snapshot means the account can never scan the
-    // snapshot; there is no progress to report, only permanent ineligibility.
-    if (birthday > snapshot) return null;
+    // No progress to report for a permanently ineligible account.
+    if (walletAccountBirthdayAfterSnapshot) return null;
     final total = snapshot - birthday;
     if (total <= 0) return scanned >= snapshot ? 1 : null;
     return ((scanned - birthday) / total).clamp(0.0, 1.0).toDouble();
