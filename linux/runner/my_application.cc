@@ -47,8 +47,15 @@ static void register_icon_theme_paths() {
 }
 
 static gboolean is_payment_link_uri(const gchar* value) {
-  return value != nullptr &&
-         g_ascii_strncasecmp(value, "vizor://payment-link", 20) == 0;
+  static constexpr gchar prefix[] = "vizor://payment-link";
+  static constexpr gsize prefix_length = sizeof(prefix) - 1;
+  if (value == nullptr ||
+      g_ascii_strncasecmp(value, prefix, prefix_length) != 0) {
+    return FALSE;
+  }
+  const gchar boundary = value[prefix_length];
+  return boundary == '\0' || boundary == '?' || boundary == '/' ||
+         boundary == '#';
 }
 
 static gboolean add_bounded_payment_link(GPtrArray* uris,
