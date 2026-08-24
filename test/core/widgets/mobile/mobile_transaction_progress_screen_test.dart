@@ -101,6 +101,39 @@ void main() {
     );
   });
 
+  testWidgets('can defer an initial success animation', (tester) async {
+    await _setMobileViewport(tester);
+    late StateSetter update;
+    var animationEnabled = false;
+
+    await tester.pumpWidget(
+      _app(
+        StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return MobileTransactionProgressBadge(
+              phase: MobileTransactionProgressPhase.succeeded,
+              terminalAnimationEnabled: animationEnabled,
+              successRippleKey: const ValueKey('deferred_success_ripple'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const ValueKey('deferred_success_ripple')), findsNothing);
+
+    update(() => animationEnabled = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('deferred_success_ripple')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('animates an initial failure phase', (tester) async {
     await _setMobileViewport(tester);
 

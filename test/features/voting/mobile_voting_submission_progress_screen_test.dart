@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
@@ -157,6 +158,118 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_submitted_home_button')),
     );
     expect(done, isTrue);
+  });
+
+  testWidgets('starts the Voted pulse and haptic after route transition', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    final haptics = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, (call) async {
+          haptics.add(call.method);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(hapticsChannel, null),
+    );
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    navigatorKey.currentState!.push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (context, animation, secondaryAnimation) => AppTheme(
+          data: AppThemeData.light,
+          child: MobileVotingSubmittedScreen(onDone: () {}),
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(
+      find.byKey(const ValueKey('mobile_voting_submitted_success_ripple')),
+      findsNothing,
+    );
+    expect(haptics, isEmpty);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+      ModalRoute.of(
+        tester.element(find.byType(MobileVotingSubmittedScreen)),
+      )?.animation?.status,
+      AnimationStatus.completed,
+    );
+    expect(haptics, ['sendSuccess']);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.byKey(const ValueKey('mobile_voting_submitted_success_ripple')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(haptics, ['sendSuccess']);
+  });
+
+  testWidgets('does not celebrate when Voted is removed during transition', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    final haptics = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, (call) async {
+          haptics.add(call.method);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(hapticsChannel, null),
+    );
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    final route = PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileVotingSubmittedScreen(onDone: () {}),
+      ),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          FadeTransition(opacity: animation, child: child),
+    );
+    navigatorKey.currentState!.push(route);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    navigatorKey.currentState!.removeRoute(route);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(MobileVotingSubmittedScreen), findsNothing);
+    expect(haptics, isEmpty);
   });
 
   testWidgets('keeps the Voted action reachable above compact safe areas', (

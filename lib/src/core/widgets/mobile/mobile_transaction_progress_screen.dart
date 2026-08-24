@@ -225,6 +225,7 @@ class MobileTransactionProgressBadge extends StatefulWidget {
     this.successRippleKey,
     this.inProgressCircleColor,
     this.inProgressIconColor,
+    this.terminalAnimationEnabled = true,
     super.key,
   });
 
@@ -236,6 +237,10 @@ class MobileTransactionProgressBadge extends StatefulWidget {
   final Key? successRippleKey;
   final Color? inProgressCircleColor;
   final Color? inProgressIconColor;
+
+  /// Whether success/failure motion may start for the current terminal phase.
+  /// The visual state still renders while terminal motion is deferred.
+  final bool terminalAnimationEnabled;
 
   @override
   State<MobileTransactionProgressBadge> createState() =>
@@ -271,18 +276,20 @@ class _MobileTransactionProgressBadgeState
   @override
   void didUpdateWidget(covariant MobileTransactionProgressBadge oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.phase == widget.phase) return;
-    _startTerminalAnimation(widget.phase);
+    if (!widget.terminalAnimationEnabled) {
+      _resetTerminalAnimations();
+      return;
+    }
+    if (oldWidget.phase != widget.phase ||
+        !oldWidget.terminalAnimationEnabled) {
+      _startTerminalAnimation(widget.phase);
+    }
   }
 
   void _startTerminalAnimation(MobileTransactionProgressPhase phase) {
-    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
-      _ripple
-        ..stop()
-        ..value = 0;
-      _shake
-        ..stop()
-        ..value = 0;
+    if (!widget.terminalAnimationEnabled ||
+        (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _resetTerminalAnimations();
       return;
     }
     switch (phase) {
@@ -297,6 +304,10 @@ class _MobileTransactionProgressBadgeState
   }
 
   void _syncTerminalAnimation() {
+    if (!widget.terminalAnimationEnabled) {
+      _resetTerminalAnimations();
+      return;
+    }
     final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (disabled) {
       _startTerminalAnimation(widget.phase);
@@ -315,6 +326,15 @@ class _MobileTransactionProgressBadgeState
       case MobileTransactionProgressPhase.pending:
         break;
     }
+  }
+
+  void _resetTerminalAnimations() {
+    _ripple
+      ..stop()
+      ..value = 0;
+    _shake
+      ..stop()
+      ..value = 0;
   }
 
   @override
