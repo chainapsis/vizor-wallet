@@ -1039,7 +1039,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(recoveryApi.ballotIntents, isEmpty);
@@ -1142,7 +1142,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(
@@ -1228,6 +1228,197 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('submission confirmed route'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'completed mobile status navigates before voting power refresh finishes',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final refreshGate = Completer<BigInt?>();
+      addTearDown(() {
+        if (!refreshGate.isCompleted) refreshGate.complete(null);
+      });
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
+      final completedState = VotingSessionState(
+        roundId: _roundId,
+        accountUuid: key.accountUuid,
+        phase: VotingSessionPhase.done,
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
+          votingSubmissionJobSessionProvider(
+            key,
+          ).overrideWithValue(AsyncValue.data(completedState)),
+          votingSubmissionSessionProvider(key).overrideWith(
+            () => _BlockedRefreshVotingSubmissionSessionNotifier(
+              key,
+              completedState,
+              refreshGate,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+          GoRoute(
+            path: '/voting',
+            builder: (_, _) => const Text('voting route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId',
+            builder: (_, _) => const Text('poll route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/review',
+            builder: (_, _) => const Text('review route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+
+      unawaited(router.push('/voting'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('poll route'));
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('review route'));
+      unawaited(
+        router.pushReplacement(
+          votingStatusRoute(_roundId, accountUuid: key.accountUuid),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Finalizing submission'));
+
+      jobNotifier.complete();
+      await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+      expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(refreshGate.isCompleted, isFalse);
+    },
+  );
+
+  testWidgets(
+    'completed mobile status does not replace a route pushed above it',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.submittingShares,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: votingStatusRoute(
+          _roundId,
+          accountUuid: key.accountUuid,
+        ),
+        routes: [
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+          GoRoute(
+            path: '/pushed-route',
+            builder: (_, _) => const Text('pushed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      unawaited(router.push('/pushed-route'));
+      await _pumpUntilFound(tester, find.text('pushed route'));
+      expect(find.text('pushed route'), findsOneWidget);
+
+      jobNotifier.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('pushed route'), findsOneWidget);
+      expect(find.text('submission confirmed route'), findsNothing);
     },
   );
 
@@ -4066,6 +4257,20 @@ class _StaticVotingSubmissionJobNotifier extends VotingSubmissionJobNotifier {
   VotingSubmissionJobState build() => _initial;
 }
 
+class _CompletableVotingSubmissionJobNotifier
+    extends VotingSubmissionJobNotifier {
+  _CompletableVotingSubmissionJobNotifier(super.key, this._initial);
+
+  final VotingSubmissionJobState _initial;
+
+  @override
+  VotingSubmissionJobState build() => _initial;
+
+  void complete() {
+    state = state.copyWith(status: VotingSubmissionJobStatus.complete);
+  }
+}
+
 class _StaticVotingSubmissionJobsNotifier extends VotingSubmissionJobsNotifier {
   _StaticVotingSubmissionJobsNotifier(this._initial);
 
@@ -4219,6 +4424,24 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
   Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
 }
 
+class _BlockedRefreshVotingSubmissionSessionNotifier
+    extends VotingSubmissionSessionNotifier {
+  _BlockedRefreshVotingSubmissionSessionNotifier(
+    super.key,
+    this._state,
+    this._refreshGate,
+  );
+
+  final VotingSessionState _state;
+  final Completer<BigInt?> _refreshGate;
+
+  @override
+  Future<VotingSessionState> build() async => _state;
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() => _refreshGate.future;
+}
+
 class _FailingEligibilityVotingSessionNotifier
     extends _StaticVotingSessionNotifier {
   _FailingEligibilityVotingSessionNotifier(super.state);
@@ -4355,6 +4578,9 @@ class _NoopVotingRustApi implements VotingRustApi {
   Future<List<int>> generateVotingHotkey({required String network}) async {
     return [9, 9, 9];
   }
+
+  @override
+  void warmVotingProvingCaches() {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

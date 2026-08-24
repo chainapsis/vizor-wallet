@@ -80,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 582226879;
+  int get rustContentHash => -1543264106;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1198,6 +1198,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   bool crateApiWalletWalletExists({required String dbPath});
+
+  void crateApiVotingWarmVotingProvingCaches();
 
   Future<void> crateApiSyncWriteBlockMetadata({
     required String cachePath,
@@ -8563,6 +8565,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "wallet_exists", argNames: ["dbPath"]);
 
   @override
+  void crateApiVotingWarmVotingProvingCaches() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 174,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiVotingWarmVotingProvingCachesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingWarmVotingProvingCachesConstMeta =>
+      const TaskConstMeta(
+        debugName: "warm_voting_proving_caches",
+        argNames: [],
+      );
+
+  @override
   Future<void> crateApiSyncWriteBlockMetadata({
     required String cachePath,
     required List<BlockMetaInfo> blocks,
@@ -8576,7 +8607,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 174,
+            funcId: 175,
             port: port_,
           );
         },
@@ -8613,7 +8644,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 175,
+            funcId: 176,
             port: port_,
           );
         },
