@@ -10,6 +10,8 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "single_instance.cpp"
+  "payment_uri_handoff.cpp"
+  "payment_uri_protocol.cpp"
   "utils.cpp"
   "velopack_uninstall.cpp"
   "velopack_update.cpp"

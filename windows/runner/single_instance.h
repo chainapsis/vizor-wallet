@@ -40,10 +40,12 @@ class SingleInstanceGuard {
 // Result returned by the matching primary window for an activation message.
 constexpr LRESULT kSingleInstanceActivationAcknowledged = 0x56495A4F;
 
-// Tries briefly to find the primary window in the current interactive session
-// and asks it to restore and activate itself. Returns false when the primary is
-// still starting, hung, elevated beyond the caller, or running in another
-// Windows session. Process exclusion remains enforced by the file lock.
-bool ActivateExistingInstance(UINT activation_message);
+// Tries for |retry_window_ms| to find the primary window in the current
+// interactive session and asks it to restore and activate itself. Returns
+// false when the primary is still starting, hung, elevated beyond the caller,
+// or running in another Windows session. Process exclusion remains enforced by
+// the file lock.
+bool ActivateExistingInstance(UINT activation_message,
+                              DWORD retry_window_ms);
 
 #endif  // RUNNER_SINGLE_INSTANCE_H_

@@ -22,7 +22,6 @@ namespace {
 #define VIZOR_WIDEN(value) VIZOR_WIDEN2(value)
 
 constexpr wchar_t kLockDirectoryName[] = L"VizorInstanceLocks";
-constexpr DWORD kActivationRetryWindowMs = 2000;
 constexpr DWORD kActivationRetryDelayMs = 50;
 constexpr UINT kActivationMessageTimeoutMs = 100;
 
@@ -186,12 +185,13 @@ SingleInstanceAcquireResult SingleInstanceGuard::Acquire() {
   return SingleInstanceAcquireResult::kError;
 }
 
-bool ActivateExistingInstance(UINT activation_message) {
+bool ActivateExistingInstance(UINT activation_message,
+                              DWORD retry_window_ms) {
   if (activation_message == 0) {
     return false;
   }
 
-  const ULONGLONG deadline = ::GetTickCount64() + kActivationRetryWindowMs;
+  const ULONGLONG deadline = ::GetTickCount64() + retry_window_ms;
   do {
     ActivationContext context{activation_message, false};
     ::EnumWindows(SendActivationMessage,

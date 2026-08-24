@@ -5,6 +5,7 @@ param(
   [string]$Network = "mainnet",
   [string]$PackId = "",
   [string]$PackTitle = "",
+  [string]$WindowsStoragePrefix = "",
   [string]$Channel = "",
   [string]$OutputDir = "",
   [string]$UpdateFeedSigningKey = $env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64,
@@ -285,7 +286,9 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\mainnet"
   }
   $NetworkDartDefine = "main"
-  $WindowsStoragePrefix = "Vizor"
+  if ([string]::IsNullOrWhiteSpace($WindowsStoragePrefix)) {
+    $WindowsStoragePrefix = "Vizor"
+  }
 } else {
   if ([string]::IsNullOrWhiteSpace($PackId)) {
     $PackId = "com.keplr.vizor.testnet"
@@ -300,7 +303,9 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\testnet"
   }
   $NetworkDartDefine = "test"
-  $WindowsStoragePrefix = "VizorTestnet"
+  if ([string]::IsNullOrWhiteSpace($WindowsStoragePrefix)) {
+    $WindowsStoragePrefix = "VizorTestnet"
+  }
 }
 
 $env:VIZOR_WINDOWS_COMPANY_NAME = "com.keplr"
