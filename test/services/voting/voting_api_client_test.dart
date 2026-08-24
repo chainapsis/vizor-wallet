@@ -617,6 +617,34 @@ void main() {
     ]);
   });
 
+  test('definitive tx lookup rejects 404 after a transient error', () async {
+    final primary = Uri.parse('https://vote-primary.example');
+    final secondary = Uri.parse('https://vote-secondary.example');
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://vote-primary.example/shielded-vote/v1/tx/ambiguous-tx':
+            timeoutResponse(),
+        'https://vote-secondary.example/shielded-vote/v1/tx/ambiguous-tx':
+            jsonResponse({'error': 'not found'}, statusCode: 404),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: primary,
+      fallbackBaseUrls: [secondary],
+      httpClient: http,
+      delay: (_) async {},
+    );
+
+    await expectLater(
+      client.getTxConfirmation('ambiguous-tx', requireDefinitiveResult: true),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(http.requests.map((request) => request.uri.host), [
+      'vote-primary.example',
+      'vote-secondary.example',
+    ]);
+  });
+
   test('rejects malformed transaction confirmation bodies', () async {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),

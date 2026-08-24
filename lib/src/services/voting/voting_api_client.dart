@@ -466,21 +466,27 @@ class VotingApiClient {
   }) async {
     final candidates = [_baseUrl, ..._fallbackBaseUrls];
     Object? lastError;
+    StackTrace? lastErrorStackTrace;
     late T fallbackResult;
     var hasFallbackResult = false;
     for (var attempt = 0; attempt < candidates.length; attempt++) {
       final baseUrl = candidates[attempt];
       try {
         final result = await operation(baseUrl);
-        if (attempt < candidates.length - 1 &&
-            (shouldTryNextCandidate?.call(result) ?? false)) {
-          fallbackResult = result;
-          hasFallbackResult = true;
-          continue;
+        if (shouldTryNextCandidate?.call(result) ?? false) {
+          if (attempt < candidates.length - 1) {
+            fallbackResult = result;
+            hasFallbackResult = true;
+            continue;
+          }
+          if (!returnFallbackResultOnRetryableError && lastError != null) {
+            Error.throwWithStackTrace(lastError, lastErrorStackTrace!);
+          }
         }
         return result;
-      } catch (error) {
+      } catch (error, stackTrace) {
         lastError = error;
+        lastErrorStackTrace = stackTrace;
         final retryable = policy.shouldRetry(error);
         if (attempt == candidates.length - 1 || !retryable) {
           if (hasFallbackResult &&
