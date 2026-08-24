@@ -518,18 +518,35 @@ class PaymentLinkService {
     String? mnemonic,
   }) async {
     await _requireShieldedAddress(toAddress);
-    final walletDbPath = dbPath ?? await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSendFlowId();
-    final proposal = await rust_sync.proposeSend(
-      dbPath: walletDbPath,
-      network: endpoint.networkName,
-      accountUuid: fromAccountUuid,
-      sendFlowId: sendFlowId,
-      toAddress: toAddress,
-      amountZatoshi: amountZatoshi,
-      memo: memo,
-    );
+    Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
+      String proposalDbPath,
+    ) async {
+      final proposal = await rust_sync.proposeSend(
+        dbPath: proposalDbPath,
+        network: endpoint.networkName,
+        accountUuid: fromAccountUuid,
+        sendFlowId: sendFlowId,
+        toAddress: toAddress,
+        amountZatoshi: amountZatoshi,
+        memo: memo,
+      );
+      return (dbPath: proposalDbPath, proposal: proposal);
+    }
+
+    // The primary wallet shares the ordinary send flow's authoritative
+    // spendable lease. Claim wallets are fully synchronized before this path.
+    final proposalContext = dbPath == null
+        ? await _ref
+              .read(syncProvider.notifier)
+              .runWithAuthoritativeSpendable(
+                accountUuid: fromAccountUuid,
+                operation: () async => createProposal(await getWalletDbPath()),
+              )
+        : await createProposal(dbPath);
+    final walletDbPath = proposalContext.dbPath;
+    final proposal = proposalContext.proposal;
 
     try {
       final result = await _executeProposal(
