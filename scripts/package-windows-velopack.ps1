@@ -315,6 +315,24 @@ $env:VIZOR_WINDOWS_LEGAL_COPYRIGHT = "Copyright (C) 2026 com.keplr. All rights r
 $env:VIZOR_WINDOWS_ORIGINAL_FILENAME = "Vizor.exe"
 $env:VIZOR_WINDOWS_PRODUCT_NAME = $PackTitle
 $env:VIZOR_WINDOWS_STORAGE_PREFIX = $WindowsStoragePrefix
+$env:VIZOR_WINDOWS_PAYMENT_URI_OWNER = "0"
+$isOfficialPackageId = [string]::Equals(
+  $PackId,
+  "com.keplr.vizor",
+  [System.StringComparison]::Ordinal
+)
+$isProductionStorage = [string]::Equals(
+  $WindowsStoragePrefix,
+  "Vizor",
+  [System.StringComparison]::Ordinal
+)
+if (
+  $Network -eq "mainnet" -and
+  $isOfficialPackageId -and
+  $isProductionStorage
+) {
+  $env:VIZOR_WINDOWS_PAYMENT_URI_OWNER = "1"
+}
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   $env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64 = $UpdateFeedSigningKey.Trim()

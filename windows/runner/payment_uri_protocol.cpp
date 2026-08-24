@@ -11,6 +11,12 @@
 
 namespace {
 
+#ifndef VIZOR_WINDOWS_PAYMENT_URI_OWNER
+#define VIZOR_WINDOWS_PAYMENT_URI_OWNER 0
+#endif
+
+constexpr bool kOwnsPaymentUriScheme =
+    VIZOR_WINDOWS_PAYMENT_URI_OWNER == 1;
 constexpr wchar_t kProtocolKeyPath[] = L"Software\\Classes\\vizor";
 constexpr wchar_t kProtocolCommandKeyPath[] =
     L"Software\\Classes\\vizor\\shell\\open\\command";
@@ -90,6 +96,9 @@ void NotifyAssociationChanged() {
 }  // namespace
 
 void RegisterVizorProtocolHandler() {
+  if (!kOwnsPaymentUriScheme) {
+    return;
+  }
   const std::wstring module_path = ModuleFileName();
   if (module_path.empty()) {
     return;
@@ -118,6 +127,9 @@ void RegisterVizorProtocolHandler() {
 }
 
 void RegisterVizorProtocolHandlerIfUnclaimed() {
+  if (!kOwnsPaymentUriScheme) {
+    return;
+  }
   const std::wstring module_path = ToLower(ModuleFileName());
   if (module_path.empty()) {
     return;
@@ -130,6 +142,9 @@ void RegisterVizorProtocolHandlerIfUnclaimed() {
 }
 
 void UnregisterVizorProtocolHandler() {
+  if (!kOwnsPaymentUriScheme) {
+    return;
+  }
   const std::wstring module_path = ToLower(ModuleFileName());
   const std::wstring command = ToLower(ReadDefaultCommand());
   if (module_path.empty() || command.find(module_path) == std::wstring::npos) {
