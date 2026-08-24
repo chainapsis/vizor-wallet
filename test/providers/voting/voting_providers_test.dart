@@ -4105,6 +4105,100 @@ void main() {
     expect(rust.voteCommitBundleCalls, [0, 1]);
   });
 
+  test('spent nullifier rejection explains voting started elsewhere', () async {
+    final responses = votingHttpResponses();
+    responses['/shielded-vote/v1/cast-vote'] = {
+      'tx_hash': 'rejected-vote-tx',
+      'code': 1,
+      'log': 'nullifier already spent: abc123',
+    };
+    responses['/shielded-vote/v1/tx/rejected-vote-tx'] = jsonResponse({
+      'error': 'not found',
+    }, statusCode: 404);
+    final http = FakeVotingHttpClient(responses: responses);
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(
+      state.error?.message,
+      "You've begun voting on this round from another wallet. You must use "
+      'that wallet to see your voting status',
+    );
+    expect(rust.storedVoteTxHashes, isEmpty);
+  });
+
+  test(
+    'spent nullifier rejection resumes when its tx already landed',
+    () async {
+      final responses = votingHttpResponses();
+      responses['/shielded-vote/v1/cast-vote'] = {
+        'tx_hash': 'vote-tx',
+        'code': 1,
+        'log': 'nullifier already spent: abc123',
+      };
+      final http = FakeVotingHttpClient(responses: responses);
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _singleVoteRecoveryApi(),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: _singleProposalDrafts());
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.done);
+      expect(state.error, isNull);
+      expect(rust.storedVoteTxHashes, ['0:7:vote-tx']);
+    },
+  );
+
+  test('spent nullifier without a tx hash keeps its diagnostic', () async {
+    final responses = votingHttpResponses();
+    responses['/shielded-vote/v1/cast-vote'] = {
+      'code': 1,
+      'log': 'nullifier already spent: abc123',
+    };
+    final http = FakeVotingHttpClient(responses: responses);
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('nullifier already spent: abc123'));
+    expect(
+      state.error?.message,
+      isNot(contains("You've begun voting on this round")),
+    );
+    expect(rust.storedVoteTxHashes, isEmpty);
+  });
+
   test(
     'vote submission progress displays questions while bundle work advances',
     () async {
@@ -10474,6 +10568,33 @@ List<rust_wire.DraftVote> _twoProposalDrafts() => [
     singleShare: false,
   ),
 ];
+
+List<rust_wire.DraftVote> _singleProposalDrafts() => [
+  rust_wire.DraftVote(
+    proposalId: 7,
+    choice: 1,
+    numOptions: 2,
+    vcTreePosition: BigInt.zero,
+    singleShare: false,
+  ),
+];
+
+FakeVotingRecoveryApi _singleVoteRecoveryApi() {
+  return FakeVotingRecoveryApi(
+    state: recoveryState(
+      bundleCount: 1,
+      delegationTxHashes: const [
+        rust_frb_types.DelegationRecoveryView(
+          bundleIndex: 0,
+          phase: VotingWorkflowPhase.submittedDelegation,
+          txHash: 'delegation-0',
+          vanLeafPosition: null,
+        ),
+      ],
+      votes: [vote(bundleIndex: 0, proposalId: 7)],
+    ),
+  );
+}
 
 rust_wire.SignedVoteCommitmentsView _commitments({
   required String roundId,

@@ -29,6 +29,15 @@ import 'voting_submission_guard_provider.dart';
 
 final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
+const _votingStartedFromAnotherWalletMessage =
+    "You've begun voting on this round from another wallet. You must use "
+    'that wallet to see your voting status';
+
+final _nullifierAlreadySpentPattern = RegExp(
+  r'nullifier already spent:\s*\S+',
+  caseSensitive: false,
+);
+
 /// The PCZT value-pool tag for Ironwood actions.
 ///
 /// Ironwood spend authorization uses a RedPallas key derived from the
@@ -2229,6 +2238,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // it unwind on its own so the caller can drop the abandoned round.
       for (final failure in failures) {
         if (failure.error is _StaleVotingSessionAction) throw failure.error;
+        if (failure.error is _VotingStartedFromAnotherWallet) {
+          throw failure.error;
+        }
       }
       throw _VoteWaveBatchException(failures);
     }
@@ -2278,13 +2290,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           rust.voteCommitmentWireJson(commitment: commitment.wire),
         ),
       );
-      if (result.code != 0) {
-        throw StateError(
-          result.log.isEmpty
-              ? 'Vote commitment transaction was rejected.'
-              : result.log,
-        );
-      }
+      await _requireAcceptedVoteCommitment(api, result);
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -2348,13 +2354,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'proposal=${commitment.proposalId} txHash=${result.txHash} '
         'code=${result.code} log=${result.log}',
       );
-      if (result.code != 0) {
-        throw StateError(
-          result.log.isEmpty
-              ? 'Vote commitment transaction was rejected.'
-              : result.log,
-        );
-      }
+      await _requireAcceptedVoteCommitment(api, result);
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -4688,6 +4688,42 @@ class _VoteWaveFailure {
   final int proposalId;
   final String stage;
   final Object error;
+}
+
+/// Signals that a pre-chain vote rejection proves another wallet spent the
+/// voting nullifier.
+class _VotingStartedFromAnotherWallet implements Exception {
+  const _VotingStartedFromAnotherWallet();
+
+  @override
+  String toString() => _votingStartedFromAnotherWalletMessage;
+}
+
+/// Requires a vote submission to be accepted or already present on-chain.
+///
+/// A spent-nullifier rejection is ambiguous after a retry: the first attempt
+/// may have landed even though its response was lost. The cross-wallet guidance
+/// is safe only when the rejected transaction has a hash and that hash is
+/// absent from the chain. If it is present and successful, normal confirmation
+/// recovery continues. Without a hash, the original diagnostic is preserved.
+Future<void> _requireAcceptedVoteCommitment(
+  VotingApiClient api,
+  VotingTxResult result,
+) async {
+  if (result.code == 0) return;
+  if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
+      result.txHash.isNotEmpty) {
+    final confirmation = await api.getTxConfirmation(result.txHash);
+    if (confirmation == null) {
+      throw const _VotingStartedFromAnotherWallet();
+    }
+    if (confirmation.code == 0) return;
+  }
+  throw StateError(
+    result.log.isEmpty
+        ? 'Vote commitment transaction was rejected.'
+        : result.log,
+  );
 }
 
 class _VoteWaveBatchException implements Exception {
