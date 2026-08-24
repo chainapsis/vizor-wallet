@@ -7,6 +7,7 @@ import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
 
 const _storageVersion = 1;
+const _fundingMetadataWriteAttempts = 2;
 
 final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
   ref,
@@ -262,12 +263,26 @@ class PaymentLinkRecoveryStore {
   }
 }
 
+class PaymentLinkFundingRecoveryResult<T> {
+  const PaymentLinkFundingRecoveryResult({
+    required this.transaction,
+    this.recoveryError,
+    this.recoveryStackTrace,
+  });
+
+  final T transaction;
+  final Object? recoveryError;
+  final StackTrace? recoveryStackTrace;
+
+  bool get fundingMetadataSaved => recoveryError == null;
+}
+
 class PaymentLinkFundingRecovery {
   const PaymentLinkFundingRecovery(this._store);
 
   final PaymentLinkRecoveryStore _store;
 
-  Future<T> fund<T>({
+  Future<PaymentLinkFundingRecoveryResult<T>> fund<T>({
     required VizorPaymentLink link,
     required String sourceAccountUuid,
     required Future<T> Function() createTransaction,
@@ -275,11 +290,23 @@ class PaymentLinkFundingRecovery {
   }) async {
     await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
     final result = await createTransaction();
-    await _store.markFunded(
-      address: link.address,
-      fundingTxids: fundingTxids(result),
+    final txids = fundingTxids(result);
+    Object? recoveryError;
+    StackTrace? recoveryStackTrace;
+    for (var attempt = 0; attempt < _fundingMetadataWriteAttempts; attempt++) {
+      try {
+        await _store.markFunded(address: link.address, fundingTxids: txids);
+        return PaymentLinkFundingRecoveryResult(transaction: result);
+      } catch (error, stackTrace) {
+        recoveryError = error;
+        recoveryStackTrace = stackTrace;
+      }
+    }
+    return PaymentLinkFundingRecoveryResult(
+      transaction: result,
+      recoveryError: recoveryError,
+      recoveryStackTrace: recoveryStackTrace,
     );
-    return result;
   }
 }
 
