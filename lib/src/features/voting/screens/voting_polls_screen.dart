@@ -470,7 +470,7 @@ class _MobilePollCardContent extends StatelessWidget {
     final colors = context.colors;
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
-    final compactDescription = description.replaceAll(RegExp(r'\s+'), ' ');
+    final previewDescription = _mobileRoundDescription(description);
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
@@ -486,7 +486,7 @@ class _MobilePollCardContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         Text(
-          compactDescription.isEmpty ? round.roundId : compactDescription,
+          previewDescription.isEmpty ? round.roundId : previewDescription,
           key: ValueKey('voting_poll_description_${round.roundId}'),
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
@@ -769,6 +769,20 @@ String _roundDescription(Map<String, dynamic> json) {
     }
   }
   return '';
+}
+
+String _mobileRoundDescription(String description) {
+  final normalized = description
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .trim();
+  if (normalized.isEmpty) return '';
+
+  return normalized
+      .split(RegExp(r'\n(?:[ \t]*\n)+'))
+      .map((paragraph) => paragraph.replaceAll(RegExp(r'[ \t\n]+'), ' ').trim())
+      .where((paragraph) => paragraph.isNotEmpty)
+      .join('\n');
 }
 
 String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {

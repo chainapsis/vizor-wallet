@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
@@ -52,18 +53,23 @@ void main() {
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
-    final description = tester.widget<Text>(
-      find.byKey(
-        const ValueKey('voting_poll_description_snack-governance-active'),
-      ),
+    final descriptionFinder = find.byKey(
+      const ValueKey('voting_poll_description_snack-governance-active'),
     );
+    final description = tester.widget<Text>(descriptionFinder);
     expect(
       description.data,
-      'A silly sample round for testing the shielded vote builder without '
-      'using real governance content.',
+      'Welcome\nThis poll resolves outstanding NU7 scope questions following '
+      'the early-2026 sentiment polling. Already in NU7, established by prior '
+      'consensus.',
     );
     expect(description.maxLines, 3);
     expect(description.overflow, TextOverflow.ellipsis);
+    expect(
+      tester.renderObject<RenderParagraph>(descriptionFinder).didExceedMaxLines,
+      isTrue,
+    );
+    expect(tester.getSize(card).height, tester.getSize(secondCard).height);
     final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
     expect(cardDecoration.boxShadow, isNotEmpty);
     final cardTap = tester.widget<InkWell>(

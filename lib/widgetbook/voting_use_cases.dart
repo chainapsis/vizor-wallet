@@ -322,8 +322,9 @@ const _previewVotingRounds = [
     status: 'active',
     rawJson: {
       'description':
-          'A silly sample round for testing the shielded vote builder\n\nwithout '
-          'using real governance content.',
+          'Welcome\n\nThis poll resolves outstanding NU7 scope questions '
+          'following the early-2026 sentiment polling. Already in NU7, '
+          'established by prior consensus.',
       'vote_end_time': '2026-08-24T12:00:00Z',
     },
   ),
