@@ -37,6 +37,45 @@ void main() {
       });
     });
 
+    test('compares the complete canonical payment-link payload', () {
+      final original = _link();
+      final roundTripped = VizorPaymentLink.parse(original.toUri().toString());
+
+      expect(original.hasSameCanonicalPayload(roundTripped), isTrue);
+      expect(
+        original.hasSameCanonicalPayload(
+          _link(
+            network: ' main ',
+            address: ' ${original.address} ',
+            mnemonic: ' ${original.mnemonic} ',
+            label: ' ${original.label} ',
+            createdAt: DateTime.parse('2026-06-21T14:00:00+02:00'),
+          ),
+        ),
+        isTrue,
+      );
+
+      final changedPayloads = <String, VizorPaymentLink>{
+        'address': _link(address: '${original.address}2'),
+        'amount': _link(amountZatoshi: original.amountZatoshi + BigInt.one),
+        'mnemonic': _link(
+          mnemonic:
+              'legal winner thank year wave sausage worth useful legal winner thank yellow',
+        ),
+        'birthday': _link(birthdayHeight: original.birthdayHeight - 1),
+        'label': _link(label: '${original.label} updated'),
+        'createdAt': _link(
+          createdAt: original.createdAt.add(const Duration(seconds: 1)),
+        ),
+        'presentation': _link(
+          presentation: const PaymentLinkPresentation(message: 'Updated'),
+        ),
+      };
+      for (final MapEntry(:key, :value) in changedPayloads.entries) {
+        expect(original.hasSameCanonicalPayload(value), isFalse, reason: key);
+      }
+    });
+
     test('omits an empty presentation payload', () {
       final uri = _link(
         presentation: const PaymentLinkPresentation(
@@ -211,16 +250,25 @@ Map<String, Object?> _decodePayload(Uri uri) {
       as Map<String, Object?>;
 }
 
-VizorPaymentLink _link({PaymentLinkPresentation? presentation}) {
+VizorPaymentLink _link({
+  String network = 'main',
+  String address = 'u1exampleaddress',
+  BigInt? amountZatoshi,
+  String mnemonic =
+      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+  int birthdayHeight = 3_456_789,
+  String label = 'Demo link',
+  DateTime? createdAt,
+  PaymentLinkPresentation? presentation,
+}) {
   return VizorPaymentLink(
-    network: 'main',
-    address: 'u1exampleaddress',
-    amountZatoshi: BigInt.from(123456789),
-    mnemonic:
-        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
-    birthdayHeight: 3_456_789,
-    label: 'Demo link',
-    createdAt: DateTime.utc(2026, 6, 21, 12),
+    network: network,
+    address: address,
+    amountZatoshi: amountZatoshi ?? BigInt.from(123456789),
+    mnemonic: mnemonic,
+    birthdayHeight: birthdayHeight,
+    label: label,
+    createdAt: createdAt ?? DateTime.utc(2026, 6, 21, 12),
     presentation: presentation,
   );
 }

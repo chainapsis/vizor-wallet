@@ -99,7 +99,24 @@ class VizorPaymentLink {
 
   static bool supportsNetwork(String network) => network.trim() == 'main';
 
+  /// Compares every field carried by the versioned payment-link payload after
+  /// applying the same normalization as [toUri]. This is intentionally stricter
+  /// than claim-wallet cache identity: a corrected amount or changed
+  /// presentation must remain a distinct intake item.
+  bool hasSameCanonicalPayload(VizorPaymentLink other) {
+    return _encodedPayload() == other._encodedPayload();
+  }
+
   Uri toUri() {
+    return Uri(
+      scheme: scheme,
+      host: host,
+      path: path,
+      fragment: '$_fragmentPrefix${_encodedPayload()}',
+    );
+  }
+
+  String _encodedPayload() {
     final normalizedNetwork = network.trim();
     if (!supportsNetwork(normalizedNetwork)) {
       throw const FormatException(
@@ -120,13 +137,7 @@ class VizorPaymentLink {
     if (presentationPayload != null) {
       payload['presentation'] = presentationPayload;
     }
-    final encoded = base64UrlEncode(utf8.encode(jsonEncode(payload)));
-    return Uri(
-      scheme: scheme,
-      host: host,
-      path: path,
-      fragment: '$_fragmentPrefix$encoded',
-    );
+    return base64UrlEncode(utf8.encode(jsonEncode(payload)));
   }
 
   static bool matchesEndpoint(Uri uri) {
