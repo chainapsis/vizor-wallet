@@ -986,10 +986,19 @@ fn parse_32_byte_hex(value: &str, label: &str) -> Result<[u8; 32], String> {
 }
 
 fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
-    use pczt::roles::combiner::Combiner;
+    use pczt::roles::{combiner::Combiner, redactor::Redactor};
 
     let p = pczt::Pczt::parse(proofs).map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
     let s = pczt::Pczt::parse(sigs).map_err(|e| format!("Parse PCZT with signatures: {e:?}"))?;
+    // The signer view may normalize a TEX output's display-only `user_address`
+    // to its legacy t-address for Keystone. The wallet-owned proof PCZT keeps
+    // the authoritative TEX metadata, so do not let the signer copy conflict
+    // with or replace it during the merge.
+    let s = Redactor::new(s)
+        .redact_transparent_with(|mut redactor| {
+            redactor.redact_outputs(|mut output| output.clear_user_address());
+        })
+        .finish();
     Combiner::new(vec![p, s])
         .combine()
         .map_err(|e| format!("Combine PCZTs: {e:?}"))
@@ -1971,7 +1980,7 @@ mod tests {
         let tex_base = Updater::new(base)
             .update_transparent_with(|mut updater| {
                 updater.update_output_with(0, |mut output| {
-                    output.set_user_address(tex_address);
+                    output.set_user_address(tex_address.clone());
                     Ok(())
                 })
             })
@@ -1989,6 +1998,14 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+
+        let combined = combine_pczts(&tex_base, &second_signer).unwrap();
+        assert_eq!(
+            combined.transparent().outputs()[0]
+                .user_address()
+                .as_deref(),
+            Some(tex_address.as_str())
+        );
     }
 
     #[test]
