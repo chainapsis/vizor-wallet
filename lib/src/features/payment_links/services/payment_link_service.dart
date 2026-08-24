@@ -204,7 +204,7 @@ class PaymentLinkService {
     }
 
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    final paymentAccount = await rust_wallet.previewNewSoftwareAccount(
+    final paymentAccount = await rust_wallet.generateSoftwareAccount(
       network: endpoint.networkName,
     );
     final ephemeralAddress = paymentAccount.unifiedAddress;
@@ -241,7 +241,7 @@ class PaymentLinkService {
           fundingTxids: (result) => result.txids,
         );
 
-    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
+    unawaited(_refreshMainWalletAfterSend());
     _requireFullyBroadcasted(fundingResult);
     return link;
   }
@@ -368,7 +368,7 @@ class PaymentLinkService {
       var claimableZatoshi = BigInt.zero;
       var feeZatoshi = BigInt.zero;
       try {
-        final estimate = await rust_sync.estimateSendMaxMinConfirmations(
+        final estimate = await rust_sync.estimateSendMax(
           dbPath: tempWallet.dbPath,
           network: endpoint.networkName,
           accountUuid: importedAccountUuid,
@@ -423,7 +423,7 @@ class PaymentLinkService {
         'using ${endpoint.networkName}.',
       );
     }
-    final estimate = await rust_sync.estimateSendMaxMinConfirmations(
+    final estimate = await rust_sync.estimateSendMax(
       dbPath: session.dbPath,
       network: endpoint.networkName,
       accountUuid: session.accountUuid,
@@ -443,7 +443,6 @@ class PaymentLinkService {
       amountZatoshi: session.link.amountZatoshi,
       memo: null,
       mnemonic: session.link.mnemonic,
-      useMinConfirmations: true,
     );
     final claimResult = PaymentLinkClaimResult(
       txids: sendResult.txids,
@@ -452,7 +451,7 @@ class PaymentLinkService {
     if (!shouldRetainPaymentLinkClaimWallet(claimResult.status)) {
       await discardClaimSession(session);
     }
-    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
+    unawaited(_refreshMainWalletAfterSend());
     return claimResult;
   }
 
@@ -464,6 +463,17 @@ class PaymentLinkService {
   Future<void> discardClaimSession(PaymentLinkClaimSession session) =>
       _deleteTemporaryWalletDb(session.directory);
 
+  Future<void> _refreshMainWalletAfterSend() async {
+    try {
+      await _ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (e, stackTrace) {
+      log(
+        'PaymentLinkService: refreshAfterSend failed (non-critical): $e\n'
+        '$stackTrace',
+      );
+    }
+  }
+
   Future<rust_sync.ExecuteProposalResult> _sendShielded({
     String? dbPath,
     required String fromAccountUuid,
@@ -471,31 +481,20 @@ class PaymentLinkService {
     required BigInt amountZatoshi,
     String? memo,
     String? mnemonic,
-    bool useMinConfirmations = false,
   }) async {
     await _requireShieldedAddress(toAddress);
     final walletDbPath = dbPath ?? await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSendFlowId();
-    final proposal = useMinConfirmations
-        ? await rust_sync.proposeSendMinConfirmations(
-            dbPath: walletDbPath,
-            network: endpoint.networkName,
-            accountUuid: fromAccountUuid,
-            sendFlowId: sendFlowId,
-            toAddress: toAddress,
-            amountZatoshi: amountZatoshi,
-            memo: memo,
-          )
-        : await rust_sync.proposeSend(
-            dbPath: walletDbPath,
-            network: endpoint.networkName,
-            accountUuid: fromAccountUuid,
-            sendFlowId: sendFlowId,
-            toAddress: toAddress,
-            amountZatoshi: amountZatoshi,
-            memo: memo,
-          );
+    final proposal = await rust_sync.proposeSend(
+      dbPath: walletDbPath,
+      network: endpoint.networkName,
+      accountUuid: fromAccountUuid,
+      sendFlowId: sendFlowId,
+      toAddress: toAddress,
+      amountZatoshi: amountZatoshi,
+      memo: memo,
+    );
 
     try {
       final result = await _executeProposal(
