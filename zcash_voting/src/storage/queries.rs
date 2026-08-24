@@ -4,7 +4,6 @@ use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 use rusqlite::{named_params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
-use voting_circuits::delegation::ImtProofData;
 
 use crate::note_bundling::BundlePolicy;
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
@@ -2357,27 +2356,50 @@ fn fields_from_blob<const N: usize>(
     })
 }
 
-pub fn store_imt_proof(
+// --- Bundle-independent PIR proof cache ---
+//
+// Rows here are keyed by (wallet_id, network, root, nullifier) with no round or
+// bundle attached, so proofs can be warmed before any bundle exists and the
+// same nullifier can hold proofs for several IMT snapshots at once.
+
+pub(crate) const PIR_PROOF_CACHE_TTL_SECS: i64 = 28 * 24 * 60 * 60;
+
+/// Deletes PIR proof cache rows created more than four weeks ago.
+///
+/// This is intentionally based on `created_at`, not `updated_at`, so repeatedly
+/// storing the same cache key does not extend its lifetime indefinitely.
+pub fn prune_expired_pir_cache(conn: &Connection) -> Result<usize, VotingError> {
+    conn.execute(
+        "DELETE FROM pir_proof_cache
+         WHERE created_at < strftime('%s','now') - :ttl",
+        named_params! { ":ttl": PIR_PROOF_CACHE_TTL_SECS },
+    )
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to prune expired PIR proof cache rows: {e}"),
+    })
+}
+
+/// Stores a PIR proof under `(wallet_id, network, proof.root, nullifier)`,
+/// updating the existing row in place when that exact key is already present.
+pub fn store_pir_cache_proof(
     conn: &Connection,
-    round_id: &str,
     wallet_id: &str,
-    bundle_index: u32,
+    network: Network,
     nullifier: &[u8],
-    proof: &ImtProofData,
+    proof: &pir_client::ImtProofData,
 ) -> Result<(), VotingError> {
     let root = field_to_bytes(proof.root);
     let nf_bounds = fields_to_blob(proof.nf_bounds);
     let path = fields_to_blob(proof.path);
 
     conn.execute(
-        "INSERT INTO imt_proofs (round_id, wallet_id, bundle_index, nullifier, root, nf_bounds, leaf_pos, path, created_at)
-         VALUES (:round_id, :wallet_id, :bundle_index, :nullifier, :root, :nf_bounds, :leaf_pos, :path, strftime('%s','now'))
-         ON CONFLICT(round_id, wallet_id, bundle_index, nullifier)
-         DO UPDATE SET root = :root, nf_bounds = :nf_bounds, leaf_pos = :leaf_pos, path = :path, created_at = strftime('%s','now')",
+        "INSERT INTO pir_proof_cache (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+         VALUES (:wallet_id, :network, :nullifier, :root, :nf_bounds, :leaf_pos, :path, strftime('%s','now'), strftime('%s','now'))
+         ON CONFLICT(wallet_id, network, root, nullifier)
+         DO UPDATE SET nf_bounds = :nf_bounds, leaf_pos = :leaf_pos, path = :path, updated_at = strftime('%s','now')",
         named_params! {
-            ":round_id": round_id,
             ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
+            ":network": network_to_storage(network),
             ":nullifier": nullifier,
             ":root": root,
             ":nf_bounds": nf_bounds,
@@ -2386,59 +2408,114 @@ pub fn store_imt_proof(
         },
     )
     .map_err(|e| VotingError::Internal {
-        message: format!("failed to store IMT proof for bundle {bundle_index}: {e}"),
+        message: format!("failed to store cached PIR proof: {e}"),
     })?;
     Ok(())
 }
 
-pub fn load_imt_proof(
+/// Raw `pir_proof_cache` blobs for one `(wallet_id, network, root, nullifier)`.
+///
+/// Decoding is separate from the SQLite load so a corrupt row can be treated as
+/// a cache miss (and overwritten) without looking like a storage failure.
+pub struct PirCacheRow {
+    pub nf_bounds: Vec<u8>,
+    pub leaf_pos: i64,
+    pub path: Vec<u8>,
+    root: Vec<u8>,
+}
+
+impl PirCacheRow {
+    /// Decode the stored blobs into a PIR proof. Fails only on corrupt bytes.
+    pub fn decode(&self) -> Result<pir_client::ImtProofData, VotingError> {
+        Ok(pir_client::ImtProofData {
+            root: field_from_bytes(&self.root, "pir_proof_cache.root")?,
+            nf_bounds: fields_from_blob::<3>(&self.nf_bounds, "pir_proof_cache.nf_bounds")?,
+            leaf_pos: u32::try_from(self.leaf_pos).map_err(|_| VotingError::Internal {
+                message: format!("invalid cached PIR proof leaf_pos {}", self.leaf_pos),
+            })?,
+            path: fields_from_blob::<29>(&self.path, "pir_proof_cache.path")?,
+        })
+    }
+}
+
+/// Loads the raw cached PIR proof row for exactly `(wallet_id, network, root,
+/// nullifier)`, or `None` when no proof is cached under that root.
+///
+/// Storage errors propagate; blob decode is left to [`PirCacheRow::decode`].
+pub fn load_pir_cache_row(
     conn: &Connection,
-    round_id: &str,
     wallet_id: &str,
-    bundle_index: u32,
+    network: Network,
+    root: &[u8],
     nullifier: &[u8],
-    expected_root: &[u8],
-) -> Result<Option<ImtProofData>, VotingError> {
-    let row = conn
-        .query_row(
-            "SELECT root, nf_bounds, leaf_pos, path FROM imt_proofs
-             WHERE round_id = :round_id AND wallet_id = :wallet_id
-               AND bundle_index = :bundle_index AND nullifier = :nullifier",
+) -> Result<Option<PirCacheRow>, VotingError> {
+    conn.query_row(
+        "SELECT root, nf_bounds, leaf_pos, path FROM pir_proof_cache
+         WHERE wallet_id = :wallet_id AND network = :network
+           AND root = :root AND nullifier = :nullifier",
+        named_params! {
+            ":wallet_id": wallet_id,
+            ":network": network_to_storage(network),
+            ":root": root,
+            ":nullifier": nullifier,
+        },
+        |row| {
+            Ok(PirCacheRow {
+                root: row.get(0)?,
+                nf_bounds: row.get(1)?,
+                leaf_pos: row.get(2)?,
+                path: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to load cached PIR proof: {e}"),
+    })
+}
+
+/// Loads and decodes the cached PIR proof for exactly `(wallet_id, network,
+/// root, nullifier)`, or `None` when no proof is cached under that root.
+pub fn load_pir_cache_proof(
+    conn: &Connection,
+    wallet_id: &str,
+    network: Network,
+    root: &[u8],
+    nullifier: &[u8],
+) -> Result<Option<pir_client::ImtProofData>, VotingError> {
+    match load_pir_cache_row(conn, wallet_id, network, root, nullifier)? {
+        Some(row) => Ok(Some(row.decode()?)),
+        None => Ok(None),
+    }
+}
+
+/// Lists every root the nullifier has a cached proof under on this network,
+/// most recently updated first.
+pub fn list_pir_cache_roots(
+    conn: &Connection,
+    wallet_id: &str,
+    network: Network,
+    nullifier: &[u8],
+) -> Result<Vec<Vec<u8>>, VotingError> {
+    conn.prepare(
+        "SELECT root FROM pir_proof_cache
+         WHERE wallet_id = :wallet_id AND network = :network AND nullifier = :nullifier
+         ORDER BY updated_at DESC, root",
+    )
+    .and_then(|mut stmt| {
+        stmt.query_map(
             named_params! {
-                ":round_id": round_id,
                 ":wallet_id": wallet_id,
-                ":bundle_index": bundle_index as i64,
+                ":network": network_to_storage(network),
                 ":nullifier": nullifier,
             },
-            |row| {
-                let root: Vec<u8> = row.get(0)?;
-                let nf_bounds: Vec<u8> = row.get(1)?;
-                let leaf_pos: i64 = row.get(2)?;
-                let path: Vec<u8> = row.get(3)?;
-                Ok((root, nf_bounds, leaf_pos, path))
-            },
-        )
-        .optional()
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to load IMT proof for bundle {bundle_index}: {e}"),
-        })?;
-
-    let Some((root, nf_bounds, leaf_pos, path)) = row else {
-        return Ok(None);
-    };
-
-    if root != expected_root {
-        return Ok(None);
-    }
-
-    Ok(Some(ImtProofData {
-        root: field_from_bytes(&root, "imt_proof.root")?,
-        nf_bounds: fields_from_blob::<3>(&nf_bounds, "imt_proof.nf_bounds")?,
-        leaf_pos: u32::try_from(leaf_pos).map_err(|_| VotingError::Internal {
-            message: format!("invalid IMT proof leaf_pos {leaf_pos}"),
-        })?,
-        path: fields_from_blob::<29>(&path, "imt_proof.path")?,
-    }))
+            |row| row.get(0),
+        )?
+        .collect()
+    })
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to list cached PIR proof roots: {e}"),
+    })
 }
 
 // --- Proofs ---

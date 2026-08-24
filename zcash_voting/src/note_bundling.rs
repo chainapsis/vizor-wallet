@@ -460,6 +460,26 @@ pub(crate) fn canonical_note_bundle_plan_for_notes(
     Ok(chunk_notes_with_policy(&distinct_notes, policy))
 }
 
+/// Notes whose PIR proofs [`crate::precompute::precompute_pir_proofs`] will fetch.
+///
+/// Empty input is a no-op so a wallet can warm before it has selected anything.
+/// All-dust input yields an empty list rather than a PIR fetch. Duplicate
+/// nullifiers are collapsed, then the same plan round setup uses is applied, so
+/// a long selected-note tail is not PIR-queried.
+pub(crate) fn notes_for_pir_proof_cache(
+    notes: &[NoteInfo],
+    policy: BundlePolicy,
+) -> Result<Vec<NoteInfo>, VotingError> {
+    if notes.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(canonical_note_bundle_plan_for_notes(notes, policy)?
+        .bundles
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 fn distinct_notes_by_nullifier(notes: &[NoteInfo]) -> Vec<NoteInfo> {
     let mut seen = HashSet::new();
     notes
@@ -882,6 +902,87 @@ mod tests {
         assert!(result.bundles.is_empty());
         assert_eq!(result.eligible_weight, 0);
         assert_eq!(result.dropped_count, 3);
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_empty_selection_is_a_noop() {
+        let planned = notes_for_pir_proof_cache(&[], BundlePolicy::default()).unwrap();
+        assert!(planned.is_empty());
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_drops_all_dust() {
+        let notes = vec![make_note(100, 0), make_note(200, 1), make_note(300, 2)];
+        let planned = notes_for_pir_proof_cache(&notes, BundlePolicy::default()).unwrap();
+        assert!(
+            planned.is_empty(),
+            "sub-ballot bundles must not be PIR-warmed, got {} notes",
+            planned.len()
+        );
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_keeps_one_ballot_note() {
+        let notes = vec![make_note(BALLOT_DIVISOR, 7)];
+        let planned = notes_for_pir_proof_cache(&notes, BundlePolicy::default()).unwrap();
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].nullifier, notes[0].nullifier);
+        assert_eq!(planned[0].value, BALLOT_DIVISOR);
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_drops_a_concentrated_dust_tail() {
+        const ZEC: u64 = 100_000_000;
+        // 8 x 500 ZEC plus 190 x 0.1 ZEC: 198 selected notes, 40 untrimmed
+        // bundles, 2 after the default privacy trim.
+        let notes: Vec<_> = (0..8)
+            .map(|i| make_note(500 * ZEC, i))
+            .chain((0..190).map(|i| make_note(ZEC / 10, 8 + i)))
+            .collect();
+
+        let planned = notes_for_pir_proof_cache(&notes, BundlePolicy::default()).unwrap();
+        let untrimmed = notes_for_pir_proof_cache(
+            &notes,
+            BundlePolicy::default().with_max_privacy_bundles(None),
+        )
+        .unwrap();
+
+        assert_eq!(notes.len(), 198);
+        assert_eq!(untrimmed.len(), 198);
+        // Two privacy-trim bundles of five notes: the eight 500 ZEC notes plus
+        // two 0.1 ZEC notes that fill the second bundle.
+        assert_eq!(planned.len(), 10);
+        assert_eq!(
+            planned
+                .iter()
+                .filter(|note| note.value == 500 * ZEC)
+                .count(),
+            8
+        );
+        assert_eq!(
+            planned.iter().filter(|note| note.value == ZEC / 10).count(),
+            2
+        );
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_collapses_duplicate_nullifiers() {
+        let notes = vec![make_note(BALLOT_DIVISOR, 1), make_note(BALLOT_DIVISOR, 1)];
+        let planned = notes_for_pir_proof_cache(&notes, BundlePolicy::default()).unwrap();
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].nullifier, vec![1u8; 32]);
+    }
+
+    #[test]
+    fn notes_for_pir_proof_cache_rejects_malformed_notes() {
+        let mut note = make_note(BALLOT_DIVISOR, 0);
+        note.nullifier = vec![0x07; 31];
+        let err = notes_for_pir_proof_cache(&[note], BundlePolicy::default()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("notes[0].nullifier must be 32 bytes, got 31"),
+            "{err}"
+        );
     }
 
     #[test]

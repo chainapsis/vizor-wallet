@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 14;
+const CURRENT_VERSION: u32 = 15;
 
 /// Schema version that `001_init.sql` produces, and the oldest version that can
 /// be upgraded in place.
@@ -22,10 +22,37 @@ const LAUNCH_VERSION: u32 = 13;
 /// [`LAUNCH_VERSION`] to [`CURRENT_VERSION`]. Every statement here MUST preserve
 /// existing rows; `001_init.sql` is updated alongside so a fresh database and a
 /// migrated one end up with the same schema.
-const INCREMENTAL_MIGRATIONS: &[(u32, &str)] =
-    &[(13, "ALTER TABLE rounds ADD COLUMN bundle_policy_json TEXT;")];
+const INCREMENTAL_MIGRATIONS: &[(u32, &str)] = &[
+    (13, "ALTER TABLE rounds ADD COLUMN bundle_policy_json TEXT;"),
+    // v15 replaces the bundle-scoped `imt_proofs` table with the bundle- and
+    // round-independent `pir_proof_cache`. Existing proofs are carried over
+    // (their network comes from the owning round) so an upgrade mid-round does
+    // not refetch anything, then the old table is dropped.
+    (
+        14,
+        "CREATE TABLE pir_proof_cache (
+    wallet_id   TEXT NOT NULL DEFAULT '',
+    network     TEXT NOT NULL CHECK (network IN ('mainnet','testnet','regtest')),
+    nullifier   BLOB NOT NULL,
+    root        BLOB NOT NULL,
+    nf_bounds   BLOB NOT NULL,
+    leaf_pos    INTEGER NOT NULL,
+    path        BLOB NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (wallet_id, network, root, nullifier)
+);
+INSERT OR IGNORE INTO pir_proof_cache
+    (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+SELECT i.wallet_id, r.network, i.nullifier, i.root, i.nf_bounds, i.leaf_pos, i.path, i.created_at, i.created_at
+FROM imt_proofs i
+JOIN rounds r ON r.round_id = i.round_id AND r.wallet_id = i.wallet_id;
+DROP TABLE imt_proofs;",
+    ),
+];
 
-const RESET_SQL: &str = "DROP TABLE IF EXISTS ballot_intent;
+const RESET_SQL: &str = "DROP TABLE IF EXISTS pir_proof_cache;
+DROP TABLE IF EXISTS ballot_intent;
 DROP TABLE IF EXISTS imt_proofs;
 DROP TABLE IF EXISTS share_delegations;
 DROP TABLE IF EXISTS keystone_signatures;
@@ -118,9 +145,47 @@ mod tests {
         include_str!("migrations/001_init.sql").replace("    note_identity_hashes_blob BLOB,\n", "")
     }
 
-    /// The launch schema, before `bundle_policy_json` was added.
+    /// Strips the `pir_proof_cache` table (added at version 15) from a schema.
+    fn without_pir_proof_cache(schema: &str) -> String {
+        let start = schema
+            .find("CREATE TABLE pir_proof_cache")
+            .expect("schema must contain the table added at version 15");
+        let end = start
+            + schema[start..]
+                .find(");")
+                .expect("pir_proof_cache DDL must be terminated")
+            + ");".len();
+        format!("{}{}", &schema[..start], &schema[end..])
+    }
+
+    /// The bundle-scoped `imt_proofs` table that version 15 replaced with
+    /// `pir_proof_cache`, exactly as `001_init.sql` created it through v14.
+    const V14_IMT_PROOFS_SQL: &str = "CREATE TABLE imt_proofs (
+    round_id       TEXT NOT NULL,
+    wallet_id      TEXT NOT NULL DEFAULT '',
+    bundle_index   INTEGER NOT NULL,
+    nullifier      BLOB NOT NULL,
+    root           BLOB NOT NULL,
+    nf_bounds      BLOB NOT NULL,
+    leaf_pos       INTEGER NOT NULL,
+    path           BLOB NOT NULL,
+    created_at     INTEGER NOT NULL,
+    PRIMARY KEY (round_id, wallet_id, bundle_index, nullifier),
+    FOREIGN KEY (round_id, wallet_id, bundle_index) REFERENCES bundles(round_id, wallet_id, bundle_index) ON DELETE CASCADE
+);";
+
+    /// The version-14 schema: no `pir_proof_cache` yet, `imt_proofs` still present.
+    fn v14_schema() -> String {
+        format!(
+            "{}\n{}\n",
+            without_pir_proof_cache(include_str!("migrations/001_init.sql")),
+            V14_IMT_PROOFS_SQL
+        )
+    }
+
+    /// The launch schema, before `bundle_policy_json` and `pir_proof_cache` were added.
     fn launch_schema() -> String {
-        let schema = include_str!("migrations/001_init.sql");
+        let schema = v14_schema();
         let stripped = schema.replace("    bundle_policy_json  TEXT,\n", "");
         assert_ne!(
             stripped, schema,
@@ -264,13 +329,90 @@ mod tests {
         let mut fresh = Connection::open_in_memory().unwrap();
         migrate(&mut fresh).unwrap();
 
-        for table in ["rounds", "bundles", "votes", "share_delegations"] {
+        for table in [
+            "rounds",
+            "bundles",
+            "votes",
+            "share_delegations",
+            "pir_proof_cache",
+        ] {
             assert_eq!(
                 table_columns(&migrated, table),
                 table_columns(&fresh, table),
                 "column mismatch in {table}"
             );
         }
+    }
+
+    #[test]
+    fn migrate_from_v14_creates_pir_proof_cache_and_preserves_state() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&v14_schema()).unwrap();
+        queries::insert_round(
+            &conn,
+            "wallet",
+            crate::Network::Testnet,
+            &test_params(),
+            None,
+        )
+        .unwrap();
+        queries::insert_bundle(&conn, "test-round", "wallet", 0, &[1]).unwrap();
+        // A cached proof from the old bundle-scoped table; v15 must carry it
+        // over so an upgrade mid-round does not refetch from the PIR server.
+        conn.execute(
+            "INSERT INTO imt_proofs (round_id, wallet_id, bundle_index, nullifier, root, nf_bounds, leaf_pos, path, created_at)
+             VALUES ('test-round', 'wallet', 0, X'01', X'02', X'03', 7, X'04', 42)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 14).unwrap();
+
+        migrate(&mut conn).unwrap();
+
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+
+        let round_count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rounds WHERE round_id = 'test-round'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(round_count, 1);
+
+        // The old proof row was migrated, keyed by the round's network, with
+        // updated_at seeded from created_at.
+        let migrated_row: (String, Vec<u8>, i64, i64, i64) = conn
+            .query_row(
+                "SELECT network, root, leaf_pos, created_at, updated_at
+                 FROM pir_proof_cache WHERE wallet_id = 'wallet' AND nullifier = X'01'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(migrated_row, ("testnet".to_string(), vec![0x02], 7, 42, 42));
+
+        // The old table is gone...
+        assert!(!table_names(&conn).contains(&"imt_proofs".to_string()));
+
+        // ...and the new one is usable.
+        conn.execute(
+            "INSERT INTO pir_proof_cache (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+             VALUES ('wallet', 'testnet', X'05', X'02', X'03', 0, X'04', 0, 0)",
+            [],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -334,10 +476,12 @@ mod tests {
         assert!(tables.contains(&"cached_tree_state".to_string()));
         assert!(tables.contains(&"proofs".to_string()));
         assert!(tables.contains(&"votes".to_string()));
-        assert!(tables.contains(&"imt_proofs".to_string()));
+        // Replaced by pir_proof_cache at v15.
+        assert!(!tables.contains(&"imt_proofs".to_string()));
         assert!(tables.contains(&"share_delegations".to_string()));
         assert!(tables.contains(&"keystone_signatures".to_string()));
         assert!(tables.contains(&"ballot_intent".to_string()));
+        assert!(tables.contains(&"pir_proof_cache".to_string()));
 
         let round_columns = table_columns(&conn, "rounds");
         assert!(round_columns.contains(&"network".to_string()));
@@ -395,6 +539,15 @@ mod tests {
         conn.prepare(&format!("PRAGMA table_info({table})"))
             .unwrap()
             .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<Vec<String>, _>>()
+            .unwrap()
+    }
+
+    fn table_names(conn: &Connection) -> Vec<String> {
+        conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
             .unwrap()
             .collect::<Result<Vec<String>, _>>()
             .unwrap()

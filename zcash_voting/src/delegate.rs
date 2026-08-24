@@ -1606,7 +1606,12 @@ mod tests {
         orchard::keys::FullViewingKey,
     ) {
         let seed = SecretVec::new(vec![7u8; 32]);
-        let mut db = WalletDb::from_connection(conn, network, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
+        let mut db = WalletDb::from_connection(
+            conn,
+            network,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
         init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec()))).unwrap();
 
         let sapling_height = network
@@ -1715,8 +1720,12 @@ mod tests {
             11,
         );
 
-        let wallet_db =
-            WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
+        let wallet_db = WalletDb::from_connection(
+            &conn,
+            Network::Regtest,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
         let voting_db = VotingDb::open_in_memory().unwrap();
         voting_db.set_wallet_id("prepare-delegation-bundle-test");
         let hotkey = test_regtest_voting_hotkey();
@@ -2217,7 +2226,12 @@ mod tests {
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 2, 8, divisor * 2, 3);
         insert_ironwood_note(&conn, account_ref, &orchard_fvk, 3, 16, divisor * 3, 11);
 
-        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
+        let db = WalletDb::from_connection(
+            &conn,
+            Network::Regtest,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
         let hotkey = test_regtest_voting_hotkey();
         let inputs = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
             wallet_db: &db,
@@ -2250,7 +2264,12 @@ mod tests {
     fn gather_delegation_wallet_inputs_rejects_empty_snapshot() {
         let mut conn = Connection::open_in_memory().unwrap();
         let (account_uuid, _) = setup_test_account_for_network(&mut conn, Network::Regtest);
-        let db = WalletDb::from_connection(&conn, Network::Regtest, SystemClock, voting_crypto_deps::rand::rngs::OsRng);
+        let db = WalletDb::from_connection(
+            &conn,
+            Network::Regtest,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
         let hotkey = test_regtest_voting_hotkey();
         let err = gather_delegation_wallet_inputs(GatherDelegationWalletParams {
             wallet_db: &db,

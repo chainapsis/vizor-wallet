@@ -489,7 +489,12 @@ mod tests {
         later_height: u32,
         marked_positions: &[Position],
     ) -> (
-        WalletDb<rusqlite::Connection, VotingNetwork, SystemClock, voting_crypto_deps::rand::rngs::OsRng>,
+        WalletDb<
+            rusqlite::Connection,
+            VotingNetwork,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        >,
         Frontier<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
     ) {
         let max_position = marked_positions

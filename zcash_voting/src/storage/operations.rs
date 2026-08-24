@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 pub(crate) use crate::backend::{orchard, pasta_curves, zcash_keys};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use orchard::{
     keys::FullViewingKey,
@@ -9,7 +9,7 @@ use orchard::{
 };
 use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
-use voting_circuits::delegation::{synthetic_padding_note_parts, ImtProofData};
+use voting_circuits::delegation::synthetic_padding_note_parts;
 use zcash_keys::keys::UnifiedFullViewingKey;
 
 use crate::delegate::{DelegationKeys, DelegationSigningRequest};
@@ -21,8 +21,10 @@ use crate::storage::{
 };
 use crate::types::{
     DelegationPirPrecomputeResult, DelegationProgressReporter, DelegationProofResult,
-    DelegationSubmissionData, GovernancePczt, Network, NoteInfo, ProgressReporter, SharePayload,
-    VoteCommitmentBundle, VotingError, VotingRoundParams, WireEncryptedShare, WitnessData,
+    DelegationSubmissionData, GovernancePczt, Network, NoteInfo, PirCachePrecomputeResult,
+    PirCacheValidationReport, PirProofCacheEntry, PirProofCacheStatus, ProgressReporter,
+    SharePayload, VoteCommitmentBundle, VotingError, VotingRoundParams, WireEncryptedShare,
+    WitnessData,
 };
 
 pub(crate) struct PreparedVoteProof {
@@ -113,6 +115,43 @@ fn delegation_nullifier_targets(
         targets.push((nf_bytes, nf));
     }
 
+    Ok(targets)
+}
+
+fn pir_cache_nullifier_target(
+    bytes: &[u8],
+    label: &str,
+) -> Result<([u8; 32], pallas::Base), VotingError> {
+    let nf_bytes: [u8; 32] = bytes.try_into().map_err(|_| VotingError::InvalidInput {
+        message: format!("{label} nullifier must be 32 bytes, got {}", bytes.len()),
+    })?;
+    let nf = Option::from(pallas::Base::from_repr(nf_bytes)).ok_or_else(|| {
+        VotingError::InvalidInput {
+            message: format!("{label} nullifier is not a valid field element"),
+        }
+    })?;
+    Ok((nf_bytes, nf))
+}
+
+/// Nullifier targets for the bundle-independent PIR cache APIs: note
+/// nullifiers first, then the caller-supplied extras, in input order.
+///
+/// Unlike [`delegation_nullifier_targets`] this reports malformed values as
+/// `InvalidInput`, since both lists come straight from the caller.
+fn pir_cache_nullifier_targets(
+    notes: &[NoteInfo],
+    extra_nullifiers: &[Vec<u8>],
+) -> Result<Vec<([u8; 32], pallas::Base)>, VotingError> {
+    let mut targets = Vec::with_capacity(notes.len() + extra_nullifiers.len());
+    for (idx, note) in notes.iter().enumerate() {
+        targets.push(pir_cache_nullifier_target(
+            &note.nullifier,
+            &format!("note[{idx}]"),
+        )?);
+    }
+    for (idx, extra) in extra_nullifiers.iter().enumerate() {
+        targets.push(pir_cache_nullifier_target(extra, &format!("extra[{idx}]"))?);
+    }
     Ok(targets)
 }
 
@@ -769,92 +808,275 @@ impl VotingDb {
         pir_client: &pir_client::PirClientBlocking,
         network: Network,
     ) -> Result<DelegationPirPrecomputeResult, VotingError> {
-        let conn = self.conn();
-        let wallet_id = self.wallet_id();
-        let (params, stored_network) =
-            queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
-        validate_network_matches_round(stored_network, network, "delegation PIR")?;
-        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
-        let padded_secrets =
-            queries::load_padded_note_secrets(&conn, round_id, &wallet_id, bundle_index)?;
-        let padded_nullifiers =
-            padded_nullifiers_for_circuit(notes, &padded_secrets, stored_network)?;
-        let targets = delegation_nullifier_targets(notes, &padded_nullifiers)?;
+        let (params, padded_nullifiers) = {
+            let conn = self.conn();
+            let wallet_id = self.wallet_id();
+            let (params, stored_network) =
+                queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
+            validate_network_matches_round(stored_network, network, "delegation PIR")?;
+            queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
+            let padded_secrets =
+                queries::load_padded_note_secrets(&conn, round_id, &wallet_id, bundle_index)?;
+            let padded_nullifiers =
+                padded_nullifiers_for_circuit(notes, &padded_secrets, stored_network)?;
+            (params, padded_nullifiers)
+        };
+        let expected_nf_imt_root = nullifier_imt_root_to_base(&params.nullifier_imt_root)?;
 
+        // Proofs live in the bundle-independent cache keyed by the round's
+        // root, so a background `precompute_pir_proof_cache` run against the
+        // same snapshot already covers the real notes; only the bundle's
+        // padded-slot nullifiers can still be missing here.
+        let result = self.precompute_pir_proof_cache_inner(
+            notes,
+            &padded_nullifiers,
+            network,
+            expected_nf_imt_root,
+            |nfs| {
+                // Only checked when something must actually be fetched: a
+                // fully cached bundle must not require a live matching server.
+                if pir_client.circuit_root() != expected_nf_imt_root {
+                    return Err(VotingError::InvalidInput {
+                        message: "connected PIR circuit root does not match the stored round nullifier_imt_root"
+                            .to_string(),
+                    });
+                }
+                eprintln!("[ZKP1] Precomputing PIR proofs: {} missing", nfs.len());
+                pir_client.fetch_proofs(nfs).map_err(|e| VotingError::Internal {
+                    message: format!("PIR parallel fetch failed: {e}"),
+                })
+            },
+        )?;
+
+        Ok(DelegationPirPrecomputeResult {
+            cached_count: result.cached_count,
+            fetched_count: result.fetched_count,
+        })
+    }
+
+    /// Fetch and persist PIR-backed IMT non-membership proofs for notes that
+    /// survive `bundle_policy`, against whatever IMT root the connected PIR
+    /// server currently serves.
+    ///
+    /// Completely round-independent: proofs land in the `pir_proof_cache` table
+    /// keyed by `(wallet_id, network, root, nullifier)`, so they can be warmed
+    /// before any round or bundle exists, and proofs for the same nullifier
+    /// under different snapshots coexist. Real notes are planned first with the
+    /// same policy round setup uses, so a selected-note dust tail is not
+    /// fetched. Padded-slot nullifiers are not an input; the per-bundle
+    /// precompute path fetches those after padded-note secrets exist. A cached
+    /// row only counts as a hit if it decodes and verifies under the served
+    /// root; a corrupt or invalid row is treated as a miss and overwritten by
+    /// the refetch. Cache rows created more than four weeks ago are pruned
+    /// before this background warmup; prove-time precompute does not prune.
+    ///
+    /// Every fetched proof is validated against the served root before
+    /// anything is persisted; a single bad proof fails the whole call.
+    pub fn precompute_pir_proof_cache(
+        &self,
+        notes: &[NoteInfo],
+        bundle_policy: BundlePolicy,
+        network: Network,
+        pir_client: &pir_client::PirClientBlocking,
+    ) -> Result<PirCachePrecomputeResult, VotingError> {
+        let notes = crate::note_bundling::notes_for_pir_proof_cache(notes, bundle_policy)?;
+        {
+            let conn = self.conn();
+            queries::prune_expired_pir_cache(&conn)?;
+        }
+        self.precompute_pir_proof_cache_inner(
+            &notes,
+            &[],
+            network,
+            pir_client.circuit_root(),
+            |nfs| {
+                pir_client
+                    .fetch_proofs(nfs)
+                    .map_err(|e| VotingError::Internal {
+                        message: format!("PIR parallel fetch failed: {e}"),
+                    })
+            },
+        )
+    }
+
+    /// Cache-check, fetch, validate, and persist against `served_root`, with
+    /// the network fetch abstracted so tests can supply proofs directly.
+    fn precompute_pir_proof_cache_inner(
+        &self,
+        notes: &[NoteInfo],
+        extra_nullifiers: &[Vec<u8>],
+        network: Network,
+        served_root: pallas::Base,
+        fetch: impl FnOnce(&[pallas::Base]) -> Result<Vec<pir_client::ImtProofData>, VotingError>,
+    ) -> Result<PirCachePrecomputeResult, VotingError> {
+        let wallet_id = self.wallet_id();
+        let targets = pir_cache_nullifier_targets(notes, extra_nullifiers)?;
+        let served_root_bytes = served_root.to_repr().to_vec();
+
+        let mut seen = HashSet::new();
+        let mut unique_targets = Vec::new();
+        let mut loaded_rows = Vec::new();
+        {
+            let conn = self.conn();
+            for (nf_bytes, nf) in targets {
+                if !seen.insert(nf_bytes) {
+                    continue;
+                }
+                unique_targets.push((nf_bytes, nf));
+                loaded_rows.push(queries::load_pir_cache_row(
+                    &conn,
+                    &wallet_id,
+                    network,
+                    &served_root_bytes,
+                    &nf_bytes,
+                )?);
+            }
+            // Lock dropped here so verify and the PIR fetch do not block other
+            // DB work. Storage errors already propagated; decode/verify below
+            // is not a storage failure.
+        }
+
+        // A cached row only counts if it decodes AND verifies under the served
+        // root; a corrupt or invalid row is a miss so the refetch upsert
+        // overwrites it (the cache self-heals instead of wedging prove).
         let mut cached_count = 0u32;
         let mut missing = Vec::new();
-        for (nf_bytes, nf) in targets {
-            if queries::load_imt_proof(
-                &conn,
-                round_id,
-                &wallet_id,
-                bundle_index,
-                &nf_bytes,
-                &params.nullifier_imt_root,
-            )?
-            .is_some()
-            {
+        for ((nf_bytes, nf), row) in unique_targets.into_iter().zip(loaded_rows) {
+            let cached_ok = row.is_some_and(|row| {
+                row.decode().is_ok_and(|proof| {
+                    crate::zkp1::validate_pir_proof(&proof, nf, served_root).is_ok()
+                })
+            });
+            if cached_ok {
                 cached_count += 1;
             } else {
                 missing.push((nf_bytes, nf));
             }
         }
-        drop(conn);
 
         if missing.is_empty() {
-            return Ok(DelegationPirPrecomputeResult {
+            return Ok(PirCachePrecomputeResult {
                 cached_count,
                 fetched_count: 0,
+                served_root: served_root_bytes,
             });
         }
 
-        let expected_nf_imt_root = nullifier_imt_root_to_base(&params.nullifier_imt_root)?;
-        if pir_client.circuit_root() != expected_nf_imt_root {
-            return Err(VotingError::InvalidInput {
-                message:
-                    "connected PIR circuit root does not match the stored round nullifier_imt_root"
-                        .to_string(),
-            });
-        }
-
-        eprintln!(
-            "[ZKP1] Precomputing PIR proofs: {} cached, {} missing",
-            cached_count,
-            missing.len()
-        );
         let missing_nullifiers: Vec<_> = missing.iter().map(|(_, nf)| *nf).collect();
-        let raw_fetched_proofs =
-            pir_client
-                .fetch_proofs(&missing_nullifiers)
-                .map_err(|e| VotingError::Internal {
-                    message: format!("PIR parallel fetch failed: {e}"),
-                })?;
-        if raw_fetched_proofs.len() != missing_nullifiers.len() {
+        let fetched_proofs = fetch(&missing_nullifiers)?;
+        if fetched_proofs.len() != missing_nullifiers.len() {
             return Err(VotingError::Internal {
                 message: format!(
                     "PIR returned {} proofs for {} nullifiers",
-                    raw_fetched_proofs.len(),
+                    fetched_proofs.len(),
                     missing_nullifiers.len()
                 ),
             });
         }
-        let fetched_proofs: Vec<ImtProofData> = raw_fetched_proofs
-            .into_iter()
+        for (proof, nf) in fetched_proofs
+            .iter()
             .zip(missing_nullifiers.iter().copied())
-            .map(|(proof, nullifier)| {
-                crate::zkp1::validate_and_convert_pir_proof(proof, nullifier, expected_nf_imt_root)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        {
+            crate::zkp1::validate_pir_proof(proof, nf, served_root)?;
+        }
 
         let conn = self.conn();
         let fetched_count = fetched_proofs.len() as u32;
         for ((nf_bytes, _), proof) in missing.iter().zip(fetched_proofs.iter()) {
-            queries::store_imt_proof(&conn, round_id, &wallet_id, bundle_index, nf_bytes, proof)?;
+            queries::store_pir_cache_proof(&conn, &wallet_id, network, nf_bytes, proof)?;
         }
 
-        Ok(DelegationPirPrecomputeResult {
+        Ok(PirCachePrecomputeResult {
             cached_count,
             fetched_count,
+            served_root: served_root_bytes,
+        })
+    }
+
+    /// Classify the cached PIR proofs for the given notes' nullifiers (plus
+    /// optional extra raw nullifiers) against an expected IMT root, e.g. a
+    /// round's `nullifier_imt_root`.
+    ///
+    /// Completely bundle- and round-independent, and fully offline — the PIR
+    /// server is never contacted. Mismatches are reported per nullifier
+    /// (`Valid` / `StaleRoot` / `Missing` / `Invalid`) rather than raised as
+    /// errors; the call only fails on malformed input or a storage error.
+    pub fn validate_pir_proof_cache(
+        &self,
+        notes: &[NoteInfo],
+        extra_nullifiers: &[Vec<u8>],
+        network: Network,
+        expected_root: &[u8],
+    ) -> Result<PirCacheValidationReport, VotingError> {
+        let root_bytes: [u8; 32] =
+            expected_root
+                .try_into()
+                .map_err(|_| VotingError::InvalidInput {
+                    message: format!(
+                        "expected IMT root must be 32 bytes, got {}",
+                        expected_root.len()
+                    ),
+                })?;
+        let expected = Option::from(pallas::Base::from_repr(root_bytes)).ok_or_else(|| {
+            VotingError::InvalidInput {
+                message: "expected IMT root is not a valid field element".to_string(),
+            }
+        })?;
+        let wallet_id = self.wallet_id();
+        let targets = pir_cache_nullifier_targets(notes, extra_nullifiers)?;
+
+        let conn = self.conn();
+        let mut entries = Vec::with_capacity(targets.len());
+        let mut valid_count = 0u32;
+        let mut stale_root_count = 0u32;
+        let mut missing_count = 0u32;
+        let mut invalid_count = 0u32;
+        for (nf_bytes, nf) in targets {
+            let other_roots: Vec<Vec<u8>> =
+                queries::list_pir_cache_roots(&conn, &wallet_id, network, &nf_bytes)?
+                    .into_iter()
+                    .filter(|root| root.as_slice() != root_bytes)
+                    .collect();
+            let status = match queries::load_pir_cache_row(
+                &conn,
+                &wallet_id,
+                network,
+                &root_bytes,
+                &nf_bytes,
+            )? {
+                Some(row) => match row.decode() {
+                    Ok(proof) if crate::zkp1::validate_pir_proof(&proof, nf, expected).is_ok() => {
+                        PirProofCacheStatus::Valid
+                    }
+                    _ => PirProofCacheStatus::Invalid,
+                },
+                None => {
+                    if other_roots.is_empty() {
+                        PirProofCacheStatus::Missing
+                    } else {
+                        PirProofCacheStatus::StaleRoot
+                    }
+                }
+            };
+            match status {
+                PirProofCacheStatus::Valid => valid_count += 1,
+                PirProofCacheStatus::StaleRoot => stale_root_count += 1,
+                PirProofCacheStatus::Missing => missing_count += 1,
+                PirProofCacheStatus::Invalid => invalid_count += 1,
+            }
+            entries.push(PirProofCacheEntry {
+                nullifier: nf_bytes.to_vec(),
+                status,
+                other_roots,
+            });
+        }
+
+        Ok(PirCacheValidationReport {
+            entries,
+            valid_count,
+            stale_root_count,
+            missing_count,
+            invalid_count,
         })
     }
 
@@ -971,39 +1193,34 @@ impl VotingDb {
             keys.network,
         )?;
 
+        // Proofs come from the bundle-independent `pir_proof_cache` keyed by
+        // the round's root; `validate_and_convert_pir_proof` re-verifies each
+        // one out-of-circuit so a corrupt cache row fails here, not in Halo2.
+        let expected_nf_imt_root = nullifier_imt_root_to_base(&params.nullifier_imt_root)?;
         let conn = self.conn();
         let real_targets = delegation_nullifier_targets(notes, &[])?;
         let dummy_targets = delegation_nullifier_targets(&[], &padded_nullifiers)?;
-        let mut imt_proofs = Vec::with_capacity(real_targets.len());
-        for (nf_bytes, _) in &real_targets {
-            let proof = queries::load_imt_proof(
+        let load_cached_proof = |nf_bytes: &[u8; 32], nf: pallas::Base, what: &str| {
+            let proof = queries::load_pir_cache_proof(
                 &conn,
-                round_id,
                 &wallet_id,
-                bundle_index,
-                nf_bytes,
+                stored_network,
                 &params.nullifier_imt_root,
+                nf_bytes,
             )?
             .ok_or_else(|| VotingError::Internal {
-                message: "missing cached IMT proof after PIR precompute".to_string(),
+                message: format!("missing cached {what} PIR proof after precompute"),
             })?;
-            imt_proofs.push(proof);
+            crate::zkp1::validate_and_convert_pir_proof(proof, nf, expected_nf_imt_root)
+        };
+        let mut imt_proofs = Vec::with_capacity(real_targets.len());
+        for (nf_bytes, nf) in &real_targets {
+            imt_proofs.push(load_cached_proof(nf_bytes, *nf, "note")?);
         }
 
         let mut extra_imt_proofs = Vec::with_capacity(dummy_targets.len());
-        for (nf_bytes, _) in &dummy_targets {
-            let proof = queries::load_imt_proof(
-                &conn,
-                round_id,
-                &wallet_id,
-                bundle_index,
-                nf_bytes,
-                &params.nullifier_imt_root,
-            )?
-            .ok_or_else(|| VotingError::Internal {
-                message: "missing cached padded-note IMT proof after PIR precompute".to_string(),
-            })?;
-            extra_imt_proofs.push((*nf_bytes, proof));
+        for (nf_bytes, nf) in &dummy_targets {
+            extra_imt_proofs.push((*nf_bytes, load_cached_proof(nf_bytes, *nf, "padded-note")?));
         }
         drop(conn);
 
@@ -1920,6 +2137,101 @@ mod tests {
         }
     }
 
+    /// Recording transport whose `/root` response serves a configurable
+    /// circuit root, for tests that pair a real `SpacedLeafImtProvider` root
+    /// with a connected PIR client. POSTs return corrupt ciphertext like
+    /// [`RecordingPirTransport`].
+    struct ConfigurableRootPirTransport {
+        circuit_root_hex: String,
+        hits: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl ConfigurableRootPirTransport {
+        fn new(circuit_root: pallas::Base) -> Self {
+            Self {
+                circuit_root_hex: hex::encode(circuit_root.to_repr()),
+                hits: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn record(&self, path: &str) {
+            self.hits.lock().unwrap().push(path.to_owned());
+        }
+
+        fn count_hits(&self, path: &str) -> usize {
+            self.hits
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|hit| hit.as_str() == path)
+                .count()
+        }
+
+        fn query_post_count(&self) -> usize {
+            self.hits
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|hit| hit.ends_with("/query"))
+                .count()
+        }
+    }
+
+    impl pir_client::Transport for ConfigurableRootPirTransport {
+        fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
+            Box::pin(async move {
+                let path = request_path(url);
+                self.record(path);
+                match path {
+                    "/tier0" => Ok(transport_response(vec![
+                        0;
+                        ((1usize
+                            << pir_types::TIER0_LAYERS)
+                            - 1)
+                            * 32
+                            + pir_types::TIER1_ROWS * 64
+                    ])),
+                    "/params/tier1" => Ok(transport_response(
+                        serde_json::to_vec(&pir_types::YpirScenario {
+                            num_items: pir_types::TIER1_ROWS,
+                            item_size_bits: pir_types::TIER1_ITEM_BITS,
+                            poly_len: pir_types::DEFAULT_YPIR_POLY_LEN,
+                        })
+                        .unwrap(),
+                    )),
+                    "/root" => Ok(transport_response(
+                        serde_json::to_vec(&pir_types::RootInfo {
+                            zcash_network: pir_types::ZcashNetwork::Test,
+                            nullifier_pool: pir_types::NULLIFIER_POOL.to_owned(),
+                            dataset_version: pir_types::DATASET_VERSION,
+                            circuit_root: self.circuit_root_hex.clone(),
+                            pir_root: hex::encode([0u8; 32]),
+                            num_ranges: 1,
+                            pir_layout: pir_types::COMPILED_PIR_LAYOUT,
+                            pir_depth: pir_types::PIR_DEPTH,
+                            tier1_rows: pir_types::TIER1_ROWS,
+                            tier1_row_bytes: pir_types::TIER1_ROW_BYTES,
+                            height: None,
+                        })
+                        .unwrap(),
+                    )),
+                    _ => Err(anyhow::anyhow!("unexpected GET {path}")),
+                }
+            })
+        }
+
+        fn post<'a>(&'a self, url: &'a str, _body: Vec<u8>) -> pir_client::TransportFuture<'a> {
+            Box::pin(async move {
+                let path = request_path(url);
+                self.record(path);
+                match path {
+                    "/tier1/query" => Ok(transport_response(vec![0xDE; 65536])),
+                    _ => Err(anyhow::anyhow!("unexpected POST {path}")),
+                }
+            })
+        }
+    }
+
     fn request_path(url: &str) -> &str {
         let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
         without_scheme
@@ -2205,8 +2517,8 @@ mod tests {
             note::{NoteVersion, Rho},
             value::NoteValue,
         };
-        use voting_crypto_deps::rand::rngs::OsRng;
         use voting_circuits::delegation::ImtProvider;
+        use voting_crypto_deps::rand::rngs::OsRng;
         use zcash_keys::keys::UnifiedSpendingKey;
         use zcash_protocol::consensus::TEST_NETWORK;
         use zip32::{AccountId, Scope};
@@ -2254,8 +2566,9 @@ mod tests {
             for note in &notes {
                 let nf_bytes: [u8; 32] = note.nullifier.as_slice().try_into().unwrap();
                 let nf = Option::from(pallas::Base::from_repr(nf_bytes)).unwrap();
-                let proof = imt.non_membership_proof(nf).unwrap();
-                queries::store_imt_proof(&conn, ROUND_ID, W, 0, &nf_bytes, &proof).unwrap();
+                let proof = pir_proof_from_circuit(imt.non_membership_proof(nf).unwrap());
+                queries::store_pir_cache_proof(&conn, W, Network::Testnet, &nf_bytes, &proof)
+                    .unwrap();
             }
         }
 
@@ -2423,6 +2736,868 @@ mod tests {
             ),
             "{err}"
         );
+    }
+
+    // --- Bundle-independent PIR proof cache ---
+    //
+    // These tests deliberately never call init_round/ensure_bundles: working on
+    // a database with no rounds or bundles is the property under test.
+
+    fn pir_proof_from_circuit(
+        proof: voting_circuits::delegation::ImtProofData,
+    ) -> pir_client::ImtProofData {
+        pir_client::ImtProofData {
+            root: proof.root,
+            nf_bounds: proof.nf_bounds,
+            leaf_pos: proof.leaf_pos,
+            path: proof.path,
+        }
+    }
+
+    fn imt_pir_proof(
+        imt: &voting_circuits::delegation::SpacedLeafImtProvider,
+        nf: pallas::Base,
+    ) -> pir_client::ImtProofData {
+        use voting_circuits::delegation::ImtProvider;
+        pir_proof_from_circuit(imt.non_membership_proof(nf).unwrap())
+    }
+
+    fn nf_base(bytes: &[u8]) -> pallas::Base {
+        let arr: [u8; 32] = bytes.try_into().unwrap();
+        Option::from(pallas::Base::from_repr(arr)).unwrap()
+    }
+
+    fn pir_cache_row_count(db: &VotingDb) -> u32 {
+        db.conn()
+            .query_row("SELECT COUNT(*) FROM pir_proof_cache", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    /// Seeds the cache with a real proof from `imt` for each nullifier.
+    fn seed_pir_cache(
+        db: &VotingDb,
+        imt: &voting_circuits::delegation::SpacedLeafImtProvider,
+        nullifiers: &[Vec<u8>],
+    ) {
+        let conn = db.conn();
+        for nf_bytes in nullifiers {
+            let proof = imt_pir_proof(imt, nf_base(nf_bytes));
+            queries::store_pir_cache_proof(&conn, W, Network::Testnet, nf_bytes, &proof).unwrap();
+        }
+    }
+
+    #[test]
+    fn pir_cache_precompute_fetches_and_persists_for_notes_and_extras() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let root = imt.root();
+        let notes = vec![
+            identity_note_with_position(0),
+            identity_note_with_position(1),
+        ];
+        let extras = vec![vec![0x33u8; 32]];
+
+        let result = db
+            .precompute_pir_proof_cache_inner(&notes, &extras, Network::Testnet, root, |nfs| {
+                Ok(nfs.iter().map(|nf| imt_pir_proof(&imt, *nf)).collect())
+            })
+            .unwrap();
+
+        assert_eq!(result.fetched_count, 3);
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(result.served_root, root.to_repr().to_vec());
+        assert_eq!(pir_cache_row_count(&db), 3);
+
+        let root_bytes = root.to_repr().to_vec();
+        let conn = db.conn();
+        for nf_bytes in [
+            notes[0].nullifier.clone(),
+            notes[1].nullifier.clone(),
+            extras[0].clone(),
+        ] {
+            let stored =
+                queries::load_pir_cache_proof(&conn, W, Network::Testnet, &root_bytes, &nf_bytes)
+                    .unwrap()
+                    .expect("proof persisted");
+            let expected = imt_pir_proof(&imt, nf_base(&nf_bytes));
+            assert_eq!(stored.root, expected.root);
+            assert_eq!(stored.nf_bounds, expected.nf_bounds);
+            assert_eq!(stored.leaf_pos, expected.leaf_pos);
+            assert_eq!(stored.path, expected.path);
+        }
+    }
+
+    #[test]
+    fn pir_cache_precompute_skips_cached_entries_with_same_root() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes = vec![
+            identity_note_with_position(0),
+            identity_note_with_position(1),
+        ];
+        seed_pir_cache(
+            &db,
+            &imt,
+            &[notes[0].nullifier.clone(), notes[1].nullifier.clone()],
+        );
+
+        let result = db
+            .precompute_pir_proof_cache_inner(&notes, &[], Network::Testnet, imt.root(), |_| {
+                panic!("fully cached precompute must not fetch")
+            })
+            .unwrap();
+
+        assert_eq!(result.cached_count, 2);
+        assert_eq!(result.fetched_count, 0);
+    }
+
+    #[test]
+    fn pir_cache_precompute_refetches_corrupt_or_invalid_rows() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes: Vec<NoteInfo> = (0..3).map(identity_note_with_position).collect();
+        seed_pir_cache(
+            &db,
+            &imt,
+            &[
+                notes[0].nullifier.clone(),
+                notes[1].nullifier.clone(),
+                notes[2].nullifier.clone(),
+            ],
+        );
+
+        {
+            let conn = db.conn();
+            // notes[0]: undecodable blob.
+            conn.execute(
+                "UPDATE pir_proof_cache SET path = X'00' WHERE nullifier = ?1",
+                rusqlite::params![notes[0].nullifier],
+            )
+            .unwrap();
+            // notes[1]: decodes, but fails out-of-circuit verification.
+            conn.execute(
+                "UPDATE pir_proof_cache SET leaf_pos = leaf_pos + 1 WHERE nullifier = ?1",
+                rusqlite::params![notes[1].nullifier],
+            )
+            .unwrap();
+        }
+
+        let fetched = std::cell::RefCell::new(Vec::<pallas::Base>::new());
+        let result = db
+            .precompute_pir_proof_cache_inner(&notes, &[], Network::Testnet, imt.root(), |nfs| {
+                fetched.borrow_mut().extend(nfs.iter().copied());
+                Ok(nfs.iter().map(|nf| imt_pir_proof(&imt, *nf)).collect())
+            })
+            .unwrap();
+
+        assert_eq!(result.cached_count, 1);
+        assert_eq!(result.fetched_count, 2);
+        let fetched = fetched.into_inner();
+        assert_eq!(fetched.len(), 2);
+        assert!(fetched.contains(&nf_base(&notes[0].nullifier)));
+        assert!(fetched.contains(&nf_base(&notes[1].nullifier)));
+        assert!(!fetched.contains(&nf_base(&notes[2].nullifier)));
+
+        let root_bytes = imt.root().to_repr().to_vec();
+        let conn = db.conn();
+        for note in &notes {
+            let stored = queries::load_pir_cache_proof(
+                &conn,
+                W,
+                Network::Testnet,
+                &root_bytes,
+                &note.nullifier,
+            )
+            .unwrap()
+            .expect("proof persisted");
+            crate::zkp1::validate_pir_proof(&stored, nf_base(&note.nullifier), imt.root()).unwrap();
+        }
+    }
+
+    #[test]
+    fn pir_cache_precompute_public_api_sends_no_queries_when_fully_cached() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes = vec![
+            identity_note_with_position(0),
+            identity_note_with_position(1),
+        ];
+        seed_pir_cache(
+            &db,
+            &imt,
+            &[notes[0].nullifier.clone(), notes[1].nullifier.clone()],
+        );
+        db.conn()
+            .execute(
+                "UPDATE pir_proof_cache
+                 SET created_at = strftime('%s','now') - ?1 + 1",
+                rusqlite::params![queries::PIR_PROOF_CACHE_TTL_SECS],
+            )
+            .unwrap();
+
+        let transport = std::sync::Arc::new(ConfigurableRootPirTransport::new(imt.root()));
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            transport.clone(),
+        )
+        .unwrap();
+
+        let result = db
+            .precompute_pir_proof_cache(
+                &notes,
+                BundlePolicy::default(),
+                Network::Testnet,
+                &pir_client,
+            )
+            .unwrap();
+
+        assert_eq!(result.cached_count, 2);
+        assert_eq!(result.fetched_count, 0);
+        assert_eq!(result.served_root, imt.root().to_repr().to_vec());
+        assert_eq!(transport.query_post_count(), 0);
+    }
+
+    #[test]
+    fn pir_cache_public_precompute_prunes_expired_proof_before_refetch() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let note = identity_note_with_position(0);
+        seed_pir_cache(&db, &imt, std::slice::from_ref(&note.nullifier));
+        db.conn()
+            .execute(
+                "UPDATE pir_proof_cache
+                 SET created_at = strftime('%s','now') - ?1 - 1",
+                rusqlite::params![queries::PIR_PROOF_CACHE_TTL_SECS],
+            )
+            .unwrap();
+
+        let transport = std::sync::Arc::new(ConfigurableRootPirTransport::new(imt.root()));
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            transport.clone(),
+        )
+        .unwrap();
+
+        // The mock returns a deliberately corrupt ciphertext. Reaching the
+        // fetch proves the expired row was pruned and treated as a cache miss.
+        let err = db
+            .precompute_pir_proof_cache(
+                std::slice::from_ref(&note),
+                BundlePolicy::default(),
+                Network::Testnet,
+                &pir_client,
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("PIR parallel fetch failed"),
+            "{err}"
+        );
+        assert_eq!(transport.query_post_count(), 1);
+        assert_eq!(pir_cache_row_count(&db), 0);
+    }
+
+    #[test]
+    fn pir_cache_inner_keeps_expired_proof_for_prove_time_reuse() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let note = identity_note_with_position(0);
+        seed_pir_cache(&db, &imt, std::slice::from_ref(&note.nullifier));
+        db.conn()
+            .execute(
+                "UPDATE pir_proof_cache
+                 SET created_at = strftime('%s','now') - ?1 - 1",
+                rusqlite::params![queries::PIR_PROOF_CACHE_TTL_SECS],
+            )
+            .unwrap();
+
+        let result = db
+            .precompute_pir_proof_cache_inner(
+                std::slice::from_ref(&note),
+                &[],
+                Network::Testnet,
+                imt.root(),
+                |_| panic!("prove-time cache path must not prune an expired proof"),
+            )
+            .unwrap();
+
+        assert_eq!(result.cached_count, 1);
+        assert_eq!(result.fetched_count, 0);
+        assert_eq!(pir_cache_row_count(&db), 1);
+    }
+
+    #[test]
+    fn pir_cache_public_precompute_prunes_expired_unrelated_root() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let current_imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let old_imt = voting_circuits::delegation::SpacedLeafImtProvider::with_extra_nullifiers(&[
+            pallas::Base::from(1234u64),
+        ]);
+        let note = identity_note_with_position(0);
+        seed_pir_cache(&db, &current_imt, std::slice::from_ref(&note.nullifier));
+        seed_pir_cache(&db, &old_imt, std::slice::from_ref(&note.nullifier));
+        let old_root = old_imt.root().to_repr();
+        db.conn()
+            .execute(
+                "UPDATE pir_proof_cache
+                 SET created_at = strftime('%s','now') - ?1 - 1
+                 WHERE root = ?2",
+                rusqlite::params![queries::PIR_PROOF_CACHE_TTL_SECS, &old_root[..]],
+            )
+            .unwrap();
+
+        let transport = std::sync::Arc::new(ConfigurableRootPirTransport::new(current_imt.root()));
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            transport.clone(),
+        )
+        .unwrap();
+
+        let result = db
+            .precompute_pir_proof_cache(
+                std::slice::from_ref(&note),
+                BundlePolicy::default(),
+                Network::Testnet,
+                &pir_client,
+            )
+            .unwrap();
+
+        assert_eq!(result.cached_count, 1);
+        assert_eq!(result.fetched_count, 0);
+        assert_eq!(transport.query_post_count(), 0);
+        assert_eq!(pir_cache_row_count(&db), 1);
+        assert!(queries::load_pir_cache_row(
+            &db.conn(),
+            W,
+            Network::Testnet,
+            &old_root,
+            &note.nullifier,
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn pir_cache_precompute_fetches_new_root_without_clobbering_old() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt_a = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let imt_b = voting_circuits::delegation::SpacedLeafImtProvider::with_extra_nullifiers(&[
+            pallas::Base::from(1234u64),
+        ]);
+        assert_ne!(imt_a.root(), imt_b.root());
+
+        let notes = vec![
+            identity_note_with_position(0),
+            identity_note_with_position(1),
+        ];
+        seed_pir_cache(
+            &db,
+            &imt_a,
+            &[notes[0].nullifier.clone(), notes[1].nullifier.clone()],
+        );
+
+        let result = db
+            .precompute_pir_proof_cache_inner(&notes, &[], Network::Testnet, imt_b.root(), |nfs| {
+                Ok(nfs.iter().map(|nf| imt_pir_proof(&imt_b, *nf)).collect())
+            })
+            .unwrap();
+
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(result.fetched_count, 2);
+        assert_eq!(pir_cache_row_count(&db), 4);
+
+        // Both snapshots coexist and load back under their own roots.
+        let conn = db.conn();
+        for note in &notes {
+            for (imt, root) in [(&imt_a, imt_a.root()), (&imt_b, imt_b.root())] {
+                let stored = queries::load_pir_cache_proof(
+                    &conn,
+                    W,
+                    Network::Testnet,
+                    &root.to_repr(),
+                    &note.nullifier,
+                )
+                .unwrap()
+                .expect("proof persisted for this snapshot");
+                assert_eq!(stored.root, imt.root());
+            }
+        }
+    }
+
+    #[test]
+    fn pir_cache_precompute_sends_one_query_per_uncached_nullifier() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes: Vec<NoteInfo> = (0..5).map(identity_note_with_position).collect();
+        seed_pir_cache(
+            &db,
+            &imt,
+            &[notes[0].nullifier.clone(), notes[1].nullifier.clone()],
+        );
+
+        let transport = std::sync::Arc::new(ConfigurableRootPirTransport::new(imt.root()));
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            transport.clone(),
+        )
+        .unwrap();
+
+        // Corrupt mock ciphertext: query cardinality is the property under test.
+        let err = db
+            .precompute_pir_proof_cache(
+                &notes,
+                BundlePolicy::default(),
+                Network::Testnet,
+                &pir_client,
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("PIR parallel fetch failed"),
+            "expected PIR fetch failure from corrupt mock ciphertext, got: {err}"
+        );
+        assert_eq!(transport.count_hits("/tier1/query"), 3);
+        assert_eq!(transport.query_post_count(), 3);
+    }
+
+    #[test]
+    fn pir_cache_precompute_does_not_fetch_sub_ballot_notes() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes: Vec<NoteInfo> = (0..3)
+            .map(|position| {
+                let mut note = identity_note_with_position(position);
+                note.value = 100;
+                note
+            })
+            .collect();
+
+        let transport = std::sync::Arc::new(ConfigurableRootPirTransport::new(imt.root()));
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            transport.clone(),
+        )
+        .unwrap();
+
+        let result = db
+            .precompute_pir_proof_cache(
+                &notes,
+                BundlePolicy::default(),
+                Network::Testnet,
+                &pir_client,
+            )
+            .unwrap();
+
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(result.fetched_count, 0);
+        assert_eq!(transport.query_post_count(), 0);
+        assert_eq!(pir_cache_row_count(&db), 0);
+    }
+
+    #[test]
+    fn pir_cache_precompute_rejects_malformed_nullifier() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+
+        let mut short_note = identity_note_with_position(0);
+        short_note.nullifier = vec![0x02; 31];
+        let err = db
+            .precompute_pir_proof_cache_inner(
+                &[short_note],
+                &[],
+                Network::Testnet,
+                imt.root(),
+                |_| panic!("malformed input must fail before fetching"),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, VotingError::InvalidInput { .. }),
+            "expected InvalidInput, got: {err}"
+        );
+        assert!(
+            err.to_string()
+                .contains("note[0] nullifier must be 32 bytes, got 31"),
+            "{err}"
+        );
+
+        let err = db
+            .precompute_pir_proof_cache_inner(
+                &[identity_note_with_position(0)],
+                &[vec![0x07; 33]],
+                Network::Testnet,
+                imt.root(),
+                |_| panic!("malformed input must fail before fetching"),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("extra[0] nullifier must be 32 bytes, got 33"),
+            "{err}"
+        );
+
+        // Canonical-encoding failure, not just length.
+        let err = db
+            .precompute_pir_proof_cache_inner(
+                &[],
+                &[vec![0xFF; 32]],
+                Network::Testnet,
+                imt.root(),
+                |_| panic!("malformed input must fail before fetching"),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("extra[0] nullifier is not a valid field element"),
+            "{err}"
+        );
+
+        assert_eq!(pir_cache_row_count(&db), 0);
+    }
+
+    #[test]
+    fn pir_cache_precompute_rejects_proof_failing_verification() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+
+        // Zero sits on a sentinel leaf boundary, so a proof generated for a
+        // different value cannot verify for it.
+        let err = db
+            .precompute_pir_proof_cache_inner(
+                &[],
+                &[vec![0u8; 32]],
+                Network::Testnet,
+                imt.root(),
+                |nfs| {
+                    assert_eq!(nfs.len(), 1);
+                    Ok(vec![imt_pir_proof(&imt, pallas::Base::one())])
+                },
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("PIR proof verification failed"),
+            "{err}"
+        );
+        assert_eq!(pir_cache_row_count(&db), 0);
+    }
+
+    #[test]
+    fn pir_cache_precompute_rejects_proof_root_mismatching_served_root() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt_a = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let imt_b = voting_circuits::delegation::SpacedLeafImtProvider::with_extra_nullifiers(&[
+            pallas::Base::from(1234u64),
+        ]);
+        let notes = vec![identity_note_with_position(0)];
+
+        // Valid proofs, but rooted at snapshot B while the server claims A.
+        let err = db
+            .precompute_pir_proof_cache_inner(&notes, &[], Network::Testnet, imt_a.root(), |nfs| {
+                Ok(nfs.iter().map(|nf| imt_pir_proof(&imt_b, *nf)).collect())
+            })
+            .unwrap_err();
+
+        assert!(err.to_string().contains("PIR proof root mismatch"), "{err}");
+        assert_eq!(pir_cache_row_count(&db), 0);
+    }
+
+    #[test]
+    fn pir_cache_precompute_deduplicates_repeated_nullifiers() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let note = identity_note_with_position(0);
+        let duplicate = note.nullifier.clone();
+
+        let result = db
+            .precompute_pir_proof_cache_inner(
+                &[note.clone(), note.clone()],
+                &[duplicate],
+                Network::Testnet,
+                imt.root(),
+                |nfs| {
+                    assert_eq!(nfs.len(), 1, "duplicates must be fetched once");
+                    Ok(nfs.iter().map(|nf| imt_pir_proof(&imt, *nf)).collect())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(result.fetched_count, 1);
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(pir_cache_row_count(&db), 1);
+    }
+
+    #[test]
+    fn pir_cache_validate_classifies_valid_stale_and_missing() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt_expected = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let imt_other =
+            voting_circuits::delegation::SpacedLeafImtProvider::with_extra_nullifiers(&[
+                pallas::Base::from(1234u64),
+            ]);
+        let expected_root = imt_expected.root().to_repr().to_vec();
+        let other_root = imt_other.root().to_repr().to_vec();
+
+        let notes: Vec<NoteInfo> = (0..3).map(identity_note_with_position).collect();
+        seed_pir_cache(&db, &imt_expected, &[notes[0].nullifier.clone()]);
+        seed_pir_cache(&db, &imt_other, &[notes[1].nullifier.clone()]);
+        // notes[2] stays absent.
+
+        let report = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &expected_root)
+            .unwrap();
+
+        assert_eq!(report.entries.len(), 3);
+        assert_eq!(report.entries[0].nullifier, notes[0].nullifier);
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Valid);
+        assert!(report.entries[0].other_roots.is_empty());
+        assert_eq!(report.entries[1].nullifier, notes[1].nullifier);
+        assert_eq!(report.entries[1].status, PirProofCacheStatus::StaleRoot);
+        assert_eq!(report.entries[1].other_roots, vec![other_root.clone()]);
+        assert_eq!(report.entries[2].nullifier, notes[2].nullifier);
+        assert_eq!(report.entries[2].status, PirProofCacheStatus::Missing);
+        assert!(report.entries[2].other_roots.is_empty());
+        assert_eq!(report.valid_count, 1);
+        assert_eq!(report.stale_root_count, 1);
+        assert_eq!(report.missing_count, 1);
+        assert_eq!(report.invalid_count, 0);
+
+        // A nullifier cached under the expected AND another root stays Valid,
+        // with the other snapshot listed.
+        seed_pir_cache(&db, &imt_other, &[notes[0].nullifier.clone()]);
+        let report = db
+            .validate_pir_proof_cache(&notes[..1], &[], Network::Testnet, &expected_root)
+            .unwrap();
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Valid);
+        assert_eq!(report.entries[0].other_roots, vec![other_root]);
+    }
+
+    #[test]
+    fn pir_cache_validate_flags_corrupt_row_as_invalid() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let expected_root = imt.root().to_repr().to_vec();
+        let notes: Vec<NoteInfo> = (0..2).map(identity_note_with_position).collect();
+        seed_pir_cache(
+            &db,
+            &imt,
+            &[notes[0].nullifier.clone(), notes[1].nullifier.clone()],
+        );
+
+        {
+            let conn = db.conn();
+            // Undecodable blob for notes[0]...
+            conn.execute(
+                "UPDATE pir_proof_cache SET path = X'00' WHERE nullifier = ?1",
+                rusqlite::params![notes[0].nullifier],
+            )
+            .unwrap();
+            // ...and a decodable row that fails proof verification for notes[1].
+            conn.execute(
+                "UPDATE pir_proof_cache SET leaf_pos = leaf_pos + 1 WHERE nullifier = ?1",
+                rusqlite::params![notes[1].nullifier],
+            )
+            .unwrap();
+        }
+
+        let report = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &expected_root)
+            .unwrap();
+
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Invalid);
+        assert_eq!(report.entries[1].status, PirProofCacheStatus::Invalid);
+        assert_eq!(report.invalid_count, 2);
+        assert_eq!(report.valid_count, 0);
+    }
+
+    #[test]
+    fn pir_cache_validate_rejects_malformed_expected_root() {
+        let db = test_db();
+        let notes = vec![identity_note_with_position(0)];
+
+        let err = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &[0xBB; 31])
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected IMT root must be 32 bytes, got 31"),
+            "{err}"
+        );
+
+        let err = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &[0xFF; 32])
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected IMT root is not a valid field element"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn pir_cache_is_scoped_to_wallet_id() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let expected_root = imt.root().to_repr().to_vec();
+        let notes = vec![identity_note_with_position(0)];
+        seed_pir_cache(&db, &imt, &[notes[0].nullifier.clone()]);
+
+        db.set_wallet_id("other-wallet");
+        let report = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &expected_root)
+            .unwrap();
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Missing);
+
+        db.set_wallet_id(W);
+        let report = db
+            .validate_pir_proof_cache(&notes, &[], Network::Testnet, &expected_root)
+            .unwrap();
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Valid);
+    }
+
+    #[test]
+    fn pir_cache_is_scoped_to_network() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let expected_root = imt.root().to_repr().to_vec();
+        let notes = vec![identity_note_with_position(0)];
+        seed_pir_cache(&db, &imt, &[notes[0].nullifier.clone()]);
+
+        // A proof cached under Testnet is invisible to every other network —
+        // including its `other_roots` listing, so it is Missing, not StaleRoot.
+        let report = db
+            .validate_pir_proof_cache(&notes, &[], Network::Mainnet, &expected_root)
+            .unwrap();
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Missing);
+        assert!(report.entries[0].other_roots.is_empty());
+
+        let conn = db.conn();
+        assert!(queries::load_pir_cache_proof(
+            &conn,
+            W,
+            Network::Mainnet,
+            &expected_root,
+            &notes[0].nullifier
+        )
+        .unwrap()
+        .is_none());
+        assert!(queries::load_pir_cache_proof(
+            &conn,
+            W,
+            Network::Testnet,
+            &expected_root,
+            &notes[0].nullifier
+        )
+        .unwrap()
+        .is_some());
+    }
+
+    #[test]
+    fn pir_cache_apis_work_with_no_rounds_or_bundles() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let notes = vec![
+            identity_note_with_position(0),
+            identity_note_with_position(1),
+        ];
+        let extras = vec![vec![0x33u8; 32]];
+
+        let precompute = db
+            .precompute_pir_proof_cache_inner(
+                &notes,
+                &extras,
+                Network::Testnet,
+                imt.root(),
+                |nfs| Ok(nfs.iter().map(|nf| imt_pir_proof(&imt, *nf)).collect()),
+            )
+            .unwrap();
+        assert_eq!(precompute.fetched_count, 3);
+
+        let report = db
+            .validate_pir_proof_cache(&notes, &extras, Network::Testnet, &imt.root().to_repr())
+            .unwrap();
+        assert_eq!(report.valid_count, 3);
+
+        let conn = db.conn();
+        for table in ["rounds", "bundles"] {
+            let count: u32 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "{table} must stay untouched");
+        }
+    }
+
+    #[test]
+    fn store_and_load_pir_cache_proof_round_trip() {
+        use voting_circuits::delegation::ImtProvider;
+        let db = test_db();
+        let imt_a = voting_circuits::delegation::SpacedLeafImtProvider::new();
+        let imt_b = voting_circuits::delegation::SpacedLeafImtProvider::with_extra_nullifiers(&[
+            pallas::Base::from(1234u64),
+        ]);
+        let nf_bytes = identity_note_with_position(0).nullifier;
+        let root_a = imt_a.root().to_repr().to_vec();
+        let root_b = imt_b.root().to_repr().to_vec();
+
+        let conn = db.conn();
+        let proof_a = imt_pir_proof(&imt_a, nf_base(&nf_bytes));
+        queries::store_pir_cache_proof(&conn, W, Network::Testnet, &nf_bytes, &proof_a).unwrap();
+
+        let stored = queries::load_pir_cache_proof(&conn, W, Network::Testnet, &root_a, &nf_bytes)
+            .unwrap()
+            .expect("stored proof loads back");
+        assert_eq!(stored.root, proof_a.root);
+        assert_eq!(stored.nf_bounds, proof_a.nf_bounds);
+        assert_eq!(stored.leaf_pos, proof_a.leaf_pos);
+        assert_eq!(stored.path, proof_a.path);
+
+        // Re-storing the same (root, nullifier) updates in place.
+        queries::store_pir_cache_proof(&conn, W, Network::Testnet, &nf_bytes, &proof_a).unwrap();
+        // A second root for the same nullifier creates a second row.
+        let proof_b = imt_pir_proof(&imt_b, nf_base(&nf_bytes));
+        queries::store_pir_cache_proof(&conn, W, Network::Testnet, &nf_bytes, &proof_b).unwrap();
+        drop(conn);
+        assert_eq!(pir_cache_row_count(&db), 2);
+
+        let conn = db.conn();
+        assert!(
+            queries::load_pir_cache_proof(&conn, W, Network::Testnet, &root_b, &nf_bytes)
+                .unwrap()
+                .is_some()
+        );
+        // Unknown key → None.
+        assert!(
+            queries::load_pir_cache_proof(&conn, W, Network::Testnet, &root_a, &[0x77; 32])
+                .unwrap()
+                .is_none()
+        );
+
+        let roots = queries::list_pir_cache_roots(&conn, W, Network::Testnet, &nf_bytes).unwrap();
+        assert_eq!(roots.len(), 2);
+        assert!(roots.contains(&root_a) && roots.contains(&root_b));
     }
 
     #[test]

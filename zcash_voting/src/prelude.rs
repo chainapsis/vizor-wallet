@@ -46,7 +46,8 @@ pub use crate::pir::{
     connect_pir, connect_pir_blocking, negotiated_pir_layout, select_pir_endpoint, PirEndpoint,
 };
 pub use crate::precompute::{
-    note_witnesses, stored_note_witnesses, verify_witness, PirPrecomputeReport,
+    note_witnesses, precompute_pir_proofs, stored_note_witnesses, validate_cached_pir_proofs,
+    verify_witness, PirPrecomputeReport,
 };
 pub use crate::recovery::{
     clear as clear_recovery, recoverable_commitment_bundle, round_snapshot, DelegationRecovery,
@@ -75,10 +76,11 @@ pub use crate::share::{
 };
 pub use crate::types::{
     validate_proposal_id, validate_vote_decision, validate_vote_options, DelegationProgressBridge,
-    DelegationProgressReporter, Network, NoopProgressReporter, NoteInfo, NoteRef, ProgressReporter,
-    RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VoteCommitStageBridge,
-    VoteCommitStageReporter, VotingHotkey, VotingHotkeyTarget, WitnessData, MAX_PROPOSAL_ID,
-    MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
+    DelegationProgressReporter, Network, NoopProgressReporter, NoteInfo, NoteRef,
+    PirCachePrecomputeResult, PirCacheValidationReport, PirProofCacheEntry, PirProofCacheStatus,
+    ProgressReporter, RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload,
+    VoteCommitStageBridge, VoteCommitStageReporter, VotingHotkey, VotingHotkeyTarget, WitnessData,
+    MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
 };
 pub use crate::vote::{
     commit as commit_vote, commit_batch, parse_recovery, persist_prepared_commit,

@@ -70,6 +70,18 @@ fn validate_pir_proof_raw(
     Ok(())
 }
 
+/// Validates a PIR proof against a nullifier and expected root without
+/// converting it to the circuit-crate type, for callers that persist the raw
+/// `pir_client` proof.
+pub(crate) fn validate_pir_proof(
+    proof: &pir_client::ImtProofData,
+    nullifier: pallas::Base,
+    expected_root: pallas::Base,
+) -> Result<(), VotingError> {
+    validate_pir_proof_raw(proof, nullifier, expected_root)
+        .map_err(|message| VotingError::Internal { message })
+}
+
 pub fn validate_and_convert_pir_proof(
     proof: pir_client::ImtProofData,
     nullifier: pallas::Base,
@@ -559,9 +571,9 @@ mod tests {
         value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
     };
     use pasta_curves::group::ff::Field;
-    use voting_crypto_deps::rand::Rng;
     use voting_circuits::delegation::SpacedLeafImtProvider;
     use voting_crypto_deps::rand::rngs::OsRng;
+    use voting_crypto_deps::rand::Rng;
 
     struct TestReporter {
         count: Arc<AtomicU32>,

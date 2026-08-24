@@ -724,6 +724,59 @@ pub struct DelegationPirPrecomputeResult {
     pub fetched_count: u32,
 }
 
+/// Result of the bundle- and round-independent PIR proof precompute
+/// ([`crate::precompute::precompute_pir_proofs`]) against the IMT root the connected
+/// PIR server currently serves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PirCachePrecomputeResult {
+    /// Number of nullifiers that already had a cached proof under the served root.
+    pub cached_count: u32,
+    /// Number of proofs fetched from the PIR server during this call.
+    pub fetched_count: u32,
+    /// IMT root the PIR server served, as 32 little-endian bytes. Every proof
+    /// fetched or counted as cached by this call verifies under this root.
+    pub served_root: Vec<u8>,
+}
+
+/// Per-nullifier outcome of validating the bundle-independent PIR proof cache
+/// against an expected IMT root.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PirProofCacheStatus {
+    /// A cached proof exists under the expected root and verifies for this nullifier.
+    Valid,
+    /// Proofs exist for this nullifier, but only under other roots (older or
+    /// newer snapshots) — none under the expected root.
+    StaleRoot,
+    /// No cached proof exists for this nullifier under any root.
+    Missing,
+    /// A row exists under the expected root but is corrupt: its blobs do not
+    /// decode, or the proof fails out-of-circuit verification.
+    Invalid,
+}
+
+/// One entry of a [`PirCacheValidationReport`], in input order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PirProofCacheEntry {
+    /// The 32-byte nullifier this entry describes.
+    pub nullifier: Vec<u8>,
+    pub status: PirProofCacheStatus,
+    /// Roots other than the expected one that this nullifier has cached proofs
+    /// under (32 little-endian bytes each, most recently updated first).
+    pub other_roots: Vec<Vec<u8>>,
+}
+
+/// Result of the offline validation of cached PIR proofs against an expected
+/// IMT root ([`crate::precompute::validate_cached_pir_proofs`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PirCacheValidationReport {
+    /// One entry per input nullifier: notes first, then extras, duplicates included.
+    pub entries: Vec<PirProofCacheEntry>,
+    pub valid_count: u32,
+    pub stale_root_count: u32,
+    pub missing_count: u32,
+    pub invalid_count: u32,
+}
+
 /// Merkle witness for a note in the selected shielded commitment tree.
 #[derive(Clone, Debug)]
 pub struct WitnessData {

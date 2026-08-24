@@ -21,7 +21,9 @@ use zcash_client_sqlite::WalletDb;
 
 use crate::{
     round::VotingDb,
-    types::{NoteInfo, VotingError, WitnessData},
+    types::{
+        NoteInfo, PirCachePrecomputeResult, PirCacheValidationReport, VotingError, WitnessData,
+    },
 };
 
 use crate::{delegate::PreparedDelegationReport, round::BundleLayout, types::Network};
@@ -178,6 +180,47 @@ pub fn delegation_pir(
         cached: result.cached_count,
         fetched: result.fetched_count,
     })
+}
+
+/// Fetches and persists PIR proofs for notes that survive `bundle_policy`.
+///
+/// Callers pass the selected snapshot set against the IMT root the connected
+/// PIR server currently serves, keyed by `network`. This plans first with the
+/// same path round setup uses, so sub-ballot bundles and the privacy-trim tail
+/// are not PIR-queried. Pass the same [`crate::note_bundling::BundlePolicy`]
+/// the wallet will later persist at round setup.
+///
+/// Padded-slot nullifiers are not an input here: they only exist after bundle
+/// padded-note secrets are initialized, and the per-bundle PIR precompute path
+/// fetches them then.
+///
+/// Proofs can be warmed before any round or bundle exists, and later checked
+/// against a round's expected root with [`validate_cached_pir_proofs`]. The
+/// delegation prove path reads the same cache, so real-note proofs warmed here
+/// are never refetched at proving time. A cached row that fails to decode or
+/// verify is treated as a miss and overwritten. Each call prunes cache rows
+/// created more than four weeks ago before checking or fetching proofs.
+pub fn precompute_pir_proofs(
+    db: &VotingDb,
+    notes: &[NoteInfo],
+    bundle_policy: crate::note_bundling::BundlePolicy,
+    network: Network,
+    pir_client: &pir_client::PirClientBlocking,
+) -> Result<PirCachePrecomputeResult, VotingError> {
+    db.precompute_pir_proof_cache(notes, bundle_policy, network, pir_client)
+}
+
+/// Classifies the cached PIR proofs for the given nullifiers against an
+/// expected IMT root (e.g. a round's `nullifier_imt_root`). Offline — the PIR
+/// server is never contacted; mismatches are reported, not raised.
+pub fn validate_cached_pir_proofs(
+    db: &VotingDb,
+    notes: &[NoteInfo],
+    extra_nullifiers: &[Vec<u8>],
+    network: Network,
+    expected_root: &[u8],
+) -> Result<PirCacheValidationReport, VotingError> {
+    db.validate_pir_proof_cache(notes, extra_nullifiers, network, expected_root)
 }
 
 /// Initializes padded-note secrets and runs PIR precompute.
@@ -345,6 +388,175 @@ mod pir_tests {
             message.contains("failed to decode UFVK while deriving padded nullifiers")
                 || message.contains("unexpected POST"),
             "unexpected warm_delegation_pir error: {message}",
+        );
+    }
+
+    #[test]
+    fn precompute_pir_proofs_wrapper_delegates_and_surfaces_input_errors() {
+        struct StaticPirTransport;
+
+        impl pir_client::Transport for StaticPirTransport {
+            fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
+                Box::pin(async move {
+                    let path = {
+                        let without_scheme =
+                            url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+                        without_scheme
+                            .find('/')
+                            .map(|idx| without_scheme[idx..].to_owned())
+                            .unwrap_or_else(|| "/".to_owned())
+                    };
+                    let respond = |body: Vec<u8>| pir_client::TransportResponse {
+                        status: 200,
+                        headers: Vec::new(),
+                        body,
+                    };
+                    match path.as_str() {
+                        "/tier0" => Ok(respond(vec![
+                            0;
+                            ((1usize << pir_types::TIER0_LAYERS) - 1) * 32
+                                + pir_types::TIER1_ROWS * 64
+                        ])),
+                        "/params/tier1" => Ok(respond(
+                            serde_json::to_vec(&pir_types::YpirScenario {
+                                num_items: pir_types::TIER1_ROWS,
+                                item_size_bits: pir_types::TIER1_ITEM_BITS,
+                                poly_len: pir_types::DEFAULT_YPIR_POLY_LEN,
+                            })
+                            .unwrap(),
+                        )),
+                        "/root" => Ok(respond(
+                            serde_json::to_vec(&pir_types::RootInfo {
+                                zcash_network: pir_types::ZcashNetwork::Test,
+                                nullifier_pool: pir_types::NULLIFIER_POOL.to_owned(),
+                                dataset_version: pir_types::DATASET_VERSION,
+                                circuit_root: hex::encode([0u8; 32]),
+                                pir_root: hex::encode([0u8; 32]),
+                                num_ranges: 1,
+                                pir_layout: pir_types::COMPILED_PIR_LAYOUT,
+                                pir_depth: pir_types::PIR_DEPTH,
+                                tier1_rows: pir_types::TIER1_ROWS,
+                                tier1_row_bytes: pir_types::TIER1_ROW_BYTES,
+                                height: None,
+                            })
+                            .unwrap(),
+                        )),
+                        _ => Err(anyhow::anyhow!("unexpected GET {path}")),
+                    }
+                })
+            }
+
+            fn post<'a>(&'a self, url: &'a str, _body: Vec<u8>) -> pir_client::TransportFuture<'a> {
+                let _ = url;
+                Box::pin(async move { Err(anyhow::anyhow!("unexpected POST")) })
+            }
+        }
+
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id("test-wallet");
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            std::sync::Arc::new(StaticPirTransport),
+        )
+        .unwrap();
+
+        // Empty inputs run the whole wrapper path without any PIR query and
+        // report the served (all-zero) root.
+        let result = precompute_pir_proofs(
+            &db,
+            &[],
+            crate::note_bundling::BundlePolicy::default(),
+            Network::Testnet,
+            &pir_client,
+        )
+        .unwrap();
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(result.fetched_count, 0);
+        assert_eq!(result.served_root, vec![0u8; 32]);
+
+        // Malformed caller input surfaces through the wrapper as InvalidInput
+        // at planning time, before any PIR query.
+        let short = NoteInfo {
+            commitment: vec![1; 32],
+            nullifier: vec![0x07; 31],
+            value: crate::governance::BALLOT_DIVISOR,
+            position: 0,
+            diversifier: vec![3; 11],
+            rho: vec![4; 32],
+            rseed: vec![5; 32],
+            scope: 0,
+            ufvk_str: "uviewtest".to_string(),
+        };
+        let err = precompute_pir_proofs(
+            &db,
+            &[short],
+            crate::note_bundling::BundlePolicy::default(),
+            Network::Testnet,
+            &pir_client,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("notes[0].nullifier must be 32 bytes, got 31"),
+            "{err}"
+        );
+
+        // Sub-ballot selected notes are planned away before any PIR query.
+        let dust = vec![NoteInfo {
+            commitment: vec![1; 32],
+            nullifier: vec![2; 32],
+            value: 100,
+            position: 0,
+            diversifier: vec![3; 11],
+            rho: vec![4; 32],
+            rseed: vec![5; 32],
+            scope: 0,
+            ufvk_str: "uviewtest".to_string(),
+        }];
+        let result = precompute_pir_proofs(
+            &db,
+            &dust,
+            crate::note_bundling::BundlePolicy::default(),
+            Network::Testnet,
+            &pir_client,
+        )
+        .unwrap();
+        assert_eq!(result.cached_count, 0);
+        assert_eq!(result.fetched_count, 0);
+    }
+
+    #[test]
+    fn validate_cached_pir_proofs_wrapper_reports_offline() {
+        use crate::types::PirProofCacheStatus;
+
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id("test-wallet");
+        let notes = vec![NoteInfo {
+            commitment: vec![1; 32],
+            nullifier: vec![2; 32],
+            value: 10,
+            position: 0,
+            diversifier: vec![3; 11],
+            rho: vec![4; 32],
+            rseed: vec![5; 32],
+            scope: 0,
+            ufvk_str: "uviewtest".to_string(),
+        }];
+
+        // No PIR client anywhere in sight: the wrapper works fully offline.
+        let report =
+            validate_cached_pir_proofs(&db, &notes, &[], Network::Testnet, &[0u8; 32]).unwrap();
+        assert_eq!(report.entries.len(), 1);
+        assert_eq!(report.entries[0].status, PirProofCacheStatus::Missing);
+        assert_eq!(report.missing_count, 1);
+
+        let err = validate_cached_pir_proofs(&db, &notes, &[], Network::Testnet, &[0xBB; 31])
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected IMT root must be 32 bytes, got 31"),
+            "{err}"
         );
     }
 }
