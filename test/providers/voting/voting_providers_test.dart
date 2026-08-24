@@ -1709,6 +1709,7 @@ void main() {
         recoveryApi: FakeVotingRecoveryApi(
           state: recoveryState(bundleCount: 3),
         ),
+        txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
 
@@ -1757,6 +1758,52 @@ void main() {
       expect(rust.storedVanPositions, ['0:0']);
     },
   );
+
+  test('spent delegation nullifier waits for tx indexing', () async {
+    final responses = votingHttpResponses();
+    final confirmation = responses['/shielded-vote/v1/tx/delegation-tx']!;
+    responses['/shielded-vote/v1/delegate-vote'] = {
+      'tx_hash': 'delegation-tx',
+      'code': 1,
+      'log': 'nullifier already spent: abc123',
+    };
+    responses['/shielded-vote/v1/tx/delegation-tx'] =
+        SequentialVotingHttpResponses([
+          jsonResponse({'error': 'not found'}, statusCode: 404),
+          confirmation,
+        ]);
+    final http = FakeVotingHttpClient(responses: responses);
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      txConfirmationPolling: const VotingTxConfirmationPolling(
+        attempts: 2,
+        delay: Duration.zero,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.delegated);
+    expect(state.error, isNull);
+    expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+    expect(
+      http.requests
+          .where(
+            (request) =>
+                request.method == 'GET' &&
+                request.uri.path == '/shielded-vote/v1/tx/delegation-tx',
+          )
+          .length,
+      3,
+    );
+  });
 
   test(
     'spent delegation nullifier without a tx hash keeps its diagnostic',
@@ -4221,6 +4268,7 @@ void main() {
       http: http,
       rust: rust,
       recoveryApi: _singleVoteRecoveryApi(),
+      txConfirmationPolling: _fastTxConfirmationPolling,
     );
     addTearDown(container.dispose);
 
@@ -4253,6 +4301,7 @@ void main() {
       http: http,
       rust: rust,
       recoveryApi: _singleVoteRecoveryApi(),
+      txConfirmationPolling: _fastTxConfirmationPolling,
     );
     addTearDown(container.dispose);
 
@@ -4305,6 +4354,7 @@ void main() {
       http: http,
       rust: rust,
       recoveryApi: recoveryApi,
+      txConfirmationPolling: _fastTxConfirmationPolling,
     );
     addTearDown(container.dispose);
 

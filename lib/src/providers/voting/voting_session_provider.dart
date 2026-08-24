@@ -20,6 +20,7 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_retry.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
@@ -2302,8 +2303,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
       await _requireAcceptedVotingTransaction(
-        api,
         result,
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          requireDefinitiveResult: true,
+        ),
         rejectionMessage: 'Vote commitment transaction was rejected.',
       );
       if (result.txHash.isEmpty) {
@@ -2370,8 +2376,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'code=${result.code} log=${result.log}',
       );
       await _requireAcceptedVotingTransaction(
-        api,
         result,
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          requireDefinitiveResult: true,
+        ),
         rejectionMessage: 'Vote commitment transaction was rejected.',
       );
       if (result.txHash.isEmpty) {
@@ -2750,8 +2761,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
     await _requireAcceptedVotingTransaction(
-      api,
       result,
+      waitForConfirmation: (txHash) => _awaitTxConfirmation(
+        api,
+        txHash,
+        context: context,
+        requireDefinitiveResult: true,
+      ),
       rejectionMessage: 'Delegation transaction was rejected.',
     );
     await rust.markDelegationSubmitted(
@@ -2806,15 +2822,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingApiClient api,
     String txHash, {
     required _VotingSessionContext context,
+    bool requireDefinitiveResult = false,
   }) async {
     final polling = ref.read(votingTxConfirmationPollingProvider);
     final attempts = polling.attempts;
     final delay = polling.delay;
     final timer = Stopwatch()..start();
+    Object? lastRetryableError;
+    StackTrace? lastRetryableStackTrace;
     _logVoteTiming('tx confirmation wait start txHash=$txHash');
     for (var attempt = 0; attempt < attempts; attempt++) {
       _throwIfContextStale(context, 'tx-confirmation');
-      final confirmation = await api.getTxConfirmation(txHash);
+      VotingTxConfirmation? confirmation;
+      try {
+        confirmation = await api.getTxConfirmation(
+          txHash,
+          requireDefinitiveResult: requireDefinitiveResult,
+        );
+      } catch (error, stackTrace) {
+        if (!requireDefinitiveResult || !isRetryableVotingError(error)) {
+          rethrow;
+        }
+        lastRetryableError = error;
+        lastRetryableStackTrace = stackTrace;
+      }
       _throwIfContextStale(context, 'tx-confirmation-response');
       if (confirmation != null) {
         _logVoteTiming(
@@ -2839,6 +2870,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'tx confirmation wait timed out txHash=$txHash '
       'elapsed=${formatElapsedSeconds(timer.elapsed)}',
     );
+    if (lastRetryableError != null) {
+      Error.throwWithStackTrace(lastRetryableError, lastRetryableStackTrace!);
+    }
     return null;
   }
 
@@ -4725,11 +4759,13 @@ class _VotingStartedFromAnotherWallet implements Exception {
 /// A spent-nullifier rejection is ambiguous after a retry: the first attempt
 /// may have landed even though its response was lost. The cross-wallet guidance
 /// is safe only when the rejected transaction has a hash and that hash is
-/// absent from the chain. If it is present and successful, normal confirmation
-/// recovery continues. Without a hash, the original diagnostic is preserved.
+/// still absent after confirmation polling. If it is present and successful,
+/// normal confirmation recovery continues. Without a hash, or when lookup is
+/// inconclusive, the original diagnostic is preserved.
 Future<void> _requireAcceptedVotingTransaction(
-  VotingApiClient api,
   VotingTxResult result, {
+  required Future<VotingTxConfirmation?> Function(String txHash)
+  waitForConfirmation,
   required String rejectionMessage,
 }) async {
   if (result.code == 0) return;
@@ -4737,10 +4773,7 @@ Future<void> _requireAcceptedVotingTransaction(
       result.txHash.isNotEmpty) {
     final VotingTxConfirmation? confirmation;
     try {
-      confirmation = await api.getTxConfirmation(
-        result.txHash,
-        requireDefinitiveResult: true,
-      );
+      confirmation = await waitForConfirmation(result.txHash);
     } catch (_) {
       // A failed lookup cannot prove that another wallet submitted the vote.
       throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
