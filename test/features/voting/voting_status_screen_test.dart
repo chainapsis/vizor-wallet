@@ -1858,6 +1858,49 @@ void main() {
     expect(find.text('Review answers'), findsOneWidget);
   });
 
+  testWidgets('proposal detail accepts answers while voting power loads', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _PendingVotingEligibilityRustApi(recoveryApi);
+    addTearDown(rust.completeEligible);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Preparing voting power'));
+
+    await tester.tap(find.text('Yes'));
+    await tester.pump();
+
+    // The choice is local state, so it must land while the eligibility check
+    // is still outstanding.
+    expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+    expect(find.text('Preparing voting power'), findsOneWidget);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
+    rust.completeEligible();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing voting power'), findsNothing);
+    expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+    expect(_reviewAnswersButton(tester).onPressed, isNotNull);
+  });
+
   testWidgets(
     'proposal detail shows read-only options when eligibility fails',
     (tester) async {
@@ -3430,6 +3473,15 @@ Future<void> _pumpUntilCondition(
     await tester.pump(const Duration(milliseconds: 100));
     if (condition()) return;
   }
+}
+
+AppButton _reviewAnswersButton(WidgetTester tester) {
+  return tester.widget<AppButton>(
+    find.descendant(
+      of: find.byKey(const ValueKey('voting_review_answers_button')),
+      matching: find.byType(AppButton),
+    ),
+  );
 }
 
 ProviderContainer _statusContainer({
