@@ -13,7 +13,7 @@ void main() {
         final store = PaymentLinkRecoveryStore(storage);
         final link = _link();
 
-        final fundingTxid = await PaymentLinkFundingRecovery(store).fund(
+        final funding = await PaymentLinkFundingRecovery(store).fund(
           link: link,
           sourceAccountUuid: 'source-account',
           createTransaction: () async {
@@ -31,7 +31,8 @@ void main() {
           fundingTxids: (txid) => txid,
         );
 
-        expect(fundingTxid, 'funding-txid');
+        expect(funding.transaction, 'funding-txid');
+        expect(funding.recoveryError, isNull);
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
         expect(restartedRecords.single.fundingTxids, 'funding-txid');
@@ -63,22 +64,51 @@ void main() {
       },
     );
 
-    test(
-      'funding metadata failure still preserves the earlier draft',
-      () async {
-        final storage = _FakePaymentLinkRecoveryStorage(failOnWrite: 2);
-        final link = _link();
+    test('retries a transient funding metadata write failure', () async {
+      final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {2});
+      final link = _link();
 
-        await expectLater(
-          PaymentLinkFundingRecovery(PaymentLinkRecoveryStore(storage)).fund(
-            link: link,
-            sourceAccountUuid: 'source-account',
-            createTransaction: () async => 'funding-txid',
-            fundingTxids: (txid) => txid,
-          ),
-          throwsStateError,
+      final funding = await PaymentLinkFundingRecovery(
+        PaymentLinkRecoveryStore(storage),
+      ).fund(
+        link: link,
+        sourceAccountUuid: 'source-account',
+        createTransaction: () async => 'funding-txid',
+        fundingTxids: (txid) => txid,
+      );
+
+      expect(funding.transaction, 'funding-txid');
+      expect(funding.recoveryError, isNull);
+      final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
+      expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
+      expect(restartedRecords.single.fundingTxids, 'funding-txid');
+    });
+
+    test(
+      'returns the broadcast result when funding metadata cannot be updated',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage(
+          failOnWrites: {2, 3},
+        );
+        final link = _link();
+        var transactionCount = 0;
+
+        final funding = await PaymentLinkFundingRecovery(
+          PaymentLinkRecoveryStore(storage),
+        ).fund(
+          link: link,
+          sourceAccountUuid: 'source-account',
+          createTransaction: () async {
+            transactionCount += 1;
+            return 'funding-txid';
+          },
+          fundingTxids: (txid) => txid,
         );
 
+        expect(funding.transaction, 'funding-txid');
+        expect(funding.recoveryError, isA<StateError>());
+        expect(funding.recoveryStackTrace, isNotNull);
+        expect(transactionCount, 1);
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
         expect(restartedRecords.single.link.mnemonic, link.mnemonic);
@@ -90,7 +120,7 @@ void main() {
       final store = PaymentLinkRecoveryStore(storage);
       final link = _link();
 
-      final result = await PaymentLinkFundingRecovery(store).fund(
+      final funding = await PaymentLinkFundingRecovery(store).fund(
         link: link,
         sourceAccountUuid: 'source-account',
         createTransaction: () async =>
@@ -98,7 +128,8 @@ void main() {
         fundingTxids: (result) => result.txids,
       );
 
-      expect(result.status, 'pending_broadcast');
+      expect(funding.transaction.status, 'pending_broadcast');
+      expect(funding.recoveryError, isNull);
       final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
       expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
       expect(restartedRecords.single.fundingTxids, 'pending-funding-txid');
@@ -181,9 +212,9 @@ VizorPaymentLink _link() {
 }
 
 class _FakePaymentLinkRecoveryStorage implements PaymentLinkRecoveryStorage {
-  _FakePaymentLinkRecoveryStorage({this.failOnWrite});
+  _FakePaymentLinkRecoveryStorage({this.failOnWrites = const {}});
 
-  final int? failOnWrite;
+  final Set<int> failOnWrites;
   String? value;
   int _writeCount = 0;
 
@@ -198,7 +229,7 @@ class _FakePaymentLinkRecoveryStorage implements PaymentLinkRecoveryStorage {
   @override
   Future<void> write(String nextValue) async {
     _writeCount += 1;
-    if (_writeCount == failOnWrite) {
+    if (failOnWrites.contains(_writeCount)) {
       throw StateError('storage write failed');
     }
     value = nextValue;

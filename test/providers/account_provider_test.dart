@@ -89,6 +89,23 @@ void main() {
   );
 
   test(
+    'wallet reset treats payment-link claim cleanup as best effort',
+    () async {
+      final loggedMessages = <String>[];
+
+      await clearPaymentLinkClaimWalletsForReset(
+        deleteDirectories: () async {
+          throw StateError('claim cleanup failed');
+        },
+        reportError: loggedMessages.add,
+      );
+
+      expect(loggedMessages, hasLength(1));
+      expect(loggedMessages.single, contains('claim cleanup failed'));
+    },
+  );
+
+  test(
     'wallet reset clears the tor data directory and route preference',
     () async {
       SharedPreferences.setMockInitialValues({kTorEnabledPreferenceKey: true});
