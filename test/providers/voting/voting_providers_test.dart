@@ -1689,7 +1689,7 @@ void main() {
     expect(rust.storedVanPositions, ['0:0']);
   });
 
-  test('spent delegation nullifier reports unrecovered status once', () async {
+  test('spent delegation nullifier uses bounded recovery polling', () async {
     final responses = votingHttpResponses();
     responses['/shielded-vote/v1/delegate-vote'] = {
       'tx_hash': 'rejected-delegation-tx',
@@ -1705,7 +1705,10 @@ void main() {
       http: http,
       rust: rust,
       recoveryApi: FakeVotingRecoveryApi(state: recoveryState(bundleCount: 3)),
-      txConfirmationPolling: _fastTxConfirmationPolling,
+      txConfirmationPolling: const VotingTxConfirmationPolling(
+        attempts: 45,
+        delay: Duration.zero,
+      ),
     );
     addTearDown(container.dispose);
 
@@ -1723,6 +1726,17 @@ void main() {
       'to it to see the status.',
     );
     expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 1);
+    expect(
+      http.requests
+          .where(
+            (request) =>
+                request.method == 'GET' &&
+                request.uri.path ==
+                    '/shielded-vote/v1/tx/rejected-delegation-tx',
+          )
+          .length,
+      3,
+    );
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
 

@@ -38,6 +38,8 @@ final _nullifierAlreadySpentPattern = RegExp(
   r'nullifier already spent:\s*\S+',
   caseSensitive: false,
 );
+const _spentNullifierRecoveryMaxAttempts = 3;
+const _spentNullifierRecoveryMaxDelay = Duration(seconds: 1);
 
 /// The PCZT value-pool tag for Ironwood actions.
 ///
@@ -2304,8 +2306,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       await _requireAcceptedVotingTransaction(
         result,
-        waitForConfirmation: (txHash) =>
-            _awaitTxConfirmation(api, txHash, context: context),
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          spentNullifierRecovery: true,
+        ),
         rejectionMessage: 'Vote commitment transaction was rejected.',
       );
       if (result.txHash.isEmpty) {
@@ -2373,8 +2379,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       await _requireAcceptedVotingTransaction(
         result,
-        waitForConfirmation: (txHash) =>
-            _awaitTxConfirmation(api, txHash, context: context),
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          spentNullifierRecovery: true,
+        ),
         rejectionMessage: 'Vote commitment transaction was rejected.',
       );
       if (result.txHash.isEmpty) {
@@ -2754,8 +2764,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
     await _requireAcceptedVotingTransaction(
       result,
-      waitForConfirmation: (txHash) =>
-          _awaitTxConfirmation(api, txHash, context: context),
+      waitForConfirmation: (txHash) => _awaitTxConfirmation(
+        api,
+        txHash,
+        context: context,
+        spentNullifierRecovery: true,
+      ),
       rejectionMessage: 'Delegation transaction was rejected.',
     );
     await rust.markDelegationSubmitted(
@@ -2810,10 +2824,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingApiClient api,
     String txHash, {
     required _VotingSessionContext context,
+    bool spentNullifierRecovery = false,
   }) async {
-    final polling = ref.read(votingTxConfirmationPollingProvider);
-    final attempts = polling.attempts;
-    final delay = polling.delay;
+    final settings = ref.read(votingTxConfirmationPollingProvider);
+    final attempts =
+        spentNullifierRecovery &&
+            settings.attempts > _spentNullifierRecoveryMaxAttempts
+        ? _spentNullifierRecoveryMaxAttempts
+        : settings.attempts;
+    final delay =
+        spentNullifierRecovery &&
+            settings.delay > _spentNullifierRecoveryMaxDelay
+        ? _spentNullifierRecoveryMaxDelay
+        : settings.delay;
     final timer = Stopwatch()..start();
     _logVoteTiming('tx confirmation wait start txHash=$txHash');
     for (var attempt = 0; attempt < attempts; attempt++) {
