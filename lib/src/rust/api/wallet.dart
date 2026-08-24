@@ -89,9 +89,9 @@ Future<AccountCreationResult> addAccount({
 /// Generate a software account mnemonic and shielded address without touching
 /// the wallet DB. Used for an external one-time recipient controlled by a
 /// fresh seed, such as payment-link funding.
-Future<SoftwareAccountPreviewResult> previewNewSoftwareAccount({
+Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   required String network,
-}) => RustLib.instance.api.crateApiWalletPreviewNewSoftwareAccount(
+}) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(
   network: network,
 );
 
@@ -509,12 +509,12 @@ class ChainUpgradeStatus {
           endpointMatchesNetwork == other.endpointMatchesNetwork;
 }
 
-/// Result of deriving a software account without importing it into the wallet DB.
-class SoftwareAccountPreviewResult {
+/// A generated software account that has not been imported into the wallet DB.
+class GeneratedSoftwareAccount {
   final String mnemonic;
   final String unifiedAddress;
 
-  const SoftwareAccountPreviewResult({
+  const GeneratedSoftwareAccount({
     required this.mnemonic,
     required this.unifiedAddress,
   });
@@ -525,7 +525,7 @@ class SoftwareAccountPreviewResult {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is SoftwareAccountPreviewResult &&
+      other is GeneratedSoftwareAccount &&
           runtimeType == other.runtimeType &&
           mnemonic == other.mnemonic &&
           unifiedAddress == other.unifiedAddress;
