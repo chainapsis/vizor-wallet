@@ -1689,6 +1689,106 @@ void main() {
     expect(rust.storedVanPositions, ['0:0']);
   });
 
+  test(
+    'spent delegation nullifier explains voting started elsewhere once',
+    () async {
+      final responses = votingHttpResponses();
+      responses['/shielded-vote/v1/delegate-vote'] = {
+        'tx_hash': 'rejected-delegation-tx',
+        'code': 1,
+        'log': 'nullifier already spent: abc123',
+      };
+      responses['/shielded-vote/v1/tx/rejected-delegation-tx'] = jsonResponse({
+        'error': 'not found',
+      }, statusCode: 404);
+      final http = FakeVotingHttpClient(responses: responses);
+      final rust = FakeVotingRustApi(bundleCount: 3);
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(bundleCount: 3),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      expect(
+        state.error?.message,
+        "You've begun voting on this round from another wallet. You must use "
+        'that wallet to see your voting status',
+      );
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 1);
+      expect(rust.storedDelegationTxHashes, isEmpty);
+    },
+  );
+
+  test(
+    'spent delegation nullifier resumes when its tx already landed',
+    () async {
+      final responses = votingHttpResponses();
+      responses['/shielded-vote/v1/delegate-vote'] = {
+        'tx_hash': 'delegation-tx',
+        'code': 1,
+        'log': 'nullifier already spent: abc123',
+      };
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        http: FakeVotingHttpClient(responses: responses),
+        rust: rust,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.delegated);
+      expect(state.error, isNull);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+      expect(rust.storedVanPositions, ['0:0']);
+    },
+  );
+
+  test(
+    'spent delegation nullifier without a tx hash keeps its diagnostic',
+    () async {
+      final responses = votingHttpResponses();
+      responses['/shielded-vote/v1/delegate-vote'] = {
+        'code': 1,
+        'log': 'nullifier already spent: abc123',
+      };
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        http: FakeVotingHttpClient(responses: responses),
+        rust: rust,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.error?.message, contains('nullifier already spent: abc123'));
+      expect(
+        state.error?.message,
+        isNot(contains("You've begun voting on this round")),
+      );
+      expect(rust.storedDelegationTxHashes, isEmpty);
+    },
+  );
+
   test('delegation proves at most three bundles concurrently', () async {
     final proofGate = Completer<void>();
     final rust = FakeVotingRustApi(

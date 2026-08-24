@@ -2290,7 +2290,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           rust.voteCommitmentWireJson(commitment: commitment.wire),
         ),
       );
-      await _requireAcceptedVoteCommitment(api, result);
+      await _requireAcceptedVotingTransaction(
+        api,
+        result,
+        rejectionMessage: 'Vote commitment transaction was rejected.',
+      );
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -2354,7 +2358,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'proposal=${commitment.proposalId} txHash=${result.txHash} '
         'code=${result.code} log=${result.log}',
       );
-      await _requireAcceptedVoteCommitment(api, result);
+      await _requireAcceptedVotingTransaction(
+        api,
+        result,
+        rejectionMessage: 'Vote commitment transaction was rejected.',
+      );
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -2637,7 +2645,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             error: error,
           ),
         );
-        if (error is _StaleVotingSessionAction) break;
+        if (error is _StaleVotingSessionAction ||
+            error is _VotingStartedFromAnotherWallet) {
+          break;
+        }
       }
     }
 
@@ -2688,7 +2699,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     for (final failure in failures) {
-      if (failure.error is _StaleVotingSessionAction) {
+      if (failure.error is _StaleVotingSessionAction ||
+          failure.error is _VotingStartedFromAnotherWallet) {
         throw failure.error;
       }
     }
@@ -2726,13 +2738,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'txHash=${result.txHash} code=${result.code} '
       'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
-    if (result.code != 0) {
-      throw StateError(
-        result.log.isEmpty
-            ? 'Delegation transaction was rejected.'
-            : result.log,
-      );
-    }
+    await _requireAcceptedVotingTransaction(
+      api,
+      result,
+      rejectionMessage: 'Delegation transaction was rejected.',
+    );
     await rust.markDelegationSubmitted(
       dbPath: context.dbPath,
       accountUuid: context.accountUuid,
@@ -4690,7 +4700,7 @@ class _VoteWaveFailure {
   final Object error;
 }
 
-/// Signals that a pre-chain vote rejection proves another wallet spent the
+/// Signals that a rejected voting transaction proves another wallet spent the
 /// voting nullifier.
 class _VotingStartedFromAnotherWallet implements Exception {
   const _VotingStartedFromAnotherWallet();
@@ -4699,17 +4709,18 @@ class _VotingStartedFromAnotherWallet implements Exception {
   String toString() => _votingStartedFromAnotherWalletMessage;
 }
 
-/// Requires a vote submission to be accepted or already present on-chain.
+/// Requires a voting transaction to be accepted or already present on-chain.
 ///
 /// A spent-nullifier rejection is ambiguous after a retry: the first attempt
 /// may have landed even though its response was lost. The cross-wallet guidance
 /// is safe only when the rejected transaction has a hash and that hash is
 /// absent from the chain. If it is present and successful, normal confirmation
 /// recovery continues. Without a hash, the original diagnostic is preserved.
-Future<void> _requireAcceptedVoteCommitment(
+Future<void> _requireAcceptedVotingTransaction(
   VotingApiClient api,
-  VotingTxResult result,
-) async {
+  VotingTxResult result, {
+  required String rejectionMessage,
+}) async {
   if (result.code == 0) return;
   if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
       result.txHash.isNotEmpty) {
@@ -4719,11 +4730,7 @@ Future<void> _requireAcceptedVoteCommitment(
     }
     if (confirmation.code == 0) return;
   }
-  throw StateError(
-    result.log.isEmpty
-        ? 'Vote commitment transaction was rejected.'
-        : result.log,
-  );
+  throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
 }
 
 class _VoteWaveBatchException implements Exception {
