@@ -1,4 +1,4 @@
-use std::{panic, path::Path, sync::Arc};
+use std::{panic, path::Path, sync::Arc, time::Instant};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -34,6 +34,9 @@ const PHASE_DELEGATION_PROGRESS: &str = "delegation_progress";
 const PHASE_BUILDING_SHARE_PAYLOADS: &str = "building_share_payloads";
 const PHASE_SIGNING: &str = "signing";
 const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
+
+/// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
+const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 #[flutter_rust_bridge::frb(sync)]
@@ -791,6 +794,15 @@ pub async fn precompute_delegation_pir(
     .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
+/// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
+///
+/// Safe to call repeatedly; only the first call starts work. Returns
+/// immediately so Dart can overlap warm-up with PIR resolve / bundle setup.
+#[flutter_rust_bridge::frb(sync)]
+pub fn warm_voting_proving_caches() {
+    delegation::start_proving_cache_warmup();
+}
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
@@ -820,6 +832,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
+    let lwd_started = Instant::now();
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -827,6 +840,10 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         voting_network,
     )
     .await?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s",
+        lwd_started.elapsed().as_secs_f64()
+    );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -839,6 +856,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
+    let wallet_flow_started = Instant::now();
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_urls,
@@ -855,6 +873,10 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     .and_then(|bundle| {
         zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} wallet-prove-sign elapsed={:.3}s",
+        wallet_flow_started.elapsed().as_secs_f64()
+    );
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
@@ -1138,10 +1160,12 @@ pub fn mark_delegation_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        // Persist submission hash for this round/bundle key.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
-            .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Persist submission hash for this round/bundle key.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
+                .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1161,16 +1185,18 @@ pub fn confirm_delegation_submission(
 ) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
         let events = parse_tx_events_json(&events_json)?;
-        // Parse tx events and persist confirmation details for this bundle.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::confirmation::confirm_delegation_submission(
-            &db,
-            &round_id,
-            bundle_index,
-            &tx_hash,
-            &events,
-        )
-        .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Parse tx events and persist confirmation details for this bundle.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::confirmation::confirm_delegation_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                &tx_hash,
+                &events,
+            )
+            .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1214,9 +1240,15 @@ pub fn sync_vote_tree(
 ) -> Result<u32, String> {
     catch(|| {
         // Sync and cache vote tree state for this wallet/round.
+        let started = Instant::now();
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
-            .map_err(|e| format!("sync_vote_tree failed: {e}"))
+        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
+            .map_err(|e| format!("sync_vote_tree failed: {e}"))?;
+        log::info!(
+            "{VOTING_VOTE_LOG} sync-tree complete round={round_id} height={height} elapsed={:.3}s",
+            started.elapsed().as_secs_f64()
+        );
+        Ok(height)
     })
 }
 
@@ -1237,6 +1269,7 @@ pub fn generate_van_witness(
     anchor_height: u32,
 ) -> Result<zcash_voting::wire::VanWitness, String> {
     catch(|| {
+        let started = Instant::now();
         let db = db::open_voting_db(&db_path, &account_uuid)?;
 
         // Validate bundle index against persisted bundle count first.
@@ -1245,8 +1278,15 @@ pub fn generate_van_witness(
             .map_err(|e| format!("get_bundle_count failed: {e}"))?;
         zcash_voting::validate_bundle_index(bundle_count, bundle_index, "voting")
             .map_err(|e| e.to_string())?;
-        zcash_voting::precompute::van_witness(&db, &round_id, bundle_index, anchor_height)
-            .map_err(|e| format!("generate_van_witness failed: {e}"))
+        let witness =
+            zcash_voting::precompute::van_witness(&db, &round_id, bundle_index, anchor_height)
+                .map_err(|e| format!("generate_van_witness failed: {e}"))?;
+        log::info!(
+            "{VOTING_VOTE_LOG} van-witness complete bundle={bundle_index} position={} elapsed={:.3}s",
+            witness.position,
+            started.elapsed().as_secs_f64()
+        );
+        Ok(witness)
     })
 }
 
@@ -1439,6 +1479,13 @@ where
     // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
     let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
+    let total_started = Instant::now();
+    let proposal_label = draft_votes
+        .iter()
+        .map(|draft| draft.proposal_id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    log::info!("{VOTING_VOTE_LOG} bundle={bundle_index} prove-start proposals=[{proposal_label}]");
 
     // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
     let commitment_result = tokio::task::spawn_blocking(move || {
@@ -1450,16 +1497,34 @@ where
         )
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
 
-        zcash_voting::vote::commit_batch(
+        let prepare_started = Instant::now();
+        let prepared = zcash_voting::vote::prepare_commit_batch(
             &voting_db,
-            &round_id,
-            bundle_index,
-            &draft_votes,
-            &van_witness,
             zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            &reporter,
+            zcash_voting::vote::VoteCommitBatch {
+                round_id: &round_id,
+                bundle_index,
+                drafts: &draft_votes,
+                witness: &van_witness,
+                stages: &reporter,
+            },
         )
-        .map_err(|e| format!("vote commit batch failed: {e}"))
+        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
+        log::info!(
+            "{VOTING_VOTE_LOG} bundle={bundle_index} prepare-batch elapsed={:.3}s",
+            prepare_started.elapsed().as_secs_f64()
+        );
+        let persist_started = Instant::now();
+        let persisted = db::with_voting_sidecar_write_lock(&db_path, || {
+            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
+                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
+        })?;
+        log::info!(
+            "{VOTING_VOTE_LOG} bundle={bundle_index} persist-batch elapsed={:.3}s worker_total={:.3}s",
+            persist_started.elapsed().as_secs_f64(),
+            total_started.elapsed().as_secs_f64()
+        );
+        Ok(persisted)
     })
     .await
     .map_err(|e| format!("vote commitment task failed: {e}"))
@@ -1467,7 +1532,8 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+        .map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1541,10 +1607,12 @@ pub fn mark_vote_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        // Persist submission hash for this round/bundle/proposal key.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
-            .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Persist submission hash for this round/bundle/proposal key.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
+                .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1565,17 +1633,19 @@ pub fn confirm_vote_submission(
 ) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
         let events = parse_tx_events_json(&events_json)?;
-        // Parse tx events and persist vote confirmation fields.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::confirmation::confirm_vote_submission(
-            &db,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            &tx_hash,
-            &events,
-        )
-        .map_err(|e| e.to_string())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Parse tx events and persist vote confirmation fields.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::confirmation::confirm_vote_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+                &tx_hash,
+                &events,
+            )
+            .map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -1603,14 +1673,14 @@ pub fn record_share_delegation(
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // Recover vote context first, then persist helper submission metadata.
-        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("recover committed vote failed: {e}"))?
-            .record_share(&db, share_index, &sent_to_urls, submit_at)
-            .map_err(|e| format!("record_share_delegation failed: {e}"))?;
-        Ok(())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // Recover vote context first, then persist helper submission metadata.
+            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("recover committed vote failed: {e}"))?
+                .record_share(&db, share_index, &sent_to_urls, submit_at)
+                .map_err(|e| format!("record_share_delegation failed: {e}"))
+        })
     })
 }
 
@@ -1629,14 +1699,14 @@ pub fn mark_share_confirmed(
     share_index: u32,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // Recover vote context first, then mark the specific share as confirmed.
-        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("recover committed vote failed: {e}"))?
-            .confirm_share(&db, share_index)
-            .map_err(|e| format!("mark_share_confirmed failed: {e}"))?;
-        Ok(())
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // Recover vote context first, then mark the specific share as confirmed.
+            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("recover committed vote failed: {e}"))?
+                .confirm_share(&db, share_index)
+                .map_err(|e| format!("mark_share_confirmed failed: {e}"))
+        })
     })
 }
 
@@ -1656,17 +1726,19 @@ pub fn add_sent_servers(
     new_urls: Vec<String>,
 ) -> Result<(), String> {
     catch(|| {
-        // Merge additional helper URLs into persisted share delivery state.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::share::add_sent_servers(
-            &db,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            share_index,
-            &new_urls,
-        )
-        .map_err(|e| format!("add_sent_servers failed: {e}"))
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            // Merge additional helper URLs into persisted share delivery state.
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::share::add_sent_servers(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                &new_urls,
+            )
+            .map_err(|e| format!("add_sent_servers failed: {e}"))
+        })
     })
 }
 
@@ -1717,19 +1789,20 @@ pub fn set_ballot_intent(
     choice: Option<u32>,
 ) -> Result<(), String> {
     catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // `skipped` takes precedence; otherwise a concrete choice is required.
-        let decision = if skipped {
-            zcash_voting::session::Decision::Skipped
-        } else {
-            let c = choice.ok_or_else(|| {
-                "set_ballot_intent: choice must be Some when skipped is false".to_string()
-            })?;
-            zcash_voting::session::Decision::Choice(c)
-        };
-        db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
-            .map_err(|e| format!("set_ballot_intent failed: {e}"))
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            // `skipped` takes precedence; otherwise a concrete choice is required.
+            let decision = if skipped {
+                zcash_voting::session::Decision::Skipped
+            } else {
+                let c = choice.ok_or_else(|| {
+                    "set_ballot_intent: choice must be Some when skipped is false".to_string()
+                })?;
+                zcash_voting::session::Decision::Choice(c)
+            };
+            db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
+                .map_err(|e| format!("set_ballot_intent failed: {e}"))
+        })
     })
 }
 
@@ -1943,6 +2016,12 @@ mod tests {
         assert_eq!(hotkey_a.len(), 64);
         assert_eq!(hotkey_b.len(), 64);
         assert_ne!(hotkey_a, hotkey_b);
+    }
+
+    #[test]
+    fn warm_voting_proving_caches_is_idempotent() {
+        warm_voting_proving_caches();
+        warm_voting_proving_caches();
     }
 
     #[test]

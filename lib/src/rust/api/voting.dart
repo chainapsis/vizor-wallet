@@ -236,6 +236,13 @@ Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   bundleIndex: bundleIndex,
 );
 
+/// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
+///
+/// Safe to call repeatedly; only the first call starts work. Returns
+/// immediately so Dart can overlap warm-up with PIR resolve / bundle setup.
+void warmVotingProvingCaches() =>
+    RustLib.instance.api.crateApiVotingWarmVotingProvingCaches();
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
