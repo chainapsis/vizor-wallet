@@ -356,8 +356,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
           keystoneScanError: state.keystoneScanError,
-          walletScannedHeight: state.walletScannedHeight,
-          walletSnapshotHeight: state.walletSnapshotHeight,
           walletSyncProgress: state.walletSnapshotSyncProgress,
           walletSyncStalled: state.walletSyncStalled,
           errorMessage: _sessionErrorMessage(state, localError),
@@ -656,8 +654,6 @@ class _StatusContent extends StatelessWidget {
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.keystoneScanError,
-    this.walletScannedHeight,
-    this.walletSnapshotHeight,
     this.walletSyncProgress,
     this.walletSyncStalled = false,
     this.errorMessage,
@@ -684,8 +680,6 @@ class _StatusContent extends StatelessWidget {
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final String? keystoneScanError;
-  final int? walletScannedHeight;
-  final int? walletSnapshotHeight;
   final double? walletSyncProgress;
   final bool walletSyncStalled;
   final String? errorMessage;
@@ -738,10 +732,7 @@ class _StatusContent extends StatelessWidget {
               if (phase == VotingSessionPhase.waitingForWalletSync) ...[
                 Text(
                   formatVotingWalletSyncProgress(
-                    scannedHeight: walletScannedHeight,
-                    snapshotHeight: walletSnapshotHeight,
                     progress: walletSyncProgress,
-                    continuation: 'Voting',
                     stalled: walletSyncStalled,
                   ),
                   textAlign: TextAlign.center,

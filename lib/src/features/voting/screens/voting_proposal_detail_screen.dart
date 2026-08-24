@@ -186,10 +186,7 @@ class _VotingProposalDetailViewState
         final votingEligibilityMessage =
             state.phase == VotingSessionPhase.waitingForWalletSync
             ? formatVotingWalletSyncProgress(
-                scannedHeight: state.walletScannedHeight,
-                snapshotHeight: state.walletSnapshotHeight,
                 progress: state.walletSnapshotSyncProgress,
-                continuation: 'Eligibility',
                 stalled: state.walletSyncStalled,
               )
             : _votingEligibilityMessage(state, preparing: votingPowerPreparing);

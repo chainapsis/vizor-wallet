@@ -2114,7 +2114,7 @@ void main() {
       ),
     );
     const syncCopy =
-        'Wallet sync: 50% · block 73 of 123 · 50 blocks remaining. '
+        'Wallet sync: 50%. '
         'Voting power will be calculated once the snapshot height is reached.';
     await _pumpUntilFound(tester, find.text(syncCopy));
 
@@ -2158,8 +2158,8 @@ void main() {
     await _pumpUntilFound(tester, find.textContaining('stopped advancing'));
 
     expect(find.textContaining('50%'), findsOneWidget);
-    expect(find.textContaining('50 blocks remaining'), findsOneWidget);
-    expect(find.textContaining('block 73 of 123'), findsOneWidget);
+    expect(find.textContaining('blocks remaining'), findsNothing);
+    expect(find.textContaining('block 73 of 123'), findsNothing);
 
     // The stalled wait continues automatically once sync reaches the
     // snapshot — the promise in the summary copy.
@@ -3753,17 +3753,12 @@ void main() {
   testWidgets('snapshot catch-up uses regular copy instead of a custom panel', (
     tester,
   ) async {
-    final copy = formatVotingWalletSyncProgress(
-      scannedHeight: 150,
-      snapshotHeight: 200,
-      progress: 0.5,
-      continuation: 'Voting',
-    );
+    final copy = formatVotingWalletSyncProgress(progress: 0.5);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: Text(copy))));
 
     expect(
       find.text(
-        'Wallet sync: 50% · block 150 of 200 · 50 blocks remaining. '
+        'Wallet sync: 50%. '
         'Voting power will be calculated once the snapshot height is reached.',
       ),
       findsOneWidget,
