@@ -201,6 +201,7 @@ Widget _app(
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
+  AppThemeData theme = AppThemeData.dark,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -320,7 +321,7 @@ Widget _app(
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+      builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
   );
 }
@@ -569,10 +570,7 @@ void main() {
     final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
     expect(entry, findsOneWidget);
     expect(find.text('Coinholder voting'), findsOneWidget);
-    expect(
-      find.text('Use your ZEC to help shape the network.'),
-      findsOneWidget,
-    );
+    expect(find.text('Help to shape the network'), findsOneWidget);
     expect(
       tester.getTopLeft(entry).dy,
       greaterThan(
@@ -584,7 +582,40 @@ void main() {
     );
     final votingDecoration = votingSurface.decoration! as BoxDecoration;
     expect(votingDecoration.boxShadow, isNull);
-    expect(votingDecoration.border, isNotNull);
+    expect(votingDecoration.color, AppThemeData.dark.colors.background.ground);
+    expect(
+      votingDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.large),
+    );
+    final votingForegroundDecoration =
+        votingSurface.foregroundDecoration! as BoxDecoration;
+    expect(
+      votingForegroundDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.large),
+    );
+    final votingBorder = votingForegroundDecoration.border! as Border;
+    expect(votingBorder.top.width, 1.5);
+    expect(votingBorder.top.color, const Color(0x12FFFFFF));
+    expect(tester.getSize(entry).height, 77);
+    expect(
+      find.descendant(
+        of: entry,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.coinholderVoting,
+        ),
+      ),
+      findsOneWidget,
+    );
+    final darkIcons = tester.widgetList<AppIcon>(
+      find.descendant(of: entry, matching: find.byType(AppIcon)),
+    );
+    expect(
+      darkIcons.every(
+        (icon) => icon.color == AppThemeData.dark.colors.icon.accent,
+      ),
+      isTrue,
+    );
 
     await tester.ensureVisible(entry);
     await tester.tap(entry);
@@ -641,6 +672,76 @@ void main() {
     await tester.tap(find.text('Maybe later'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+  });
+
+  testWidgets('voting entry grows instead of overflowing with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.45;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        swapEnabled: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(entry).height, greaterThan(77));
+  });
+
+  testWidgets('voting entry resolves the light theme semantic colors', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        theme: AppThemeData.light,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+    final votingSurface = tester.widget<Container>(
+      find.descendant(of: entry, matching: find.byType(Container)).first,
+    );
+    final votingDecoration = votingSurface.decoration! as BoxDecoration;
+    expect(votingDecoration.color, AppThemeData.light.colors.background.ground);
+
+    final title = tester.widget<Text>(
+      find.descendant(of: entry, matching: find.text('Coinholder voting')),
+    );
+    final description = tester.widget<Text>(
+      find.descendant(
+        of: entry,
+        matching: find.text('Help to shape the network'),
+      ),
+    );
+    expect(title.style?.color, AppThemeData.light.colors.text.accent);
+    expect(description.style?.color, AppThemeData.light.colors.text.secondary);
+    expect(title.style?.fontSize, 16);
+    expect(title.style?.height, 17 / 16);
+    expect(description.style?.fontSize, 16);
+    expect(description.style?.height, 17 / 16);
+
+    final icons = tester.widgetList<AppIcon>(
+      find.descendant(of: entry, matching: find.byType(AppIcon)),
+    );
+    expect(icons, hasLength(2));
+    expect(
+      icons.every(
+        (icon) => icon.color == AppThemeData.light.colors.icon.accent,
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('shows the importing state before account data exists', (

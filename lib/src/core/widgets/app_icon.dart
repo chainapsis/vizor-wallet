@@ -40,6 +40,7 @@ abstract final class AppIcons {
   static const collapsed = 'collapsed';
   static const cog = 'cog';
   static const coins = 'coins';
+  static const coinholderVoting = 'coinholder_voting';
   static const copy = 'copy';
   static const cross = 'cross';
   static const crystalBall = 'crystal_ball';

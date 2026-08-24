@@ -19,7 +19,7 @@ const _statusCircleSize = 64.0;
 const _statusIconSize = 32.0;
 const _statusButtonWidth = 230.0;
 
-const _mobileTransactionProgressBackgroundImage = AssetImage(
+const mobileTransactionProgressBackgroundImage = AssetImage(
   'assets/illustrations/mobile_send_status_background.png',
 );
 
@@ -93,7 +93,7 @@ class MobileTransactionProgressScreen extends StatelessWidget {
           children: [
             const Positioned.fill(
               child: Image(
-                image: _mobileTransactionProgressBackgroundImage,
+                image: mobileTransactionProgressBackgroundImage,
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
                 excludeFromSemantics: true,
@@ -115,7 +115,7 @@ class MobileTransactionProgressScreen extends StatelessWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _MobileTransactionProgressBadge(
+                            MobileTransactionProgressBadge(
                               phase: phase,
                               badgeKey: statusBadgeKey,
                               progressIconKey: progressIconKey,
@@ -215,14 +215,18 @@ class MobileTransactionProgressScreen extends StatelessWidget {
   }
 }
 
-class _MobileTransactionProgressBadge extends StatefulWidget {
-  const _MobileTransactionProgressBadge({
+class MobileTransactionProgressBadge extends StatefulWidget {
+  const MobileTransactionProgressBadge({
     required this.phase,
     this.badgeKey,
     this.progressIconKey,
     this.successIconKey,
     this.failureIconKey,
     this.successRippleKey,
+    this.inProgressCircleColor,
+    this.inProgressIconColor,
+    this.terminalAnimationEnabled = true,
+    super.key,
   });
 
   final MobileTransactionProgressPhase phase;
@@ -231,14 +235,20 @@ class _MobileTransactionProgressBadge extends StatefulWidget {
   final Key? successIconKey;
   final Key? failureIconKey;
   final Key? successRippleKey;
+  final Color? inProgressCircleColor;
+  final Color? inProgressIconColor;
+
+  /// Whether success/failure motion may start for the current terminal phase.
+  /// The visual state still renders while terminal motion is deferred.
+  final bool terminalAnimationEnabled;
 
   @override
-  State<_MobileTransactionProgressBadge> createState() =>
+  State<MobileTransactionProgressBadge> createState() =>
       _MobileTransactionProgressBadgeState();
 }
 
 class _MobileTransactionProgressBadgeState
-    extends State<_MobileTransactionProgressBadge>
+    extends State<MobileTransactionProgressBadge>
     with TickerProviderStateMixin {
   late final AnimationController _ripple = AnimationController(
     vsync: this,
@@ -255,17 +265,33 @@ class _MobileTransactionProgressBadgeState
   @override
   void initState() {
     super.initState();
-    _startTerminalAnimation(widget.phase);
   }
 
   @override
-  void didUpdateWidget(covariant _MobileTransactionProgressBadge oldWidget) {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncTerminalAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant MobileTransactionProgressBadge oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.phase == widget.phase) return;
-    _startTerminalAnimation(widget.phase);
+    if (!widget.terminalAnimationEnabled) {
+      _resetTerminalAnimations();
+      return;
+    }
+    if (oldWidget.phase != widget.phase ||
+        !oldWidget.terminalAnimationEnabled) {
+      _startTerminalAnimation(widget.phase);
+    }
   }
 
   void _startTerminalAnimation(MobileTransactionProgressPhase phase) {
+    if (!widget.terminalAnimationEnabled ||
+        (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _resetTerminalAnimations();
+      return;
+    }
     switch (phase) {
       case MobileTransactionProgressPhase.succeeded:
         _ripple.forward(from: 0);
@@ -277,6 +303,40 @@ class _MobileTransactionProgressBadgeState
     }
   }
 
+  void _syncTerminalAnimation() {
+    if (!widget.terminalAnimationEnabled) {
+      _resetTerminalAnimations();
+      return;
+    }
+    final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disabled) {
+      _startTerminalAnimation(widget.phase);
+      return;
+    }
+    switch (widget.phase) {
+      case MobileTransactionProgressPhase.succeeded:
+        if (_ripple.status == AnimationStatus.dismissed) {
+          _ripple.forward();
+        }
+      case MobileTransactionProgressPhase.failed:
+        if (_shake.status == AnimationStatus.dismissed) {
+          _shake.forward();
+        }
+      case MobileTransactionProgressPhase.inProgress:
+      case MobileTransactionProgressPhase.pending:
+        break;
+    }
+  }
+
+  void _resetTerminalAnimations() {
+    _ripple
+      ..stop()
+      ..value = 0;
+    _shake
+      ..stop()
+      ..value = 0;
+  }
+
   @override
   void dispose() {
     _ripple.dispose();
@@ -286,9 +346,12 @@ class _MobileTransactionProgressBadgeState
 
   @override
   Widget build(BuildContext context) {
+    final animationsDisabled =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final circleColor = switch (widget.phase) {
       MobileTransactionProgressPhase.inProgress ||
-      MobileTransactionProgressPhase.pending => _sendingCircleColor,
+      MobileTransactionProgressPhase.pending =>
+        widget.inProgressCircleColor ?? _sendingCircleColor,
       MobileTransactionProgressPhase.succeeded => _successCircleColor,
       MobileTransactionProgressPhase.failed => _failureCircleColor,
     };
@@ -300,7 +363,7 @@ class _MobileTransactionProgressBadgeState
             widget.progressIconKey ??
             const ValueKey('mobile_transaction_progress_icon_loader'),
         size: _statusIconSize,
-        color: _statusIconColor,
+        color: widget.inProgressIconColor ?? _statusIconColor,
       ),
       MobileTransactionProgressPhase.succeeded => AppIcon(
         AppIcons.checkCircle,
@@ -370,7 +433,9 @@ class _MobileTransactionProgressBadgeState
               );
             },
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
+              duration: animationsDisabled
+                  ? Duration.zero
+                  : const Duration(milliseconds: 250),
               width: _statusCircleSize,
               height: _statusCircleSize,
               decoration: BoxDecoration(
@@ -378,10 +443,12 @@ class _MobileTransactionProgressBadgeState
                 shape: BoxShape.circle,
               ),
               child: Center(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  child: icon,
-                ),
+                child: animationsDisabled
+                    ? icon
+                    : AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: icon,
+                      ),
               ),
             ),
           ),

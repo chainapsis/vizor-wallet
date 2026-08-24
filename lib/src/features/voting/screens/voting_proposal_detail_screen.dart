@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/number_format.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -139,7 +140,7 @@ class _VotingProposalDetailViewState
         }
         if (completedVote != null &&
             (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
-          return _VotedPollContent(
+          return VotingVotedPollContent(
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
                 ? 'Token holder voting'
@@ -483,6 +484,80 @@ class _ActivePollContentState extends State<_ActivePollContent> {
         widget.votingEligibilityErrorMessage == null;
   }
 
+  Widget _buildPollSummary() {
+    return _PollSummary(
+      title: widget.title,
+      snapshotHeight: widget.snapshotHeight,
+      description: widget.description,
+      forumUri: widget.forumUri,
+      endDate: widget.endDate,
+      votingPowerZatoshi: widget.votingPowerZatoshi,
+      votingPowerPreparing: widget.votingPowerPreparing,
+      votingEligibilityMessage: widget.votingEligibilityMessage,
+    );
+  }
+
+  Widget _buildReviewAction() {
+    final canRetryEligibility = _canRetryVotingEligibility;
+    final isIneligible =
+        !widget.votingEligibilityConfirmed &&
+        widget.votingEligibilityErrorMessage != null;
+    return _ReviewAnswersButton(
+      key: const ValueKey('voting_review_answers_button'),
+      enabled:
+          canRetryEligibility ||
+          isIneligible ||
+          widget.votingEligibilityConfirmed && !widget.draft.isEmpty,
+      label: canRetryEligibility
+          ? 'Retry eligibility'
+          : isIneligible
+          ? 'Not eligible'
+          : 'Review answers',
+      onPressed: _handleBottomActionPressed,
+    );
+  }
+
+  Widget _buildProposalCard(VotingProposalView proposal) {
+    final isIneligible =
+        !widget.votingEligibilityConfirmed &&
+        widget.votingEligibilityErrorMessage != null;
+    return VotingProposalCard(
+      proposal: proposal,
+      selectedChoice: widget.answersEditable
+          ? widget.draft.choices[proposal.id]
+          : null,
+      enabled: widget.answersEditable,
+      onDisabledOptionTap: isIneligible ? _showIneligibleDialog : null,
+      onChoice: (choice) => widget.onChoice(proposal.id, choice),
+    );
+  }
+
+  Widget _buildMobileProposalContent() {
+    return VotingPaneScrollView(
+      maxWidth: 560,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildPollSummary(),
+          const SizedBox(height: AppSpacing.md),
+          for (var index = 0; index < widget.proposals.length; index++) ...[
+            _buildProposalCard(widget.proposals[index]),
+            if (index < widget.proposals.length - 1)
+              const SizedBox(height: AppSpacing.xs),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          _buildReviewAction(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -496,6 +571,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                   title: 'No proposals',
                   message: 'This voting round does not contain any proposals.',
                 )
+              : kAppFormFactor == AppFormFactor.mobile
+              ? _buildMobileProposalContent()
               : VotingPaneListView.separated(
                   maxWidth: 560,
                   padding: EdgeInsets.fromLTRB(
@@ -516,57 +593,100 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                   },
                   itemBuilder: (context, index) {
                     if (index == 0) {
-                      return _PollSummary(
-                        title: widget.title,
-                        snapshotHeight: widget.snapshotHeight,
-                        description: widget.description,
-                        forumUri: widget.forumUri,
-                        endDate: widget.endDate,
-                        votingPowerZatoshi: widget.votingPowerZatoshi,
-                        votingPowerPreparing: widget.votingPowerPreparing,
-                        votingEligibilityMessage:
-                            widget.votingEligibilityMessage,
-                      );
+                      return _buildPollSummary();
                     }
                     if (index == widget.proposals.length + 1) {
-                      final canRetryEligibility = _canRetryVotingEligibility;
-                      final isIneligible =
-                          !widget.votingEligibilityConfirmed &&
-                          widget.votingEligibilityErrorMessage != null;
-                      return _ReviewAnswersButton(
-                        key: const ValueKey('voting_review_answers_button'),
-                        enabled:
-                            canRetryEligibility ||
-                            isIneligible ||
-                            widget.votingEligibilityConfirmed &&
-                                !widget.draft.isEmpty,
-                        label: canRetryEligibility
-                            ? 'Retry eligibility'
-                            : isIneligible
-                            ? 'Not eligible'
-                            : 'Review answers',
-                        onPressed: _handleBottomActionPressed,
-                      );
+                      return _buildReviewAction();
                     }
                     final proposal = widget.proposals[index - 1];
-                    final isIneligible =
-                        !widget.votingEligibilityConfirmed &&
-                        widget.votingEligibilityErrorMessage != null;
-                    return VotingProposalCard(
-                      proposal: proposal,
-                      selectedChoice: widget.answersEditable
-                          ? widget.draft.choices[proposal.id]
-                          : null,
-                      enabled: widget.answersEditable,
-                      onDisabledOptionTap: isIneligible
-                          ? _showIneligibleDialog
-                          : null,
-                      onChoice: (choice) =>
-                          widget.onChoice(proposal.id, choice),
-                    );
+                    return _buildProposalCard(proposal);
                   },
                 ),
         ),
+      ],
+    );
+  }
+}
+
+class _DesktopVotedPollHeader extends StatelessWidget {
+  const _DesktopVotedPollHeader({
+    required this.title,
+    required this.snapshotHeight,
+    required this.description,
+    required this.forumUri,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
+    required this.votedAt,
+  });
+
+  final String title;
+  final int snapshotHeight;
+  final String description;
+  final Uri? forumUri;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
+  final DateTime? votedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final titleStyle = AppTypography.headlineMedium.copyWith(
+      color: colors.text.accent,
+      fontFamily: 'Geist',
+      fontWeight: FontWeight.w600,
+      fontSize: 20,
+      height: 30 / 20,
+      letterSpacing: 0,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: Text(title, style: titleStyle)),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              '#${formatGroupedInteger(snapshotHeight)}',
+              style: titleStyle.copyWith(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
+          children: [
+            _MetaText(
+              votedAt == null
+                  ? 'Voted'
+                  : 'Voted ${formatMonthDayYear(votedAt!)}',
+            ),
+            const _MetaText('·'),
+            _VotingPowerMeta(
+              zatoshi: votingPowerZatoshi,
+              preparing: votingPowerPreparing,
+            ),
+            const _MetaText('·'),
+            const _MetaText('Vote locked'),
+          ],
+        ),
+        if (description.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          VotingExpandableText(
+            text: description,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri!),
+          ),
+        ],
       ],
     );
   }
@@ -872,8 +992,9 @@ class _ReviewAnswersButton extends StatelessWidget {
   }
 }
 
-class _VotedPollContent extends StatelessWidget {
-  const _VotedPollContent({
+class VotingVotedPollContent extends StatelessWidget {
+  const VotingVotedPollContent({
+    super.key,
     required this.showDesktopToolbar,
     required this.roundTitle,
     required this.snapshotHeight,
@@ -899,59 +1020,117 @@ class _VotedPollContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showDesktopToolbar) const AppPaneToolbar(),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: showDesktopToolbar
+                      ? AppSpacing.md
+                      : AppSpacing.sm,
+                ),
+                child: _DesktopVotedPollHeader(
+                  title: roundTitle,
+                  snapshotHeight: snapshotHeight,
+                  description: description,
+                  forumUri: forumUri,
+                  votingPowerZatoshi: votingPowerZatoshi,
+                  votingPowerPreparing: votingPowerPreparing,
+                  votedAt: votedAt,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Expanded(
+            child: proposals.isEmpty
+                ? const _Message(
+                    title: 'No proposals',
+                    message:
+                        'This voting round does not contain any proposals.',
+                  )
+                : VotingPaneListView.separated(
+                    maxWidth: 560,
+                    padding: EdgeInsets.fromLTRB(
+                      showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+                      0,
+                      showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+                      AppSpacing.md,
+                    ),
+                    itemCount: proposals.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: AppSpacing.s),
+                    itemBuilder: (context, index) {
+                      final proposal = proposals[index];
+                      final choice = choicesByProposalId[proposal.id];
+                      return VotingProposalCard(
+                        proposal: proposal,
+                        fallbackForumUri: forumUri,
+                        selectedChoice: choice,
+                        readOnly: true,
+                        statusLabel: choice == null ? 'Skipped' : null,
+                      );
+                    },
+                  ),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (showDesktopToolbar) const AppPaneToolbar(),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
-              ),
-              child: _VotedPollHeader(
-                title: roundTitle,
-                snapshotHeight: snapshotHeight,
-                description: description,
-                forumUri: forumUri,
-                votingPowerZatoshi: votingPowerZatoshi,
-                votingPowerPreparing: votingPowerPreparing,
-                votedAt: votedAt,
-              ),
+        Expanded(
+          child: VotingPaneScrollView(
+            maxWidth: 560,
+            padding: EdgeInsets.fromLTRB(
+              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              AppSpacing.s,
+              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _VotedPollHeader(
+                  title: roundTitle,
+                  snapshotHeight: snapshotHeight,
+                  description: description,
+                  forumUri: forumUri,
+                  votingPowerZatoshi: votingPowerZatoshi,
+                  votingPowerPreparing: votingPowerPreparing,
+                  votedAt: votedAt,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                if (proposals.isEmpty)
+                  const _Message(
+                    title: 'No proposals',
+                    message:
+                        'This voting round does not contain any proposals.',
+                  )
+                else
+                  for (var index = 0; index < proposals.length; index++) ...[
+                    VotingProposalCard(
+                      proposal: proposals[index],
+                      fallbackForumUri: forumUri,
+                      selectedChoice: choicesByProposalId[proposals[index].id],
+                      readOnly: true,
+                      statusLabel:
+                          choicesByProposalId[proposals[index].id] == null
+                          ? 'Skipped'
+                          : null,
+                    ),
+                    if (index < proposals.length - 1)
+                      const SizedBox(height: AppSpacing.md),
+                  ],
+              ],
             ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Expanded(
-          child: proposals.isEmpty
-              ? const _Message(
-                  title: 'No proposals',
-                  message: 'This voting round does not contain any proposals.',
-                )
-              : VotingPaneListView.separated(
-                  maxWidth: 560,
-                  padding: EdgeInsets.fromLTRB(
-                    showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
-                    0,
-                    showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
-                    AppSpacing.md,
-                  ),
-                  itemCount: proposals.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.s),
-                  itemBuilder: (context, index) {
-                    final proposal = proposals[index];
-                    final choice = choicesByProposalId[proposal.id];
-                    return VotingProposalCard(
-                      proposal: proposal,
-                      fallbackForumUri: forumUri,
-                      selectedChoice: choice,
-                      readOnly: true,
-                      statusLabel: choice == null ? 'Skipped' : null,
-                    );
-                  },
-                ),
         ),
       ],
     );
@@ -1108,54 +1287,49 @@ class _VotedPollHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final titleStyle = AppTypography.headlineMedium.copyWith(
-      color: colors.text.accent,
-      fontFamily: 'Geist',
-      fontWeight: FontWeight.w600,
-      fontSize: 20,
-      height: 30 / 20,
-      letterSpacing: 0,
-    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: Text(title, style: titleStyle)),
-            const SizedBox(width: AppSpacing.sm),
             Text(
               '#${formatGroupedInteger(snapshotHeight)}',
-              style: titleStyle.copyWith(fontWeight: FontWeight.w500),
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            AppIcon(
+              AppIcons.checkCircle,
+              size: 20,
+              color: colors.text.positiveStrong,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              'Voted',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.positiveStrong,
+              ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xxs,
-          children: [
-            _MetaText(
-              votedAt == null
-                  ? 'Voted'
-                  : 'Voted ${formatMonthDayYear(votedAt!)}',
-            ),
-            const _MetaText('·'),
-            _VotingPowerMeta(
-              zatoshi: votingPowerZatoshi,
-              preparing: votingPowerPreparing,
-            ),
-            const _MetaText('·'),
-            const _MetaText('Vote locked'),
-          ],
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          title,
+          style: AppTypography.displaySmall.copyWith(color: colors.text.accent),
         ),
         if (description.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.sm),
           VotingExpandableText(
             text: description,
             style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
+              color: colors.text.primary,
             ),
+            collapsedLabel: 'Show description',
+            expandedLabel: 'Hide description',
+            buttonAlignment: Alignment.centerLeft,
+            showToggleWhenNotOverflowing: true,
           ),
         ],
         if (forumUri != null) ...[
@@ -1165,6 +1339,73 @@ class _VotedPollHeader extends StatelessWidget {
             child: VotingForumLinkButton(uri: forumUri!),
           ),
         ],
+        const SizedBox(height: AppSpacing.md),
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            boxShadow: [
+              BoxShadow(
+                color: colors.shadows.subtle,
+                offset: const Offset(0, 1),
+                blurRadius: 2,
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _VotedReviewRow(
+                label: 'Voted',
+                value: votedAt == null
+                    ? 'Not available'
+                    : formatMonthDayYear(votedAt!),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _VotedReviewRow(
+                label: 'Voting power',
+                value: votingPowerZatoshi == null
+                    ? votingPowerPreparing
+                          ? 'Preparing...'
+                          : 'Not available'
+                    : formatVotingPower(votingPowerZatoshi!),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              const _VotedReviewRow(label: 'Status', value: 'Vote locked'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VotedReviewRow extends StatelessWidget {
+  const _VotedReviewRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.primary,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          value,
+          textAlign: TextAlign.right,
+          style: AppTypography.bodyMediumStrong.copyWith(
+            color: context.colors.text.accent,
+          ),
+        ),
       ],
     );
   }
