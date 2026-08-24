@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +17,7 @@ import '../voting_polls_screen.dart';
 import '../voting_proposal_detail_screen.dart';
 import '../voting_results_screen.dart';
 import '../voting_review_screen.dart';
+import '../../voting_flow_models.dart';
 import '../voting_status_screen.dart';
 import '../voting_submission_confirmation_screen.dart';
 import '../../widgets/voting_pane_scroll_area.dart';
@@ -37,28 +40,79 @@ class MobileVotingPollsScreen extends StatelessWidget {
   }
 }
 
-class MobileVotingProposalDetailScreen extends ConsumerWidget {
+class MobileVotingProposalDetailScreen extends ConsumerStatefulWidget {
   const MobileVotingProposalDetailScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(votingSessionProvider(roundId));
+  ConsumerState<MobileVotingProposalDetailScreen> createState() =>
+      _MobileVotingProposalDetailScreenState();
+}
+
+class _MobileVotingProposalDetailScreenState
+    extends ConsumerState<MobileVotingProposalDetailScreen> {
+  VotingSessionKey? _draftKey;
+  bool _draftExitCleanupStarted = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(votingSessionProvider(widget.roundId));
     final sessionState = session.value;
+    final accountUuid = sessionState?.accountUuid;
+    if (accountUuid != null && accountUuid.isNotEmpty) {
+      _draftKey = VotingSessionKey(
+        roundId: widget.roundId,
+        accountUuid: accountUuid,
+      );
+    }
     final title =
         sessionState != null &&
             hasCompletedVoteForDisplay(sessionState.roundPlan) &&
             !hasBlockingRoundRecoveryWork(sessionState.roundPlan)
         ? 'Voted'
         : 'Coinholder voting';
-    return MobileVotingScaffold(
-      title: title,
-      child: VotingProposalDetailView(
-        roundId: roundId,
-        showDesktopToolbar: false,
+    return PopScope<void>(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) unawaited(_clearDraftForExit());
+      },
+      child: MobileVotingScaffold(
+        title: title,
+        onBack: () => unawaited(_handleBack()),
+        child: VotingProposalDetailView(
+          roundId: widget.roundId,
+          showDesktopToolbar: false,
+        ),
       ),
     );
+  }
+
+  Future<void> _handleBack() async {
+    await _clearDraftForExit();
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/voting');
+    }
+  }
+
+  Future<void> _clearDraftForExit() async {
+    if (_draftExitCleanupStarted) return;
+    _draftExitCleanupStarted = true;
+    final draftKey = _draftKey;
+    if (draftKey == null) return;
+    final notifier = ref.read(votingDraftProvider(draftKey).notifier);
+    try {
+      await notifier.clearAll();
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: draft cleanup failed on poll exit '
+        'round=${draftKey.roundId} account=${draftKey.accountUuid} '
+        'error=$error',
+      );
+    }
   }
 }
 
@@ -185,6 +239,7 @@ class MobileVotingScaffold extends StatelessWidget {
     this.fallbackPath = '/voting',
     this.horizontalPadding = 0,
     this.trailing,
+    this.onBack,
   });
 
   final String title;
@@ -192,6 +247,7 @@ class MobileVotingScaffold extends StatelessWidget {
   final String fallbackPath;
   final double horizontalPadding;
   final Widget? trailing;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -213,13 +269,15 @@ class MobileVotingScaffold extends StatelessWidget {
               MobileTopNav.back(
                 title: title,
                 trailing: trailing,
-                onBack: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go(fallbackPath);
-                  }
-                },
+                onBack:
+                    onBack ??
+                    () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go(fallbackPath);
+                      }
+                    },
               ),
               Expanded(child: body),
             ],

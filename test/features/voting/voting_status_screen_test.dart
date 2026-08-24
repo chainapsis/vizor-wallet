@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -1649,6 +1650,113 @@ void main() {
 
     expect(find.text('View less'), findsOneWidget);
   });
+
+  testWidgets(
+    'mobile poll exit clears its draft before the same poll is reopened',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      const otherDraftKey = VotingSessionKey(
+        roundId: 'another-round',
+        accountUuid: 'account-1',
+      );
+      await persistence.save(
+        otherDraftKey,
+        const VotingDraftState(choices: {9: 1}),
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(otherDraftKey)).choices, {9: 1});
+
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsNothing,
+      );
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile review back preserves choices until the poll itself is exited',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review answers'));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('Review answers'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
 
   testWidgets('proposal detail shows completed vote with stale local draft', (
     tester,
@@ -3684,6 +3792,7 @@ ProviderContainer _statusContainer({
   VotingRecoveryApi? recoveryApi,
   VotingRustApi? rust,
   VotingHotkeyStore? hotkeyStore,
+  VotingDraftPersistence? draftPersistence,
   List<Override> overrides = const [],
 }) {
   final effectiveHttp =
@@ -3779,7 +3888,7 @@ ProviderContainer _statusContainer({
         VotingRecoveryService(api: recoveryApi ?? _FakeVotingRecoveryApi()),
       ),
       votingDraftPersistenceProvider.overrideWithValue(
-        _MemoryVotingDraftPersistence(),
+        draftPersistence ?? _MemoryVotingDraftPersistence(),
       ),
       votingPirResolverProvider.overrideWithValue(
         const _MatchedPirSnapshotResolver(),
@@ -3797,6 +3906,33 @@ ProviderContainer _statusContainer({
       ),
       ...overrides,
     ],
+  );
+}
+
+GoRouter _mobileProposalRouter() {
+  return GoRouter(
+    initialLocation: '/voting',
+    routes: [
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, state) => MobileVotingProposalDetailScreen(
+          roundId: state.pathParameters['roundId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
+        builder: (_, state) =>
+            MobileVotingReviewScreen(roundId: state.pathParameters['roundId']!),
+      ),
+    ],
+  );
+}
+
+Widget _mobileProposalApp(GoRouter router) {
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
