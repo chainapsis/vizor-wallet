@@ -37,6 +37,8 @@ zeroize = "1"
 aes = { version = "0.8", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+hkdf = "0.12"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

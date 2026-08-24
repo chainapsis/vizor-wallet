@@ -5,6 +5,7 @@
 
 import 'api/keystone.dart';
 import 'api/network_privacy.dart';
+import 'api/private_state_sync.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -96,6 +97,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiPendingShareRound dco_decode_api_pending_share_round(dynamic raw);
 
   @protected
+  ApiPrivateStateEnvelope dco_decode_api_private_state_envelope(dynamic raw);
+
+  @protected
+  ApiPrivateStateObjectReference dco_decode_api_private_state_object_reference(
+    dynamic raw,
+  );
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  dco_decode_api_private_state_request_authorization(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
@@ -115,6 +128,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  ApiPrivateStateEnvelope dco_decode_box_autoadd_api_private_state_envelope(
+    dynamic raw,
+  );
 
   @protected
   ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
@@ -891,6 +909,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiPrivateStateEnvelope sse_decode_api_private_state_envelope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPrivateStateObjectReference sse_decode_api_private_state_object_reference(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  sse_decode_api_private_state_request_authorization(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   );
@@ -920,6 +954,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  ApiPrivateStateEnvelope sse_decode_box_autoadd_api_private_state_envelope(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ApiVotingRoundContext sse_decode_box_autoadd_api_voting_round_context(
@@ -1891,6 +1930,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_private_state_envelope(
+    ApiPrivateStateEnvelope self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_private_state_object_reference(
+    ApiPrivateStateObjectReference self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_private_state_request_authorization(
+    ApiPrivateStateRequestAuthorization self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -1925,6 +1982,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_api_private_state_envelope(
+    ApiPrivateStateEnvelope self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_api_voting_round_context(

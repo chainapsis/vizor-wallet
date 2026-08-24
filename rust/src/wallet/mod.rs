@@ -6,6 +6,7 @@ pub(crate) mod db;
 pub mod keys;
 pub mod keystone;
 pub mod network;
+pub mod private_state_sync;
 pub mod secret_payload;
 pub mod secret_store;
 pub mod sync;
