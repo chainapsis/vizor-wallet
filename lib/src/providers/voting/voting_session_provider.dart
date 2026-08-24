@@ -3275,10 +3275,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
+  /// Preserves resolved PIR diagnostics unless the error supplies replacements.
   void _setError(
     String message, {
     Object? cause,
-    List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
+    List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
   }) {
     if (!_canUpdateSessionUi(context)) return;
@@ -3289,7 +3290,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         error: VotingSessionError(
           message: message,
           cause: cause,
-          pirDiagnostics: pirDiagnostics,
+          pirDiagnostics: pirDiagnostics ?? const [],
         ),
         pirDiagnostics: pirDiagnostics,
       ),

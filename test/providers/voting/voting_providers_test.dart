@@ -1762,6 +1762,37 @@ void main() {
     },
   );
 
+  test('delegation retry preserves PIR failover endpoints', () async {
+    final primary = Uri.parse('https://pir-primary.example');
+    final failover = Uri.parse('https://pir-failover.example');
+    final rust = FakeVotingRustApi(
+      delegationStreamError: StateError('temporary delegation failure'),
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      pirResolver: FakePirResolver(
+        resolution: _pirResolution(primary, [primary, failover]),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.error,
+    );
+
+    rust.delegationStreamError = null;
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+
+    expect(rust.delegationPirServerUrlBatches, [
+      [primary.toString(), failover.toString()],
+      [primary.toString(), failover.toString()],
+    ]);
+  });
+
   test('hardware voting prepares Keystone signing request', () async {
     final rust = FakeVotingRustApi();
     final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -7748,7 +7779,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final bool? eligibilityEligible;
   final int commitmentShareCount;
   final bool mismatchKeystoneSubmission;
-  final Object? delegationStreamError;
+  Object? delegationStreamError;
   final Completer<void>? delegationProofGate;
   final Completer<void>? keystoneDelegationProofGate;
   final Completer<void>? voteCommitmentGate;
