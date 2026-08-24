@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_profile_picture.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -87,6 +90,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
   Widget build(BuildContext context) {
     final session = ref.watch(votingSessionProvider(widget.roundId));
     final tally = ref.watch(_roundTallyProvider(widget.roundId));
+    final accountState = kAppFormFactor == AppFormFactor.mobile
+        ? ref.watch(accountProvider).value
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,7 +161,7 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                                 ? 0
                                 : AppSpacing.s,
                           ),
-                          child: _ResultCard(
+                          child: VotingResultCard(
                             key: ValueKey(
                               'voting-result-card-${proposals[index].id}',
                             ),
@@ -167,6 +173,10 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                             selectedChoice: _selectedChoiceForProposal(
                               session.value,
                               proposals[index].id,
+                            ),
+                            profilePictureId: _profilePictureIdForAccount(
+                              accountState,
+                              session.value?.accountUuid,
                             ),
                           ),
                         ),
@@ -268,17 +278,19 @@ class _ResultsHeader extends StatelessWidget {
   }
 }
 
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({
+class VotingResultCard extends StatelessWidget {
+  const VotingResultCard({
     super.key,
     required this.proposal,
     required this.tally,
     required this.selectedChoice,
+    this.profilePictureId,
   });
 
   final VotingProposalView proposal;
   final Map<int, num> tally;
   final int? selectedChoice;
+  final String? profilePictureId;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +299,16 @@ class _ResultCard extends StatelessWidget {
     final selectedLabel = _optionLabel(proposal.options, selectedChoice);
     final zipBadges = proposal.zipBadges;
     final forumUri = proposal.forumUri;
+
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return _MobileResultCard(
+        proposal: proposal,
+        tally: tally,
+        total: total,
+        selectedChoice: selectedChoice,
+        profilePictureId: profilePictureId,
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -356,6 +378,210 @@ class _ResultCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _MobileResultCard extends StatelessWidget {
+  const _MobileResultCard({
+    required this.proposal,
+    required this.tally,
+    required this.total,
+    required this.selectedChoice,
+    required this.profilePictureId,
+  });
+
+  final VotingProposalView proposal;
+  final Map<int, num> tally;
+  final num total;
+  final int? selectedChoice;
+  final String? profilePictureId;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadows.subtle,
+            offset: const Offset(0, 1),
+            blurRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (proposal.zipBadges.isNotEmpty)
+            SizedBox(
+              height: 21,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Text(
+                  proposal.zipBadges.join('   '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: colors.text.primary,
+                    height: 16 / 14,
+                    letterSpacing: -0.06,
+                  ),
+                ),
+              ),
+            ),
+          if (proposal.zipBadges.isNotEmpty)
+            const SizedBox(height: AppSpacing.xs),
+          Text(
+            proposal.title,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+              height: 24 / 16,
+              letterSpacing: -0.24,
+            ),
+          ),
+          if (proposal.description.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              proposal.description.trim(),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+                height: 21 / 14,
+                letterSpacing: -0.21,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          for (var index = 0; index < proposal.options.length; index++) ...[
+            _MobileTallyRow(
+              option: proposal.options[index],
+              amount: tally[proposal.options[index].index] ?? 0,
+              total: total,
+              selected: selectedChoice == proposal.options[index].index,
+              profilePictureId: profilePictureId,
+            ),
+            if (index != proposal.options.length - 1)
+              const SizedBox(height: AppSpacing.s),
+          ],
+          if (total > 0) ...[
+            const SizedBox(height: AppSpacing.s),
+            SizedBox(
+              height: 24,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    'Total',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                      height: 16 / 14,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    _formatTallyZec(total),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.primary,
+                      height: 16 / 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileTallyRow extends StatelessWidget {
+  const _MobileTallyRow({
+    required this.option,
+    required this.amount,
+    required this.total,
+    required this.selected,
+    required this.profilePictureId,
+  });
+
+  final VotingOptionView option;
+  final num amount;
+  final num total;
+  final bool selected;
+  final String? profilePictureId;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final progress = total <= 0
+        ? 0.0
+        : (amount / total).clamp(0.0, 1.0).toDouble();
+    return SizedBox(
+      height: 48,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: colors.background.base),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: progress,
+                heightFactor: 1,
+                child: ColoredBox(
+                  color: colors.background.neutralSubtleOpacity,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selected ? '${option.label} (your vote)' : option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w500,
+                        height: 16 / 14,
+                        letterSpacing: -0.06,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    _formatTallyZec(amount),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                      height: 16 / 14,
+                      letterSpacing: -0.06,
+                    ),
+                  ),
+                  if (selected && profilePictureId != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    AppProfilePicture(
+                      profilePictureId: profilePictureId!,
+                      size: AppProfilePictureSize.medium,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -671,7 +897,21 @@ String _formatTallyZec(num ballotUnits) {
   // decimals (e.g. 0.125 -> 0.13). This intentionally does not route through
   // ZecAmount, which truncates fractions rather than rounding.
   final zec = ballotUnits * _ballotDivisorZatoshi / zatoshiPerZec.toInt();
-  return '${zec.toStringAsFixed(2)} ZEC';
+  final fixed = zec.toStringAsFixed(2);
+  final parts = fixed.split('.');
+  final integer = int.tryParse(parts.first) ?? 0;
+  return '${formatGroupedInteger(integer)}.${parts.last} ZEC';
+}
+
+String? _profilePictureIdForAccount(
+  AccountState? accountState,
+  String? accountUuid,
+) {
+  if (accountState == null || accountUuid == null) return null;
+  for (final account in accountState.accounts) {
+    if (account.uuid == accountUuid) return account.profilePictureId;
+  }
+  return null;
 }
 
 Map<String, dynamic> _objectFromValue(Object? value) {

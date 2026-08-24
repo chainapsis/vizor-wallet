@@ -40,33 +40,30 @@ void main() {
       AppSpacing.md,
     );
     final firstAction = find.byKey(
-      const ValueKey('voting_poll_action_community-grants-2026'),
+      const ValueKey('voting_poll_action_snack-governance-active'),
     );
     expect(firstAction, findsOneWidget);
     final card = find.byKey(
-      const ValueKey('voting_poll_card_community-grants-2026'),
+      const ValueKey('voting_poll_card_snack-governance-active'),
     );
     final secondCard = find.byKey(
-      const ValueKey('voting_poll_card_network-priorities-2026'),
+      const ValueKey('voting_poll_card_snack-governance-voted'),
     );
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
     final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
-    expect(cardDecoration.boxShadow, isNull);
-    expect(
-      tester
-          .widget<InkWell>(
-            find.byKey(
-              const ValueKey('voting_poll_card_tap_community-grants-2026'),
-            ),
-          )
-          .onTap,
-      isNotNull,
+    expect(cardDecoration.boxShadow, isNotEmpty);
+    final cardTap = tester.widget<InkWell>(
+      find.byKey(
+        const ValueKey('voting_poll_card_tap_snack-governance-active'),
+      ),
     );
+    expect(cardTap.onTap, isNotNull);
+    expect(cardTap.borderRadius, BorderRadius.circular(AppRadii.large));
     expect(
       tester.getTopLeft(secondCard).dy - tester.getBottomLeft(card).dy,
-      AppSpacing.sm,
+      AppSpacing.md,
     );
 
     await tester.tap(

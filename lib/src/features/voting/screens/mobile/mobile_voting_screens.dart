@@ -7,6 +7,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/voting/voting_session_provider.dart';
 import 'mobile_keystone_voting_signing_screen.dart';
 import '../voting_polls_screen.dart';
 import '../voting_proposal_detail_screen.dart';
@@ -16,13 +17,14 @@ import '../voting_status_screen.dart';
 import '../voting_submission_confirmation_screen.dart';
 import '../../widgets/voting_pane_scroll_area.dart';
 import '../../widgets/mobile/mobile_voting_config_settings_sheet.dart';
+import '../../voting_resume_plan.dart';
 
 class MobileVotingPollsScreen extends StatelessWidget {
   const MobileVotingPollsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
+    return MobileVotingScaffold(
       title: 'Coinholder voting',
       fallbackPath: '/home',
       trailing: _MobileVotingSettingsButton(
@@ -33,15 +35,23 @@ class MobileVotingPollsScreen extends StatelessWidget {
   }
 }
 
-class MobileVotingProposalDetailScreen extends StatelessWidget {
+class MobileVotingProposalDetailScreen extends ConsumerWidget {
   const MobileVotingProposalDetailScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
-      title: 'Coinholder voting',
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(votingSessionProvider(roundId));
+    final sessionState = session.value;
+    final title =
+        sessionState != null &&
+            hasCompletedVoteForDisplay(sessionState.roundPlan) &&
+            !hasBlockingRoundRecoveryWork(sessionState.roundPlan)
+        ? 'Voted'
+        : 'Coinholder voting';
+    return MobileVotingScaffold(
+      title: title,
       child: VotingProposalDetailView(
         roundId: roundId,
         showDesktopToolbar: false,
@@ -57,7 +67,7 @@ class MobileVotingReviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
+    return MobileVotingScaffold(
       title: 'Review vote',
       child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
     );
@@ -80,7 +90,7 @@ class MobileVotingStatusScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       requireCurrentRouteForConfirmation: true,
-      contentWrapper: (_, content) => _MobileVotingScaffold(
+      contentWrapper: (_, content) => MobileVotingScaffold(
         title: 'Submit vote',
         horizontalPadding: AppSpacing.sm,
         child: content,
@@ -103,7 +113,7 @@ class MobileVotingSubmissionConfirmationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
+    return MobileVotingScaffold(
       title: 'Vote submitted',
       child: VotingSubmissionConfirmationView(
         roundId: roundId,
@@ -121,7 +131,7 @@ class MobileVotingResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MobileVotingScaffold(
+    return MobileVotingScaffold(
       title: 'Voting results',
       horizontalPadding: AppSpacing.sm,
       child: VotingResultsView(roundId: roundId, showDesktopToolbar: false),
@@ -141,12 +151,12 @@ class MobileVotingAccountGuard extends ConsumerWidget {
     return ref
         .watch(accountProvider)
         .when(
-          loading: () => const _MobileVotingScaffold(
+          loading: () => const MobileVotingScaffold(
             title: 'Coinholder voting',
             fallbackPath: '/home',
             child: VotingPaneLoading(),
           ),
-          error: (error, _) => _MobileVotingScaffold(
+          error: (error, _) => MobileVotingScaffold(
             title: 'Coinholder voting',
             fallbackPath: '/home',
             horizontalPadding: AppSpacing.sm,
@@ -165,8 +175,9 @@ class MobileVotingAccountGuard extends ConsumerWidget {
   }
 }
 
-class _MobileVotingScaffold extends StatelessWidget {
-  const _MobileVotingScaffold({
+class MobileVotingScaffold extends StatelessWidget {
+  const MobileVotingScaffold({
+    super.key,
     required this.title,
     required this.child,
     this.fallbackPath = '/voting',
