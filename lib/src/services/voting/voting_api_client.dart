@@ -227,15 +227,7 @@ class VotingApiClient {
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
 
-  /// Fetches a transaction confirmation from the configured vote servers.
-  ///
-  /// Confirmation polling treats exhausted transient failures as not yet
-  /// confirmed. Set [requireDefinitiveResult] when `null` must mean that a
-  /// server actually returned 404; transient failures are then rethrown.
-  Future<VotingTxConfirmation?> getTxConfirmation(
-    String txHash, {
-    bool requireDefinitiveResult = false,
-  }) async {
+  Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
     final VotingHttpResponse response;
     try {
       response = await _withVoteServerFailover(
@@ -252,12 +244,9 @@ class VotingApiClient {
           return response;
         },
         shouldTryNextCandidate: (response) => response.statusCode == 404,
-        returnFallbackResultOnRetryableError: !requireDefinitiveResult,
       );
     } catch (error) {
-      if (!requireDefinitiveResult && _readRetryPolicy.shouldRetry(error)) {
-        return null;
-      }
+      if (_readRetryPolicy.shouldRetry(error)) return null;
       rethrow;
     }
     if (response.statusCode == 404) return null;
@@ -462,36 +451,27 @@ class VotingApiClient {
     required VotingRetryPolicy policy,
     required Future<T> Function(Uri baseUrl) operation,
     bool Function(T result)? shouldTryNextCandidate,
-    bool returnFallbackResultOnRetryableError = true,
   }) async {
     final candidates = [_baseUrl, ..._fallbackBaseUrls];
     Object? lastError;
-    StackTrace? lastErrorStackTrace;
     late T fallbackResult;
     var hasFallbackResult = false;
     for (var attempt = 0; attempt < candidates.length; attempt++) {
       final baseUrl = candidates[attempt];
       try {
         final result = await operation(baseUrl);
-        if (shouldTryNextCandidate?.call(result) ?? false) {
-          if (attempt < candidates.length - 1) {
-            fallbackResult = result;
-            hasFallbackResult = true;
-            continue;
-          }
-          if (!returnFallbackResultOnRetryableError && lastError != null) {
-            Error.throwWithStackTrace(lastError, lastErrorStackTrace!);
-          }
+        if (attempt < candidates.length - 1 &&
+            (shouldTryNextCandidate?.call(result) ?? false)) {
+          fallbackResult = result;
+          hasFallbackResult = true;
+          continue;
         }
         return result;
-      } catch (error, stackTrace) {
+      } catch (error) {
         lastError = error;
-        lastErrorStackTrace = stackTrace;
         final retryable = policy.shouldRetry(error);
         if (attempt == candidates.length - 1 || !retryable) {
-          if (hasFallbackResult &&
-              retryable &&
-              returnFallbackResultOnRetryableError) {
+          if (hasFallbackResult && retryable) {
             return fallbackResult;
           }
           rethrow;

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
-import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
@@ -582,68 +581,6 @@ void main() {
       ]);
     },
   );
-
-  test('definitive tx lookup surfaces transient failover errors', () async {
-    final primary = Uri.parse('https://vote-primary.example');
-    final secondary = Uri.parse('https://vote-secondary.example');
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://vote-primary.example/shielded-vote/v1/tx/ambiguous-tx':
-            jsonResponse({'error': 'not found'}, statusCode: 404),
-        'https://vote-secondary.example/shielded-vote/v1/tx/ambiguous-tx':
-            jsonResponse({'error': 'unavailable'}, statusCode: 503),
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: primary,
-      fallbackBaseUrls: [secondary],
-      httpClient: http,
-      delay: (_) async {},
-    );
-
-    await expectLater(
-      client.getTxConfirmation('ambiguous-tx', requireDefinitiveResult: true),
-      throwsA(
-        isA<VotingHttpException>().having(
-          (error) => error.statusCode,
-          'statusCode',
-          503,
-        ),
-      ),
-    );
-    expect(http.requests.map((request) => request.uri.host), [
-      'vote-primary.example',
-      'vote-secondary.example',
-    ]);
-  });
-
-  test('definitive tx lookup rejects 404 after a transient error', () async {
-    final primary = Uri.parse('https://vote-primary.example');
-    final secondary = Uri.parse('https://vote-secondary.example');
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://vote-primary.example/shielded-vote/v1/tx/ambiguous-tx':
-            timeoutResponse(),
-        'https://vote-secondary.example/shielded-vote/v1/tx/ambiguous-tx':
-            jsonResponse({'error': 'not found'}, statusCode: 404),
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: primary,
-      fallbackBaseUrls: [secondary],
-      httpClient: http,
-      delay: (_) async {},
-    );
-
-    await expectLater(
-      client.getTxConfirmation('ambiguous-tx', requireDefinitiveResult: true),
-      throwsA(isA<TimeoutException>()),
-    );
-    expect(http.requests.map((request) => request.uri.host), [
-      'vote-primary.example',
-      'vote-secondary.example',
-    ]);
-  });
 
   test('rejects malformed transaction confirmation bodies', () async {
     final client = VotingApiClient(
