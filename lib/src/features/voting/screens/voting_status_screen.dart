@@ -627,9 +627,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         !_canNavigateToConfirmation(key)) {
       return;
     }
-    context.go(
-      votingSubmissionConfirmedRoute(key.roundId, accountUuid: key.accountUuid),
+    final route = votingSubmissionConfirmedRoute(
+      key.roundId,
+      accountUuid: key.accountUuid,
     );
+    if (widget.requireCurrentRouteForConfirmation) {
+      context.pushReplacement(route);
+    } else {
+      context.go(route);
+    }
   }
 
   bool _canNavigateToConfirmation(VotingSessionKey key) {

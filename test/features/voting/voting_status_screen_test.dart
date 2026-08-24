@@ -1335,6 +1335,9 @@ void main() {
       await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
       expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await _pumpUntilFound(tester, find.text('poll route'));
       expect(refreshGate.isCompleted, isFalse);
     },
   );
