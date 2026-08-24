@@ -178,7 +178,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
               profilePictureId:
                   active?.profilePictureId ?? kDefaultProfilePictureId,
               size: AppProfilePictureSize.xLarge,
-              isHardware: active?.isHardware ?? false,
+              hardwareSignerKind: active?.hardwareSignerKind,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -240,7 +240,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                           leading: MobileAccountAvatar(
                             profilePictureId: account.profilePictureId,
                             size: AppProfilePictureSize.navLarge,
-                            isHardware: account.isHardware,
+                            hardwareSignerKind: account.hardwareSignerKind,
                           ),
                           label: account.name,
                           trailing: _CopyAddressButton(

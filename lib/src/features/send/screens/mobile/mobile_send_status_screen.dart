@@ -20,6 +20,7 @@ typedef MobileSendBroadcastRunner =
       required WidgetRef ref,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
+      LedgerBroadcastArgs? ledger,
       required Future<bool> Function() confirmSaplingParamsDownload,
       Future<bool> Function()? shouldAbort,
     });
@@ -28,12 +29,14 @@ class MobileSendStatusScreen extends ConsumerStatefulWidget {
   const MobileSendStatusScreen({
     required this.args,
     this.keystone,
+    this.ledger,
     this.broadcastRunner,
     super.key,
   });
 
   final SendReviewArgs args;
   final KeystoneBroadcastArgs? keystone;
+  final LedgerBroadcastArgs? ledger;
 
   @visibleForTesting
   final MobileSendBroadcastRunner? broadcastRunner;
@@ -69,7 +72,7 @@ class _MobileSendStatusScreenState
     super.initState();
     _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
     _syncNotifier = ref.read(syncProvider.notifier);
-    _proposalConsumed = widget.keystone != null;
+    _proposalConsumed = widget.keystone != null || widget.ledger != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_startBroadcast());
     });
@@ -137,6 +140,7 @@ class _MobileSendStatusScreenState
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
+      ledger: widget.ledger,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
     );
