@@ -159,6 +159,26 @@ class PaymentLinkClaimResult {
       status == PaymentLinkClaimBroadcastStatus.broadcasted;
 }
 
+/// A fully broadcast payment-link funding result.
+///
+/// When [fundingMetadataSaved] is false, the durable draft still preserves the
+/// bearer secret, but callers must not offer another funding attempt as the
+/// transaction already reached the network.
+class PaymentLinkFundingResult {
+  const PaymentLinkFundingResult({
+    required this.link,
+    required this.txids,
+    required this.fundingMetadataSaved,
+  });
+
+  final VizorPaymentLink link;
+  final String txids;
+
+  /// Whether the durable recovery record advanced from draft to funded.
+  /// The link remains recoverable from its draft when this is false.
+  final bool fundingMetadataSaved;
+}
+
 class PaymentLinkBroadcastPendingException implements Exception {
   const PaymentLinkBroadcastPendingException({
     required this.txids,
@@ -180,7 +200,7 @@ class PaymentLinkService {
   final Ref _ref;
   final PaymentLinkRecoveryStore _recoveryStore;
 
-  Future<VizorPaymentLink> createFundedLink({
+  Future<PaymentLinkFundingResult> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
@@ -226,7 +246,7 @@ class PaymentLinkService {
       presentation: presentation,
     );
 
-    final fundingResult = await PaymentLinkFundingRecovery(_recoveryStore)
+    final funding = await PaymentLinkFundingRecovery(_recoveryStore)
         .fund<rust_sync.ExecuteProposalResult>(
           link: link,
           sourceAccountUuid: sourceAccountUuid,
@@ -240,10 +260,22 @@ class PaymentLinkService {
           },
           fundingTxids: (result) => result.txids,
         );
+    final fundingResult = funding.transaction;
+    if (!funding.fundingMetadataSaved) {
+      log(
+        'PaymentLinkService: funding was submitted but recovery metadata '
+        'could not be saved after retry: ${funding.recoveryError}\n'
+        '${funding.recoveryStackTrace}',
+      );
+    }
 
     unawaited(_refreshMainWalletAfterSend());
     _requireFullyBroadcasted(fundingResult);
-    return link;
+    return PaymentLinkFundingResult(
+      link: link,
+      txids: fundingResult.txids,
+      fundingMetadataSaved: funding.fundingMetadataSaved,
+    );
   }
 
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() {
