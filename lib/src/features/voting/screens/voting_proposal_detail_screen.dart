@@ -484,6 +484,80 @@ class _ActivePollContentState extends State<_ActivePollContent> {
         widget.votingEligibilityErrorMessage == null;
   }
 
+  Widget _buildPollSummary() {
+    return _PollSummary(
+      title: widget.title,
+      snapshotHeight: widget.snapshotHeight,
+      description: widget.description,
+      forumUri: widget.forumUri,
+      endDate: widget.endDate,
+      votingPowerZatoshi: widget.votingPowerZatoshi,
+      votingPowerPreparing: widget.votingPowerPreparing,
+      votingEligibilityMessage: widget.votingEligibilityMessage,
+    );
+  }
+
+  Widget _buildReviewAction() {
+    final canRetryEligibility = _canRetryVotingEligibility;
+    final isIneligible =
+        !widget.votingEligibilityConfirmed &&
+        widget.votingEligibilityErrorMessage != null;
+    return _ReviewAnswersButton(
+      key: const ValueKey('voting_review_answers_button'),
+      enabled:
+          canRetryEligibility ||
+          isIneligible ||
+          widget.votingEligibilityConfirmed && !widget.draft.isEmpty,
+      label: canRetryEligibility
+          ? 'Retry eligibility'
+          : isIneligible
+          ? 'Not eligible'
+          : 'Review answers',
+      onPressed: _handleBottomActionPressed,
+    );
+  }
+
+  Widget _buildProposalCard(VotingProposalView proposal) {
+    final isIneligible =
+        !widget.votingEligibilityConfirmed &&
+        widget.votingEligibilityErrorMessage != null;
+    return VotingProposalCard(
+      proposal: proposal,
+      selectedChoice: widget.answersEditable
+          ? widget.draft.choices[proposal.id]
+          : null,
+      enabled: widget.answersEditable,
+      onDisabledOptionTap: isIneligible ? _showIneligibleDialog : null,
+      onChoice: (choice) => widget.onChoice(proposal.id, choice),
+    );
+  }
+
+  Widget _buildMobileProposalContent() {
+    return VotingPaneScrollView(
+      maxWidth: 560,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildPollSummary(),
+          const SizedBox(height: AppSpacing.md),
+          for (var index = 0; index < widget.proposals.length; index++) ...[
+            _buildProposalCard(widget.proposals[index]),
+            if (index < widget.proposals.length - 1)
+              const SizedBox(height: AppSpacing.xs),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          _buildReviewAction(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -497,6 +571,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                   title: 'No proposals',
                   message: 'This voting round does not contain any proposals.',
                 )
+              : kAppFormFactor == AppFormFactor.mobile
+              ? _buildMobileProposalContent()
               : VotingPaneListView.separated(
                   maxWidth: 560,
                   padding: EdgeInsets.fromLTRB(
@@ -517,54 +593,13 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                   },
                   itemBuilder: (context, index) {
                     if (index == 0) {
-                      return _PollSummary(
-                        title: widget.title,
-                        snapshotHeight: widget.snapshotHeight,
-                        description: widget.description,
-                        forumUri: widget.forumUri,
-                        endDate: widget.endDate,
-                        votingPowerZatoshi: widget.votingPowerZatoshi,
-                        votingPowerPreparing: widget.votingPowerPreparing,
-                        votingEligibilityMessage:
-                            widget.votingEligibilityMessage,
-                      );
+                      return _buildPollSummary();
                     }
                     if (index == widget.proposals.length + 1) {
-                      final canRetryEligibility = _canRetryVotingEligibility;
-                      final isIneligible =
-                          !widget.votingEligibilityConfirmed &&
-                          widget.votingEligibilityErrorMessage != null;
-                      return _ReviewAnswersButton(
-                        key: const ValueKey('voting_review_answers_button'),
-                        enabled:
-                            canRetryEligibility ||
-                            isIneligible ||
-                            widget.votingEligibilityConfirmed &&
-                                !widget.draft.isEmpty,
-                        label: canRetryEligibility
-                            ? 'Retry eligibility'
-                            : isIneligible
-                            ? 'Not eligible'
-                            : 'Review answers',
-                        onPressed: _handleBottomActionPressed,
-                      );
+                      return _buildReviewAction();
                     }
                     final proposal = widget.proposals[index - 1];
-                    final isIneligible =
-                        !widget.votingEligibilityConfirmed &&
-                        widget.votingEligibilityErrorMessage != null;
-                    return VotingProposalCard(
-                      proposal: proposal,
-                      selectedChoice: widget.answersEditable
-                          ? widget.draft.choices[proposal.id]
-                          : null,
-                      enabled: widget.answersEditable,
-                      onDisabledOptionTap: isIneligible
-                          ? _showIneligibleDialog
-                          : null,
-                      onChoice: (choice) =>
-                          widget.onChoice(proposal.id, choice),
-                    );
+                    return _buildProposalCard(proposal);
                   },
                 ),
         ),
@@ -1051,7 +1086,7 @@ class VotingVotedPollContent extends StatelessWidget {
       children: [
         if (showDesktopToolbar) const AppPaneToolbar(),
         Expanded(
-          child: VotingPaneListView.separated(
+          child: VotingPaneScrollView(
             maxWidth: 560,
             padding: EdgeInsets.fromLTRB(
               showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
@@ -1059,11 +1094,10 @@ class VotingVotedPollContent extends StatelessWidget {
               showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
               AppSpacing.md,
             ),
-            itemCount: proposals.isEmpty ? 2 : proposals.length + 1,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return _VotedPollHeader(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _VotedPollHeader(
                   title: roundTitle,
                   snapshotHeight: snapshotHeight,
                   description: description,
@@ -1071,24 +1105,31 @@ class VotingVotedPollContent extends StatelessWidget {
                   votingPowerZatoshi: votingPowerZatoshi,
                   votingPowerPreparing: votingPowerPreparing,
                   votedAt: votedAt,
-                );
-              }
-              if (proposals.isEmpty) {
-                return const _Message(
-                  title: 'No proposals',
-                  message: 'This voting round does not contain any proposals.',
-                );
-              }
-              final proposal = proposals[index - 1];
-              final choice = choicesByProposalId[proposal.id];
-              return VotingProposalCard(
-                proposal: proposal,
-                fallbackForumUri: forumUri,
-                selectedChoice: choice,
-                readOnly: true,
-                statusLabel: choice == null ? 'Skipped' : null,
-              );
-            },
+                ),
+                const SizedBox(height: AppSpacing.md),
+                if (proposals.isEmpty)
+                  const _Message(
+                    title: 'No proposals',
+                    message:
+                        'This voting round does not contain any proposals.',
+                  )
+                else
+                  for (var index = 0; index < proposals.length; index++) ...[
+                    VotingProposalCard(
+                      proposal: proposals[index],
+                      fallbackForumUri: forumUri,
+                      selectedChoice: choicesByProposalId[proposals[index].id],
+                      readOnly: true,
+                      statusLabel:
+                          choicesByProposalId[proposals[index].id] == null
+                          ? 'Skipped'
+                          : null,
+                    ),
+                    if (index < proposals.length - 1)
+                      const SizedBox(height: AppSpacing.md),
+                  ],
+              ],
+            ),
           ),
         ),
       ],

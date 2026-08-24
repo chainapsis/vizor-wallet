@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -34,10 +35,55 @@ void main() {
   testWidgets('voted state exposes the Figma review details', (tester) async {
     await _pumpMobileFixture(tester, buildMobileVotingVotedUseCase);
 
+    expect(find.byType(VotingPaneScrollView), findsOneWidget);
+    expect(find.byType(VotingPaneListView), findsNothing);
     expect(find.text('Voted'), findsWidgets);
     expect(find.text('Show description'), findsOneWidget);
     expect(find.text('Vote locked'), findsOneWidget);
     expect(find.text('0.375 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('voted detail eagerly lays out its bounded proposal set', (
+    tester,
+  ) async {
+    final proposals = List.generate(
+      6,
+      (index) => VotingProposalView(
+        id: index,
+        title: 'Proposal $index',
+        description: 'Description for proposal $index',
+        options: const [
+          VotingOptionView(index: 0, label: 'Yes'),
+          VotingOptionView(index: 1, label: 'No'),
+        ],
+      ),
+    );
+    await _pumpMobileFixture(
+      tester,
+      (_) => MobileVotingScaffold(
+        title: 'Voted',
+        child: VotingVotedPollContent(
+          showDesktopToolbar: false,
+          roundTitle: 'Bounded voting round',
+          snapshotHeight: 1,
+          description: 'Round description',
+          forumUri: null,
+          votingPowerZatoshi: BigInt.zero,
+          votingPowerPreparing: false,
+          votedAt: null,
+          proposals: proposals,
+          choicesByProposalId: const {},
+        ),
+      ),
+    );
+
+    expect(find.byType(VotingProposalCard), findsNWidgets(proposals.length));
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
+    final initialMaxExtent = scrollable.position.maxScrollExtent;
+    scrollable.position.jumpTo(initialMaxExtent / 2);
+    await tester.pump();
+
+    expect(scrollable.position.maxScrollExtent, initialMaxExtent);
   });
 
   testWidgets('results card matches the mobile geometry and selected vote', (
