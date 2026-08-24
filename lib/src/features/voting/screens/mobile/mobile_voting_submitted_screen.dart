@@ -25,6 +25,7 @@ class _MobileVotingSubmittedScreenState
   Animation<double>? _routeAnimation;
   bool _celebrationStarted = false;
   bool _celebrationScheduled = false;
+  bool _isLeaving = false;
 
   @override
   void didChangeDependencies() {
@@ -68,6 +69,12 @@ class _MobileVotingSubmittedScreenState
     unawaited(AppHaptics.sendSuccess());
   }
 
+  void _finish() {
+    if (_isLeaving) return;
+    _isLeaving = true;
+    widget.onDone();
+  }
+
   @override
   void dispose() {
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
@@ -80,7 +87,7 @@ class _MobileVotingSubmittedScreenState
     return PopScope<void>(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) widget.onDone();
+        if (!didPop) _finish();
       },
       child: Scaffold(
         backgroundColor: colors.background.window,
@@ -195,7 +202,7 @@ class _MobileVotingSubmittedScreenState
                                             key: const ValueKey(
                                               'mobile_voting_submitted_home_button',
                                             ),
-                                            onPressed: widget.onDone,
+                                            onPressed: _finish,
                                             expand: true,
                                             constrainContent: true,
                                             child: const Text('Go home'),

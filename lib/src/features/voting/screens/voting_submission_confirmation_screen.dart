@@ -75,6 +75,7 @@ class VotingSubmissionConfirmationView extends ConsumerStatefulWidget {
 
 class _VotingSubmissionConfirmationViewState
     extends ConsumerState<VotingSubmissionConfirmationView> {
+  bool _isReturningHome = false;
   bool _isReturningToPolls = false;
   bool _refreshingVotingPower = false;
   bool _votingPowerRefreshAttempted = false;
@@ -256,6 +257,8 @@ class _VotingSubmissionConfirmationViewState
   }
 
   void _returnHome(VotingSessionKey? jobKey) {
+    if (_isReturningHome) return;
+    _isReturningHome = true;
     if (jobKey != null) {
       ref.read(votingSubmissionJobsProvider.notifier).dismiss(jobKey);
     }

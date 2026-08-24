@@ -159,9 +159,9 @@ void main() {
 
   testWidgets('renders the shared voted success presentation', (tester) async {
     await _setMobileViewport(tester);
-    var done = false;
+    var doneCount = 0;
     await tester.pumpWidget(
-      _app(MobileVotingSubmittedScreen(onDone: () => done = true)),
+      _app(MobileVotingSubmittedScreen(onDone: () => doneCount++)),
     );
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -174,7 +174,10 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('mobile_voting_submitted_home_button')),
     );
-    expect(done, isTrue);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_submitted_home_button')),
+    );
+    expect(doneCount, 1);
   });
 
   testWidgets('starts the Voted pulse and haptic after route transition', (
