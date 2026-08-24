@@ -224,6 +224,9 @@ class PaymentLinkService {
     }
 
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    if (!VizorPaymentLink.supportsNetwork(endpoint.networkName)) {
+      throw StateError('Payment links are only available on mainnet.');
+    }
     final paymentAccount = await rust_wallet.generateSoftwareAccount(
       network: endpoint.networkName,
     );

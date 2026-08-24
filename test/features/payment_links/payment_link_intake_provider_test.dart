@@ -11,7 +11,7 @@ void main() {
 
     final result = container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(link.encode());
+        .receive(link.toUri().toString());
 
     expect(result, PaymentLinkIntakeResult.accepted);
     expect(
@@ -21,26 +21,38 @@ void main() {
     expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
   });
 
-  test('ignores other URI schemes so ZIP-321 can share the channel', () {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
+  test(
+    'ignores unrelated links so ZIP-321 and HTTPS can share the channel',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
 
-    final result = container
-        .read(paymentLinkIntakeProvider.notifier)
-        .ingest('zcash:u1recipient?amount=1');
+      final result = container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive('zcash:u1recipient?amount=1');
 
-    expect(result, PaymentLinkIntakeResult.ignored);
-    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
-  });
+      expect(result, PaymentLinkIntakeResult.ignored);
+      expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
+
+      expect(
+        container
+            .read(paymentLinkIntakeProvider.notifier)
+            .receive('https://functions.vizor.cash/health'),
+        PaymentLinkIntakeResult.ignored,
+      );
+    },
+  );
 
   test('rejects malformed Vizor links without clearing an earlier secret', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final link = _link();
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
-    notifier.ingest(link.encode());
+    notifier.receive(link.toUri().toString());
 
-    final result = notifier.ingest('vizor://payment-link?p=not-base64');
+    final result = notifier.receive(
+      'https://functions.vizor.cash/payment-links/open#v1=not-base64',
+    );
 
     expect(result, PaymentLinkIntakeResult.rejected);
     final state = container.read(paymentLinkIntakeProvider);
@@ -54,7 +66,7 @@ void main() {
     addTearDown(container.dispose);
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
     final link = _link();
-    notifier.ingest(link.encode());
+    notifier.receive(link.toUri().toString());
 
     final taken = notifier.takePending();
 
@@ -77,8 +89,8 @@ void main() {
       createdAt: first.createdAt.add(const Duration(minutes: 1)),
     );
 
-    notifier.ingest(first.encode());
-    notifier.ingest(second.encode());
+    notifier.receive(first.toUri().toString());
+    notifier.receive(second.toUri().toString());
 
     expect(notifier.takePending()?.address, first.address);
     expect(notifier.takePending()?.address, second.address);
@@ -91,8 +103,14 @@ void main() {
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
     final link = _link();
 
-    expect(notifier.ingest(link.encode()), PaymentLinkIntakeResult.accepted);
-    expect(notifier.ingest(link.encode()), PaymentLinkIntakeResult.accepted);
+    expect(
+      notifier.receive(link.toUri().toString()),
+      PaymentLinkIntakeResult.accepted,
+    );
+    expect(
+      notifier.receive(link.toUri().toString()),
+      PaymentLinkIntakeResult.accepted,
+    );
 
     expect(
       container.read(paymentLinkIntakeProvider).pendingLinks,
@@ -107,13 +125,17 @@ void main() {
 
     for (var i = 0; i < kPaymentLinkIntakeQueueCapacity; i++) {
       expect(
-        notifier.ingest(_link(address: 'u1paymentlinkaddress$i').encode()),
+        notifier.receive(
+          _link(address: 'u1paymentlinkaddress$i').toUri().toString(),
+        ),
         PaymentLinkIntakeResult.accepted,
       );
     }
 
     expect(
-      notifier.ingest(_link(address: 'u1paymentlinkoverflow').encode()),
+      notifier.receive(
+        _link(address: 'u1paymentlinkoverflow').toUri().toString(),
+      ),
       PaymentLinkIntakeResult.rejected,
     );
     final state = container.read(paymentLinkIntakeProvider);

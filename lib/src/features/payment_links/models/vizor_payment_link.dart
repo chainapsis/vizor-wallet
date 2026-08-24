@@ -81,10 +81,12 @@ class VizorPaymentLink {
     this.presentation,
   });
 
-  static const scheme = 'vizor';
-  static const host = 'payment-link';
+  static const scheme = 'https';
+  static const host = 'functions.vizor.cash';
+  static const path = '/payment-links/open';
   static const maxEncodedLength = 16 * 1024;
   static const _version = 1;
+  static const _fragmentPrefix = 'v1=';
 
   final String network;
   final String address;
@@ -95,10 +97,18 @@ class VizorPaymentLink {
   final DateTime createdAt;
   final PaymentLinkPresentation? presentation;
 
-  String encode() {
+  static bool supportsNetwork(String network) => network.trim() == 'main';
+
+  Uri toUri() {
+    final normalizedNetwork = network.trim();
+    if (!supportsNetwork(normalizedNetwork)) {
+      throw const FormatException(
+        'Payment links are only available on mainnet.',
+      );
+    }
     final payload = <String, Object?>{
       'v': _version,
-      'network': network.trim(),
+      'network': normalizedNetwork,
       'address': address.trim(),
       'amountZatoshi': amountZatoshi.toString(),
       'mnemonic': mnemonic.trim(),
@@ -114,23 +124,37 @@ class VizorPaymentLink {
     return Uri(
       scheme: scheme,
       host: host,
-      queryParameters: {'p': encoded},
-    ).toString();
+      path: path,
+      fragment: '$_fragmentPrefix$encoded',
+    );
   }
 
-  static VizorPaymentLink decode(String rawLink) {
+  static bool matchesEndpoint(Uri uri) {
+    return uri.scheme.toLowerCase() == scheme &&
+        uri.host.toLowerCase() == host &&
+        uri.path == path;
+  }
+
+  static VizorPaymentLink parse(String rawLink) {
     final trimmed = rawLink.trim();
     if (trimmed.length > maxEncodedLength) {
       throw const FormatException('Payment link is too large.');
     }
     final uri = Uri.tryParse(trimmed);
-    if (uri == null || uri.scheme != scheme || uri.host != host) {
+    if (uri == null || !matchesEndpoint(uri)) {
       throw const FormatException('This is not a Vizor payment link.');
     }
+    if (uri.userInfo.isNotEmpty || uri.hasPort || uri.hasQuery) {
+      throw const FormatException('Payment link URL is invalid.');
+    }
 
-    final encoded = uri.queryParameters['p'];
-    if (encoded == null || encoded.isEmpty) {
+    final fragment = uri.fragment;
+    if (!fragment.startsWith(_fragmentPrefix)) {
       throw const FormatException('Payment link is missing its payload.');
+    }
+    final encoded = fragment.substring(_fragmentPrefix.length);
+    if (encoded.isEmpty || encoded.contains('&')) {
+      throw const FormatException('Payment link payload is invalid.');
     }
 
     late final Object? decodedJson;
@@ -162,8 +186,8 @@ class VizorPaymentLink {
       payload['presentation'],
     );
 
-    if (network.isEmpty) {
-      throw const FormatException('Payment link network is missing.');
+    if (!supportsNetwork(network)) {
+      throw const FormatException('Payment link network is not supported.');
     }
     if (address.isEmpty) {
       throw const FormatException('Payment link address is missing.');

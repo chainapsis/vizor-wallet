@@ -60,7 +60,7 @@ void main() {
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords, hasLength(1));
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
-        expect(restartedRecords.single.link.encode(), link.encode());
+        expect(restartedRecords.single.link.toUri(), link.toUri());
       },
     );
 
@@ -68,14 +68,15 @@ void main() {
       final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {2});
       final link = _link();
 
-      final funding = await PaymentLinkFundingRecovery(
-        PaymentLinkRecoveryStore(storage),
-      ).fund(
-        link: link,
-        sourceAccountUuid: 'source-account',
-        createTransaction: () async => 'funding-txid',
-        fundingTxids: (txid) => txid,
-      );
+      final funding =
+          await PaymentLinkFundingRecovery(
+            PaymentLinkRecoveryStore(storage),
+          ).fund(
+            link: link,
+            sourceAccountUuid: 'source-account',
+            createTransaction: () async => 'funding-txid',
+            fundingTxids: (txid) => txid,
+          );
 
       expect(funding.transaction, 'funding-txid');
       expect(funding.recoveryError, isNull);
@@ -87,23 +88,22 @@ void main() {
     test(
       'returns the broadcast result when funding metadata cannot be updated',
       () async {
-        final storage = _FakePaymentLinkRecoveryStorage(
-          failOnWrites: {2, 3},
-        );
+        final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {2, 3});
         final link = _link();
         var transactionCount = 0;
 
-        final funding = await PaymentLinkFundingRecovery(
-          PaymentLinkRecoveryStore(storage),
-        ).fund(
-          link: link,
-          sourceAccountUuid: 'source-account',
-          createTransaction: () async {
-            transactionCount += 1;
-            return 'funding-txid';
-          },
-          fundingTxids: (txid) => txid,
-        );
+        final funding =
+            await PaymentLinkFundingRecovery(
+              PaymentLinkRecoveryStore(storage),
+            ).fund(
+              link: link,
+              sourceAccountUuid: 'source-account',
+              createTransaction: () async {
+                transactionCount += 1;
+                return 'funding-txid';
+              },
+              fundingTxids: (txid) => txid,
+            );
 
         expect(funding.transaction, 'funding-txid');
         expect(funding.recoveryError, isA<StateError>());
@@ -171,7 +171,7 @@ void main() {
           'version': 1,
           'records': [
             {
-              'link': link.encode(),
+              'link': link.toUri().toString(),
               'sourceAccountUuid': 'source-account',
               'state': 'unsupported',
               'fundingTxids': 'funding-txid',

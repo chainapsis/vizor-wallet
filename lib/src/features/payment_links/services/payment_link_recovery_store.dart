@@ -351,7 +351,7 @@ List<PaymentLinkRecoveryRecord> _replaceByAddress(
 
 Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
   return {
-    'link': record.link.encode(),
+    'link': record.link.toUri().toString(),
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
@@ -407,7 +407,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   }
 
   return PaymentLinkRecoveryRecord(
-    link: VizorPaymentLink.decode(linkRaw),
+    link: VizorPaymentLink.parse(linkRaw),
     sourceAccountUuid: sourceAccountUuid,
     state: state,
     fundingTxids: fundingTxids as String?,
