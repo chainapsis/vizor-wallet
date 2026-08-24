@@ -9,10 +9,12 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.EventChannel
 
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private lateinit var ledgerMobileHandler: LedgerMobileHandler
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -42,6 +44,17 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, result ->
             deviceOwnerAuthHandler.handle(call, result)
         }
+        ledgerMobileHandler = LedgerMobileHandler(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.METHOD_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            ledgerMobileHandler.handle(call, result)
+        }
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.EVENT_CHANNEL
+        ).setStreamHandler(ledgerMobileHandler)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CAMERA_PERMISSION_CHANNEL
@@ -124,6 +137,25 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (
+            ::ledgerMobileHandler.isInitialized &&
+            ledgerMobileHandler.onRequestPermissionsResult(requestCode, grantResults)
+        ) {
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onDestroy() {
+        if (::ledgerMobileHandler.isInitialized) ledgerMobileHandler.close()
+        super.onDestroy()
     }
 
     private fun openAppSettings(): Boolean {

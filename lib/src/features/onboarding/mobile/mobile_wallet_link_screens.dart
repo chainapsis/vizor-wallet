@@ -1124,7 +1124,13 @@ class _WalletLinkAccountRow extends StatelessWidget {
               height: 32,
               child: Center(
                 child: AppIcon(
-                  account.isHardware ? AppIcons.keystone : AppIcons.user,
+                  account.effectiveHardwareKind ==
+                          kWalletLinkHardwareKindKeystone
+                      ? AppIcons.keystone
+                      : account.effectiveHardwareKind ==
+                            kWalletLinkHardwareKindLedger
+                      ? AppIcons.key
+                      : AppIcons.user,
                   size: 20,
                   color: enabled ? colors.icon.accent : colors.icon.muted,
                 ),
