@@ -374,7 +374,7 @@ abstract interface class VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -413,7 +413,7 @@ abstract interface class VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
@@ -645,14 +645,14 @@ class FrbVotingRustApi implements VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return rust_api.buildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
-      pirServerUrl: pirServerUrl,
+      pirServerUrls: pirServerUrls,
       mnemonic: mnemonic,
       storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
@@ -726,7 +726,7 @@ class FrbVotingRustApi implements VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
@@ -735,7 +735,7 @@ class FrbVotingRustApi implements VotingRustApi {
     return rust_api
         .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
           ctx: ctx,
-          pirServerUrl: pirServerUrl,
+          pirServerUrls: pirServerUrls,
           storedHotkeySecret: storedHotkeySecret,
           bundleIndex: bundleIndex,
           keystoneSig: keystoneSig,

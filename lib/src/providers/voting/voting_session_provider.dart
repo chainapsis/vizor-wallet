@@ -453,7 +453,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await for (final event
             in rust.buildProveAndSignDelegationPayloadWithProgress(
               ctx: _apiRoundContext(context),
-              pirServerUrl: _transportUrl(pirEndpoint!),
+              pirServerUrls: _delegationPirTransportUrls(
+                state.value ?? current,
+              ),
               mnemonic: mnemonic!,
               storedHotkeySecret: storedHotkeySecret!,
               bundleIndex: bundleIndex,
@@ -847,7 +849,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             in rust
                 .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                   ctx: _apiRoundContext(context),
-                  pirServerUrl: _transportUrl(pirEndpoint!),
+                  pirServerUrls: _delegationPirTransportUrls(
+                    state.value ?? current,
+                  ),
                   storedHotkeySecret: storedHotkeySecret!,
                   bundleIndex: bundleIndex,
                   keystoneSig: signature.sig,
@@ -2577,6 +2581,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   String _transportUrl(Uri logicalUrl) {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
+  }
+
+  List<String> _delegationPirTransportUrls(VotingSessionState session) {
+    final selected = session.pirEndpoint;
+    if (selected == null) return const [];
+
+    final candidates = <String>[_transportUrl(selected)];
+    final seen = <String>{selected.toString()};
+    for (final diagnostic in session.pirDiagnostics) {
+      if (diagnostic.matched && seen.add(diagnostic.endpoint.toString())) {
+        candidates.add(_transportUrl(diagnostic.endpoint));
+      }
+    }
+    return candidates;
   }
 
   static String _delegationPirPrecomputeKey(

@@ -240,7 +240,9 @@ Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
 ///
 /// Emits local preparation phase events while work progresses, then emits a
 /// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued.
+/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
+/// contain at least one endpoint that serves the round's exact snapshot; later
+/// entries are used only after retryable PIR transport failures.
 ///
 /// # Errors
 ///
@@ -249,14 +251,14 @@ Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
 /// stream errors.
 Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
-  required String pirServerUrl,
+  required List<String> pirServerUrls,
   required String mnemonic,
   required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
-      pirServerUrl: pirServerUrl,
+      pirServerUrls: pirServerUrls,
       mnemonic: mnemonic,
       storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
@@ -338,6 +340,7 @@ Future<List<KeystoneSignatureRecord>> getKeystoneSignatures({
 );
 
 /// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
+/// `pir_server_urls` follows the same exact-snapshot failover contract.
 ///
 /// # Errors
 ///
@@ -346,7 +349,7 @@ Future<List<KeystoneSignatureRecord>> getKeystoneSignatures({
 Stream<ApiDelegationProofEvent>
 buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required ApiVotingRoundContext ctx,
-  required String pirServerUrl,
+  required List<String> pirServerUrls,
   required List<int> storedHotkeySecret,
   required int bundleIndex,
   required List<int> keystoneSig,
@@ -354,7 +357,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
 }) => RustLib.instance.api
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       ctx: ctx,
-      pirServerUrl: pirServerUrl,
+      pirServerUrls: pirServerUrls,
       storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,

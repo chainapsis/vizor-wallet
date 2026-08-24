@@ -4598,7 +4598,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -4738,7 +4738,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,

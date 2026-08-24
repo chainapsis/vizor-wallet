@@ -38,11 +38,89 @@ fn prepare_params_with_whale_protection<'a>(
     prepare_params
 }
 
+fn normalize_pir_server_urls(pir_server_urls: &[String]) -> Result<Vec<String>, String> {
+    let mut normalized = Vec::with_capacity(pir_server_urls.len());
+    for raw_url in pir_server_urls {
+        let url = raw_url.trim();
+        if url.is_empty() {
+            return Err("PIR server URLs must not contain an empty URL".to_string());
+        }
+        if !normalized.iter().any(|existing| existing == url) {
+            normalized.push(url.to_string());
+        }
+    }
+    if normalized.is_empty() {
+        return Err("at least one PIR server URL is required".to_string());
+    }
+    Ok(normalized)
+}
+
+fn is_retryable_pir_query_error(error: &str) -> bool {
+    let message = error.to_ascii_lowercase();
+    let has_pir_context = message.contains("pir parallel fetch failed")
+        || message.contains("connect to pir server failed")
+        || message.contains("pir http request timed out");
+    if !has_pir_context {
+        return false;
+    }
+    if message.contains("pir http request timed out")
+        || message.contains("send http request")
+        || message.contains("read http response body")
+    {
+        return true;
+    }
+
+    ["http status ", "http "].iter().any(|prefix| {
+        message.match_indices(prefix).any(|(index, prefix)| {
+            let remainder = &message[index + prefix.len()..];
+            let Some(digits) = remainder.get(..3) else {
+                return false;
+            };
+            if remainder.as_bytes().get(3).is_some_and(u8::is_ascii_digit) {
+                return false;
+            }
+            let Ok(status) = digits.parse::<u16>() else {
+                return false;
+            };
+            status == 408 || status == 429 || (500..=599).contains(&status)
+        })
+    })
+}
+
+fn with_pir_endpoint_failover<T>(
+    pir_server_urls: &[String],
+    mut operation: impl FnMut(&str) -> Result<T, String>,
+) -> Result<T, String> {
+    for (attempt, url) in pir_server_urls.iter().enumerate() {
+        match operation(url) {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                let retryable = is_retryable_pir_query_error(&error);
+                let has_failover = attempt + 1 < pir_server_urls.len();
+                log::warn!(
+                    "delegation PIR attempt failed endpoint={} attempt={}/{} retryable={} error={}",
+                    url,
+                    attempt + 1,
+                    pir_server_urls.len(),
+                    retryable,
+                    error
+                );
+                if !retryable || !has_failover {
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    Err("delegation PIR failover exited without an endpoint attempt".to_string())
+}
+
 /// Completes the proof phase for a previously prepared delegation bundle.
 ///
-/// Opens the voting database for `account_uuid`, connects to `pir_server_url`,
-/// then runs bundle proving on a blocking worker thread while forwarding
-/// `DelegationProgress` updates to `on_progress`.
+/// Opens the voting database for `account_uuid`, then runs bundle proving on a
+/// blocking worker thread while forwarding `DelegationProgress` updates to
+/// `on_progress`. Retryable PIR transport failures rotate through the remaining
+/// exact-snapshot endpoints while reusing the same prepared bundle.
 ///
 /// # Errors
 ///
@@ -51,7 +129,7 @@ fn prepare_params_with_whale_protection<'a>(
 /// the spawned blocking task is cancelled or panics.
 async fn prove_delegation_bundle<F>(
     db_path: &str,
-    pir_server_url: &str,
+    pir_server_urls: &[String],
     pir_layout: PirLayout,
     account_uuid: &str,
     prepared: &PreparedDelegationBundle,
@@ -61,25 +139,27 @@ where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
     let proof_db_path = db_path.to_string();
-    let proof_pir_server_url = pir_server_url.to_string();
+    let proof_pir_server_urls = pir_server_urls.to_vec();
     let proof_account_uuid = account_uuid.to_string();
     let prepared = prepared.clone();
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
-        let pir_client = zcash_voting::connect_pir_blocking(
-            pir_layout,
-            &proof_pir_server_url,
-            Arc::new(zcash_voting::HyperTransport::new()),
-        )
-        .map_err(|e| format!("connect to PIR server failed: {e}"))?;
         let reporter = zcash_voting::DelegationProgressBridge::new(move |progress| {
             proof_progress(progress);
         });
-        prepared
-            .prove(&proof_voting_db, &pir_client, &reporter)
-            .map(|_| ())
-            .map_err(|e| format!("delegate::prove failed: {e}"))
+        with_pir_endpoint_failover(&proof_pir_server_urls, |pir_server_url| {
+            let pir_client = zcash_voting::connect_pir_blocking(
+                pir_layout,
+                pir_server_url,
+                Arc::new(zcash_voting::HyperTransport::new()),
+            )
+            .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+            prepared
+                .prove(&proof_voting_db, &pir_client, &reporter)
+                .map(|_| ())
+                .map_err(|e| format!("delegate::prove failed: {e}"))
+        })
     })
     .await
     .map_err(|e| format!("delegation proof task failed: {e}"))??;
@@ -291,7 +371,8 @@ pub async fn precompute_delegation_pir(
 /// Build, prove, and sign one delegation payload.
 ///
 /// Emits progress phases through `on_progress`. The returned value is a signed
-/// delegation payload ready for Dart-side submission.
+/// delegation payload ready for Dart-side submission. PIR endpoints are tried
+/// in order only for retryable transport failures, reusing one prepared bundle.
 ///
 /// # Errors
 ///
@@ -300,7 +381,7 @@ pub async fn precompute_delegation_pir(
 /// fails.
 pub async fn build_prove_and_sign_delegation_payload<F>(
     db_path: &str,
-    pir_server_url: &str,
+    pir_server_urls: &[String],
     pir_layout: PirLayout,
     seed: &SecretVec<u8>,
     prepare_params: PrepareDelegationBundleParams<'_>,
@@ -309,6 +390,7 @@ pub async fn build_prove_and_sign_delegation_payload<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
+    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
     let account_uuid = prepare_params.account_uuid;
 
@@ -336,7 +418,7 @@ where
 
     prove_delegation_bundle(
         db_path,
-        pir_server_url,
+        &pir_server_urls,
         pir_layout,
         account_uuid,
         &prepared_bundle,
@@ -431,6 +513,8 @@ pub async fn build_keystone_delegation_request(
 /// This path intentionally does not rebuild the governance PCZT. The signed PCZT
 /// request already persisted the sighash and delegation fields; rebuilding here
 /// would overwrite that state with a fresh PCZT that the device did not sign.
+/// Retryable PIR transport failures rotate through `pir_server_urls` without
+/// rebuilding that request.
 ///
 /// # Errors
 ///
@@ -438,7 +522,7 @@ pub async fn build_keystone_delegation_request(
 /// match the stored PCZT sighash, or submission payload reconstruction fails.
 pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
     db_path: &str,
-    pir_server_url: &str,
+    pir_server_urls: &[String],
     pir_layout: PirLayout,
     account_uuid: &str,
     prepare_params: PrepareDelegationBundleParams<'_>,
@@ -449,6 +533,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
+    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
 
     on_progress(DelegationProgress::SelectingNotes);
@@ -463,7 +548,7 @@ where
             .map_err(|e| e.to_string())?;
     prove_delegation_bundle(
         db_path,
-        pir_server_url,
+        &pir_server_urls,
         pir_layout,
         account_uuid,
         &prepared_bundle,
@@ -511,6 +596,112 @@ mod tests {
             scope: 0,
             ufvk_str: "uviewtest".to_string(),
         }
+    }
+
+    #[test]
+    fn pir_endpoint_failover_rotates_after_retryable_transport_error() {
+        let urls = vec![
+            "https://pir-primary.example".to_string(),
+            "https://pir-backup.example".to_string(),
+        ];
+        let mut attempts = Vec::new();
+
+        let result = with_pir_endpoint_failover(&urls, |url| {
+            attempts.push(url.to_string());
+            if url.contains("primary") {
+                Err(
+                    "delegate::prove failed: Internal error: PIR parallel fetch failed: send HTTP request"
+                        .to_string(),
+                )
+            } else {
+                Ok("proof")
+            }
+        })
+        .unwrap();
+
+        assert_eq!(result, "proof");
+        assert_eq!(attempts, urls);
+    }
+
+    #[test]
+    fn pir_endpoint_failover_stops_on_validation_error() {
+        let urls = vec![
+            "https://pir-primary.example".to_string(),
+            "https://pir-backup.example".to_string(),
+        ];
+        let mut attempts = Vec::new();
+
+        let error = with_pir_endpoint_failover(&urls, |url| {
+            attempts.push(url.to_string());
+            Err::<(), _>(
+                "delegate::prove failed: connected PIR circuit root does not match".to_string(),
+            )
+        })
+        .unwrap_err();
+
+        assert!(error.contains("circuit root"));
+        assert_eq!(attempts, vec![urls[0].clone()]);
+    }
+
+    #[test]
+    fn pir_endpoint_failover_returns_last_error_after_exhaustion() {
+        let urls = vec![
+            "https://pir-primary.example".to_string(),
+            "https://pir-backup.example".to_string(),
+        ];
+        let mut attempts = Vec::new();
+
+        let error = with_pir_endpoint_failover(&urls, |url| {
+            attempts.push(url.to_string());
+            Err::<(), _>(format!(
+                "delegate::prove failed: Internal error: PIR parallel fetch failed: send HTTP request to {url}"
+            ))
+        })
+        .unwrap_err();
+
+        assert!(error.contains(&urls[1]));
+        assert_eq!(attempts, urls);
+    }
+
+    #[test]
+    fn pir_query_retry_classifier_is_transport_only() {
+        for error in [
+            "delegate::prove failed: Internal error: PIR parallel fetch failed: send HTTP request",
+            "connect to PIR server failed: PIR HTTP request timed out",
+            "PIR parallel fetch failed: read HTTP response body: connection closed",
+            "PIR parallel fetch failed: tier1 query failed: HTTP 503",
+            "PIR parallel fetch failed: tier1 query failed: HTTP status 521",
+        ] {
+            assert!(is_retryable_pir_query_error(error), "{error}");
+        }
+        for error in [
+            "delegate::prove failed: connected PIR circuit root does not match",
+            "PIR parallel fetch failed: invalid proof encoding",
+            "PIR parallel fetch failed: tier1 query failed: HTTP 400",
+            "PIR parallel fetch failed: tier1 query failed: HTTP 5000",
+            "network: gRPC connect failed: send HTTP request",
+        ] {
+            assert!(!is_retryable_pir_query_error(error), "{error}");
+        }
+    }
+
+    #[test]
+    fn pir_server_url_normalization_rejects_empty_and_deduplicates() {
+        let normalized = normalize_pir_server_urls(&[
+            " https://pir.example ".to_string(),
+            "https://pir.example".to_string(),
+            "https://pir-backup.example".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(
+            normalized,
+            vec![
+                "https://pir.example".to_string(),
+                "https://pir-backup.example".to_string(),
+            ]
+        );
+        assert!(normalize_pir_server_urls(&[]).is_err());
+        assert!(normalize_pir_server_urls(&[" ".to_string()]).is_err());
     }
 
     #[test]
@@ -698,11 +889,12 @@ mod tests {
             nc_root: vec![2; 32],
             nullifier_imt_root: vec![3; 32],
         };
+        let pir_server_urls = vec!["http://127.0.0.1:2".to_string()];
         let err = tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(build_prove_and_sign_delegation_payload(
                 db_path.to_str().unwrap(),
-                "http://127.0.0.1:2",
+                &pir_server_urls,
                 PirLayout {
                     pir_depth: 19,
                     tier0_layers: 12,
