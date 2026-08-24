@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 
@@ -11,10 +13,12 @@ import '../voting_status_screen.dart';
 class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   const MobileVotingSubmissionProgressScreen({
     required this.activeStep,
+    this.activeStepProgress,
     super.key,
   });
 
   final VotingSubmissionProgressStep activeStep;
+  final double? activeStepProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +116,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                                       right: 0,
                                       child: _VotingSubmissionSteps(
                                         activeStep: activeStep,
+                                        activeStepProgress: activeStepProgress,
                                       ),
                                     ),
                                     Positioned(
@@ -149,9 +154,13 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
 }
 
 class _VotingSubmissionSteps extends StatelessWidget {
-  const _VotingSubmissionSteps({required this.activeStep});
+  const _VotingSubmissionSteps({
+    required this.activeStep,
+    required this.activeStepProgress,
+  });
 
   final VotingSubmissionProgressStep activeStep;
+  final double? activeStepProgress;
 
   static const _labels = <VotingSubmissionProgressStep, String>{
     VotingSubmissionProgressStep.delegating: 'Delegating voting authority',
@@ -182,6 +191,7 @@ class _VotingSubmissionSteps extends StatelessWidget {
                 : index == activeStep.index
                 ? _VotingSubmissionStepState.active
                 : _VotingSubmissionStepState.pending,
+            progress: index == activeStep.index ? activeStepProgress : null,
           ),
           if (index < steps.length - 1) const _VotingSubmissionStepConnector(),
         ],
@@ -196,11 +206,13 @@ class _VotingSubmissionStepRow extends StatelessWidget {
   const _VotingSubmissionStepRow({
     required this.label,
     required this.state,
+    required this.progress,
     super.key,
   });
 
   final String label;
   final _VotingSubmissionStepState state;
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -216,8 +228,8 @@ class _VotingSubmissionStepRow extends StatelessWidget {
               _VotingSubmissionStepState.complete => const Center(
                 child: _CompletedStepIndicator(),
               ),
-              _VotingSubmissionStepState.active => const Center(
-                child: _ActiveStepIndicator(),
+              _VotingSubmissionStepState.active => Center(
+                child: _ActiveStepIndicator(progress: progress),
               ),
               _VotingSubmissionStepState.pending => Center(
                 child: Container(
@@ -293,7 +305,9 @@ class _CompletedStepIndicator extends StatelessWidget {
 }
 
 class _ActiveStepIndicator extends StatefulWidget {
-  const _ActiveStepIndicator();
+  const _ActiveStepIndicator({required this.progress});
+
+  final double? progress;
 
   @override
   State<_ActiveStepIndicator> createState() => _ActiveStepIndicatorState();
@@ -334,16 +348,26 @@ class _ActiveStepIndicatorState extends State<_ActiveStepIndicator>
     _syncAnimation();
     final colors = context.colors;
     final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    final dot = Container(
-      key: const ValueKey('mobile_voting_submission_active_step'),
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: colors.background.inverse,
-        shape: BoxShape.circle,
+    final progress = widget.progress?.clamp(0.0, 1.0).toDouble();
+    final indicator = Semantics(
+      label: 'Active voting submission step progress',
+      value: progress == null ? 'Unknown' : '${(progress * 100).round()}%',
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: progress ?? 0),
+        duration: disabled ? Duration.zero : const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (context, animatedProgress, _) => CustomPaint(
+          key: const ValueKey('mobile_voting_submission_active_step'),
+          size: const Size.square(20),
+          painter: _StepProgressRingPainter(
+            progress: animatedProgress,
+            ringColor: colors.border.regular,
+            progressColor: colors.background.inverse,
+          ),
+        ),
       ),
     );
-    if (disabled) return dot;
+    if (disabled) return indicator;
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -370,7 +394,55 @@ class _ActiveStepIndicatorState extends State<_ActiveStepIndicator>
           ],
         );
       },
-      child: dot,
+      child: indicator,
     );
   }
+}
+
+class _StepProgressRingPainter extends CustomPainter {
+  const _StepProgressRingPainter({
+    required this.progress,
+    required this.ringColor,
+    required this.progressColor,
+  });
+
+  final double progress;
+  final Color ringColor;
+  final Color progressColor;
+
+  static const _strokeWidth = 2.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final ringRadius = (size.shortestSide - _strokeWidth) / 2;
+    final ringRect = Rect.fromCircle(center: center, radius: ringRadius);
+    canvas.drawCircle(
+      center,
+      ringRadius,
+      Paint()
+        ..color = ringColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _strokeWidth,
+    );
+    if (progress > 0) {
+      canvas.drawArc(
+        ringRect,
+        -math.pi / 2,
+        math.pi * 2 * progress,
+        false,
+        Paint()
+          ..color = progressColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _strokeWidth
+          ..strokeCap = StrokeCap.butt,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StepProgressRingPainter oldDelegate) =>
+      progress != oldDelegate.progress ||
+      ringColor != oldDelegate.ringColor ||
+      progressColor != oldDelegate.progressColor;
 }

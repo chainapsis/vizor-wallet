@@ -253,7 +253,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-submission-delegating',
-    description: 'Mobile voting submission while delegating authority',
+    description: 'Mobile voting submission with delegation at 25 percent',
     builder: buildMobileVotingSubmissionDelegatingUseCase,
     desktop: false,
     mobile: true,

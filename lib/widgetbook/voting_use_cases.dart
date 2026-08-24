@@ -123,6 +123,7 @@ Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
     context,
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.delegating,
+      activeStepProgress: 0.25,
     ),
   );
 }
@@ -132,6 +133,7 @@ Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
     context,
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.castingVotes,
+      activeStepProgress: 0.6,
     ),
   );
 }

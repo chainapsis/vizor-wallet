@@ -49,6 +49,7 @@ void main() {
       _app(
         const MobileVotingSubmissionProgressScreen(
           activeStep: VotingSubmissionProgressStep.castingVotes,
+          activeStepProgress: 0.25,
         ),
       ),
     );
@@ -60,6 +61,18 @@ void main() {
     expect(find.text('Casting votes and submitting shares'), findsOneWidget);
     expect(find.text('Finalizing submission'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
+    final progressSemantics = tester.getSemantics(
+      find.bySemanticsLabel('Active voting submission step progress'),
+    );
+    expect(progressSemantics.value, '25%');
+    final progressTransition = tester.widget<TweenAnimationBuilder<double>>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('mobile_voting_submission_active_step')),
+        matching: find.byType(TweenAnimationBuilder<double>),
+      ),
+    );
+    expect(progressTransition.duration, const Duration(milliseconds: 220));
+    expect(progressTransition.curve, Curves.easeOutCubic);
     expect(
       find.byKey(
         const ValueKey('mobile_voting_submission_step_delegating_complete'),

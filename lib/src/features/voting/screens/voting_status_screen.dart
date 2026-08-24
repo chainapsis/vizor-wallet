@@ -26,7 +26,7 @@ typedef VotingStatusContentWrapper =
 typedef VotingSubmissionProgressBuilder =
     Widget Function(
       BuildContext context,
-      VotingSubmissionProgressStep activeStep,
+      VotingSubmissionProgressPresentation presentation,
     );
 typedef VotingKeystoneStatusBuilder =
     Widget Function(
@@ -35,6 +35,16 @@ typedef VotingKeystoneStatusBuilder =
     );
 
 enum VotingSubmissionProgressStep { delegating, castingVotes, finalizing }
+
+class VotingSubmissionProgressPresentation {
+  const VotingSubmissionProgressPresentation({
+    required this.activeStep,
+    this.activeStepProgress,
+  });
+
+  final VotingSubmissionProgressStep activeStep;
+  final double? activeStepProgress;
+}
 
 VotingSubmissionProgressStep votingSubmissionProgressStepFor({
   required VotingSessionPhase phase,
@@ -319,7 +329,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           usesPlatformScreen = true;
           return progressBuilder(
             context,
-            VotingSubmissionProgressStep.delegating,
+            const VotingSubmissionProgressPresentation(
+              activeStep: VotingSubmissionProgressStep.delegating,
+            ),
           );
         }
         return const VotingPaneLoading();
@@ -382,19 +394,29 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
         final voteStepComplete =
             completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
+        final delegationProgress = _delegationProgress(state);
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
             phase != VotingSessionPhase.keystoneSigning &&
             !(job?.softwareAccountRequired ?? false)) {
           usesPlatformScreen = true;
+          final activeStep = votingSubmissionProgressStepFor(
+            phase: phase,
+            voteStepComplete: voteStepComplete,
+            submissionJobComplete: submissionJobComplete,
+            submissionJobInFlight: submissionJobInFlight,
+          );
           return progressBuilder(
             context,
-            votingSubmissionProgressStepFor(
-              phase: phase,
-              voteStepComplete: voteStepComplete,
-              submissionJobComplete: submissionJobComplete,
-              submissionJobInFlight: submissionJobInFlight,
+            VotingSubmissionProgressPresentation(
+              activeStep: activeStep,
+              activeStepProgress: switch (activeStep) {
+                VotingSubmissionProgressStep.delegating => delegationProgress,
+                VotingSubmissionProgressStep.castingVotes =>
+                  voteSubmissionProgress,
+                VotingSubmissionProgressStep.finalizing => null,
+              },
             ),
           );
         }
@@ -403,7 +425,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail: _voteSubmissionDetail(state),
           voteSubmissionProgress: voteSubmissionProgress,
-          delegationProgress: _delegationProgress(state),
+          delegationProgress: delegationProgress,
           completedSubmission: completedSubmission,
           submissionJobComplete: submissionJobComplete,
           submissionJobInFlight: submissionJobInFlight,

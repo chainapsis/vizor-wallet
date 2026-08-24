@@ -147,8 +147,11 @@ class MobileVotingStatusScreen extends StatelessWidget {
       accountUuid: accountUuid,
       requireCurrentRouteForConfirmation: true,
       contentHorizontalPadding: AppSpacing.sm,
-      submissionProgressBuilder: (_, activeStep) =>
-          MobileVotingSubmissionProgressScreen(activeStep: activeStep),
+      submissionProgressBuilder: (_, presentation) =>
+          MobileVotingSubmissionProgressScreen(
+            activeStep: presentation.activeStep,
+            activeStepProgress: presentation.activeStepProgress,
+          ),
       contentWrapper: (_, content) =>
           MobileVotingScaffold(title: 'Submit vote', child: content),
       keystoneStatusBuilder: (_, presentation) =>
