@@ -13,6 +13,15 @@ else()
 endif()
 set(STORAGE_PREFIX "${VIZOR_WINDOWS_STORAGE_PREFIX}")
 
+if(
+  DEFINED ENV{VIZOR_WINDOWS_PAYMENT_URI_OWNER}
+  AND "$ENV{VIZOR_WINDOWS_PAYMENT_URI_OWNER}" STREQUAL "1"
+)
+  set(VIZOR_WINDOWS_PAYMENT_URI_OWNER 1)
+else()
+  set(VIZOR_WINDOWS_PAYMENT_URI_OWNER 0)
+endif()
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
