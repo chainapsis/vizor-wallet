@@ -486,6 +486,11 @@ class _MobileVotingProposalOption extends StatelessWidget {
       opacity: enabled || readOnly ? 1 : 0.56,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadii.medium),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.pressed) ? Colors.transparent : null,
+        ),
         onTap: interactive
             ? onTap
             : readOnly

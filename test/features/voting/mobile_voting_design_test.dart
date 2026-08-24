@@ -193,6 +193,18 @@ void main() {
     final initialFirstOptionRect = tester.getRect(firstOption);
     final initialSecondOptionRect = tester.getRect(secondOption);
     final initialLabelRect = tester.getRect(label);
+    final firstOptionInkWell = tester.widget<InkWell>(
+      find.descendant(of: firstOption, matching: find.byType(InkWell)),
+    );
+    expect(firstOptionInkWell.splashFactory, NoSplash.splashFactory);
+    expect(
+      firstOptionInkWell.overlayColor?.resolve({WidgetState.pressed}),
+      Colors.transparent,
+    );
+    expect(
+      firstOptionInkWell.overlayColor?.resolve({WidgetState.focused}),
+      isNull,
+    );
     expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w500);
 
     await tester.tap(firstOption);

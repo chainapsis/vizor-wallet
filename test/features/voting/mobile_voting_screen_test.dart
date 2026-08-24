@@ -79,6 +79,12 @@ void main() {
     );
     expect(cardTap.onTap, isNotNull);
     expect(cardTap.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(cardTap.splashFactory, NoSplash.splashFactory);
+    expect(
+      cardTap.overlayColor?.resolve({WidgetState.pressed}),
+      Colors.transparent,
+    );
+    expect(cardTap.overlayColor?.resolve({WidgetState.focused}), isNull);
     expect(
       tester.getTopLeft(secondCard).dy - tester.getBottomLeft(card).dy,
       AppSpacing.md,

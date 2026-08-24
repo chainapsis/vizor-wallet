@@ -404,6 +404,11 @@ class _MobilePollCard extends StatelessWidget {
         key: ValueKey('voting_poll_card_tap_${round.roundId}'),
         onTap: onAction,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.pressed) ? Colors.transparent : null,
+        ),
         child: Ink(
           key: ValueKey('voting_poll_card_${round.roundId}'),
           padding: const EdgeInsets.symmetric(
