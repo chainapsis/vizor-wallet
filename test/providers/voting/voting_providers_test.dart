@@ -1697,6 +1697,54 @@ void main() {
   );
 
   test(
+    'readiness regressing after the wallet gate stalls the submission job',
+    () async {
+      // Ready for the initial ensureWalletReadyForVoting gate, then unready
+      // for every later wait the job initiates (eligibility, delegation) —
+      // a rewind or reorg mid-job. Those waits must fail on stall too, or
+      // the job parks in waitingForWalletSync with no error, no recovery
+      // poll, and no retry.
+      final harness = await _draftBearingStallHarness(
+        initiallyReady: true,
+        readyCallBudget: 1,
+      );
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
+        contains('has not advanced'),
+      );
+      expect(
+        harness.readiness.calls,
+        greaterThan(1),
+        reason: 'the stall came from a wait after the initial gate',
+      );
+
+      // Recovery is armed for the regressed wait, so the job resumes on its
+      // own once sync catches back up.
+      harness.readiness.readyCallBudget = null;
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
+        greaterThan(1),
+      );
+    },
+  );
+
+  test(
     'stalled-recovery polling stops for a birthday-ineligible account',
     () async {
       var syncStartCalls = 0;
@@ -8330,9 +8378,14 @@ class _DraftBearingStallHarness {
 Future<_DraftBearingStallHarness> _draftBearingStallHarness({
   AppSecurityNotifier? securityNotifier,
   void Function()? walletSyncStarter,
+  bool initiallyReady = false,
+  int? readyCallBudget,
 }) async {
   final rust = FakeVotingRustApi(emitCommitments: true);
-  final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+  final readiness = _MutableVotingWalletSyncReadinessChecker(
+    ready: initiallyReady,
+    readyCallBudget: readyCallBudget,
+  );
   final roundStatus = roundStatusJson(roundId: kRoundId)
     ..['proposals'] = [
       {
@@ -9402,10 +9455,19 @@ class _GatedVotingWalletSyncReadinessChecker
 
 class _MutableVotingWalletSyncReadinessChecker
     implements VotingWalletSyncReadinessChecker {
-  _MutableVotingWalletSyncReadinessChecker({required this.ready});
+  _MutableVotingWalletSyncReadinessChecker({
+    required this.ready,
+    this.readyCallBudget,
+  });
 
   bool ready;
   bool birthdayAfterSnapshot = false;
+
+  /// When set, only the first [readyCallBudget] checks may report ready.
+  /// Models readiness regressing mid-job (a rewind or reorg after the
+  /// initial wallet-sync gate has already passed).
+  int? readyCallBudget;
+  int calls = 0;
 
   @override
   Future<VotingWalletSyncReadiness> check({
@@ -9414,8 +9476,11 @@ class _MutableVotingWalletSyncReadinessChecker
     required String accountUuid,
     required int snapshotHeight,
   }) async {
+    calls++;
+    final budget = readyCallBudget;
+    final isReady = ready && (budget == null || calls <= budget);
     return VotingWalletSyncReadiness(
-      scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
+      scannedHeight: isReady ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
       accountBirthdayHeight: birthdayAfterSnapshot

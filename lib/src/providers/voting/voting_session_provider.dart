@@ -303,9 +303,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> ensureWalletReadyForVoting() {
     return _enqueue(() async {
       final context = await _loadContext(_roundId);
-      // The submission job is the one caller that converts a stall into an
-      // error: its recovery poll retries automatically once sync catches up.
-      await _waitUntilWalletReadyForVoting(context, failOnStall: true);
+      // Stall handling follows the notifier's ownership: the submission
+      // session fails (its recovery poll retries once sync catches up), a
+      // UI-owned session keeps waiting.
+      await _waitUntilWalletReadyForVoting(context);
     });
   }
 
@@ -3923,19 +3924,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
   }
 
+  /// Whether a wallet-sync stall must fail this notifier's waits.
+  ///
+  /// False for UI-owned sessions: a stall is a display state there, and the
+  /// wait continues automatically. The submission session overrides it to
+  /// true because it owns the recovery poll that turns the resulting error
+  /// back into a retry — see [VotingSubmissionSessionNotifier].
+  bool get failsOnWalletSyncStall => false;
+
   /// Waits until wallet scan reaches the round snapshot.
   ///
   /// A stall (no observable sync progress within the configured budget) is a
   /// UI state, not a failure: the loop keeps polling, marks the session
   /// stalled, and clears the mark as soon as progress resumes — so the
   /// "voting continues automatically" copy holds for every session-level
-  /// caller. Only the submission job passes [failOnStall], because it owns an
-  /// automatic recovery loop for the resulting error. Birthday-after-snapshot
-  /// always throws: it is a permanent per-account condition.
+  /// caller. Waits owned by the submission job instead throw, because it
+  /// owns an automatic recovery loop for the resulting error; that applies
+  /// to *every* wait it initiates, not just the initial readiness gate, so
+  /// readiness regressing mid-job (a rewind or reorg while eligibility or
+  /// delegation is being prepared) still surfaces instead of parking the job
+  /// in waitingForWalletSync forever. Birthday-after-snapshot always throws:
+  /// it is a permanent per-account condition.
   Future<void> _waitUntilWalletReadyForVoting(
     _VotingSessionContext context, {
-    bool failOnStall = false,
+    bool? failOnStall,
   }) async {
+    final failsOnStall = failOnStall ?? failsOnWalletSyncStall;
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final noProgressTimer = Stopwatch()..start();
@@ -3998,7 +4012,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
       final stalled = noProgressTimer.elapsed >= maxWait;
-      if (stalled && failOnStall) {
+      if (stalled && failsOnStall) {
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
@@ -4872,6 +4886,12 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
 
   @override
   bool get _ownsAutomaticShareTracking => true;
+
+  /// Every wait this session initiates fails on stall, not just the initial
+  /// readiness gate: the submission job turns the error into its recovery
+  /// poll and a retry, so a stall must never park the job silently.
+  @override
+  bool get failsOnWalletSyncStall => true;
 
   @override
   bool _retainAutomaticShareTracking() {
