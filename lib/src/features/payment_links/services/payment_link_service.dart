@@ -144,7 +144,12 @@ int validatePaymentLinkClaimBirthday({
 @visibleForTesting
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
-      .convert(utf8.encode('${link.network}:${link.address}:${link.mnemonic}'))
+      .convert(
+        utf8.encode(
+          '${link.network}:${link.address}:${link.mnemonic}:'
+          '${link.birthdayHeight}',
+        ),
+      )
       .toString();
   return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
 }
