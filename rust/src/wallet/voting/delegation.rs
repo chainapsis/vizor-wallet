@@ -14,8 +14,8 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::{
-    open_voting_db, retry_voting_db_locks, retry_voting_db_locks_coordinated,
-    with_open_voting_db_write, with_voting_sidecar_write_lock,
+    open_voting_db, retry_voting_db_locks_coordinated, with_open_voting_db_write,
+    with_voting_sidecar_write_lock,
 };
 
 use zcash_voting::config::PirLayout;
@@ -188,9 +188,10 @@ where
 
         // Fetch/cache PIR rows before Halo2 prove so remaining keygen warm-up
         // can overlap the network round-trip when the early warm thread is still
-        // running.
+        // running. Keep the first attempt parallel; only a SQLite writer-race
+        // retry joins the per-wallet coordinator.
         let precompute_started = Instant::now();
-        retry_voting_db_locks(|| {
+        retry_voting_db_locks_coordinated(&proof_db_path, || {
             prepared
                 .precompute(&proof_voting_db, &proof_wallet_db, &pir_client)
                 .map(|_| ())
@@ -428,7 +429,9 @@ pub async fn precompute_delegation_pir(
             Arc::new(zcash_voting::HyperTransport::new()),
         )
         .map_err(|e| format!("connect to PIR server failed: {e}"))?;
-        retry_voting_db_locks(|| {
+        // Preserve parallel warm-up on the first attempt, but wait behind the
+        // per-wallet writer coordinator if persistence loses a SQLite race.
+        retry_voting_db_locks_coordinated(&db_path, || {
             prepared
                 .precompute(&voting_db, &wallet_db, &pir_client)
                 .map_err(|e| e.to_string())
