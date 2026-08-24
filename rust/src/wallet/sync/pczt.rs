@@ -20,8 +20,8 @@
 //!   3. store_and_broadcast_signed_pczts_for_proposal(          │
 //!        [pcztWithProofs...], [pcztWithSignatures...],         │
 //!      )                                               → validate/finalize all
-//!                                                        + atomic store
-//!                                                        + ordered broadcast ◄┘
+//!                                                        + ordered broadcast
+//!                                                        + atomic prefix store ◄┘
 //! ```
 //!
 //! ## Critical invariants (each of these was a real regression at some point)
@@ -31,10 +31,10 @@
 //!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
 //!    shielded or transparent signatures are rejected before persistence.
 //!
-//! 2. **The complete Send set is atomically stored before broadcast.** Each
-//!    rich PCZT-aware store participates in one outer WalletDb transaction. A
-//!    later failure rolls back earlier writes; after commit, normal pending
-//!    recovery owns retries.
+//! 2. **Broadcast precedes persistence.** A definite lightwalletd rejection
+//!    must leave that PCZT out of the wallet DB. After each ordered broadcast
+//!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
+//!    a later store failure rolls back every earlier write in that prefix.
 //!
 //! 3. **Sapling params must be passed to BOTH `add_proofs_to_pczt`
 //!    AND the final store/broadcast call whenever the PCZT contains a
@@ -57,8 +57,8 @@
 //!    returns "Proposal not found (expired or already consumed)".
 //!    `discard_proposal` is idempotent and releases the retained
 //!    owner-scoped input lock after hardware cancel or pre-store failure.
-//!    Successful atomic storage finishes proposal bookkeeping before network
-//!    I/O because the pending transactions now own recovery.
+//!    Successful post-broadcast storage finishes proposal bookkeeping because
+//!    the persisted transactions now own recovery.
 
 use std::convert::Infallible;
 use std::sync::OnceLock;
@@ -103,9 +103,9 @@ pub struct StoreAndBroadcastPcztsResult {
 
 impl StoreAndBroadcastPcztsResult {
     const BROADCASTED: &'static str = "broadcasted";
-    const PENDING_BROADCAST: &'static str = "pending_broadcast";
     const BROADCAST_UNKNOWN: &'static str = "broadcast_unknown";
     const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
+    const BROADCASTED_STORAGE_FAILED: &'static str = "broadcasted_storage_failed";
     const EXPIRED: &'static str = "expired";
 }
 
@@ -1110,6 +1110,94 @@ struct PreparedSignedPczt {
     extracted: ExtractedPcztTransaction,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum PcztBroadcastAttempt {
+    Accepted,
+    TransportUnknown(String),
+    DefiniteRejection(String),
+    RouteUnavailable(String),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PcztBroadcastPlan {
+    persisted_prefix_len: usize,
+    broadcasted_count: u32,
+    status: &'static str,
+    message: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PcztBroadcastStep {
+    Continue,
+    Stop(PcztBroadcastPlan),
+    Fail(String),
+}
+
+fn pczt_broadcast_step(
+    index: usize,
+    total_count: usize,
+    attempt: PcztBroadcastAttempt,
+) -> PcztBroadcastStep {
+    match attempt {
+        PcztBroadcastAttempt::Accepted if index + 1 < total_count => {
+            PcztBroadcastStep::Continue
+        }
+        PcztBroadcastAttempt::Accepted => PcztBroadcastStep::Stop(PcztBroadcastPlan {
+            persisted_prefix_len: index + 1,
+            broadcasted_count: (index + 1) as u32,
+            status: StoreAndBroadcastPcztsResult::BROADCASTED,
+            message: None,
+        }),
+        PcztBroadcastAttempt::TransportUnknown(error) => {
+            PcztBroadcastStep::Stop(PcztBroadcastPlan {
+                // SendTransaction began, so this PCZT may already be on the
+                // network and must be persisted for conservative recovery.
+                persisted_prefix_len: index + 1,
+                broadcasted_count: index as u32,
+                status: if index == 0 {
+                    StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN
+                } else {
+                    StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST
+                },
+                message: Some(format!(
+                    "Transaction {} of {total_count} has an unknown broadcast result: {error}",
+                    index + 1
+                )),
+            })
+        }
+        PcztBroadcastAttempt::DefiniteRejection(error) if index == 0 => {
+            PcztBroadcastStep::Fail(error)
+        }
+        PcztBroadcastAttempt::DefiniteRejection(error) => {
+            PcztBroadcastStep::Stop(PcztBroadcastPlan {
+                // The rejected PCZT itself must not be persisted. Only the
+                // already-accepted dependency prefix is safe to store.
+                persisted_prefix_len: index,
+                broadcasted_count: index as u32,
+                status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
+                message: Some(format!(
+                    "Transaction {} of {total_count} was rejected and was not stored: {error}",
+                    index + 1
+                )),
+            })
+        }
+        PcztBroadcastAttempt::RouteUnavailable(error) if index == 0 => {
+            PcztBroadcastStep::Fail(error)
+        }
+        PcztBroadcastAttempt::RouteUnavailable(error) => {
+            PcztBroadcastStep::Stop(PcztBroadcastPlan {
+                persisted_prefix_len: index,
+                broadcasted_count: index as u32,
+                status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
+                message: Some(format!(
+                    "Failed to open the broadcast route for transaction {} of {total_count}; it was not stored: {error}",
+                    index + 1
+                )),
+            })
+        }
+    }
+}
+
 fn release_pczt_proposal_after_failure<T>(
     proposal_id: u64,
     send_flow_id: &str,
@@ -1171,11 +1259,11 @@ fn prepare_signed_pczts(
     Ok(prepared)
 }
 
-/// Validates every signed PCZT, atomically persists the complete ordered set,
-/// and only then broadcasts it in dependency order. The outer SQLite
-/// transaction is significant: the transactional `WalletDb` implementation
-/// makes each PCZT-aware store participate in the same commit, so a later
-/// failure rolls back every earlier item.
+/// Validates every signed PCZT, broadcasts it in dependency order, and then
+/// atomically persists only the accepted-or-ambiguous prefix. Definite
+/// rejections are never written to the wallet DB. The outer SQLite transaction
+/// makes each PCZT-aware store participate in the same commit, so a later store
+/// failure rolls back every earlier item in the prefix.
 pub async fn store_and_broadcast_signed_pczts_for_proposal(
     db_path: &str,
     lightwalletd_url: &str,
@@ -1187,7 +1275,9 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<StoreAndBroadcastPcztsResult, String> {
-    use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+    };
 
     let proposal_lock = match stored_proposal_lock(proposal_id, send_flow_id) {
         Ok(lock) => lock,
@@ -1214,40 +1304,6 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
         };
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
 
-    let store_result = with_wallet_db_write_lock("pczt.store_signed_pczts", || {
-        let mut db = open_wallet_db(db_path, network)?;
-        db.transactionally(|transactional_db| {
-            for (index, item) in prepared.iter().enumerate() {
-                let consensus_branch_id = *item.combined.global().consensus_branch_id();
-                let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
-                extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
-                    transactional_db,
-                    item.combined.clone(),
-                    sapling_vks.as_ref().map(|(spend, output)| (spend, output)),
-                    Some(&orchard_vk),
-                )
-                .map_err(|error| {
-                    AtomicPcztStoreError::Store(format!(
-                        "Store signed PCZT round {}: {error}",
-                        index + 1
-                    ))
-                })?;
-            }
-            Ok::<(), AtomicPcztStoreError>(())
-        })
-        .map_err(|error| format!("Atomically store signed PCZTs: {error}"))
-    });
-    if let Err(error) = store_result {
-        return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
-    }
-
-    // Successful wallet storage supersedes the proposal-level input lock. The
-    // stored pending transactions now own recovery, exactly as in the mnemonic
-    // execute path, so this bookkeeping must finish before network I/O.
-    if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
-        log::warn!("keystone: transactions stored but proposal lock bookkeeping failed: {error}");
-    }
-
     let txids = prepared
         .iter()
         .map(|item| item.extracted.txid.to_string())
@@ -1255,41 +1311,27 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Storage deliberately precedes network access so an unavailable route
-    // still leaves the complete signed set recoverable. Once a route exists,
-    // restore the old hardware-send live-tip guard before attempting either
-    // dependency: an already-expired set is terminal and must not be reported
-    // as pending automatic retry.
-    let mut expiry_client = match crate::wallet::sync_engine::open_isolated_lwd_channel(
-        lightwalletd_url,
-    )
-    .await
-    {
-        Ok(client) => client,
-        Err(error) => {
-            return Ok(StoreAndBroadcastPcztsResult {
-                txids: txids_joined,
-                status: StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string(),
-                broadcasted_count: 0,
-                total_count,
-                message: Some(format!(
-                    "All transactions are stored locally. Failed to open the broadcast route before checking expiry: {error}"
-                )),
-            });
-        }
-    };
+    // Resolve a live tip before touching either the DB or the network. An
+    // already-expired set is terminal and must not be persisted as pending.
+    let mut expiry_client =
+        match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
+            Ok(client) => client,
+            Err(error) => {
+                return release_pczt_proposal_after_failure(
+                    proposal_id,
+                    send_flow_id,
+                    format!("Failed to open the broadcast route: {error}"),
+                );
+            }
+        };
     let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
         Ok(latest) => latest,
         Err(error) => {
-            return Ok(StoreAndBroadcastPcztsResult {
-                txids: txids_joined,
-                status: StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string(),
-                broadcasted_count: 0,
-                total_count,
-                message: Some(format!(
-                    "All transactions are stored locally. Failed to read the chain tip before checking expiry: {error}"
-                )),
-            });
+            return release_pczt_proposal_after_failure(
+                proposal_id,
+                send_flow_id,
+                format!("Failed to read the chain tip before broadcast: {error}"),
+            );
         }
     };
     if let Some(error) = prepared.iter().find_map(|item| {
@@ -1299,93 +1341,180 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
             latest.height,
         )
     }) {
-        return Ok(StoreAndBroadcastPcztsResult {
+        let result = StoreAndBroadcastPcztsResult {
             txids: txids_joined,
             status: StoreAndBroadcastPcztsResult::EXPIRED.to_string(),
             broadcasted_count: 0,
             total_count,
+            message: Some(error.clone()),
+        };
+        return match finish_stored_proposal(proposal_id, send_flow_id, true) {
+            Ok(()) => Ok(result),
+            Err(cleanup_error) => Err(format!(
+                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+            )),
+        };
+    }
+    let mut first_client = Some(expiry_client);
+    let broadcast_plan = 'broadcast: loop {
+        for (index, item) in prepared.iter().enumerate() {
+            let client = if let Some(client) = first_client.take() {
+                Ok(client)
+            } else {
+                crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await
+            };
+            let mut client = match client {
+                Ok(client) => client,
+                Err(error) => {
+                    match pczt_broadcast_step(
+                        index,
+                        prepared.len(),
+                        PcztBroadcastAttempt::RouteUnavailable(error.to_string()),
+                    ) {
+                        PcztBroadcastStep::Continue => unreachable!(),
+                        PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
+                        PcztBroadcastStep::Fail(error) => {
+                            return release_pczt_proposal_after_failure(
+                                proposal_id,
+                                send_flow_id,
+                                error,
+                            );
+                        }
+                    }
+                }
+            };
+            let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
+                &mut client,
+                &item.extracted.raw_tx,
+            )
+            .await
+            {
+                Ok(response) => match super::broadcast::send_response_rejection_error(&response) {
+                    Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
+                    None => PcztBroadcastAttempt::Accepted,
+                },
+                Err(error) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+            };
+            match pczt_broadcast_step(index, prepared.len(), attempt) {
+                PcztBroadcastStep::Continue => {}
+                PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
+                PcztBroadcastStep::Fail(error) => {
+                    return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+                }
+            }
+        }
+        unreachable!("a non-empty PCZT set always yields a terminal broadcast plan");
+    };
+
+    let store_result: Result<(), String> = with_wallet_db_write_lock(
+        "pczt.store_broadcast_pczts",
+        || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let primary_result = db.transactionally(|transactional_db| {
+                for (index, item) in prepared
+                    .iter()
+                    .take(broadcast_plan.persisted_prefix_len)
+                    .enumerate()
+                {
+                    let consensus_branch_id = *item.combined.global().consensus_branch_id();
+                    let orchard_vk =
+                        orchard_verifying_key_for_consensus_branch(consensus_branch_id);
+                    extract_and_store_transaction_from_pczt::<
+                            _,
+                            zcash_client_sqlite::ReceivedNoteId,
+                        >(
+                            transactional_db,
+                            item.combined.clone(),
+                            sapling_vks.as_ref().map(|(spend, output)| (spend, output)),
+                            Some(&orchard_vk),
+                        )
+                        .map_err(|error| {
+                            AtomicPcztStoreError::Store(format!(
+                                "Store signed PCZT round {}: {error}",
+                                index + 1
+                            ))
+                        })?;
+                }
+                Ok::<(), AtomicPcztStoreError>(())
+            });
+            if let Err(primary_error) = primary_result {
+                log::warn!(
+                    "keystone: atomic PCZT-aware storage failed after broadcast: {primary_error}. \
+                 Falling back to chain-style transaction storage."
+                );
+                db.transactionally(|transactional_db| {
+                for (index, item) in prepared
+                    .iter()
+                    .take(broadcast_plan.persisted_prefix_len)
+                    .enumerate()
+                {
+                    decrypt_and_store_transaction(
+                        &network,
+                        transactional_db,
+                        &item.extracted.tx,
+                        None,
+                    )
+                    .map_err(|error| {
+                        AtomicPcztStoreError::Store(format!(
+                            "Fallback-store broadcast PCZT round {}: {error}",
+                            index + 1
+                        ))
+                    })?;
+                }
+                Ok::<(), AtomicPcztStoreError>(())
+            })
+            .map_err(|fallback_error| {
+                format!(
+                    "Primary PCZT storage failed: {primary_error}. Fallback storage failed: {fallback_error}"
+                )
+            })?;
+            }
+            Ok(())
+        },
+    );
+
+    if let Err(storage_error) = store_result {
+        let retain_error = retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id)
+            .err()
+            .map(|error| format!(" Proposal input-lock retention also failed: {error}."))
+            .unwrap_or_default();
+        let network_message = broadcast_plan
+            .message
+            .as_deref()
+            .map(|message| format!("{message} "))
+            .unwrap_or_default();
+        return Ok(StoreAndBroadcastPcztsResult {
+            txids: txids_joined,
+            status: if broadcast_plan.broadcasted_count == total_count {
+                StoreAndBroadcastPcztsResult::BROADCASTED_STORAGE_FAILED.to_string()
+            } else {
+                broadcast_plan.status.to_string()
+            },
+            broadcasted_count: broadcast_plan.broadcasted_count,
+            total_count,
             message: Some(format!(
-                "{error} The signed transactions remain stored locally, but they will not be retried."
+                "{network_message}A transaction may already be on the network, but local storage failed: {storage_error}. Do not send again until sync or an explorer confirms the result.{retain_error}"
             )),
         });
     }
-    drop(expiry_client);
 
-    for (index, item) in prepared.iter().enumerate() {
-        let mut client = match crate::wallet::sync_engine::open_isolated_lwd_channel(
-            lightwalletd_url,
-        )
-        .await
-        {
-            Ok(client) => client,
-            Err(error) => {
-                return Ok(StoreAndBroadcastPcztsResult {
-                    txids: txids_joined,
-                    status: if index == 0 {
-                        StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string()
-                    } else {
-                        StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
-                    },
-                    broadcasted_count: index as u32,
-                    total_count,
-                    message: Some(format!(
-                        "All transactions are stored locally. Failed to open the broadcast route for transaction {} of {}: {error}",
-                        index + 1,
-                        prepared.len()
-                    )),
-                });
-            }
-        };
-        let response = match crate::wallet::sync_engine::send_transaction_with_status(
-            &mut client,
-            &item.extracted.raw_tx,
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                return Ok(StoreAndBroadcastPcztsResult {
-                    txids: txids_joined,
-                    status: if index == 0 {
-                        StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN.to_string()
-                    } else {
-                        StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
-                    },
-                    broadcasted_count: index as u32,
-                    total_count,
-                    message: Some(format!(
-                        "Transaction {} of {} is stored locally, but its broadcast result is unknown: {error}",
-                        index + 1,
-                        prepared.len()
-                    )),
-                });
-            }
-        };
-        if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-            return Ok(StoreAndBroadcastPcztsResult {
-                txids: txids_joined,
-                status: if index == 0 {
-                    StoreAndBroadcastPcztsResult::PENDING_BROADCAST.to_string()
-                } else {
-                    StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST.to_string()
-                },
-                broadcasted_count: index as u32,
-                total_count,
-                message: Some(format!(
-                    "Transaction {} of {} is stored locally but was rejected: {error}",
-                    index + 1,
-                    prepared.len()
-                )),
-            });
-        }
+    // The persisted network-touched prefix now owns recovery, so the original
+    // proposal input lock is no longer needed.
+    if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+        log::warn!("keystone: transactions stored but proposal lock bookkeeping failed: {error}");
     }
 
+    let message = broadcast_plan.message.map(|message| {
+        format!(
+            "{message} The accepted-or-ambiguous transaction prefix was stored locally for recovery."
+        )
+    });
     Ok(StoreAndBroadcastPcztsResult {
         txids: txids_joined,
-        status: StoreAndBroadcastPcztsResult::BROADCASTED.to_string(),
-        broadcasted_count: total_count,
+        status: broadcast_plan.status.to_string(),
+        broadcasted_count: broadcast_plan.broadcasted_count,
         total_count,
-        message: None,
+        message,
     })
 }
 
@@ -2006,6 +2135,49 @@ mod tests {
                 .as_deref(),
             Some(tex_address.as_str())
         );
+    }
+
+    #[test]
+    fn pczt_set_first_rejection_never_persists() {
+        let step = pczt_broadcast_step(
+            0,
+            2,
+            PcztBroadcastAttempt::DefiniteRejection("rejected".to_string()),
+        );
+
+        assert_eq!(step, PcztBroadcastStep::Fail("rejected".to_string()));
+    }
+
+    #[test]
+    fn pczt_set_child_rejection_persists_only_accepted_parent() {
+        let step = pczt_broadcast_step(
+            1,
+            2,
+            PcztBroadcastAttempt::DefiniteRejection("rejected".to_string()),
+        );
+
+        let PcztBroadcastStep::Stop(plan) = step else {
+            panic!("child rejection must stop with a partial-broadcast plan");
+        };
+        assert_eq!(plan.persisted_prefix_len, 1);
+        assert_eq!(plan.broadcasted_count, 1);
+        assert_eq!(plan.status, StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST);
+    }
+
+    #[test]
+    fn pczt_set_transport_unknown_persists_the_attempted_pczt() {
+        let step = pczt_broadcast_step(
+            0,
+            2,
+            PcztBroadcastAttempt::TransportUnknown("deadline".to_string()),
+        );
+
+        let PcztBroadcastStep::Stop(plan) = step else {
+            panic!("ambiguous broadcast must stop with a recovery plan");
+        };
+        assert_eq!(plan.persisted_prefix_len, 1);
+        assert_eq!(plan.broadcasted_count, 0);
+        assert_eq!(plan.status, StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN);
     }
 
     #[test]

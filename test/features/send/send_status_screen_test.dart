@@ -281,6 +281,8 @@ void main() {
       status: 'partial_broadcast',
       broadcastedCount: 1,
       totalCount: 2,
+      message:
+          'The first transaction was accepted, but the dependent transaction was rejected and was not stored.',
     );
 
     await _setDesktopViewport(tester);
@@ -308,7 +310,7 @@ void main() {
       find.textContaining('first transaction was accepted'),
       findsOneWidget,
     );
-    expect(find.textContaining('will retry automatically'), findsOneWidget);
+    expect(find.textContaining('was not stored'), findsOneWidget);
   });
 
   testWidgets('TEX broadcasts both validated steps in dependency order', (
@@ -450,51 +452,15 @@ void main() {
     ]);
   });
 
-  for (final status in ['broadcast_unknown', 'pending_broadcast']) {
-    testWidgets('Keystone $status is already stored for pending recovery', (
-      tester,
-    ) async {
-      rustApi.storeResult = StoreAndBroadcastPcztsResult(
-        txids: _txid,
-        status: status,
-        broadcastedCount: 0,
-        totalCount: 1,
-        message: 'broadcast outcome requires conservative locking',
-      );
-
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _harness(
-          _reviewArgs(),
-          keystone: KeystoneBroadcastArgs(
-            reviewArgs: _reviewArgs(),
-            pcztWithProofs: const [
-              [3, 3, 3],
-            ],
-            pcztWithSignatures: const [
-              [9, 9],
-            ],
-          ),
-          isHardware: true,
-        ),
-      );
-      await tester.pump();
-      await _flushBroadcast(tester);
-
-      expect(rustApi.discardCalls, isEmpty);
-      expect(rustApi.retainCalls, isEmpty);
-    });
-  }
-
-  testWidgets('Keystone rejection reports locally stored retry state', (
+  testWidgets('Keystone broadcast_unknown is stored for pending recovery', (
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
       txids: _txid,
-      status: 'pending_broadcast',
+      status: 'broadcast_unknown',
       broadcastedCount: 0,
       totalCount: 1,
-      message: 'Broadcast rejected: mempool full',
+      message: 'broadcast outcome requires conservative locking',
     );
 
     await _setDesktopViewport(tester);
@@ -516,11 +482,78 @@ void main() {
     await tester.pump();
     await _flushBroadcast(tester);
 
+    expect(rustApi.discardCalls, isEmpty);
+    expect(rustApi.retainCalls, isEmpty);
+  });
+
+  testWidgets('Keystone definite rejection surfaces as a send failure', (
+    tester,
+  ) async {
+    rustApi.storeError = Exception(
+      'Broadcast rejected: bad-txns-inputs-spent (code 18)',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(),
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Send failed'), findsOneWidget);
     expect(
-      find.textContaining('stored locally but was rejected'),
+      find.text('The network rejected this transaction. Try again later.'),
       findsOneWidget,
     );
-    expect(find.textContaining('until it expires'), findsOneWidget);
+    expect(rustApi.discardCalls, isEmpty);
+    expect(rustApi.retainCalls, isEmpty);
+  });
+
+  testWidgets('Keystone storage failure preserves the network warning', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: _txid,
+      status: 'broadcasted_storage_failed',
+      broadcastedCount: 1,
+      totalCount: 1,
+      message:
+          'The transaction is on the network, but local storage failed. Do not send again until sync reconciles it.',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(),
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.textContaining('is on the network'), findsOneWidget);
+    expect(find.textContaining('Do not send again'), findsOneWidget);
   });
 
   testWidgets('expired Keystone signing is terminal and does not promise retry', (

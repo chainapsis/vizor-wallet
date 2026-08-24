@@ -967,8 +967,8 @@ Future<Uint8List> addProofsToPczt({
 Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncRedactPcztForSigner(pcztBytes: pcztBytes);
 
-/// Validate and finalize every signed PCZT, atomically persist the complete
-/// ordered set, finish the proposal lock, then broadcast parent before child.
+/// Validate and finalize every signed PCZT, broadcast parent before child,
+/// then atomically persist only the accepted-or-ambiguous transaction prefix.
 Future<StoreAndBroadcastPcztsResult> storeAndBroadcastSignedPcztsForProposal({
   required String dbPath,
   required String lightwalletdUrl,

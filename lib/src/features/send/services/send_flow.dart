@@ -362,13 +362,14 @@ String _pcztBroadcastStatusMessage(
   }
   if (result.status == 'partial_broadcast') {
     return result.message ??
-        'The first transaction was accepted. The dependent transaction is stored locally and will retry automatically.';
+        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
   }
-  final rawMessage = result.message?.toLowerCase() ?? '';
-  if (rawMessage.contains('rejected')) {
-    return 'The transaction is stored locally but was rejected by the network. The wallet will keep retrying until it expires.';
+  if (result.status == 'broadcasted_storage_failed') {
+    return result.message ??
+        'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
   }
-  return 'The transaction is stored locally and pending broadcast. It will retry automatically when the network is available.';
+  return result.message ??
+      'The transaction broadcast did not complete. Check Activity before sending again.';
 }
 
 /// Runs the full broadcast leg for a proposed send — Sapling params

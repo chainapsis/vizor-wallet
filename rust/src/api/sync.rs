@@ -2602,8 +2602,8 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     wallet_sync::redact_pczt_for_signer(&pczt_bytes)
 }
 
-/// Validate and finalize every signed PCZT, atomically persist the complete
-/// ordered set, finish the proposal lock, then broadcast parent before child.
+/// Validate and finalize every signed PCZT, broadcast parent before child,
+/// then atomically persist only the accepted-or-ambiguous transaction prefix.
 pub async fn store_and_broadcast_signed_pczts_for_proposal(
     db_path: String,
     lightwalletd_url: String,
