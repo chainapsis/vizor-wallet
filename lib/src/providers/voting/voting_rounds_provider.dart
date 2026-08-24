@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/private_state_sync/private_state_models.dart';
 import '../../features/voting/voting_flow_models.dart';
+import '../../features/voting/voting_private_state_sync.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
@@ -155,6 +157,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }) async {
     final String accountUuid;
     final String dbPath;
+    final String network;
     try {
       final activeAccountUuid = await ref
           .read(votingActiveAccountUuidProvider)
@@ -162,6 +165,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       if (activeAccountUuid == null) return const {};
       accountUuid = activeAccountUuid;
       dbPath = await ref.read(votingWalletDbPathProvider).call();
+      network = ref.read(votingRpcEndpointConfigProvider).networkName;
     } catch (error) {
       debugPrint('[zcash] Voting: skipped poll-state lookup: $error');
       return const {};
@@ -173,6 +177,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           api: api,
           dbPath: dbPath,
           accountUuid: accountUuid,
+          network: network,
           round: round,
         );
         if (recoveryState.voted ||
@@ -201,6 +206,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     required VotingRoundSummary round,
     required String dbPath,
     required String accountUuid,
+    required String network,
   }) async {
     final recovery = ref.read(votingRecoveryServiceProvider);
     final proposalIds = await _proposalIdsForRound(api, round);
@@ -221,6 +227,27 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       );
     }
     if (hasCompletedVoteForDisplay(roundPlan)) {
+      await _publishLocalCompletion(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        network: network,
+        roundId: round.roundId,
+        roundPlan: roundPlan,
+      );
+      return const _RoundListRecoveryState(
+        voted: true,
+        inProgress: false,
+        recoveryError: false,
+      );
+    }
+
+    final remoteCompletion = await _readRemoteCompletion(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      network: network,
+      roundId: round.roundId,
+    );
+    if (remoteCompletion != null) {
       return const _RoundListRecoveryState(
         voted: true,
         inProgress: false,
@@ -233,6 +260,62 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       inProgress: roundPlan?.pendingRecovery ?? false,
       recoveryError: false,
     );
+  }
+
+  Future<void> _publishLocalCompletion({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String roundId,
+    required rust_voting.RoundPlanView? roundPlan,
+  }) async {
+    final sync = ref.read(votingPrivateStateSyncProvider);
+    final record = VotingCompletionRecord.fromRoundPlan(
+      roundId: roundId,
+      roundPlan: roundPlan,
+    );
+    if (sync == null || record == null) return;
+    try {
+      await sync.publishCompletion(
+        account: PrivateStateAccount(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        ),
+        record: record,
+      );
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: private completion publish failed '
+        'round=$roundId: $error',
+      );
+    }
+  }
+
+  Future<VotingCompletionRecord?> _readRemoteCompletion({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String roundId,
+  }) async {
+    final sync = ref.read(votingPrivateStateSyncProvider);
+    if (sync == null) return null;
+    try {
+      return await sync.readCompletion(
+        account: PrivateStateAccount(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        ),
+        roundId: roundId,
+      );
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: private completion lookup failed '
+        'round=$roundId: $error',
+      );
+      return null;
+    }
   }
 
   List<int> _proposalIdsFromRoundJson(Map<String, dynamic> json) {

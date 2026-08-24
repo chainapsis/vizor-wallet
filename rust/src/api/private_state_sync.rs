@@ -146,8 +146,63 @@ pub fn authorize_private_state_request(
     })
 }
 
+/// Verifies an opaque request authorization without access to a wallet UFVK.
+///
+/// Deployments must additionally check the challenge's server-side lifetime,
+/// single-use state, and expected audience before accepting the request.
+pub fn verify_private_state_request_authorization(
+    authorization: ApiPrivateStateRequestAuthorization,
+) -> Result<(), String> {
+    catch(|| {
+        private_state_sync::verify_request_authorization(
+            &private_state_sync::RequestAuthorization::from(authorization),
+        )
+    })
+}
+
+/// Verifies that an opaque object reference is self-certifying before a
+/// server allocates challenge state for it.
+pub fn verify_private_state_object_reference(
+    reference: ApiPrivateStateObjectReference,
+) -> Result<(), String> {
+    catch(|| {
+        private_state_sync::verify_object_reference(&private_state_sync::ObjectReference::from(
+            reference,
+        ))
+    })
+}
+
+/// Verifies a PUT signature and that its envelope directly follows the object
+/// atomically read by the server. `current = None` means create-if-absent.
+pub fn verify_private_state_authorized_put_transition(
+    envelope: ApiPrivateStateEnvelope,
+    authorization: ApiPrivateStateRequestAuthorization,
+    current: Option<ApiPrivateStateEnvelope>,
+) -> Result<(), String> {
+    catch(|| {
+        let envelope = private_state_sync::EncryptedObject::from(envelope);
+        let authorization = private_state_sync::RequestAuthorization::from(authorization);
+        let current = current.map(private_state_sync::EncryptedObject::from);
+        private_state_sync::verify_authorized_put_transition(
+            &envelope,
+            &authorization,
+            current.as_ref(),
+        )
+    })
+}
+
 impl From<private_state_sync::ObjectReference> for ApiPrivateStateObjectReference {
     fn from(value: private_state_sync::ObjectReference) -> Self {
+        Self {
+            protocol_version: value.protocol_version,
+            object_id: value.object_id,
+            auth_public_key_base64: value.auth_public_key_base64,
+        }
+    }
+}
+
+impl From<ApiPrivateStateObjectReference> for private_state_sync::ObjectReference {
+    fn from(value: ApiPrivateStateObjectReference) -> Self {
         Self {
             protocol_version: value.protocol_version,
             object_id: value.object_id,
@@ -190,6 +245,22 @@ impl From<ApiPrivateStateEnvelope> for private_state_sync::EncryptedObject {
 
 impl From<private_state_sync::RequestAuthorization> for ApiPrivateStateRequestAuthorization {
     fn from(value: private_state_sync::RequestAuthorization) -> Self {
+        Self {
+            protocol_version: value.protocol_version,
+            object_id: value.object_id,
+            auth_public_key_base64: value.auth_public_key_base64,
+            method: value.method,
+            challenge_base64: value.challenge_base64,
+            audience: value.audience,
+            expires_at_seconds: value.expires_at_seconds,
+            content_hash_base64: value.content_hash_base64,
+            signature_base64: value.signature_base64,
+        }
+    }
+}
+
+impl From<ApiPrivateStateRequestAuthorization> for private_state_sync::RequestAuthorization {
+    fn from(value: ApiPrivateStateRequestAuthorization) -> Self {
         Self {
             protocol_version: value.protocol_version,
             object_id: value.object_id,

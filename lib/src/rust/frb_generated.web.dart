@@ -137,6 +137,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiPrivateStateObjectReference
+  dco_decode_box_autoadd_api_private_state_object_reference(dynamic raw);
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  dco_decode_box_autoadd_api_private_state_request_authorization(dynamic raw);
+
+  @protected
   ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
     dynamic raw,
   );
@@ -585,6 +593,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  ApiPrivateStateEnvelope?
+  dco_decode_opt_box_autoadd_api_private_state_envelope(dynamic raw);
+
+  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
@@ -959,6 +971,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiPrivateStateEnvelope sse_decode_box_autoadd_api_private_state_envelope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPrivateStateObjectReference
+  sse_decode_box_autoadd_api_private_state_object_reference(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  sse_decode_box_autoadd_api_private_state_request_authorization(
     SseDeserializer deserializer,
   );
 
@@ -1527,6 +1551,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  ApiPrivateStateEnvelope?
+  sse_decode_opt_box_autoadd_api_private_state_envelope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
@@ -1988,6 +2018,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_api_private_state_envelope(
     ApiPrivateStateEnvelope self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_private_state_object_reference(
+    ApiPrivateStateObjectReference self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_private_state_request_authorization(
+    ApiPrivateStateRequestAuthorization self,
     SseSerializer serializer,
   );
 
@@ -2680,6 +2722,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_private_state_envelope(
+    ApiPrivateStateEnvelope? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);

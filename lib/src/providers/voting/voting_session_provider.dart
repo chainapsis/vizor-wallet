@@ -7,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../core/formatting/hex_codec.dart';
+import '../../core/private_state_sync/private_state_models.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
+import '../../features/voting/voting_private_state_sync.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
@@ -71,6 +73,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   Future<void>? _shareTrackingPass;
+  final Map<String, Future<void>> _completionPublishFutures = {};
+  final Set<String> _publishedCompletionScopes = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -117,6 +121,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       round: context.round,
       resumePlan: context.resumePlan,
       roundPlan: context.roundPlan,
+      remoteCompletion: context.remoteCompletion,
       phase: _phaseForPlans(context.roundPlan),
     );
     _shareTrackingTimer?.cancel();
@@ -253,6 +258,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           round: context.round,
           resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
+          remoteCompletion: context.remoteCompletion,
           phase: _phaseForPlans(context.roundPlan),
         ),
       );
@@ -3103,6 +3109,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           proposalIds: proposalIds,
         );
     checkAction();
+    VotingCompletionRecord? remoteCompletion;
+    final privateSync = ref.read(votingPrivateStateSyncProvider);
+    if (privateSync != null &&
+        !hasBlockingRoundRecoveryWork(roundPlan) &&
+        !hasCompletedVoteForDisplay(roundPlan)) {
+      try {
+        remoteCompletion = await privateSync.readCompletion(
+          account: PrivateStateAccount(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+          ),
+          roundId: round.roundId,
+        );
+      } catch (error) {
+        debugPrint(
+          '[zcash] Voting: private completion lookup failed '
+          'round=${round.roundId}: $error',
+        );
+      }
+      checkAction();
+    }
     final context = _VotingSessionContext(
       sessionGeneration: _sessionGeneration,
       dbPath: dbPath,
@@ -3115,7 +3143,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundParams: roundParams,
       resumePlan: resumePlan,
       roundPlan: roundPlan,
+      remoteCompletion: remoteCompletion,
     );
+    await _publishCompletionIfNeeded(context, roundPlan);
+    checkAction();
     return context;
   }
 
@@ -3156,9 +3187,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// Loads the crate planner's round plan.
   Future<rust_wire.RoundPlanView> _loadRoundPlan(
     _VotingSessionContext context,
-  ) {
+  ) async {
     final proposals = proposalsFromRound(context.round);
-    return ref
+    final plan = await ref
         .read(votingRecoveryServiceProvider)
         .loadRoundPlan(
           dbPath: context.dbPath,
@@ -3166,6 +3197,56 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundId: context.round.roundId,
           proposalIds: proposals.map((p) => p.id).toList(),
         );
+    await _publishCompletionIfNeeded(context, plan);
+    return plan;
+  }
+
+  Future<void> _publishCompletionIfNeeded(
+    _VotingSessionContext context,
+    rust_wire.RoundPlanView? roundPlan,
+  ) async {
+    final scope = [
+      context.dbPath,
+      context.network,
+      context.accountUuid,
+      context.round.roundId,
+    ].join('\u0000');
+    if (_publishedCompletionScopes.contains(scope)) return;
+    final inFlight = _completionPublishFutures[scope];
+    if (inFlight != null) return inFlight;
+    final sync = ref.read(votingPrivateStateSyncProvider);
+    final record = VotingCompletionRecord.fromRoundPlan(
+      roundId: context.round.roundId,
+      roundPlan: roundPlan,
+    );
+    if (sync == null || record == null) return;
+
+    late final Future<void> run;
+    run =
+        (() async {
+          try {
+            await sync.publishCompletion(
+              account: PrivateStateAccount(
+                dbPath: context.dbPath,
+                network: context.network,
+                accountUuid: context.accountUuid,
+              ),
+              record: record,
+            );
+            _publishedCompletionScopes.add(scope);
+          } catch (error) {
+            debugPrint(
+              '[zcash] Voting: private completion publish failed '
+              'round=${context.round.roundId}: $error',
+            );
+          }
+        })().whenComplete(() {
+          if (identical(_completionPublishFutures[scope], run)) {
+            _completionPublishFutures.remove(scope);
+          }
+        });
+    _completionPublishFutures[scope] = run;
+    await run;
   }
 
   Future<void> _waitUntilWalletReadyForVoting(
@@ -3693,6 +3774,7 @@ class _VotingSessionContext {
   final rust_wire.VotingRoundParams roundParams;
   final VotingResumePlan resumePlan;
   final rust_wire.RoundPlanView? roundPlan;
+  final VotingCompletionRecord? remoteCompletion;
 
   const _VotingSessionContext({
     required this.sessionGeneration,
@@ -3706,6 +3788,7 @@ class _VotingSessionContext {
     required this.roundParams,
     required this.resumePlan,
     this.roundPlan,
+    this.remoteCompletion,
   });
 }
 

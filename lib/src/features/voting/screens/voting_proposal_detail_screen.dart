@@ -19,6 +19,7 @@ import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_poll_ordering.dart';
+import '../voting_private_state_sync.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -112,14 +113,17 @@ class _VotingProposalDetailViewState
         final accountUuid = state.accountUuid;
         final proposals = proposalsFromRound(round);
         final forumUri = votingRoundForumUriFromJson(round.rawJson);
-        final completedVote = _CompletedVote.fromPlan(state.roundPlan);
+        final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+          state.roundPlan,
+        );
+        final completedVote = hasBlockingRecovery
+            ? null
+            : _CompletedVote.fromPlan(state.roundPlan) ??
+                  _CompletedVote.fromRemote(state.remoteCompletion);
         final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
         final hasConfirmedVotingEligibility =
             state.hasConfirmedVotingEligibility;
         final isVotingEligibilityPending = _isVotingEligibilityPending(state);
-        final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
-          state.roundPlan,
-        );
         _maybePrepareVotingPower(state);
         // Foreground recovery takes precedence over the read-only voted view.
         // Accepted helper shares may still be tracked after submission, but
@@ -138,7 +142,9 @@ class _VotingProposalDetailViewState
           );
         }
         if (completedVote != null &&
-            (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
+            (state.remoteCompletion != null ||
+                hasConfirmedVotingEligibility ||
+                isVotingEligibilityPending)) {
           return _VotedPollContent(
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
@@ -1228,6 +1234,14 @@ class _CompletedVote {
     return _CompletedVote(
       choicesByProposalId: choices,
       votedAt: parseFlexibleDate(display.votedAt?.toInt()),
+    );
+  }
+
+  static _CompletedVote? fromRemote(VotingCompletionRecord? record) {
+    if (record == null) return null;
+    return _CompletedVote(
+      choicesByProposalId: record.choicesByProposalId,
+      votedAt: record.completedAt,
     );
   }
 }

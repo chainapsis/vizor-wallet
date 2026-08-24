@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 577691567;
+  int get rustContentHash => -28774345;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1231,6 +1231,21 @@ abstract class RustLibApi extends BaseApi {
   });
 
   bool crateApiWalletValidateMnemonic({required String mnemonic});
+
+  Future<void>
+  crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition({
+    required ApiPrivateStateEnvelope envelope,
+    required ApiPrivateStateRequestAuthorization authorization,
+    ApiPrivateStateEnvelope? current,
+  });
+
+  Future<void> crateApiPrivateStateSyncVerifyPrivateStateObjectReference({
+    required ApiPrivateStateObjectReference reference,
+  });
+
+  Future<void> crateApiPrivateStateSyncVerifyPrivateStateRequestAuthorization({
+    required ApiPrivateStateRequestAuthorization authorization,
+  });
 
   Future<String> crateApiVotingVoteCommitmentWireJson({
     required VoteCommitmentWire commitment,
@@ -8750,6 +8765,131 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void>
+  crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition({
+    required ApiPrivateStateEnvelope envelope,
+    required ApiPrivateStateRequestAuthorization authorization,
+    ApiPrivateStateEnvelope? current,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_private_state_envelope(
+            envelope,
+            serializer,
+          );
+          sse_encode_box_autoadd_api_private_state_request_authorization(
+            authorization,
+            serializer,
+          );
+          sse_encode_opt_box_autoadd_api_private_state_envelope(
+            current,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 175,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransitionConstMeta,
+        argValues: [envelope, authorization, current],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransitionConstMeta =>
+      const TaskConstMeta(
+        debugName: "verify_private_state_authorized_put_transition",
+        argNames: ["envelope", "authorization", "current"],
+      );
+
+  @override
+  Future<void> crateApiPrivateStateSyncVerifyPrivateStateObjectReference({
+    required ApiPrivateStateObjectReference reference,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_private_state_object_reference(
+            reference,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 176,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiPrivateStateSyncVerifyPrivateStateObjectReferenceConstMeta,
+        argValues: [reference],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPrivateStateSyncVerifyPrivateStateObjectReferenceConstMeta =>
+      const TaskConstMeta(
+        debugName: "verify_private_state_object_reference",
+        argNames: ["reference"],
+      );
+
+  @override
+  Future<void> crateApiPrivateStateSyncVerifyPrivateStateRequestAuthorization({
+    required ApiPrivateStateRequestAuthorization authorization,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_private_state_request_authorization(
+            authorization,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 177,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiPrivateStateSyncVerifyPrivateStateRequestAuthorizationConstMeta,
+        argValues: [authorization],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPrivateStateSyncVerifyPrivateStateRequestAuthorizationConstMeta =>
+      const TaskConstMeta(
+        debugName: "verify_private_state_request_authorization",
+        argNames: ["authorization"],
+      );
+
+  @override
   Future<String> crateApiVotingVoteCommitmentWireJson({
     required VoteCommitmentWire commitment,
   }) {
@@ -8761,7 +8901,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 175,
+            funcId: 178,
             port: port_,
           );
         },
@@ -8798,7 +8938,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 176,
+            funcId: 179,
             port: port_,
           );
         },
@@ -8829,7 +8969,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 177,
+            funcId: 180,
           )!;
         },
         codec: SseCodec(
@@ -8860,7 +9000,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 178,
+            funcId: 181,
             port: port_,
           );
         },
@@ -8897,7 +9037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 179,
+            funcId: 182,
             port: port_,
           );
         },
@@ -9287,6 +9427,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_api_private_state_envelope(raw);
+  }
+
+  @protected
+  ApiPrivateStateObjectReference
+  dco_decode_box_autoadd_api_private_state_object_reference(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_api_private_state_object_reference(raw);
+  }
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  dco_decode_box_autoadd_api_private_state_request_authorization(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_api_private_state_request_authorization(raw);
   }
 
   @protected
@@ -10529,6 +10683,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  ApiPrivateStateEnvelope?
+  dco_decode_opt_box_autoadd_api_private_state_envelope(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_api_private_state_envelope(raw);
   }
 
   @protected
@@ -11894,6 +12057,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_api_private_state_envelope(deserializer));
+  }
+
+  @protected
+  ApiPrivateStateObjectReference
+  sse_decode_box_autoadd_api_private_state_object_reference(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_api_private_state_object_reference(deserializer));
+  }
+
+  @protected
+  ApiPrivateStateRequestAuthorization
+  sse_decode_box_autoadd_api_private_state_request_authorization(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_api_private_state_request_authorization(deserializer));
   }
 
   @protected
@@ -13614,6 +13795,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiPrivateStateEnvelope?
+  sse_decode_opt_box_autoadd_api_private_state_envelope(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_api_private_state_envelope(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -15170,6 +15365,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_api_private_state_object_reference(
+    ApiPrivateStateObjectReference self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_private_state_object_reference(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_api_private_state_request_authorization(
+    ApiPrivateStateRequestAuthorization self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_private_state_request_authorization(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_api_voting_round_context(
     ApiVotingRoundContext self,
     SseSerializer serializer,
@@ -16572,6 +16785,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_private_state_envelope(
+    ApiPrivateStateEnvelope? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_api_private_state_envelope(self, serializer);
     }
   }
 

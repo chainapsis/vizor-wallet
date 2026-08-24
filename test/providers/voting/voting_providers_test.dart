@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
+import 'package:zcash_wallet/src/features/voting/voting_private_state_sync.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
@@ -50,6 +51,7 @@ import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
 import '../../features/voting/round_plan_test_utils.dart';
+import '../../features/voting/private_state_test_repository.dart';
 import '../../features/voting/tx_event_json_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 
@@ -1040,6 +1042,185 @@ void main() {
       expect(rounds.single.voted, isTrue);
     },
   );
+
+  test('rounds provider publishes local completion to private state', () async {
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses()
+        ..['/shielded-vote/v1/rounds'] = {
+          'rounds': [
+            {
+              'vote_round_id': kRoundId,
+              'title': 'Poll',
+              'status': 'active',
+              'proposals': [
+                {
+                  'id': 7,
+                  'title': 'Question',
+                  'options': [
+                    {'index': 0, 'label': 'Yes'},
+                    {'index': 1, 'label': 'No'},
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(),
+      roundPlan: apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 7, choice: 1),
+          ],
+          votedAt: BigInt.from(1_717_260_000),
+        ),
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      ),
+    );
+    final repository = MemoryVotingCompletionRepository();
+    final container = _sessionContainer(
+      http: http,
+      recoveryApi: recoveryApi,
+      privateStateSync: VotingPrivateStateSync(repository),
+    );
+    addTearDown(container.dispose);
+
+    final rounds = await container.read(votingRoundsProvider.future);
+
+    expect(rounds.single.voted, isTrue);
+    expect(repository.createCalls, 1);
+    expect(repository.record?.choicesByProposalId, {7: 1});
+  });
+
+  test(
+    'rounds provider restores remote completion without local state',
+    () async {
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses()
+          ..['/shielded-vote/v1/rounds'] = {
+            'rounds': [
+              {
+                'vote_round_id': kRoundId,
+                'title': 'Poll',
+                'status': 'active',
+                'proposals': [
+                  {
+                    'id': 7,
+                    'title': 'Question',
+                    'options': [
+                      {'index': 0, 'label': 'Yes'},
+                      {'index': 1, 'label': 'No'},
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+      );
+      final repository = MemoryVotingCompletionRepository(
+        record: VotingCompletionRecord(
+          roundId: kRoundId,
+          completedAtSeconds: 1_717_260_000,
+          choicesByProposalId: const {7: 0},
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        recoveryApi: FakeVotingRecoveryApi(state: recoveryState()),
+        privateStateSync: VotingPrivateStateSync(repository),
+      );
+      addTearDown(container.dispose);
+
+      final rounds = await container.read(votingRoundsProvider.future);
+
+      expect(rounds.single.voted, isTrue);
+      expect(repository.readCalls, 1);
+    },
+  );
+
+  test('session publishes an authoritative local completion', () async {
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(),
+      roundPlan: apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 7, choice: 1),
+          ],
+          votedAt: BigInt.from(1_717_260_000),
+        ),
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      ),
+    );
+    final repository = MemoryVotingCompletionRepository();
+    final container = _sessionContainer(
+      recoveryApi: recoveryApi,
+      privateStateSync: VotingPrivateStateSync(repository),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+
+    expect(repository.createCalls, 1);
+    expect(repository.record?.choicesByProposalId, {7: 1});
+  });
+
+  test('session publish cache is scoped to the active account', () async {
+    final activeAccountProvider =
+        NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(),
+      roundPlan: apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: const rust_wire.CompletedVoteDisplayView(
+          choices: [
+            rust_wire.CompletedVoteChoiceView(proposalId: 7, choice: 1),
+          ],
+        ),
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      ),
+    );
+    final repository = MemoryVotingCompletionRepository();
+    final container = _sessionContainer(
+      recoveryApi: recoveryApi,
+      activeAccountUuidListenable: activeAccountProvider,
+      privateStateSync: VotingPrivateStateSync(repository),
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    container.read(activeAccountProvider.notifier).set('account-2');
+    final reloaded = await container.read(
+      votingSessionProvider(kRoundId).future,
+    );
+
+    expect(reloaded.accountUuid, 'account-2');
+    expect(repository.createCalls, 2);
+  });
 
   test('session provider rejects explicitly skipped round IDs', () async {
     final http = FakeVotingHttpClient(responses: votingHttpResponses());
@@ -6347,6 +6528,7 @@ ProviderContainer _sessionContainer({
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind Function(rust_config.ResolvedVotingConfig?)?
   configSwitchKind,
+  VotingPrivateStateSync? privateStateSync,
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -6416,6 +6598,8 @@ ProviderContainer _sessionContainer({
           api: recoveryApi ?? FakeVotingRecoveryApi(state: recoveryState()),
         ),
       ),
+      if (privateStateSync != null)
+        votingPrivateStateSyncProvider.overrideWithValue(privateStateSync),
       accountProvider.overrideWith(
         () => _FakeVotingAccountNotifier(
           mnemonic: accountMnemonic,

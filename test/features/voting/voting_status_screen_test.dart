@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confi
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
+import 'package:zcash_wallet/src/features/voting/voting_private_state_sync.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
@@ -54,6 +55,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
+
+import 'private_state_test_repository.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
@@ -1693,6 +1696,93 @@ void main() {
     expect(find.text('results route'), findsNothing);
   });
 
+  testWidgets('proposal detail restores remote choice without local recovery', (
+    tester,
+  ) async {
+    final repository = MemoryVotingCompletionRepository(
+      record: VotingCompletionRecord(
+        roundId: _roundId,
+        completedAtSeconds: 1_717_260_000,
+        choicesByProposalId: const {1: 1},
+      ),
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: _MutableVotingRecoveryApi(),
+      overrides: [
+        votingPrivateStateSyncProvider.overrideWithValue(
+          VotingPrivateStateSync(repository),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('Selected'), findsOneWidget);
+    expect(find.text('Review answers'), findsNothing);
+  });
+
+  testWidgets(
+    'local blocking recovery takes precedence over remote completion',
+    (tester) async {
+      final recoveryApi = _MutableVotingRecoveryApi()
+        ..roundPlan = apiRoundPlan(
+          roundId: _roundId,
+          pendingRecovery: true,
+          nextSteps: const [
+            rust_wire.NextStepView(
+              kind: 'cast_vote',
+              bundleIndex: 0,
+              proposalId: 1,
+              choice: 0,
+              shareIndex: 0,
+            ),
+          ],
+          openProposals: Uint32List(0),
+          allDecided: false,
+        );
+      final repository = MemoryVotingCompletionRepository(
+        record: VotingCompletionRecord(
+          roundId: _roundId,
+          completedAtSeconds: 1_717_260_000,
+          choicesByProposalId: const {1: 1},
+        ),
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        overrides: [
+          votingPrivateStateSyncProvider.overrideWithValue(
+            VotingPrivateStateSync(repository),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _proposalHarness(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Vote in progress'), findsOneWidget);
+      expect(find.text('Continue voting'), findsOneWidget);
+      expect(find.textContaining('Voted'), findsNothing);
+    },
+  );
+
   testWidgets('proposal detail shows recovery before non-active redirect', (
     tester,
   ) async {
@@ -2213,6 +2303,44 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('results screen restores a remote completion choice', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'closed';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
+        ..['/shielded-vote/v1/tally-results/$_roundId'] = {
+          'vote_round_id': _roundId,
+          'results': const [],
+        },
+    );
+    final repository = MemoryVotingCompletionRepository(
+      record: VotingCompletionRecord(
+        roundId: _roundId,
+        completedAtSeconds: 1_717_260_000,
+        choicesByProposalId: const {1: 1},
+      ),
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingPrivateStateSyncProvider.overrideWithValue(
+          VotingPrivateStateSync(repository),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _resultsHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Voted: No'), findsOneWidget);
   });
 
   testWidgets('results screen keeps empty tallies visible as zero rows', (

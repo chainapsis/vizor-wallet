@@ -93,7 +93,7 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
       accountUuid: account.accountUuid,
       namespace: key.namespace.wireName,
       itemKey: key.itemKey,
-      envelope: _envelopeToRust(envelope),
+      envelope: privateStateEnvelopeToRust(envelope),
     );
   }
 
@@ -151,7 +151,9 @@ PrivateStateEnvelope _envelopeFromRust(rust.ApiPrivateStateEnvelope envelope) {
   );
 }
 
-rust.ApiPrivateStateEnvelope _envelopeToRust(PrivateStateEnvelope envelope) {
+rust.ApiPrivateStateEnvelope privateStateEnvelopeToRust(
+  PrivateStateEnvelope envelope,
+) {
   return rust.ApiPrivateStateEnvelope(
     protocolVersion: envelope.protocolVersion,
     objectId: envelope.objectId,

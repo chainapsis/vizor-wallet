@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../core/formatting/date_format.dart';
+import '../../features/voting/voting_private_state_sync.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
@@ -220,6 +221,7 @@ class VotingSessionState {
   /// fields drive foreground recovery, completed vote display, and next action
   /// selection.
   final rust_wire.RoundPlanView? roundPlan;
+  final VotingCompletionRecord? remoteCompletion;
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;
 
@@ -256,6 +258,7 @@ class VotingSessionState {
     this.round,
     this.resumePlan,
     this.roundPlan,
+    this.remoteCompletion,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
     this.privacyTrimDroppedValueZatoshi,
@@ -319,6 +322,8 @@ class VotingSessionState {
     VotingResumePlan? resumePlan,
     rust_wire.RoundPlanView? roundPlan,
     bool clearRoundPlan = false,
+    VotingCompletionRecord? remoteCompletion,
+    bool clearRemoteCompletion = false,
     Uri? pirEndpoint,
     BigInt? eligibleWeightZatoshi,
     BigInt? privacyTrimDroppedValueZatoshi,
@@ -354,6 +359,9 @@ class VotingSessionState {
       round: round ?? this.round,
       resumePlan: resumePlan ?? this.resumePlan,
       roundPlan: clearRoundPlan ? null : roundPlan ?? this.roundPlan,
+      remoteCompletion: clearRemoteCompletion
+          ? null
+          : remoteCompletion ?? this.remoteCompletion,
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
           eligibleWeightZatoshi ?? this.eligibleWeightZatoshi,

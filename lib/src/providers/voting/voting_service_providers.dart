@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_recovery_service.dart';
+import '../../features/voting/voting_private_state_sync.dart';
+import '../../core/private_state_sync/private_state_crypto.dart';
+import '../../core/private_state_sync/private_state_object_repository.dart';
+import '../../core/private_state_sync/private_state_remote_store.dart';
 import '../../core/config/rpc_endpoint_config.dart';
 import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
@@ -158,6 +162,24 @@ final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
 /// Adapter over durable Rust recovery/share-tracking state.
 final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
   return const VotingRecoveryService();
+});
+
+/// Opaque remote storage deployment seam. Production remains disabled until a
+/// server URL and transport policy are configured; tests can share one store
+/// across independent provider containers to model multiple installations.
+final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((_) {
+  return null;
+});
+
+final votingPrivateStateSyncProvider = Provider<VotingPrivateStateSync?>((ref) {
+  final remote = ref.watch(privateStateRemoteStoreProvider);
+  if (remote == null) return null;
+  return VotingPrivateStateSync(
+    DefaultPrivateStateObjectRepository(
+      crypto: const RustPrivateStateCrypto(),
+      remote: remote,
+    ),
+  );
 });
 
 /// Injectable wrapper around generated Rust voting bindings.

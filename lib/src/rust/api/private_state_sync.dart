@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `account_ufvk`, `catch`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<ApiPrivateStateObjectReference> derivePrivateStateObjectReference({
   required String dbPath,
@@ -83,6 +83,39 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
   expiresAtSeconds: expiresAtSeconds,
   contentHashBase64: contentHashBase64,
 );
+
+/// Verifies an opaque request authorization without access to a wallet UFVK.
+///
+/// Deployments must additionally check the challenge's server-side lifetime,
+/// single-use state, and expected audience before accepting the request.
+Future<void> verifyPrivateStateRequestAuthorization({
+  required ApiPrivateStateRequestAuthorization authorization,
+}) => RustLib.instance.api
+    .crateApiPrivateStateSyncVerifyPrivateStateRequestAuthorization(
+      authorization: authorization,
+    );
+
+/// Verifies that an opaque object reference is self-certifying before a
+/// server allocates challenge state for it.
+Future<void> verifyPrivateStateObjectReference({
+  required ApiPrivateStateObjectReference reference,
+}) => RustLib.instance.api
+    .crateApiPrivateStateSyncVerifyPrivateStateObjectReference(
+      reference: reference,
+    );
+
+/// Verifies a PUT signature and that its envelope directly follows the object
+/// atomically read by the server. `current = None` means create-if-absent.
+Future<void> verifyPrivateStateAuthorizedPutTransition({
+  required ApiPrivateStateEnvelope envelope,
+  required ApiPrivateStateRequestAuthorization authorization,
+  ApiPrivateStateEnvelope? current,
+}) => RustLib.instance.api
+    .crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition(
+      envelope: envelope,
+      authorization: authorization,
+      current: current,
+    );
 
 class ApiPrivateStateEnvelope {
   final int protocolVersion;

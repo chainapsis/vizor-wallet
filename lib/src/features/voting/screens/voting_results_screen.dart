@@ -18,6 +18,7 @@ import '../voting_choice_style.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
+import '../voting_resume_plan.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
@@ -492,14 +493,14 @@ String? _roundDescription(VotingRoundDetails round) {
 }
 
 int? _selectedChoiceForProposal(VotingSessionState? state, int proposalId) {
+  if (hasBlockingRoundRecoveryWork(state?.roundPlan)) return null;
   final display = state?.roundPlan?.completedVoteDisplay;
-  if (state?.roundPlan?.completedForDisplay != true || display == null) {
-    return null;
+  if (state?.roundPlan?.completedForDisplay == true && display != null) {
+    for (final choice in display.choices) {
+      if (choice.proposalId == proposalId) return choice.choice;
+    }
   }
-  for (final choice in display.choices) {
-    if (choice.proposalId == proposalId) return choice.choice;
-  }
-  return null;
+  return state?.remoteCompletion?.choicesByProposalId[proposalId];
 }
 
 Map<int, num> _proposalTally(Map<String, dynamic> json, int proposalId) {

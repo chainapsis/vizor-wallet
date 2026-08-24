@@ -127,6 +127,28 @@ pub fn derive_object_reference(
     Ok(ObjectKeys::derive(ufvk, network, namespace, item_key)?.reference())
 }
 
+/// Validates that an opaque object ID is the self-certifying identifier for
+/// the supplied authentication public key.
+pub fn verify_object_reference(reference: &ObjectReference) -> Result<(), String> {
+    if reference.protocol_version != PROTOCOL_VERSION {
+        return Err("Unsupported private-state object version".to_string());
+    }
+    let public_key_bytes = decode_exact(
+        &reference.auth_public_key_base64,
+        ED25519_PUBLIC_KEY_LEN,
+        "public key",
+    )?;
+    let public_key: [u8; ED25519_PUBLIC_KEY_LEN] = public_key_bytes
+        .try_into()
+        .map_err(|_| "Invalid private-state public key".to_string())?;
+    VerifyingKey::from_bytes(&public_key)
+        .map_err(|_| "Invalid private-state public key".to_string())?;
+    if reference.object_id != reference_from_public_key(public_key).object_id {
+        return Err("Private-state object ID does not match public key".to_string());
+    }
+    Ok(())
+}
+
 pub fn seal_object(
     ufvk: &str,
     network: &str,
@@ -722,6 +744,11 @@ mod tests {
         assert_ne!(reference.object_id, other_item.object_id);
         assert_ne!(reference.object_id, other_namespace.object_id);
         assert_ne!(reference.object_id, other_network.object_id);
+        verify_object_reference(&reference).unwrap();
+
+        let mut tampered = reference;
+        tampered.object_id = URL_SAFE_NO_PAD.encode([0u8; 32]);
+        assert!(verify_object_reference(&tampered).is_err());
     }
 
     #[test]
