@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.d
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
+import 'package:zcash_wallet/src/features/voting/voting_formatters.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
@@ -2092,6 +2093,113 @@ void main() {
     expect(_reviewAnswersButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('proposal detail shows snapshot progress before eligibility', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final readiness = _WaitingVotingWalletSyncReadinessChecker();
+    final container = _statusContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    const syncCopy =
+        'Wallet sync: 50% · block 73 of 123 · 50 blocks remaining. '
+        'Voting power will be calculated once the snapshot height is reached.';
+    await _pumpUntilFound(tester, find.text(syncCopy));
+
+    expect(find.text(syncCopy), findsOneWidget);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
+    readiness.ready = true;
+    await _pumpUntilCondition(
+      tester,
+      () => find.text(syncCopy).evaluate().isEmpty,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(syncCopy), findsNothing);
+  });
+
+  testWidgets('proposal detail keeps showing sync copy after a stall', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    // Never-ready readiness with a zero stall budget: the session-level
+    // wallet-sync wait marks itself stalled on its first check but keeps
+    // polling, so the regular summary copy reports the stall while the loop
+    // stays live.
+    final readiness = _WaitingVotingWalletSyncReadinessChecker();
+    final container = _statusContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 10),
+      walletSyncMaxWait: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.textContaining('stopped advancing'));
+
+    expect(find.textContaining('50%'), findsOneWidget);
+    expect(find.textContaining('50 blocks remaining'), findsOneWidget);
+    expect(find.textContaining('block 73 of 123'), findsOneWidget);
+
+    // The stalled wait continues automatically once sync reaches the
+    // snapshot — the promise in the summary copy.
+    readiness.ready = true;
+    await _pumpUntilCondition(
+      tester,
+      () => find.textContaining('stopped advancing').evaluate().isEmpty,
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('stopped advancing'), findsNothing);
+    expect(find.textContaining('Wallet sync:'), findsNothing);
+  });
+
+  testWidgets('proposal detail shows birthday guidance instead of zero power', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final container = _statusContainer(
+      walletSyncReadinessChecker:
+          _BirthdayAfterSnapshotVotingWalletSyncReadinessChecker(),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.textContaining('Restore the account'));
+
+    expect(find.textContaining('after this voting round snapshot'), findsOne);
+    expect(find.textContaining('switch to another eligible account'), findsOne);
+    expect(find.text('Voting power 0 ZEC'), findsNothing);
+    expect(find.text('Voting power unavailable'), findsNothing);
+  });
+
   testWidgets(
     'proposal detail shows read-only options when eligibility fails',
     (tester) async {
@@ -3641,6 +3749,27 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Scan signature'), findsNothing);
   });
+
+  testWidgets('snapshot catch-up uses regular copy instead of a custom panel', (
+    tester,
+  ) async {
+    final copy = formatVotingWalletSyncProgress(
+      scannedHeight: 150,
+      snapshotHeight: 200,
+      progress: 0.5,
+      continuation: 'Voting',
+    );
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Text(copy))));
+
+    expect(
+      find.text(
+        'Wallet sync: 50% · block 150 of 200 · 50 blocks remaining. '
+        'Voting power will be calculated once the snapshot height is reached.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
 }
 
 Future<void> _pumpUntilFound(
@@ -3684,6 +3813,9 @@ ProviderContainer _statusContainer({
   VotingRecoveryApi? recoveryApi,
   VotingRustApi? rust,
   VotingHotkeyStore? hotkeyStore,
+  VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
+  Duration walletSyncPollInterval = Duration.zero,
+  Duration? walletSyncMaxWait,
   List<Override> overrides = const [],
 }) {
   final effectiveHttp =
@@ -3786,10 +3918,15 @@ ProviderContainer _statusContainer({
       ),
       votingRustApiProvider.overrideWithValue(rust ?? _NoopVotingRustApi()),
       votingWalletSyncReadinessCheckerProvider.overrideWithValue(
-        _FakeVotingWalletSyncReadinessChecker(),
+        walletSyncReadinessChecker ?? _FakeVotingWalletSyncReadinessChecker(),
       ),
       votingWalletSyncStarterProvider.overrideWithValue(() {}),
-      votingWalletSyncPollIntervalProvider.overrideWithValue(Duration.zero),
+      votingWalletSyncProgressSignalProvider.overrideWithValue(() => null),
+      votingWalletSyncPollIntervalProvider.overrideWithValue(
+        walletSyncPollInterval,
+      ),
+      if (walletSyncMaxWait != null)
+        votingWalletSyncMaxWaitProvider.overrideWithValue(walletSyncMaxWait),
       if (hotkeyStore != null)
         votingHotkeyStoreProvider.overrideWithValue(hotkeyStore),
       votingTxConfirmationPollingProvider.overrideWithValue(
@@ -4761,12 +4898,52 @@ class _FakeVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required int snapshotHeight,
   }) async {
     return VotingWalletSyncReadiness(
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      accountBirthdayHeight: snapshotHeight,
+    );
+  }
+}
+
+class _WaitingVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  bool ready = false;
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required int snapshotHeight,
+  }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: ready ? snapshotHeight : snapshotHeight - 50,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 40,
+      accountBirthdayHeight: snapshotHeight - 100,
+    );
+  }
+}
+
+class _BirthdayAfterSnapshotVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required int snapshotHeight,
+  }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: snapshotHeight + 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 100,
+      accountBirthdayHeight: snapshotHeight + 1,
     );
   }
 }

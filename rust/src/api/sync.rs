@@ -2431,6 +2431,23 @@ pub fn get_export_birthday_height(
     })
 }
 
+/// Returns the exact recovery birthday stored for one wallet account.
+///
+/// Unlike [`get_export_birthday_height`], this does not substitute the oldest
+/// mined transaction. Voting uses the original birthday to determine whether
+/// the wallet could have scanned a historical round snapshot at all.
+pub fn get_account_birthday_height(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<u64, String> {
+    catch(|| {
+        let _network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_account_birthday_height(&db_path, &account_uuid)?
+            .ok_or_else(|| "Account birthday not found".to_string())
+    })
+}
+
 pub fn get_block_time(lightwalletd_url: String, height: u64) -> Result<u64, String> {
     catch(|| fetch_block_time(&lightwalletd_url, height))
 }

@@ -183,14 +183,24 @@ class _VotingProposalDetailViewState
             (state.eligibleWeightZatoshi == null &&
                 state.error == null &&
                 _shouldPrepareVotingPower(state));
-        final votingEligibilityMessage = _votingEligibilityMessage(
-          state,
-          preparing: votingPowerPreparing,
-        );
+        final votingEligibilityMessage =
+            state.phase == VotingSessionPhase.waitingForWalletSync
+            ? formatVotingWalletSyncProgress(
+                scannedHeight: state.walletScannedHeight,
+                snapshotHeight: state.walletSnapshotHeight,
+                progress: state.walletSnapshotSyncProgress,
+                continuation: 'Eligibility',
+                stalled: state.walletSyncStalled,
+              )
+            : _votingEligibilityMessage(state, preparing: votingPowerPreparing);
         final votingError = state.error;
-        final votingEligibilityError = votingError == null
-            ? false
-            : isVotingEligibilityErrorText(votingError.message);
+        final votingEligibilityError = isVotingEligibilityError(votingError);
+        final birthdayAfterSnapshot =
+            isVotingAccountBirthdayAfterSnapshot(votingError?.cause) ||
+            (state.walletAccountBirthdayHeight != null &&
+                state.walletSnapshotHeight != null &&
+                state.walletAccountBirthdayHeight! >
+                    state.walletSnapshotHeight!);
         _maybePrecomputeDelegationPir(state);
         return _ActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
@@ -200,17 +210,19 @@ class _VotingProposalDetailViewState
           description: _roundDescription(round.rawJson),
           forumUri: forumUri,
           endDate: _roundEndDate(round.rawJson),
-          votingPowerZatoshi: votingEligibilityError
+          votingPowerZatoshi: votingEligibilityError && !birthdayAfterSnapshot
               ? BigInt.zero
               : state.eligibleWeightZatoshi,
           votingPowerPreparing: votingPowerPreparing,
+          showVotingPower: !birthdayAfterSnapshot,
           votingEligibilityConfirmed: hasConfirmedVotingEligibility,
           // Drafting answers only writes local state, so it stays open while
           // voting power is still being calculated. Only a resolved
           // ineligibility (or another eligibility failure) locks the options.
           answersEditable:
               hasConfirmedVotingEligibility || isVotingEligibilityPending,
-          votingEligibilityMessage: votingEligibilityError
+          votingEligibilityMessage:
+              votingEligibilityError && !birthdayAfterSnapshot
               ? null
               : votingEligibilityMessage,
           votingEligibilityErrorMessage: votingEligibilityError
@@ -402,6 +414,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.showVotingPower,
     required this.votingEligibilityConfirmed,
     required this.answersEditable,
     required this.votingEligibilityMessage,
@@ -421,6 +434,7 @@ class _ActivePollContent extends StatefulWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool showVotingPower;
   final bool votingEligibilityConfirmed;
 
   /// Whether the user may still pick answers. Broader than
@@ -524,6 +538,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         endDate: widget.endDate,
                         votingPowerZatoshi: widget.votingPowerZatoshi,
                         votingPowerPreparing: widget.votingPowerPreparing,
+                        showVotingPower: widget.showVotingPower,
                         votingEligibilityMessage:
                             widget.votingEligibilityMessage,
                       );
@@ -736,6 +751,7 @@ class _PollSummary extends StatelessWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.showVotingPower,
     required this.votingEligibilityMessage,
   });
 
@@ -746,6 +762,7 @@ class _PollSummary extends StatelessWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool showVotingPower;
   final String? votingEligibilityMessage;
 
   @override
@@ -806,11 +823,13 @@ class _PollSummary extends StatelessWidget {
                   ? 'Voting active'
                   : 'Ends ${formatMonthDayYear(endDate!)}',
             ),
-            const _MetaText('·'),
-            _VotingPowerMeta(
-              zatoshi: votingPowerZatoshi,
-              preparing: votingPowerPreparing,
-            ),
+            if (showVotingPower) ...[
+              const _MetaText('·'),
+              _VotingPowerMeta(
+                zatoshi: votingPowerZatoshi,
+                preparing: votingPowerPreparing,
+              ),
+            ],
             if (endDate != null) ...[
               const _MetaText('·'),
               _MetaText(_daysLeftLabel(endDate!)),

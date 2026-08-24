@@ -232,6 +232,8 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
+  final int? walletAccountBirthdayHeight;
+  final bool walletSyncStalled;
   final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
@@ -262,6 +264,8 @@ class VotingSessionState {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
+    this.walletAccountBirthdayHeight,
+    this.walletSyncStalled = false,
     this.isHardwareAccount = false,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
@@ -300,6 +304,19 @@ class VotingSessionState {
       error == null &&
       phase != VotingSessionPhase.error;
 
+  double? get walletSnapshotSyncProgress {
+    final scanned = walletScannedHeight;
+    final snapshot = walletSnapshotHeight;
+    final birthday = walletAccountBirthdayHeight;
+    if (scanned == null || snapshot == null || birthday == null) return null;
+    // A birthday past the snapshot means the account can never scan the
+    // snapshot; there is no progress to report, only permanent ineligibility.
+    if (birthday > snapshot) return null;
+    final total = snapshot - birthday;
+    if (total <= 0) return scanned >= snapshot ? 1 : null;
+    return ((scanned - birthday) / total).clamp(0.0, 1.0).toDouble();
+  }
+
   int get keystoneResolvedBundlePrefixCount =>
       resolvedKeystoneBundlePrefixCount(
         plan: resumePlan,
@@ -335,6 +352,8 @@ class VotingSessionState {
     int? walletScannedHeight,
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
+    int? walletAccountBirthdayHeight,
+    bool? walletSyncStalled,
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
@@ -378,6 +397,12 @@ class VotingSessionState {
       walletChainTipHeight: clearWalletSyncReadiness
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
+      walletAccountBirthdayHeight: clearWalletSyncReadiness
+          ? null
+          : walletAccountBirthdayHeight ?? this.walletAccountBirthdayHeight,
+      walletSyncStalled: clearWalletSyncReadiness
+          ? false
+          : walletSyncStalled ?? this.walletSyncStalled,
       isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,

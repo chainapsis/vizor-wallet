@@ -863,6 +863,21 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
+/// Returns the exact recovery birthday stored for one wallet account.
+///
+/// Unlike [`get_export_birthday_height`], this does not substitute the oldest
+/// mined transaction. Voting uses the original birthday to determine whether
+/// the wallet could have scanned a historical round snapshot at all.
+Future<BigInt> getAccountBirthdayHeight({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetAccountBirthdayHeight(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 Future<BigInt> getBlockTime({
   required String lightwalletdUrl,
   required BigInt height,

@@ -358,7 +358,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneScanError: state.keystoneScanError,
           walletScannedHeight: state.walletScannedHeight,
           walletSnapshotHeight: state.walletSnapshotHeight,
-          walletChainTipHeight: state.walletChainTipHeight,
+          walletSyncProgress: state.walletSnapshotSyncProgress,
+          walletSyncStalled: state.walletSyncStalled,
           errorMessage: _sessionErrorMessage(state, localError),
           onRetry: _retry,
           onClear: job?.status == VotingSubmissionJobStatus.error
@@ -657,7 +658,8 @@ class _StatusContent extends StatelessWidget {
     this.keystoneScanError,
     this.walletScannedHeight,
     this.walletSnapshotHeight,
-    this.walletChainTipHeight,
+    this.walletSyncProgress,
+    this.walletSyncStalled = false,
     this.errorMessage,
     this.onRetry,
     this.onClear,
@@ -684,7 +686,8 @@ class _StatusContent extends StatelessWidget {
   final String? keystoneScanError;
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
-  final int? walletChainTipHeight;
+  final double? walletSyncProgress;
+  final bool walletSyncStalled;
   final String? errorMessage;
   final VoidCallback? onRetry;
   final VoidCallback? onClear;
@@ -733,10 +736,18 @@ class _StatusContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               if (phase == VotingSessionPhase.waitingForWalletSync) ...[
-                _WalletSyncProgressText(
-                  scannedHeight: walletScannedHeight,
-                  snapshotHeight: walletSnapshotHeight,
-                  chainTipHeight: walletChainTipHeight,
+                Text(
+                  formatVotingWalletSyncProgress(
+                    scannedHeight: walletScannedHeight,
+                    snapshotHeight: walletSnapshotHeight,
+                    progress: walletSyncProgress,
+                    continuation: 'Voting',
+                    stalled: walletSyncStalled,
+                  ),
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -826,88 +837,6 @@ class _StatusContent extends StatelessWidget {
 
   bool _after(VotingSessionPhase target) {
     return phase.index > target.index && phase != VotingSessionPhase.error;
-  }
-}
-
-class _WalletSyncProgressText extends StatelessWidget {
-  const _WalletSyncProgressText({
-    required this.scannedHeight,
-    required this.snapshotHeight,
-    required this.chainTipHeight,
-  });
-
-  final int? scannedHeight;
-  final int? snapshotHeight;
-  final int? chainTipHeight;
-
-  @override
-  Widget build(BuildContext context) {
-    final scanned = scannedHeight;
-    final snapshot = snapshotHeight;
-    final chainTip = chainTipHeight;
-    final rawRemaining = scanned == null || snapshot == null
-        ? null
-        : snapshot - scanned;
-    final remaining = rawRemaining == null
-        ? null
-        : rawRemaining > 0
-        ? rawRemaining
-        : 0;
-    final detail = [
-      if (scanned != null) 'Synced to block $scanned',
-      if (snapshot != null) 'snapshot block $snapshot',
-      if (chainTip != null) 'chain tip $chainTip',
-    ].join(' / ');
-    final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Column(
-          children: [
-            Text(
-              'Waiting for wallet sync',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            if (detail.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                detail,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-            if (remaining != null && remaining > 0) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                '$remaining blocks remaining',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 }
 

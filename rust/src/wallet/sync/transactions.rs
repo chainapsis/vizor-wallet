@@ -795,7 +795,10 @@ pub(crate) fn get_export_birthday_anchor(
         .ok_or_else(|| "Account birthday not found".to_string())
 }
 
-fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
+pub(crate) fn get_account_birthday_height(
+    db_path: &str,
+    account_uuid: &str,
+) -> Result<Option<u64>, String> {
     let account_id = parse_account_uuid(account_uuid)?;
     let conn = open_readonly_conn(db_path)?;
     let mut stmt = conn
@@ -3053,6 +3056,18 @@ mod tests {
                 .unwrap();
 
         assert_eq!(got.block_height, 200);
+    }
+
+    #[test]
+    fn account_birthday_height_returns_stored_recovery_height() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        set_account_birthday(&db, account, 123_456);
+
+        let got =
+            get_account_birthday_height(db.path().to_str().unwrap(), &account.to_string()).unwrap();
+
+        assert_eq!(got, Some(123_456));
     }
 
     #[test]

@@ -222,10 +222,52 @@ final votingWalletSyncPollIntervalProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 2);
 });
 
-/// Upper bound for waiting on wallet scan readiness before surfacing retryable
-/// session error state.
+/// Maximum time without observable sync progress before the voting wait is
+/// reported as stalled. Session-level waits keep polling past this budget
+/// (stalled is a UI state, not a failure); only the submission job converts a
+/// stall into a retryable error, because it owns automatic recovery.
 final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
   return const Duration(minutes: 3);
+});
+
+/// Snapshot of live sync-engine progress sampled by the voting stall
+/// detector. A change between samples counts as progress. This deliberately
+/// includes the engine's own progress stream: the readiness checker's
+/// scanned height is the contiguous scan frontier, which stays pinned while
+/// higher-priority ranges near the chain tip scan first, so frontier movement
+/// alone under-reports a healthy catch-up.
+///
+/// Only forward movement changes the emitted value. Sync percentage drops to
+/// zero every time the engine restarts an attempt, so a crash-looping sync
+/// that never commits new scan work oscillates without advancing; counting
+/// those oscillations as progress would keep resetting the stall budget and
+/// mask a wedged sync from the submission job's failure path. Increases are
+/// commit-backed (percentage rises only when unscanned ranges shrink), so
+/// they are the only samples that tick the signal forward.
+final votingWalletSyncProgressSignalProvider = Provider<Object? Function()>((
+  ref,
+) {
+  double? lastPercentage;
+  int? lastScannedHeight;
+  var forwardTicks = 0;
+  return () {
+    try {
+      final sync = ref.read(syncProvider).value;
+      if (sync == null) return null;
+      final advanced =
+          (lastPercentage != null && sync.percentage > lastPercentage!) ||
+          (lastScannedHeight != null &&
+              sync.scannedHeight > lastScannedHeight!);
+      lastPercentage = sync.percentage;
+      lastScannedHeight = sync.scannedHeight;
+      if (advanced) forwardTicks++;
+      return forwardTicks;
+    } catch (_) {
+      // No signal is safe: the stall detector then falls back to frontier
+      // movement only.
+      return null;
+    }
+  };
 });
 
 /// Checks whether wallet scan progress has reached a voting snapshot height.
@@ -239,13 +281,19 @@ class VotingWalletSyncReadiness {
     required this.scannedHeight,
     required this.snapshotHeight,
     required this.chainTipHeight,
+    required this.accountBirthdayHeight,
   });
 
   final int scannedHeight;
   final int snapshotHeight;
   final int chainTipHeight;
+  final int accountBirthdayHeight;
 
-  bool get isReady => scannedHeight >= snapshotHeight;
+  bool get accountBirthdayAfterSnapshot =>
+      accountBirthdayHeight > snapshotHeight;
+
+  bool get isReady =>
+      !accountBirthdayAfterSnapshot && scannedHeight >= snapshotHeight;
 
   int get blocksRemaining {
     final remaining = snapshotHeight - scannedHeight;
@@ -257,6 +305,7 @@ abstract interface class VotingWalletSyncReadinessChecker {
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required int snapshotHeight,
   });
 }
@@ -269,16 +318,24 @@ class FrbVotingWalletSyncReadinessChecker
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required int snapshotHeight,
   }) async {
-    final status = await rust_sync.getSyncStatus(
-      dbPath: dbPath,
-      network: network,
-    );
+    final results = await Future.wait<Object>([
+      rust_sync.getSyncStatus(dbPath: dbPath, network: network),
+      rust_sync.getAccountBirthdayHeight(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      ),
+    ]);
+    final status = results[0] as rust_sync.SyncProgress;
+    final birthdayHeight = results[1] as BigInt;
     return VotingWalletSyncReadiness(
       scannedHeight: status.scannedHeight.toInt(),
       snapshotHeight: snapshotHeight,
       chainTipHeight: status.chainTipHeight.toInt(),
+      accountBirthdayHeight: birthdayHeight.toInt(),
     );
   }
 }
