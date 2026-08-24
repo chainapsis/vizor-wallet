@@ -98,8 +98,8 @@ class MobileVotingSubmittedScreen extends StatelessWidget {
                                       child: SizedBox(
                                         width: 259,
                                         child: Text(
-                                          'It will confirm on-chain shortly. '
-                                          'Track it in Activity.',
+                                          'Your vote has been submitted and '
+                                          'can’t be changed.',
                                           textAlign: TextAlign.center,
                                           style: AppTypography.bodyMediumStrong
                                               .copyWith(
@@ -123,7 +123,7 @@ class MobileVotingSubmittedScreen extends StatelessWidget {
                                           onPressed: onDone,
                                           expand: true,
                                           constrainContent: true,
-                                  child: const Text('Go home'),
+                                          child: const Text('Go home'),
                                         ),
                                       ),
                                     ),

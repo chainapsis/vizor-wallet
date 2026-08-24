@@ -149,7 +149,7 @@ void main() {
 
     expect(find.text('Voted'), findsOneWidget);
     expect(
-      find.text('It will confirm on-chain shortly. Track it in Activity.'),
+      find.text('Your vote has been submitted and can’t be changed.'),
       findsOneWidget,
     );
     expect(find.text('Go home'), findsOneWidget);
