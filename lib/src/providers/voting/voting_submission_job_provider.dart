@@ -291,7 +291,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Timer? _walletSyncRecoveryTimer;
   bool _walletSyncRecoveryInFlight = false;
   int _walletSyncRecoveryFailureStreak = 0;
-  String? _walletSyncRecoveryDbPath;
   bool _walletSyncRecoveryRetryOnUnlock = false;
   int _nextGeneration = 0;
 
@@ -1124,12 +1123,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     _walletSyncRecoveryInFlight = true;
     try {
-      // The db path is stable for the life of one armed recovery; resolving
-      // it per tick would pay a support-directory lookup plus a keychain
-      // read every 2 seconds for nothing.
-      final dbPath = _walletSyncRecoveryDbPath ??= await ref
-          .read(votingWalletDbPathProvider)
-          .call();
+      // votingWalletDbPathProvider memoizes the resolve, so the 2s poll
+      // does not repeat a support-directory lookup plus keychain read.
+      final dbPath = await ref.read(votingWalletDbPathProvider).call();
       final endpoint = ref.read(votingRpcEndpointConfigProvider);
       final readiness = await ref
           .read(votingWalletSyncReadinessCheckerProvider)
@@ -1216,7 +1212,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoverySnapshotHeight = null;
     _walletSyncRecoveryFailureStreak = 0;
     _walletSyncRecoveryRetryOnUnlock = false;
-    _walletSyncRecoveryDbPath = null;
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {

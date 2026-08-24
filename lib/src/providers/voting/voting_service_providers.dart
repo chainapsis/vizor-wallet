@@ -177,8 +177,43 @@ final votingHotkeyStoreProvider = Provider<VotingHotkeyStore>((ref) {
 });
 
 /// Test seam for wallet DB path resolution.
+/// Memoizes the wallet DB path for voting callers.
+///
+/// Resolving it hits the application support directory (with a mkdir) and
+/// reads the DB name from secure storage, and voting resolves it per round
+/// refresh, tree sync, session start, and stall-recovery poll.
+///
+/// The resolved name changes only when a wallet reset clears the stored DB
+/// name, so [clear] must be called there — see [walletDbPathCacheProvider]'s
+/// use in the wallet mutation guard. A failed resolve is not cached.
+class VotingWalletDbPathCache {
+  Future<String>? _pending;
+
+  Future<String> resolve() async {
+    final cached = _pending;
+    if (cached != null) return cached;
+    final pending = getWalletDbPath();
+    _pending = pending;
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_pending, pending)) _pending = null;
+      rethrow;
+    }
+  }
+
+  void clear() => _pending = null;
+}
+
+/// Cache instance behind [votingWalletDbPathProvider]. Exposed so wallet
+/// reset can invalidate it; a stale path would point at a deleted DB.
+final walletDbPathCacheProvider = Provider<VotingWalletDbPathCache>((ref) {
+  return VotingWalletDbPathCache();
+});
+
 final votingWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
-  return getWalletDbPath;
+  final cache = ref.watch(walletDbPathCacheProvider);
+  return cache.resolve;
 });
 
 /// Test seam for active account lookup.
@@ -237,47 +272,91 @@ final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
 /// higher-priority ranges near the chain tip scan first, so frontier movement
 /// alone under-reports a healthy catch-up.
 ///
-/// Only movement past the highest value ever observed ticks the signal.
-/// A restarting sync replays old values: Dart resets the percentage to zero
-/// on every startSync, and the engine's pre-batch progress events re-emit a
-/// percentage computed from persisted state before any new scan work
-/// commits — so a crash-looping sync oscillates through previously seen
-/// values without advancing. Comparing against high-water marks makes those
-/// replays inert (a re-rise to a value already reached is not progress),
-/// which keeps a wedged sync from resetting the stall budget forever and
-/// masking itself from the submission job's failure path. Genuinely new work
-/// pushes percentage or scanned height past the marks and still ticks.
-final votingWalletSyncProgressSignalProvider = Provider<Object? Function()>((
-  ref,
-) {
-  var primed = false;
-  var maxPercentage = 0.0;
-  var maxScannedHeight = 0;
-  var forwardTicks = 0;
-  return () {
-    try {
-      final sync = ref.read(syncProvider).value;
-      if (sync == null) return null;
-      final advanced =
-          primed &&
-          (sync.percentage > maxPercentage ||
-              sync.scannedHeight > maxScannedHeight);
-      if (!primed || sync.percentage > maxPercentage) {
-        maxPercentage = sync.percentage;
-      }
-      if (!primed || sync.scannedHeight > maxScannedHeight) {
-        maxScannedHeight = sync.scannedHeight;
-      }
-      primed = true;
-      if (advanced) forwardTicks++;
-      return forwardTicks;
-    } catch (_) {
-      // No signal is safe: the stall detector then falls back to frontier
-      // movement only.
-      return null;
+/// Raw sample of live sync-engine progress, read by the voting stall
+/// detector through [VotingWalletSyncProgressTracker].
+class VotingWalletSyncProgressSample {
+  const VotingWalletSyncProgressSample({
+    required this.percentage,
+    required this.scannedHeight,
+  });
+
+  final double percentage;
+  final int scannedHeight;
+}
+
+/// Samples the sync engine's own progress. The readiness checker's scanned
+/// height is the contiguous scan frontier, which stays pinned while
+/// higher-priority ranges near the chain tip scan first, so frontier
+/// movement alone under-reports a healthy catch-up.
+///
+/// Returning null is safe: the stall detector then falls back to frontier
+/// movement only.
+final votingWalletSyncProgressSampleProvider =
+    Provider<VotingWalletSyncProgressSample? Function()>((ref) {
+      return () {
+        try {
+          final sync = ref.read(syncProvider).value;
+          if (sync == null) return null;
+          return VotingWalletSyncProgressSample(
+            percentage: sync.percentage,
+            scannedHeight: sync.scannedHeight,
+          );
+        } catch (_) {
+          return null;
+        }
+      };
+    });
+
+/// Decides whether successive sync samples represent real forward progress.
+///
+/// One tracker belongs to one wait; its marks must never outlive that wait,
+/// or a completed sync (percentage pinned at 1.0, height at the tip) would
+/// make every later sample unsatisfiable and fail a healthy backfill as
+/// stalled.
+///
+/// Within a wait, progress is movement past the high-water marks. A
+/// restarting sync replays old values — Dart resets the percentage to zero
+/// on every startSync, and the engine's pre-batch events re-emit a
+/// percentage computed from persisted state before any new work commits —
+/// so counting a re-rise to an already-reached value would let a wedged sync
+/// reset the stall budget forever and hide from the submission job's failure
+/// path.
+///
+/// A scanned height *below* the mark is different: it is the signature of a
+/// new scan epoch (an account added with an older birthday, a reorg rewind,
+/// an in-session reimport, a tail-repair pass), which is real work at a
+/// lower height range. The tracker rebases onto that epoch so its subsequent
+/// forward movement registers normally.
+class VotingWalletSyncProgressTracker {
+  double? _maxPercentage;
+  int? _maxScannedHeight;
+
+  bool observe(VotingWalletSyncProgressSample? sample) {
+    if (sample == null) return false;
+    final maxPercentage = _maxPercentage;
+    final maxScannedHeight = _maxScannedHeight;
+    if (maxPercentage == null || maxScannedHeight == null) {
+      _maxPercentage = sample.percentage;
+      _maxScannedHeight = sample.scannedHeight;
+      return false;
     }
-  };
-});
+    if (sample.scannedHeight < maxScannedHeight) {
+      // New scan epoch: rebase both marks onto it. The rewind itself is
+      // engine activity, so it counts as progress.
+      _maxPercentage = sample.percentage;
+      _maxScannedHeight = sample.scannedHeight;
+      return true;
+    }
+    final advanced =
+        sample.percentage > maxPercentage ||
+        sample.scannedHeight > maxScannedHeight;
+    if (sample.percentage > maxPercentage) _maxPercentage = sample.percentage;
+    if (sample.scannedHeight > maxScannedHeight) {
+      _maxScannedHeight = sample.scannedHeight;
+    }
+    return advanced;
+  }
+}
 
 /// Checks whether wallet scan progress has reached a voting snapshot height.
 final votingWalletSyncReadinessCheckerProvider =

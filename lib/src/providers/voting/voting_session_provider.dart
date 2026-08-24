@@ -3940,7 +3940,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final noProgressTimer = Stopwatch()..start();
     int? lastScannedHeight;
-    Object? lastProgressSignal;
+    // Scoped to this wait: high-water marks must not outlive it (see
+    // VotingWalletSyncProgressTracker).
+    final progressTracker = VotingWalletSyncProgressTracker();
     final sessionInvalidated = _sessionInvalidated.future;
     while (true) {
       _throwIfContextStale(context, 'wallet-sync-wait');
@@ -3972,20 +3974,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
-      // Progress is any movement of the contiguous scan frontier OR of the
-      // engine's own progress signal; the frontier alone stays pinned while
-      // tip-priority ranges scan first, which is a healthy catch-up, not a
-      // stall.
-      final progressSignal = ref
-          .read(votingWalletSyncProgressSignalProvider)
-          .call();
+      // Progress is any movement of the contiguous scan frontier OR real
+      // forward movement of the engine's own progress; the frontier alone
+      // stays pinned while tip-priority ranges scan first, which is a
+      // healthy catch-up, not a stall.
+      final engineProgressed = progressTracker.observe(
+        ref.read(votingWalletSyncProgressSampleProvider).call(),
+      );
       if (lastScannedHeight == null ||
           readiness.scannedHeight != lastScannedHeight ||
-          progressSignal != lastProgressSignal) {
+          engineProgressed) {
         noProgressTimer.reset();
       }
       lastScannedHeight = readiness.scannedHeight;
-      lastProgressSignal = progressSignal;
 
       if (!loggedWait) {
         loggedWait = true;

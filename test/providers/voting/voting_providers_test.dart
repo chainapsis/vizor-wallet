@@ -1537,15 +1537,21 @@ void main() {
   test('engine progress signal defers stall while scan frontier is pinned', () async {
     final rust = FakeVotingRustApi();
     // The frontier (scannedHeight) never moves until ready, which alone would
-    // blow the 12ms stall budget across 10 checks; the changing engine
-    // progress signal must keep resetting the budget instead.
+    // blow the 12ms stall budget across 10 checks; real engine progress must
+    // keep resetting the budget instead.
     final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
-    var signalTicks = 0;
+    var enginePercentage = 0.0;
     final observedStalls = <bool>[];
     final container = _sessionContainer(
       rust: rust,
       walletSyncReadinessChecker: readiness,
-      walletSyncProgressSignal: () => signalTicks++,
+      walletSyncProgressSample: () {
+        enginePercentage += 0.01;
+        return VotingWalletSyncProgressSample(
+          percentage: enginePercentage,
+          scannedHeight: 100,
+        );
+      },
       walletSyncPollInterval: const Duration(milliseconds: 5),
       walletSyncMaxWait: const Duration(milliseconds: 12),
     );
@@ -8070,7 +8076,7 @@ ProviderContainer _sessionContainer({
   List<ProviderObserver>? observers,
   VotingTxConfirmationPolling? txConfirmationPolling,
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
-  Object? Function()? walletSyncProgressSignal,
+  VotingWalletSyncProgressSample? Function()? walletSyncProgressSample,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
   Duration? walletSyncMaxWait,
@@ -8183,8 +8189,8 @@ ProviderContainer _sessionContainer({
       votingWalletSyncStarterProvider.overrideWithValue(
         walletSyncStarter ?? () {},
       ),
-      votingWalletSyncProgressSignalProvider.overrideWithValue(
-        walletSyncProgressSignal ?? () => null,
+      votingWalletSyncProgressSampleProvider.overrideWithValue(
+        walletSyncProgressSample ?? () => null,
       ),
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval ?? Duration.zero,

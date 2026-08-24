@@ -3930,7 +3930,7 @@ ProviderContainer _statusContainer({
         walletSyncReadinessChecker ?? _FakeVotingWalletSyncReadinessChecker(),
       ),
       votingWalletSyncStarterProvider.overrideWithValue(() {}),
-      votingWalletSyncProgressSignalProvider.overrideWithValue(() => null),
+      votingWalletSyncProgressSampleProvider.overrideWithValue(() => null),
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval,
       ),
