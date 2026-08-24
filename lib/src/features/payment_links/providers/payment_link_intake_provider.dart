@@ -23,14 +23,14 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
   @override
   PaymentLinkIntakeState build() => const PaymentLinkIntakeState();
 
-  PaymentLinkIntakeResult ingest(String rawUri) {
+  PaymentLinkIntakeResult receive(String rawUri) {
     final uri = Uri.tryParse(rawUri.trim());
-    if (uri == null || uri.scheme.toLowerCase() != VizorPaymentLink.scheme) {
+    if (uri == null || !VizorPaymentLink.matchesEndpoint(uri)) {
       return PaymentLinkIntakeResult.ignored;
     }
 
     try {
-      final link = VizorPaymentLink.decode(rawUri);
+      final link = VizorPaymentLink.parse(rawUri);
       final pendingLinks = state.pendingLinks;
       final duplicate = pendingLinks.any(
         (pending) =>

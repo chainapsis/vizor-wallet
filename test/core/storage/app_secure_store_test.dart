@@ -109,7 +109,7 @@ void main() {
     'payment-link recovery stays encrypted across password rotation',
     () async {
       const recoveryPayload =
-          '{"link":"vizor://payment-link?p=secret-mnemonic-payload"}';
+          '{"link":"https://functions.vizor.cash/payment-links/open#v1=secret-mnemonic-payload"}';
       await store.configurePassword(_oldPassword);
       await store.writeSecretString(
         kPaymentLinkRecoveryStorageKey,
