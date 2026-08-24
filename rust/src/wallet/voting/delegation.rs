@@ -17,13 +17,13 @@ use super::db::{
     open_voting_db, retry_voting_db_locks_coordinated, with_open_voting_db_write,
     with_voting_sidecar_write_lock,
 };
+use super::transport::{fetch_snapshot_tree_state, policy_aware_pir_transport};
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
 };
-use zcash_voting::lwd::anchor_tree_state_with_retry;
 use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
@@ -195,15 +195,12 @@ type PirConnectThread = OwnedResultThread<zcash_voting::PirClientBlocking>;
 fn connect_pir_client(
     pir_server_url: &str,
     pir_layout: PirLayout,
+    transport: Arc<dyn zcash_voting::Transport>,
 ) -> Result<zcash_voting::PirClientBlocking, String> {
     let started = Instant::now();
     log::info!("[VOTING_PROVE] pir-connect start");
-    let client = zcash_voting::connect_pir_blocking(
-        pir_layout,
-        pir_server_url,
-        Arc::new(zcash_voting::HyperTransport::new()),
-    )
-    .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+    let client = zcash_voting::connect_pir_blocking(pir_layout, pir_server_url, transport)
+        .map_err(|e| format!("connect to PIR server failed: {e}"))?;
     log::info!(
         "[VOTING_PROVE] pir-connect complete elapsed={:.3}s",
         started.elapsed().as_secs_f64()
@@ -211,14 +208,42 @@ fn connect_pir_client(
     Ok(client)
 }
 
+fn connect_pir_client_direct(
+    pir_server_url: &str,
+    pir_layout: PirLayout,
+) -> Result<zcash_voting::PirClientBlocking, String> {
+    connect_pir_client(
+        pir_server_url,
+        pir_layout,
+        Arc::new(zcash_voting::HyperTransport::new()),
+    )
+}
+
+/// Spawns the PIR handshake on the SDK's own clearnet hyper transport.
+///
+/// Prove, precompute, and Keystone delegation still connect this way. Only the
+/// PIR cache warm-up routes through the process route policy so far; see
+/// [`super::transport::policy_aware_pir_transport`].
+fn spawn_pir_connect_direct(
+    pir_server_url: &str,
+    pir_layout: PirLayout,
+) -> Result<PirConnectThread, String> {
+    spawn_pir_connect(
+        pir_server_url,
+        pir_layout,
+        Arc::new(zcash_voting::HyperTransport::new()),
+    )
+}
+
 fn spawn_pir_connect(
     pir_server_url: &str,
     pir_layout: PirLayout,
+    transport: Arc<dyn zcash_voting::Transport>,
 ) -> Result<PirConnectThread, String> {
     let pir_server_url = pir_server_url.to_string();
     let handle = thread::Builder::new()
         .name("voting-pir-connect".to_string())
-        .spawn(move || connect_pir_client(&pir_server_url, pir_layout))
+        .spawn(move || connect_pir_client(&pir_server_url, pir_layout, transport))
         .map_err(|e| format!("failed to spawn PIR connect thread: {e}"))?;
     Ok(OwnedResultThread::new("PIR connect", handle))
 }
@@ -278,7 +303,7 @@ where
         with_pir_endpoint_failover(&proof_pir_server_urls, |pir_server_url| {
             let pir_client = match first_connect.take() {
                 Some(connect) => connect.join()?,
-                None => connect_pir_client(pir_server_url, pir_layout)?,
+                None => connect_pir_client_direct(pir_server_url, pir_layout)?,
             };
 
             // Fetch/cache PIR rows before Halo2 prove so remaining keygen
@@ -489,7 +514,7 @@ pub async fn precompute_delegation_pir(
     let stored_hotkey_secret = Zeroizing::new(voting_hotkey.stored_secret().to_vec());
 
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_url, pir_layout)?;
+    let pir_connect = spawn_pir_connect_direct(pir_server_url, pir_layout)?;
 
     tokio::task::spawn_blocking(move || {
         let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
@@ -581,11 +606,14 @@ pub async fn warm_pir_proof_cache(
     _keep_roots: Vec<Vec<u8>>,
 ) -> Result<PirCacheWarmupOutcome, String> {
     let started = Instant::now();
+    // Resolved before anything is spawned so a Tor route that is not usable yet
+    // skips the whole warm-up instead of querying PIR directly.
+    let pir_transport = policy_aware_pir_transport()?;
     // Overlap the PIR handshake with sidecar open, lightwalletd anchor, and
     // note selection. Sidecar open (schema v15 migrate) and wallet-DB reads
     // stay off the FRB async worker so poll-list / wallet-summary calls are
     // not stuck behind a note scan or PIR fetch.
-    let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
+    let pir_connect = spawn_pir_connect(pir_server_url, pir_layout, pir_transport)?;
 
     let db_path = db_path.to_string();
     let account_uuid = account_uuid.to_string();
@@ -607,14 +635,14 @@ pub async fn warm_pir_proof_cache(
         }
     };
 
-    let anchor_tree_state =
-        match anchor_tree_state_with_retry(lightwalletd_url, snapshot_height).await {
-            Ok(anchor) => anchor,
-            Err(error) => {
-                drain_pir_connect_after_error(pir_connect).await;
-                return Err(format!("voting note selection failed: {error}"));
-            }
-        };
+    let anchor_tree_state = match fetch_snapshot_tree_state(lightwalletd_url, snapshot_height).await
+    {
+        Ok(anchor) => anchor,
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection failed: {error}"));
+        }
+    };
 
     let wallet_net = wallet_network(network);
     let selected = match tokio::task::spawn_blocking({
@@ -727,7 +755,7 @@ where
 
     // Overlap independent warm-ups with local preparation/PCZT setup.
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let pir_connect = spawn_pir_connect_direct(&pir_server_urls[0], pir_layout)?;
 
     on_progress(DelegationProgress::SelectingNotes);
     let preparation = (|| {
@@ -916,7 +944,7 @@ where
     let on_progress = Arc::new(on_progress);
 
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let pir_connect = spawn_pir_connect_direct(&pir_server_urls[0], pir_layout)?;
 
     on_progress(DelegationProgress::SelectingNotes);
     let preparation = (|| {

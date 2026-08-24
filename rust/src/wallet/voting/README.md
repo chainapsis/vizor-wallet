@@ -26,6 +26,7 @@ This document focuses on what Vizor's integration is responsible for.
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
+| `transport.rs` | Decides which network route applies to voting calls and refuses to proceed when Tor is selected but unusable, so the PIR cache warm-up fails closed instead of leaking the user's IP while Tor is starting or broken. The transports and all lightwalletd *RPC* retry come from `zcash_voting` (`HyperTransport` / `TorTransport`, `anchor_tree_state_with_retry_on`); this module adds only the route decision and *dial* retry, which is its own because it opens the socket. Prove, precompute (including vote-tree sync), and Keystone delegation still reach the network through the crate's URL-taking helpers, which dial directly. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
 

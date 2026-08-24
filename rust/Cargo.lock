@@ -8241,16 +8241,23 @@ version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07ad58d8ca5daacbc089bf82ec09e45cf2a8be40adeb40b9399b16545c81a528"
 dependencies = [
+ "arti-client",
  "base64",
  "bech32",
  "bls12_381",
  "bs58",
  "byteorder",
  "document-features",
+ "dynosaur",
  "flume",
+ "fs-mistrust",
+ "futures-util",
  "getset",
  "group 0.13.0",
  "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "incrementalmerkletree",
  "memuse",
  "nonempty",
@@ -8258,15 +8265,27 @@ dependencies = [
  "pasta_curves",
  "percent-encoding",
  "prost 0.14.4",
+ "rand 0.8.7",
  "rand_core 0.6.4",
  "rayon",
+ "rust_decimal",
  "sapling-crypto",
  "secrecy",
+ "serde",
+ "serde_json",
  "shardtree",
  "subtle",
  "time",
+ "tokio",
+ "tokio-rustls",
+ "tonic",
+ "tonic-prost",
  "tonic-prost-build",
+ "tor-rtcompat",
+ "tower",
  "tracing",
+ "trait-variant",
+ "webpki-roots",
  "which 8.0.5",
  "zcash_address",
  "zcash_encoding",
@@ -8497,8 +8516,6 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "3.1.0-rc.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "126ff6778bcfaf447f11e2b2d721fc374312ada5f0150aa24a0e4a5eb304ff92"
 dependencies = [
  "anyhow",
  "base64",
@@ -8541,6 +8558,7 @@ dependencies = [
  "zakura-pczt",
  "zakura-primitives",
  "zakura-wallet-lib",
+ "zcash_client_backend",
  "zcash_protocol",
  "zeroize",
  "zip32",

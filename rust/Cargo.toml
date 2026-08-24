@@ -118,7 +118,9 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 [dependencies.zcash_voting]
 version = "=3.1.0-rc.8"
 default-features = false
-features = ["zakura"]
+# "tor" supplies `TorTransport`, the Tor counterpart to the crate's built-in
+# `HyperTransport`. Vizor picks between them per the process route policy.
+features = ["zakura", "tor"]
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -150,6 +152,15 @@ features = ["std"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
+
+# PROTOTYPE ONLY — do not merge. Points zcash_voting at a local checkout that
+# carries the proposed upstream API (`TorTransport`, retry-on-client anchor
+# fetch, injectable vote-tree transport) so Vizor's route-policy integration can
+# be written against it before the changes are landed upstream. The absolute
+# path makes this machine-specific by design; drop this block and the
+# `zcash_voting` "tor" feature to go back to the published crate.
+[patch.crates-io]
+zcash_voting = { path = "/Users/roman/projects/vizor-sdk-prototype/zcash_voting" }
 
 [dev-dependencies]
 tempfile = "3"
