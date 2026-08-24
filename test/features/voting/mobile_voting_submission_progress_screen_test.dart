@@ -91,6 +91,17 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    final delegatingRow = find.byKey(
+      const ValueKey('mobile_voting_submission_step_delegating_complete'),
+    );
+    final connector = find.byKey(
+      const ValueKey('mobile_voting_submission_connector_after_delegating'),
+    );
+    expect(
+      tester.getCenter(connector).dx,
+      tester.getTopLeft(delegatingRow).dx + 12,
+    );
   });
 
   testWidgets('keeps the active progress ring at a stable size', (

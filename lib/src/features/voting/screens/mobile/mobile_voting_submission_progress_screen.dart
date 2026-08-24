@@ -193,7 +193,13 @@ class _VotingSubmissionSteps extends StatelessWidget {
                 : _VotingSubmissionStepState.pending,
             progress: index == activeStep.index ? activeStepProgress : null,
           ),
-          if (index < steps.length - 1) const _VotingSubmissionStepConnector(),
+          if (index < steps.length - 1)
+            _VotingSubmissionStepConnector(
+              lineKey: ValueKey(
+                'mobile_voting_submission_connector_after_'
+                '${steps[index].name}',
+              ),
+            ),
         ],
       ],
     );
@@ -265,16 +271,26 @@ class _VotingSubmissionStepRow extends StatelessWidget {
 }
 
 class _VotingSubmissionStepConnector extends StatelessWidget {
-  const _VotingSubmissionStepConnector();
+  const _VotingSubmissionStepConnector({required this.lineKey});
+
+  final Key lineKey;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      width: 24,
-      height: 20,
-      child: Center(
-        child: Container(width: 1, height: 12, color: colors.border.regular),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SizedBox(
+        width: 24,
+        height: 20,
+        child: Center(
+          child: Container(
+            key: lineKey,
+            width: 1,
+            height: 12,
+            color: colors.border.regular,
+          ),
+        ),
       ),
     );
   }
