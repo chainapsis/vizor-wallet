@@ -19,7 +19,6 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
-import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -54,23 +53,6 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async => data;
-}
-
-/// In-memory clicked-state store for the shared desktop/mobile Pay intro.
-class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  _FakePayIntroductionBadgeStore({this.clicked = false});
-
-  bool clicked;
-  int markCount = 0;
-
-  @override
-  Future<bool> hasClickedPay() async => clicked;
-
-  @override
-  Future<void> markPayClicked() async {
-    markCount += 1;
-    clicked = true;
-  }
 }
 
 class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
@@ -208,7 +190,6 @@ Widget _app(
   FakeSyncNotifier? syncNotifier,
   SyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   bool? swapEnabled,
-  PayIntroductionBadgeStore? badgeStore,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
@@ -310,15 +291,9 @@ Widget _app(
         _FakeMarketDataSource(marketData),
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
-      payIntroductionBadgeStoreProvider.overrideWithValue(
-        badgeStore ?? _FakePayIntroductionBadgeStore(),
-      ),
       paySelectedAssetStoreProvider.overrideWithValue(
         const _FakePaySelectedAssetStore(),
       ),
-      // The coin float loops forever; keep it off so pumpAndSettle-based
-      // tests can settle (mirrors the desktop suites' motion seam).
-      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       ironwoodHomeMigrationCtaProvider.overrideWith(
@@ -1270,11 +1245,6 @@ void main() {
         isNull,
       );
       expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('mobile_home_pay_badges')),
-        findsNothing,
-      );
-      expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
     },
   );
 
@@ -2118,11 +2088,8 @@ void main() {
     expect(payRect.size, const Size(50, 50));
     expect(receiveRect.left, greaterThan(sendRect.right));
     expect(payRect.left, greaterThan(receiveRect.right));
-    expect(
-      find.byKey(const ValueKey('mobile_home_pay_badges')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsOneWidget);
+    expect(find.text('NEW'), findsNothing);
+    expect(find.bySemanticsLabel('New: Pay in USDC'), findsNothing);
     expect(sendRect.height, AppButtonSizing.largeHeight);
     expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
     expect(sendLabelStyle.height, AppTypography.labelLarge.height);
@@ -2160,12 +2127,8 @@ void main() {
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
-    final badgeStore = _FakePayIntroductionBadgeStore();
     await tester.pumpWidget(
-      _app(
-        _syncedState(orchardBalance: BigInt.from(14312000000)),
-        badgeStore: badgeStore,
-      ),
+      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
     await tester.pump();
     await tester.pump();
@@ -2174,34 +2137,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
-    expect(badgeStore.clicked, isTrue);
-    expect(badgeStore.markCount, 1);
   });
 
-  testWidgets('hides the mobile Pay introduction after Pay was activated', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        _syncedState(orchardBalance: BigInt.from(14312000000)),
-        badgeStore: _FakePayIntroductionBadgeStore(clicked: true),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
-    final glow = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('mobile_home_pay_glow')),
-    );
-    expect((glow.decoration as BoxDecoration).boxShadow, isNull);
-  });
-
-  testWidgets('hides the pay entry and callout when swap is disabled', (
-    tester,
-  ) async {
+  testWidgets('hides the pay entry when swap is disabled', (tester) async {
     await tester.pumpWidget(
       _app(
         _syncedState(orchardBalance: BigInt.from(14312000000)),
@@ -2212,8 +2150,6 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
     // Send/Receive remain.
     expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);
