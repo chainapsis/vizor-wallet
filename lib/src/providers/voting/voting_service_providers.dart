@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/voting/voting_recovery_service.dart';
 import '../../features/voting/voting_private_state_sync.dart';
 import '../../core/private_state_sync/private_state_crypto.dart';
+import '../../core/private_state_sync/private_state_http_remote_store.dart';
 import '../../core/private_state_sync/private_state_object_repository.dart';
 import '../../core/private_state_sync/private_state_remote_store.dart';
+import '../../core/config/private_state_sync_config.dart';
 import '../../core/config/rpc_endpoint_config.dart';
 import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
@@ -164,11 +166,21 @@ final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
   return const VotingRecoveryService();
 });
 
-/// Opaque remote storage deployment seam. Production remains disabled until a
-/// server URL and transport policy are configured; tests can share one store
-/// across independent provider containers to model multiple installations.
-final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((_) {
-  return null;
+final privateStateBaseUriProvider = Provider<Uri>((_) {
+  return privateStateBaseUriForBuild();
+});
+
+/// Opaque remote storage deployment seam. The network client follows the
+/// process-wide direct/Tor route and fails closed during route transitions.
+final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
+  ref,
+) {
+  final transport = NetworkPrivateStateHttpTransport();
+  ref.onDispose(() => transport.close(force: true));
+  return HttpPrivateStateRemoteStore(
+    baseUri: ref.watch(privateStateBaseUriProvider),
+    transport: transport,
+  );
 });
 
 final votingPrivateStateSyncProvider = Provider<VotingPrivateStateSync?>((ref) {

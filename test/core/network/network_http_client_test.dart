@@ -113,6 +113,31 @@ void main() {
     ]);
   });
 
+  test('redirect following can be disabled for sensitive requests', () async {
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(
+        statusCode: 307,
+        bodyBytes: utf8.encode('redirect'),
+        headers: const {
+          'location': ['https://other.example/final'],
+        },
+      ),
+    ]);
+    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    addTearDown(() => client.close());
+
+    final response = await client.request(
+      'POST',
+      Uri.parse('https://example.com/private'),
+      headers: const {'x-private-authorization': 'secret'},
+      bodyBytes: utf8.encode('payload'),
+      followRedirects: false,
+    );
+
+    expect(response.statusCode, 307);
+    expect(bridge.requests, hasLength(1));
+  });
+
   test('cross-origin redirects strip credentials', () async {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(

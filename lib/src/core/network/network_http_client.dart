@@ -184,6 +184,7 @@ class NetworkHttpClient {
     Map<String, String> headers = const {},
     List<int> bodyBytes = const [],
     Duration? timeout,
+    bool followRedirects = true,
   }) {
     final future = _torDesired()
         ? _requestViaTorWithRedirects(
@@ -191,6 +192,7 @@ class NetworkHttpClient {
             uri,
             headers: headers,
             bodyBytes: bodyBytes,
+            followRedirects: followRedirects,
           )
         : _runDirectRequest(
             () => _requestDirect(
@@ -198,6 +200,7 @@ class NetworkHttpClient {
               uri,
               headers: headers,
               bodyBytes: bodyBytes,
+              followRedirects: followRedirects,
             ),
           );
     return timeout == null ? future : future.timeout(timeout);
@@ -218,6 +221,7 @@ class NetworkHttpClient {
             uri,
             headers: headers,
             bodyBytes: const [],
+            followRedirects: true,
             destinationPath: destination.path,
           )
         : _runDirectRequest(
@@ -268,6 +272,7 @@ class NetworkHttpClient {
     Uri initialUri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required bool followRedirects,
     String? destinationPath,
   }) async {
     if (method != 'GET' && method != 'POST') {
@@ -293,7 +298,9 @@ class NetworkHttpClient {
               bodyBytes: currentBody,
             );
       final location = response.header(HttpHeaders.locationHeader);
-      if (!_isRedirect(response.statusCode) || location == null) {
+      if (!followRedirects ||
+          !_isRedirect(response.statusCode) ||
+          location == null) {
         return response;
       }
       if (redirectCount == 5) {
@@ -324,8 +331,10 @@ class NetworkHttpClient {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required bool followRedirects,
   }) async {
     final request = await _directClient.openUrl(method, uri);
+    request.followRedirects = followRedirects;
     headers.forEach(request.headers.set);
     if (bodyBytes.isNotEmpty) request.add(bodyBytes);
     final response = await request.close();

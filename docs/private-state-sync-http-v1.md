@@ -10,13 +10,21 @@ JSON integers are unsigned and JSON byte strings use unpadded base64url.
 as produced by the client protocol. It is the only stable server-side object
 identifier.
 
-- `POST /v1/objects/{object_id}/challenge`
-- `GET /v1/objects/{object_id}`
-- `PUT /v1/objects/{object_id}`
+- `POST /api/private-state/v1/objects/{object_id}/challenge`
+- `GET /api/private-state/v1/objects/{object_id}`
+- `PUT /api/private-state/v1/objects/{object_id}`
+- `POST /api/private-state/v1/objects/{object_id}/put` (transport alias for
+  signed PUT)
 
 Every response sets `Cache-Control: no-store`. Requests and logs must not add
 wallet addresses, IP-derived account identifiers, or analytics identifiers to
 the object record.
+
+The POST `/put` alias exists for the app's embedded Tor HTTP transport, which
+supports body-bearing POST requests but not arbitrary methods. It executes the
+same handler as PUT and authorization is still signed and verified with the
+canonical method `PUT`; the transport method does not weaken or alter the
+signed operation.
 
 ## Challenge
 
@@ -107,3 +115,38 @@ payloads or cryptographic material into logs.
 The in-process executable reference is
 `InMemoryPrivateStateRemoteStore`. It is for contract tests only and is not a
 production persistence or rate-limiting implementation.
+
+## App endpoint configuration
+
+Production builds default to
+`https://functions.vizor.cash/api/private-state/v1`. A local server can be
+selected at build time; plaintext HTTP always requires a separate explicit
+opt-in so a production endpoint cannot silently downgrade:
+
+```bash
+fvm flutter run \
+  --dart-define=VIZOR_PRIVATE_STATE_BASE_URL=http://127.0.0.1:3000/api/private-state/v1 \
+  --dart-define=VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP=true
+```
+
+iOS Simulator can use host loopback. Android Emulator normally uses
+`10.0.2.2`; a physical device uses the development machine's reachable LAN
+address. Mobile commands must also include the repository's required
+`VIZOR_FORM_FACTOR=mobile` define.
+
+## Local app-server contract test
+
+The cross-repository HTTP contract test is tagged `external-service` and is
+skipped by default. With the Lambda server's memory-backed development mode
+running on port 3000, invoke it explicitly:
+
+```bash
+fvm flutter test \
+  --tags external-service \
+  --run-skipped \
+  --dart-define=VIZOR_PRIVATE_STATE_INTEGRATION_URL=http://127.0.0.1:3000/api/private-state/v1 \
+  test/core/private_state_sync/private_state_http_local_integration_test.dart
+```
+
+The test also exits before network access when the URL define is absent, even
+if a broad `--run-skipped` command overrides the tag's default skip.

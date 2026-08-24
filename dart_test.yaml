@@ -8,6 +8,11 @@ tags:
   # See "Design Token Form Factor" in AGENTS.md.
   mobile:
     skip: "mobile token lane only: fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile"
+  # Contract tests that require a separately running service are opt-in. Each
+  # test must also guard its required configuration inside the body because a
+  # broad --run-skipped overrides this default skip.
+  external-service:
+    skip: "external service only: pass the required URL dart-define and run fvm flutter test --tags external-service --run-skipped"
   # Probes that talk to the live Tor network from a booted device. They cost
   # minutes, depend on a network nobody controls, and leave the process
   # Tor-enabled and fail-closed for anything sharing the binary, so they stay
