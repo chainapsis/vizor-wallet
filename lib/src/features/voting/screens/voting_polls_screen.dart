@@ -476,6 +476,7 @@ class _MobilePollCardContent extends StatelessWidget {
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
     final previewDescription = _mobileRoundDescription(description);
+    final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
 
@@ -497,6 +498,13 @@ class _MobilePollCardContent extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
         ),
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(uri: forumUri),
+          ),
+        ],
         const SizedBox(height: AppSpacing.s),
         Container(height: 1.5, color: colors.border.subtle),
         const SizedBox(height: AppSpacing.s),

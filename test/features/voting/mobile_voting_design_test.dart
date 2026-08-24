@@ -93,7 +93,8 @@ void main() {
 
     final card = find.byType(VotingResultCard);
     expect(card, findsOneWidget);
-    expect(tester.getSize(card), const Size(361, 375));
+    expect(tester.getSize(card), const Size(361, 378));
+    expect(find.byType(VotingForumLinkButton), findsOneWidget);
     expect(find.text('Option 2 (your vote)'), findsOneWidget);
     expect(find.text('490.36 ZEC'), findsWidgets);
   });

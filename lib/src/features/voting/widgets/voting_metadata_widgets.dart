@@ -353,7 +353,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
           if (proposal.zipBadges.isNotEmpty ||
               forumUri != null ||
               statusLabel != null) ...[
-            _MobileProposalMetadata(
+            MobileVotingProposalMetadataRow(
               zipBadges: proposal.zipBadges,
               forumUri: forumUri,
               statusLabel: statusLabel,
@@ -410,11 +410,12 @@ class _MobileVotingProposalCard extends StatelessWidget {
   }
 }
 
-class _MobileProposalMetadata extends StatelessWidget {
-  const _MobileProposalMetadata({
+class MobileVotingProposalMetadataRow extends StatelessWidget {
+  const MobileVotingProposalMetadataRow({
     required this.zipBadges,
     required this.forumUri,
     required this.statusLabel,
+    super.key,
   });
 
   final List<String> zipBadges;

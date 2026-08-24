@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
@@ -34,6 +35,7 @@ void main() {
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
     expect(find.bySemanticsLabel('Voting config settings'), findsOneWidget);
     expect(find.byType(MobileBottomSafeArea), findsOneWidget);
+    expect(find.byType(VotingForumLinkButton), findsNWidgets(3));
     expect(
       tester
           .widget<MobileBottomSafeArea>(find.byType(MobileBottomSafeArea))

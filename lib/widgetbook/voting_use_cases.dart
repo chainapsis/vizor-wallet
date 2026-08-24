@@ -109,7 +109,7 @@ Widget buildMobileVotingResultsUseCase(BuildContext context) {
     child: SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
       child: VotingResultCard(
-        proposal: _previewSnackProposal,
+        proposal: _previewSnackResultProposal,
         tally: {1: 2640.96, 2: 1040.96, 3: 240.96},
         selectedChoice: 2,
         profilePictureId: kDefaultProfilePictureId,
@@ -328,6 +328,7 @@ const _previewVotingRounds = [
           'following the early-2026 sentiment polling. Already in NU7, '
           'established by prior consensus.',
       'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
   VotingRoundView(
@@ -340,6 +341,7 @@ const _previewVotingRounds = [
           'A silly sample round for testing the shielded vote builder without '
           'using real governance content.',
       'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
   VotingRoundView(
@@ -351,6 +353,7 @@ const _previewVotingRounds = [
           'A silly sample round for testing the shielded vote builder without '
           'using real governance content.',
       'vote_end_time': '2026-08-24T12:00:00Z',
+      'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
 ];
@@ -362,6 +365,39 @@ const _previewSnackProposal = VotingProposalView(
       'Which snack should be recognized as the official snack of the next '
       'team sync?',
   zipNumber: 'ZIP-2033 ZIP-2033',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label: 'Option 1',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 2,
+      label: 'Option 2',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+    VotingOptionView(
+      index: 3,
+      label: 'Option 3',
+      description:
+          'Which snack should be recognized as the official snack of the next '
+          'team sync...',
+    ),
+  ],
+);
+
+const _previewSnackResultProposal = VotingProposalView(
+  id: 1,
+  title: 'Official Snack of the Next Team Sync',
+  description:
+      'Which snack should be recognized as the official snack of the next '
+      'team sync?',
+  zipNumber: 'ZIP-2033 ZIP-2033',
+  forumUrl: 'https://forum.zcashcommunity.com/t/snack-governance',
   options: [
     VotingOptionView(
       index: 1,

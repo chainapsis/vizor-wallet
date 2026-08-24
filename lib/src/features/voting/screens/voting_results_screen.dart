@@ -310,6 +310,7 @@ class VotingResultCard extends StatelessWidget {
         total: total,
         selectedChoice: selectedChoice,
         profilePictureId: profilePictureId,
+        forumUri: forumUri,
       );
     }
 
@@ -393,6 +394,7 @@ class _MobileResultCard extends StatelessWidget {
     required this.total,
     required this.selectedChoice,
     required this.profilePictureId,
+    required this.forumUri,
   });
 
   final VotingProposalView proposal;
@@ -400,6 +402,7 @@ class _MobileResultCard extends StatelessWidget {
   final num total;
   final int? selectedChoice;
   final String? profilePictureId;
+  final Uri? forumUri;
 
   @override
   Widget build(BuildContext context) {
@@ -423,24 +426,13 @@ class _MobileResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (proposal.zipBadges.isNotEmpty)
-            SizedBox(
-              height: 21,
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  proposal.zipBadges.join('   '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.primary,
-                    height: 16 / 14,
-                    letterSpacing: -0.06,
-                  ),
-                ),
-              ),
+          if (proposal.zipBadges.isNotEmpty || forumUri != null)
+            MobileVotingProposalMetadataRow(
+              zipBadges: proposal.zipBadges,
+              forumUri: forumUri,
+              statusLabel: null,
             ),
-          if (proposal.zipBadges.isNotEmpty)
+          if (proposal.zipBadges.isNotEmpty || forumUri != null)
             const SizedBox(height: AppSpacing.xs),
           Text(
             proposal.title,
