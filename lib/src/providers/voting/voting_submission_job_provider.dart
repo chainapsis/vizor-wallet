@@ -1072,14 +1072,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (shouldAutoRecover && snapshotHeight != null) {
       _walletSyncRecoveryGeneration = generation;
       _walletSyncRecoverySnapshotHeight = snapshotHeight;
-      final configuredInterval = ref.read(votingWalletSyncPollIntervalProvider);
-      final interval = configuredInterval > Duration.zero
-          ? configuredInterval
-          : const Duration(milliseconds: 10);
-      _walletSyncRecoveryTimer = Timer.periodic(interval, (_) {
-        unawaited(_pollWalletSyncRecovery());
-      });
-      unawaited(_pollWalletSyncRecovery());
+      _startWalletSyncRecoveryPolling();
     }
   }
 
@@ -1193,6 +1186,21 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
   }
 
+  void _startWalletSyncRecoveryPolling() {
+    final configuredInterval = ref.read(votingWalletSyncPollIntervalProvider);
+    final interval = configuredInterval > Duration.zero
+        ? configuredInterval
+        : const Duration(milliseconds: 10);
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = Timer.periodic(interval, (_) {
+      unawaited(_pollWalletSyncRecovery());
+    });
+    unawaited(_pollWalletSyncRecovery());
+  }
+
+  /// Parks recovery on the unlock signal. Sync cannot advance and the retry
+  /// needs the unlocked spending secret, so polling stops entirely until
+  /// [_retryWalletSyncRecoveryAfterUnlock] resumes it.
   void _armWalletSyncRecoveryRetryOnUnlock() {
     _walletSyncRecoveryRetryOnUnlock = true;
     _walletSyncRecoveryTimer?.cancel();
@@ -1210,7 +1218,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _cancelWalletSyncRecovery();
       return;
     }
-    await retry();
+    _walletSyncRecoveryRetryOnUnlock = false;
+    // Resume polling rather than retrying outright: the wallet may have been
+    // locked while still short of the snapshot, and the poll is what decides
+    // readiness. When sync is already past it, the immediate first tick
+    // retries straight away.
+    _startWalletSyncRecoveryPolling();
   }
 
   void _cancelWalletSyncRecovery() {
