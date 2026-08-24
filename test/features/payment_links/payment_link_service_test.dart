@@ -154,9 +154,21 @@ void main() {
         createdAt: link.createdAt,
       ),
     );
+    final differentBirthdayName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: link.network,
+        address: link.address,
+        amountZatoshi: link.amountZatoshi,
+        mnemonic: link.mnemonic,
+        birthdayHeight: link.birthdayHeight - 1,
+        label: link.label,
+        createdAt: link.createdAt,
+      ),
+    );
 
     expect(paymentLinkClaimWalletDirectoryName(link), sameLinkName);
     expect(differentSecretName, isNot(sameLinkName));
+    expect(differentBirthdayName, isNot(sameLinkName));
     expect(sameLinkName, isNot(contains(link.address)));
     expect(sameLinkName, isNot(contains('abandon')));
   });
