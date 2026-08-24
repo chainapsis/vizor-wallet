@@ -50,7 +50,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   KeystoneSigningModalPhase? _keystonePhase;
   String? _keystoneError;
   List<String> _keystoneUrParts = const [];
-  List<int>? _keystonePcztWithProofs;
+  List<List<String>> _keystoneUrPartsByRound = const [];
+  List<List<int>> _keystonePcztsWithProofs = const [];
+  final List<List<int>> _keystoneSignatures = [];
+  int _keystoneRound = 0;
   SaplingParamsStatus? _keystoneSaplingParams;
 
   @override
@@ -129,7 +132,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _keystonePhase = KeystoneSigningModalPhase.preparing;
       _keystoneError = null;
       _keystoneUrParts = const [];
-      _keystonePcztWithProofs = null;
+      _keystoneUrPartsByRound = const [];
+      _keystonePcztsWithProofs = const [];
+      _keystoneSignatures.clear();
+      _keystoneRound = 0;
       _keystoneSaplingParams = null;
     });
     unawaited(_prepareKeystonePczt());
@@ -191,40 +197,65 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       final currentSaplingParams = await loadSaplingParamsStatus();
       _keystoneSaplingParams = currentSaplingParams;
 
-      final pcztBytes = await rust_sync.createPcztFromProposal(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-      );
-      final redactedPczt = await rust_sync.redactPcztForSigner(
-        pcztBytes: pcztBytes,
-      );
-      final urParts = await rust_keystone.encodePcztUrParts(
-        pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
-      );
+      final texPczts = widget.args.addressType == 'tex'
+          ? await rust_sync.createTexPcztsFromProposal(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+            )
+          : null;
+      final pczts =
+          texPczts?.pczts ??
+          [
+            await rust_sync.createPcztFromProposal(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+            ),
+          ];
+      final urPartsByRound = <List<String>>[];
+      final signerPczts = texPczts?.signerPczts;
+      for (var index = 0; index < pczts.length; index++) {
+        final redacted =
+            signerPczts?[index] ??
+            await rust_sync.redactPcztForSigner(pcztBytes: pczts[index]);
+        urPartsByRound.add(
+          await rust_keystone.encodePcztUrParts(
+            pcztBytes: redacted,
+            maxFragmentLen: BigInt.from(140),
+          ),
+        );
+      }
 
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.ready;
-        _keystoneUrParts = urParts;
+        _keystoneUrPartsByRound = urPartsByRound;
+        _keystoneUrParts = urPartsByRound.first;
       });
 
-      final pcztWithProofs = await rust_sync.addProofsToPczt(
-        pcztBytes: pcztBytes,
-        spendParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.spendPath
-            : null,
-        outputParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.outputPath
-            : null,
-      );
+      final proofs = <List<int>>[];
+      for (final pczt in pczts) {
+        proofs.add(
+          await rust_sync.addProofsToPczt(
+            pcztBytes: pczt,
+            spendParamsPath: widget.args.needsSaplingParams
+                ? currentSaplingParams.spendPath
+                : null,
+            outputParamsPath: widget.args.needsSaplingParams
+                ? currentSaplingParams.outputPath
+                : null,
+          ),
+        );
+      }
 
       if (!mounted) return;
       setState(() {
-        _keystonePcztWithProofs = pcztWithProofs;
+        _keystonePcztsWithProofs = proofs;
       });
     } catch (e, st) {
       log('SendReview._prepareKeystonePczt: ERROR: $e\n$st');
@@ -256,22 +287,29 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _getKeystoneSignature() async {
-    final pcztWithProofs = _keystonePcztWithProofs;
     final saplingParams = _keystoneSaplingParams;
     if (_keystonePhase != KeystoneSigningModalPhase.ready ||
-        pcztWithProofs == null ||
+        _keystonePcztsWithProofs.isEmpty ||
         saplingParams == null) {
       return;
     }
 
     final signatures = await context.push<List<int>>('/send/keystone/scan');
     if (signatures == null || !mounted) return;
+    _keystoneSignatures.add(signatures);
+    if (_keystoneRound + 1 < _keystonePcztsWithProofs.length) {
+      setState(() {
+        _keystoneRound++;
+        _keystoneUrParts = _keystoneUrPartsByRound[_keystoneRound];
+      });
+      return;
+    }
 
     _handoffToKeystone = true;
     final statusArgs = KeystoneBroadcastArgs(
       reviewArgs: widget.args,
-      pcztWithProofsBytes: pcztWithProofs,
-      pcztWithSignaturesBytes: signatures,
+      pcztWithProofs: _keystonePcztsWithProofs,
+      pcztWithSignatures: List<List<int>>.of(_keystoneSignatures),
     );
     ref.read(sendStatusRoutePayloadProvider.notifier).retain(statusArgs);
     context.go(
@@ -354,16 +392,18 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   urParts: _keystoneUrParts,
                   error: _keystoneError,
                   title: 'Confirm with Keystone',
-                  subtitle: 'Scan with your Keystone',
-                  instruction: _keystonePcztWithProofs == null
+                  subtitle: _keystoneUrPartsByRound.length == 2
+                      ? 'Transaction ${_keystoneRound + 1} of 2'
+                      : 'Scan with your Keystone',
+                  instruction: _keystonePcztsWithProofs.isEmpty
                       ? 'Scan now. Signature import unlocks after proofs are ready.'
                       : 'After you scanned, click Get signature.',
-                  primaryLabel: _keystonePcztWithProofs == null
+                  primaryLabel: _keystonePcztsWithProofs.isEmpty
                       ? 'Preparing'
                       : 'Get signature',
                   onPrimary:
                       keystonePhase == KeystoneSigningModalPhase.ready &&
-                          _keystonePcztWithProofs != null
+                          _keystonePcztsWithProofs.isNotEmpty
                       ? () => unawaited(_getKeystoneSignature())
                       : null,
                   secondaryLabel: 'Cancel',

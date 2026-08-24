@@ -478,8 +478,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType != 'invalid' &&
       _addressType != 'error';
 
-  static const _hardwareTexUnsupportedText =
-      'Keystone does not support TEX sends yet.';
   static const _notEnoughZecText = 'Not enough ZEC';
 
   bool get _activeAccountIsHardware {
@@ -487,12 +485,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (uuid == null) return false;
     return ref.read(accountProvider.notifier).isHardwareAccount(uuid);
   }
-
-  // Keystone cannot sign the multi-step shielded -> ephemeral t-addr -> TEX
-  // proposal yet, so block a hardware account from a TEX recipient at the
-  // address step. Software accounts handle TEX via the ZIP-320 two-step.
-  bool get _isHardwareTexRecipient =>
-      _addressType == 'tex' && _activeAccountIsHardware;
 
   bool get _showRecipientContinue =>
       _addressController.text.trim().isNotEmpty || _addressFocus.hasFocus;
@@ -608,7 +600,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _continueToAmount() {
-    if (!_hasValidAddress || _isHardwareTexRecipient) return;
+    if (!_hasValidAddress) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
@@ -870,7 +862,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _maxEstimatePreconditionError() {
     if (_activeAccountUuid == null) return 'Max amount unavailable';
     if (!_hasValidAddress) return 'Max amount unavailable';
-    if (_isHardwareTexRecipient) return _hardwareTexUnsupportedText;
     if (utf8.encode(_effectiveMemo).length > 512) {
       return 'Message is too long';
     }
@@ -1927,20 +1918,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressErrorSpace(BuildContext context) {
     final colors = context.colors;
-    final hardwareTex = _isHardwareTexRecipient;
-    final showError =
-        _addressType == 'invalid' || _addressType == 'error' || hardwareTex;
+    final showError = _addressType == 'invalid' || _addressType == 'error';
     // The reserved line shows the validation error, or — when the address is
     // valid and matches a saved contact / own account — the resolved name so
     // the user knows the pasted/typed address is the intended one.
     Widget? line;
     if (showError) {
       line = Text(
-        hardwareTex
-            ? _hardwareTexUnsupportedText
-            : (_addressType == 'invalid'
-                  ? 'Invalid address'
-                  : 'Address validation failed'),
+        _addressType == 'invalid'
+            ? 'Invalid address'
+            : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,
         ),
@@ -1995,7 +1982,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
             : null,
-        onPressed: _hasValidAddress && !_isHardwareTexRecipient
+        onPressed: _hasValidAddress
             ? _continueToAmount
             : null,
         child: Text(

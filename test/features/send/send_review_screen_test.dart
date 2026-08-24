@@ -31,6 +31,7 @@ import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' show TexPcztPairResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
@@ -427,8 +428,8 @@ void main() {
     final extra = statusExtras.single;
     expect(extra, isA<KeystoneBroadcastArgs>());
     final keystoneArgs = extra! as KeystoneBroadcastArgs;
-    expect(keystoneArgs.pcztWithProofsBytes, _fakeProofsBytes);
-    expect(keystoneArgs.pcztWithSignaturesBytes, _fakeSignatureBytes);
+    expect(keystoneArgs.pcztWithProofs.single, _fakeProofsBytes);
+    expect(keystoneArgs.pcztWithSignatures.single, _fakeSignatureBytes);
     expect(keystoneArgs.reviewArgs.proposalId, BigInt.one);
 
     // The proposal was consumed by createPcztFromProposal; the handoff must
@@ -436,6 +437,41 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     expect(rustApi.discardCalls, isEmpty);
+  });
+
+  testWidgets('Keystone TEX advances through two explicit signing rounds', (
+    tester,
+  ) async {
+    final statusExtras = <Object?>[];
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex'),
+        bootstrap: _bootstrap(isHardware: true),
+        statusExtras: statusExtras,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    expect(find.text('Transaction 1 of 2'), findsOneWidget);
+
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('keystone-scan-route'));
+    await tester.pumpAndSettle();
+    expect(find.text('Transaction 2 of 2'), findsOneWidget);
+
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('keystone-scan-route'));
+    await tester.pumpAndSettle();
+
+    final handoff = statusExtras.single as KeystoneBroadcastArgs;
+    expect(handoff.pcztWithProofs, hasLength(2));
+    expect(handoff.pcztWithSignatures, hasLength(2));
   });
 
   testWidgets('Keystone status survives a router refresh after handoff', (
@@ -478,8 +514,8 @@ void main() {
     final reviewArgs = _reviewArgs(addressType: 'unified');
     final retained = KeystoneBroadcastArgs(
       reviewArgs: reviewArgs,
-      pcztWithProofsBytes: _fakeProofsBytes,
-      pcztWithSignaturesBytes: _fakeSignatureBytes,
+      pcztWithProofs: [_fakeProofsBytes],
+      pcztWithSignatures: [_fakeSignatureBytes],
     );
 
     expect(
@@ -945,6 +981,27 @@ class _RustApiFake implements RustLibApi {
   }) async {
     createPcztCalls++;
     return Uint8List.fromList([1, 2, 3]);
+  }
+
+  @override
+  Future<TexPcztPairResult> crateApiSyncCreateTexPcztsFromProposal({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    createPcztCalls++;
+    return TexPcztPairResult(
+      pczts: [
+        Uint8List.fromList([1]),
+        Uint8List.fromList([2]),
+      ],
+      signerPczts: [
+        Uint8List.fromList([4]),
+        Uint8List.fromList([5]),
+      ],
+    );
   }
 
   @override

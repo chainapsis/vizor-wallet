@@ -953,6 +953,14 @@ pub struct ExtractAndBroadcastPcztResult {
     pub message: Option<String>,
 }
 
+pub struct StoreAndBroadcastPcztsResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
+}
+
 pub struct SendMaxEstimateResult {
     pub amount_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -2517,6 +2525,36 @@ pub fn create_pczt_from_proposal(
     })
 }
 
+pub struct TexPcztPairResult {
+    pub pczts: Vec<Vec<u8>>,
+    pub signer_pczts: Vec<Vec<u8>>,
+}
+
+/// Create the two ordered PCZTs for a ZIP-320 Keystone send.
+pub fn create_tex_pczts_from_proposal(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    proposal_id: u64,
+    send_flow_id: String,
+) -> Result<TexPcztPairResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let result = rt.block_on(wallet_sync::create_tex_pczts_from_proposal(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            proposal_id,
+            &send_flow_id,
+        ))?;
+        Ok(TexPcztPairResult {
+            pczts: result.pczts,
+            signer_pczts: result.signer_pczts,
+        })
+    })
+}
+
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
@@ -2562,6 +2600,51 @@ pub fn add_proofs_to_pczt(
 /// to the Keystone device for signing.
 pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     wallet_sync::redact_pczt_for_signer(&pczt_bytes)
+}
+
+/// Validate and finalize every signed PCZT, broadcast parent before child,
+/// then atomically persist only the accepted-or-ambiguous transaction prefix.
+pub async fn store_and_broadcast_signed_pczts_for_proposal(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    proposal_id: u64,
+    send_flow_id: String,
+    pczt_with_proofs: Vec<Vec<u8>>,
+    pczt_with_signatures: Vec<Vec<u8>>,
+    spend_params_path: Option<String>,
+    output_params_path: Option<String>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    let network = match parse_network_and_migrate(&db_path, &network) {
+        Ok(network) => network,
+        Err(error) => {
+            return match wallet_sync::discard_proposal(proposal_id, &send_flow_id) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    let result = wallet_sync::store_and_broadcast_signed_pczts_for_proposal(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        proposal_id,
+        &send_flow_id,
+        &pczt_with_proofs,
+        &pczt_with_signatures,
+        spend_params_path.as_deref(),
+        output_params_path.as_deref(),
+    )
+    .await?;
+    Ok(StoreAndBroadcastPcztsResult {
+        txids: result.txids,
+        status: result.status,
+        broadcasted_count: result.broadcasted_count,
+        total_count: result.total_count,
+        message: result.message,
+    })
 }
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final

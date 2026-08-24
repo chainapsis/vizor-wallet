@@ -29,9 +29,48 @@ class MobileKeystoneSignScreen extends ConsumerStatefulWidget {
       _MobileKeystoneSignScreenState();
 }
 
+class MobileKeystoneSigningRounds {
+  MobileKeystoneSigningRounds({required this.args})
+    : count = args.addressType == 'tex' ? 2 : 1;
+
+  final SendReviewArgs args;
+  final int count;
+  int index = 0;
+  final List<List<int>> proofs = [];
+  final List<List<int>> signatures = [];
+
+  String get title => count == 2
+      ? 'Confirm transaction ${index + 1} of 2'
+      : 'Confirm transaction';
+
+  bool add(List<int> proof, List<int> signature) {
+    proofs.add(proof);
+    signatures.add(signature);
+    if (index + 1 < count) {
+      index++;
+      return false;
+    }
+    return true;
+  }
+
+  KeystoneBroadcastArgs result() => KeystoneBroadcastArgs(
+    reviewArgs: args,
+    pcztWithProofs: List<List<int>>.of(proofs),
+    pcztWithSignatures: List<List<int>>.of(signatures),
+  );
+}
+
 class _MobileKeystoneSignScreenState
     extends ConsumerState<MobileKeystoneSignScreen> {
   bool _proposalOwnershipTransferred = false;
+  late final MobileKeystoneSigningRounds _rounds;
+  List<MobileKeystonePcztSigningPayload>? _payloads;
+
+  @override
+  void initState() {
+    super.initState();
+    _rounds = MobileKeystoneSigningRounds(args: widget.args);
+  }
 
   @override
   void dispose() {
@@ -50,10 +89,12 @@ class _MobileKeystoneSignScreenState
   @override
   Widget build(BuildContext context) {
     return MobileKeystonePcztSigningFlow(
-      title: 'Confirm transaction',
-      description:
-          'Use your Keystone wallet to scan this transaction QR code. '
-          'Follow the steps on your device.',
+      key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
+      title: _rounds.title,
+      description: widget.args.addressType == 'tex'
+          ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
+          : 'Use your Keystone wallet to scan this transaction QR code. '
+                'Follow the steps on your device.',
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
@@ -78,6 +119,8 @@ class _MobileKeystoneSignScreenState
     BuildContext context,
     WidgetRef ref,
   ) async {
+    final cached = _payloads;
+    if (cached != null) return cached[_rounds.index];
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
     var saplingParams = await loadSaplingParamsStatus();
@@ -97,34 +140,53 @@ class _MobileKeystoneSignScreenState
       saplingParams = await loadSaplingParamsStatus();
     }
 
-    final pcztBytes = await rust_sync.createPcztFromProposal(
-      dbPath: dbPath,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      network: endpoint.networkName,
-      proposalId: widget.args.proposalId,
-      sendFlowId: widget.args.sendFlowId,
-    );
-
-    final redactedPczt = await rust_sync.redactPcztForSigner(
-      pcztBytes: pcztBytes,
-    );
-    final urParts = await rust_keystone.encodePcztUrParts(
-      pcztBytes: redactedPczt,
-      maxFragmentLen: BigInt.from(140),
-    );
-
-    return MobileKeystonePcztSigningPayload(
-      urParts: urParts,
-      pcztWithProofs: rust_sync.addProofsToPczt(
-        pcztBytes: pcztBytes,
-        spendParamsPath: widget.args.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: widget.args.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      ),
-    );
+    final texPczts = widget.args.addressType == 'tex'
+        ? await rust_sync.createTexPcztsFromProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+          )
+        : null;
+    final pczts =
+        texPczts?.pczts ??
+        [
+          await rust_sync.createPcztFromProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+          ),
+        ];
+    final payloads = <MobileKeystonePcztSigningPayload>[];
+    final signerPczts = texPczts?.signerPczts;
+    for (var index = 0; index < pczts.length; index++) {
+      final pczt = pczts[index];
+      final redacted =
+          signerPczts?[index] ??
+          await rust_sync.redactPcztForSigner(pcztBytes: pczt);
+      payloads.add(
+        MobileKeystonePcztSigningPayload(
+          urParts: await rust_keystone.encodePcztUrParts(
+            pcztBytes: redacted,
+            maxFragmentLen: BigInt.from(140),
+          ),
+          pcztWithProofs: rust_sync.addProofsToPczt(
+            pcztBytes: pczt,
+            spendParamsPath: widget.args.needsSaplingParams
+                ? saplingParams.spendPath
+                : null,
+            outputParamsPath: widget.args.needsSaplingParams
+                ? saplingParams.outputPath
+                : null,
+          ),
+        ),
+      );
+    }
+    _payloads = payloads;
+    return payloads[_rounds.index];
   }
 
   Future<bool> _confirmSaplingParamsDownload(BuildContext context) async {
@@ -142,16 +204,14 @@ class _MobileKeystoneSignScreenState
     List<int> pcztWithProofs,
     Uint8List signedPczt,
   ) async {
+    if (!_rounds.add(pcztWithProofs, signedPczt)) {
+      if (mounted) setState(() {});
+      return;
+    }
     // The status route now owns the retained proposal lock and decides whether
     // to release it or keep it through an ambiguous broadcast result.
     _proposalOwnershipTransferred = true;
-    context.pop(
-      KeystoneBroadcastArgs(
-        reviewArgs: widget.args,
-        pcztWithProofsBytes: pcztWithProofs,
-        pcztWithSignaturesBytes: signedPczt,
-      ),
-    );
+    context.pop(_rounds.result());
   }
 
   String _friendlyError(Object error) {

@@ -903,6 +903,21 @@ Future<Uint8List> createPcztFromProposal({
   sendFlowId: sendFlowId,
 );
 
+/// Create the two ordered PCZTs for a ZIP-320 Keystone send.
+Future<TexPcztPairResult> createTexPcztsFromProposal({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required BigInt proposalId,
+  required String sendFlowId,
+}) => RustLib.instance.api.crateApiSyncCreateTexPcztsFromProposal(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+);
+
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
@@ -951,6 +966,30 @@ Future<Uint8List> addProofsToPczt({
 /// to the Keystone device for signing.
 Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncRedactPcztForSigner(pcztBytes: pcztBytes);
+
+/// Validate and finalize every signed PCZT, broadcast parent before child,
+/// then atomically persist only the accepted-or-ambiguous transaction prefix.
+Future<StoreAndBroadcastPcztsResult> storeAndBroadcastSignedPcztsForProposal({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required BigInt proposalId,
+  required String sendFlowId,
+  required List<Uint8List> pcztWithProofs,
+  required List<Uint8List> pcztWithSignatures,
+  String? spendParamsPath,
+  String? outputParamsPath,
+}) => RustLib.instance.api.crateApiSyncStoreAndBroadcastSignedPcztsForProposal(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+  pcztWithProofs: pcztWithProofs,
+  pcztWithSignatures: pcztWithSignatures,
+  spendParamsPath: spendParamsPath,
+  outputParamsPath: outputParamsPath,
+);
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
@@ -2218,6 +2257,41 @@ class ShieldTransparentStatus {
           reason == other.reason;
 }
 
+class StoreAndBroadcastPcztsResult {
+  final String txids;
+  final String status;
+  final int broadcastedCount;
+  final int totalCount;
+  final String? message;
+
+  const StoreAndBroadcastPcztsResult({
+    required this.txids,
+    required this.status,
+    required this.broadcastedCount,
+    required this.totalCount,
+    this.message,
+  });
+
+  @override
+  int get hashCode =>
+      txids.hashCode ^
+      status.hashCode ^
+      broadcastedCount.hashCode ^
+      totalCount.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StoreAndBroadcastPcztsResult &&
+          runtimeType == other.runtimeType &&
+          txids == other.txids &&
+          status == other.status &&
+          broadcastedCount == other.broadcastedCount &&
+          totalCount == other.totalCount &&
+          message == other.message;
+}
+
 class SubtreeIndices {
   final BigInt nextSapling;
   final BigInt nextOrchard;
@@ -2293,6 +2367,24 @@ class SyncProgress {
           chainTipHeight == other.chainTipHeight &&
           isSyncing == other.isSyncing &&
           isComplete == other.isComplete;
+}
+
+class TexPcztPairResult {
+  final List<Uint8List> pczts;
+  final List<Uint8List> signerPczts;
+
+  const TexPcztPairResult({required this.pczts, required this.signerPczts});
+
+  @override
+  int get hashCode => pczts.hashCode ^ signerPczts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TexPcztPairResult &&
+          runtimeType == other.runtimeType &&
+          pczts == other.pczts &&
+          signerPczts == other.signerPczts;
 }
 
 class TransactionDetail {
