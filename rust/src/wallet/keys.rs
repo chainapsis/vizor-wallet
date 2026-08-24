@@ -259,7 +259,7 @@ fn software_account_ufvk(
 
 /// Derive the default shielded Unified Address for a software account without
 /// importing it into the wallet database.
-pub fn software_account_unified_address(
+pub fn derive_software_address(
     network: WalletNetwork,
     seed: &SecretVec<u8>,
     account_index: u32,
@@ -1260,13 +1260,13 @@ mod tests {
     }
 
     #[test]
-    fn software_account_preview_address_is_deterministic_and_network_scoped() {
+    fn software_address_derivation_is_deterministic_and_network_scoped() {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let seed = mnemonic_to_seed(phrase).unwrap();
 
-        let main = software_account_unified_address(WalletNetwork::Main, &seed, 0).unwrap();
-        let main_again = software_account_unified_address(WalletNetwork::Main, &seed, 0).unwrap();
-        let test = software_account_unified_address(WalletNetwork::Test, &seed, 0).unwrap();
+        let main = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let main_again = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let test = derive_software_address(WalletNetwork::Test, &seed, 0).unwrap();
 
         assert_eq!(main, main_again);
         assert!(main.starts_with("u1"));

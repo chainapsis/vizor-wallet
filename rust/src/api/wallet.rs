@@ -30,8 +30,8 @@ pub struct AccountCreationResult {
     pub unified_address: String,
 }
 
-/// Result of deriving a software account without importing it into the wallet DB.
-pub struct SoftwareAccountPreviewResult {
+/// A generated software account that has not been imported into the wallet DB.
+pub struct GeneratedSoftwareAccount {
     pub mnemonic: String,
     pub unified_address: String,
 }
@@ -327,16 +327,14 @@ pub fn add_account(
 /// Generate a software account mnemonic and shielded address without touching
 /// the wallet DB. Used for an external one-time recipient controlled by a
 /// fresh seed, such as payment-link funding.
-pub fn preview_new_software_account(
-    network: String,
-) -> Result<SoftwareAccountPreviewResult, String> {
+pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAccount, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
         let mnemonic = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
-        let unified_address = keys::software_account_unified_address(network, &seed, 0)?;
+        let unified_address = keys::derive_software_address(network, &seed, 0)?;
 
-        Ok(SoftwareAccountPreviewResult {
+        Ok(GeneratedSoftwareAccount {
             mnemonic,
             unified_address,
         })
@@ -1122,12 +1120,12 @@ mod tests {
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
     #[test]
-    fn payment_link_account_preview_is_valid_without_creating_a_database() {
-        let preview = preview_new_software_account("main".to_string()).unwrap();
+    fn generates_valid_software_account_without_creating_a_database() {
+        let account = generate_software_account("main".to_string()).unwrap();
 
-        assert_eq!(preview.mnemonic.split_whitespace().count(), 24);
-        assert!(validate_mnemonic(preview.mnemonic.clone()));
-        assert!(preview.unified_address.starts_with("u1"));
+        assert_eq!(account.mnemonic.split_whitespace().count(), 24);
+        assert!(validate_mnemonic(account.mnemonic.clone()));
+        assert!(account.unified_address.starts_with("u1"));
     }
 
     #[test]

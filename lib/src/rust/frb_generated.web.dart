@@ -336,6 +336,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  GeneratedSoftwareAccount dco_decode_generated_software_account(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -814,11 +817,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
-    dynamic raw,
-  );
-
-  @protected
-  SoftwareAccountPreviewResult dco_decode_software_account_preview_result(
     dynamic raw,
   );
 
@@ -1302,6 +1300,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  GeneratedSoftwareAccount sse_decode_generated_software_account(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -1902,11 +1905,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  SoftwareAccountPreviewResult sse_decode_software_account_preview_result(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   SoftwareWalletDiscoveredAccount sse_decode_software_wallet_discovered_account(
     SseDeserializer deserializer,
   );
@@ -2490,6 +2488,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_generated_software_account(
+    GeneratedSoftwareAccount self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -3217,12 +3221,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_software_account_preview_result(
-    SoftwareAccountPreviewResult self,
     SseSerializer serializer,
   );
 
