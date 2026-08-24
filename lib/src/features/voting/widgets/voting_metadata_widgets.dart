@@ -514,9 +514,7 @@ class _MobileVotingProposalOption extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.accent,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
+                        fontWeight: FontWeight.w500,
                         height: 16 / 14,
                         letterSpacing: -0.06,
                       ),

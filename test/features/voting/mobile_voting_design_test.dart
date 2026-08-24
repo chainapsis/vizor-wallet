@@ -193,6 +193,7 @@ void main() {
     final initialFirstOptionRect = tester.getRect(firstOption);
     final initialSecondOptionRect = tester.getRect(secondOption);
     final initialLabelRect = tester.getRect(label);
+    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w500);
 
     await tester.tap(firstOption);
     await tester.pumpAndSettle();
@@ -201,6 +202,7 @@ void main() {
     expect(tester.getRect(firstOption), initialFirstOptionRect);
     expect(tester.getRect(secondOption), initialSecondOptionRect);
     expect(tester.getRect(label), initialLabelRect);
+    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w500);
     expect(
       find.byKey(const ValueKey('voting_selected_choice_indicator')),
       findsOneWidget,
