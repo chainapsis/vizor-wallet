@@ -1845,6 +1845,86 @@ void main() {
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
 
+  test(
+    'delegation passes only exact snapshot matches for PIR failover',
+    () async {
+      final primary = Uri.parse('https://pir-primary.example');
+      final behind = Uri.parse('https://pir-behind.example');
+      final failover = Uri.parse('https://pir-failover.example');
+      final rust = FakeVotingRustApi();
+      final pir = FakePirResolver(
+        resolution: PirSnapshotResolution(
+          endpoint: failover,
+          diagnostics: [
+            PirSnapshotEndpointDiagnostic(
+              endpoint: primary,
+              status: PirSnapshotEndpointStatus.matched,
+              reportedHeight: 123,
+            ),
+            PirSnapshotEndpointDiagnostic(
+              endpoint: behind,
+              status: PirSnapshotEndpointStatus.behind,
+              reportedHeight: 122,
+            ),
+            PirSnapshotEndpointDiagnostic(
+              endpoint: failover,
+              status: PirSnapshotEndpointStatus.matched,
+              reportedHeight: 123,
+            ),
+          ],
+        ),
+      );
+      final container = _sessionContainer(rust: rust, pirResolver: pir);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.delegated);
+      expect(state.pirEndpoint, failover);
+      expect(rust.delegationPirServerUrlBatches, [
+        [failover.toString(), primary.toString()],
+      ]);
+      expect(rust.delegationBundleCalls, [0]);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+    },
+  );
+
+  test('delegation retry preserves PIR failover endpoints', () async {
+    final primary = Uri.parse('https://pir-primary.example');
+    final failover = Uri.parse('https://pir-failover.example');
+    final proofErrors = <int, Object>{
+      0: StateError('temporary delegation failure'),
+    };
+    final rust = FakeVotingRustApi(delegationStreamErrorsByBundle: proofErrors);
+    final container = _sessionContainer(
+      rust: rust,
+      pirResolver: FakePirResolver(
+        resolution: _pirResolution(primary, [primary, failover]),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.error,
+    );
+
+    proofErrors.clear();
+    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+
+    expect(rust.delegationPirServerUrlBatches, [
+      [primary.toString(), failover.toString()],
+      [primary.toString(), failover.toString()],
+    ]);
+  });
+
   test('hardware voting prepares Keystone signing request', () async {
     final rust = FakeVotingRustApi();
     final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -2620,6 +2700,40 @@ void main() {
       expect(rust.storedVanPositions, ['0:0']);
     },
   );
+
+  test('hardware delegation passes PIR failover endpoints to Rust', () async {
+    final primary = Uri.parse('https://pir-primary.example');
+    final failover = Uri.parse('https://pir-failover.example');
+    final rust = FakeVotingRustApi();
+    rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: 0,
+      sig: Uint8List.fromList(const [3, 0]),
+      sighash: Uint8List.fromList(const [10, 0]),
+      rk: Uint8List.fromList(const [2, 0]),
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      accountIsHardware: true,
+      pirResolver: FakePirResolver(
+        resolution: _pirResolution(primary, [primary, failover]),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundlesWithKeystoneSignatures();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.delegated);
+    expect(state.pirEndpoint, primary);
+    expect(rust.keystonePirServerUrlBatches, [
+      [primary.toString(), failover.toString()],
+    ]);
+    expect(rust.keystoneProofBundleCalls, [0]);
+    expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+  });
 
   test(
     'hardware voting blocks delegation when later Keystone bundle is unsigned',
@@ -7642,6 +7756,20 @@ class _CountingVotingRoundsNotifier extends VotingRoundsNotifier {
   }
 }
 
+PirSnapshotResolution _pirResolution(Uri selected, List<Uri> matches) {
+  return PirSnapshotResolution(
+    endpoint: selected,
+    diagnostics: [
+      for (final endpoint in matches)
+        PirSnapshotEndpointDiagnostic(
+          endpoint: endpoint,
+          status: PirSnapshotEndpointStatus.matched,
+          reportedHeight: 123,
+        ),
+    ],
+  );
+}
+
 ProviderContainer _sessionContainer({
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -9277,6 +9405,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int _activeVoteCommitments = 0;
   int maxConcurrentVoteCommitments = 0;
   final delegationBundleCalls = <int>[];
+  final delegationPirServerUrlBatches = <List<String>>[];
   final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
   final voteCommitmentKeys = <String>[];
@@ -9314,6 +9443,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final eligibilityAccountUuids = <String>[];
   final keystoneDelegationRequestCalls = <int>[];
   final keystoneProofBundleCalls = <int>[];
+  final keystonePirServerUrlBatches = <List<String>>[];
   final deleteSkippedBundleKeepCounts = <int>[];
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   rust_wire.VotingRoundParams? lastTrustedRoundParams;
@@ -9422,13 +9552,14 @@ class FakeVotingRustApi implements VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async* {
     accountUuids.add(ctx.accountUuid);
     delegationBundleCalls.add(bundleIndex);
+    delegationPirServerUrlBatches.add(List<String>.from(pirServerUrls));
     delegationMnemonics.add(mnemonic);
     delegationStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     _activeDelegationProofs++;
@@ -9620,7 +9751,7 @@ class FakeVotingRustApi implements VotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
@@ -9628,6 +9759,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async* {
     accountUuids.add(ctx.accountUuid);
     keystoneProofBundleCalls.add(bundleIndex);
+    keystonePirServerUrlBatches.add(List<String>.from(pirServerUrls));
     _activeKeystoneDelegationProofs++;
     if (_activeKeystoneDelegationProofs >
         maxConcurrentKeystoneDelegationProofs) {

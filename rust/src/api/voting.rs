@@ -807,7 +807,9 @@ pub fn warm_voting_proving_caches() {
 ///
 /// Emits local preparation phase events while work progresses, then emits a
 /// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued.
+/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
+/// contain at least one endpoint that serves the round's exact snapshot; later
+/// entries are used only after retryable PIR transport failures.
 ///
 /// # Errors
 ///
@@ -816,7 +818,7 @@ pub fn warm_voting_proving_caches() {
 /// stream errors.
 pub async fn build_prove_and_sign_delegation_payload_with_progress(
     ctx: ApiVotingRoundContext,
-    pir_server_url: String,
+    pir_server_urls: Vec<String>,
     mnemonic: String,
     stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
@@ -857,7 +859,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     let wallet_flow_started = Instant::now();
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
-        &pir_server_url,
+        &pir_server_urls,
         ctx.pir_layout,
         &seed,
         prepare_params,
@@ -1080,6 +1082,7 @@ pub fn get_keystone_signatures(
 }
 
 /// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
+/// `pir_server_urls` follows the same exact-snapshot failover contract.
 ///
 /// # Errors
 ///
@@ -1087,7 +1090,7 @@ pub fn get_keystone_signatures(
 /// Runtime proving/signature errors are emitted through the sink.
 pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
     ctx: ApiVotingRoundContext,
-    pir_server_url: String,
+    pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
     keystone_sig: Vec<u8>,
@@ -1122,7 +1125,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     let progress_sink = sink.clone();
     let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
         &ctx.db_path,
-        &pir_server_url,
+        &pir_server_urls,
         ctx.pir_layout,
         &ctx.account_uuid,
         prepare_params,
