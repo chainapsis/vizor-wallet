@@ -9,6 +9,8 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/voting/voting_session_provider.dart';
 import 'mobile_keystone_voting_signing_screen.dart';
+import 'mobile_voting_submitted_screen.dart';
+import 'mobile_voting_submission_progress_screen.dart';
 import '../voting_polls_screen.dart';
 import '../voting_proposal_detail_screen.dart';
 import '../voting_results_screen.dart';
@@ -90,6 +92,8 @@ class MobileVotingStatusScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       requireCurrentRouteForConfirmation: true,
+      submissionProgressBuilder: (_, activeStep) =>
+          MobileVotingSubmissionProgressScreen(activeStep: activeStep),
       contentWrapper: (_, content) => MobileVotingScaffold(
         title: 'Submit vote',
         horizontalPadding: AppSpacing.sm,
@@ -113,13 +117,14 @@ class MobileVotingSubmissionConfirmationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MobileVotingScaffold(
-      title: 'Vote submitted',
-      child: VotingSubmissionConfirmationView(
-        roundId: roundId,
-        accountUuid: accountUuid,
-        showDesktopToolbar: false,
-      ),
+    return VotingSubmissionConfirmationView(
+      roundId: roundId,
+      accountUuid: accountUuid,
+      showDesktopToolbar: false,
+      contentWrapper: (_, content) =>
+          MobileVotingScaffold(title: 'Vote submitted', child: content),
+      confirmedContentBuilder: (_, onDone) =>
+          MobileVotingSubmittedScreen(onDone: onDone),
     );
   }
 }

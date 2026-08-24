@@ -121,6 +121,38 @@ void main() {
     );
     expect(shake.transform.getTranslation().x, isNot(0));
   });
+
+  testWidgets('suppresses terminal motion when animations are disabled', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+
+    await tester.pumpWidget(
+      _app(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MobileTransactionProgressScreen(
+            phase: MobileTransactionProgressPhase.succeeded,
+            title: 'Voted',
+            body: 'Submitted.',
+            canPop: true,
+            successIconKey: ValueKey('reduced_motion_success_icon'),
+            successRippleKey: ValueKey('reduced_motion_success_ripple'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('reduced_motion_success_ripple')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('reduced_motion_success_icon')),
+      findsOneWidget,
+    );
+  });
 }
 
 Widget _app(Widget child) {

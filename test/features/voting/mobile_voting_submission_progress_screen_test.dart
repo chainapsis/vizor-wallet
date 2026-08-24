@@ -1,0 +1,209 @@
+@Tags(['mobile'])
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+
+void main() {
+  test('maps submission phases to the simplified three-step presentation', () {
+    expect(
+      votingSubmissionProgressStepFor(
+        phase: VotingSessionPhase.resolvingPir,
+        voteStepComplete: false,
+        submissionJobComplete: false,
+        submissionJobInFlight: true,
+      ),
+      VotingSubmissionProgressStep.delegating,
+    );
+    expect(
+      votingSubmissionProgressStepFor(
+        phase: VotingSessionPhase.submittingShares,
+        voteStepComplete: false,
+        submissionJobComplete: false,
+        submissionJobInFlight: true,
+      ),
+      VotingSubmissionProgressStep.castingVotes,
+    );
+    expect(
+      votingSubmissionProgressStepFor(
+        phase: VotingSessionPhase.done,
+        voteStepComplete: true,
+        submissionJobComplete: false,
+        submissionJobInFlight: true,
+      ),
+      VotingSubmissionProgressStep.finalizing,
+    );
+  });
+
+  testWidgets('renders the simplified three-step casting state', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        const MobileVotingSubmissionProgressScreen(
+          activeStep: VotingSubmissionProgressStep.castingVotes,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Don’t leave this window.'), findsOneWidget);
+    expect(find.text('Submitting votes...'), findsOneWidget);
+    expect(find.text('Delegating voting authority'), findsOneWidget);
+    expect(find.text('Casting votes and submitting shares'), findsOneWidget);
+    expect(find.text('Finalizing submission'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('mobile_voting_submission_step_delegating_complete'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_voting_submission_step_castingVotes_active'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_voting_submission_step_finalizing_pending'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('uses a subtle repeating pulse for the active step', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        const MobileVotingSubmissionProgressScreen(
+          activeStep: VotingSubmissionProgressStep.delegating,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final pulse = tester.widget<Transform>(
+      find.byKey(const ValueKey('mobile_voting_submission_active_step_pulse')),
+    );
+    final scale = pulse.transform.getMaxScaleOnAxis();
+    expect(scale, greaterThan(1));
+    expect(scale, lessThanOrEqualTo(1.06));
+  });
+
+  testWidgets('keeps the proof notice visible on a compact mobile height', (
+    tester,
+  ) async {
+    await _setMobileViewport(
+      tester,
+      size: const Size(375, 667),
+      viewPadding: const FakeViewPadding(top: 47, bottom: 34),
+    );
+    await tester.pumpWidget(
+      _app(
+        const MobileVotingSubmissionProgressScreen(
+          activeStep: VotingSubmissionProgressStep.finalizing,
+        ),
+      ),
+    );
+
+    final notice = find.textContaining('Generating zero-knowledge proofs');
+    expect(notice, findsOneWidget);
+    expect(tester.getSize(find.byType(Scaffold)), const Size(375, 667));
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -200),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_voting_submission_progress_content'),
+            ),
+          )
+          .height,
+      740,
+    );
+    expect(tester.getBottomRight(notice).dy, lessThanOrEqualTo(667));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders the shared voted success presentation', (tester) async {
+    await _setMobileViewport(tester);
+    var done = false;
+    await tester.pumpWidget(
+      _app(MobileVotingSubmittedScreen(onDone: () => done = true)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Voted'), findsOneWidget);
+    expect(
+      find.text('It will confirm on-chain shortly. Track it in Activity.'),
+      findsOneWidget,
+    );
+    expect(find.text('Go home'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_submitted_home_button')),
+    );
+    expect(done, isTrue);
+  });
+
+  testWidgets('keeps the Voted action reachable above compact safe areas', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, size: const Size(375, 667));
+    var done = false;
+    await tester.pumpWidget(
+      _app(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: Size(375, 667),
+            padding: EdgeInsets.only(top: 47, bottom: 34),
+            viewPadding: EdgeInsets.only(top: 47, bottom: 34),
+          ),
+          child: MobileVotingSubmittedScreen(onDone: () => done = true),
+        ),
+      ),
+    );
+
+    final button = find.byKey(
+      const ValueKey('mobile_voting_submitted_home_button'),
+    );
+    expect(button, findsOneWidget);
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -80));
+    await tester.pump();
+    expect(tester.getBottomRight(button).dy, lessThanOrEqualTo(633));
+    await tester.tap(button);
+    expect(done, isTrue);
+  });
+}
+
+Widget _app(Widget child) {
+  return MaterialApp(
+    home: AppTheme(data: AppThemeData.light, child: child),
+  );
+}
+
+Future<void> _setMobileViewport(
+  WidgetTester tester, {
+  Size size = const Size(393, 852),
+  FakeViewPadding viewPadding = const FakeViewPadding(top: 55),
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  tester.view.viewPadding = viewPadding;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetViewPadding);
+}

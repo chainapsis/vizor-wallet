@@ -23,11 +23,38 @@ import '../widgets/voting_pane_scroll_area.dart';
 
 typedef VotingStatusContentWrapper =
     Widget Function(BuildContext context, Widget content);
+typedef VotingSubmissionProgressBuilder =
+    Widget Function(
+      BuildContext context,
+      VotingSubmissionProgressStep activeStep,
+    );
 typedef VotingKeystoneStatusBuilder =
     Widget Function(
       BuildContext context,
       VotingKeystoneStatusPresentation presentation,
     );
+
+enum VotingSubmissionProgressStep { delegating, castingVotes, finalizing }
+
+VotingSubmissionProgressStep votingSubmissionProgressStepFor({
+  required VotingSessionPhase phase,
+  required bool voteStepComplete,
+  required bool submissionJobComplete,
+  required bool submissionJobInFlight,
+}) {
+  if (submissionJobInFlight && voteStepComplete && !submissionJobComplete) {
+    return VotingSubmissionProgressStep.finalizing;
+  }
+  return switch (phase) {
+    VotingSessionPhase.delegated ||
+    VotingSessionPhase.readyToVote ||
+    VotingSessionPhase.syncingVoteTree ||
+    VotingSessionPhase.castingVotes ||
+    VotingSessionPhase.submittingShares ||
+    VotingSessionPhase.done => VotingSubmissionProgressStep.castingVotes,
+    _ => VotingSubmissionProgressStep.delegating,
+  };
+}
 
 class VotingKeystoneStatusPresentation {
   const VotingKeystoneStatusPresentation({
@@ -82,6 +109,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
     this.accountUuid,
     this.requireCurrentRouteForConfirmation = false,
     this.contentWrapper,
+    this.submissionProgressBuilder,
     this.keystoneStatusBuilder,
   });
 
@@ -89,6 +117,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
   final String? accountUuid;
   final bool requireCurrentRouteForConfirmation;
   final VotingStatusContentWrapper? contentWrapper;
+  final VotingSubmissionProgressBuilder? submissionProgressBuilder;
   final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
 
   @override
@@ -261,7 +290,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         job?.status == VotingSubmissionJobStatus.complete) {
       _scheduleConfirmationNavigation(selectedKey);
     }
-    var usesPlatformKeystoneScreen = false;
+    var usesPlatformScreen = false;
     final content = session.when(
       skipLoadingOnRefresh: false,
       loading: () {
@@ -279,6 +308,14 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             errorMessage: job?.errorMessage,
             onRetry: _retry,
             onClear: _clearError,
+          );
+        }
+        final progressBuilder = widget.submissionProgressBuilder;
+        if (progressBuilder != null) {
+          usesPlatformScreen = true;
+          return progressBuilder(
+            context,
+            VotingSubmissionProgressStep.delegating,
           );
         }
         return const VotingPaneLoading();
@@ -318,7 +355,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             bundleIndex != null &&
             urParts.isNotEmpty &&
             job?.keystoneQrError == null) {
-          usesPlatformKeystoneScreen = true;
+          usesPlatformScreen = true;
           return keystoneBuilder(
             context,
             VotingKeystoneStatusPresentation(
@@ -334,13 +371,32 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
+        final voteSubmissionProgress = _voteSubmissionProgress(
+          state,
+          completedSubmission: completedSubmission,
+        );
+        final voteStepComplete =
+            completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
+        final progressBuilder = widget.submissionProgressBuilder;
+        if (progressBuilder != null &&
+            phase != VotingSessionPhase.error &&
+            phase != VotingSessionPhase.keystoneSigning &&
+            !(job?.softwareAccountRequired ?? false)) {
+          usesPlatformScreen = true;
+          return progressBuilder(
+            context,
+            votingSubmissionProgressStepFor(
+              phase: phase,
+              voteStepComplete: voteStepComplete,
+              submissionJobComplete: submissionJobComplete,
+              submissionJobInFlight: submissionJobInFlight,
+            ),
+          );
+        }
         return _StatusContent(
           phase: phase,
           voteSubmissionDetail: _voteSubmissionDetail(state),
-          voteSubmissionProgress: _voteSubmissionProgress(
-            state,
-            completedSubmission: completedSubmission,
-          ),
+          voteSubmissionProgress: voteSubmissionProgress,
           delegationProgress: _delegationProgress(state),
           completedSubmission: completedSubmission,
           submissionJobComplete: submissionJobComplete,
@@ -369,7 +425,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
       },
     );
-    if (usesPlatformKeystoneScreen) return content;
+    if (usesPlatformScreen) return content;
     return widget.contentWrapper?.call(context, content) ?? content;
   }
 

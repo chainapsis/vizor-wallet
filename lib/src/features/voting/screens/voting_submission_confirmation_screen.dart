@@ -21,6 +21,11 @@ import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
+typedef VotingConfirmationContentWrapper =
+    Widget Function(BuildContext context, Widget content);
+typedef VotingConfirmedContentBuilder =
+    Widget Function(BuildContext context, VoidCallback onDone);
+
 class VotingSubmissionConfirmationScreen extends StatelessWidget {
   const VotingSubmissionConfirmationScreen({
     super.key,
@@ -53,11 +58,15 @@ class VotingSubmissionConfirmationView extends ConsumerStatefulWidget {
     required this.roundId,
     required this.showDesktopToolbar,
     this.accountUuid,
+    this.contentWrapper,
+    this.confirmedContentBuilder,
   });
 
   final String roundId;
   final String? accountUuid;
   final bool showDesktopToolbar;
+  final VotingConfirmationContentWrapper? contentWrapper;
+  final VotingConfirmedContentBuilder? confirmedContentBuilder;
 
   @override
   ConsumerState<VotingSubmissionConfirmationView> createState() =>
@@ -110,9 +119,11 @@ class _VotingSubmissionConfirmationViewState
         : ref.watch(votingSubmissionJobSessionProvider(jobKey));
     return session.when(
       skipLoadingOnRefresh: false,
-      loading: () => widget.showDesktopToolbar
-          ? const VotingPaneStateView(child: VotingPaneLoading())
-          : const VotingPaneLoading(),
+      loading: () => _wrapFallback(
+        widget.showDesktopToolbar
+            ? const VotingPaneStateView(child: VotingPaneLoading())
+            : const VotingPaneLoading(),
+      ),
       error: (error, _) {
         final cachedState = _lastSubmissionState;
         if (cachedState != null) {
@@ -122,20 +133,26 @@ class _VotingSubmissionConfirmationViewState
             loadError: error,
           );
         }
-        return _ConfirmationScaffold(
-          showDesktopToolbar: widget.showDesktopToolbar,
-          confirmed: false,
-          title: 'Submission not complete',
-          pollTitle: 'Token holder voting',
-          message:
-              "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
-          votingPower: 'Not available',
+        return _wrapFallback(
+          _ConfirmationScaffold(
+            showDesktopToolbar: widget.showDesktopToolbar,
+            confirmed: false,
+            title: 'Submission not complete',
+            pollTitle: 'Token holder voting',
+            message:
+                "Couldn't load submission details: ${friendlyVotingErrorMessage(error)}",
+            votingPower: 'Not available',
+          ),
         );
       },
       data: (state) {
         return _buildSubmissionContent(state: state, jobKey: jobKey);
       },
     );
+  }
+
+  Widget _wrapFallback(Widget content) {
+    return widget.contentWrapper?.call(context, content) ?? content;
   }
 
   Widget _buildSubmissionContent({
@@ -166,15 +183,17 @@ class _VotingSubmissionConfirmationViewState
     );
 
     if (!hasCompletedSubmission) {
-      return _ConfirmationScaffold(
-        showDesktopToolbar: widget.showDesktopToolbar,
-        confirmed: false,
-        title: 'Submission not complete',
-        pollTitle: pollTitle,
-        message:
-            'This account has not completed submission for this voting round.',
-        votingPower: 'Not available',
-        doneLabel: 'Done',
+      return _wrapFallback(
+        _ConfirmationScaffold(
+          showDesktopToolbar: widget.showDesktopToolbar,
+          confirmed: false,
+          title: 'Submission not complete',
+          pollTitle: pollTitle,
+          message:
+              'This account has not completed submission for this voting round.',
+          votingPower: 'Not available',
+          doneLabel: 'Done',
+        ),
       );
     }
     if (!hasConfirmedVotingEligibility) {
@@ -192,40 +211,55 @@ class _VotingSubmissionConfirmationViewState
           latestRefreshMessage != null &&
           !_refreshingVotingPower &&
           !isVotingEligibilityErrorText(latestRefreshMessage);
-      return _ConfirmationScaffold(
-        showDesktopToolbar: widget.showDesktopToolbar,
-        confirmed: false,
-        title: 'Submission not complete',
-        pollTitle: pollTitle,
-        message:
-            retryMessage ??
-            storedEligibilityErrorMessage ??
-            (_refreshingVotingPower
-                ? 'Checking voting eligibility for this account.'
-                : 'Voting eligibility has not been confirmed for this account.'),
-        votingPower: 'Not available',
-        doneLabel: 'Done',
-        retryLabel: canRetry ? 'Retry' : null,
-        onRetry: canRetry
-            ? () => _retryVotingPowerRefresh(state, jobKey)
-            : null,
+      return _wrapFallback(
+        _ConfirmationScaffold(
+          showDesktopToolbar: widget.showDesktopToolbar,
+          confirmed: false,
+          title: 'Submission not complete',
+          pollTitle: pollTitle,
+          message:
+              retryMessage ??
+              storedEligibilityErrorMessage ??
+              (_refreshingVotingPower
+                  ? 'Checking voting eligibility for this account.'
+                  : 'Voting eligibility has not been confirmed for this account.'),
+          votingPower: 'Not available',
+          doneLabel: 'Done',
+          retryLabel: canRetry ? 'Retry' : null,
+          onRetry: canRetry
+              ? () => _retryVotingPowerRefresh(state, jobKey)
+              : null,
+        ),
       );
     }
-    return _ConfirmationScaffold(
-      showDesktopToolbar: widget.showDesktopToolbar,
-      confirmed: true,
-      title: 'Submission confirmed!',
-      pollTitle: pollTitle,
-      message: 'Your vote was successfully published and cannot be changed.',
-      votingPower: _formatVotingPower(
-        _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
+    final confirmedContentBuilder = widget.confirmedContentBuilder;
+    if (confirmedContentBuilder != null) {
+      return confirmedContentBuilder(context, () => _returnHome(jobKey));
+    }
+    return _wrapFallback(
+      _ConfirmationScaffold(
+        showDesktopToolbar: widget.showDesktopToolbar,
+        confirmed: true,
+        title: 'Submission confirmed!',
+        pollTitle: pollTitle,
+        message: 'Your vote was successfully published and cannot be changed.',
+        votingPower: _formatVotingPower(
+          _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
+        ),
+        isReturningToPolls: _isReturningToPolls,
+        doneEnabled: !_isReturningToPolls,
+        doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
+        returnErrorMessage: _returnErrorMessage,
+        onDone: () => unawaited(_returnToPolls(jobKey)),
       ),
-      isReturningToPolls: _isReturningToPolls,
-      doneEnabled: !_isReturningToPolls,
-      doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
-      returnErrorMessage: _returnErrorMessage,
-      onDone: () => unawaited(_returnToPolls(jobKey)),
     );
+  }
+
+  void _returnHome(VotingSessionKey? jobKey) {
+    if (jobKey != null) {
+      ref.read(votingSubmissionJobsProvider.notifier).dismiss(jobKey);
+    }
+    context.go('/home');
   }
 
   Future<void> _returnToPolls(VotingSessionKey? jobKey) async {

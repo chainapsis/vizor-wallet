@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
+import '../src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
+import '../src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../src/features/voting/screens/voting_proposal_detail_screen.dart';
 import '../src/features/voting/screens/voting_results_screen.dart';
@@ -112,6 +114,57 @@ Widget buildMobileVotingResultsUseCase(BuildContext context) {
         selectedChoice: 2,
         profilePictureId: kDefaultProfilePictureId,
       ),
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.delegating,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.castingVotes,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmissionFinalizingUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.finalizing,
+    ),
+  );
+}
+
+Widget buildMobileVotingSubmittedUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingSubmittedScreen(onDone: _previewNoop),
+  );
+}
+
+Widget _mobileVotingFullPagePreview(BuildContext context, Widget child) {
+  final mediaQuery = MediaQuery.of(context);
+  const safeArea = EdgeInsets.only(top: 55);
+  return SizedBox(
+    width: 393,
+    height: 852,
+    child: MediaQuery(
+      data: mediaQuery.copyWith(
+        size: const Size(393, 852),
+        padding: safeArea,
+        viewPadding: safeArea,
+      ),
+      child: child,
     ),
   );
 }
