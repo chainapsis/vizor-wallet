@@ -205,6 +205,11 @@ class _VotingProposalDetailViewState
               : state.eligibleWeightZatoshi,
           votingPowerPreparing: votingPowerPreparing,
           votingEligibilityConfirmed: hasConfirmedVotingEligibility,
+          // Drafting answers only writes local state, so it stays open while
+          // voting power is still being calculated. Only a resolved
+          // ineligibility (or another eligibility failure) locks the options.
+          answersEditable:
+              hasConfirmedVotingEligibility || isVotingEligibilityPending,
           votingEligibilityMessage: votingEligibilityError
               ? null
               : votingEligibilityMessage,
@@ -217,7 +222,10 @@ class _VotingProposalDetailViewState
           onChoice: draftKey == null
               ? (_, _) {}
               : (proposalId, choice) {
-                  if (!hasConfirmedVotingEligibility) return;
+                  if (!hasConfirmedVotingEligibility &&
+                      !isVotingEligibilityPending) {
+                    return;
+                  }
                   final notifier = ref.read(
                     votingDraftProvider(draftKey).notifier,
                   );
@@ -395,6 +403,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votingEligibilityConfirmed,
+    required this.answersEditable,
     required this.votingEligibilityMessage,
     required this.votingEligibilityErrorMessage,
     required this.onVotingEligibilityRetry,
@@ -413,6 +422,11 @@ class _ActivePollContent extends StatefulWidget {
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final bool votingEligibilityConfirmed;
+
+  /// Whether the user may still pick answers. Broader than
+  /// [votingEligibilityConfirmed]: it also covers the window where voting
+  /// power is still being calculated.
+  final bool answersEditable;
   final String? votingEligibilityMessage;
   final String? votingEligibilityErrorMessage;
   final VoidCallback onVotingEligibilityRetry;
@@ -540,10 +554,10 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         widget.votingEligibilityErrorMessage != null;
                     return VotingProposalCard(
                       proposal: proposal,
-                      selectedChoice: widget.votingEligibilityConfirmed
+                      selectedChoice: widget.answersEditable
                           ? widget.draft.choices[proposal.id]
                           : null,
-                      enabled: widget.votingEligibilityConfirmed,
+                      enabled: widget.answersEditable,
                       onDisabledOptionTap: isIneligible
                           ? _showIneligibleDialog
                           : null,
