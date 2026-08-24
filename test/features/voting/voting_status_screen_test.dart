@@ -1817,6 +1817,11 @@ void main() {
       expect(reviewScroll, findsOneWidget);
       expect(submitButton, findsOneWidget);
       expect(scrollable, findsOneWidget);
+      final submitButtonWidget = tester.widget<AppButton>(submitButton);
+      expect(submitButtonWidget.expand, isTrue);
+      expect(submitButtonWidget.minWidth, isNull);
+      expect(tester.getTopLeft(submitButton).dx, AppSpacing.sm);
+      expect(tester.getTopRight(submitButton).dx, 393 - AppSpacing.sm);
       expect(
         tester.getBottomLeft(reviewScroll).dy,
         greaterThan(tester.getBottomLeft(submitButton).dy),
@@ -1825,7 +1830,7 @@ void main() {
       final scrollableState = tester.state<ScrollableState>(scrollable);
 
       await tester.dragFrom(
-        Offset(AppSpacing.sm, tester.getCenter(submitButton).dy),
+        Offset(AppSpacing.xs, tester.getCenter(submitButton).dy),
         const Offset(0, -100),
       );
       await tester.pumpAndSettle();

@@ -251,7 +251,8 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
           key: const ValueKey('voting_confirm_submit_button'),
           onPressed: onSubmit,
           variant: AppButtonVariant.primary,
-          minWidth: 240,
+          minWidth: widget.showDesktopToolbar ? 240 : null,
+          expand: !widget.showDesktopToolbar,
           child: const Text('Confirm & submit'),
         );
         if (!widget.showDesktopToolbar) {
@@ -278,11 +279,13 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
                 bottom: 0,
                 child: Padding(
                   key: const ValueKey('mobile_voting_review_action'),
-                  padding: const EdgeInsets.only(
-                    top: AppSpacing.xs,
-                    bottom: AppSpacing.md,
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm,
+                    AppSpacing.xs,
+                    AppSpacing.sm,
+                    AppSpacing.md,
                   ),
-                  child: Center(child: submitButton),
+                  child: submitButton,
                 ),
               ),
             ],
