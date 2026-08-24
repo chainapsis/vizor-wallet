@@ -101,6 +101,39 @@ void main() {
     );
   });
 
+  testWidgets('can defer an initial success animation', (tester) async {
+    await _setMobileViewport(tester);
+    late StateSetter update;
+    var animationEnabled = false;
+
+    await tester.pumpWidget(
+      _app(
+        StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return MobileTransactionProgressBadge(
+              phase: MobileTransactionProgressPhase.succeeded,
+              terminalAnimationEnabled: animationEnabled,
+              successRippleKey: const ValueKey('deferred_success_ripple'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const ValueKey('deferred_success_ripple')), findsNothing);
+
+    update(() => animationEnabled = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('deferred_success_ripple')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('animates an initial failure phase', (tester) async {
     await _setMobileViewport(tester);
 
@@ -120,6 +153,38 @@ void main() {
       find.byKey(const ValueKey('mobile_transaction_progress_failure_shake')),
     );
     expect(shake.transform.getTranslation().x, isNot(0));
+  });
+
+  testWidgets('suppresses terminal motion when animations are disabled', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+
+    await tester.pumpWidget(
+      _app(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MobileTransactionProgressScreen(
+            phase: MobileTransactionProgressPhase.succeeded,
+            title: 'Voted',
+            body: 'Submitted.',
+            canPop: true,
+            successIconKey: ValueKey('reduced_motion_success_icon'),
+            successRippleKey: ValueKey('reduced_motion_success_ripple'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('reduced_motion_success_ripple')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('reduced_motion_success_icon')),
+      findsOneWidget,
+    );
   });
 }
 

@@ -34,7 +34,10 @@ void main() {
     expect(find.text('Immediately'), findsOneWidget);
     expect(find.text('Later'), findsOneWidget);
     expect(find.text('Choice 4'), findsOneWidget);
-    expect(find.text('Selected'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voting_selected_choice_indicator')),
+      findsOneWidget,
+    );
     expect(find.text('Choose'), findsNothing);
   });
 }

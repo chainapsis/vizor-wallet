@@ -2,10 +2,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
@@ -33,6 +35,7 @@ void main() {
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
     expect(find.bySemanticsLabel('Voting config settings'), findsOneWidget);
     expect(find.byType(MobileBottomSafeArea), findsOneWidget);
+    expect(find.byType(VotingForumLinkButton), findsNWidgets(3));
     expect(
       tester
           .widget<MobileBottomSafeArea>(find.byType(MobileBottomSafeArea))
@@ -40,33 +43,53 @@ void main() {
       AppSpacing.md,
     );
     final firstAction = find.byKey(
-      const ValueKey('voting_poll_action_community-grants-2026'),
+      const ValueKey('voting_poll_action_snack-governance-active'),
     );
     expect(firstAction, findsOneWidget);
     final card = find.byKey(
-      const ValueKey('voting_poll_card_community-grants-2026'),
+      const ValueKey('voting_poll_card_snack-governance-active'),
     );
     final secondCard = find.byKey(
-      const ValueKey('voting_poll_card_network-priorities-2026'),
+      const ValueKey('voting_poll_card_snack-governance-voted'),
     );
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
     expect(tester.getTopLeft(card).dx, 16);
-    final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
-    expect(cardDecoration.boxShadow, isNull);
-    expect(
-      tester
-          .widget<InkWell>(
-            find.byKey(
-              const ValueKey('voting_poll_card_tap_community-grants-2026'),
-            ),
-          )
-          .onTap,
-      isNotNull,
+    final descriptionFinder = find.byKey(
+      const ValueKey('voting_poll_description_snack-governance-active'),
     );
+    final description = tester.widget<Text>(descriptionFinder);
+    expect(
+      description.data,
+      'Welcome\nThis poll resolves outstanding NU7 scope questions following '
+      'the early-2026 sentiment polling. Already in NU7, established by prior '
+      'consensus.',
+    );
+    expect(description.maxLines, 3);
+    expect(description.overflow, TextOverflow.ellipsis);
+    expect(
+      tester.renderObject<RenderParagraph>(descriptionFinder).didExceedMaxLines,
+      isTrue,
+    );
+    expect(tester.getSize(card).height, tester.getSize(secondCard).height);
+    final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
+    expect(cardDecoration.boxShadow, isNotEmpty);
+    final cardTap = tester.widget<InkWell>(
+      find.byKey(
+        const ValueKey('voting_poll_card_tap_snack-governance-active'),
+      ),
+    );
+    expect(cardTap.onTap, isNotNull);
+    expect(cardTap.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(cardTap.splashFactory, NoSplash.splashFactory);
+    expect(
+      cardTap.overlayColor?.resolve({WidgetState.pressed}),
+      Colors.transparent,
+    );
+    expect(cardTap.overlayColor?.resolve({WidgetState.focused}), isNull);
     expect(
       tester.getTopLeft(secondCard).dy - tester.getBottomLeft(card).dy,
-      AppSpacing.sm,
+      AppSpacing.md,
     );
 
     await tester.tap(

@@ -23,11 +23,48 @@ import '../widgets/voting_pane_scroll_area.dart';
 
 typedef VotingStatusContentWrapper =
     Widget Function(BuildContext context, Widget content);
+typedef VotingSubmissionProgressBuilder =
+    Widget Function(
+      BuildContext context,
+      VotingSubmissionProgressPresentation presentation,
+    );
 typedef VotingKeystoneStatusBuilder =
     Widget Function(
       BuildContext context,
       VotingKeystoneStatusPresentation presentation,
     );
+
+enum VotingSubmissionProgressStep { delegating, castingVotes, finalizing }
+
+class VotingSubmissionProgressPresentation {
+  const VotingSubmissionProgressPresentation({
+    required this.activeStep,
+    this.activeStepProgress,
+  });
+
+  final VotingSubmissionProgressStep activeStep;
+  final double? activeStepProgress;
+}
+
+VotingSubmissionProgressStep votingSubmissionProgressStepFor({
+  required VotingSessionPhase phase,
+  required bool voteStepComplete,
+  required bool submissionJobComplete,
+  required bool submissionJobInFlight,
+}) {
+  if (submissionJobInFlight && voteStepComplete && !submissionJobComplete) {
+    return VotingSubmissionProgressStep.finalizing;
+  }
+  return switch (phase) {
+    VotingSessionPhase.delegated ||
+    VotingSessionPhase.readyToVote ||
+    VotingSessionPhase.syncingVoteTree ||
+    VotingSessionPhase.castingVotes ||
+    VotingSessionPhase.submittingShares ||
+    VotingSessionPhase.done => VotingSubmissionProgressStep.castingVotes,
+    _ => VotingSubmissionProgressStep.delegating,
+  };
+}
 
 class VotingKeystoneStatusPresentation {
   const VotingKeystoneStatusPresentation({
@@ -81,14 +118,18 @@ class VotingStatusView extends ConsumerStatefulWidget {
     required this.roundId,
     this.accountUuid,
     this.requireCurrentRouteForConfirmation = false,
+    this.contentHorizontalPadding = 0,
     this.contentWrapper,
+    this.submissionProgressBuilder,
     this.keystoneStatusBuilder,
   });
 
   final String roundId;
   final String? accountUuid;
   final bool requireCurrentRouteForConfirmation;
+  final double contentHorizontalPadding;
   final VotingStatusContentWrapper? contentWrapper;
+  final VotingSubmissionProgressBuilder? submissionProgressBuilder;
   final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
 
   @override
@@ -261,13 +302,14 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         job?.status == VotingSubmissionJobStatus.complete) {
       _scheduleConfirmationNavigation(selectedKey);
     }
-    var usesPlatformKeystoneScreen = false;
+    var usesPlatformScreen = false;
     final content = session.when(
       skipLoadingOnRefresh: false,
       loading: () {
         if (startError != null) {
           return _StatusContent(
             phase: VotingSessionPhase.error,
+            horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: startError,
             onRetry: _retry,
           );
@@ -276,15 +318,27 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             job?.key?.roundId == widget.roundId) {
           return _StatusContent(
             phase: VotingSessionPhase.error,
+            horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
             onRetry: _retry,
             onClear: _clearError,
+          );
+        }
+        final progressBuilder = widget.submissionProgressBuilder;
+        if (progressBuilder != null) {
+          usesPlatformScreen = true;
+          return progressBuilder(
+            context,
+            const VotingSubmissionProgressPresentation(
+              activeStep: VotingSubmissionProgressStep.delegating,
+            ),
           );
         }
         return const VotingPaneLoading();
       },
       error: (error, _) => _StatusContent(
         phase: VotingSessionPhase.error,
+        horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
         onRetry: _retry,
         onClear: job?.status == VotingSubmissionJobStatus.error
@@ -318,7 +372,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             bundleIndex != null &&
             urParts.isNotEmpty &&
             job?.keystoneQrError == null) {
-          usesPlatformKeystoneScreen = true;
+          usesPlatformScreen = true;
           return keystoneBuilder(
             context,
             VotingKeystoneStatusPresentation(
@@ -334,14 +388,44 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
+        final voteSubmissionProgress = _voteSubmissionProgress(
+          state,
+          completedSubmission: completedSubmission,
+        );
+        final voteStepComplete =
+            completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
+        final delegationProgress = _delegationProgress(state);
+        final progressBuilder = widget.submissionProgressBuilder;
+        if (progressBuilder != null &&
+            phase != VotingSessionPhase.error &&
+            phase != VotingSessionPhase.keystoneSigning &&
+            !(job?.softwareAccountRequired ?? false)) {
+          usesPlatformScreen = true;
+          final activeStep = votingSubmissionProgressStepFor(
+            phase: phase,
+            voteStepComplete: voteStepComplete,
+            submissionJobComplete: submissionJobComplete,
+            submissionJobInFlight: submissionJobInFlight,
+          );
+          return progressBuilder(
+            context,
+            VotingSubmissionProgressPresentation(
+              activeStep: activeStep,
+              activeStepProgress: switch (activeStep) {
+                VotingSubmissionProgressStep.delegating => delegationProgress,
+                VotingSubmissionProgressStep.castingVotes =>
+                  voteSubmissionProgress,
+                VotingSubmissionProgressStep.finalizing => null,
+              },
+            ),
+          );
+        }
         return _StatusContent(
           phase: phase,
+          horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail: _voteSubmissionDetail(state),
-          voteSubmissionProgress: _voteSubmissionProgress(
-            state,
-            completedSubmission: completedSubmission,
-          ),
-          delegationProgress: _delegationProgress(state),
+          voteSubmissionProgress: voteSubmissionProgress,
+          delegationProgress: delegationProgress,
           completedSubmission: completedSubmission,
           submissionJobComplete: submissionJobComplete,
           submissionJobInFlight: submissionJobInFlight,
@@ -369,7 +453,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
       },
     );
-    if (usesPlatformKeystoneScreen) return content;
+    if (usesPlatformScreen) return content;
     return widget.contentWrapper?.call(context, content) ?? content;
   }
 
@@ -543,9 +627,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         !_canNavigateToConfirmation(key)) {
       return;
     }
-    context.go(
-      votingSubmissionConfirmedRoute(key.roundId, accountUuid: key.accountUuid),
+    final route = votingSubmissionConfirmedRoute(
+      key.roundId,
+      accountUuid: key.accountUuid,
     );
+    if (widget.requireCurrentRouteForConfirmation) {
+      context.pushReplacement(route);
+    } else {
+      context.go(route);
+    }
   }
 
   bool _canNavigateToConfirmation(VotingSessionKey key) {
@@ -639,6 +729,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
 class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
+    this.horizontalPadding = 0,
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
@@ -666,6 +757,7 @@ class _StatusContent extends StatelessWidget {
   });
 
   final VotingSessionPhase phase;
+  final double horizontalPadding;
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
@@ -694,7 +786,10 @@ class _StatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (softwareAccountRequired) {
-      return const _SoftwareAccountRequiredContent();
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        child: const _SoftwareAccountRequiredContent(),
+      );
     }
     final voteStepComplete =
         completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
@@ -712,7 +807,10 @@ class _StatusContent extends StatelessWidget {
         return VotingPaneCenteredScrollView(
           maxWidth: 560,
           minHeight: minHeight,
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: AppSpacing.md,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

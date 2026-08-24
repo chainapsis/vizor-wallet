@@ -1,7 +1,37 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+
+const _mobileVotingScrollbarEdgeGap = 2.0;
+
+class VotingPaneScrollbar extends StatelessWidget {
+  const VotingPaneScrollbar({
+    required this.builder,
+    this.controller,
+    this.scrollbarKey,
+    super.key,
+  });
+
+  final Widget Function(BuildContext context, ScrollController controller)
+  builder;
+  final ScrollController? controller;
+  final Key? scrollbarKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPaneScrollbar(
+      controller: controller,
+      scrollbarKey: scrollbarKey,
+      crossAxisMargin: kAppFormFactor == AppFormFactor.mobile
+          ? _mobileVotingScrollbarEdgeGap
+          : 6,
+      scrollbarOrientation: ScrollbarOrientation.right,
+      builder: builder,
+    );
+  }
+}
 
 class VotingPaneListView extends StatefulWidget {
   const VotingPaneListView.separated({
@@ -32,7 +62,7 @@ class _VotingPaneListViewState extends State<VotingPaneListView> {
       right: padding.right,
     );
     // Shared pane overlay scrollbar (6px capsule, surface.scrollbarThumb).
-    return AppPaneScrollbar(
+    return VotingPaneScrollbar(
       builder: (context, controller) => ListView.separated(
         controller: controller,
         primary: false,
@@ -74,7 +104,7 @@ class VotingPaneScrollView extends StatefulWidget {
 class _VotingPaneScrollViewState extends State<VotingPaneScrollView> {
   @override
   Widget build(BuildContext context) {
-    return AppPaneScrollbar(
+    return VotingPaneScrollbar(
       builder: (context, controller) => SingleChildScrollView(
         controller: controller,
         primary: false,
@@ -112,7 +142,7 @@ class _VotingPaneCenteredScrollViewState
     extends State<VotingPaneCenteredScrollView> {
   @override
   Widget build(BuildContext context) {
-    return AppPaneScrollbar(
+    return VotingPaneScrollbar(
       builder: (context, controller) => SingleChildScrollView(
         controller: controller,
         primary: false,
