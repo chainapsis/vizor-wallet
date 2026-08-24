@@ -36,7 +36,8 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
         (pending) =>
             pending.network == link.network &&
             pending.address == link.address &&
-            pending.mnemonic == link.mnemonic,
+            pending.mnemonic == link.mnemonic &&
+            pending.birthdayHeight == link.birthdayHeight,
       );
       if (duplicate) {
         state = PaymentLinkIntakeState(pendingLinks: pendingLinks);

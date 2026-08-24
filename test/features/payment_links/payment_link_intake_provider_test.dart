@@ -118,6 +118,25 @@ void main() {
     );
   });
 
+  test('keeps a corrected claim birthday in the intake queue', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(paymentLinkIntakeProvider.notifier);
+    final original = _link();
+    final corrected = _link(birthdayHeight: original.birthdayHeight - 1);
+
+    notifier.receive(original.toUri().toString());
+    notifier.receive(corrected.toUri().toString());
+
+    expect(
+      container
+          .read(paymentLinkIntakeProvider)
+          .pendingLinks
+          .map((link) => link.birthdayHeight),
+      [original.birthdayHeight, corrected.birthdayHeight],
+    );
+  });
+
   test('rejects unique links beyond the bounded intake queue', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -144,14 +163,17 @@ void main() {
   });
 }
 
-VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
+VizorPaymentLink _link({
+  String address = 'u1paymentlinkaddress',
+  int birthdayHeight = 3_456_789,
+}) {
   return VizorPaymentLink(
     network: 'main',
     address: address,
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
-    birthdayHeight: 3_456_789,
+    birthdayHeight: birthdayHeight,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
   );
