@@ -304,56 +304,23 @@ class _CompletedStepIndicator extends StatelessWidget {
   }
 }
 
-class _ActiveStepIndicator extends StatefulWidget {
+class _ActiveStepIndicator extends StatelessWidget {
   const _ActiveStepIndicator({required this.progress});
 
   final double? progress;
 
   @override
-  State<_ActiveStepIndicator> createState() => _ActiveStepIndicatorState();
-}
-
-class _ActiveStepIndicatorState extends State<_ActiveStepIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1600),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncAnimation();
-  }
-
-  void _syncAnimation() {
-    final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (disabled) {
-      _controller
-        ..stop()
-        ..value = 0;
-    } else if (!_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    _syncAnimation();
     final colors = context.colors;
     final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    final progress = widget.progress?.clamp(0.0, 1.0).toDouble();
-    final indicator = Semantics(
+    final clampedProgress = progress?.clamp(0.0, 1.0).toDouble();
+    return Semantics(
       label: 'Active voting submission step progress',
-      value: progress == null ? 'Unknown' : '${(progress * 100).round()}%',
+      value: clampedProgress == null
+          ? 'Unknown'
+          : '${(clampedProgress * 100).round()}%',
       child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: progress ?? 0),
+        tween: Tween<double>(begin: 0, end: clampedProgress ?? 0),
         duration: disabled ? Duration.zero : const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         builder: (context, animatedProgress, _) => CustomPaint(
@@ -366,35 +333,6 @@ class _ActiveStepIndicatorState extends State<_ActiveStepIndicator>
           ),
         ),
       ),
-    );
-    if (disabled) return indicator;
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final eased = Curves.easeInOut.transform(_controller.value);
-        return Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: 20 + eased * 5,
-              height: 20 + eased * 5,
-              decoration: BoxDecoration(
-                color: colors.background.inverse.withValues(
-                  alpha: 0.08 + eased * 0.06,
-                ),
-                shape: BoxShape.circle,
-              ),
-            ),
-            Transform.scale(
-              key: const ValueKey('mobile_voting_submission_active_step_pulse'),
-              scale: 1 + eased * 0.06,
-              child: child,
-            ),
-          ],
-        );
-      },
-      child: indicator,
     );
   }
 }

@@ -93,7 +93,7 @@ void main() {
     );
   });
 
-  testWidgets('uses a subtle repeating pulse for the active step', (
+  testWidgets('keeps the active progress ring at a stable size', (
     tester,
   ) async {
     await _setMobileViewport(tester);
@@ -106,12 +106,16 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
 
-    final pulse = tester.widget<Transform>(
+    expect(
       find.byKey(const ValueKey('mobile_voting_submission_active_step_pulse')),
+      findsNothing,
     );
-    final scale = pulse.transform.getMaxScaleOnAxis();
-    expect(scale, greaterThan(1));
-    expect(scale, lessThanOrEqualTo(1.06));
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('mobile_voting_submission_active_step')),
+      ),
+      const Size.square(20),
+    );
   });
 
   testWidgets('keeps the proof notice visible on a compact mobile height', (
