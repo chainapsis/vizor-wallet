@@ -8,6 +8,12 @@ import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.da
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_server_verifier.dart';
 import 'package:zcash_wallet/src/features/voting/voting_private_state_sync.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_document.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync_metadata.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 
 void main() {
   final now = DateTime.utc(2026, 8, 24, 12);
@@ -69,6 +75,91 @@ void main() {
       expect(verifier.putTransitionCalls, 1);
     },
   );
+
+  test('swap deletion and voting completion converge across devices', () async {
+    const desktopAccount = PrivateStateAccount(
+      dbPath: '/desktop/wallet.db',
+      network: 'main',
+      accountUuid: 'desktop-local-uuid',
+    );
+    const mobileAccount = PrivateStateAccount(
+      dbPath: '/mobile/wallet.db',
+      network: 'main',
+      accountUuid: 'mobile-local-uuid',
+    );
+    final desktopStore = _MemoryActivityStore([
+      _swapRecord('swap-1'),
+      _swapRecord('pay-1', payMode: true),
+    ]);
+    final mobileStore = _MemoryActivityStore(const []);
+    final desktopSync = SwapPrivateHistorySync(
+      repository: desktopRepository,
+      replica: SwapActivityReplica(activityStore: desktopStore),
+      metadataStore: _MemoryMetadataStore(),
+      now: () => now,
+    );
+    final mobileMetadata = _MemoryMetadataStore();
+    final mobileSync = SwapPrivateHistorySync(
+      repository: mobileRepository,
+      replica: SwapActivityReplica(activityStore: mobileStore),
+      metadataStore: mobileMetadata,
+      now: () => now.add(const Duration(minutes: 1)),
+    );
+
+    await desktopSync.synchronize(
+      account: desktopAccount,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+    await mobileSync.synchronize(
+      account: mobileAccount,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+    await desktopSync.synchronize(
+      account: desktopAccount,
+      kind: SwapPrivateHistoryKind.pay,
+    );
+    await mobileSync.synchronize(
+      account: mobileAccount,
+      kind: SwapPrivateHistoryKind.pay,
+    );
+    expect(mobileStore.records.map((record) => record.id).toSet(), {
+      'swap-1',
+      'pay-1',
+    });
+
+    await mobileSync.recordLocalDeletions(
+      accountUuid: mobileAccount.accountUuid,
+      records: mobileStore.records.where((record) => record.id == 'swap-1'),
+    );
+    mobileStore.records = mobileStore.records
+        .where((record) => record.id != 'swap-1')
+        .toList();
+    await mobileSync.synchronize(
+      account: mobileAccount,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+    await desktopSync.synchronize(
+      account: desktopAccount,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+    expect(desktopStore.records.map((record) => record.id), ['pay-1']);
+
+    final desktopVoting = VotingPrivateStateSync(desktopRepository);
+    final mobileVoting = VotingPrivateStateSync(mobileRepository);
+    await desktopVoting.publishCompletion(
+      account: desktopAccount,
+      record: VotingCompletionRecord(
+        roundId: 'round-99',
+        completedAtSeconds: 1_724_000_100,
+        choicesByProposalId: const {7: 1},
+      ),
+    );
+    final completion = await mobileVoting.readCompletion(
+      account: mobileAccount,
+      roundId: 'round-99',
+    );
+    expect(completion?.choicesByProposalId, {7: 1});
+  });
 
   test('challenge is single-use even for repeated authorized reads', () async {
     final challenge = await remote.createChallenge(object: _reference);
@@ -213,10 +304,11 @@ class _FakeCrypto implements PrivateStateCrypto {
     required String audience,
     String? contentHashBase64,
   }) async {
+    final reference = _referenceForKey(key);
     return PrivateStateRequestAuthorization(
       protocolVersion: 1,
-      objectId: _reference.objectId,
-      authPublicKeyBase64: _reference.authPublicKeyBase64,
+      objectId: reference.objectId,
+      authPublicKeyBase64: reference.authPublicKeyBase64,
       method: method,
       challengeBase64: challenge.valueBase64,
       audience: audience,
@@ -231,7 +323,7 @@ class _FakeCrypto implements PrivateStateCrypto {
   Future<PrivateStateObjectReference> deriveObjectReference({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-  }) async => _reference;
+  }) async => _referenceForKey(key);
 
   @override
   Future<Uint8List> open({
@@ -250,11 +342,12 @@ class _FakeCrypto implements PrivateStateCrypto {
     required String? previousHashBase64,
     required Uint8List plaintext,
   }) async {
+    final reference = _referenceForKey(key);
     final ciphertext = base64Url.encode(plaintext).replaceAll('=', '');
     return PrivateStateEnvelope(
       protocolVersion: 1,
-      objectId: _reference.objectId,
-      authPublicKeyBase64: _reference.authPublicKeyBase64,
+      objectId: reference.objectId,
+      authPublicKeyBase64: reference.authPublicKeyBase64,
       revision: revision,
       previousHashBase64: previousHashBase64,
       nonceBase64: 'nonce-$revision',
@@ -270,7 +363,9 @@ class _FakeServerVerifier implements PrivateStateServerVerifier {
 
   @override
   Future<void> verifyObjectReference(PrivateStateObjectReference object) async {
-    if (object != _reference) {
+    if (object != _reference &&
+        (!object.objectId.startsWith('shared-object:') ||
+            !object.authPublicKeyBase64.startsWith('shared-key:'))) {
       throw const PrivateStateProtocolException('Invalid object reference.');
     }
   }
@@ -307,5 +402,109 @@ class _FakeServerVerifier implements PrivateStateServerVerifier {
         envelope.previousHashBase64 != current.envelopeHashBase64) {
       throw const PrivateStateProtocolException('Invalid object successor.');
     }
+  }
+}
+
+PrivateStateObjectReference _referenceForKey(PrivateStateObjectKey key) {
+  final suffix = '${key.namespace.wireName}:${key.itemKey}';
+  return PrivateStateObjectReference(
+    protocolVersion: 1,
+    objectId: 'shared-object:$suffix',
+    authPublicKeyBase64: 'shared-key:$suffix',
+  );
+}
+
+SwapIntentRecord _swapRecord(String id, {bool payMode = false}) {
+  return SwapIntentRecord(
+    id: id,
+    providerLabel: 'NEAR Intents',
+    pairText: 'ZEC -> USDC',
+    sellAmountText: '1 ZEC',
+    receiveEstimateText: '70 USDC',
+    status: SwapIntentStatus.complete,
+    nextAction: 'Completed',
+    sellAmountBaseUnits: BigInt.one,
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: 'deposit-$id',
+    providerQuoteId: 'quote-$id',
+    payMode: payMode,
+    createdAt: DateTime.utc(2026, 8, 24),
+    updatedAt: DateTime.utc(2026, 8, 24),
+  );
+}
+
+class _MemoryActivityStore implements SwapActivityStore {
+  _MemoryActivityStore(List<SwapIntentRecord> records)
+    : records = List.of(records);
+
+  List<SwapIntentRecord> records;
+
+  @override
+  Future<List<SwapIntentRecord>> loadRecords({
+    required String accountUuid,
+  }) async => List.of(records);
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {
+    this.records = List.of(records);
+  }
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    records = const [];
+  }
+}
+
+class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
+  final Map<String, SwapPrivateHistorySyncMetadata> values = {};
+
+  String _key(String accountUuid, SwapPrivateHistoryKind kind) =>
+      '$accountUuid:${kind.wireName}';
+
+  @override
+  Future<void> addTombstones({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required Map<String, DateTime> tombstones,
+  }) async {
+    final key = _key(accountUuid, kind);
+    final current = values[key];
+    values[key] = SwapPrivateHistorySyncMetadata(
+      plaintextHashBase64: current?.plaintextHashBase64 ?? 'pending',
+      synchronizedAt: current?.synchronizedAt ?? DateTime.now().toUtc(),
+      remoteVersion: current?.remoteVersion,
+      tombstones: {...?current?.tombstones, ...tombstones},
+    );
+  }
+
+  @override
+  Future<SwapPrivateHistorySyncMetadata?> load({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+  }) async => values[_key(accountUuid, kind)];
+
+  @override
+  Future<void> save({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required SwapPrivateHistorySyncMetadata metadata,
+  }) async {
+    final key = _key(accountUuid, kind);
+    final current = values[key];
+    values[key] = SwapPrivateHistorySyncMetadata(
+      plaintextHashBase64: metadata.plaintextHashBase64,
+      synchronizedAt: metadata.synchronizedAt,
+      remoteVersion: metadata.remoteVersion,
+      tombstones: {...?current?.tombstones, ...metadata.tombstones},
+    );
+  }
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    values.removeWhere((key, _) => key.startsWith('$accountUuid:'));
   }
 }
