@@ -29,6 +29,18 @@ import 'voting_submission_guard_provider.dart';
 
 final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
+const _votingAlreadyStartedMessage =
+    "Voting has already started for these funds, but Vizor couldn't recover "
+    'the submission status. If you used another wallet, return to it to see '
+    'the status.';
+
+final _nullifierAlreadySpentPattern = RegExp(
+  r'nullifier already spent:\s*\S+',
+  caseSensitive: false,
+);
+const _spentNullifierRecoveryMaxAttempts = 3;
+const _spentNullifierRecoveryMaxDelay = Duration(seconds: 1);
+
 /// The PCZT value-pool tag for Ironwood actions.
 ///
 /// Ironwood spend authorization uses a RedPallas key derived from the
@@ -1863,6 +1875,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // Cast-vote broadcasts stay one-at-a-time across all bundles; only the
     // confirmation wait that follows them overlaps.
     final broadcastPool = _AsyncPermitPool(1);
+    _VotingAlreadyStarted? votingAlreadyStartedAbort;
     final sharePool = _AsyncPermitPool(_votingWorkConcurrency);
     final shareOutcomeFutures =
         <VotingVoteKey, Future<_BundleWorkOutcome<void>>>{};
@@ -2054,12 +2067,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           try {
             _throwIfContextStale(context, 'vote-chain-submit');
             final submitTimer = Stopwatch()..start();
-            txHashes = await broadcastPool.run(
-              () => _submitVoteCommitmentsWithoutConfirmation(
-                context,
-                commitments,
-              ),
-            );
+            txHashes = await broadcastPool.run(() async {
+              final abort = votingAlreadyStartedAbort;
+              if (abort != null) throw abort;
+              try {
+                return await _submitVoteCommitmentsWithoutConfirmation(
+                  context,
+                  commitments,
+                );
+              } on _VotingAlreadyStarted catch (error) {
+                // Set the shared abort before releasing the single broadcast
+                // permit, so already queued bundle chains cannot submit after
+                // one of the round's voting nullifiers has already been spent.
+                votingAlreadyStartedAbort ??= error;
+                rethrow;
+              }
+            });
             _logVoteTiming(
               'bundle=$bundleIndex proposal=${key.proposalId} '
               'submit elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
@@ -2229,6 +2252,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // it unwind on its own so the caller can drop the abandoned round.
       for (final failure in failures) {
         if (failure.error is _StaleVotingSessionAction) throw failure.error;
+        if (failure.error is _VotingAlreadyStarted) {
+          throw failure.error;
+        }
       }
       throw _VoteWaveBatchException(failures);
     }
@@ -2278,13 +2304,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           rust.voteCommitmentWireJson(commitment: commitment.wire),
         ),
       );
-      if (result.code != 0) {
-        throw StateError(
-          result.log.isEmpty
-              ? 'Vote commitment transaction was rejected.'
-              : result.log,
-        );
-      }
+      await _requireAcceptedVotingTransaction(
+        result,
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          spentNullifierRecovery: true,
+        ),
+        rejectionMessage: 'Vote commitment transaction was rejected.',
+      );
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -2348,13 +2377,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'proposal=${commitment.proposalId} txHash=${result.txHash} '
         'code=${result.code} log=${result.log}',
       );
-      if (result.code != 0) {
-        throw StateError(
-          result.log.isEmpty
-              ? 'Vote commitment transaction was rejected.'
-              : result.log,
-        );
-      }
+      await _requireAcceptedVotingTransaction(
+        result,
+        waitForConfirmation: (txHash) => _awaitTxConfirmation(
+          api,
+          txHash,
+          context: context,
+          spentNullifierRecovery: true,
+        ),
+        rejectionMessage: 'Vote commitment transaction was rejected.',
+      );
       if (result.txHash.isEmpty) {
         throw StateError('Vote commitment response did not include tx_hash.');
       }
@@ -2637,7 +2669,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             error: error,
           ),
         );
-        if (error is _StaleVotingSessionAction) break;
+        if (error is _StaleVotingSessionAction ||
+            error is _VotingAlreadyStarted) {
+          break;
+        }
       }
     }
 
@@ -2688,7 +2723,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     for (final failure in failures) {
-      if (failure.error is _StaleVotingSessionAction) {
+      if (failure.error is _StaleVotingSessionAction ||
+          failure.error is _VotingAlreadyStarted) {
         throw failure.error;
       }
     }
@@ -2726,13 +2762,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'txHash=${result.txHash} code=${result.code} '
       'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
-    if (result.code != 0) {
-      throw StateError(
-        result.log.isEmpty
-            ? 'Delegation transaction was rejected.'
-            : result.log,
-      );
-    }
+    await _requireAcceptedVotingTransaction(
+      result,
+      waitForConfirmation: (txHash) => _awaitTxConfirmation(
+        api,
+        txHash,
+        context: context,
+        spentNullifierRecovery: true,
+      ),
+      rejectionMessage: 'Delegation transaction was rejected.',
+    );
     await rust.markDelegationSubmitted(
       dbPath: context.dbPath,
       accountUuid: context.accountUuid,
@@ -2785,10 +2824,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingApiClient api,
     String txHash, {
     required _VotingSessionContext context,
+    bool spentNullifierRecovery = false,
   }) async {
-    final polling = ref.read(votingTxConfirmationPollingProvider);
-    final attempts = polling.attempts;
-    final delay = polling.delay;
+    final settings = ref.read(votingTxConfirmationPollingProvider);
+    final attempts =
+        spentNullifierRecovery &&
+            settings.attempts > _spentNullifierRecoveryMaxAttempts
+        ? _spentNullifierRecoveryMaxAttempts
+        : settings.attempts;
+    final delay =
+        spentNullifierRecovery &&
+            settings.delay > _spentNullifierRecoveryMaxDelay
+        ? _spentNullifierRecoveryMaxDelay
+        : settings.delay;
     final timer = Stopwatch()..start();
     _logVoteTiming('tx confirmation wait start txHash=$txHash');
     for (var attempt = 0; attempt < attempts; attempt++) {
@@ -4688,6 +4736,35 @@ class _VoteWaveFailure {
   final int proposalId;
   final String stage;
   final Object error;
+}
+
+/// Stops queued broadcasts once a voting nullifier is already spent.
+class _VotingAlreadyStarted implements Exception {
+  const _VotingAlreadyStarted();
+
+  @override
+  String toString() => _votingAlreadyStartedMessage;
+}
+
+/// Requires a voting transaction to be accepted or already present on-chain.
+///
+/// A spent-nullifier rejection means voting has started, but it does not prove
+/// which wallet submitted the accepted transaction. If the rejected response's
+/// hash resolves to a successful transaction, normal recovery continues.
+Future<void> _requireAcceptedVotingTransaction(
+  VotingTxResult result, {
+  required Future<VotingTxConfirmation?> Function(String txHash)
+  waitForConfirmation,
+  required String rejectionMessage,
+}) async {
+  if (result.code == 0) return;
+  if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
+      result.txHash.isNotEmpty) {
+    final confirmation = await waitForConfirmation(result.txHash);
+    if (confirmation?.code == 0) return;
+    throw const _VotingAlreadyStarted();
+  }
+  throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
 }
 
 class _VoteWaveBatchException implements Exception {

@@ -222,16 +222,24 @@ fn spawn_pir_connect(
     Ok(OwnedResultThread::new("PIR connect", handle))
 }
 
+async fn drain_result_thread<T: Send + 'static>(
+    handle: OwnedResultThread<T>,
+) -> Result<(), String> {
+    let name = handle.name;
+    tokio::task::spawn_blocking(move || handle.join().map(drop))
+        .await
+        .map_err(|error| format!("{name} drain task failed: {error}"))?
+}
+
 async fn drain_pir_connect_after_error(handle: PirConnectThread) {
-    match tokio::task::spawn_blocking(move || handle.join()).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(error)) => {
-            log::warn!("[VOTING_PROVE] PIR connect also failed while draining: {error}");
-        }
-        Err(error) => {
-            log::warn!("[VOTING_PROVE] PIR connect drain task failed: {error}");
-        }
+    if let Err(error) = drain_result_thread(handle).await {
+        log::warn!("[VOTING_PROVE] PIR connect also failed while draining: {error}");
     }
+}
+
+fn is_reusable_delegation_setup_error(error: &str) -> bool {
+    error.contains("refusing to overwrite pczt_sighash")
+        || error.contains("refusing to overwrite tx1_effects")
 }
 
 /// Completes the proof phase for a previously prepared delegation bundle.
@@ -592,18 +600,31 @@ where
                 prepare_bundle_started.elapsed().as_secs_f64()
             );
             let pczt_setup_started = Instant::now();
-            let delegation_setup = prepared_bundle
-                .setup(voting_db, &setup_stages)
-                .map_err(|e| format!("delegate::setup failed: {e}"))?;
+            let delegation_pczt_bytes = match prepared_bundle.setup(voting_db, &setup_stages) {
+                Ok(setup) => setup.pczt_bytes,
+                Err(error) if is_reusable_delegation_setup_error(&error.to_string()) => {
+                    // A prior software attempt may have completed setup/proving
+                    // but failed before its transaction hash was recorded. The
+                    // persisted setup is write-once and contains everything
+                    // needed to prove and sign again; an empty PCZT is valid for
+                    // submission reconstruction from those stored fields.
+                    log::info!(
+                        "[VOTING_PROVE] bundle={} reusing persisted delegation setup",
+                        prepared_bundle.bundle_index
+                    );
+                    Vec::new()
+                }
+                Err(error) => return Err(format!("delegate::setup failed: {error}")),
+            };
             log::info!(
                 "[VOTING_PROVE] bundle={} pczt-setup elapsed={:.3}s",
                 prepared_bundle.bundle_index,
                 pczt_setup_started.elapsed().as_secs_f64()
             );
-            Ok((prepared_bundle, delegation_setup))
+            Ok((prepared_bundle, delegation_pczt_bytes))
         })
     })();
-    let (voting_db, (prepared_bundle, delegation_setup)) = match preparation {
+    let (voting_db, (prepared_bundle, delegation_pczt_bytes)) = match preparation {
         Ok(value) => value,
         Err(error) => {
             drain_pir_connect_after_error(pir_connect).await;
@@ -641,7 +662,7 @@ where
         signing_started.elapsed().as_secs_f64()
     );
     let signed_bundle = prepared_bundle
-        .signed_bundle(&voting_db, delegation_setup.pczt_bytes, signer)
+        .signed_bundle(&voting_db, delegation_pczt_bytes, signer)
         .map_err(|e| format!("delegate::signed_bundle failed: {e}"))?;
     log::info!(
         "[VOTING_PROVE] bundle={} signed-bundle total={:.3}s",
@@ -1182,6 +1203,31 @@ mod tests {
         let panic =
             OwnedResultThread::<u32>::new("test", std::thread::spawn(|| panic!("injected panic")));
         assert_eq!(panic.join().unwrap_err(), "test thread panicked");
+    }
+
+    #[tokio::test]
+    async fn draining_result_thread_drops_runtime_on_blocking_worker() {
+        let runtime = OwnedResultThread::new(
+            "test runtime",
+            std::thread::spawn(|| {
+                tokio::runtime::Runtime::new().map_err(|error| error.to_string())
+            }),
+        );
+
+        drain_result_thread(runtime).await.unwrap();
+    }
+
+    #[test]
+    fn reusable_delegation_setup_errors_are_write_once_conflicts_only() {
+        assert!(is_reusable_delegation_setup_error(
+            "Invalid input: refusing to overwrite pczt_sighash for round=abc, bundle=0"
+        ));
+        assert!(is_reusable_delegation_setup_error(
+            "Invalid input: refusing to overwrite tx1_effects for round=abc, bundle=0"
+        ));
+        assert!(!is_reusable_delegation_setup_error(
+            "Invalid input: refusing to overwrite padded_note_secrets for round=abc, bundle=0"
+        ));
     }
 
     #[test]
