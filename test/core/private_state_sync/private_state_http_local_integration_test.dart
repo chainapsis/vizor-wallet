@@ -11,6 +11,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_http_remote_store.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
+import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
+import 'package:zcash_wallet/src/core/private_state_sync/private_state_remote_store.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_document.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync.dart';
+import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync_metadata.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 
 const _integrationUrl = String.fromEnvironment(
   'VIZOR_PRIVATE_STATE_INTEGRATION_URL',
@@ -91,6 +99,103 @@ void main() {
         ? 'Set VIZOR_PRIVATE_STATE_INTEGRATION_URL to a local Lambda server.'
         : false,
   );
+
+  test(
+    'concurrent finalized archives converge through rotating HTTP objects',
+    () async {
+      if (_integrationUrl.isEmpty) return;
+
+      final transport = NetworkPrivateStateHttpTransport(
+        client: NetworkHttpClient(torDesired: () => false),
+      );
+      addTearDown(() => transport.close(force: true));
+      final remote = HttpPrivateStateRemoteStore(
+        baseUri: Uri.parse(_integrationUrl),
+        signingAudience: _integrationAudience.isEmpty
+            ? _integrationUrl
+            : _integrationAudience,
+        transport: transport,
+      );
+      final random = Random.secure();
+      final masterSeed = Uint8List.fromList(
+        List<int>.generate(32, (_) => random.nextInt(256)),
+      );
+      final desktopRepository = _WireRepository(remote, masterSeed);
+      final mobileRepository = _WireRepository(remote, masterSeed);
+      final desktopStore = _MemoryActivityStore([
+        _record('desktop-complete', SwapIntentStatus.complete),
+        _record('desktop-failed', SwapIntentStatus.failed),
+      ]);
+      final mobileStore = _MemoryActivityStore([
+        _record('mobile-refunded', SwapIntentStatus.refunded),
+      ]);
+      final desktop = FinalizedActivityArchiveSync(
+        repository: desktopRepository,
+        replica: SwapActivityReplica(activityStore: desktopStore),
+        metadataStore: _MemoryMetadataStore(),
+      );
+      final mobile = FinalizedActivityArchiveSync(
+        repository: mobileRepository,
+        replica: SwapActivityReplica(activityStore: mobileStore),
+        metadataStore: _MemoryMetadataStore(),
+      );
+      const desktopAccount = PrivateStateAccount(
+        dbPath: '/unused.db',
+        network: 'main',
+        accountUuid: 'desktop-local-account-id',
+      );
+      const mobileAccount = PrivateStateAccount(
+        dbPath: '/unused.db',
+        network: 'main',
+        accountUuid: 'mobile-local-account-id',
+      );
+      const recoveryAccount = PrivateStateAccount(
+        dbPath: '/unused.db',
+        network: 'main',
+        accountUuid: 'reimported-local-account-id',
+      );
+
+      await Future.wait([
+        desktop.synchronize(
+          account: desktopAccount,
+          kind: SwapPrivateHistoryKind.swap,
+        ),
+        mobile.synchronize(
+          account: mobileAccount,
+          kind: SwapPrivateHistoryKind.swap,
+        ),
+      ]);
+
+      final recoveryStore = _MemoryActivityStore(const []);
+      final recoveryRepository = _WireRepository(remote, masterSeed);
+      final recovery = FinalizedActivityArchiveSync(
+        repository: recoveryRepository,
+        replica: SwapActivityReplica(activityStore: recoveryStore),
+        metadataStore: _MemoryMetadataStore(),
+      );
+      final result = await recovery.synchronize(
+        account: recoveryAccount,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+
+      expect(result.lastSlot, 2);
+      expect(recoveryStore.records.map((record) => record.id).toSet(), {
+        'desktop-complete',
+        'mobile-refunded',
+      });
+      expect(
+        recoveryStore.records.any((record) => record.id == 'desktop-failed'),
+        isFalse,
+      );
+      final slotOne = recoveryRepository.references['archive-v1:1']!;
+      final slotTwo = recoveryRepository.references['archive-v1:2']!;
+      expect(slotOne.objectId, isNot(slotTwo.objectId));
+      expect(slotOne.authPublicKeyBase64, isNot(slotTwo.authPublicKeyBase64));
+    },
+    skip: _integrationUrl.isEmpty
+        ? 'Set VIZOR_PRIVATE_STATE_INTEGRATION_URL to a local Lambda server.'
+        : false,
+  );
 }
 
 class _WireFixture {
@@ -103,9 +208,9 @@ class _WireFixture {
   final PrivateStateObjectReference object;
   final SimpleKeyPair _keyPair;
 
-  static Future<_WireFixture> create() async {
+  static Future<_WireFixture> create({List<int>? seed}) async {
     final random = Random.secure();
-    final seed = List<int>.generate(32, (_) => random.nextInt(256));
+    seed ??= List<int>.generate(32, (_) => random.nextInt(256));
     final keyPair = await _signatureAlgorithm.newKeyPairFromSeed(seed);
     final publicKey = await keyPair.extractPublicKey();
     final publicKeyBase64 = _encodeBase64Url(publicKey.bytes);
@@ -125,10 +230,11 @@ class _WireFixture {
     );
   }
 
-  Future<PrivateStateEnvelope> envelope() async {
+  Future<PrivateStateEnvelope> envelope([Uint8List? plaintext]) async {
     final nonce = Uint8List.fromList(List<int>.filled(12, 1));
     final ciphertext = Uint8List.fromList([
-      ...utf8.encode('opaque-private-state-integration'),
+      ...?plaintext,
+      if (plaintext == null) ...utf8.encode('opaque-private-state-integration'),
       ...List<int>.filled(16, 7),
     ]);
     final unsigned = _concat([
@@ -161,6 +267,11 @@ class _WireFixture {
       signatureBase64: _encodeBase64Url(signature.bytes),
       envelopeHashBase64: _encodeBase64Url(envelopeHash),
     );
+  }
+
+  Uint8List open(PrivateStateEnvelope envelope) {
+    final ciphertext = _decodeBase64Url(envelope.ciphertextBase64);
+    return Uint8List.sublistView(ciphertext, 0, ciphertext.length - 16);
   }
 
   Future<PrivateStateRequestAuthorization> authorization({
@@ -197,6 +308,165 @@ class _WireFixture {
     );
   }
 }
+
+class _WireRepository implements PrivateStateObjectRepository {
+  _WireRepository(this._remote, this._masterSeed);
+
+  final PrivateStateRemoteStore _remote;
+  final Uint8List _masterSeed;
+  final Map<String, _WireFixture> _fixtures = {};
+  final Map<String, PrivateStateObjectReference> references = {};
+
+  Future<_WireFixture> _fixture(PrivateStateObjectKey key) async {
+    final scope = '${key.namespace.wireName}:${key.itemKey}';
+    final existing = _fixtures[scope];
+    if (existing != null) return existing;
+    final seed = _hash([..._masterSeed, ...utf8.encode(scope)]);
+    final created = await _WireFixture.create(seed: seed);
+    _fixtures[scope] = created;
+    references[key.itemKey] = created.object;
+    return created;
+  }
+
+  @override
+  Future<PrivateStateReadResult> read({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+  }) async {
+    final fixture = await _fixture(key);
+    final challenge = await _remote.createChallenge(object: fixture.object);
+    final authorization = await fixture.authorization(
+      method: PrivateStateRequestMethod.get,
+      challenge: challenge,
+      audience: _remote.audience,
+      contentHashBase64: _emptyContentHash,
+    );
+    final result = await _remote.get(
+      object: fixture.object,
+      authorization: authorization,
+    );
+    return switch (result) {
+      PrivateStateRemoteAbsent() => const PrivateStateReadAbsent(),
+      PrivateStateRemoteFound(:final envelope) => PrivateStateReadFound(
+        plaintext: fixture.open(envelope),
+        version: envelope.version,
+      ),
+    };
+  }
+
+  @override
+  Future<PrivateStateWriteResult> create({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required Uint8List plaintext,
+  }) async {
+    final fixture = await _fixture(key);
+    final envelope = await fixture.envelope(plaintext);
+    final challenge = await _remote.createChallenge(object: fixture.object);
+    final authorization = await fixture.authorization(
+      method: PrivateStateRequestMethod.put,
+      challenge: challenge,
+      audience: _remote.audience,
+      contentHashBase64: envelope.envelopeHashBase64,
+    );
+    final result = await _remote.put(
+      object: fixture.object,
+      envelope: envelope,
+      authorization: authorization,
+      expectedVersion: null,
+    );
+    return switch (result) {
+      PrivateStateRemoteStored() => PrivateStateWriteStored(envelope.version),
+      PrivateStateRemoteConflict() => const PrivateStateWriteConflict(),
+    };
+  }
+
+  @override
+  Future<PrivateStateWriteResult> compareAndSet({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required PrivateStateVersion currentVersion,
+    required Uint8List plaintext,
+  }) {
+    throw UnsupportedError('Finalized archives are create-only.');
+  }
+}
+
+class _MemoryActivityStore implements SwapActivityStore {
+  _MemoryActivityStore(this.records);
+
+  List<SwapIntentRecord> records;
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    records = const [];
+  }
+
+  @override
+  Future<List<SwapIntentRecord>> loadRecords({
+    required String accountUuid,
+  }) async => List.of(records);
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {
+    this.records = List.of(records);
+  }
+}
+
+class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
+  FinalizedActivityArchiveMetadata? value;
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    value = null;
+  }
+
+  @override
+  Future<void> hideRecords({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required Iterable<String> recordIds,
+  }) async {
+    value = FinalizedActivityArchiveMetadata(
+      lastSlot: value?.lastSlot ?? 0,
+      hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
+    );
+  }
+
+  @override
+  Future<FinalizedActivityArchiveMetadata?> load({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+  }) async => value;
+
+  @override
+  Future<void> save({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required FinalizedActivityArchiveMetadata metadata,
+  }) async {
+    value = metadata;
+  }
+}
+
+SwapIntentRecord _record(String id, SwapIntentStatus status) =>
+    SwapIntentRecord(
+      id: id,
+      providerLabel: 'NEAR Intents',
+      pairText: 'ZEC -> USDC',
+      sellAmountText: '1 ZEC',
+      receiveEstimateText: '70 USDC',
+      status: status,
+      nextAction: status.label,
+      sellAmountBaseUnits: BigInt.one,
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      createdAt: DateTime.utc(2026, 8, 25),
+      updatedAt: DateTime.utc(2026, 8, 25),
+    );
 
 final _emptyContentHash = _encodeBase64Url(_hash(const []));
 
