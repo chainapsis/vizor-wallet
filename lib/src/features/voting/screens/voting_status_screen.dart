@@ -399,7 +399,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
             phase != VotingSessionPhase.keystoneSigning &&
-            phase != VotingSessionPhase.waitingForWalletSync &&
             !(job?.softwareAccountRequired ?? false)) {
           usesPlatformScreen = true;
           final activeStep = votingSubmissionProgressStepFor(
@@ -441,8 +440,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
           keystoneScanError: state.keystoneScanError,
-          walletSyncProgress: state.walletSnapshotSyncProgress,
-          walletSyncStalled: state.walletSyncStalled,
+          walletScannedHeight: state.walletScannedHeight,
+          walletSnapshotHeight: state.walletSnapshotHeight,
+          walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
           onRetry: _retry,
           onClear: job?.status == VotingSubmissionJobStatus.error
@@ -746,8 +746,9 @@ class _StatusContent extends StatelessWidget {
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.keystoneScanError,
-    this.walletSyncProgress,
-    this.walletSyncStalled = false,
+    this.walletScannedHeight,
+    this.walletSnapshotHeight,
+    this.walletChainTipHeight,
     this.errorMessage,
     this.onRetry,
     this.onClear,
@@ -773,8 +774,9 @@ class _StatusContent extends StatelessWidget {
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final String? keystoneScanError;
-  final double? walletSyncProgress;
-  final bool walletSyncStalled;
+  final int? walletScannedHeight;
+  final int? walletSnapshotHeight;
+  final int? walletChainTipHeight;
   final String? errorMessage;
   final VoidCallback? onRetry;
   final VoidCallback? onClear;
@@ -829,15 +831,10 @@ class _StatusContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               if (phase == VotingSessionPhase.waitingForWalletSync) ...[
-                Text(
-                  formatVotingWalletSyncProgress(
-                    progress: walletSyncProgress,
-                    stalled: walletSyncStalled,
-                  ),
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
+                _WalletSyncProgressText(
+                  scannedHeight: walletScannedHeight,
+                  snapshotHeight: walletSnapshotHeight,
+                  chainTipHeight: walletChainTipHeight,
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -927,6 +924,88 @@ class _StatusContent extends StatelessWidget {
 
   bool _after(VotingSessionPhase target) {
     return phase.index > target.index && phase != VotingSessionPhase.error;
+  }
+}
+
+class _WalletSyncProgressText extends StatelessWidget {
+  const _WalletSyncProgressText({
+    required this.scannedHeight,
+    required this.snapshotHeight,
+    required this.chainTipHeight,
+  });
+
+  final int? scannedHeight;
+  final int? snapshotHeight;
+  final int? chainTipHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final scanned = scannedHeight;
+    final snapshot = snapshotHeight;
+    final chainTip = chainTipHeight;
+    final rawRemaining = scanned == null || snapshot == null
+        ? null
+        : snapshot - scanned;
+    final remaining = rawRemaining == null
+        ? null
+        : rawRemaining > 0
+        ? rawRemaining
+        : 0;
+    final detail = [
+      if (scanned != null) 'Synced to block $scanned',
+      if (snapshot != null) 'snapshot block $snapshot',
+      if (chainTip != null) 'chain tip $chainTip',
+    ].join(' / ');
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Text(
+              'Waiting for wallet sync',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            if (detail.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+            if (remaining != null && remaining > 0) ...[
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                '$remaining blocks remaining',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

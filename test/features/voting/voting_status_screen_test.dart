@@ -20,7 +20,6 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
-import 'package:zcash_wallet/src/features/voting/voting_formatters.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
@@ -4015,21 +4014,68 @@ void main() {
     expect(find.text('Scan signature'), findsNothing);
   });
 
-  testWidgets('snapshot catch-up uses regular copy instead of a custom panel', (
-    tester,
-  ) async {
-    final copy = formatVotingWalletSyncProgress(progress: 0.5);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Text(copy))));
+  testWidgets(
+    'wallet-sync wait keeps the established submission progress presentation',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.waitingForWalletSync,
+                walletScannedHeight: 73,
+                walletSnapshotHeight: 123,
+                walletChainTipHeight: 163,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      VotingSubmissionProgressPresentation? presentation;
 
-    expect(
-      find.text(
-        'Wallet sync: 50%. '
-        'Voting power will be calculated once the snapshot height is reached.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-  });
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: VotingStatusView(
+              roundId: _roundId,
+              accountUuid: key.accountUuid,
+              submissionProgressBuilder: (context, value) {
+                presentation = value;
+                return const Text('established submission progress');
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('established submission progress'), findsOneWidget);
+      expect(find.text('Waiting for wallet sync'), findsNothing);
+      expect(presentation?.activeStep, VotingSubmissionProgressStep.delegating);
+      expect(presentation?.activeStepProgress, isNull);
+    },
+  );
 }
 
 Future<void> _pumpUntilFound(
