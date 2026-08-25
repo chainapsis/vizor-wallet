@@ -117,12 +117,9 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "aa81a230292202bc0431b338cbaff0fb2fe972a7"
+rev = "f02ffe030376126b3606e667d957bb6b0053c247"
 default-features = false
 features = ["zakura"]
-
-[patch."https://github.com/valargroup/zcash_voting.git"]
-zcash_voting = { path = "/Users/roman/projects/zcash_voting/zcash_voting" }
 
 [dependencies.orchard]
 package = "zakura-orchard"
