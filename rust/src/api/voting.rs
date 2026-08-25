@@ -284,6 +284,43 @@ pub fn plan_share_submissions(
     })
 }
 
+/// Return the crate-owned progressive helper probe and privacy policy.
+#[flutter_rust_bridge::frb(sync)]
+pub fn share_server_selection_policy(
+    server_count: u32,
+) -> Result<zcash_voting::share_policy::ShareServerSelectionPolicy, String> {
+    catch(|| {
+        let server_count = usize::try_from(server_count)
+            .map_err(|_| "server_count does not fit in usize".to_string())?;
+        zcash_voting::share_policy::share_server_selection_policy(server_count)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// Return one crate-owned helper candidate order for each encrypted share.
+///
+/// Ready helpers must lead `ranked_server_urls` in response order. Configured
+/// helpers that missed the progressive probe deadline follow in stable order.
+/// `previously_selected_server_urls` carries one entry per prior accepted
+/// assignment for the same commitment so resumed work preserves the cap.
+#[flutter_rust_bridge::frb(sync)]
+pub fn ranked_share_submission_server_candidates(
+    share_count: u32,
+    ranked_server_urls: Vec<String>,
+    previously_selected_server_urls: Vec<String>,
+) -> Result<Vec<Vec<String>>, String> {
+    catch(|| {
+        let share_count = usize::try_from(share_count)
+            .map_err(|_| "share_count does not fit in usize".to_string())?;
+        zcash_voting::share_policy::ranked_share_submission_server_candidates_with_usage(
+            share_count,
+            &ranked_server_urls,
+            &previously_selected_server_urls,
+        )
+        .map_err(|e| e.to_string())
+    })
+}
+
 /// Return the crate-owned randomized helper order for one share retry.
 pub fn share_resubmission_server_order(
     configured_server_urls: Vec<String>,
@@ -1532,8 +1569,7 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-        .map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2447,6 +2483,40 @@ mod tests {
                 .iter()
                 .all(|url| server_urls.contains(url)));
         }
+    }
+
+    #[test]
+    fn helper_selection_wrappers_expose_progressive_policy_and_share_cap() {
+        let policy = share_server_selection_policy(10).unwrap();
+        assert_eq!(policy.target_count, 5);
+        assert_eq!(policy.max_shares_per_server, 8);
+        assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
+        assert_eq!(policy.preflight_hard_timeout_milliseconds, 30_000);
+
+        let servers: Vec<String> = (0..10)
+            .map(|index| format!("https://helper-{index}.example"))
+            .collect();
+        let candidates =
+            ranked_share_submission_server_candidates(16, servers.clone(), Vec::new()).unwrap();
+        let mut planned_counts = std::collections::HashMap::<String, usize>::new();
+        for row in candidates {
+            assert_eq!(row.len(), servers.len());
+            for server in row.into_iter().take(policy.target_count as usize) {
+                *planned_counts.entry(server).or_default() += 1;
+            }
+        }
+        assert!(servers
+            .iter()
+            .all(|server| planned_counts.get(server) == Some(&8)));
+
+        let previously_selected: Vec<String> = servers[..5]
+            .iter()
+            .flat_map(|server| std::iter::repeat_n(server.clone(), 8))
+            .collect();
+        let resumed =
+            ranked_share_submission_server_candidates(8, servers.clone(), previously_selected)
+                .unwrap();
+        assert!(resumed.iter().all(|row| row[..5] == servers[5..]));
     }
 
     #[test]

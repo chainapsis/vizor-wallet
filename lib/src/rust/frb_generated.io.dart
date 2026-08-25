@@ -373,6 +373,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<List<String>> dco_decode_list_list_String(dynamic raw);
+
+  @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -663,6 +666,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareDelegationRecordView dco_decode_share_delegation_record_view(
+    dynamic raw,
+  );
+
+  @protected
+  ShareServerSelectionPolicy dco_decode_share_server_selection_policy(
     dynamic raw,
   );
 
@@ -1250,6 +1258,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
+
+  @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   );
@@ -1614,6 +1625,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareDelegationRecordView sse_decode_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareServerSelectionPolicy sse_decode_share_server_selection_policy(
     SseDeserializer deserializer,
   );
 
@@ -2332,6 +2348,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_list_String(
+    List<List<String>> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
     SseSerializer serializer,
@@ -2775,6 +2797,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_share_delegation_record_view(
     ShareDelegationRecordView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_server_selection_policy(
+    ShareServerSelectionPolicy self,
     SseSerializer serializer,
   );
 

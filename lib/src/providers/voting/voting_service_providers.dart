@@ -66,11 +66,6 @@ final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 5);
 });
 
-/// Timeout for one helper readiness probe.
-final votingHelperPreflightTimeoutProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 2);
-});
-
 /// Delay before retrying a failed automatic helper-share tracking pass.
 final votingShareTrackingFailureRetryDelayProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 15);
@@ -137,7 +132,6 @@ final votingApiClientProvider =
         httpClient: ref.watch(votingHttpClientProvider),
         timeout: ref.watch(votingApiRequestTimeoutProvider),
         helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
-        helperPreflightTimeout: ref.watch(votingHelperPreflightTimeoutProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
         helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
         broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
@@ -522,6 +516,16 @@ abstract interface class VotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+  });
+
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  });
+
+  List<List<String>> rankedShareSubmissionServerCandidates({
+    required int shareCount,
+    required List<String> rankedServerUrls,
+    required List<String> previouslySelectedServerUrls,
   });
 
   Future<List<String>> shareResubmissionServerOrder({
@@ -934,6 +938,26 @@ class FrbVotingRustApi implements VotingRustApi {
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+    );
+  }
+
+  @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    return rust_api.shareServerSelectionPolicy(serverCount: serverCount);
+  }
+
+  @override
+  List<List<String>> rankedShareSubmissionServerCandidates({
+    required int shareCount,
+    required List<String> rankedServerUrls,
+    required List<String> previouslySelectedServerUrls,
+  }) {
+    return rust_api.rankedShareSubmissionServerCandidates(
+      shareCount: shareCount,
+      rankedServerUrls: rankedServerUrls,
+      previouslySelectedServerUrls: previouslySelectedServerUrls,
     );
   }
 

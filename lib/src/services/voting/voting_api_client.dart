@@ -18,7 +18,6 @@ class VotingApiClient {
     List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
-    Duration helperPreflightTimeout = const Duration(seconds: 2),
     VotingRetryPolicy? readRetryPolicy,
     VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
@@ -28,7 +27,6 @@ class VotingApiClient {
        _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
        _helperTimeout = helperTimeout,
-       _helperPreflightTimeout = helperPreflightTimeout,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
@@ -57,7 +55,6 @@ class VotingApiClient {
   final VotingHttpClient _httpClient;
   final Duration _timeout;
   final Duration _helperTimeout;
-  final Duration _helperPreflightTimeout;
   final VotingRetryPolicy _readRetryPolicy;
   final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
@@ -255,18 +252,93 @@ class VotingApiClient {
     );
   }
 
-  /// Checks helper readiness concurrently without failing the voting flow.
+  /// Ranks ready helpers using the shared progressive timeout policy.
   ///
-  /// A helper is ready only when its public status endpoint returns a
-  /// successful `{"status":"ok"}` response.
-  Future<Map<String, bool>> preflightHelpers(Iterable<Uri> serverUrls) async {
-    final entries = await Future.wait([
+  /// All probes start together. The first decision happens after [softTimeout];
+  /// if fewer than [readyTargetCount] helpers are ready, slower responses keep
+  /// racing until enough arrive or [hardTimeout] expires. A helper is ready only
+  /// when its public status endpoint returns `{"status":"ok"}` successfully.
+  /// Completing [cancelSignal] stops the wait and returns the responses already
+  /// collected so callers can abandon the preflight promptly.
+  Future<VotingHelperPreflightResult> preflightHelpers(
+    Iterable<Uri> serverUrls, {
+    required int readyTargetCount,
+    required Duration softTimeout,
+    required Duration hardTimeout,
+    Future<void>? cancelSignal,
+  }) async {
+    if (softTimeout.isNegative || hardTimeout <= softTimeout) {
+      throw ArgumentError(
+        'helper preflight requires 0 <= softTimeout < hardTimeout',
+      );
+    }
+
+    final seen = <String>{};
+    final servers = [
       for (final serverUrl in serverUrls)
-        _probeHelper(
-          serverUrl,
-        ).then((isReady) => MapEntry(serverUrl.toString(), isReady)),
-    ]);
-    return Map<String, bool>.unmodifiable(Map.fromEntries(entries));
+        if (seen.add(serverUrl.toString())) serverUrl,
+    ];
+    if (servers.isEmpty) {
+      return VotingHelperPreflightResult(
+        rankedServerUrls: const [],
+        readiness: const {},
+      );
+    }
+
+    final targetCount = readyTargetCount.clamp(1, servers.length).toInt();
+    final readyServers = <String>[];
+    var completedServerCount = 0;
+    var acceptingResults = true;
+    final targetOrAllCompleted = Completer<void>();
+    for (final serverUrl in servers) {
+      unawaited(
+        _probeHelper(serverUrl, timeout: hardTimeout).then((isReady) {
+          if (!acceptingResults) return;
+          completedServerCount++;
+          if (isReady) readyServers.add(serverUrl.toString());
+          if (!targetOrAllCompleted.isCompleted &&
+              (readyServers.length >= targetCount ||
+                  completedServerCount == servers.length)) {
+            targetOrAllCompleted.complete();
+          }
+        }),
+      );
+    }
+
+    final softDeadline = Completer<void>();
+    final softTimer = Timer(softTimeout, softDeadline.complete);
+    late final bool cancelledDuringSoftWait;
+    try {
+      cancelledDuringSoftWait = await Future.any([
+        softDeadline.future.then((_) => false),
+        if (cancelSignal != null) cancelSignal.then((_) => true),
+      ]);
+    } finally {
+      softTimer.cancel();
+    }
+    if (cancelledDuringSoftWait) {
+      acceptingResults = false;
+      return _helperPreflightResult(servers, readyServers);
+    }
+
+    if (readyServers.length < targetCount &&
+        completedServerCount < servers.length) {
+      final hardDeadline = Completer<void>();
+      final remainingTimeout = hardTimeout - softTimeout;
+      final hardTimer = Timer(remainingTimeout, hardDeadline.complete);
+      try {
+        await Future.any([
+          targetOrAllCompleted.future,
+          hardDeadline.future,
+          ?cancelSignal,
+        ]);
+      } finally {
+        hardTimer.cancel();
+      }
+    }
+
+    acceptingResults = false;
+    return _helperPreflightResult(servers, readyServers);
   }
 
   /// Posts one encrypted share directly to a helper server.
@@ -379,13 +451,10 @@ class VotingApiClient {
     return jsonDecode(response.bodyText);
   }
 
-  Future<bool> _probeHelper(Uri serverUrl) async {
+  Future<bool> _probeHelper(Uri serverUrl, {required Duration timeout}) async {
     final uri = _endpoint(['status'], baseUrl: serverUrl);
     try {
-      final response = await _get(
-        uri,
-        timeout: _helperPreflightTimeout,
-      ).timeout(_helperPreflightTimeout);
+      final response = await _get(uri, timeout: timeout);
       if (response.statusCode < 200 || response.statusCode >= 300) return false;
       final status = _objectFromValue(jsonDecode(response.bodyText))['status'];
       return status?.toString().trim().toLowerCase() == 'ok';
@@ -509,6 +578,24 @@ class VotingApiClient {
     }
     return List<Uri>.unmodifiable(deduped);
   }
+}
+
+VotingHelperPreflightResult _helperPreflightResult(
+  List<Uri> servers,
+  List<String> readyServers,
+) {
+  final readySet = readyServers.toSet();
+  final configuredServers = servers.map((server) => server.toString()).toList();
+  return VotingHelperPreflightResult(
+    rankedServerUrls: [
+      ...readyServers,
+      for (final server in configuredServers)
+        if (!readySet.contains(server)) server,
+    ],
+    readiness: {
+      for (final server in configuredServers) server: readySet.contains(server),
+    },
+  );
 }
 
 Map<String, dynamic> _objectFromValue(Object? value) {

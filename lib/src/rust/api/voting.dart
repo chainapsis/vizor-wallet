@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -87,6 +87,29 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   voteEndTimeSeconds: voteEndTimeSeconds,
   lastMomentBufferSeconds: lastMomentBufferSeconds,
   singleShare: singleShare,
+);
+
+/// Return the crate-owned progressive helper probe and privacy policy.
+ShareServerSelectionPolicy shareServerSelectionPolicy({
+  required int serverCount,
+}) => RustLib.instance.api.crateApiVotingShareServerSelectionPolicy(
+  serverCount: serverCount,
+);
+
+/// Return one crate-owned helper candidate order for each encrypted share.
+///
+/// Ready helpers must lead `ranked_server_urls` in response order. Configured
+/// helpers that missed the progressive probe deadline follow in stable order.
+/// `previously_selected_server_urls` carries one entry per prior accepted
+/// assignment for the same commitment so resumed work preserves the cap.
+List<List<String>> rankedShareSubmissionServerCandidates({
+  required int shareCount,
+  required List<String> rankedServerUrls,
+  required List<String> previouslySelectedServerUrls,
+}) => RustLib.instance.api.crateApiVotingRankedShareSubmissionServerCandidates(
+  shareCount: shareCount,
+  rankedServerUrls: rankedServerUrls,
+  previouslySelectedServerUrls: previouslySelectedServerUrls,
 );
 
 /// Return the crate-owned randomized helper order for one share retry.

@@ -6,6 +6,55 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Shared helper selection values for one complete vote commitment.
+///
+/// Clients own the HTTP requests, but should use these values to keep probe
+/// timing and privacy limits consistent. Start every readiness probe at once,
+/// inspect the responses available after `preflight_soft_timeout_milliseconds`,
+/// and keep waiting until `target_count` helpers are ready or the hard timeout
+/// expires. Pass ready helpers to
+/// [`ranked_share_submission_server_candidates`] in response order, followed by
+/// the remaining configured helpers.
+class ShareServerSelectionPolicy {
+  /// Number of helpers each share should reach.
+  final int targetCount;
+
+  /// Normal maximum number of one commitment's shares sent to one helper.
+  final int maxSharesPerServer;
+
+  /// Time to collect the first group of fast helper responses.
+  final BigInt preflightSoftTimeoutMilliseconds;
+
+  /// Absolute deadline for collecting enough ready helper responses.
+  final BigInt preflightHardTimeoutMilliseconds;
+
+  const ShareServerSelectionPolicy({
+    required this.targetCount,
+    required this.maxSharesPerServer,
+    required this.preflightSoftTimeoutMilliseconds,
+    required this.preflightHardTimeoutMilliseconds,
+  });
+
+  @override
+  int get hashCode =>
+      targetCount.hashCode ^
+      maxSharesPerServer.hashCode ^
+      preflightSoftTimeoutMilliseconds.hashCode ^
+      preflightHardTimeoutMilliseconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareServerSelectionPolicy &&
+          runtimeType == other.runtimeType &&
+          targetCount == other.targetCount &&
+          maxSharesPerServer == other.maxSharesPerServer &&
+          preflightSoftTimeoutMilliseconds ==
+              other.preflightSoftTimeoutMilliseconds &&
+          preflightHardTimeoutMilliseconds ==
+              other.preflightHardTimeoutMilliseconds;
+}
+
 /// Planned helper-share submission values that SDKs can apply to payloads.
 class ShareSubmissionPlan {
   /// Unix seconds when helpers should submit the share, or 0 for immediate.

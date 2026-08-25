@@ -5512,6 +5512,9 @@ void main() {
         );
 
     expect(rust.recoveredVoteCommitmentKeys, ['1:7']);
+    expect(rust.rankedCandidatePreviousSelections.first, [
+      'https://voting.example',
+    ]);
     expect(
       rust.recordedShares
           .where((share) => share.bundleIndex == 1 && share.proposalId == 7)
@@ -9679,6 +9682,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final draftSingleShareValues = <bool>[];
   final planLastMomentBufferSeconds = <BigInt?>[];
   final planSingleShareValues = <bool>[];
+  final rankedCandidatePreviousSelections = <List<String>>[];
   final accountUuids = <String>[];
   final confirmedShares = <String>[];
   final shareResubmissionConfiguredServerUrls = <List<String>>[];
@@ -10388,6 +10392,33 @@ class FakeVotingRustApi implements VotingRustApi {
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),
+    ];
+  }
+
+  @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    return rust_share_policy.ShareServerSelectionPolicy(
+      targetCount: serverCount == 0 ? 0 : (serverCount / 2).ceil(),
+      maxSharesPerServer: 8,
+      preflightSoftTimeoutMilliseconds: BigInt.zero,
+      preflightHardTimeoutMilliseconds: BigInt.one,
+    );
+  }
+
+  @override
+  List<List<String>> rankedShareSubmissionServerCandidates({
+    required int shareCount,
+    required List<String> rankedServerUrls,
+    required List<String> previouslySelectedServerUrls,
+  }) {
+    rankedCandidatePreviousSelections.add(
+      List<String>.of(previouslySelectedServerUrls),
+    );
+    return [
+      for (var i = 0; i < shareCount; i++)
+        List<String>.of(rankedServerUrls, growable: false),
     ];
   }
 

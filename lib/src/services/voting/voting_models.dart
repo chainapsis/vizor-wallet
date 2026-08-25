@@ -145,6 +145,21 @@ class VotingRoundTally {
   }
 }
 
+/// Helper readiness snapshot ordered by observed response speed.
+class VotingHelperPreflightResult {
+  VotingHelperPreflightResult({
+    required Iterable<String> rankedServerUrls,
+    required Map<String, bool> readiness,
+  }) : rankedServerUrls = List.unmodifiable(rankedServerUrls),
+       readiness = Map.unmodifiable(readiness);
+
+  /// Every configured helper, with ready helpers first in response order.
+  final List<String> rankedServerUrls;
+
+  /// Whether each configured helper returned a ready status before selection.
+  final Map<String, bool> readiness;
+}
+
 /// Response from a helper-server share submission.
 class VotingShareSubmissionResult {
   static const _acceptedStatuses = {'queued', 'duplicate'};

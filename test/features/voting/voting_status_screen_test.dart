@@ -5525,6 +5525,30 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    return rust_share_policy.ShareServerSelectionPolicy(
+      targetCount: serverCount == 0 ? 0 : (serverCount / 2).ceil(),
+      maxSharesPerServer: 8,
+      preflightSoftTimeoutMilliseconds: BigInt.zero,
+      preflightHardTimeoutMilliseconds: BigInt.one,
+    );
+  }
+
+  @override
+  List<List<String>> rankedShareSubmissionServerCandidates({
+    required int shareCount,
+    required List<String> rankedServerUrls,
+    required List<String> previouslySelectedServerUrls,
+  }) {
+    return [
+      for (var i = 0; i < shareCount; i++)
+        List<String>.of(rankedServerUrls, growable: false),
+    ];
+  }
+
+  @override
   BigInt? lastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
