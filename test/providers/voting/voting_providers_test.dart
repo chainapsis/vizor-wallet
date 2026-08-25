@@ -1705,10 +1705,22 @@ void main() {
       expect(harness.rust.voteCommitmentKeys, isEmpty);
       expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
 
+      // Editing the still-mutable draft after leaving the stalled status
+      // screen must not alter the choices already confirmed for this job.
+      harness.container
+          .read(votingDraftProvider(harness.key).notifier)
+          .setChoice(7, 0);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        harness.container.read(votingDraftProvider(harness.key)).choices[7],
+        0,
+      );
+
       harness.readiness.ready = true;
       await _waitForVoteCommitmentKey(harness.rust, '0:7');
 
       expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
+      expect(harness.rust.voteCommitmentDraftChoices, ['0:7:1']);
       expect(
         harness.container
             .read(votingSubmissionJobProvider(harness.key))
@@ -10085,6 +10097,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
   final voteCommitmentKeys = <String>[];
+  final voteCommitmentDraftChoices = <String>[];
   final recoveredVoteCommitmentKeys = <String>[];
   final storedDelegationTxHashes = <String>[];
   final storedVoteTxHashes = <String>[];
@@ -10678,6 +10691,9 @@ class FakeVotingRustApi implements VotingRustApi {
         voteCommitmentStarted.complete();
       }
       for (final draft in draftVotes) {
+        voteCommitmentDraftChoices.add(
+          '$bundleIndex:${draft.proposalId}:${draft.choice}',
+        );
         yield rust_api.ApiVoteCommitEvent(
           phase: 'proving',
           proposalId: draft.proposalId,

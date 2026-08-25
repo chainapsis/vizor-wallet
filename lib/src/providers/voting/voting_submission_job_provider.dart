@@ -282,6 +282,20 @@ class _VotingKeystoneSigningRound {
   ];
 }
 
+class _ConfirmedVoteIntent {
+  _ConfirmedVoteIntent({
+    required List<rust_wire.DraftVote> draftVotes,
+    required List<int> proposalIds,
+    required Map<int, int> proposalOptionCounts,
+  }) : draftVotes = List.unmodifiable(draftVotes),
+       proposalIds = List.unmodifiable(proposalIds),
+       proposalOptionCounts = Map.unmodifiable(proposalOptionCounts);
+
+  final List<rust_wire.DraftVote> draftVotes;
+  final List<int> proposalIds;
+  final Map<int, int> proposalOptionCounts;
+}
+
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   VotingSubmissionJobNotifier(this._key);
 
@@ -326,11 +340,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   Future<void> retry() async {
+    await _restartJob();
+  }
+
+  Future<void> _restartJob({_ConfirmedVoteIntent? confirmedIntent}) async {
     _cancelWalletSyncRecovery();
     _releaseGuard();
     _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key);
-    _startJob(_key);
+    _startJob(_key, confirmedIntent: confirmedIntent);
   }
 
   void dismiss() {
@@ -343,7 +361,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
   }
 
-  void _startJob(VotingSessionKey key) {
+  void _startJob(
+    VotingSessionKey key, {
+    _ConfirmedVoteIntent? confirmedIntent,
+  }) {
     _cancelWalletSyncRecovery();
     _cancelCompletionPoll();
     _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
@@ -358,8 +379,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       key: key,
       status: VotingSubmissionJobStatus.running,
       generation: generation,
+      pendingDraftVotes: confirmedIntent?.draftVotes,
+      pendingProposalIds: confirmedIntent?.proposalIds ?? const [],
+      pendingProposalOptionCounts:
+          confirmedIntent?.proposalOptionCounts ?? const {},
     );
-    unawaited(_run(key: key, generation: generation));
+    unawaited(
+      _run(key: key, generation: generation, confirmedIntent: confirmedIntent),
+    );
   }
 
   Future<void> handleKeystoneBatchSignResponse(List<int> responseCbor) async {
@@ -491,6 +518,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> _run({
     required VotingSessionKey key,
     required int generation,
+    _ConfirmedVoteIntent? confirmedIntent,
   }) async {
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
@@ -509,34 +537,62 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       final proposals = proposalsFromRound(round);
-      final proposalOptionCounts = {
+      final currentProposalOptionCounts = {
         for (final proposal in proposals) proposal.id: proposal.options.length,
       };
-      final VotingDraftState draft;
-      try {
-        draft = await ref
-            .read(votingDraftProvider(key).notifier)
-            .ensureLoaded();
-      } catch (_) {
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        final activeSession = await _ensureEligibilityForCompletedSession(
-          key: key,
-          generation: generation,
-          sessionNotifier: sessionNotifier,
-          session: loadedSession,
+      late List<rust_wire.DraftVote> draftVotes;
+      late List<int> intentProposalIds;
+      late Map<int, int> proposalOptionCounts;
+      if (confirmedIntent != null) {
+        // Keep the reviewed choices immutable, but drop work that a fresh
+        // recovery plan now reports as complete while sync was catching up.
+        draftVotes = _draftVotesForSession(
+          confirmedIntent.draftVotes,
+          loadedSession,
         );
-        if (activeSession == null) return;
-        if (_canCompleteSessionAfterDraftLoadFailure(activeSession)) {
-          _completeJob(key: key, generation: generation);
-          return;
+        intentProposalIds = _proposalIdsForSession(
+          confirmedIntent.proposalIds,
+          loadedSession,
+        );
+        proposalOptionCounts = confirmedIntent.proposalOptionCounts;
+      } else {
+        final VotingDraftState draft;
+        try {
+          draft = await ref
+              .read(votingDraftProvider(key).notifier)
+              .ensureLoaded();
+        } catch (_) {
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+          final activeSession = await _ensureEligibilityForCompletedSession(
+            key: key,
+            generation: generation,
+            sessionNotifier: sessionNotifier,
+            session: loadedSession,
+          );
+          if (activeSession == null) return;
+          if (_canCompleteSessionAfterDraftLoadFailure(activeSession)) {
+            _completeJob(key: key, generation: generation);
+            return;
+          }
+          rethrow;
         }
-        rethrow;
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final confirmedDraft = _draftForSession(draft, loadedSession);
+        draftVotes = confirmedDraft.toDraftVotes(proposals);
+        intentProposalIds = draftVotes.isNotEmpty
+            ? _proposalIdsForDraftIntents(loadedSession, proposals)
+            : const [];
+        proposalOptionCounts = currentProposalOptionCounts;
       }
-      if (!_isCurrentJob(key: key, generation: generation)) return;
-      if (_canCompleteSessionWithoutDraft(loadedSession, draft)) {
+      if (_canCompleteSessionWithoutDraftVotes(loadedSession, draftVotes)) {
         _completeJob(key: key, generation: generation);
         return;
       }
+      state = state.copyWith(
+        pendingDraftVotes: draftVotes,
+        pendingProposalIds: intentProposalIds,
+        pendingProposalOptionCounts: proposalOptionCounts,
+      );
       if (round.voteEndTime == null) {
         _failJob(
           key: key,
@@ -571,7 +627,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
       if (completedEligibilitySession == null) return;
       activeSession = completedEligibilitySession;
-      if (!draft.isEmpty && !activeSession.hasConfirmedVotingEligibility) {
+      if (draftVotes.isNotEmpty &&
+          !activeSession.hasConfirmedVotingEligibility) {
         await sessionNotifier.ensureVotingEligibility();
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterEligibilityCheck = _sessionForJob(key);
@@ -585,24 +642,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         }
         activeSession = afterEligibilityCheck ?? activeSession;
       }
-      if (_canCompleteSessionWithoutDraft(activeSession, draft)) {
+      if (_canCompleteSessionWithoutDraftVotes(activeSession, draftVotes)) {
         _completeJob(key: key, generation: generation);
         return;
       }
-      final userDraftVotes = _draftForSession(
-        draft,
-        activeSession,
-      ).toDraftVotes(proposals);
       final recoveredDraftVotes =
-          userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
+          draftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
           ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
           : const <rust_wire.DraftVote>[];
-      final draftVotes = userDraftVotes.isNotEmpty
-          ? userDraftVotes
-          : recoveredDraftVotes;
-      final intentProposalIds = userDraftVotes.isNotEmpty
-          ? _proposalIdsForDraftIntents(activeSession, proposals)
-          : const <int>[];
+      if (draftVotes.isEmpty) draftVotes = recoveredDraftVotes;
       final canRecoverWithoutDraft = _canRecoverWithoutDraft(activeSession);
       final canPollDelegationWithoutDraft = _canPollDelegationWithoutDraft(
         activeSession,
@@ -1071,10 +1119,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final shouldAutoRecover = isVotingWalletSyncStalled(session.error?.cause);
     final snapshotHeight = session.walletSnapshotHeight;
+    final preserveConfirmedIntent = shouldAutoRecover && snapshotHeight != null;
     _failJob(
       key: key,
       generation: generation,
       message: _statusErrorMessage(session) ?? _genericVotingStatusErrorMessage,
+      preservePendingSubmission: preserveConfirmedIntent,
     );
     if (shouldAutoRecover && snapshotHeight != null) {
       _walletSyncRecoveryGeneration = generation;
@@ -1088,6 +1138,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required String message,
     bool softwareAccountRequired = false,
+    bool preservePendingSubmission = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelWalletSyncRecovery();
@@ -1104,10 +1155,16 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
-      clearPendingDraftVotes: true,
-      pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
-      pendingRecoveryWithoutDraft: false,
+      clearPendingDraftVotes: !preservePendingSubmission,
+      pendingProposalIds: preservePendingSubmission
+          ? state.pendingProposalIds
+          : const [],
+      pendingProposalOptionCounts: preservePendingSubmission
+          ? state.pendingProposalOptionCounts
+          : const {},
+      pendingRecoveryWithoutDraft: preservePendingSubmission
+          ? state.pendingRecoveryWithoutDraft
+          : false,
     );
   }
 
@@ -1169,11 +1226,22 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           _armWalletSyncRecoveryRetryOnUnlock();
           return;
         }
+        final confirmedIntent = _confirmedVoteIntentFromState();
+        if (confirmedIntent == null) {
+          ref
+              .read(votingSubmissionSessionProvider(_key).notifier)
+              .markWalletSyncRecoveryStopped(_walletSyncRecoveryStoppedMessage);
+          state = state.copyWith(
+            errorMessage: _walletSyncRecoveryStoppedMessage,
+          );
+          _cancelWalletSyncRecovery();
+          return;
+        }
         _walletSyncRecoveryGeneration = null;
         _walletSyncRecoverySnapshotHeight = null;
         _walletSyncRecoveryTimer?.cancel();
         _walletSyncRecoveryTimer = null;
-        await retry();
+        await _restartJob(confirmedIntent: confirmedIntent);
       } else {
         ref.read(votingWalletSyncStarterProvider).call();
       }
@@ -1446,17 +1514,27 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return true;
   }
 
-  bool _canCompleteSessionWithoutDraft(
+  bool _canCompleteSessionWithoutDraftVotes(
     VotingSessionState session,
-    VotingDraftState draft,
+    List<rust_wire.DraftVote> draftVotes,
   ) {
     if (!_canCompleteSubmission(session)) return false;
-    if (draft.isEmpty) return true;
+    if (draftVotes.isEmpty) return true;
     final roundPlan = session.roundPlan;
     if (roundPlan == null) return false;
     final openProposalIds = roundPlan.openProposals.toSet();
-    return draft.choices.keys.every(
-      (proposalId) => !openProposalIds.contains(proposalId),
+    return draftVotes.every(
+      (draftVote) => !openProposalIds.contains(draftVote.proposalId),
+    );
+  }
+
+  _ConfirmedVoteIntent? _confirmedVoteIntentFromState() {
+    final draftVotes = state.pendingDraftVotes;
+    if (draftVotes == null) return null;
+    return _ConfirmedVoteIntent(
+      draftVotes: draftVotes,
+      proposalIds: state.pendingProposalIds,
+      proposalOptionCounts: state.pendingProposalOptionCounts,
     );
   }
 
@@ -1478,6 +1556,32 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           if (openProposalIds.contains(entry.key)) entry.key: entry.value,
       },
     );
+  }
+
+  List<rust_wire.DraftVote> _draftVotesForSession(
+    List<rust_wire.DraftVote> draftVotes,
+    VotingSessionState session,
+  ) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan == null) return draftVotes;
+    final openProposalIds = roundPlan.openProposals.toSet();
+    return [
+      for (final draftVote in draftVotes)
+        if (openProposalIds.contains(draftVote.proposalId)) draftVote,
+    ];
+  }
+
+  List<int> _proposalIdsForSession(
+    List<int> proposalIds,
+    VotingSessionState session,
+  ) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan == null) return proposalIds;
+    final openProposalIds = roundPlan.openProposals.toSet();
+    return [
+      for (final proposalId in proposalIds)
+        if (openProposalIds.contains(proposalId)) proposalId,
+    ];
   }
 
   List<int> _proposalIdsForDraftIntents(
