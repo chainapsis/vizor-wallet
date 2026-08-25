@@ -79,7 +79,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _operation = Future.value();
   final String _roundId;
-  final Map<String, Future<void>> _delegationPirPrecomputes = {};
+  final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   Future<void>? _shareTrackingPass;
@@ -163,7 +163,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // keep account-wide vote-tree sync state reusable across rounds.
       _isDisposed = true;
       _advanceSessionGeneration();
-      _delegationPirPrecomputes.clear();
+      _snapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
       _releaseAutomaticShareTracking();
@@ -248,7 +248,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionAccountUuid = accountUuid;
     _sessionIsHardwareAccount = null;
     _currentContext = null;
-    _delegationPirPrecomputes.clear();
+    _snapshotBundlePrecomputes.clear();
     _hotkeyEnsures.clear();
     _shareTrackingTimer?.cancel();
     if (!hadSessionAccount || _isDisposed) return;
@@ -323,9 +323,41 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<void> precomputeDelegationPir({required String accountUuid}) async {
+  Future<void> precomputeSnapshotBundles({required String accountUuid}) {
+    final key = _snapshotBundlePrecomputeKey(accountUuid);
+    final existing = _snapshotBundlePrecomputes[key];
+    if (existing != null) return existing;
+
+    final precompute = _runSnapshotBundlePrecomputeForAccount(accountUuid);
+    _snapshotBundlePrecomputes[key] = precompute;
+    void removeIfCurrent() {
+      if (identical(_snapshotBundlePrecomputes[key], precompute)) {
+        _snapshotBundlePrecomputes.remove(key);
+      }
+    }
+
+    unawaited(
+      precompute.then<void>(
+        (_) => removeIfCurrent(),
+        onError: (Object _, StackTrace _) => removeIfCurrent(),
+      ),
+    );
+    return precompute;
+  }
+
+  Future<void> _runSnapshotBundlePrecomputeForAccount(
+    String accountUuid,
+  ) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
+    final current = state.value;
+    if (current == null || !current.hasConfirmedVotingEligibility) {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=${context.round.roundId} reason=eligibility-not-confirmed',
+      );
+      return;
+    }
     try {
       await _waitUntilWalletReadyForVoting(context);
     } on _StaleVotingSessionAction {
@@ -337,64 +369,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         waiting: false,
       );
       debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
+        '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
       );
       return;
     }
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    final plan = await _loadResumePlan(context);
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    final pendingBundles = plan.pendingDelegationBundleIndexes;
-    if (pendingBundles.isEmpty) {
-      // Fresh rounds (no durable bundles yet) land here by design: the
-      // bundle-independent background warm-up (votingPirWarmupProvider) has
-      // already cached the real-note PIR proofs, so the prove-time precompute
-      // only fetches the per-bundle padded-slot nullifiers.
-      debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
-        'round=${context.round.roundId} reason=no-pending-bundles '
-        '(real-note proofs come from the background PIR cache warmup)',
-      );
-      return;
-    }
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
-    final signatures = context.isHardwareAccount
-        ? await _loadKeystoneSignatures(context)
-        : const <int, rust_wire.KeystoneSignatureRecord>{};
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    final List<int> storedHotkeySecret;
-    try {
-      storedHotkeySecret = await _ensureHotkey(
-        context,
-        alreadyBound: signatures.isNotEmpty,
-      );
-    } on VotingHotkeyUnavailable catch (e) {
-      debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
-        'round=${context.round.roundId} reason=missing-hotkey error=$e',
-      );
-      return;
-    }
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-
-    for (final bundleIndex in pendingBundles) {
-      final key = _delegationPirPrecomputeKey(context, bundleIndex);
-      _delegationPirPrecomputes[key] ??= _runDelegationPirPrecompute(
-        context: context,
-        pirEndpoint: pirEndpoint,
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndex: bundleIndex,
-      );
-    }
+    await _runSnapshotBundlePrecompute(
+      context: context,
+      pirEndpoint: pirEndpoint,
+    );
   }
 
   Future<void> delegatePendingBundles({String? mnemonic}) {
     return _enqueue(() async {
+      final actionTimer = Stopwatch()..start();
+      _logDelegationStart('software action entered');
       var current = await future;
       var context = await _loadContext(_roundId);
+      _logDelegationStart(
+        'round=${context.round.roundId} context loaded '
+        'elapsed=${formatElapsedSeconds(actionTimer.elapsed)} '
+        'phase=${current.phase.name} '
+        'pirEndpoint=${current.pirEndpoint != null} '
+        'eligibleWeight=${current.eligibleWeightZatoshi != null} '
+        'pendingBundles=${context.resumePlan.pendingDelegationBundleIndexes.length}',
+      );
       if (context.isHardwareAccount) {
         _setError(
           'Sign delegation bundles with Keystone before submitting.',
@@ -404,9 +407,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationWork(plan, roundPlan) &&
-          _needsDelegationPreparation(current)) {
+      final needsPrepare =
+          _needsFreshDelegationWork(plan, roundPlan) &&
+          _needsDelegationPreparation(current);
+      if (needsPrepare) {
+        _logDelegationStart(
+          'round=${context.round.roundId} prepare start '
+          'elapsed=${formatElapsedSeconds(actionTimer.elapsed)}',
+        );
         await _prepareDelegationUnlocked();
+        _logDelegationStart(
+          'round=${context.round.roundId} prepare done '
+          'elapsed=${formatElapsedSeconds(actionTimer.elapsed)}',
+        );
         current = await future;
         if (current.phase == VotingSessionPhase.error ||
             current.phase == VotingSessionPhase.waitingForWalletSync) {
@@ -443,20 +456,40 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         _setStateForContext(context, nextState);
         current = nextState;
+        _logDelegationStart(
+          'round=${context.round.roundId} phase=delegating '
+          'pendingBundles=${plan.pendingDelegationBundleIndexes.length} '
+          'elapsed=${formatElapsedSeconds(actionTimer.elapsed)}',
+        );
       }
+      final hotkeyTimer = Stopwatch()..start();
       final storedHotkeySecret = hasPendingBundles
           ? await _ensureHotkey(context)
           : null;
+      if (hasPendingBundles) {
+        _logDelegationStart(
+          'round=${context.round.roundId} hotkey ready '
+          'elapsed=${formatElapsedSeconds(actionTimer.elapsed)} '
+          'hotkey=${formatElapsedSeconds(hotkeyTimer.elapsed)}',
+        );
+      }
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
       final rust = ref.read(votingRustApiProvider);
+      final confirmTimer = Stopwatch()..start();
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
         plan: plan,
         roundPlan: roundPlan,
         progress: progress,
+      );
+      _logDelegationStart(
+        'round=${context.round.roundId} confirm-submitted done '
+        'elapsed=${formatElapsedSeconds(actionTimer.elapsed)} '
+        'confirm=${formatElapsedSeconds(confirmTimer.elapsed)} '
+        'alreadyConfirmed=${completedBundleIndexes?.length ?? 0}',
       );
       if (completedBundleIndexes == null) return;
       try {
@@ -468,11 +501,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             progress: progress,
             logLabel: 'software',
             prove: (bundleIndex, publishProgress) async {
-              await _awaitDelegationPirPrecomputeIfRunning(
-                context,
-                bundleIndex,
-              );
+              await _awaitSnapshotBundlePrecomputeIfRunning(context);
               _throwIfContextStale(context, 'delegation-proof');
+              _logDelegationStart(
+                'round=${context.round.roundId} bundle=$bundleIndex '
+                'rust-stream subscribe '
+                'elapsed=${formatElapsedSeconds(actionTimer.elapsed)}',
+              );
               rust_wire.SignedDelegationPayloadView? signedPayload;
               await for (final event
                   in rust.buildProveAndSignDelegationPayloadWithProgress(
@@ -850,6 +885,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             logLabel: 'Keystone',
             prove: (bundleIndex, publishProgress) async {
               final signature = signatures[bundleIndex]!;
+              _logDelegationStart(
+                'round=${context.round.roundId} bundle=$bundleIndex '
+                'keystone rust-stream subscribe',
+              );
               rust_wire.SignedDelegationPayloadView? signedPayload;
               await for (final event
                   in rust
@@ -1742,6 +1781,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     debugPrint('[zcash] Voting: $message');
   }
 
+  void _logDelegationStart(String message) {
+    debugPrint('[zcash] Voting: delegation-start $message');
+  }
+
   List<String> _plannedShareServers({
     required List<String> plannedServers,
     required Iterable<String> fallbackServers,
@@ -2536,11 +2579,44 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final proofWallTimer = Stopwatch()..start();
     final timers = <int, Stopwatch>{};
     final proofElapsed = <int, Duration>{};
+    var loggedFirstProgress = false;
+    var loggedWheelMoving = false;
 
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
       if (bundleIndex == null) return;
+      final previous = progress[bundleIndex];
       progress[bundleIndex] = update;
+      final sinceBatch = formatElapsedSeconds(batchTimer.elapsed);
+      final sinceBundle = formatElapsedSeconds(
+        timers[bundleIndex]?.elapsed ?? Duration.zero,
+      );
+      if (!loggedFirstProgress) {
+        loggedFirstProgress = true;
+        debugPrint(
+          '[zcash] Voting: $logLabel delegation first-progress-event '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'phase=${update.phase} proofProgress=${update.proofProgress} '
+          'sinceBatch=$sinceBatch sinceBundle=$sinceBundle',
+        );
+      } else if (previous?.phase != update.phase) {
+        debugPrint(
+          '[zcash] Voting: $logLabel delegation progress-phase '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'phase=${update.phase} proofProgress=${update.proofProgress} '
+          'sinceBatch=$sinceBatch sinceBundle=$sinceBundle',
+        );
+      }
+      final proofProgress = update.proofProgress;
+      if (!loggedWheelMoving && proofProgress != null && proofProgress > 0) {
+        loggedWheelMoving = true;
+        debugPrint(
+          '[zcash] Voting: $logLabel delegation wheel-moving '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'phase=${update.phase} proofProgress=$proofProgress '
+          'sinceBatch=$sinceBatch sinceBundle=$sinceBundle',
+        );
+      }
       _setStateForContext(
         context,
         (state.value ?? fallbackState).copyWith(
@@ -3253,14 +3329,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
+        '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=pir-resolution-failed '
         'error=$e',
       );
       return null;
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
+        '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=pir-resolution-failed '
         'error=$e',
       );
@@ -3268,61 +3344,72 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<void> _runDelegationPirPrecompute({
+  Future<void> _runSnapshotBundlePrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) async {
-    final key = _delegationPirPrecomputeKey(context, bundleIndex);
     final timer = Stopwatch()..start();
     debugPrint(
-      '[zcash] Voting: delegation PIR precompute start '
-      'round=${context.round.roundId} bundle=$bundleIndex',
+      '[zcash] Voting: snapshot bundle precompute start '
+      'round=${context.round.roundId}',
     );
     try {
       final rust = ref.read(votingRustApiProvider);
       rust.warmVotingProvingCaches();
-      final result = await rust.precomputeDelegationPir(
+      final result = await rust.precomputeSnapshotBundles(
         ctx: _apiRoundContext(context),
         pirServerUrl: _transportUrl(pirEndpoint),
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndex: bundleIndex,
+      );
+      final cached = result.bundles.fold<int>(
+        0,
+        (total, bundle) => total + bundle.cachedCount,
+      );
+      final fetched = result.bundles.fold<int>(
+        0,
+        (total, bundle) => total + bundle.fetchedCount,
       );
       debugPrint(
-        '[zcash] Voting: delegation PIR precompute completed '
-        'round=${context.round.roundId} bundle=$bundleIndex '
-        'cached=${result.cachedCount} fetched=${result.fetchedCount} '
+        '[zcash] Voting: snapshot bundle precompute completed '
+        'round=${context.round.roundId} bundles=${result.bundleCount} '
+        'cached=$cached fetched=$fetched '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: delegation PIR precompute failed '
-        'round=${context.round.roundId} bundle=$bundleIndex '
+        '[zcash] Voting: snapshot bundle precompute failed '
+        'round=${context.round.roundId} '
         'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
       );
-    } finally {
-      _delegationPirPrecomputes.remove(key);
     }
   }
 
-  Future<void> _awaitDelegationPirPrecomputeIfRunning(
+  Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
     _VotingSessionContext context,
-    int bundleIndex,
   ) async {
     final precompute =
-        _delegationPirPrecomputes[_delegationPirPrecomputeKey(
-          context,
-          bundleIndex,
+        _snapshotBundlePrecomputes[_snapshotBundlePrecomputeKey(
+          context.accountUuid,
         )];
-    if (precompute == null) return;
+    if (precompute == null) {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute not in-flight '
+        'round=${context.round.roundId}',
+      );
+      return;
+    }
 
+    final waitTimer = Stopwatch()..start();
     debugPrint(
-      '[zcash] Voting: waiting for in-flight delegation PIR precompute '
-      'round=${context.round.roundId} bundle=$bundleIndex',
+      '[zcash] Voting: waiting for in-flight snapshot bundle precompute '
+      'round=${context.round.roundId}',
     );
     await precompute;
+    debugPrint(
+      '[zcash] Voting: in-flight snapshot bundle precompute joined '
+      'round=${context.round.roundId} '
+      'elapsed=${formatElapsedSeconds(waitTimer.elapsed)}',
+    );
   }
 
   String _transportUrl(Uri logicalUrl) {
@@ -3343,11 +3430,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return candidates;
   }
 
-  static String _delegationPirPrecomputeKey(
-    _VotingSessionContext context,
-    int bundleIndex,
-  ) {
-    return '${context.dbPath}|${context.accountUuid}|${context.round.roundId}|$bundleIndex';
+  String _snapshotBundlePrecomputeKey(String accountUuid) {
+    return '$_roundId|$accountUuid';
   }
 
   static void _logPirSnapshotMismatch({
@@ -3440,7 +3524,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     bool propagateError = false,
   }) {
     final actionGeneration = _sessionGeneration;
+    final queuedAt = Stopwatch()..start();
     final next = _operation.then((_) async {
+      final queueWait = queuedAt.elapsed;
+      if (queueWait.inMilliseconds >= 50) {
+        debugPrint(
+          '[zcash] Voting: session-queue wait '
+          'elapsed=${formatElapsedSeconds(queueWait)}',
+        );
+      }
       if (!_isCurrentGeneration(actionGeneration)) {
         _logStaleSessionUpdate('queued-action', actionGeneration);
         return;
@@ -3662,10 +3754,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> _prepareDelegationUnlocked() async {
+    final prepareTimer = Stopwatch()..start();
     final current = await future;
     final context = await _loadContext(_roundId);
+    _logDelegationStart(
+      'round=${context.round.roundId} prepare-unlocked start '
+      'phase=${current.phase.name}',
+    );
     ref.read(votingRustApiProvider).warmVotingProvingCaches();
+    final walletTimer = Stopwatch()..start();
     await _waitUntilWalletReadyForVoting(context);
+    _logDelegationStart(
+      'round=${context.round.roundId} prepare wallet-ready '
+      'elapsed=${formatElapsedSeconds(prepareTimer.elapsed)} '
+      'walletWait=${formatElapsedSeconds(walletTimer.elapsed)}',
+    );
     _setStateForContext(
       context,
       current.copyWith(
@@ -3681,6 +3784,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final resolver = ref.read(votingPirResolverProvider);
     late final PirSnapshotResolution resolution;
+    final pirTimer = Stopwatch()..start();
     try {
       resolution = await resolver.resolve(
         endpoints: context.config.pirEndpointUrls,
@@ -3699,6 +3803,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setError('Failed to resolve PIR endpoint.', cause: e, context: context);
       return;
     }
+    _logDelegationStart(
+      'round=${context.round.roundId} prepare pir-resolved '
+      'endpoint=${resolution.endpoint} '
+      'elapsed=${formatElapsedSeconds(prepareTimer.elapsed)} '
+      'pir=${formatElapsedSeconds(pirTimer.elapsed)}',
+    );
 
     _setStateForContext(
       context,
@@ -3714,9 +3824,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       ),
     );
 
+    await _awaitSnapshotBundlePrecomputeIfRunning(context);
+    _throwIfContextStale(context, 'snapshot-bundle-precompute');
+    final setupTimer = Stopwatch()..start();
     final bundleSetup = await ref
         .read(votingRustApiProvider)
         .setupDelegationBundles(ctx: _apiRoundContext(context));
+    _logDelegationStart(
+      'round=${context.round.roundId} prepare setup-bundles done '
+      'elapsed=${formatElapsedSeconds(prepareTimer.elapsed)} '
+      'setup=${formatElapsedSeconds(setupTimer.elapsed)}',
+    );
     final refreshedPlan = await _loadResumePlan(context);
     final refreshedRoundPlan = await _loadRoundPlan(context);
     _setStateForContext(
@@ -3957,6 +4075,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           waiting: false,
         );
         _throwIfContextStale(context, 'wallet-sync-ready');
+        debugPrint(
+          '[zcash] Voting: wallet-sync-ready '
+          'round=${context.round.roundId} '
+          'scanned=${readiness.scannedHeight} '
+          'snapshot=${readiness.snapshotHeight} '
+          'waited=$loggedWait '
+          'elapsed=${formatElapsedSeconds(waitTimer.elapsed)}',
+        );
         return;
       }
 

@@ -7285,16 +7285,14 @@ void main() {
   });
 
   test(
-    'hotkey generation is single-flight for PIR warmup and delegation',
+    'snapshot bundle precompute needs no hotkey and joins delegation',
     () async {
-      final hotkeyGenerationGate = Completer<void>();
       final precomputeGate = Completer<void>();
       final rust = FakeVotingRustApi(
         generatedHotkeys: const [
           [42, 43, 44],
           [99, 99, 99],
         ],
-        hotkeyGenerationGate: hotkeyGenerationGate,
         precomputeGate: precomputeGate,
       );
       final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -7303,28 +7301,25 @@ void main() {
 
       await container.read(votingSessionProvider(kRoundId).future);
       final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-      final precomputeFuture = notifier.precomputeDelegationPir(
+      await notifier.refreshEligibleWeight();
+      final precomputeFuture = notifier.precomputeSnapshotBundles(
         accountUuid: 'account-1',
       );
-      await rust.hotkeyGenerationStarted.future;
+      await rust.precomputeStarted.future;
 
       final delegationFuture = notifier.delegatePendingBundles(
         mnemonic: kTestMnemonic,
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(rust.generateVotingHotkeyCalls, 0);
 
-      hotkeyGenerationGate.complete();
-      await rust.precomputeStarted.future;
       precomputeGate.complete();
       await Future.wait([precomputeFuture, delegationFuture]);
 
       expect(rust.generateVotingHotkeyCalls, 1);
       expect(hotkeyStore.hotkey, [42, 43, 44]);
-      expect(rust.precomputeStoredHotkeySecrets, [
-        [42, 43, 44],
-      ]);
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
       expect(rust.delegationStoredHotkeySecrets, [
         [42, 43, 44],
       ]);
@@ -7332,26 +7327,31 @@ void main() {
   );
 
   test(
-    'delegation PIR warmup passes the stored hotkey secret to Rust',
+    'snapshot bundle precompute runs without reading a voting hotkey',
     () async {
       final precomputeGate = Completer<void>();
       final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
-      final container = _sessionContainer(rust: rust);
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
       addTearDown(container.dispose);
 
       await container.read(votingSessionProvider(kRoundId).future);
-      await container
-          .read(votingSessionProvider(kRoundId).notifier)
-          .precomputeDelegationPir(accountUuid: 'account-1');
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precomputeFuture = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
       await rust.precomputeStarted.future;
 
-      expect(rust.precomputeStoredHotkeySecrets.single, [9, 9, 9]);
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
+      expect(rust.generateVotingHotkeyCalls, 0);
+      expect(hotkeyStore.hotkey, isNull);
       expect(rust.setupCalls, 0);
       expect(rust.warmVotingProvingCachesCalls, greaterThanOrEqualTo(1));
 
       precomputeGate.complete();
+      await precomputeFuture;
       await rust.precomputeFinished.future;
-      await Future<void>.delayed(Duration.zero);
     },
   );
 
@@ -7370,7 +7370,7 @@ void main() {
   });
 
   test(
-    'delegation PIR warmup skips cold plans without durable setup',
+    'snapshot bundle precompute runs for a fresh round without durable bundles',
     () async {
       final rust = FakeVotingRustApi();
       final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -7380,24 +7380,23 @@ void main() {
         recoveryApi: FakeVotingRecoveryApi(
           state: recoveryState(bundleCount: 0),
         ),
-        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
       );
       addTearDown(container.dispose);
 
       await container.read(votingSessionProvider(kRoundId).future);
-      await container
-          .read(votingSessionProvider(kRoundId).notifier)
-          .precomputeDelegationPir(accountUuid: 'account-1');
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
 
       expect(rust.setupCalls, 0);
-      expect(rust.precomputedDelegationPir, isEmpty);
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(hotkeyStore.hotkey, isNull);
     },
   );
 
   test(
-    'delegation PIR warmup does not regenerate Keystone hotkey after signature',
+    'snapshot bundle precompute does not regenerate Keystone hotkey',
     () async {
       final rust = FakeVotingRustApi();
       rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
@@ -7415,18 +7414,18 @@ void main() {
       addTearDown(container.dispose);
 
       await container.read(votingSessionProvider(kRoundId).future);
-      await container
-          .read(votingSessionProvider(kRoundId).notifier)
-          .precomputeDelegationPir(accountUuid: 'account-1');
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
 
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(hotkeyStore.hotkey, isNull);
       expect(rust.setupCalls, 0);
-      expect(rust.precomputedDelegationPir, isEmpty);
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
     },
   );
 
-  test('delegation PIR warmup skips after account switch', () async {
+  test('snapshot bundle precompute skips after account switch', () async {
     final rust = FakeVotingRustApi();
     final activeAccountProvider =
         NotifierProvider<_ActiveVotingAccountNotifier, String?>(
@@ -7452,12 +7451,12 @@ void main() {
 
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(accountUuid: 'account-1');
+        .precomputeSnapshotBundles(accountUuid: 'account-1');
 
-    expect(rust.precomputedDelegationPir, isEmpty);
+    expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
   });
 
-  test('delegation phase activates while waiting for PIR warmup', () async {
+  test('bundle setup waits for snapshot bundle precompute', () async {
     final precomputeGate = Completer<void>();
     final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
     final container = _sessionContainer(rust: rust);
@@ -7465,49 +7464,57 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
+    await notifier.refreshEligibleWeight();
+    final precomputeFuture = notifier.precomputeSnapshotBundles(
+      accountUuid: 'account-1',
+    );
     await rust.precomputeStarted.future;
 
     final delegationFuture = notifier.delegatePendingBundles(
       mnemonic: kTestMnemonic,
     );
 
-    VotingSessionState? activeState;
+    VotingSessionState? waitingState;
     for (var i = 0; i < 10; i++) {
       await Future<void>.delayed(Duration.zero);
-      final state = container.read(votingSessionProvider(kRoundId)).value;
-      if (state?.phase == VotingSessionPhase.delegating) {
-        activeState = state;
+      final current = container.read(votingSessionProvider(kRoundId)).value;
+      if (current?.phase == VotingSessionPhase.loadingWitnesses) {
+        waitingState = current;
         break;
       }
     }
 
-    expect(activeState?.phase, VotingSessionPhase.delegating);
-    expect(activeState?.currentBundleIndex, isNull);
+    expect(waitingState?.phase, VotingSessionPhase.loadingWitnesses);
+    expect(rust.setupCalls, 0);
     expect(rust.delegationBundleCalls, isEmpty);
 
     precomputeGate.complete();
-    await delegationFuture;
+    await Future.wait([precomputeFuture, delegationFuture]);
 
     final finalState = container.read(votingSessionProvider(kRoundId)).value!;
     expect(finalState.phase, VotingSessionPhase.delegated);
+    expect(rust.setupCalls, 1);
     expect(rust.delegationBundleCalls, [0]);
   });
 
-  test('delegation PIR warmup failure is a non-fatal cache miss', () async {
-    final rust = FakeVotingRustApi(failPrecompute: true);
-    final container = _sessionContainer(rust: rust);
-    addTearDown(container.dispose);
+  test(
+    'snapshot bundle precompute failure is a non-fatal cache miss',
+    () async {
+      final rust = FakeVotingRustApi(failPrecompute: true);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
-    await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+      await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
 
-    expect(rust.precomputedDelegationPir, [0]);
-    expect(rust.delegationBundleCalls, [0]);
-    expect(rust.resetVotingSessionStateCalls, isEmpty);
-  });
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
+      expect(rust.delegationBundleCalls, [0]);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+    },
+  );
 
   test('session dispose clears round-scoped process state', () async {
     final rust = FakeVotingRustApi();
@@ -7650,7 +7657,7 @@ void main() {
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(hotkeyStore.hotkey, isNull);
       expect(rust.setupCalls, 0);
-      expect(rust.precomputedDelegationPir, isEmpty);
+      expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
     },
   );
 
@@ -9664,8 +9671,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final recordShareAttempts = <int>[];
   final syncedVoteTrees = <String>[];
   final syncedVoteTreeNodeUrls = <String>[];
-  final precomputedDelegationPir = <int>[];
-  final precomputeStoredHotkeySecrets = <List<int>>[];
+  final snapshotBundlePrecomputeAccounts = <String>[];
   final warmPirProofCacheAccountUuids = <String>[];
   final warmPirProofCacheSnapshotHeights = <int>[];
   final warmPirProofCacheKeepRoots = <List<List<int>>>[];
@@ -10086,15 +10092,12 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
-    precomputedDelegationPir.add(bundleIndex);
-    precomputeStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
+    snapshotBundlePrecomputeAccounts.add(ctx.accountUuid);
     if (!precomputeStarted.isCompleted) {
       precomputeStarted.complete();
     }
@@ -10108,11 +10111,20 @@ class FakeVotingRustApi implements VotingRustApi {
         precomputeFinished.complete();
       }
     }
-    return rust_wire.DelegationPirPrecomputeResultView(
-      cachedCount: 0,
-      fetchedCount: 1,
+    return rust_api.ApiSnapshotBundlePrecomputeResult(
       bundleCount: bundleCount,
-      bundleIndex: bundleIndex,
+      eligibleWeight: BigInt.from(setupEligibleWeight),
+      droppedCount: 0,
+      privacyTrimDroppedBundles: 0,
+      privacyTrimDroppedNotes: 0,
+      privacyTrimDroppedValueZatoshi: BigInt.zero,
+      bundles: List.generate(
+        bundleCount,
+        (_) => const rust_api.ApiSnapshotBundlePirResult(
+          cachedCount: 0,
+          fetchedCount: 1,
+        ),
+      ),
     );
   }
 

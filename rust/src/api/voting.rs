@@ -149,6 +149,49 @@ pub struct ApiBundleLayout {
     pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// PIR cache result for one snapshot-precomputed delegation bundle.
+pub struct ApiSnapshotBundlePirResult {
+    pub cached_count: u32,
+    pub fetched_count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Snapshot bundle plan and PIR warm-up result exposed to Dart.
+pub struct ApiSnapshotBundlePrecomputeResult {
+    pub bundle_count: u32,
+    pub eligible_weight: u64,
+    pub dropped_count: u32,
+    pub privacy_trim_dropped_bundles: u32,
+    pub privacy_trim_dropped_notes: u32,
+    pub privacy_trim_dropped_value_zatoshi: u64,
+    pub bundles: Vec<ApiSnapshotBundlePirResult>,
+}
+
+impl From<zcash_voting::precompute::SnapshotBundlePrecomputeReport>
+    for ApiSnapshotBundlePrecomputeResult
+{
+    fn from(report: zcash_voting::precompute::SnapshotBundlePrecomputeReport) -> Self {
+        let layout = report.layout;
+        Self {
+            bundle_count: layout.bundle_count,
+            eligible_weight: layout.eligible_weight,
+            dropped_count: layout.dropped_count,
+            privacy_trim_dropped_bundles: layout.privacy_trim_dropped_bundles,
+            privacy_trim_dropped_notes: layout.privacy_trim_dropped_notes,
+            privacy_trim_dropped_value_zatoshi: layout.privacy_trim_dropped_value_zatoshi,
+            bundles: report
+                .bundles
+                .into_iter()
+                .map(|bundle| ApiSnapshotBundlePirResult {
+                    cached_count: bundle.cached,
+                    fetched_count: bundle.fetched,
+                })
+                .collect(),
+        }
+    }
+}
+
 impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
     fn from(layout: zcash_voting::wire::BundleLayout) -> Self {
         Self {
@@ -742,6 +785,36 @@ pub async fn check_voting_eligibility(
     })
 }
 
+/// Persist the snapshot-stable bundle plan and warm all bundle PIR inputs.
+///
+/// This is the vote-screen warm-up path. It requires an initialized round and
+/// snapshot-selected notes, but no voting hotkey or wallet seed. The normal
+/// prove path remains the correctness fallback for missing witnesses or PIR
+/// cache rows.
+pub async fn precompute_snapshot_bundles(
+    ctx: ApiVotingRoundContext,
+    pir_server_url: String,
+) -> Result<ApiSnapshotBundlePrecomputeResult, String> {
+    let (voting_network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    delegation::precompute_snapshot_bundles(
+        &ctx.db_path,
+        &ctx.account_uuid,
+        &pir_server_url,
+        ctx.pir_layout,
+        zcash_voting::delegate::ResolveDelegationLwdParams {
+            lightwalletd_url: &ctx.lightwalletd_url,
+            network: voting_network,
+            round_params: ctx.round_params,
+            round_name: &ctx.round_name,
+        },
+        ctx.session_json.as_deref(),
+        bundle_policy,
+    )
+    .await
+    .map(Into::into)
+}
+
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
 ///
 /// This is a background warm-up path. The normal proof path still fetches any
@@ -898,15 +971,22 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
+    let frb_started = Instant::now();
+    log::info!("[VOTING_PROVE] bundle={bundle_index} frb-stream start");
     // Resolve static delegation inputs and validate the app-owned stored hotkey.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} frb-local-inputs elapsed={:.3}s",
+        frb_started.elapsed().as_secs_f64()
+    );
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
     let lwd_started = Instant::now();
+    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -915,8 +995,10 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     )
     .await?;
     log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s",
-        lwd_started.elapsed().as_secs_f64()
+        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
+         since_frb_start={:.3}s",
+        lwd_started.elapsed().as_secs_f64(),
+        frb_started.elapsed().as_secs_f64()
     );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
@@ -1171,13 +1253,21 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     keystone_sighash: Vec<u8>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
+    let frb_started = Instant::now();
+    log::info!("[VOTING_PROVE] bundle={bundle_index} keystone-frb-stream start");
     // Resolve static inputs and validate the persisted Keystone hotkey seed.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} keystone-frb-local-inputs elapsed={:.3}s",
+        frb_started.elapsed().as_secs_f64()
+    );
 
     // Resolve round inputs and build delegation preparation parameters.
+    let lwd_started = Instant::now();
+    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -1185,6 +1275,12 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         voting_network,
     )
     .await?;
+    log::info!(
+        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
+         since_frb_start={:.3}s",
+        lwd_started.elapsed().as_secs_f64(),
+        frb_started.elapsed().as_secs_f64()
+    );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -1606,8 +1702,7 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-        .map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3533,6 +3628,36 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("Unknown network"));
+    }
+
+    #[test]
+    fn precompute_snapshot_bundles_rejects_invalid_network_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_snapshot_bundles(
+                test_round_context(&db_path, "bogus", "wallet-1"),
+                "http://127.0.0.1:2".to_string(),
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("Unknown network"));
+    }
+
+    #[test]
+    fn precompute_snapshot_bundles_rejects_empty_pir_url_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_snapshot_bundles(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                "  ".to_string(),
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("PIR server URL must not be empty"));
     }
 
     #[test]

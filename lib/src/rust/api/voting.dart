@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -214,6 +214,20 @@ Future<ApiBundleLayout> setupDelegationBundles({
 Future<ApiVotingEligibility> checkVotingEligibility({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingCheckVotingEligibility(ctx: ctx);
+
+/// Persist the snapshot-stable bundle plan and warm all bundle PIR inputs.
+///
+/// This is the vote-screen warm-up path. It requires an initialized round and
+/// snapshot-selected notes, but no voting hotkey or wallet seed. The normal
+/// prove path remains the correctness fallback for missing witnesses or PIR
+/// cache rows.
+Future<ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
+  required ApiVotingRoundContext ctx,
+  required String pirServerUrl,
+}) => RustLib.instance.api.crateApiVotingPrecomputeSnapshotBundles(
+  ctx: ctx,
+  pirServerUrl: pirServerUrl,
+);
 
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
 ///
@@ -1096,6 +1110,73 @@ class ApiPirCacheWarmupResult {
           fetchedCount == other.fetchedCount &&
           servedRoot == other.servedRoot &&
           prunedCount == other.prunedCount;
+}
+
+/// PIR cache result for one snapshot-precomputed delegation bundle.
+class ApiSnapshotBundlePirResult {
+  final int cachedCount;
+  final int fetchedCount;
+
+  const ApiSnapshotBundlePirResult({
+    required this.cachedCount,
+    required this.fetchedCount,
+  });
+
+  @override
+  int get hashCode => cachedCount.hashCode ^ fetchedCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiSnapshotBundlePirResult &&
+          runtimeType == other.runtimeType &&
+          cachedCount == other.cachedCount &&
+          fetchedCount == other.fetchedCount;
+}
+
+/// Snapshot bundle plan and PIR warm-up result exposed to Dart.
+class ApiSnapshotBundlePrecomputeResult {
+  final int bundleCount;
+  final BigInt eligibleWeight;
+  final int droppedCount;
+  final int privacyTrimDroppedBundles;
+  final int privacyTrimDroppedNotes;
+  final BigInt privacyTrimDroppedValueZatoshi;
+  final List<ApiSnapshotBundlePirResult> bundles;
+
+  const ApiSnapshotBundlePrecomputeResult({
+    required this.bundleCount,
+    required this.eligibleWeight,
+    required this.droppedCount,
+    required this.privacyTrimDroppedBundles,
+    required this.privacyTrimDroppedNotes,
+    required this.privacyTrimDroppedValueZatoshi,
+    required this.bundles,
+  });
+
+  @override
+  int get hashCode =>
+      bundleCount.hashCode ^
+      eligibleWeight.hashCode ^
+      droppedCount.hashCode ^
+      privacyTrimDroppedBundles.hashCode ^
+      privacyTrimDroppedNotes.hashCode ^
+      privacyTrimDroppedValueZatoshi.hashCode ^
+      bundles.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiSnapshotBundlePrecomputeResult &&
+          runtimeType == other.runtimeType &&
+          bundleCount == other.bundleCount &&
+          eligibleWeight == other.eligibleWeight &&
+          droppedCount == other.droppedCount &&
+          privacyTrimDroppedBundles == other.privacyTrimDroppedBundles &&
+          privacyTrimDroppedNotes == other.privacyTrimDroppedNotes &&
+          privacyTrimDroppedValueZatoshi ==
+              other.privacyTrimDroppedValueZatoshi &&
+          bundles == other.bundles;
 }
 
 /// Progress event emitted while building ZKP2 vote commitments.

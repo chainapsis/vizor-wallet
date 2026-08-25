@@ -54,22 +54,22 @@ class VotingReviewView extends ConsumerStatefulWidget {
 }
 
 class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
-  bool _precomputeStarted = false;
+  bool _snapshotPrecomputeStarted = false;
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
-  String? _delegationPirPrecomputeKey;
+  String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
 
   @override
   void didUpdateWidget(covariant VotingReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
-      _precomputeStarted = false;
+      _snapshotPrecomputeStarted = false;
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
-      _delegationPirPrecomputeKey = null;
+      _snapshotBundlePrecomputeKey = null;
       _resultsRedirectRoundId = null;
     }
   }
@@ -114,31 +114,31 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
     });
   }
 
-  void _maybePrecomputeDelegationPir(VotingSessionState state) {
+  void _maybePrecomputeSnapshotBundles(VotingSessionState state) {
     final accountUuid = state.accountUuid;
     if (accountUuid == null || !state.hasConfirmedVotingEligibility) {
       return;
     }
 
     final key = '${widget.roundId}|$accountUuid';
-    if (_delegationPirPrecomputeKey == key) return;
-    _precomputeStarted = false;
-    _delegationPirPrecomputeKey = key;
+    if (_snapshotBundlePrecomputeKey == key) return;
+    _snapshotPrecomputeStarted = false;
+    _snapshotBundlePrecomputeKey = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_startPirPrecompute(accountUuid));
+      unawaited(_startSnapshotBundlePrecompute(accountUuid));
     });
   }
 
-  Future<void> _startPirPrecompute(String accountUuid) async {
-    if (_precomputeStarted) return;
-    _precomputeStarted = true;
+  Future<void> _startSnapshotBundlePrecompute(String accountUuid) async {
+    if (_snapshotPrecomputeStarted) return;
+    _snapshotPrecomputeStarted = true;
     try {
       await ref
           .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeDelegationPir(accountUuid: accountUuid);
+          .precomputeSnapshotBundles(accountUuid: accountUuid);
     } catch (e) {
-      debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
+      debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
     }
   }
 
@@ -168,7 +168,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
           return _stateView(const VotingPaneLoading());
         }
         _maybePrepareVotingPower(state);
-        _maybePrecomputeDelegationPir(state);
+        _maybePrecomputeSnapshotBundles(state);
         final proposals = round == null
             ? <VotingProposalView>[]
             : proposalsFromRound(round);
