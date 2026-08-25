@@ -15,7 +15,7 @@
 //! - `zcash_voting` owns all **RPC** retry (`anchor_tree_state_with_retry_on`),
 //!   so no lightwalletd retry policy is duplicated here.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use zcash_client_backend::proto::service::TreeState;
 
@@ -47,48 +47,19 @@ pub(crate) async fn fetch_snapshot_tree_state(
     // failures the loop below exists for.
     crate::network_privacy::tor_client_for_route(false)?;
 
-    let fetch_started = Instant::now();
-    log::info!(
-        "[VOTING_PROVE] snapshot-anchor fetch start height={snapshot_height}"
-    );
-
     let mut last_error = None;
     for attempt in 1..=LWD_DIAL_ATTEMPTS {
-        let dial_started = Instant::now();
-        log::info!(
-            "[VOTING_PROVE] snapshot-anchor dial attempt={attempt}/{LWD_DIAL_ATTEMPTS}"
-        );
         match sync_engine::open_lwd_channel(lightwalletd_url).await {
             Ok(mut client) => {
-                log::info!(
-                    "[VOTING_PROVE] snapshot-anchor dial ok attempt={attempt} \
-                     elapsed={:.3}s",
-                    dial_started.elapsed().as_secs_f64()
-                );
-                let rpc_started = Instant::now();
-                let tree_state = zcash_voting::lwd::anchor_tree_state_with_retry_on(
+                return zcash_voting::lwd::anchor_tree_state_with_retry_on(
                     &mut client,
                     snapshot_height,
                 )
                 .await
-                .map_err(|error| error.to_string())?;
-                log::info!(
-                    "[VOTING_PROVE] snapshot-anchor rpc ok height={snapshot_height} \
-                     rpc_elapsed={:.3}s total={:.3}s",
-                    rpc_started.elapsed().as_secs_f64(),
-                    fetch_started.elapsed().as_secs_f64()
-                );
-                return Ok(tree_state);
+                .map_err(|error| error.to_string());
             }
             Err(error) => {
                 last_error = Some(error.to_string());
-                log::warn!(
-                    "[VOTING_PROVE] snapshot-anchor dial failed attempt={attempt}/{} \
-                     elapsed={:.3}s error={}",
-                    LWD_DIAL_ATTEMPTS,
-                    dial_started.elapsed().as_secs_f64(),
-                    error
-                );
                 if attempt < LWD_DIAL_ATTEMPTS {
                     tokio::time::sleep(LWD_DIAL_RETRY_BASE_DELAY * attempt).await;
                 }

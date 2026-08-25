@@ -5,7 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/formatting/duration_format.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
@@ -468,20 +467,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required VotingSessionKey key,
     required int generation,
   }) async {
-    final jobTimer = Stopwatch()..start();
-    debugPrint(
-      '[zcash] Voting: delegation-start job begin '
-      'round=${key.roundId} account=${key.accountUuid}',
-    );
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
       final sessionNotifier = ref.read(sessionProvider.notifier);
       final loadedSession = await ref.read(sessionProvider.future);
-      debugPrint(
-        '[zcash] Voting: delegation-start job session-loaded '
-        'round=${key.roundId} phase=${loadedSession.phase.name} '
-        'elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
-      );
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final round = loadedSession.round;
       if (round == null) {
@@ -519,11 +508,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         rethrow;
       }
       if (!_isCurrentJob(key: key, generation: generation)) return;
-      debugPrint(
-        '[zcash] Voting: delegation-start job draft-loaded '
-        'round=${key.roundId} empty=${draft.isEmpty} '
-        'elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
-      );
       if (_canCompleteSessionWithoutDraft(loadedSession, draft)) {
         _completeJob(key: key, generation: generation);
         return;
@@ -538,10 +522,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       await sessionNotifier.ensureWalletReadyForVoting();
-      debugPrint(
-        '[zcash] Voting: delegation-start job wallet-ready '
-        'round=${key.roundId} elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
-      );
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final afterWalletSync = _sessionForJob(key);
       if (afterWalletSync?.phase == VotingSessionPhase.error ||
@@ -689,11 +669,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             .getSoftwareWalletSecretForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
         softwareMnemonic = softwareSecret?.encodeForStorage();
-        debugPrint(
-          '[zcash] Voting: delegation-start job mnemonic-ready '
-          'round=${key.roundId} present=${softwareMnemonic?.isNotEmpty ?? false} '
-          'elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
-        );
         if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
             key: key,
@@ -707,17 +682,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        debugPrint(
-          '[zcash] Voting: delegation-start job delegate begin '
-          'round=${key.roundId} hardware=${activeSession.isHardwareAccount} '
-          'elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
-        );
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,
-        );
-        debugPrint(
-          '[zcash] Voting: delegation-start job delegate done '
-          'round=${key.roundId} elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
         );
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterDelegation = _sessionForJob(key);
