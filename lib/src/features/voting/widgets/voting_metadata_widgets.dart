@@ -498,7 +498,7 @@ class _MobileVotingProposalOption extends StatelessWidget {
             ? null
             : onDisabledTap,
         child: Container(
-          height: description.isEmpty ? 48 : 94,
+          constraints: BoxConstraints(minHeight: description.isEmpty ? 48 : 94),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: colors.background.base,
@@ -516,8 +516,6 @@ class _MobileVotingProposalOption extends StatelessWidget {
                   Expanded(
                     child: Text(
                       option.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
@@ -546,8 +544,6 @@ class _MobileVotingProposalOption extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodySmall.copyWith(
                     color: colors.text.primary,
                     height: 21 / 14,

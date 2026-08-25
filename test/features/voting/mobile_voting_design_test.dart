@@ -99,12 +99,60 @@ void main() {
     expect(find.text('490.36 ZEC'), findsWidgets);
   });
 
-  testWidgets('long mobile metadata and option labels stay within the card', (
+  testWidgets('long mobile result labels remain fully visible', (tester) async {
+    const optionLabel =
+        'Ship NU7 as soon as possible, removing any feature that is not '
+        'implemented by the September 30th deadline.';
+    const displayedOptionLabel = '$optionLabel (your vote)';
+    await _pumpMobileFixture(
+      tester,
+      (_) => const MobileVotingScaffold(
+        title: 'Voting results',
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: VotingResultCard(
+            proposal: VotingProposalView(
+              id: 98,
+              title: 'NU7 Scope and Readiness',
+              description:
+                  'How should features that are not ready by the deadline be '
+                  'handled?',
+              options: [VotingOptionView(index: 1, label: optionLabel)],
+            ),
+            tally: {1: 2.75},
+            selectedChoice: 1,
+          ),
+        ),
+      ),
+    );
+
+    final option = tester.widget<Text>(find.text(displayedOptionLabel));
+    final row = find.ancestor(
+      of: find.text(displayedOptionLabel),
+      matching: find.byType(ClipRRect),
+    );
+    expect(option.maxLines, isNull);
+    expect(option.overflow, isNull);
+    expect(row, findsOneWidget);
+    expect(tester.getSize(row).height, greaterThan(48));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long mobile question and option copy remains fully visible', (
     tester,
   ) async {
-    const title = 'A proposal with constrained mobile metadata';
+    const title =
+        'A proposal title that wraps across multiple lines on a mobile screen';
+    const proposalDescription =
+        'A proposal description that must remain fully visible even when it '
+        'takes several lines to explain the question to the voter.';
     const optionLabel =
-        'A very long option label that must remain on a single line';
+        'Ship NU7 as soon as possible, removing any feature that is not '
+        'implemented by the September 30th deadline.';
+    const optionDescription =
+        'This option description is intentionally long enough to exceed two '
+        'lines so the complete explanation remains available before voting.';
+    const optionKey = ValueKey('voting_proposal_99_option_1');
     await _pumpMobileFixture(
       tester,
       (_) => MobileVotingScaffold(
@@ -115,15 +163,14 @@ void main() {
             proposal: const VotingProposalView(
               id: 99,
               title: title,
-              description: 'Description',
+              description: proposalDescription,
               zipNumber:
                   'ZIP-1000 ZIP-2000 ZIP-3000 ZIP-4000 ZIP-5000 ZIP-6000',
               options: [
                 VotingOptionView(
                   index: 1,
                   label: optionLabel,
-                  description:
-                      'A description that occupies the supported two lines.',
+                  description: optionDescription,
                 ),
               ],
             ),
@@ -134,14 +181,26 @@ void main() {
     );
 
     final metadata = find.textContaining('ZIP-1000');
+    final proposalTitle = tester.widget<Text>(find.text(title));
+    final description = tester.widget<Text>(find.text(proposalDescription));
     final option = tester.widget<Text>(find.text(optionLabel));
+    final optionDescriptionText = tester.widget<Text>(
+      find.text(optionDescription),
+    );
     expect(metadata, findsOneWidget);
     expect(
       tester.getBottomLeft(metadata).dy,
       lessThanOrEqualTo(tester.getTopLeft(find.text(title)).dy),
     );
-    expect(option.maxLines, 1);
-    expect(option.overflow, TextOverflow.ellipsis);
+    expect(proposalTitle.maxLines, isNull);
+    expect(proposalTitle.overflow, isNull);
+    expect(description.maxLines, isNull);
+    expect(description.overflow, isNull);
+    expect(option.maxLines, isNull);
+    expect(option.overflow, isNull);
+    expect(optionDescriptionText.maxLines, isNull);
+    expect(optionDescriptionText.overflow, isNull);
+    expect(tester.getSize(find.byKey(optionKey)).height, greaterThan(94));
     expect(tester.getSize(find.byType(VotingForumLinkButton)).height, 24);
     expect(tester.takeException(), isNull);
   });
