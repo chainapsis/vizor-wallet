@@ -4,6 +4,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app_secure_store.dart';
 
+const _walletDbNameOverride = String.fromEnvironment('VIZOR_WALLET_DB_NAME');
+
 Future<Directory> getWalletSupportDirectory() async {
   final dir = await getApplicationSupportDirectory();
   await dir.create(recursive: true);
@@ -11,6 +13,7 @@ Future<Directory> getWalletSupportDirectory() async {
 }
 
 Future<String> getWalletDbName() async {
+  if (_walletDbNameOverride.isNotEmpty) return _walletDbNameOverride;
   return AppSecureStore.instance.ensureWalletDbName();
 }
 

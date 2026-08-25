@@ -133,7 +133,14 @@ ZcashNetwork zcashNetworkFromName(String networkName) {
   };
 }
 
+const _secureStoreServiceOverride = String.fromEnvironment(
+  'VIZOR_SECURE_STORE_SERVICE',
+);
+
 String secureStoreServiceForNetwork(String networkName) {
+  if (_secureStoreServiceOverride.isNotEmpty) {
+    return _secureStoreServiceOverride;
+  }
   final network = normalizeZcashNetworkName(networkName);
   if (kZcashIronwoodMasquerade && network == 'main') {
     return 'com.keplr.vizor.ironwood.secure_store';

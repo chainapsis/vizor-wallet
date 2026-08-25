@@ -14,6 +14,7 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../account_provider.dart';
+import '../sync_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -712,9 +713,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           'round=${key.roundId} hardware=${activeSession.isHardwareAccount} '
           'elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
         );
-        await sessionNotifier.delegatePendingBundles(
-          mnemonic: softwareMnemonic,
-        );
+        Future<void> delegate() =>
+            sessionNotifier.delegatePendingBundles(mnemonic: softwareMnemonic);
+        if (needsDelegationSigning) {
+          await ref
+              .read(syncProvider.notifier)
+              .withForegroundSyncQuiesced(delegate);
+        } else {
+          await delegate();
+        }
         debugPrint(
           '[zcash] Voting: delegation-start job delegate done '
           'round=${key.roundId} elapsed=${formatElapsedSeconds(jobTimer.elapsed)}',
@@ -876,7 +883,16 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
     if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
-      await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
+      final delegation =
+          sessionNotifier.delegatePendingBundlesWithKeystoneSignatures;
+      if (beforeDelegation != null &&
+          _sessionNeedsDelegationSigning(beforeDelegation)) {
+        await ref
+            .read(syncProvider.notifier)
+            .withForegroundSyncQuiesced(delegation);
+      } else {
+        await delegation();
+      }
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final afterDelegation = _sessionForJob(key);
       if (afterDelegation?.phase == VotingSessionPhase.error) {

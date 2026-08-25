@@ -12,8 +12,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `delegation_progress_event`, `emit_signed_delegation_round_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -295,32 +295,25 @@ Future<ApiPirCacheWarmupResult> warmPirProofCache({
   keepRoots: keepRoots,
 );
 
-/// Streaming variant of `build_prove_and_sign_delegation_payload`.
+/// Prepare one software delegation round and stream concurrent bundle proofs.
 ///
-/// Emits local preparation phase events while work progresses, then emits a
-/// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
-/// contain at least one endpoint that serves the round's exact snapshot; later
-/// entries are used only after retryable PIR transport failures.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before the stream work
-/// starts. Runtime delegation/proving errors are forwarded into the sink as
-/// stream errors.
-Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
+/// Lightwalletd is resolved once. The wallet and round are gathered/prepared
+/// once, requested proofs run concurrently on scoped 64 MiB-stack workers, the
+/// complete proof batch is persisted atomically, and signatures are assembled
+/// before a terminal bundle-index-ordered payload list is emitted.
+Stream<ApiDelegationRoundEvent> buildProveAndSignDelegationRoundWithProgress({
   required ApiVotingRoundContext ctx,
   required List<String> pirServerUrls,
   required String mnemonic,
   required List<int> storedHotkeySecret,
-  required int bundleIndex,
+  required List<int> bundleIndexes,
 }) => RustLib.instance.api
-    .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
+    .crateApiVotingBuildProveAndSignDelegationRoundWithProgress(
       ctx: ctx,
       pirServerUrls: pirServerUrls,
       mnemonic: mnemonic,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
+      bundleIndexes: bundleIndexes,
     );
 
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
@@ -332,12 +325,14 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
 /// bundle fails.
 Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
   required ApiVotingRoundContext ctx,
+  required List<String> pirServerUrls,
   required List<int> storedHotkeySecret,
-  required List<int> bundleIndices,
+  required List<int> bundleIndexes,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequests(
   ctx: ctx,
+  pirServerUrls: pirServerUrls,
   storedHotkeySecret: storedHotkeySecret,
-  bundleIndices: bundleIndices,
+  bundleIndexes: bundleIndexes,
 );
 
 /// Persist a Keystone signature for one delegation bundle.
@@ -398,29 +393,22 @@ Future<List<KeystoneSignatureRecord>> getKeystoneSignatures({
   roundId: roundId,
 );
 
-/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
-/// `pir_server_urls` follows the same exact-snapshot failover contract.
+/// Resume a prepared Keystone round and stream concurrent bundle proofs.
 ///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before stream work starts.
-/// Runtime proving/signature errors are emitted through the sink.
-Stream<ApiDelegationProofEvent>
-buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+/// This path performs no lightwalletd/PIR work and never rebuilds signed PCZTs.
+/// It validates the durable round against historical wallet notes, captures and
+/// proves requested bundles, atomically persists the proof batch, then assembles
+/// the externally produced signatures.
+Stream<ApiDelegationRoundEvent>
+buildProveDelegationRoundWithKeystoneSignaturesWithProgress({
   required ApiVotingRoundContext ctx,
-  required List<String> pirServerUrls,
   required List<int> storedHotkeySecret,
-  required int bundleIndex,
-  required List<int> keystoneSig,
-  required List<int> keystoneSighash,
+  required List<ApiDelegationSignatureInput> signatures,
 }) => RustLib.instance.api
-    .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+    .crateApiVotingBuildProveDelegationRoundWithKeystoneSignaturesWithProgress(
       ctx: ctx,
-      pirServerUrls: pirServerUrls,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
-      keystoneSig: keystoneSig,
-      keystoneSighash: keystoneSighash,
+      signatures: signatures,
     );
 
 /// Record a submitted delegation transaction hash for one bundle.
@@ -907,35 +895,64 @@ class ApiBundleLayout {
               other.privacyTrimDroppedValueZatoshi;
 }
 
-/// Progress event emitted while building, proving, and signing a delegation payload.
+/// Round-scoped progress emitted while preparing, proving, and signing bundles.
 ///
-/// A terminal `"result"` event carries `signed_delegation_payload`; earlier
-/// phase events only describe local preparation progress.
-class ApiDelegationProofEvent {
+/// Per-bundle events carry `bundle_index`. A terminal `"result"` event carries
+/// the complete requested payload list in stable bundle-index order.
+class ApiDelegationRoundEvent {
   final String phase;
+  final int? bundleIndex;
   final double? proofProgress;
-  final SignedDelegationPayloadView? signedDelegationPayload;
+  final List<SignedDelegationPayloadView>? signedDelegationPayloads;
 
-  const ApiDelegationProofEvent({
+  const ApiDelegationRoundEvent({
     required this.phase,
+    this.bundleIndex,
     this.proofProgress,
-    this.signedDelegationPayload,
+    this.signedDelegationPayloads,
   });
 
   @override
   int get hashCode =>
       phase.hashCode ^
+      bundleIndex.hashCode ^
       proofProgress.hashCode ^
-      signedDelegationPayload.hashCode;
+      signedDelegationPayloads.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ApiDelegationProofEvent &&
+      other is ApiDelegationRoundEvent &&
           runtimeType == other.runtimeType &&
           phase == other.phase &&
+          bundleIndex == other.bundleIndex &&
           proofProgress == other.proofProgress &&
-          signedDelegationPayload == other.signedDelegationPayload;
+          signedDelegationPayloads == other.signedDelegationPayloads;
+}
+
+/// One externally produced delegation signature to prove and assemble.
+class ApiDelegationSignatureInput {
+  final int bundleIndex;
+  final Uint8List sig;
+  final Uint8List sighash;
+
+  const ApiDelegationSignatureInput({
+    required this.bundleIndex,
+    required this.sig,
+    required this.sighash,
+  });
+
+  @override
+  int get hashCode => bundleIndex.hashCode ^ sig.hashCode ^ sighash.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationSignatureInput &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          sig == other.sig &&
+          sighash == other.sighash;
 }
 
 /// One wallet-side fetch outcome for a single dynamic config mirror.

@@ -83,14 +83,15 @@ const SINK_ERROR_NOT_DELIVERED: &str = "StreamSink closed before error delivery"
 const SINK_RESULT_NOT_DELIVERED: &str = "StreamSink closed before final result";
 
 #[derive(Clone, Debug, PartialEq)]
-/// Progress event emitted while building, proving, and signing a delegation payload.
+/// Round-scoped progress emitted while preparing, proving, and signing bundles.
 ///
-/// A terminal `"result"` event carries `signed_delegation_payload`; earlier
-/// phase events only describe local preparation progress.
-pub struct ApiDelegationProofEvent {
+/// Per-bundle events carry `bundle_index`. A terminal `"result"` event carries
+/// the complete requested payload list in stable bundle-index order.
+pub struct ApiDelegationRoundEvent {
     pub phase: String,
+    pub bundle_index: Option<u32>,
     pub proof_progress: Option<f64>,
-    pub signed_delegation_payload: Option<zcash_voting::wire::SignedDelegationPayloadView>,
+    pub signed_delegation_payloads: Option<Vec<zcash_voting::wire::SignedDelegationPayloadView>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -212,6 +213,14 @@ pub struct ApiKeystoneSignatureInput {
     pub sig: Vec<u8>,
     pub sighash: Vec<u8>,
     pub rk: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// One externally produced delegation signature to prove and assemble.
+pub struct ApiDelegationSignatureInput {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
+    pub sighash: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -504,51 +513,62 @@ pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     })
 }
 
-impl From<DelegationProgress> for ApiDelegationProofEvent {
-    fn from(progress: DelegationProgress) -> Self {
-        // Normalize crate-specific progress into stable FRB phase labels.
-        match progress {
-            DelegationProgress::SelectingNotes => Self {
-                phase: PHASE_SELECTING_NOTES.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::PcztBuilding | DelegationProgress::PcztBuilt => Self {
+fn delegation_progress_event(
+    bundle_index: u32,
+    progress: DelegationProgress,
+) -> ApiDelegationRoundEvent {
+    // Normalize crate-specific progress into stable FRB phase labels.
+    match progress {
+        DelegationProgress::SelectingNotes => ApiDelegationRoundEvent {
+            phase: PHASE_SELECTING_NOTES.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: None,
+            signed_delegation_payloads: None,
+        },
+        DelegationProgress::PcztBuilding | DelegationProgress::PcztBuilt => {
+            ApiDelegationRoundEvent {
                 phase: PHASE_BUILDING_PCZT.to_string(),
+                bundle_index: Some(bundle_index),
                 proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofStarting => Self {
-                phase: PHASE_BUILDING_PROOF.to_string(),
-                proof_progress: Some(0.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofProgress(value) => Self {
-                phase: PHASE_PROOF_PROGRESS.to_string(),
-                proof_progress: Some(value),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofComplete => Self {
-                phase: PHASE_PROOF_PROGRESS.to_string(),
-                proof_progress: Some(1.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::SigningPayload => Self {
-                phase: PHASE_SIGNING_PAYLOAD.to_string(),
-                proof_progress: Some(1.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::PayloadReady => Self {
-                phase: PHASE_PAYLOAD_READY.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            _ => Self {
-                phase: PHASE_DELEGATION_PROGRESS.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
+                signed_delegation_payloads: None,
+            }
         }
+        DelegationProgress::ProofStarting => ApiDelegationRoundEvent {
+            phase: PHASE_BUILDING_PROOF.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: Some(0.0),
+            signed_delegation_payloads: None,
+        },
+        DelegationProgress::ProofProgress(value) => ApiDelegationRoundEvent {
+            phase: PHASE_PROOF_PROGRESS.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: Some(value),
+            signed_delegation_payloads: None,
+        },
+        DelegationProgress::ProofComplete => ApiDelegationRoundEvent {
+            phase: PHASE_PROOF_PROGRESS.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: Some(1.0),
+            signed_delegation_payloads: None,
+        },
+        DelegationProgress::SigningPayload => ApiDelegationRoundEvent {
+            phase: PHASE_SIGNING_PAYLOAD.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: Some(1.0),
+            signed_delegation_payloads: None,
+        },
+        DelegationProgress::PayloadReady => ApiDelegationRoundEvent {
+            phase: PHASE_PAYLOAD_READY.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: None,
+            signed_delegation_payloads: None,
+        },
+        _ => ApiDelegationRoundEvent {
+            phase: PHASE_DELEGATION_PROGRESS.to_string(),
+            bundle_index: Some(bundle_index),
+            proof_progress: None,
+            signed_delegation_payloads: None,
+        },
     }
 }
 
@@ -650,15 +670,11 @@ fn log_sink_closed(context: &str, detail: &str) {
     log::warn!("{context}: {detail}");
 }
 
-/// Emits the terminal `"result"` delegation event to a progress sink.
-///
-/// If signing failed, this forwards the error through `sink.add_error` and
-/// returns `Ok(())` so closed sinks do not fail the outer task.
-fn emit_signed_delegation_result(
-    sink: &StreamSink<ApiDelegationProofEvent>,
-    signed_result: Result<zcash_voting::wire::SignedDelegationPayloadView, String>,
+/// Emits a terminal round result or forwards the orchestration error.
+fn emit_signed_delegation_round_result(
+    sink: &StreamSink<ApiDelegationRoundEvent>,
+    signed_result: Result<Vec<zcash_voting::wire::SignedDelegationPayloadView>, String>,
 ) -> Result<(), String> {
-    // Surface computation/signing errors through stream errors.
     let signed = match signed_result {
         Ok(signed) => signed,
         Err(error) => {
@@ -669,12 +685,12 @@ fn emit_signed_delegation_result(
         }
     };
 
-    // Emit the terminal result event when a payload is available.
     if sink
-        .add(ApiDelegationProofEvent {
+        .add(ApiDelegationRoundEvent {
             phase: PHASE_RESULT.to_string(),
+            bundle_index: None,
             proof_progress: None,
-            signed_delegation_payload: Some(signed),
+            signed_delegation_payloads: Some(signed),
         })
         .is_err()
     {
@@ -950,43 +966,32 @@ pub async fn warm_pir_proof_cache(
     .map(ApiPirCacheWarmupResult::from)
 }
 
-/// Streaming variant of `build_prove_and_sign_delegation_payload`.
+/// Prepare one software delegation round and stream concurrent bundle proofs.
 ///
-/// Emits local preparation phase events while work progresses, then emits a
-/// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
-/// contain at least one endpoint that serves the round's exact snapshot; later
-/// entries are used only after retryable PIR transport failures.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before the stream work
-/// starts. Runtime delegation/proving errors are forwarded into the sink as
-/// stream errors.
-pub async fn build_prove_and_sign_delegation_payload_with_progress(
+/// Lightwalletd is resolved once. The wallet and round are gathered/prepared
+/// once, requested proofs run concurrently on scoped 64 MiB-stack workers, the
+/// complete proof batch is persisted atomically, and signatures are assembled
+/// before a terminal bundle-index-ordered payload list is emitted.
+pub async fn build_prove_and_sign_delegation_round_with_progress(
     ctx: ApiVotingRoundContext,
     pir_server_urls: Vec<String>,
     mnemonic: String,
     stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-    sink: StreamSink<ApiDelegationProofEvent>,
+    bundle_indexes: Vec<u32>,
+    sink: StreamSink<ApiDelegationRoundEvent>,
 ) -> Result<(), String> {
     let frb_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} frb-stream start");
-    // Resolve static delegation inputs and validate the app-owned stored hotkey.
+    let bundle_indexes = delegation::normalize_bundle_indexes(&bundle_indexes)?;
+    log::info!(
+        "[VOTING_PROVE] software-round frb-stream start requested={}",
+        bundle_indexes.len()
+    );
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} frb-local-inputs elapsed={:.3}s",
-        frb_started.elapsed().as_secs_f64()
-    );
-
-    // Resolve lightwalletd inputs and assemble delegation prepare parameters.
     let lwd_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -995,45 +1000,48 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     )
     .await?;
     log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
-         since_frb_start={:.3}s",
+        "[VOTING_PROVE] software-round lwd-inputs elapsed={:.3}s since_frb_start={:.3}s",
         lwd_started.elapsed().as_secs_f64(),
         frb_started.elapsed().as_secs_f64()
     );
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
 
-    // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
-    let wallet_flow_started = Instant::now();
-    let signed_result = delegation::build_prove_and_sign_delegation_payload(
-        &ctx.db_path,
-        &pir_server_urls,
+    let signed_result = delegation::build_prove_and_sign_delegation_round(
+        ctx.db_path,
+        pir_server_urls,
         ctx.pir_layout,
-        &seed,
-        prepare_params,
-        move |event| {
-            if progress_sink.add(event.into()).is_err() {
+        seed,
+        lwd,
+        ctx.session_json,
+        ctx.account_uuid,
+        voting_hotkey,
+        bundle_policy,
+        bundle_indexes,
+        move |bundle_index, event| {
+            if progress_sink
+                .add(delegation_progress_event(bundle_index, event))
+                .is_err()
+            {
                 log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
             }
         },
     )
     .await
-    .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
+    .and_then(|bundles| {
+        bundles
+            .into_iter()
+            .map(|bundle| {
+                zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
     });
     log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} wallet-prove-sign elapsed={:.3}s",
-        wallet_flow_started.elapsed().as_secs_f64()
+        "[VOTING_PROVE] software-round frb total={:.3}s",
+        frb_started.elapsed().as_secs_f64()
     );
-    emit_signed_delegation_result(sink.as_ref(), signed_result)
+    emit_signed_delegation_round_result(sink.as_ref(), signed_result)
 }
 
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
@@ -1045,28 +1053,16 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
 /// bundle fails.
 pub async fn build_keystone_delegation_requests(
     ctx: ApiVotingRoundContext,
+    pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
-    bundle_indices: Vec<u32>,
+    bundle_indexes: Vec<u32>,
 ) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
-    if bundle_indices.is_empty() {
-        return Err("Keystone delegation bundle indexes must not be empty".to_string());
-    }
-    let unique_bundle_count = bundle_indices
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    if unique_bundle_count != bundle_indices.len() {
-        return Err("Keystone delegation bundle indexes must be unique".to_string());
-    }
-
-    // Resolve static round inputs and validate Keystone-provided hotkey bytes.
+    let started = Instant::now();
+    let bundle_indexes = delegation::normalize_bundle_indexes(&bundle_indexes)?;
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Resolve lightwalletd-backed round inputs and build request parameters.
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -1074,27 +1070,23 @@ pub async fn build_keystone_delegation_requests(
         voting_network,
     )
     .await?;
-    let mut requests = Vec::with_capacity(bundle_indices.len());
-    for bundle_index in bundle_indices {
-        let prepare_params = prepare_delegation_bundle_params(
-            lwd.clone(),
-            ctx.session_json.as_deref(),
-            &ctx.account_uuid,
-            &voting_hotkey,
-            bundle_index,
-            bundle_policy,
-        );
-
-        // Keep the full PCZT in Rust-side state and return its signer view.
-        requests.push(
-            delegation::build_keystone_delegation_request(
-                &ctx.db_path,
-                &ctx.account_uuid,
-                prepare_params,
-            )
-            .await?,
-        );
-    }
+    let requests = delegation::build_keystone_delegation_requests_round(
+        ctx.db_path,
+        pir_server_urls,
+        ctx.pir_layout,
+        lwd,
+        ctx.session_json,
+        ctx.account_uuid,
+        voting_hotkey,
+        bundle_policy,
+        bundle_indexes,
+    )
+    .await?;
+    log::info!(
+        "[VOTING_PROVE] keystone-request-round count={} total={:.3}s",
+        requests.len(),
+        started.elapsed().as_secs_f64()
+    );
     Ok(requests)
 }
 
@@ -1237,81 +1229,65 @@ pub fn get_keystone_signatures(
     })
 }
 
-/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
-/// `pir_server_urls` follows the same exact-snapshot failover contract.
+/// Resume a prepared Keystone round and stream concurrent bundle proofs.
 ///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before stream work starts.
-/// Runtime proving/signature errors are emitted through the sink.
-pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
+/// This path performs no lightwalletd/PIR work and never rebuilds signed PCZTs.
+/// It validates the durable round against historical wallet notes, captures and
+/// proves requested bundles, atomically persists the proof batch, then assembles
+/// the externally produced signatures.
+pub async fn build_prove_delegation_round_with_keystone_signatures_with_progress(
     ctx: ApiVotingRoundContext,
-    pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-    keystone_sig: Vec<u8>,
-    keystone_sighash: Vec<u8>,
-    sink: StreamSink<ApiDelegationProofEvent>,
+    signatures: Vec<ApiDelegationSignatureInput>,
+    sink: StreamSink<ApiDelegationRoundEvent>,
 ) -> Result<(), String> {
     let frb_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} keystone-frb-stream start");
-    // Resolve static inputs and validate the persisted Keystone hotkey seed.
+    let signature_indexes = signatures
+        .iter()
+        .map(|signature| signature.bundle_index)
+        .collect::<Vec<_>>();
+    delegation::normalize_bundle_indexes(&signature_indexes)?;
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} keystone-frb-local-inputs elapsed={:.3}s",
-        frb_started.elapsed().as_secs_f64()
-    );
-
-    // Resolve round inputs and build delegation preparation parameters.
-    let lwd_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
-         since_frb_start={:.3}s",
-        lwd_started.elapsed().as_secs_f64(),
-        frb_started.elapsed().as_secs_f64()
-    );
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
-    // Stream local progress and emit the terminal signed payload or error.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
-    let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
-        &ctx.db_path,
-        &pir_server_urls,
-        ctx.pir_layout,
-        &ctx.account_uuid,
-        prepare_params,
-        &keystone_sig,
-        &keystone_sighash,
-        move |event| {
-            if progress_sink.add(event.into()).is_err() {
+    let signed_result = delegation::build_prove_delegation_round_with_keystone_signatures(
+        ctx.db_path,
+        ctx.account_uuid,
+        ctx.round_params.into(),
+        ctx.round_name,
+        voting_hotkey,
+        bundle_policy,
+        signatures
+            .into_iter()
+            .map(|signature| (signature.bundle_index, signature.sig, signature.sighash))
+            .collect(),
+        move |bundle_index, event| {
+            if progress_sink
+                .add(delegation_progress_event(bundle_index, event))
+                .is_err()
+            {
                 log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
             }
         },
     )
     .await
-    .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
+    .and_then(|bundles| {
+        bundles
+            .into_iter()
+            .map(|bundle| {
+                zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
     });
-    emit_signed_delegation_result(sink.as_ref(), signed_result)
+    log::info!(
+        "[VOTING_PROVE] keystone-resume frb total={:.3}s",
+        frb_started.elapsed().as_secs_f64()
+    );
+    emit_signed_delegation_round_result(sink.as_ref(), signed_result)
 }
 
 /// Record a submitted delegation transaction hash for one bundle.
@@ -2657,49 +2633,53 @@ mod tests {
     #[test]
     fn api_delegation_proof_event_uses_stable_phase_names() {
         assert_eq!(
-            ApiDelegationProofEvent::from(DelegationProgress::SelectingNotes).phase,
+            delegation_progress_event(7, DelegationProgress::SelectingNotes).phase,
             "selecting_notes"
         );
         assert_eq!(
-            ApiDelegationProofEvent::from(DelegationProgress::SigningPayload).phase,
+            delegation_progress_event(7, DelegationProgress::SigningPayload).phase,
             "signing_payload"
         );
-        let ready = ApiDelegationProofEvent::from(DelegationProgress::PayloadReady);
+        let ready = delegation_progress_event(7, DelegationProgress::PayloadReady);
         assert_eq!(ready.phase, "payload_ready");
+        assert_eq!(ready.bundle_index, Some(7));
         assert_eq!(ready.proof_progress, None);
-        assert!(ready.signed_delegation_payload.is_none());
+        assert!(ready.signed_delegation_payloads.is_none());
 
-        let proof = ApiDelegationProofEvent::from(DelegationProgress::ProofProgress(0.5));
+        let proof = delegation_progress_event(7, DelegationProgress::ProofProgress(0.5));
         assert_eq!(proof.phase, "proof_progress");
         assert_eq!(proof.proof_progress, Some(0.5));
 
-        let result = ApiDelegationProofEvent {
+        let result = ApiDelegationRoundEvent {
             phase: "result".to_string(),
+            bundle_index: None,
             proof_progress: None,
-            signed_delegation_payload: Some(zcash_voting::wire::SignedDelegationPayloadView {
-                pczt_bytes: vec![1],
-                status: "ready_for_submission".to_string(),
-                message: None,
-                submission: zcash_voting::wire::DelegationSubmissionWire {
-                    rk: "rk".to_string(),
-                    spend_auth_sig: "sig".to_string(),
-                    tx1_effects: "tx1-effects".to_string(),
-                    nf_signed: "nf".to_string(),
-                    cmx_new: "cmx".to_string(),
-                    gov_comm: "gov".to_string(),
-                    gov_nullifiers: vec!["nullifier".to_string()],
-                    proof: "proof".to_string(),
-                    vote_round_id: "round".to_string(),
+            signed_delegation_payloads: Some(vec![
+                zcash_voting::wire::SignedDelegationPayloadView {
+                    pczt_bytes: vec![1],
+                    status: "ready_for_submission".to_string(),
+                    message: None,
+                    submission: zcash_voting::wire::DelegationSubmissionWire {
+                        rk: "rk".to_string(),
+                        spend_auth_sig: "sig".to_string(),
+                        tx1_effects: "tx1-effects".to_string(),
+                        nf_signed: "nf".to_string(),
+                        cmx_new: "cmx".to_string(),
+                        gov_comm: "gov".to_string(),
+                        gov_nullifiers: vec!["nullifier".to_string()],
+                        proof: "proof".to_string(),
+                        vote_round_id: "round".to_string(),
+                    },
+                    eligible_weight_zatoshi: 10,
+                    delegated_weight_zatoshi: 10,
+                    bundle_count: 1,
+                    bundle_index: 0,
                 },
-                eligible_weight_zatoshi: 10,
-                delegated_weight_zatoshi: 10,
-                bundle_count: 1,
-                bundle_index: 0,
-            }),
+            ]),
         };
         assert_eq!(result.phase, "result");
         assert_eq!(
-            result.signed_delegation_payload.as_ref().unwrap().status,
+            result.signed_delegation_payloads.as_ref().unwrap()[0].status,
             "ready_for_submission"
         );
     }
@@ -3702,6 +3682,7 @@ mod tests {
             .unwrap()
             .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "bogus", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![0],
             ))
@@ -3718,6 +3699,7 @@ mod tests {
             .unwrap()
             .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "regtest", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 1],
                 vec![0],
             ))
@@ -3734,6 +3716,7 @@ mod tests {
             .unwrap()
             .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "regtest", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![],
             ))
@@ -3750,6 +3733,7 @@ mod tests {
             .unwrap()
             .block_on(build_keystone_delegation_requests(
                 test_round_context(&db_path, "regtest", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![1, 1],
             ))

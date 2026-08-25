@@ -70,6 +70,7 @@ class _VotingProposalDetailViewState
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+  int _snapshotPrecomputeGeneration = 0;
 
   @override
   void initState() {
@@ -87,6 +88,7 @@ class _VotingProposalDetailViewState
   void didUpdateWidget(covariant VotingProposalDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
+      _snapshotPrecomputeGeneration++;
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
@@ -339,19 +341,42 @@ class _VotingProposalDetailViewState
     final key = '${widget.roundId}|$accountUuid';
     if (_snapshotBundlePrecomputeKey == key) return;
     _snapshotBundlePrecomputeKey = key;
+    final generation = _snapshotPrecomputeGeneration;
+    final roundId = widget.roundId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_startSnapshotBundlePrecompute(accountUuid));
+      if (!mounted || generation != _snapshotPrecomputeGeneration) return;
+      final notifier = ref.read(votingSessionProvider(roundId).notifier);
+      unawaited(
+        _startSnapshotBundlePrecompute(
+          notifier: notifier,
+          accountUuid: accountUuid,
+          key: key,
+          generation: generation,
+        ),
+      );
     });
   }
 
-  Future<void> _startSnapshotBundlePrecompute(String accountUuid) async {
+  Future<void> _startSnapshotBundlePrecompute({
+    required VotingSessionNotifier notifier,
+    required String accountUuid,
+    required String key,
+    required int generation,
+  }) async {
+    var succeeded = false;
     try {
-      await ref
-          .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeSnapshotBundles(accountUuid: accountUuid);
+      succeeded = await notifier.precomputeSnapshotBundles(
+        accountUuid: accountUuid,
+      );
     } catch (e) {
       debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
+    } finally {
+      if (!succeeded &&
+          mounted &&
+          generation == _snapshotPrecomputeGeneration &&
+          _snapshotBundlePrecomputeKey == key) {
+        _snapshotBundlePrecomputeKey = null;
+      }
     }
   }
 }

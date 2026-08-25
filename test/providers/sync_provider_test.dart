@@ -34,6 +34,65 @@ void main() {
     );
   });
 
+  test('foreground sync quiesce scopes share one pause and resume', () async {
+    late _ScopedSyncTestNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(() => notifier = _ScopedSyncTestNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    final releaseOperations = Completer<void>();
+    final first = notifier.withForegroundSyncQuiesced(() async {
+      await notifier.withForegroundSyncQuiesced(() async {
+        notifier.operationCount++;
+      });
+      await releaseOperations.future;
+    });
+    final second = notifier.withForegroundSyncQuiesced(() async {
+      notifier.operationCount++;
+      await releaseOperations.future;
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    expect(notifier.pauseCount, 1);
+    expect(notifier.resumeCount, 0);
+    expect(notifier.operationCount, 2);
+
+    releaseOperations.complete();
+    await Future.wait([first, second]);
+
+    expect(notifier.pauseCount, 1);
+    expect(notifier.resumeCount, 1);
+  });
+
+  test('foreground sync quiesce resumes once when operation throws', () async {
+    late _ScopedSyncTestNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(() => notifier = _ScopedSyncTestNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    await expectLater(
+      notifier.withForegroundSyncQuiesced<void>(
+        () async => throw StateError('crypto failed'),
+      ),
+      throwsStateError,
+    );
+
+    expect(notifier.pauseCount, 1);
+    expect(notifier.resumeCount, 1);
+  });
+
   test('migration entry restarts a sync from an older foreground epoch', () {
     expect(
       shouldRestartSyncForMigrationEntry(
@@ -529,6 +588,33 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
 
   void replaceState(SyncState next) {
     state = AsyncData(next);
+  }
+}
+
+class _ScopedSyncTestNotifier extends SyncNotifier {
+  var pauseCount = 0;
+  var resumeCount = 0;
+  var operationCount = 0;
+
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    pauseCount++;
+    await onStoppingSync?.call();
+    return const WalletMutationSyncPause(
+      hadActiveSync: true,
+      hadPolling: true,
+      hadMempoolObserver: true,
+    );
+  }
+
+  @override
+  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+    resumeCount++;
   }
 }
 

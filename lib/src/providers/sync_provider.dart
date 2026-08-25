@@ -682,6 +682,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _authoritativeSpendableOperationCount = 0;
   bool _syncStartDeferred = false;
   int? _deferredSyncLatestTipHeight;
+  int _syncQuiesceDepth = 0;
+  Future<WalletMutationSyncPause>? _syncQuiescePause;
+  WalletMutationSyncPause? _activeSyncQuiescePause;
   // Mempool observer subscription. Started in `startSync` and
   // cancelled in `stopSync`, so its lifetime matches the
   // foreground-sync lifetime even though the Rust side manages
@@ -1630,6 +1633,39 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     return pause;
+  }
+
+  /// Runs [operation] while foreground sync, polling, and mempool observation
+  /// are quiescent.
+  ///
+  /// Overlapping and nested scopes share one pause. The last scope to finish
+  /// resumes the work captured by the first scope exactly once, including when
+  /// an operation throws.
+  Future<T> withForegroundSyncQuiesced<T>(
+    Future<T> Function() operation,
+  ) async {
+    _syncQuiesceDepth++;
+    final pauseFuture = _syncQuiescePause ??= pauseForWalletMutation().then((
+      pause,
+    ) {
+      _activeSyncQuiescePause = pause;
+      return pause;
+    });
+
+    try {
+      await pauseFuture;
+      return await operation();
+    } finally {
+      _syncQuiesceDepth--;
+      if (_syncQuiesceDepth == 0) {
+        final pause = _activeSyncQuiescePause;
+        _syncQuiescePause = null;
+        _activeSyncQuiescePause = null;
+        if (pause != null) {
+          resumeAfterWalletMutation(pause);
+        }
+      }
+    }
   }
 
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {

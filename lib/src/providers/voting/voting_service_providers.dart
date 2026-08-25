@@ -395,13 +395,13 @@ abstract interface class VotingRustApi {
   /// Fire-and-forget Halo2 proving-key warm-up for voting proofs.
   void warmVotingProvingCaches();
 
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveAndSignDelegationPayloadWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndexes,
   });
 
   Future<List<int>> generateVotingHotkey({required String network});
@@ -409,6 +409,7 @@ abstract interface class VotingRustApi {
   Future<List<rust_delegate.KeystoneSigningRequest>>
   buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndices,
   });
@@ -434,14 +435,11 @@ abstract interface class VotingRustApi {
     required int keepCount,
   });
 
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveDelegationRoundWithKeystoneSignaturesWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
-    required List<int> keystoneSig,
-    required List<int> keystoneSighash,
+    required List<rust_api.ApiDelegationSignatureInput> signatures,
   });
 
   Future<String> delegationSubmissionWireJson({
@@ -689,20 +687,20 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveAndSignDelegationPayloadWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndexes,
   }) {
-    return rust_api.buildProveAndSignDelegationPayloadWithProgress(
+    return rust_api.buildProveAndSignDelegationRoundWithProgress(
       ctx: ctx,
       pirServerUrls: pirServerUrls,
       mnemonic: mnemonic,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
+      bundleIndexes: bundleIndexes,
     );
   }
 
@@ -715,13 +713,15 @@ class FrbVotingRustApi implements VotingRustApi {
   Future<List<rust_delegate.KeystoneSigningRequest>>
   buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndices,
   }) {
     return rust_api.buildKeystoneDelegationRequests(
       ctx: ctx,
+      pirServerUrls: pirServerUrls,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndices: bundleIndices,
+      bundleIndexes: bundleIndices,
     );
   }
 
@@ -770,24 +770,17 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveDelegationRoundWithKeystoneSignaturesWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
-    required List<int> keystoneSig,
-    required List<int> keystoneSighash,
+    required List<rust_api.ApiDelegationSignatureInput> signatures,
   }) {
-    return rust_api
-        .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-          ctx: ctx,
-          pirServerUrls: pirServerUrls,
-          storedHotkeySecret: storedHotkeySecret,
-          bundleIndex: bundleIndex,
-          keystoneSig: keystoneSig,
-          keystoneSighash: keystoneSighash,
-        );
+    return rust_api.buildProveDelegationRoundWithKeystoneSignaturesWithProgress(
+      ctx: ctx,
+      storedHotkeySecret: storedHotkeySecret,
+      signatures: signatures,
+    );
   }
 
   @override

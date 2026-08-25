@@ -60,11 +60,13 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+  int _snapshotPrecomputeGeneration = 0;
 
   @override
   void didUpdateWidget(covariant VotingReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
+      _snapshotPrecomputeGeneration++;
       _snapshotPrecomputeStarted = false;
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
@@ -124,21 +126,45 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
     if (_snapshotBundlePrecomputeKey == key) return;
     _snapshotPrecomputeStarted = false;
     _snapshotBundlePrecomputeKey = key;
+    final generation = _snapshotPrecomputeGeneration;
+    final roundId = widget.roundId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_startSnapshotBundlePrecompute(accountUuid));
+      if (!mounted || generation != _snapshotPrecomputeGeneration) return;
+      final notifier = ref.read(votingSessionProvider(roundId).notifier);
+      unawaited(
+        _startSnapshotBundlePrecompute(
+          notifier: notifier,
+          accountUuid: accountUuid,
+          key: key,
+          generation: generation,
+        ),
+      );
     });
   }
 
-  Future<void> _startSnapshotBundlePrecompute(String accountUuid) async {
+  Future<void> _startSnapshotBundlePrecompute({
+    required VotingSessionNotifier notifier,
+    required String accountUuid,
+    required String key,
+    required int generation,
+  }) async {
     if (_snapshotPrecomputeStarted) return;
     _snapshotPrecomputeStarted = true;
+    var succeeded = false;
     try {
-      await ref
-          .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeSnapshotBundles(accountUuid: accountUuid);
+      succeeded = await notifier.precomputeSnapshotBundles(
+        accountUuid: accountUuid,
+      );
     } catch (e) {
       debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
+    } finally {
+      if (!succeeded &&
+          mounted &&
+          generation == _snapshotPrecomputeGeneration &&
+          _snapshotBundlePrecomputeKey == key) {
+        _snapshotPrecomputeStarted = false;
+        _snapshotBundlePrecomputeKey = null;
+      }
     }
   }
 

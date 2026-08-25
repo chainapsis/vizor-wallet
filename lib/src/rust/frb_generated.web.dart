@@ -38,8 +38,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  RustStreamSink<ApiDelegationProofEvent>
-  dco_decode_StreamSink_api_delegation_proof_event_Sse(dynamic raw);
+  RustStreamSink<ApiDelegationRoundEvent>
+  dco_decode_StreamSink_api_delegation_round_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<ApiMempoolTxEvent>
@@ -72,7 +72,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw);
 
   @protected
-  ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
+  ApiDelegationRoundEvent dco_decode_api_delegation_round_event(dynamic raw);
+
+  @protected
+  ApiDelegationSignatureInput dco_decode_api_delegation_signature_input(
+    dynamic raw,
+  );
 
   @protected
   ApiDynamicConfigAttempt dco_decode_api_dynamic_config_attempt(dynamic raw);
@@ -312,6 +317,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
+  List<ApiDelegationSignatureInput>
+  dco_decode_list_api_delegation_signature_input(dynamic raw);
+
+  @protected
   List<ApiDynamicConfigAttempt> dco_decode_list_api_dynamic_config_attempt(
     dynamic raw,
   );
@@ -473,6 +482,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SignedDelegationPayloadView>
+  dco_decode_list_signed_delegation_payload_view(dynamic raw);
+
+  @protected
   List<SignedVoteCommitmentView> dco_decode_list_signed_vote_commitment_view(
     dynamic raw,
   );
@@ -617,10 +630,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  SignedDelegationPayloadView?
-  dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
-
-  @protected
   SignedVoteCommitmentsView?
   dco_decode_opt_box_autoadd_signed_vote_commitments_view(dynamic raw);
 
@@ -639,6 +648,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<SignedDelegationPayloadView>?
+  dco_decode_opt_list_signed_delegation_payload_view(dynamic raw);
 
   @protected
   OrchardMigrationImmediatePlan dco_decode_orchard_migration_immediate_plan(
@@ -842,8 +855,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ApiDelegationProofEvent>
-  sse_decode_StreamSink_api_delegation_proof_event_Sse(
+  RustStreamSink<ApiDelegationRoundEvent>
+  sse_decode_StreamSink_api_delegation_round_event_Sse(
     SseDeserializer deserializer,
   );
 
@@ -886,7 +899,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer);
 
   @protected
-  ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
+  ApiDelegationRoundEvent sse_decode_api_delegation_round_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegationSignatureInput sse_decode_api_delegation_signature_input(
     SseDeserializer deserializer,
   );
 
@@ -1196,6 +1214,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
+  List<ApiDelegationSignatureInput>
+  sse_decode_list_api_delegation_signature_input(SseDeserializer deserializer);
+
+  @protected
   List<ApiDynamicConfigAttempt> sse_decode_list_api_dynamic_config_attempt(
     SseDeserializer deserializer,
   );
@@ -1395,6 +1417,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<SignedDelegationPayloadView>
+  sse_decode_list_signed_delegation_payload_view(SseDeserializer deserializer);
+
+  @protected
   List<SignedVoteCommitmentView> sse_decode_list_signed_vote_commitment_view(
     SseDeserializer deserializer,
   );
@@ -1577,12 +1603,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  SignedDelegationPayloadView?
-  sse_decode_opt_box_autoadd_signed_delegation_payload_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   SignedVoteCommitmentsView?
   sse_decode_opt_box_autoadd_signed_vote_commitments_view(
     SseDeserializer deserializer,
@@ -1607,6 +1627,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<SignedDelegationPayloadView>?
+  sse_decode_opt_list_signed_delegation_payload_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   OrchardMigrationImmediatePlan sse_decode_orchard_migration_immediate_plan(
@@ -1857,8 +1883,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_api_delegation_proof_event_Sse(
-    RustStreamSink<ApiDelegationProofEvent> self,
+  void sse_encode_StreamSink_api_delegation_round_event_Sse(
+    RustStreamSink<ApiDelegationRoundEvent> self,
     SseSerializer serializer,
   );
 
@@ -1911,8 +1937,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_api_delegation_proof_event(
-    ApiDelegationProofEvent self,
+  void sse_encode_api_delegation_round_event(
+    ApiDelegationRoundEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegation_signature_input(
+    ApiDelegationSignatureInput self,
     SseSerializer serializer,
   );
 
@@ -2286,6 +2318,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_api_delegation_signature_input(
+    List<ApiDelegationSignatureInput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_api_dynamic_config_attempt(
     List<ApiDynamicConfigAttempt> self,
     SseSerializer serializer,
@@ -2535,6 +2573,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_signed_delegation_payload_view(
+    List<SignedDelegationPayloadView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_signed_vote_commitment_view(
     List<SignedVoteCommitmentView> self,
     SseSerializer serializer,
@@ -2751,12 +2795,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_signed_delegation_payload_view(
-    SignedDelegationPayloadView? self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_opt_box_autoadd_signed_vote_commitments_view(
     SignedVoteCommitmentsView? self,
     SseSerializer serializer,
@@ -2783,6 +2821,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_list_signed_delegation_payload_view(
+    List<SignedDelegationPayloadView>? self,
     SseSerializer serializer,
   );
 

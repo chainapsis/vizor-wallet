@@ -2957,6 +2957,42 @@ void main() {
     expect(find.text('status account: account-1'), findsOneWidget);
   });
 
+  testWidgets(
+    'proposal and review routes share completed snapshot precompute',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1152, 768));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final rust = _VotingStatusRustApi(recoveryApi);
+      final container = _statusContainer(
+        accountOverride: _NoMnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: rust,
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _proposalHarness(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(rust.snapshotBundlePrecomputeCalls, 1);
+
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review answers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review your answers'), findsOneWidget);
+      expect(rust.snapshotBundlePrecomputeCalls, 1);
+    },
+  );
+
   testWidgets('review shows full proposal card with selected choice', (
     tester,
   ) async {
@@ -5126,6 +5162,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
   int eligibilityCheckCalls = 0;
+  int snapshotBundlePrecomputeCalls = 0;
 
   /// Raw note value the privacy trim withholds. Zero for every fixture that
   /// does not exercise the trim notice.
@@ -5170,6 +5207,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
   }) async {
+    snapshotBundlePrecomputeCalls++;
     return rust_api.ApiSnapshotBundlePrecomputeResult(
       bundleCount: bundleCount,
       eligibleWeight: eligibilityWeightZatoshi ?? BigInt.from(100),
@@ -5188,39 +5226,22 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveAndSignDelegationPayloadWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
+    required List<int> bundleIndexes,
   }) async* {
-    yield rust_api.ApiDelegationProofEvent(
+    yield rust_api.ApiDelegationRoundEvent(
       phase: 'result',
+      bundleIndex: null,
       proofProgress: null,
-      signedDelegationPayload: rust_wire.SignedDelegationPayloadView(
-        pcztBytes: Uint8List.fromList(const []),
-        status: 'ready_for_submission',
-        message: null,
-        submission: rust_wire.DelegationSubmissionWire(
-          rk: base64Encode(const [2]),
-          spendAuthSig: base64Encode(const [3]),
-          tx1Effects: base64Encode(const [4]),
-          nfSigned: base64Encode(const [5]),
-          cmxNew: base64Encode(const [6]),
-          govComm: base64Encode(const [7]),
-          govNullifiers: [
-            base64Encode(const [8]),
-          ],
-          proof: base64Encode(const [1]),
-          voteRoundId: base64Encode(_bytesFromHex(ctx.roundParams.voteRoundId)),
-        ),
-        eligibleWeightZatoshi: BigInt.from(100),
-        delegatedWeightZatoshi: BigInt.from(100),
-        bundleCount: 1,
-        bundleIndex: bundleIndex,
-      ),
+      signedDelegationPayloads: [
+        for (final bundleIndex in bundleIndexes)
+          _delegationPayload(ctx, bundleIndex),
+      ],
     );
   }
 
@@ -5284,6 +5305,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Future<List<rust_delegate.KeystoneSigningRequest>>
   buildKeystoneDelegationRequests({
     required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndices,
   }) async {
@@ -5328,41 +5350,57 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+  Stream<rust_api.ApiDelegationRoundEvent>
+  buildProveDelegationRoundWithKeystoneSignaturesWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required int bundleIndex,
-    required List<int> keystoneSig,
-    required List<int> keystoneSighash,
+    required List<rust_api.ApiDelegationSignatureInput> signatures,
   }) async* {
-    final signature = storedKeystoneSignatures[bundleIndex];
-    yield rust_api.ApiDelegationProofEvent(
+    yield rust_api.ApiDelegationRoundEvent(
       phase: 'result',
+      bundleIndex: null,
       proofProgress: null,
-      signedDelegationPayload: rust_wire.SignedDelegationPayloadView(
-        pcztBytes: Uint8List.fromList(const []),
-        status: 'ready_for_submission',
-        message: null,
-        submission: rust_wire.DelegationSubmissionWire(
-          rk: base64Encode(signature?.rk ?? const [4]),
-          spendAuthSig: base64Encode(keystoneSig),
-          tx1Effects: base64Encode(keystoneSighash),
-          nfSigned: base64Encode(const [5]),
-          cmxNew: base64Encode(const [6]),
-          govComm: base64Encode(const [7]),
-          govNullifiers: [
-            base64Encode(const [8]),
-          ],
-          proof: base64Encode(const [1]),
-          voteRoundId: base64Encode(_bytesFromHex(ctx.roundParams.voteRoundId)),
-        ),
-        eligibleWeightZatoshi: BigInt.from(100),
-        delegatedWeightZatoshi: BigInt.from(100),
-        bundleCount: 1,
-        bundleIndex: bundleIndex,
+      signedDelegationPayloads: [
+        for (final input in signatures)
+          _delegationPayload(
+            ctx,
+            input.bundleIndex,
+            rk: storedKeystoneSignatures[input.bundleIndex]?.rk ?? const [4],
+            spendAuthSig: input.sig,
+            tx1Effects: input.sighash,
+          ),
+      ],
+    );
+  }
+
+  rust_wire.SignedDelegationPayloadView _delegationPayload(
+    rust_api.ApiVotingRoundContext ctx,
+    int bundleIndex, {
+    List<int> rk = const [2],
+    List<int> spendAuthSig = const [3],
+    List<int> tx1Effects = const [4],
+  }) {
+    return rust_wire.SignedDelegationPayloadView(
+      pcztBytes: Uint8List.fromList(const []),
+      status: 'ready_for_submission',
+      message: null,
+      submission: rust_wire.DelegationSubmissionWire(
+        rk: base64Encode(rk),
+        spendAuthSig: base64Encode(spendAuthSig),
+        tx1Effects: base64Encode(tx1Effects),
+        nfSigned: base64Encode(const [5]),
+        cmxNew: base64Encode(const [6]),
+        govComm: base64Encode(const [7]),
+        govNullifiers: [
+          base64Encode(const [8]),
+        ],
+        proof: base64Encode(const [1]),
+        voteRoundId: base64Encode(_bytesFromHex(ctx.roundParams.voteRoundId)),
       ),
+      eligibleWeightZatoshi: BigInt.from(100),
+      delegatedWeightZatoshi: BigInt.from(100),
+      bundleCount: bundleCount,
+      bundleIndex: bundleIndex,
     );
   }
 
