@@ -80,6 +80,7 @@ import 'src/features/settings/settings_platform.dart';
 import 'src/features/settings/widgets/windows_update_download_flow.dart';
 import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
+import 'src/features/swap/providers/swap_private_history_sync_provider.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
 import 'src/features/voting/screens/keystone_voting_scan_screen.dart';
@@ -1121,6 +1122,7 @@ class ZcashWalletApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
+    ref.watch(swapPrivateHistoryLifecycleProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);

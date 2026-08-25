@@ -42,7 +42,14 @@ class SwapPrivateHistoryConflictException implements Exception {
 /// Reconciles the legacy local activity store with one encrypted remote object
 /// per account and feature namespace. Correctness never depends on metadata:
 /// every pass performs an authenticated remote read before deciding to write.
-class SwapPrivateHistorySync {
+abstract interface class SwapPrivateHistorySynchronizer {
+  Future<SwapPrivateHistorySyncResult> synchronize({
+    required PrivateStateAccount account,
+    required SwapPrivateHistoryKind kind,
+  });
+}
+
+class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
   SwapPrivateHistorySync({
     required PrivateStateObjectRepository repository,
     required SwapActivityReplica replica,
@@ -65,6 +72,7 @@ class SwapPrivateHistorySync {
   final DateTime Function() _now;
   final Map<String, Future<void>> _syncTails = {};
 
+  @override
   Future<SwapPrivateHistorySyncResult> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
