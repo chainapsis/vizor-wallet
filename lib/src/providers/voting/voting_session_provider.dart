@@ -4845,6 +4845,16 @@ bool isVotingEligibilityError(VotingSessionError? error) =>
     (isVotingWalletBirthdayAfterSnapshot(error.cause) ||
         isVotingEligibilityErrorText(error.message));
 
+String votingWalletBirthdayAfterSnapshotMessage(
+  VotingWalletSyncReadiness readiness,
+) {
+  return 'This wallet starts at birthday block '
+      '${formatBlockHeight(readiness.walletBirthdayHeight)}, after this '
+      'voting round snapshot at block '
+      '${formatBlockHeight(readiness.snapshotHeight)}. Restore an account '
+      'with a birthday at or before the snapshot to vote.';
+}
+
 class _VotingWalletSyncStalled implements Exception {
   const _VotingWalletSyncStalled({
     required this.readiness,
@@ -4870,13 +4880,7 @@ class _VotingWalletBirthdayAfterSnapshot implements Exception {
   final VotingWalletSyncReadiness readiness;
 
   @override
-  String toString() {
-    return 'This wallet starts at birthday block '
-        '${formatBlockHeight(readiness.walletBirthdayHeight)}, after this '
-        'voting round snapshot at block '
-        '${formatBlockHeight(readiness.snapshotHeight)}. Restore an account '
-        'with a birthday at or before the snapshot to vote.';
-  }
+  String toString() => votingWalletBirthdayAfterSnapshotMessage(readiness);
 }
 
 class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
@@ -4894,6 +4898,24 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   /// poll and a retry, so a stall must never park the job silently.
   @override
   bool get _failsOnWalletSyncStall => true;
+
+  void markWalletBirthdayAfterSnapshot(VotingWalletSyncReadiness readiness) {
+    final error = _VotingWalletBirthdayAfterSnapshot(readiness);
+    final current = state.value ?? VotingSessionState(roundId: _roundId);
+    state = AsyncData(
+      current.copyWith(
+        phase: VotingSessionPhase.error,
+        eligibleWeightZatoshi: BigInt.zero,
+        privacyTrimDroppedValueZatoshi: BigInt.zero,
+        walletScannedHeight: readiness.scannedHeight,
+        walletSnapshotHeight: readiness.snapshotHeight,
+        walletChainTipHeight: readiness.chainTipHeight,
+        walletBirthdayHeight: readiness.walletBirthdayHeight,
+        walletSyncStalled: false,
+        error: VotingSessionError(message: error.toString(), cause: error),
+      ),
+    );
+  }
 
   @override
   bool _retainAutomaticShareTracking() {

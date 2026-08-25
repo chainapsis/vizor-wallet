@@ -1780,6 +1780,12 @@ void main() {
         walletSyncStarter: () => syncStartCalls++,
       );
       addTearDown(harness.container.dispose);
+      final sessionSubscription = harness.container.listen(
+        votingSubmissionSessionProvider(harness.key),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(sessionSubscription.close);
 
       final startedKey = await harness.container
           .read(votingSubmissionJobsProvider.notifier)
@@ -1803,10 +1809,21 @@ void main() {
       final after = syncStartCalls;
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(syncStartCalls, after, reason: 'recovery stopped polling');
-      expect(
-        harness.container.read(votingSubmissionJobProvider(harness.key)).status,
-        VotingSubmissionJobStatus.error,
+      final job = harness.container.read(
+        votingSubmissionJobProvider(harness.key),
       );
+      expect(job.status, VotingSubmissionJobStatus.error);
+      expect(job.errorMessage, contains('Restore an account'));
+      expect(job.errorMessage, isNot(contains('retry automatically')));
+
+      final session = harness.container
+          .read(votingSubmissionSessionProvider(harness.key))
+          .value!;
+      expect(session.phase, VotingSessionPhase.error);
+      expect(session.walletBirthdayAfterSnapshot, isTrue);
+      expect(session.walletSyncStalled, isFalse);
+      expect(isVotingWalletBirthdayAfterSnapshot(session.error?.cause), isTrue);
+      expect(session.error?.message, job.errorMessage);
     },
   );
 

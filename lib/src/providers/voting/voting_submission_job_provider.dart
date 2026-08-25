@@ -1141,8 +1141,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _walletSyncRecoveryFailureStreak = 0;
       if (readiness.walletBirthdayAfterSnapshot) {
         // The shared scanner cannot reach a snapshot before the wallet's
-        // earliest birthday, so polling would run until dispose. A manual
-        // retry after restoring an earlier account re-runs this gate.
+        // earliest birthday. Replace the now-false automatic-retry promise
+        // in both owners before stopping recovery; a manual retry after
+        // restoring an earlier account re-runs this gate.
+        ref
+            .read(votingSubmissionSessionProvider(_key).notifier)
+            .markWalletBirthdayAfterSnapshot(readiness);
+        state = state.copyWith(
+          errorMessage: votingWalletBirthdayAfterSnapshotMessage(readiness),
+        );
         _cancelWalletSyncRecovery();
         return;
       }
