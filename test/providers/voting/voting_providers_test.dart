@@ -1624,6 +1624,48 @@ void main() {
     },
   );
 
+  test('destructive mutation drains a session wallet readiness wait', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false)
+      ..blockFromCall = 1;
+    var syncStartCalls = 0;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncStarter: () => syncStartCalls++,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+      walletSyncMaxWait: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final prepared = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    await readiness.blockedCheckStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    expect(registry.registeredWalletReadinessWaitCount, 1);
+    var drained = false;
+    final drain = registry.quiesceAndDrain().then((_) => drained = true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(drained, isFalse);
+    readiness.releaseBlockedChecks.complete();
+    await drain;
+    await prepared;
+
+    expect(drained, isTrue);
+    expect(readiness.calls, 1);
+    expect(syncStartCalls, 0);
+    expect(rust.setupCalls, 0);
+    expect(registry.registeredWalletReadinessWaitCount, 0);
+
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(readiness.calls, 1);
+    registry.resume();
+  });
+
   test(
     'wallet-wide coverage is ready when its earliest birthday is before snapshot',
     () {
@@ -7294,6 +7336,56 @@ void main() {
         registry.registerSyncRecovery(
           key: recoveryKey1,
           owner: recoveryOwner1,
+          stopAndDrain: () async {},
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'account mutation drains and blocks wallet-wide readiness waits',
+    () async {
+      final registry = VotingShareTrackingRegistry();
+      final releaseWait = Completer<void>();
+      final owner = Object();
+      var stopCalls = 0;
+
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: owner,
+          stopAndDrain: () async {
+            stopCalls++;
+            await releaseWait.future;
+          },
+        ),
+        isTrue,
+      );
+
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(stopCalls, 1);
+      expect(drained, isFalse);
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: Object(),
+          stopAndDrain: () async {},
+        ),
+        isFalse,
+      );
+
+      releaseWait.complete();
+      await drain;
+      expect(registry.registeredWalletReadinessWaitCount, 0);
+
+      registry.resume(accountUuid: 'account-2');
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: Object(),
           stopAndDrain: () async {},
         ),
         isTrue,

@@ -3953,6 +3953,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _waitUntilWalletReadyForVoting(
     _VotingSessionContext context,
   ) async {
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    final registrationOwner = Object();
+    final stopRequested = Completer<void>();
+    final waitCompleted = Completer<void>();
+    final registered = registry.registerWalletReadinessWait(
+      owner: registrationOwner,
+      stopAndDrain: () async {
+        if (!stopRequested.isCompleted) stopRequested.complete();
+        await waitCompleted.future;
+      },
+    );
+    if (!registered) throw const _StaleVotingSessionAction();
+
+    void throwIfStopRequested() {
+      if (stopRequested.isCompleted) {
+        throw const _StaleVotingSessionAction();
+      }
+    }
+
     final failsOnStall = _failsOnWalletSyncStall;
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
@@ -3962,87 +3981,102 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // VotingWalletSyncProgressTracker).
     final progressTracker = VotingWalletSyncProgressTracker();
     final sessionInvalidated = _sessionInvalidated.future;
-    while (true) {
-      _throwIfContextStale(context, 'wallet-sync-wait');
-      final readiness = await ref
-          .read(votingWalletSyncReadinessCheckerProvider)
-          .check(
-            dbPath: context.dbPath,
-            network: context.network,
-            snapshotHeight: context.round.snapshotHeight,
+    try {
+      while (true) {
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-wait');
+        final readiness = await ref
+            .read(votingWalletSyncReadinessCheckerProvider)
+            .check(
+              dbPath: context.dbPath,
+              network: context.network,
+              snapshotHeight: context.round.snapshotHeight,
+            );
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-readiness');
+        if (readiness.walletBirthdayAfterSnapshot) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+            retainReadiness: true,
           );
-      _throwIfContextStale(context, 'wallet-sync-readiness');
-      if (readiness.walletBirthdayAfterSnapshot) {
-        _setWalletSyncReadinessState(
-          context: context,
-          readiness: readiness,
-          waiting: false,
-          retainReadiness: true,
-        );
-        throw _VotingWalletBirthdayAfterSnapshot(readiness);
-      }
-      if (readiness.isReady) {
-        _setWalletSyncReadinessState(
-          context: context,
-          readiness: readiness,
-          waiting: false,
-        );
-        _throwIfContextStale(context, 'wallet-sync-ready');
-        return;
-      }
+          throw _VotingWalletBirthdayAfterSnapshot(readiness);
+        }
+        if (readiness.isReady) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+          );
+          _throwIfContextStale(context, 'wallet-sync-ready');
+          return;
+        }
 
-      // Progress is any movement of the contiguous scan frontier OR real
-      // forward movement of the engine's own progress; the frontier alone
-      // stays pinned while tip-priority ranges scan first, which is a
-      // healthy catch-up, not a stall.
-      final engineProgressed = progressTracker.observe(
-        ref.read(votingWalletSyncProgressSampleProvider).call(),
-      );
-      if (lastScannedHeight == null ||
-          readiness.scannedHeight != lastScannedHeight ||
-          engineProgressed) {
-        noProgressTimer.reset();
-      }
-      lastScannedHeight = readiness.scannedHeight;
-
-      if (!loggedWait) {
-        loggedWait = true;
-        debugPrint(
-          '[zcash] Voting: waiting for wallet scan before voting '
-          'round=${context.round.roundId} '
-          'scanned=${readiness.scannedHeight} '
-          'snapshot=${readiness.snapshotHeight}',
+        // Progress is any movement of the contiguous scan frontier OR real
+        // forward movement of the engine's own progress; the frontier alone
+        // stays pinned while tip-priority ranges scan first, which is a
+        // healthy catch-up, not a stall.
+        final engineProgressed = progressTracker.observe(
+          ref.read(votingWalletSyncProgressSampleProvider).call(),
         );
-      }
-      final stalled = noProgressTimer.elapsed >= maxWait;
-      if (stalled && failsOnStall) {
+        if (lastScannedHeight == null ||
+            readiness.scannedHeight != lastScannedHeight ||
+            engineProgressed) {
+          noProgressTimer.reset();
+        }
+        lastScannedHeight = readiness.scannedHeight;
+
+        if (!loggedWait) {
+          loggedWait = true;
+          debugPrint(
+            '[zcash] Voting: waiting for wallet scan before voting '
+            'round=${context.round.roundId} '
+            'scanned=${readiness.scannedHeight} '
+            'snapshot=${readiness.snapshotHeight}',
+          );
+        }
+        final stalled = noProgressTimer.elapsed >= maxWait;
+        if (stalled && failsOnStall) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+            stalled: true,
+          );
+          throw _VotingWalletSyncStalled(
+            readiness: readiness,
+            maxWait: maxWait,
+          );
+        }
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
-          waiting: false,
-          stalled: true,
+          waiting: true,
+          stalled: stalled,
         );
-        throw _VotingWalletSyncStalled(readiness: readiness, maxWait: maxWait);
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-start');
+        try {
+          ref.read(votingWalletSyncStarterProvider).call();
+        } catch (e) {
+          debugPrint('[zcash] Voting: wallet sync start skipped: $e');
+        }
+        final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
+        final remainingWait = maxWait - noProgressTimer.elapsed;
+        final delay =
+            remainingWait > Duration.zero && remainingWait < pollInterval
+            ? remainingWait
+            : pollInterval;
+        await Future.any<void>([
+          Future<void>.delayed(delay),
+          sessionInvalidated,
+          stopRequested.future,
+        ]);
       }
-      _setWalletSyncReadinessState(
-        context: context,
-        readiness: readiness,
-        waiting: true,
-        stalled: stalled,
-      );
-      _throwIfContextStale(context, 'wallet-sync-start');
-      try {
-        ref.read(votingWalletSyncStarterProvider).call();
-      } catch (e) {
-        debugPrint('[zcash] Voting: wallet sync start skipped: $e');
-      }
-      final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
-      final remainingWait = maxWait - noProgressTimer.elapsed;
-      final delay =
-          remainingWait > Duration.zero && remainingWait < pollInterval
-          ? remainingWait
-          : pollInterval;
-      await Future.any<void>([Future<void>.delayed(delay), sessionInvalidated]);
+    } finally {
+      registry.unregisterWalletReadinessWait(owner: registrationOwner);
+      if (!waitCompleted.isCompleted) waitCompleted.complete();
     }
   }
 
