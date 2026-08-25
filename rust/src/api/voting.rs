@@ -1510,8 +1510,10 @@ pub fn reset_voting_session_state(
 ///
 /// This removes every persisted round scoped to `account_uuid`, relying on the
 /// `zcash_voting` round deletion cascade for bundles, recovery rows, share
-/// history, ballot intent, and cached tree state. Use this only at account
-/// deletion boundaries, not for ordinary voting-session retries.
+/// history, ballot intent, and cached tree state. It also deletes
+/// round-independent `pir_proof_cache` rows for the same wallet id — browse-
+/// only warm-up can persist those without ever creating a round. Use this only
+/// at account deletion boundaries, not for ordinary voting-session retries.
 pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Result<u32, String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
@@ -1523,6 +1525,17 @@ pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Res
         for round in rounds {
             db.clear_round(&round.round_id)
                 .map_err(|e| format!("clear voting round {} failed: {e}", round.round_id))?;
+        }
+
+        // `pir_proof_cache` is keyed by wallet_id only (no round FK), so round
+        // cascade never reaches browse-only warm-up rows.
+        {
+            let conn = db.conn();
+            conn.execute(
+                "DELETE FROM pir_proof_cache WHERE wallet_id = :wallet_id",
+                rusqlite::named_params! { ":wallet_id": &account_uuid },
+            )
+            .map_err(|e| format!("clear voting PIR proof cache failed: {e}"))?;
         }
 
         log::info!(
@@ -3223,6 +3236,37 @@ mod tests {
     }
 
     #[test]
+    fn delete_voting_account_state_clears_roundless_pir_cache() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let target_account_uuid = "wallet-delete-pir-target";
+        let other_account_uuid = "wallet-delete-pir-other";
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        seed_pir_cache_row(&target_db, target_account_uuid, 0x11);
+        assert!(target_db.list_rounds().unwrap().is_empty());
+        assert_eq!(pir_cache_row_count(&target_db, target_account_uuid), 1);
+        drop(target_db);
+
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        seed_pir_cache_row(&other_db, other_account_uuid, 0x22);
+        assert_eq!(pir_cache_row_count(&other_db, other_account_uuid), 1);
+        drop(other_db);
+
+        let deleted = delete_voting_account_state(
+            db_path.to_str().unwrap().to_string(),
+            target_account_uuid.to_string(),
+        )
+        .unwrap();
+        assert_eq!(deleted, 0);
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        assert_eq!(pir_cache_row_count(&target_db, target_account_uuid), 0);
+        assert_eq!(pir_cache_row_count(&other_db, other_account_uuid), 1);
+    }
+
+    #[test]
     fn list_pending_share_rounds_preserves_session_context() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -3832,6 +3876,35 @@ mod tests {
                 },
             )
             .unwrap();
+    }
+
+    fn seed_pir_cache_row(
+        db: &zcash_voting::storage::VotingDb,
+        wallet_id: &str,
+        marker: u8,
+    ) {
+        db.conn()
+            .execute(
+                "INSERT INTO pir_proof_cache
+                    (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+                 VALUES (:wallet_id, 'regtest', :nullifier, :root, X'00', 0, X'00', 1, 1)",
+                rusqlite::named_params! {
+                    ":wallet_id": wallet_id,
+                    ":nullifier": [marker; 32],
+                    ":root": [marker.wrapping_add(1); 32],
+                },
+            )
+            .unwrap();
+    }
+
+    fn pir_cache_row_count(db: &zcash_voting::storage::VotingDb, wallet_id: &str) -> i64 {
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM pir_proof_cache WHERE wallet_id = :wallet_id",
+                rusqlite::named_params! { ":wallet_id": wallet_id },
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     fn test_tree_state(height: u64) -> TreeState {
