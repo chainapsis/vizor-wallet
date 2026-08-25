@@ -514,19 +514,41 @@ pub async fn precompute_snapshot_bundles(
     // Connect while note selection reads the snapshot tree and wallet DB.
     let pir_connect = spawn_pir_connect(pir_server_url, pir_layout)?;
     let select_started = Instant::now();
-    let selected = match select_notes_with_lwd(
-        &voting_db,
-        db_path,
-        lightwalletd_url,
-        network,
-        round_context.snapshot_height,
-    )
-    .await
+    let snapshot_height = round_context.snapshot_height;
+    let anchor_tree_state = match fetch_snapshot_tree_state(lightwalletd_url, snapshot_height).await
     {
-        Ok(selected) => selected,
+        Ok(anchor) => anchor,
         Err(error) => {
             drain_pir_connect_after_error(pir_connect).await;
-            return Err(error.to_string());
+            return Err(format!("voting note selection failed: {error}"));
+        }
+    };
+    let wallet_net = wallet_network(network);
+    let selected = match tokio::task::spawn_blocking({
+        let db_path = db_path.to_string();
+        let account_uuid = account_uuid.to_string();
+        move || {
+            let wallet_db = open_wallet_db_for_read(&db_path, wallet_net)?;
+            select_notes_with_wallet_db(
+                &wallet_db,
+                network,
+                &account_uuid,
+                snapshot_height,
+                anchor_tree_state,
+            )
+            .map_err(|error| error.to_string())
+        }
+    })
+    .await
+    {
+        Ok(Ok(selected)) => selected,
+        Ok(Err(error)) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection failed: {error}"));
+        }
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(format!("voting note selection task failed: {error}"));
         }
     };
     let note_infos = selected.voting_note_infos().to_vec();
