@@ -7,6 +7,18 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## v3.1.0-rc.8
 
 ### Added
+- `lwd::anchor_tree_state_with_retry_on` fetches the snapshot note-commitment
+  tree on a caller-owned lightwalletd client, so a wallet that already holds a
+  channel (Tor, a proxy, a pool) keeps that route instead of the crate dialing
+  a second, always-direct connection.
+- `precompute_snapshot_bundles` persists the canonical bundle plan for a
+  snapshot-stable note set, samples padded-note secrets, and warms PIR for
+  real notes plus padded-slot nullifiers. The round must already exist; no
+  hotkey or wallet DB is required. Once the wallet is scanned through
+  `snapshot_height`, historical note selection is frozen, so first-write-wins
+  bundle rows are the intended lock-in rather than a stale-plan hazard.
+  Witnesses still come from `prepare_delegation_bundle`. New type:
+  `SnapshotBundlePrecomputeReport`.
 - Added a bundle- and round-independent PIR proof cache. `precompute_pir_proofs`
   fetches and persists IMT non-membership proofs for notes that survive the
   caller-supplied `BundlePolicy` (the same plan round setup uses: sub-ballot
@@ -34,6 +46,14 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - `precompute_pir_proofs` now prunes PIR proof cache rows created more than
   four weeks ago before warming the requested notes. Prove-time cache access
   remains non-pruning so an already cached proof can still complete a bundle.
+
+### Removed
+- **Breaking:** URL-taking lightwalletd helpers that opened their own channel:
+  `latest_block_height`, `latest_block_height_with_retry`, `tree_state_bytes`,
+  `anchor_tree_state_with_retry`, and `anchor_tree_state_bytes_with_retry`.
+  They always dialed a direct connection, which overrode any host-owned route.
+  Open a client on the route you want and call `get_latest_block`,
+  `get_tree_state`, or `anchor_tree_state_with_retry_on`.
 
 ## v3.1.0-rc.7
 

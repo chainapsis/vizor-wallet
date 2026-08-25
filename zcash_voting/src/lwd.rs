@@ -24,6 +24,12 @@ const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
 const LIGHTWALLETD_RETRY_ATTEMPTS: u32 = 3;
 
 /// Opens a tonic gRPC channel to a lightwalletd URL.
+///
+/// This is the crate's convenience dialer and it always connects directly. A
+/// host that owns a network route — Tor, a proxy, a pooled or pinned
+/// connection, a test double — should build its own [`CompactTxStreamerClient`]
+/// and pass it to [`anchor_tree_state_with_retry_on`], [`get_latest_block`], or
+/// [`get_tree_state`] instead of calling this function.
 pub async fn open_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, VotingError> {
@@ -78,24 +84,24 @@ pub async fn get_latest_block(
 }
 
 /// Opens lightwalletd and returns the latest known block height.
-pub async fn latest_block_height(lightwalletd_url: &str) -> Result<u64, VotingError> {
+async fn latest_block_height(lightwalletd_url: &str) -> Result<u64, VotingError> {
     let mut client = open_channel(lightwalletd_url).await?;
     Ok(get_latest_block(&mut client).await?.height)
 }
 
 /// Opens lightwalletd and returns the latest known block height with bounded retry behavior.
-pub async fn latest_block_height_with_retry(lightwalletd_url: &str) -> Result<u64, VotingError> {
+pub(crate) async fn latest_block_height_with_retry(
+    lightwalletd_url: &str,
+) -> Result<u64, VotingError> {
     let mut last_error = None;
     for attempt in 1..=LIGHTWALLETD_RETRY_ATTEMPTS {
         match latest_block_height(lightwalletd_url).await {
             Ok(height) => return Ok(height),
             Err(error) => {
-                if attempt == LIGHTWALLETD_RETRY_ATTEMPTS {
-                    last_error = Some(error);
-                    break;
-                }
                 last_error = Some(error);
-                tokio::time::sleep(Duration::from_millis(500 * u64::from(attempt))).await;
+                if attempt < LIGHTWALLETD_RETRY_ATTEMPTS {
+                    tokio::time::sleep(retry_backoff(attempt)).await;
+                }
             }
         }
     }
@@ -125,29 +131,36 @@ pub async fn get_tree_state(
     .map_err(|e| status_to_error("get_tree_state", e))
 }
 
-/// Opens lightwalletd and returns the serialized `TreeState` for `height`.
-pub async fn tree_state_bytes(lightwalletd_url: &str, height: u64) -> Result<Vec<u8>, VotingError> {
-    let mut client = open_channel(lightwalletd_url).await?;
-    Ok(get_tree_state(&mut client, height).await?.encode_to_vec())
-}
-
-/// Fetches a snapshot anchor `TreeState` with bounded retry behavior around
+/// Fetches a snapshot anchor `TreeState` on a caller-owned client, retrying
 /// transient lightwalletd failures.
-pub async fn anchor_tree_state_with_retry(
-    lightwalletd_url: &str,
+///
+/// This is the public anchor fetch. Because the caller owns the channel, the
+/// host's network route is preserved: a wallet that routes lightwalletd over Tor
+/// keeps that route, and a wallet whose route is unavailable gets its own
+/// fail-closed error instead of a silent direct connection.
+///
+/// Only the RPC is retried — the caller owns the channel, so a dial failure
+/// never reaches this function. A host whose route may be transiently
+/// unreachable must retry its own open call; a host that fails closed on an
+/// unavailable route gets that error immediately instead of after the full
+/// backoff schedule.
+///
+/// # Errors
+///
+/// Returns the last lightwalletd error if every attempt fails.
+pub async fn anchor_tree_state_with_retry_on(
+    client: &mut CompactTxStreamerClient<Channel>,
     snapshot_height: u64,
 ) -> Result<TreeState, VotingError> {
     let mut last_error = None;
     for attempt in 1..=LIGHTWALLETD_RETRY_ATTEMPTS {
-        match fetch_tree_state(lightwalletd_url, snapshot_height).await {
+        match get_tree_state(client, snapshot_height).await {
             Ok(tree_state) => return Ok(tree_state),
             Err(error) => {
-                if attempt == LIGHTWALLETD_RETRY_ATTEMPTS {
-                    last_error = Some(error);
-                    break;
-                }
                 last_error = Some(error);
-                tokio::time::sleep(Duration::from_millis(500 * u64::from(attempt))).await;
+                if attempt < LIGHTWALLETD_RETRY_ATTEMPTS {
+                    tokio::time::sleep(retry_backoff(attempt)).await;
+                }
             }
         }
     }
@@ -157,8 +170,34 @@ pub async fn anchor_tree_state_with_retry(
     }))
 }
 
-/// Fetches a snapshot anchor `TreeState` as protobuf bytes.
-pub async fn anchor_tree_state_bytes_with_retry(
+/// Fetches a snapshot anchor `TreeState` with bounded retry around dial and RPC
+/// failures. Always connects directly; hosts that own a route should call
+/// [`anchor_tree_state_with_retry_on`] instead.
+pub(crate) async fn anchor_tree_state_with_retry(
+    lightwalletd_url: &str,
+    snapshot_height: u64,
+) -> Result<TreeState, VotingError> {
+    let mut last_error = None;
+    for attempt in 1..=LIGHTWALLETD_RETRY_ATTEMPTS {
+        match fetch_tree_state(lightwalletd_url, snapshot_height).await {
+            Ok(tree_state) => return Ok(tree_state),
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < LIGHTWALLETD_RETRY_ATTEMPTS {
+                    tokio::time::sleep(retry_backoff(attempt)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| VotingError::Internal {
+        message: "snapshot tree state fetch failed".to_string(),
+    }))
+}
+
+/// Protobuf-encoded form of [`anchor_tree_state_with_retry`], so callers outside
+/// this module do not need `prost::Message` in scope.
+pub(crate) async fn anchor_tree_state_bytes_with_retry(
     lightwalletd_url: &str,
     snapshot_height: u64,
 ) -> Result<Vec<u8>, VotingError> {
@@ -167,6 +206,11 @@ pub async fn anchor_tree_state_bytes_with_retry(
             .await?
             .encode_to_vec(),
     )
+}
+
+/// Backoff before the attempt following `attempt`.
+fn retry_backoff(attempt: u32) -> Duration {
+    Duration::from_millis(500) * attempt
 }
 
 /// Resolves the consensus branch ID active at `height` for `network`.

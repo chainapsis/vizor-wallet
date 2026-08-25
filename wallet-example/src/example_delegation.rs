@@ -308,6 +308,46 @@ pub fn warm_pir_proof_cache_for_notes(
     .context("warm PIR proof cache")
 }
 
+/// Persists the canonical bundle plan for snapshot-stable notes, samples
+/// padded-note secrets, and warms PIR for real notes plus padded-slot
+/// nullifiers.
+///
+/// Call this after the wallet is scanned through the round snapshot height and
+/// the round already exists in `voting_db`. Historical selection at that height
+/// will not change, so locking in bundle rows here is the intended first-write
+/// rather than a stale-plan risk. No hotkey is required. Witnesses are still
+/// generated later by [`prepare_delegation_bundle`].
+///
+/// Pass the same [`BundlePolicy`] the wallet will use at prepare time, or
+/// `voting_db.effective_bundle_policy(round_id, policy)` when a plan is already
+/// stored. The PIR server must serve the round's `nullifier_imt_root` for any
+/// proof that is not already cached. Retries are idempotent.
+///
+/// # Errors
+///
+/// Returns an error if the round is missing, the notes do not reproduce an
+/// already persisted plan, the layout handshake fails, or PIR warmup fails.
+pub fn precompute_snapshot_bundles(
+    voting_db: &VotingDb,
+    round_id: &str,
+    notes: &[zcash_voting::NoteInfo],
+    bundle_policy: BundlePolicy,
+    network: Network,
+    pir_layout: PirLayout,
+    pir_server_url: &str,
+) -> Result<zcash_voting::prelude::SnapshotBundlePrecomputeReport> {
+    let pir_client = connect_pir(pir_layout, pir_server_url)?;
+    zcash_voting::prelude::precompute_snapshot_bundles(
+        voting_db,
+        round_id,
+        notes,
+        bundle_policy,
+        &pir_client,
+        network,
+    )
+    .context("precompute snapshot bundles")
+}
+
 /// Proves one precomputed delegation bundle and signs it in wallet-owned code.
 ///
 /// The returned `DelegationSubmission` contains the chain-ready fields for the
