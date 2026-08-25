@@ -8,6 +8,7 @@ import 'swap_activity_replica.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import 'swap_private_history_sync_provider.dart';
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
@@ -17,6 +18,11 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
     activityReplica: ref.read(swapActivityReplicaProvider),
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
+    recordDeletions: ({required accountUuid, required records}) async {
+      await ref
+          .read(swapPrivateHistorySyncProvider)
+          ?.recordLocalDeletions(accountUuid: accountUuid, records: records);
+    },
   );
 });
 
@@ -151,10 +157,16 @@ class SwapActivityTracker {
     SwapActivityReplica? activityReplica,
     required SwapProvider swapProvider,
     bool Function()? isTorEnabled,
+    Future<void> Function({
+      required String accountUuid,
+      required Iterable<SwapIntentRecord> records,
+    })?
+    recordDeletions,
   }) : _activityReplica =
            activityReplica ?? SwapActivityReplica(activityStore: activityStore),
        _swapProvider = swapProvider,
-       _isTorEnabled = isTorEnabled;
+       _isTorEnabled = isTorEnabled,
+       _recordDeletions = recordDeletions;
 
   final SwapActivityReplica _activityReplica;
   final SwapProvider _swapProvider;
@@ -162,6 +174,11 @@ class SwapActivityTracker {
   /// Read per refresh, not captured once: Tor can be toggled while an intent is
   /// still open, and the exit-block classification only applies while it is on.
   final bool Function()? _isTorEnabled;
+  final Future<void> Function({
+    required String accountUuid,
+    required Iterable<SwapIntentRecord> records,
+  })?
+  _recordDeletions;
 
   static String? normalizeAccountUuid(String? accountUuid) {
     final scopedAccountUuid = accountUuid?.trim();
@@ -203,6 +220,16 @@ class SwapActivityTracker {
   }) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return;
+    final current = await _activityReplica.loadRecords(
+      accountUuid: scopedAccountUuid,
+    );
+    final removed = current.where((record) => record.id == intentId).toList();
+    if (removed.isNotEmpty) {
+      await _recordDeletions?.call(
+        accountUuid: scopedAccountUuid,
+        records: removed,
+      );
+    }
     await _activityReplica.removeRecord(
       accountUuid: scopedAccountUuid,
       intentId: intentId,

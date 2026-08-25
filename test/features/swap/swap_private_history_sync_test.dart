@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_document.dart';
 import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync.dart';
@@ -11,6 +13,8 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.d
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   const account = PrivateStateAccount(
     dbPath: '/wallet.db',
     network: 'main',
@@ -159,6 +163,89 @@ void main() {
   });
 
   test(
+    'a local deletion tombstone removes stale records on every device',
+    () async {
+      final remoteRecord = _record('deleted');
+      final repository = _MemoryRepository(
+        plaintext: SwapPrivateHistoryDocument(
+          kind: SwapPrivateHistoryKind.swap,
+          records: [remoteRecord],
+        ).encode(),
+        version: _version(1),
+      );
+      final firstStore = _MemoryActivityStore([remoteRecord]);
+      final firstMetadata = _MemoryMetadataStore();
+      final firstSync = SwapPrivateHistorySync(
+        repository: repository,
+        replica: SwapActivityReplica(activityStore: firstStore),
+        metadataStore: firstMetadata,
+        now: () => DateTime.utc(2026, 8, 25, 12),
+      );
+      await firstSync.recordLocalDeletions(
+        accountUuid: account.accountUuid,
+        records: [remoteRecord],
+      );
+      firstStore.records = const [];
+
+      await firstSync.synchronize(
+        account: account,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+      final deletedRemote = SwapPrivateHistoryDocument.decode(
+        repository.plaintext!,
+        expectedKind: SwapPrivateHistoryKind.swap,
+      );
+      expect(deletedRemote.records, isEmpty);
+      expect(deletedRemote.tombstones.keys, ['deleted']);
+
+      final secondStore = _MemoryActivityStore([remoteRecord]);
+      final secondSync = SwapPrivateHistorySync(
+        repository: repository,
+        replica: SwapActivityReplica(activityStore: secondStore),
+        metadataStore: _MemoryMetadataStore(),
+      );
+      final secondResult = await secondSync.synchronize(
+        account: account,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+
+      expect(secondStore.records, isEmpty);
+      expect(secondResult.remoteWritten, isFalse);
+    },
+  );
+
+  test('uploads a tombstone-only document when the remote is absent', () async {
+    final repository = _MemoryRepository();
+    final metadata = _MemoryMetadataStore();
+    final sync = SwapPrivateHistorySync(
+      repository: repository,
+      replica: SwapActivityReplica(
+        activityStore: _MemoryActivityStore(const []),
+      ),
+      metadataStore: metadata,
+      now: () => DateTime.utc(2026, 8, 25, 12),
+    );
+    await sync.recordLocalDeletions(
+      accountUuid: account.accountUuid,
+      records: [_record('deleted-before-first-sync')],
+    );
+
+    final result = await sync.synchronize(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(result.remoteWritten, isTrue);
+    expect(repository.createCount, 1);
+    final uploaded = SwapPrivateHistoryDocument.decode(
+      repository.plaintext!,
+      expectedKind: SwapPrivateHistoryKind.swap,
+    );
+    expect(uploaded.records, isEmpty);
+    expect(uploaded.tombstones.keys, ['deleted-before-first-sync']);
+  });
+
+  test(
     'empty local and absent remote do not reveal account presence',
     () async {
       final repository = _MemoryRepository();
@@ -195,6 +282,40 @@ void main() {
       }),
       isNull,
     );
+  });
+
+  test('metadata save rejects an over-limit merged tombstone set', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+    final store = AppSecureStoreSwapPrivateHistorySyncMetadataStore(
+      AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    );
+    final deletedAt = DateTime.utc(2026, 8, 25);
+    await store.addTombstones(
+      accountUuid: account.accountUuid,
+      kind: SwapPrivateHistoryKind.swap,
+      tombstones: {
+        for (var index = 0; index < 2048; index++) 'deleted-$index': deletedAt,
+      },
+    );
+
+    await expectLater(
+      store.save(
+        accountUuid: account.accountUuid,
+        kind: SwapPrivateHistoryKind.swap,
+        metadata: SwapPrivateHistorySyncMetadata(
+          plaintextHashBase64: 'hash',
+          synchronizedAt: deletedAt,
+          tombstones: {'different-deletion': deletedAt},
+        ),
+      ),
+      throwsStateError,
+    );
+    final preserved = await store.load(
+      accountUuid: account.accountUuid,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+    expect(preserved?.tombstones, hasLength(2048));
   });
 }
 
@@ -255,6 +376,22 @@ class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
       '$accountUuid:${kind.wireName}';
 
   @override
+  Future<void> addTombstones({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required Map<String, DateTime> tombstones,
+  }) async {
+    final key = _key(accountUuid, kind);
+    final current = values[key];
+    values[key] = SwapPrivateHistorySyncMetadata(
+      plaintextHashBase64: current?.plaintextHashBase64 ?? 'pending',
+      synchronizedAt: current?.synchronizedAt ?? DateTime.now().toUtc(),
+      remoteVersion: current?.remoteVersion,
+      tombstones: {...?current?.tombstones, ...tombstones},
+    );
+  }
+
+  @override
   Future<SwapPrivateHistorySyncMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
@@ -266,7 +403,14 @@ class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
     required SwapPrivateHistoryKind kind,
     required SwapPrivateHistorySyncMetadata metadata,
   }) async {
-    values[_key(accountUuid, kind)] = metadata;
+    final key = _key(accountUuid, kind);
+    final current = values[key];
+    values[key] = SwapPrivateHistorySyncMetadata(
+      plaintextHashBase64: metadata.plaintextHashBase64,
+      synchronizedAt: metadata.synchronizedAt,
+      remoteVersion: metadata.remoteVersion,
+      tombstones: {...?current?.tombstones, ...metadata.tombstones},
+    );
   }
 
   @override

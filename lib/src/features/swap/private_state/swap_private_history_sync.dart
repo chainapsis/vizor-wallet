@@ -47,6 +47,11 @@ abstract interface class SwapPrivateHistorySynchronizer {
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   });
+
+  Future<void> recordLocalDeletions({
+    required String accountUuid,
+    required Iterable<SwapIntentRecord> records,
+  });
 }
 
 class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
@@ -73,6 +78,25 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
   final Map<String, Future<void>> _syncTails = {};
 
   @override
+  Future<void> recordLocalDeletions({
+    required String accountUuid,
+    required Iterable<SwapIntentRecord> records,
+  }) async {
+    final deletedAt = _now().toUtc();
+    for (final kind in SwapPrivateHistoryKind.values) {
+      final tombstones = {
+        for (final record in records)
+          if (record.payMode == kind.payMode) record.id: deletedAt,
+      };
+      await _metadataStore.addTombstones(
+        accountUuid: accountUuid,
+        kind: kind,
+        tombstones: tombstones,
+      );
+    }
+  }
+
+  @override
   Future<SwapPrivateHistorySyncResult> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
@@ -85,6 +109,12 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
+    var tombstones =
+        (await _metadataStore.load(
+          accountUuid: account.accountUuid,
+          kind: kind,
+        ))?.tombstones ??
+        const <String, DateTime>{};
     for (var attempt = 1; attempt <= maxCasAttempts; attempt++) {
       final read = await _repository.read(account: account, key: _key(kind));
       final remoteDocument = switch (read) {
@@ -93,10 +123,25 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
           SwapPrivateHistoryDocument.decode(plaintext, expectedKind: kind),
       };
 
+      tombstones = _mergeHistoryTombstones(
+        tombstones,
+        remoteDocument?.tombstones ?? const {},
+      );
+
+      if (tombstones.isNotEmpty) {
+        await _replica.applyRemoteTombstones(
+          accountUuid: account.accountUuid,
+          intentIds: tombstones.keys.toSet(),
+          payMode: kind.payMode,
+        );
+      }
+
       if (remoteDocument != null && remoteDocument.records.isNotEmpty) {
         await _replica.reconcileRemoteRecords(
           accountUuid: account.accountUuid,
-          remoteRecords: remoteDocument.records,
+          remoteRecords: remoteDocument.records.where(
+            (record) => !tombstones.containsKey(record.id),
+          ),
           mergeConflict: mergeSwapPrivateHistoryRecord,
         );
       }
@@ -108,12 +153,14 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
       );
       var document = SwapPrivateHistoryDocument.compact(
         kind: kind,
-        records: allLocal,
+        records: allLocal.where((record) => !tombstones.containsKey(record.id)),
+        tombstones: tombstones,
       );
       if (remoteDocument?.truncated == true && !document.truncated) {
         document = SwapPrivateHistoryDocument(
           kind: kind,
           records: document.records,
+          tombstones: document.tombstones,
           truncated: true,
         );
       }
@@ -123,12 +170,15 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
         PrivateStateReadAbsent() => null,
       };
 
-      if (remoteDocument == null && document.records.isEmpty) {
+      if (remoteDocument == null &&
+          document.records.isEmpty &&
+          document.tombstones.isEmpty) {
         await _saveMetadata(
           account: account,
           kind: kind,
           plaintext: plaintext,
           version: null,
+          tombstones: tombstones,
         );
         return SwapPrivateHistorySyncResult(
           records: allLocal,
@@ -146,6 +196,7 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
           kind: kind,
           plaintext: plaintext,
           version: currentVersion,
+          tombstones: tombstones,
         );
         return SwapPrivateHistorySyncResult(
           records: allLocal,
@@ -174,6 +225,7 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
           kind: kind,
           plaintext: plaintext,
           version: version,
+          tombstones: tombstones,
         );
         return SwapPrivateHistorySyncResult(
           records: allLocal,
@@ -192,6 +244,7 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
     required SwapPrivateHistoryKind kind,
     required Uint8List plaintext,
     required PrivateStateVersion? version,
+    required Map<String, DateTime> tombstones,
   }) {
     final digest = sha256.convert(plaintext);
     return _metadataStore.save(
@@ -201,6 +254,7 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
         plaintextHashBase64: base64UrlEncode(digest.bytes).replaceAll('=', ''),
         synchronizedAt: _now().toUtc(),
         remoteVersion: version,
+        tombstones: tombstones,
       ),
     );
   }
@@ -232,6 +286,20 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
       }
     }
   }
+}
+
+Map<String, DateTime> _mergeHistoryTombstones(
+  Map<String, DateTime> left,
+  Map<String, DateTime> right,
+) {
+  final merged = Map<String, DateTime>.of(left);
+  for (final entry in right.entries) {
+    final current = merged[entry.key];
+    if (current == null || entry.value.isAfter(current)) {
+      merged[entry.key] = entry.value.toUtc();
+    }
+  }
+  return merged;
 }
 
 bool _bytesEqual(Uint8List left, Uint8List right) {

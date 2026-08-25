@@ -43,6 +43,8 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_private_history_sync_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
@@ -6358,6 +6360,57 @@ void main() {
     expect(sessionStore.savedIntents, isEmpty);
   });
 
+  testWidgets('failed durable removal keeps the intent in reactive state', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final persisted = _persistedIntent(
+      id: 'failed-removal',
+      txHash: '',
+      status: SwapIntentStatus.complete,
+      nextAction: 'Completed',
+    );
+    final sessionStore = _FakeSwapPersistenceStore(initialIntents: [persisted]);
+    final activityTracker = SwapActivityTracker(
+      activityStore: sessionStore,
+      swapProvider: _FakeSwapProvider(),
+      recordDeletions: ({required accountUuid, required records}) async {
+        throw StateError('durable write failed');
+      },
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+        activityTracker: activityTracker,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    await expectLater(
+      container.read(swapStateProvider.notifier).removeIntent('failed-removal'),
+      throwsStateError,
+    );
+
+    expect(
+      container.read(swapStateProvider).intents.map((intent) => intent.id),
+      ['failed-removal'],
+    );
+    expect(sessionStore.savedIntents.map((intent) => intent.id), [
+      'failed-removal',
+    ]);
+  });
+
   testWidgets(
     'remote reconcile waits for an in-flight local removal before updating UI',
     (tester) async {
@@ -6418,7 +6471,10 @@ void main() {
       final localRemoval = container
           .read(swapStateProvider.notifier)
           .removeIntent('local-swap');
-      expect(container.read(swapStateProvider).intents, isEmpty);
+      expect(
+        container.read(swapStateProvider).intents.map((intent) => intent.id),
+        ['local-swap'],
+      );
       releaseRemoteSave.complete();
       await Future.wait([remoteWrite, localRemoval]);
       await tester.pump();
@@ -9437,6 +9493,7 @@ Widget _routerHarness(
   SwapMaxAmountEstimator? maxAmountEstimator,
   SwapHardwareSigningService? hardwareSigningService,
   _FakeSwapPersistenceStore? sessionStore,
+  SwapActivityTracker? activityTracker,
   BigInt? spendableBalance,
   BigInt? displaySpendableBalance,
   SpendableBalanceFreshness displaySpendableFreshness =
@@ -9517,6 +9574,9 @@ Widget _routerHarness(
         hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
       swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
+      swapPrivateHistorySyncProvider.overrideWithValue(null),
+      if (activityTracker != null)
+        swapActivityTrackerProvider.overrideWithValue(activityTracker),
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
       ),

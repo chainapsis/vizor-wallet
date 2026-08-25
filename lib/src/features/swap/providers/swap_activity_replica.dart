@@ -17,11 +17,14 @@ class SwapActivityReplicaChange {
     required this.accountUuid,
     required this.source,
     required List<SwapIntentRecord> records,
-  }) : records = List.unmodifiable(records);
+    List<SwapIntentRecord> removedRecords = const [],
+  }) : records = List.unmodifiable(records),
+       removedRecords = List.unmodifiable(removedRecords);
 
   final String accountUuid;
   final SwapActivityReplicaChangeSource source;
   final List<SwapIntentRecord> records;
+  final List<SwapIntentRecord> removedRecords;
 }
 
 class SwapActivityReplicaChangeNotifier
@@ -126,14 +129,30 @@ class SwapActivityReplica {
     required String accountUuid,
     required String intentId,
   }) {
-    return _mutate(
-      accountUuid,
-      SwapActivityReplicaChangeSource.localMutation,
-      (current) => [
+    return _serialize(accountUuid, () async {
+      final current = await _activityStore.loadRecords(
+        accountUuid: accountUuid,
+      );
+      final removed = [
+        for (final record in current)
+          if (record.id == intentId) record,
+      ];
+      final updated = [
         for (final record in current)
           if (record.id != intentId) record,
-      ],
-    );
+      ];
+      await _activityStore.saveRecords(
+        accountUuid: accountUuid,
+        records: updated,
+      );
+      _emit(
+        accountUuid,
+        SwapActivityReplicaChangeSource.localMutation,
+        updated,
+        removedRecords: removed,
+      );
+      return List.unmodifiable(updated);
+    });
   }
 
   /// Adds remote-only records and delegates same-ID conflicts to the feature
@@ -165,6 +184,23 @@ class SwapActivityReplica {
         }
         return merged;
       },
+    );
+  }
+
+  Future<List<SwapIntentRecord>> applyRemoteTombstones({
+    required String accountUuid,
+    required Set<String> intentIds,
+    required bool payMode,
+  }) {
+    if (intentIds.isEmpty) return loadRecords(accountUuid: accountUuid);
+    return _mutate(
+      accountUuid,
+      SwapActivityReplicaChangeSource.remoteReconcile,
+      (current) => [
+        for (final record in current)
+          if (record.payMode != payMode || !intentIds.contains(record.id))
+            record,
+      ],
     );
   }
 
@@ -223,13 +259,15 @@ class SwapActivityReplica {
   void _emit(
     String accountUuid,
     SwapActivityReplicaChangeSource source,
-    List<SwapIntentRecord> records,
-  ) {
+    List<SwapIntentRecord> records, {
+    List<SwapIntentRecord> removedRecords = const [],
+  }) {
     _onChanged?.call(
       SwapActivityReplicaChange(
         accountUuid: accountUuid,
         source: source,
         records: records,
+        removedRecords: removedRecords,
       ),
     );
   }

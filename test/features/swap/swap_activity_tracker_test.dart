@@ -251,6 +251,54 @@ void main() {
     expect(result.intents.single.statusError, expectedMessage);
     expect(store.savedRecords.single.statusError, expectedMessage);
   });
+
+  test('records a tombstone before removing local activity', () async {
+    final store = _MemorySwapActivityStore();
+    final record = SwapIntentRecord.fromIntent(
+      _intent(id: 'swap-a', depositAddress: 'deposit-a'),
+    );
+    store.savedRecords = [record];
+    final events = <String>[];
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: _StatusSwapProvider({}),
+      recordDeletions: ({required accountUuid, required records}) async {
+        expect(accountUuid, 'account-1');
+        expect(records, [record]);
+        expect(store.savedRecords, [record]);
+        events.add('tombstone');
+      },
+    );
+
+    await tracker.removeIntent(accountUuid: 'account-1', intentId: 'swap-a');
+    events.add('removed');
+
+    expect(events, ['tombstone', 'removed']);
+    expect(store.savedRecords, isEmpty);
+  });
+
+  test('keeps local activity when tombstone persistence fails', () async {
+    final store = _MemorySwapActivityStore();
+    final record = SwapIntentRecord.fromIntent(
+      _intent(id: 'swap-a', depositAddress: 'deposit-a'),
+    );
+    store.savedRecords = [record];
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: _StatusSwapProvider({}),
+      recordDeletions: ({required accountUuid, required records}) async {
+        throw StateError('secure storage unavailable');
+      },
+    );
+
+    await expectLater(
+      tracker.removeIntent(accountUuid: 'account-1', intentId: 'swap-a'),
+      throwsStateError,
+    );
+
+    expect(store.savedRecords, [record]);
+    expect(store.saveCount, 0);
+  });
 }
 
 SwapIntent _intent({

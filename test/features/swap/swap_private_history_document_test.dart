@@ -98,6 +98,30 @@ void main() {
     expect(decoded.providerQuoteId, isNull);
   });
 
+  test('round-trips tombstones and rejects a live/deleted overlap', () {
+    final deletedAt = DateTime.utc(2026, 8, 25, 12);
+    final document = SwapPrivateHistoryDocument(
+      kind: SwapPrivateHistoryKind.swap,
+      records: [_record('live')],
+      tombstones: {'deleted': deletedAt},
+    );
+
+    final decoded = SwapPrivateHistoryDocument.decode(
+      document.encode(),
+      expectedKind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(decoded.tombstones, {'deleted': deletedAt});
+    expect(
+      () => SwapPrivateHistoryDocument(
+        kind: SwapPrivateHistoryKind.swap,
+        records: [_record('same')],
+        tombstones: {'same': deletedAt},
+      ),
+      throwsA(isA<PrivateStateProtocolException>()),
+    );
+  });
+
   test('evidence-bearing progress defeats local deadline expiry', () {
     final local = _record('swap-a', status: SwapIntentStatus.expired).copyWith(
       accountUuid: 'account-1',

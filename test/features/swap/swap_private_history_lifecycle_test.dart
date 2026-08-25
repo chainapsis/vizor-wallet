@@ -211,6 +211,15 @@ class _RecordingSynchronizer implements SwapPrivateHistorySynchronizer {
   final Completer<void>? firstCallStarted;
   final Completer<void>? releaseFirstCall;
   final List<_SyncCall> calls = [];
+  final List<SwapIntentRecord> deletedRecords = [];
+
+  @override
+  Future<void> recordLocalDeletions({
+    required String accountUuid,
+    required Iterable<SwapIntentRecord> records,
+  }) async {
+    deletedRecords.addAll(records);
+  }
 
   @override
   Future<SwapPrivateHistorySyncResult> synchronize({
@@ -236,6 +245,13 @@ class _RecordingSynchronizer implements SwapPrivateHistorySynchronizer {
 
 class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
   final List<String> deletedAccounts = [];
+
+  @override
+  Future<void> addTombstones({
+    required String accountUuid,
+    required SwapPrivateHistoryKind kind,
+    required Map<String, DateTime> tombstones,
+  }) async {}
 
   @override
   Future<void> deleteForAccount({required String accountUuid}) async {

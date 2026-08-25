@@ -1010,12 +1010,21 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   Future<void> removeIntent(String intentId) async {
+    if (!state.intents.any((intent) => intent.id == intentId)) return;
+    final accountUuid = _activeAccountUuidOrNull;
+    if (accountUuid == null) return;
+    await _runActivityWrite(
+      accountUuid,
+      () => ref
+          .read(swapActivityTrackerProvider)
+          .removeIntent(accountUuid: accountUuid, intentId: intentId),
+    );
+    if (_activeAccountUuidOrNull != accountUuid) return;
+
     final remaining = [
       for (final intent in state.intents)
         if (intent.id != intentId) intent,
     ];
-    if (remaining.length == state.intents.length) return;
-
     final removedSelected =
         state.selectedIntentId == intentId ||
         state.selectedIntentOrNull?.id == intentId;
@@ -1032,14 +1041,6 @@ class SwapNotifier extends Notifier<SwapState> {
       depositTxHashText: nextSelectedIntent?.depositTxHash ?? '',
       clearSelectedIntent: nextSelectedId == null,
       clearStatusError: true,
-    );
-    final accountUuid = _activeAccountUuidOrNull;
-    if (accountUuid == null) return;
-    await _runActivityWrite(
-      accountUuid,
-      () => ref
-          .read(swapActivityTrackerProvider)
-          .removeIntent(accountUuid: accountUuid, intentId: intentId),
     );
   }
 
