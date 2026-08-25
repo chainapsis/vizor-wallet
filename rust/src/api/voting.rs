@@ -2,10 +2,7 @@ use std::{panic, path::Path, sync::Arc, time::Instant};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
-use super::voting_helpers::{
-    delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
-    seed_from_mnemonic,
-};
+use super::voting_helpers::{delegation_static_inputs, seed_from_mnemonic};
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
@@ -136,72 +133,59 @@ pub struct ApiVotingEligibility {
     pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
-/// FRB-facing bundle layout for [`setup_delegation_bundles`].
-///
-/// Keeps the SDK's flat privacy-trim totals on the existing layout boundary so
-/// Dart can surface withheld voting power without mirroring a nested policy.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiBundleLayout {
+/// Durable hotkey-free delegation snapshot preparation result.
+pub struct ApiDelegationSnapshotPreparationResult {
+    pub complete: bool,
+    pub already_complete: bool,
     pub bundle_count: u32,
+    pub note_count: u32,
     pub eligible_weight: u64,
-    pub dropped_count: u32,
-    pub privacy_trim_dropped_bundles: u32,
-    pub privacy_trim_dropped_notes: u32,
-    pub privacy_trim_dropped_value_zatoshi: u64,
+    pub witness_count: u32,
+    pub pir_proof_count: u32,
+    pub witnesses_cached: u32,
+    pub witnesses_generated: u32,
+    pub pir_cached: u32,
+    pub pir_fetched: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// PIR cache result for one snapshot-precomputed delegation bundle.
-pub struct ApiSnapshotBundlePirResult {
-    pub cached_count: u32,
-    pub fetched_count: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Snapshot bundle plan and PIR warm-up result exposed to Dart.
-pub struct ApiSnapshotBundlePrecomputeResult {
+pub struct ApiDelegationSnapshotStatus {
+    pub complete: bool,
     pub bundle_count: u32,
-    pub eligible_weight: u64,
-    pub dropped_count: u32,
-    pub privacy_trim_dropped_bundles: u32,
-    pub privacy_trim_dropped_notes: u32,
-    pub privacy_trim_dropped_value_zatoshi: u64,
-    pub bundles: Vec<ApiSnapshotBundlePirResult>,
+    pub note_count: u32,
+    pub witness_count: u32,
+    pub pir_proof_count: u32,
 }
 
-impl From<zcash_voting::precompute::SnapshotBundlePrecomputeReport>
-    for ApiSnapshotBundlePrecomputeResult
-{
-    fn from(report: zcash_voting::precompute::SnapshotBundlePrecomputeReport) -> Self {
-        let layout = report.layout;
+impl From<zcash_voting::precompute::DelegationSnapshotStatus> for ApiDelegationSnapshotStatus {
+    fn from(status: zcash_voting::precompute::DelegationSnapshotStatus) -> Self {
         Self {
-            bundle_count: layout.bundle_count,
-            eligible_weight: layout.eligible_weight,
-            dropped_count: layout.dropped_count,
-            privacy_trim_dropped_bundles: layout.privacy_trim_dropped_bundles,
-            privacy_trim_dropped_notes: layout.privacy_trim_dropped_notes,
-            privacy_trim_dropped_value_zatoshi: layout.privacy_trim_dropped_value_zatoshi,
-            bundles: report
-                .bundles
-                .into_iter()
-                .map(|bundle| ApiSnapshotBundlePirResult {
-                    cached_count: bundle.cached,
-                    fetched_count: bundle.fetched,
-                })
-                .collect(),
+            complete: status.complete,
+            bundle_count: status.bundle_count,
+            note_count: status.note_count,
+            witness_count: status.witness_count,
+            pir_proof_count: status.pir_proof_count,
         }
     }
 }
 
-impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
-    fn from(layout: zcash_voting::wire::BundleLayout) -> Self {
+impl From<zcash_voting::precompute::DelegationSnapshotPreparationReport>
+    for ApiDelegationSnapshotPreparationResult
+{
+    fn from(report: zcash_voting::precompute::DelegationSnapshotPreparationReport) -> Self {
         Self {
-            bundle_count: layout.bundle_count,
-            eligible_weight: layout.eligible_weight,
-            dropped_count: layout.dropped_count,
-            privacy_trim_dropped_bundles: layout.privacy_trim_dropped_bundles,
-            privacy_trim_dropped_notes: layout.privacy_trim_dropped_notes,
-            privacy_trim_dropped_value_zatoshi: layout.privacy_trim_dropped_value_zatoshi,
+            complete: report.status.complete,
+            already_complete: report.already_complete,
+            bundle_count: report.status.bundle_count,
+            note_count: report.status.note_count,
+            eligible_weight: report.layout.eligible_weight,
+            witness_count: report.status.witness_count,
+            pir_proof_count: report.status.pir_proof_count,
+            witnesses_cached: report.witnesses_cached,
+            witnesses_generated: report.witnesses_generated,
+            pir_cached: report.pir_cached,
+            pir_fetched: report.pir_fetched,
         }
     }
 }
@@ -730,40 +714,6 @@ fn emit_signed_vote_result(
     Ok(())
 }
 
-/// Select notes and persist bundle rows for the delegation pipeline.
-///
-/// Reuses existing bundle rows for the same round/wallet, so callers can safely
-/// retry setup before proving a specific bundle.
-///
-/// # Errors
-///
-/// Returns an error if bundle policy parsing, opening the sidecar DB, round
-/// initialization, note selection, or bundle layout persistence fails.
-pub async fn setup_delegation_bundles(
-    ctx: ApiVotingRoundContext,
-) -> Result<ApiBundleLayout, String> {
-    // Resolve static network + bundle policy inputs and open the sidecar DB.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
-
-    // Select and persist reusable delegation bundles for this round/account.
-    let layout = delegation::setup_delegation_bundles(
-        &voting_db,
-        &ctx.db_path,
-        zcash_voting::delegate::ResolveDelegationLwdParams {
-            lightwalletd_url: &ctx.lightwalletd_url,
-            network: voting_network,
-            round_params: ctx.round_params,
-            round_name: &ctx.round_name,
-        },
-        ctx.session_json.as_deref(),
-        bundle_policy,
-    )
-    .await?;
-    Ok(layout.into())
-}
-
 /// Check whether the account has enough selected notes to vote in this round.
 ///
 /// This selects notes at the round snapshot height and returns the smart-bundle
@@ -801,19 +751,19 @@ pub async fn check_voting_eligibility(
     })
 }
 
-/// Persist the snapshot-stable bundle plan and warm all bundle PIR inputs.
+/// Persist the complete hotkey-free delegation snapshot tier.
 ///
 /// This is the vote-screen warm-up path. It requires an initialized round and
 /// snapshot-selected notes, but no voting hotkey or wallet seed. The normal
 /// prove path remains the correctness fallback for missing witnesses or PIR
 /// cache rows.
-pub async fn precompute_snapshot_bundles(
+pub async fn prepare_delegation_snapshot(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
-) -> Result<ApiSnapshotBundlePrecomputeResult, String> {
+) -> Result<ApiDelegationSnapshotPreparationResult, String> {
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    delegation::precompute_snapshot_bundles(
+    delegation::prepare_delegation_snapshot(
         &ctx.db_path,
         &ctx.account_uuid,
         &pir_server_url,
@@ -831,56 +781,21 @@ pub async fn precompute_snapshot_bundles(
     .map(Into::into)
 }
 
-/// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
-///
-/// This is a background warm-up path. The normal proof path still fetches any
-/// missing PIR proofs if this was not run or did not complete in time.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution, hotkey validation, bundle
-/// preparation, or PIR precompute fails.
-pub async fn precompute_delegation_pir(
-    ctx: ApiVotingRoundContext,
-    pir_server_url: String,
-    stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
-    // Resolve static network and bundling policy inputs from round context.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-
-    let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Fetch lightwalletd-backed round inputs used for delegation bundle prep.
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
+/// Read durable delegation snapshot completeness without network access.
+pub fn get_delegation_snapshot_status(
+    db_path: String,
+    account_uuid: String,
+    network: String,
+    round_params: zcash_voting::wire::VotingRoundParams,
+) -> Result<ApiDelegationSnapshotStatus, String> {
+    let wallet_network = keys::parse_network(&network)?;
+    delegation::delegation_snapshot_status(
+        &db_path,
+        &account_uuid,
+        voting_network(wallet_network),
+        &round_params,
     )
-    .await?;
-
-    // Assemble bundle preparation parameters for PIR precompute.
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
-    // Warm the PIR path by precomputing/caching delegation bundle artifacts.
-    delegation::precompute_delegation_pir(
-        &ctx.db_path,
-        &pir_server_url,
-        ctx.pir_layout,
-        prepare_params,
-    )
-    .await
-    .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
+    .map(Into::into)
 }
 
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
@@ -974,7 +889,6 @@ pub async fn warm_pir_proof_cache(
 /// before a terminal bundle-index-ordered payload list is emitted.
 pub async fn build_prove_and_sign_delegation_round_with_progress(
     ctx: ApiVotingRoundContext,
-    pir_server_urls: Vec<String>,
     mnemonic: String,
     stored_hotkey_secret: Vec<u8>,
     bundle_indexes: Vec<u32>,
@@ -986,37 +900,20 @@ pub async fn build_prove_and_sign_delegation_round_with_progress(
         "[VOTING_PROVE] software-round frb-stream start requested={}",
         bundle_indexes.len()
     );
-    let (voting_network, bundle_policy) =
+    let (voting_network, _) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    let lwd_started = Instant::now();
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    log::info!(
-        "[VOTING_PROVE] software-round lwd-inputs elapsed={:.3}s since_frb_start={:.3}s",
-        lwd_started.elapsed().as_secs_f64(),
-        frb_started.elapsed().as_secs_f64()
-    );
-
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let signed_result = delegation::build_prove_and_sign_delegation_round(
         ctx.db_path,
-        pir_server_urls,
-        ctx.pir_layout,
         seed,
-        lwd,
-        ctx.session_json,
         ctx.account_uuid,
+        ctx.round_params,
+        ctx.round_name,
         voting_hotkey,
-        bundle_policy,
         bundle_indexes,
         move |bundle_index, event| {
             if progress_sink
@@ -1044,41 +941,30 @@ pub async fn build_prove_and_sign_delegation_round_with_progress(
     emit_signed_delegation_round_result(sink.as_ref(), signed_result)
 }
 
-/// Build and redact voting PCZTs that Keystone can sign in one or more batches.
+/// Finish hotkey-bound round preparation and return signer-safe PCZTs.
 ///
 /// # Errors
 ///
 /// Returns an error if bundle indexes are empty or duplicated, round input
 /// resolution fails, or PCZT construction and redaction for any requested
 /// bundle fails.
-pub async fn build_keystone_delegation_requests(
+pub async fn finish_delegation_round_preparation(
     ctx: ApiVotingRoundContext,
-    pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
     bundle_indexes: Vec<u32>,
 ) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
     let started = Instant::now();
     let bundle_indexes = delegation::normalize_bundle_indexes(&bundle_indexes)?;
-    let (voting_network, bundle_policy) =
+    let (voting_network, _) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    let requests = delegation::build_keystone_delegation_requests_round(
+    let requests = delegation::finish_delegation_round_preparation(
         ctx.db_path,
-        pir_server_urls,
-        ctx.pir_layout,
-        lwd,
-        ctx.session_json,
         ctx.account_uuid,
+        ctx.round_params,
+        ctx.round_name,
         voting_hotkey,
-        bundle_policy,
         bundle_indexes,
     )
     .await?;
@@ -1247,7 +1133,7 @@ pub async fn build_prove_delegation_round_with_keystone_signatures_with_progress
         .map(|signature| signature.bundle_index)
         .collect::<Vec<_>>();
     delegation::normalize_bundle_indexes(&signature_indexes)?;
-    let (voting_network, bundle_policy) =
+    let (voting_network, _) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
@@ -1259,7 +1145,6 @@ pub async fn build_prove_delegation_round_with_keystone_signatures_with_progress
         ctx.round_params.into(),
         ctx.round_name,
         voting_hotkey,
-        bundle_policy,
         signatures
             .into_iter()
             .map(|signature| (signature.bundle_index, signature.sig, signature.sighash))
@@ -1348,23 +1233,32 @@ pub fn confirm_delegation_submission(
 
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
 ///
-/// Returns the number of deleted rows.
+/// Returns the eligible voting weight represented by the retained prefix.
 pub fn delete_skipped_bundles(
     db_path: String,
     account_uuid: String,
     round_id: String,
     keep_count: u32,
-) -> Result<u32, String> {
+) -> Result<u64, String> {
     catch(|| {
-        // Delete skipped bundle rows and downcast deleted count for FRB.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.delete_skipped_bundles(&round_id, keep_count)
-            .and_then(|deleted| {
-                u32::try_from(deleted).map_err(|_| zcash_voting::VotingError::Internal {
-                    message: format!("deleted bundle count {deleted} does not fit in u32"),
-                })
-            })
-            .map_err(|e| format!("delete_skipped_bundles failed: {e}"))
+            .map_err(|e| format!("delete_skipped_bundles failed: {e}"))?;
+        let total: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT SUM((total_note_value / ?1) * ?1)
+                 FROM bundles
+                 WHERE round_id = ?2 AND wallet_id = ?3",
+                rusqlite::params![
+                    zcash_voting::governance::BALLOT_DIVISOR as i64,
+                    round_id,
+                    db.wallet_id(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("calculate retained delegation weight failed: {e}"))?;
+        Ok(total.unwrap_or(0) as u64)
     })
 }
 
@@ -2235,27 +2129,6 @@ mod tests {
     }
 
     #[test]
-    fn api_bundle_setup_result_preserves_core_fields() {
-        let api = ApiBundleLayout::from(zcash_voting::wire::BundleLayout {
-            bundle_count: 2,
-            eligible_weight: 50,
-            dropped_count: 0,
-            privacy_trim_dropped_bundles: 1,
-            privacy_trim_dropped_notes: 4,
-            privacy_trim_dropped_value_zatoshi: 900,
-        });
-
-        assert_eq!(api.bundle_count, 2);
-        assert_eq!(api.eligible_weight, 50);
-        assert_eq!(api.dropped_count, 0);
-        // The privacy-trim totals are flat scalars so the Dart mirror stays a
-        // field-level delta instead of gaining a nested class.
-        assert_eq!(api.privacy_trim_dropped_bundles, 1);
-        assert_eq!(api.privacy_trim_dropped_notes, 4);
-        assert_eq!(api.privacy_trim_dropped_value_zatoshi, 900);
-    }
-
-    #[test]
     fn api_signed_delegation_payload_preserves_core_fields() {
         let api = zcash_voting::wire::SignedDelegationPayloadView::try_from(
             zcash_voting::delegate::SignedDelegationBundle {
@@ -2807,7 +2680,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_skipped_bundles_api_is_bundle_indexed() {
+    fn delete_skipped_bundles_returns_retained_weight() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
@@ -2819,6 +2692,17 @@ mod tests {
         .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE bundles SET total_note_value = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = 0",
+                rusqlite::params![
+                    zcash_voting::governance::BALLOT_DIVISOR as i64,
+                    ROUND_ID,
+                    "wallet-api-bundles",
+                ],
+            )
+            .unwrap();
 
         assert_eq!(
             delete_skipped_bundles(
@@ -2828,7 +2712,7 @@ mod tests {
                 1,
             )
             .unwrap(),
-            1
+            zcash_voting::governance::BALLOT_DIVISOR
         );
         assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 1);
     }
@@ -3597,26 +3481,12 @@ mod tests {
     }
 
     #[test]
-    fn setup_delegation_bundles_rejects_invalid_network_before_network_io() {
+    fn prepare_delegation_snapshot_rejects_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(setup_delegation_bundles(test_round_context(
-                &db_path, "bogus", "wallet-1",
-            )))
-            .unwrap_err();
-
-        assert!(err.contains("Unknown network"));
-    }
-
-    #[test]
-    fn precompute_snapshot_bundles_rejects_invalid_network_before_network_io() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(precompute_snapshot_bundles(
+            .block_on(prepare_delegation_snapshot(
                 test_round_context(&db_path, "bogus", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
             ))
@@ -3626,12 +3496,12 @@ mod tests {
     }
 
     #[test]
-    fn precompute_snapshot_bundles_rejects_empty_pir_url_before_network_io() {
+    fn prepare_delegation_snapshot_rejects_empty_pir_url_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(precompute_snapshot_bundles(
+            .block_on(prepare_delegation_snapshot(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 "  ".to_string(),
             ))
@@ -3641,48 +3511,13 @@ mod tests {
     }
 
     #[test]
-    fn precompute_delegation_pir_rejects_invalid_network_before_network_io() {
+    fn finish_delegation_round_preparation_rejects_invalid_network_before_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(precompute_delegation_pir(
+            .block_on(finish_delegation_round_preparation(
                 test_round_context(&db_path, "bogus", "wallet-1"),
-                "http://127.0.0.1:2".to_string(),
-                vec![9; 64],
-                0,
-            ))
-            .unwrap_err();
-
-        assert!(err.contains("Unknown network"));
-    }
-
-    #[test]
-    fn precompute_delegation_pir_rejects_invalid_hotkey_before_network_io() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(precompute_delegation_pir(
-                test_round_context(&db_path, "regtest", "wallet-1"),
-                "http://127.0.0.1:2".to_string(),
-                vec![9; 1],
-                0,
-            ))
-            .unwrap_err();
-
-        assert!(err.contains("Voting hotkey reconstruction failed"));
-    }
-
-    #[test]
-    fn build_keystone_delegation_requests_reject_invalid_network_before_network_io() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(build_keystone_delegation_requests(
-                test_round_context(&db_path, "bogus", "wallet-1"),
-                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![0],
             ))
@@ -3692,14 +3527,13 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_requests_reject_invalid_hotkey_before_network_io() {
+    fn finish_delegation_round_preparation_rejects_invalid_hotkey_before_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_requests(
+            .block_on(finish_delegation_round_preparation(
                 test_round_context(&db_path, "regtest", "wallet-1"),
-                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 1],
                 vec![0],
             ))
@@ -3709,14 +3543,13 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_requests_rejects_empty_bundle_indexes() {
+    fn finish_delegation_round_preparation_rejects_empty_bundle_indexes() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_requests(
+            .block_on(finish_delegation_round_preparation(
                 test_round_context(&db_path, "regtest", "wallet-1"),
-                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![],
             ))
@@ -3726,14 +3559,13 @@ mod tests {
     }
 
     #[test]
-    fn build_keystone_delegation_requests_rejects_duplicate_bundle_indexes() {
+    fn finish_delegation_round_preparation_rejects_duplicate_bundle_indexes() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(build_keystone_delegation_requests(
+            .block_on(finish_delegation_round_preparation(
                 test_round_context(&db_path, "regtest", "wallet-1"),
-                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 64],
                 vec![1, 1],
             ))

@@ -47,7 +47,7 @@ final votingPirWarmupProvider = Provider<VotingPirWarmupCoordinator>((ref) {
 /// reads the same cache, so proofs warmed here are never refetched when the
 /// user later delegates; only the per-bundle padded-slot nullifiers remain.
 ///
-/// Deliberately unlike the session provider's bundle-scoped precompute, this
+/// Deliberately unlike the session provider's round snapshot preparation, this
 /// path reads no hotkey, mints nothing, and creates no round or bundle rows —
 /// it is safe for accounts that are merely browsing and for Keystone accounts.
 /// Every failure is a logged skip; the prove-path network fallback still

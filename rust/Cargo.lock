@@ -8522,6 +8522,7 @@ dependencies = [
  "hyper-util",
  "imt-tree",
  "incrementalmerkletree",
+ "log",
  "nonempty",
  "pir-client",
  "pir-types",

@@ -24,7 +24,7 @@ import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
-import 'voting_snapshot_precompute_provider.dart';
+import 'voting_snapshot_preparation_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
@@ -321,24 +321,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<bool> precomputeSnapshotBundles({required String accountUuid}) async {
+  Future<bool> prepareDelegationSnapshot({required String accountUuid}) async {
     if (!ref.mounted || _isDisposed) return false;
-    final key = _snapshotBundlePrecomputeKey(accountUuid);
-    final coordinator = ref.read(votingSnapshotPrecomputeCoordinatorProvider);
-    if (coordinator.isCompleted(key)) return true;
+    final key = _snapshotPreparationKey(accountUuid);
+    final coordinator = ref.read(votingSnapshotPreparationCoordinatorProvider);
     final existing = coordinator.inFlight(key);
     if (existing != null) return existing;
 
-    return _runSnapshotBundlePrecomputeForAccount(
+    return _runSnapshotPreparationForAccount(
       accountUuid,
       coordinator: coordinator,
       key: key,
     );
   }
 
-  Future<bool> _runSnapshotBundlePrecomputeForAccount(
+  Future<bool> _runSnapshotPreparationForAccount(
     String accountUuid, {
-    required VotingSnapshotPrecomputeCoordinator coordinator,
+    required VotingSnapshotPreparationCoordinator coordinator,
     required VotingSessionKey key,
   }) async {
     final generation = _sessionGeneration;
@@ -348,14 +347,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on _StaleVotingSessionAction {
       return false;
     }
-    if (!_isCurrentPrecomputeContext(context, accountUuid) ||
+    if (!_isCurrentSnapshotPreparationContext(context, accountUuid) ||
         generation != _sessionGeneration) {
       return false;
     }
     final current = state.value;
     if (current == null || !current.hasConfirmedVotingEligibility) {
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
+        '[zcash] Voting: delegation snapshot preparation skipped '
         'round=${context.round.roundId} reason=eligibility-not-confirmed',
       );
       return false;
@@ -372,17 +371,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         waiting: false,
       );
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
+        '[zcash] Voting: delegation snapshot preparation skipped '
         'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
       );
       return false;
     }
-    if (!_isCurrentPrecomputeContext(context, accountUuid) ||
+    if (!_isCurrentSnapshotPreparationContext(context, accountUuid) ||
         generation != _sessionGeneration) {
       return false;
     }
     final pirEndpoint = await _resolvePirEndpoint(context);
-    if (!_isCurrentPrecomputeContext(context, accountUuid) ||
+    if (!_isCurrentSnapshotPreparationContext(context, accountUuid) ||
         generation != _sessionGeneration ||
         pirEndpoint == null) {
       return false;
@@ -396,7 +395,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirServerUrl = _transportUrl(pirEndpoint);
     return coordinator.run(
       key,
-      () => _runSnapshotBundlePrecompute(
+      () => _runDelegationSnapshotPreparation(
         rust: rust,
         roundContext: roundContext,
         roundId: context.round.roundId,
@@ -456,7 +455,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan = context.roundPlan;
       }
 
-      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
+      var delegationBundleIndexes = plan.pendingDelegationBundleIndexes
+          .toList();
+      if (roundPlanNeedsDraftSetup(roundPlan)) {
+        final snapshotStatus = await ref
+            .read(votingRustApiProvider)
+            .getDelegationSnapshotStatus(ctx: _apiRoundContext(context));
+        if (!snapshotStatus.complete) {
+          throw StateError('Delegation snapshot preparation is incomplete.');
+        }
+        delegationBundleIndexes = List<int>.generate(
+          snapshotStatus.bundleCount,
+          (index) => index,
+          growable: false,
+        );
+      }
+      final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
       final pirEndpoint = current.pirEndpoint;
       if (hasPendingBundles) {
         if (pirEndpoint == null) {
@@ -489,13 +503,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
       if (hasPendingBundles) {
-        await _awaitSnapshotBundlePrecomputeIfRunning(context);
-        _throwIfContextStale(context, 'delegation-precompute');
+        await _awaitSnapshotPreparationIfRunning(context);
+        _throwIfContextStale(context, 'delegation-snapshot');
       }
       final hotkeyTimer = Stopwatch()..start();
       final storedHotkeySecret = hasPendingBundles
           ? await _ensureHotkey(context)
           : null;
+      final rust = ref.read(votingRustApiProvider);
       if (hasPendingBundles) {
         _logDelegationStart(
           'round=${context.round.roundId} hotkey ready '
@@ -507,7 +522,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
-      final rust = ref.read(votingRustApiProvider);
       final confirmTimer = Stopwatch()..start();
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
@@ -542,9 +556,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               await for (final event
                   in rust.buildProveAndSignDelegationRoundWithProgress(
                     ctx: _apiRoundContext(context),
-                    pirServerUrls: _delegationPirTransportUrls(
-                      state.value ?? current,
-                    ),
                     mnemonic: mnemonic!,
                     storedHotkeySecret: storedHotkeySecret!,
                     bundleIndexes: plan.pendingDelegationBundleIndexes,
@@ -797,7 +808,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=${context.round.roundId} keepCount=$signedPrefixCount '
         'bundleCount=${plan.bundleCount}',
       );
-      await ref
+      final retainedEligibleWeight = await ref
           .read(votingRustApiProvider)
           .deleteSkippedBundles(
             dbPath: context.dbPath,
@@ -805,9 +816,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             roundId: context.round.roundId,
             keepCount: signedPrefixCount,
           );
-      final bundleSetup = await ref
-          .read(votingRustApiProvider)
-          .setupDelegationBundles(ctx: _apiRoundContext(context));
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final retainedSignatures = {
@@ -820,9 +828,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           phase: VotingSessionPhase.readyToDelegate,
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
-          eligibleWeightZatoshi: bundleSetup.eligibleWeight,
-          privacyTrimDroppedValueZatoshi:
-              bundleSetup.privacyTrimDroppedValueZatoshi,
+          eligibleWeightZatoshi: retainedEligibleWeight,
           keystoneSignatures: retainedSignatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -3353,14 +3359,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
+        '[zcash] Voting: delegation snapshot preparation skipped '
         'round=${context.round.roundId} reason=pir-resolution-failed '
         'error=$e',
       );
       return null;
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
+        '[zcash] Voting: delegation snapshot preparation skipped '
         'round=${context.round.roundId} reason=pir-resolution-failed '
         'error=$e',
       );
@@ -3368,7 +3374,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<bool> _runSnapshotBundlePrecompute({
+  Future<bool> _runDelegationSnapshotPreparation({
     required VotingRustApi rust,
     required rust_api.ApiVotingRoundContext roundContext,
     required String roundId,
@@ -3376,33 +3382,37 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) async {
     final timer = Stopwatch()..start();
     debugPrint(
-      '[zcash] Voting: snapshot bundle precompute start '
+      '[zcash] Voting: delegation snapshot preparation start '
       'round=$roundId',
     );
     try {
       rust.warmVotingProvingCaches();
-      final result = await rust.precomputeSnapshotBundles(
+      final before = await rust.getDelegationSnapshotStatus(ctx: roundContext);
+      if (before.complete) {
+        debugPrint(
+          '[zcash] Voting: delegation snapshot already complete '
+          'round=$roundId bundles=${before.bundleCount}',
+        );
+        return true;
+      }
+      final result = await rust.prepareDelegationSnapshot(
         ctx: roundContext,
         pirServerUrl: pirServerUrl,
       );
-      final cached = result.bundles.fold<int>(
-        0,
-        (total, bundle) => total + bundle.cachedCount,
-      );
-      final fetched = result.bundles.fold<int>(
-        0,
-        (total, bundle) => total + bundle.fetchedCount,
-      );
+      final status = await rust.getDelegationSnapshotStatus(ctx: roundContext);
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute completed '
-        'round=$roundId bundles=${result.bundleCount} '
-        'cached=$cached fetched=$fetched '
+        '[zcash] Voting: delegation snapshot preparation completed '
+        'round=$roundId bundles=${status.bundleCount} '
+        'complete=${status.complete} alreadyComplete=${result.alreadyComplete} '
+        'witnessesCached=${result.witnessesCached} '
+        'witnessesGenerated=${result.witnessesGenerated} '
+        'pirCached=${result.pirCached} pirFetched=${result.pirFetched} '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
-      return true;
+      return status.complete;
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute failed '
+        '[zcash] Voting: delegation snapshot preparation failed '
         'round=$roundId '
         'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
@@ -3411,16 +3421,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
+  Future<void> _awaitSnapshotPreparationIfRunning(
     _VotingSessionContext context,
   ) async {
     if (!ref.mounted || !_isCurrentContext(context)) return;
-    final precompute = ref
-        .read(votingSnapshotPrecomputeCoordinatorProvider)
-        .inFlight(_snapshotBundlePrecomputeKey(context.accountUuid));
-    if (precompute == null) {
+    final preparation = ref
+        .read(votingSnapshotPreparationCoordinatorProvider)
+        .inFlight(_snapshotPreparationKey(context.accountUuid));
+    if (preparation == null) {
       debugPrint(
-        '[zcash] Voting: snapshot bundle precompute not in-flight '
+        '[zcash] Voting: delegation snapshot preparation not in-flight '
         'round=${context.round.roundId}',
       );
       return;
@@ -3428,12 +3438,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final waitTimer = Stopwatch()..start();
     debugPrint(
-      '[zcash] Voting: waiting for in-flight snapshot bundle precompute '
+      '[zcash] Voting: waiting for in-flight delegation snapshot preparation '
       'round=${context.round.roundId}',
     );
-    await precompute;
+    await preparation;
     debugPrint(
-      '[zcash] Voting: in-flight snapshot bundle precompute joined '
+      '[zcash] Voting: in-flight delegation snapshot preparation joined '
       'round=${context.round.roundId} '
       'elapsed=${formatElapsedSeconds(waitTimer.elapsed)}',
     );
@@ -3443,21 +3453,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
   }
 
-  List<String> _delegationPirTransportUrls(VotingSessionState session) {
-    final selected = session.pirEndpoint;
-    if (selected == null) return const [];
-
-    final candidates = <String>[_transportUrl(selected)];
-    final seen = <String>{selected.toString()};
-    for (final diagnostic in session.pirDiagnostics) {
-      if (diagnostic.matched && seen.add(diagnostic.endpoint.toString())) {
-        candidates.add(_transportUrl(diagnostic.endpoint));
-      }
-    }
-    return candidates;
-  }
-
-  VotingSessionKey _snapshotBundlePrecomputeKey(String accountUuid) {
+  VotingSessionKey _snapshotPreparationKey(String accountUuid) {
     return VotingSessionKey(roundId: _roundId, accountUuid: accountUuid);
   }
 
@@ -3695,6 +3691,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     var unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
         .where((bundleIndex) => !signatures.containsKey(bundleIndex))
         .toList();
+    if (roundPlanNeedsDraftSetup(roundPlan)) {
+      final snapshotStatus = await ref
+          .read(votingRustApiProvider)
+          .getDelegationSnapshotStatus(ctx: _apiRoundContext(context));
+      if (!snapshotStatus.complete) {
+        throw StateError('Delegation snapshot preparation is incomplete.');
+      }
+      unsignedBundleIndexes = List<int>.generate(
+        snapshotStatus.bundleCount,
+        (index) => index,
+        growable: false,
+      ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
+    }
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
@@ -3739,11 +3748,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final rust = ref.read(votingRustApiProvider);
     late final List<rust_delegate.KeystoneSigningRequest> requests;
     try {
-      requests = await rust.buildKeystoneDelegationRequests(
+      requests = await rust.finishDelegationRoundPreparation(
         ctx: _apiRoundContext(context),
-        pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
         storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
+        bundleIndexes: unsignedBundleIndexes,
       );
     } catch (error) {
       if (!_isKeystoneSetupOverwriteError(error)) rethrow;
@@ -3801,11 +3809,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearError: true,
         ),
       );
-      requests = await rust.buildKeystoneDelegationRequests(
+      requests = await rust.finishDelegationRoundPreparation(
         ctx: _apiRoundContext(context),
-        pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
         storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
+        bundleIndexes: unsignedBundleIndexes,
       );
     }
 
@@ -3908,35 +3915,38 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       ),
     );
 
-    await _awaitSnapshotBundlePrecomputeIfRunning(context);
-    _throwIfContextStale(context, 'snapshot-bundle-precompute');
-    final precomputedPlan = await _loadResumePlan(context);
-    final precomputedRoundPlan = await _loadRoundPlan(context);
-    if (precomputedPlan.pendingDelegationBundleIndexes.isNotEmpty &&
-        !roundPlanNeedsDraftSetup(precomputedRoundPlan)) {
-      _logDelegationStart(
-        'round=${context.round.roundId} prepare reusing durable bundles '
-        'count=${precomputedPlan.pendingDelegationBundleIndexes.length}',
+    await _awaitSnapshotPreparationIfRunning(context);
+    _throwIfContextStale(context, 'delegation-snapshot-preparation');
+    final rust = ref.read(votingRustApiProvider);
+    final roundContext = _apiRoundContext(context);
+    var snapshotStatus = await rust.getDelegationSnapshotStatus(
+      ctx: roundContext,
+    );
+    if (!snapshotStatus.complete) {
+      final prepared = await ref
+          .read(votingSnapshotPreparationCoordinatorProvider)
+          .run(
+            _snapshotPreparationKey(context.accountUuid),
+            () => _runDelegationSnapshotPreparation(
+              rust: rust,
+              roundContext: roundContext,
+              roundId: context.round.roundId,
+              pirServerUrl: _transportUrl(resolution.endpoint),
+            ),
+          );
+      _throwIfContextStale(context, 'delegation-snapshot-preparation');
+      snapshotStatus = await rust.getDelegationSnapshotStatus(
+        ctx: roundContext,
       );
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.readyToDelegate,
-          resumePlan: precomputedPlan,
-          roundPlan: precomputedRoundPlan,
-          isHardwareAccount: context.isHardwareAccount,
-        ),
-      );
-      return;
+      if (!prepared || !snapshotStatus.complete) {
+        throw StateError('Delegation snapshot preparation did not complete.');
+      }
     }
-    final setupTimer = Stopwatch()..start();
-    final bundleSetup = await ref
-        .read(votingRustApiProvider)
-        .setupDelegationBundles(ctx: _apiRoundContext(context));
     _logDelegationStart(
-      'round=${context.round.roundId} prepare setup-bundles done '
+      'round=${context.round.roundId} prepare snapshot-ready '
+      'bundles=${snapshotStatus.bundleCount} '
       'elapsed=${formatElapsedSeconds(prepareTimer.elapsed)} '
-      'setup=${formatElapsedSeconds(setupTimer.elapsed)}',
+      'complete=${snapshotStatus.complete}',
     );
     final refreshedPlan = await _loadResumePlan(context);
     final refreshedRoundPlan = await _loadRoundPlan(context);
@@ -3946,9 +3956,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: VotingSessionPhase.readyToDelegate,
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
-        eligibleWeightZatoshi: bundleSetup.eligibleWeight,
-        privacyTrimDroppedValueZatoshi:
-            bundleSetup.privacyTrimDroppedValueZatoshi,
         isHardwareAccount: context.isHardwareAccount,
       ),
     );
@@ -4323,7 +4330,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _sessionAccountUuid == context.accountUuid;
   }
 
-  bool _isCurrentPrecomputeContext(
+  bool _isCurrentSnapshotPreparationContext(
     _VotingSessionContext context,
     String expectedAccountUuid,
   ) {
@@ -5095,9 +5102,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     if (context.isHardwareAccount) {
       final signatures = await _loadKeystoneSignatures(context);
       if (signatures.isNotEmpty) {
-        final bundleSetup = await ref
-            .read(votingRustApiProvider)
-            .setupDelegationBundles(ctx: _apiRoundContext(context));
         final refreshedPlan = await _loadResumePlan(context);
         final refreshedRoundPlan = await _loadRoundPlan(context);
         final successPhase = current.phase == VotingSessionPhase.error
@@ -5111,9 +5115,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             round: context.round,
             resumePlan: refreshedPlan,
             roundPlan: refreshedRoundPlan,
-            eligibleWeightZatoshi: bundleSetup.eligibleWeight,
-            privacyTrimDroppedValueZatoshi:
-                bundleSetup.privacyTrimDroppedValueZatoshi,
             isHardwareAccount: context.isHardwareAccount,
             clearError: true,
           ),

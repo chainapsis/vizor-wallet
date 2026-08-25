@@ -48,16 +48,12 @@ pub(crate) async fn fetch_snapshot_tree_state(
     crate::network_privacy::tor_client_for_route(false)?;
 
     let fetch_started = Instant::now();
-    log::info!(
-        "[VOTING_PROVE] snapshot-anchor fetch start height={snapshot_height}"
-    );
+    log::info!("[VOTING_PROVE] snapshot-anchor fetch start height={snapshot_height}");
 
     let mut last_error = None;
     for attempt in 1..=LWD_DIAL_ATTEMPTS {
         let dial_started = Instant::now();
-        log::info!(
-            "[VOTING_PROVE] snapshot-anchor dial attempt={attempt}/{LWD_DIAL_ATTEMPTS}"
-        );
+        log::info!("[VOTING_PROVE] snapshot-anchor dial attempt={attempt}/{LWD_DIAL_ATTEMPTS}");
         match sync_engine::open_lwd_channel(lightwalletd_url).await {
             Ok(mut client) => {
                 log::info!(

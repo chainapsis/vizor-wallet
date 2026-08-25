@@ -54,24 +54,24 @@ class VotingReviewView extends ConsumerStatefulWidget {
 }
 
 class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
-  bool _snapshotPrecomputeStarted = false;
+  bool _snapshotPreparationStarted = false;
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
-  String? _snapshotBundlePrecomputeKey;
+  String? _snapshotPreparationKey;
   String? _resultsRedirectRoundId;
-  int _snapshotPrecomputeGeneration = 0;
+  int _snapshotPreparationGeneration = 0;
 
   @override
   void didUpdateWidget(covariant VotingReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
-      _snapshotPrecomputeGeneration++;
-      _snapshotPrecomputeStarted = false;
+      _snapshotPreparationGeneration++;
+      _snapshotPreparationStarted = false;
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
-      _snapshotBundlePrecomputeKey = null;
+      _snapshotPreparationKey = null;
       _resultsRedirectRoundId = null;
     }
   }
@@ -116,23 +116,23 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
     });
   }
 
-  void _maybePrecomputeSnapshotBundles(VotingSessionState state) {
+  void _maybePrepareDelegationSnapshot(VotingSessionState state) {
     final accountUuid = state.accountUuid;
     if (accountUuid == null || !state.hasConfirmedVotingEligibility) {
       return;
     }
 
     final key = '${widget.roundId}|$accountUuid';
-    if (_snapshotBundlePrecomputeKey == key) return;
-    _snapshotPrecomputeStarted = false;
-    _snapshotBundlePrecomputeKey = key;
-    final generation = _snapshotPrecomputeGeneration;
+    if (_snapshotPreparationKey == key) return;
+    _snapshotPreparationStarted = false;
+    _snapshotPreparationKey = key;
+    final generation = _snapshotPreparationGeneration;
     final roundId = widget.roundId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || generation != _snapshotPrecomputeGeneration) return;
+      if (!mounted || generation != _snapshotPreparationGeneration) return;
       final notifier = ref.read(votingSessionProvider(roundId).notifier);
       unawaited(
-        _startSnapshotBundlePrecompute(
+        _startSnapshotPreparation(
           notifier: notifier,
           accountUuid: accountUuid,
           key: key,
@@ -142,28 +142,28 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
     });
   }
 
-  Future<void> _startSnapshotBundlePrecompute({
+  Future<void> _startSnapshotPreparation({
     required VotingSessionNotifier notifier,
     required String accountUuid,
     required String key,
     required int generation,
   }) async {
-    if (_snapshotPrecomputeStarted) return;
-    _snapshotPrecomputeStarted = true;
+    if (_snapshotPreparationStarted) return;
+    _snapshotPreparationStarted = true;
     var succeeded = false;
     try {
-      succeeded = await notifier.precomputeSnapshotBundles(
+      succeeded = await notifier.prepareDelegationSnapshot(
         accountUuid: accountUuid,
       );
     } catch (e) {
-      debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
+      debugPrint('[zcash] Voting: delegation snapshot preparation skipped: $e');
     } finally {
       if (!succeeded &&
           mounted &&
-          generation == _snapshotPrecomputeGeneration &&
-          _snapshotBundlePrecomputeKey == key) {
-        _snapshotPrecomputeStarted = false;
-        _snapshotBundlePrecomputeKey = null;
+          generation == _snapshotPreparationGeneration &&
+          _snapshotPreparationKey == key) {
+        _snapshotPreparationStarted = false;
+        _snapshotPreparationKey = null;
       }
     }
   }
@@ -194,7 +194,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
           return _stateView(const VotingPaneLoading());
         }
         _maybePrepareVotingPower(state);
-        _maybePrecomputeSnapshotBundles(state);
+        _maybePrepareDelegationSnapshot(state);
         final proposals = round == null
             ? <VotingProposalView>[]
             : proposalsFromRound(round);

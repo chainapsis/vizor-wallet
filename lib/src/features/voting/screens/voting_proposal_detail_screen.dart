@@ -68,9 +68,9 @@ class _VotingProposalDetailViewState
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
-  String? _snapshotBundlePrecomputeKey;
+  String? _snapshotPreparationKey;
   String? _resultsRedirectRoundId;
-  int _snapshotPrecomputeGeneration = 0;
+  int _snapshotPreparationGeneration = 0;
 
   @override
   void initState() {
@@ -88,11 +88,11 @@ class _VotingProposalDetailViewState
   void didUpdateWidget(covariant VotingProposalDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
-      _snapshotPrecomputeGeneration++;
+      _snapshotPreparationGeneration++;
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
-      _snapshotBundlePrecomputeKey = null;
+      _snapshotPreparationKey = null;
       _resultsRedirectRoundId = null;
     }
   }
@@ -207,7 +207,7 @@ class _VotingProposalDetailViewState
         final votingEligibilityError = votingError == null
             ? false
             : isVotingEligibilityErrorText(votingError.message);
-        _maybePrecomputeSnapshotBundles(state);
+        _maybePrepareDelegationSnapshot(state);
         return _ActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
           roundId: roundId,
@@ -330,7 +330,7 @@ class _VotingProposalDetailViewState
 
   // Lock in the snapshot-stable bundle plan and warm real/padded PIR inputs as
   // soon as voting power is confirmed, rather than waiting for review.
-  void _maybePrecomputeSnapshotBundles(VotingSessionState state) {
+  void _maybePrepareDelegationSnapshot(VotingSessionState state) {
     final accountUuid = state.accountUuid;
     if (accountUuid == null ||
         !state.hasConfirmedVotingEligibility ||
@@ -339,15 +339,15 @@ class _VotingProposalDetailViewState
     }
 
     final key = '${widget.roundId}|$accountUuid';
-    if (_snapshotBundlePrecomputeKey == key) return;
-    _snapshotBundlePrecomputeKey = key;
-    final generation = _snapshotPrecomputeGeneration;
+    if (_snapshotPreparationKey == key) return;
+    _snapshotPreparationKey = key;
+    final generation = _snapshotPreparationGeneration;
     final roundId = widget.roundId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || generation != _snapshotPrecomputeGeneration) return;
+      if (!mounted || generation != _snapshotPreparationGeneration) return;
       final notifier = ref.read(votingSessionProvider(roundId).notifier);
       unawaited(
-        _startSnapshotBundlePrecompute(
+        _startSnapshotPreparation(
           notifier: notifier,
           accountUuid: accountUuid,
           key: key,
@@ -357,7 +357,7 @@ class _VotingProposalDetailViewState
     });
   }
 
-  Future<void> _startSnapshotBundlePrecompute({
+  Future<void> _startSnapshotPreparation({
     required VotingSessionNotifier notifier,
     required String accountUuid,
     required String key,
@@ -365,17 +365,17 @@ class _VotingProposalDetailViewState
   }) async {
     var succeeded = false;
     try {
-      succeeded = await notifier.precomputeSnapshotBundles(
+      succeeded = await notifier.prepareDelegationSnapshot(
         accountUuid: accountUuid,
       );
     } catch (e) {
-      debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
+      debugPrint('[zcash] Voting: delegation snapshot preparation skipped: $e');
     } finally {
       if (!succeeded &&
           mounted &&
-          generation == _snapshotPrecomputeGeneration &&
-          _snapshotBundlePrecomputeKey == key) {
-        _snapshotBundlePrecomputeKey = null;
+          generation == _snapshotPreparationGeneration &&
+          _snapshotPreparationKey == key) {
+        _snapshotPreparationKey = null;
       }
     }
   }

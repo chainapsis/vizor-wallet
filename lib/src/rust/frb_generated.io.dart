@@ -67,13 +67,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
-  ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw);
-
-  @protected
   ApiDelegationRoundEvent dco_decode_api_delegation_round_event(dynamic raw);
 
   @protected
   ApiDelegationSignatureInput dco_decode_api_delegation_signature_input(
+    dynamic raw,
+  );
+
+  @protected
+  ApiDelegationSnapshotPreparationResult
+  dco_decode_api_delegation_snapshot_preparation_result(dynamic raw);
+
+  @protected
+  ApiDelegationSnapshotStatus dco_decode_api_delegation_snapshot_status(
     dynamic raw,
   );
 
@@ -102,15 +108,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiPirCacheWarmupResult dco_decode_api_pir_cache_warmup_result(dynamic raw);
-
-  @protected
-  ApiSnapshotBundlePirResult dco_decode_api_snapshot_bundle_pir_result(
-    dynamic raw,
-  );
-
-  @protected
-  ApiSnapshotBundlePrecomputeResult
-  dco_decode_api_snapshot_bundle_precompute_result(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -203,6 +200,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteShareWire dco_decode_box_autoadd_vote_share_wire(dynamic raw);
 
   @protected
+  VotingRoundParams dco_decode_box_autoadd_voting_round_params(dynamic raw);
+
+  @protected
   ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
     dynamic raw,
   );
@@ -227,10 +227,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationConfirmation dco_decode_delegation_confirmation(dynamic raw);
-
-  @protected
-  DelegationPirPrecomputeResultView
-  dco_decode_delegation_pir_precompute_result_view(dynamic raw);
 
   @protected
   DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw);
@@ -336,10 +332,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ApiPendingShareRound> dco_decode_list_api_pending_share_round(
     dynamic raw,
   );
-
-  @protected
-  List<ApiSnapshotBundlePirResult>
-  dco_decode_list_api_snapshot_bundle_pir_result(dynamic raw);
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -894,15 +886,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer);
-
-  @protected
   ApiDelegationRoundEvent sse_decode_api_delegation_round_event(
     SseDeserializer deserializer,
   );
 
   @protected
   ApiDelegationSignatureInput sse_decode_api_delegation_signature_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegationSnapshotPreparationResult
+  sse_decode_api_delegation_snapshot_preparation_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegationSnapshotStatus sse_decode_api_delegation_snapshot_status(
     SseDeserializer deserializer,
   );
 
@@ -937,17 +937,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiPirCacheWarmupResult sse_decode_api_pir_cache_warmup_result(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ApiSnapshotBundlePirResult sse_decode_api_snapshot_bundle_pir_result(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ApiSnapshotBundlePrecomputeResult
-  sse_decode_api_snapshot_bundle_precompute_result(
     SseDeserializer deserializer,
   );
 
@@ -1064,6 +1053,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VotingRoundParams sse_decode_box_autoadd_voting_round_params(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
     SseDeserializer deserializer,
   );
@@ -1096,12 +1090,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationConfirmation sse_decode_delegation_confirmation(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  DelegationPirPrecomputeResultView
-  sse_decode_delegation_pir_precompute_result_view(
     SseDeserializer deserializer,
   );
 
@@ -1235,10 +1223,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ApiPendingShareRound> sse_decode_list_api_pending_share_round(
     SseDeserializer deserializer,
   );
-
-  @protected
-  List<ApiSnapshotBundlePirResult>
-  sse_decode_list_api_snapshot_bundle_pir_result(SseDeserializer deserializer);
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -1929,12 +1913,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_api_bundle_layout(
-    ApiBundleLayout self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_api_delegation_round_event(
     ApiDelegationRoundEvent self,
     SseSerializer serializer,
@@ -1943,6 +1921,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_delegation_signature_input(
     ApiDelegationSignatureInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegation_snapshot_preparation_result(
+    ApiDelegationSnapshotPreparationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegation_snapshot_status(
+    ApiDelegationSnapshotStatus self,
     SseSerializer serializer,
   );
 
@@ -1985,18 +1975,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_pir_cache_warmup_result(
     ApiPirCacheWarmupResult self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_api_snapshot_bundle_pir_result(
-    ApiSnapshotBundlePirResult self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_api_snapshot_bundle_precompute_result(
-    ApiSnapshotBundlePrecomputeResult self,
     SseSerializer serializer,
   );
 
@@ -2133,6 +2111,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_voting_round_params(
+    VotingRoundParams self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_chain_upgrade_activation_status(
     ChainUpgradeActivationStatus self,
     SseSerializer serializer,
@@ -2177,12 +2161,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_delegation_confirmation(
     DelegationConfirmation self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_delegation_pir_precompute_result_view(
-    DelegationPirPrecomputeResultView self,
     SseSerializer serializer,
   );
 
@@ -2342,12 +2320,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_pending_share_round(
     List<ApiPendingShareRound> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_api_snapshot_bundle_pir_result(
-    List<ApiSnapshotBundlePirResult> self,
     SseSerializer serializer,
   );
 

@@ -1041,7 +1041,7 @@ void main() {
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
     expect(rust.eligibilityCheckCalls, 1);
-    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.snapshotPreparationCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(recoveryApi.ballotIntents, isEmpty);
   });
@@ -1144,7 +1144,7 @@ void main() {
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
     expect(rust.eligibilityCheckCalls, 1);
-    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.snapshotPreparationCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(
       http.requests.any(
@@ -2958,7 +2958,7 @@ void main() {
   });
 
   testWidgets(
-    'proposal and review routes share completed snapshot precompute',
+    'proposal and review routes share completed snapshot preparation',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1152, 768));
       addTearDown(() async {
@@ -2967,6 +2967,7 @@ void main() {
 
       final recoveryApi = _MutableVotingRecoveryApi();
       final rust = _VotingStatusRustApi(recoveryApi);
+      rust.snapshotComplete = false;
       final container = _statusContainer(
         accountOverride: _NoMnemonicAccountNotifier.new,
         recoveryApi: recoveryApi,
@@ -2981,7 +2982,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(rust.snapshotBundlePrecomputeCalls, 1);
+      expect(rust.snapshotPreparationCalls, 1);
 
       await tester.tap(find.text('Yes'));
       await tester.pumpAndSettle();
@@ -2989,7 +2990,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Review your answers'), findsOneWidget);
-      expect(rust.snapshotBundlePrecomputeCalls, 1);
+      expect(rust.snapshotPreparationCalls, 1);
     },
   );
 
@@ -5150,7 +5151,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     this.setupWeightPerBundle,
     this.shareTrackingDelaySeconds,
     this.keystoneMemoZecByBundle = const {},
-  }) : _persistedBundleCount = bundleCount;
+  }) : _persistedBundleCount = bundleCount,
+       snapshotComplete = bundleCount > 0;
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
@@ -5160,9 +5162,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final Map<int, String> keystoneMemoZecByBundle;
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
-  int setupDelegationBundleCalls = 0;
   int eligibilityCheckCalls = 0;
-  int snapshotBundlePrecomputeCalls = 0;
+  int snapshotPreparationCalls = 0;
+  bool snapshotComplete;
 
   /// Raw note value the privacy trim withholds. Zero for every fixture that
   /// does not exercise the trim notice.
@@ -5171,20 +5173,28 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int voteCommitmentCalls = 0;
 
   @override
-  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiDelegationSnapshotPreparationResult>
+  prepareDelegationSnapshot({
     required rust_api.ApiVotingRoundContext ctx,
+    required String pirServerUrl,
   }) async {
-    setupDelegationBundleCalls++;
+    snapshotPreparationCalls++;
+    snapshotComplete = true;
     final eligibleWeight = setupWeightPerBundle == null
         ? BigInt.from(100)
         : setupWeightPerBundle! * BigInt.from(_persistedBundleCount);
-    return rust_api.ApiBundleLayout(
+    return rust_api.ApiDelegationSnapshotPreparationResult(
+      complete: true,
+      alreadyComplete: false,
       bundleCount: _persistedBundleCount,
+      noteCount: _persistedBundleCount,
       eligibleWeight: eligibleWeight,
-      droppedCount: 0,
-      privacyTrimDroppedBundles: 0,
-      privacyTrimDroppedNotes: 0,
-      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
+      witnessCount: _persistedBundleCount,
+      pirProofCount: _persistedBundleCount,
+      witnessesCached: 0,
+      witnessesGenerated: _persistedBundleCount,
+      pirCached: 0,
+      pirFetched: _persistedBundleCount,
     );
   }
 
@@ -5203,25 +5213,15 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
+  Future<rust_api.ApiDelegationSnapshotStatus> getDelegationSnapshotStatus({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
   }) async {
-    snapshotBundlePrecomputeCalls++;
-    return rust_api.ApiSnapshotBundlePrecomputeResult(
-      bundleCount: bundleCount,
-      eligibleWeight: eligibilityWeightZatoshi ?? BigInt.from(100),
-      droppedCount: 0,
-      privacyTrimDroppedBundles: 0,
-      privacyTrimDroppedNotes: 0,
-      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
-      bundles: List.generate(
-        bundleCount,
-        (_) => const rust_api.ApiSnapshotBundlePirResult(
-          cachedCount: 0,
-          fetchedCount: 1,
-        ),
-      ),
+    return rust_api.ApiDelegationSnapshotStatus(
+      complete: snapshotComplete,
+      bundleCount: _persistedBundleCount,
+      noteCount: _persistedBundleCount,
+      witnessCount: snapshotComplete ? _persistedBundleCount : 0,
+      pirProofCount: snapshotComplete ? _persistedBundleCount : 0,
     );
   }
 
@@ -5229,7 +5229,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Stream<rust_api.ApiDelegationRoundEvent>
   buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndexes,
@@ -5262,7 +5261,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<int> deleteSkippedBundles({
+  Future<BigInt> deleteSkippedBundles({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -5276,7 +5275,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     }
     _persistedBundleCount = keepCount;
     recoveryApi.state = _recoveryState(bundleCount: keepCount);
-    return bundleCount - keepCount;
+    final weightPerBundle = setupWeightPerBundle ?? BigInt.from(100);
+    return weightPerBundle * BigInt.from(keepCount);
   }
 
   Future<rust_delegate.KeystoneSigningRequest> _buildKeystoneDelegationRequest({
@@ -5303,14 +5303,15 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>>
-  buildKeystoneDelegationRequests({
+  finishDelegationRoundPreparation({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required List<int> bundleIndices,
+    required List<int> bundleIndexes,
   }) async {
+    snapshotComplete = true;
+    recoveryApi.state = _recoveryState(bundleCount: _persistedBundleCount);
     return Future.wait([
-      for (final bundleIndex in bundleIndices)
+      for (final bundleIndex in bundleIndexes)
         _buildKeystoneDelegationRequest(
           ctx: ctx,
           storedHotkeySecret: storedHotkeySecret,

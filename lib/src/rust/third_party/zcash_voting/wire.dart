@@ -7,7 +7,7 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
@@ -69,37 +69,6 @@ class DelegationConfirmation {
           runtimeType == other.runtimeType &&
           txHash == other.txHash &&
           vanLeafPosition == other.vanLeafPosition;
-}
-
-class DelegationPirPrecomputeResultView {
-  final int cachedCount;
-  final int fetchedCount;
-  final int bundleCount;
-  final int bundleIndex;
-
-  const DelegationPirPrecomputeResultView({
-    required this.cachedCount,
-    required this.fetchedCount,
-    required this.bundleCount,
-    required this.bundleIndex,
-  });
-
-  @override
-  int get hashCode =>
-      cachedCount.hashCode ^
-      fetchedCount.hashCode ^
-      bundleCount.hashCode ^
-      bundleIndex.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DelegationPirPrecomputeResultView &&
-          runtimeType == other.runtimeType &&
-          cachedCount == other.cachedCount &&
-          fetchedCount == other.fetchedCount &&
-          bundleCount == other.bundleCount &&
-          bundleIndex == other.bundleIndex;
 }
 
 class DelegationRecoveryView {

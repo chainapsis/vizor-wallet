@@ -362,17 +362,18 @@ abstract interface class VotingRustApi {
     required List<int> nullifierImtRoot,
   });
 
-  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiDelegationSnapshotPreparationResult>
+  prepareDelegationSnapshot({
     required rust_api.ApiVotingRoundContext ctx,
+    required String pirServerUrl,
   });
 
   Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
     required rust_api.ApiVotingRoundContext ctx,
   });
 
-  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
+  Future<rust_api.ApiDelegationSnapshotStatus> getDelegationSnapshotStatus({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
   });
 
   /// Bundle-independent background PIR proof cache warm-up.
@@ -398,7 +399,6 @@ abstract interface class VotingRustApi {
   Stream<rust_api.ApiDelegationRoundEvent>
   buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndexes,
@@ -407,11 +407,10 @@ abstract interface class VotingRustApi {
   Future<List<int>> generateVotingHotkey({required String network});
 
   Future<List<rust_delegate.KeystoneSigningRequest>>
-  buildKeystoneDelegationRequests({
+  finishDelegationRoundPreparation({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required List<int> bundleIndices,
+    required List<int> bundleIndexes,
   });
 
   Future<rust_api.ApiKeystoneSignatureBatchResult>
@@ -428,7 +427,7 @@ abstract interface class VotingRustApi {
     required String roundId,
   });
 
-  Future<int> deleteSkippedBundles({
+  Future<BigInt> deleteSkippedBundles({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -634,10 +633,15 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiBundleLayout> setupDelegationBundles({
+  Future<rust_api.ApiDelegationSnapshotPreparationResult>
+  prepareDelegationSnapshot({
     required rust_api.ApiVotingRoundContext ctx,
+    required String pirServerUrl,
   }) {
-    return rust_api.setupDelegationBundles(ctx: ctx);
+    return rust_api.prepareDelegationSnapshot(
+      ctx: ctx,
+      pirServerUrl: pirServerUrl,
+    );
   }
 
   @override
@@ -648,13 +652,14 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
+  Future<rust_api.ApiDelegationSnapshotStatus> getDelegationSnapshotStatus({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
   }) {
-    return rust_api.precomputeSnapshotBundles(
-      ctx: ctx,
-      pirServerUrl: pirServerUrl,
+    return rust_api.getDelegationSnapshotStatus(
+      dbPath: ctx.dbPath,
+      accountUuid: ctx.accountUuid,
+      network: ctx.network,
+      roundParams: ctx.roundParams,
     );
   }
 
@@ -690,14 +695,12 @@ class FrbVotingRustApi implements VotingRustApi {
   Stream<rust_api.ApiDelegationRoundEvent>
   buildProveAndSignDelegationRoundWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required List<int> bundleIndexes,
   }) {
     return rust_api.buildProveAndSignDelegationRoundWithProgress(
       ctx: ctx,
-      pirServerUrls: pirServerUrls,
       mnemonic: mnemonic,
       storedHotkeySecret: storedHotkeySecret,
       bundleIndexes: bundleIndexes,
@@ -711,17 +714,15 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>>
-  buildKeystoneDelegationRequests({
+  finishDelegationRoundPreparation({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
-    required List<int> bundleIndices,
+    required List<int> bundleIndexes,
   }) {
-    return rust_api.buildKeystoneDelegationRequests(
+    return rust_api.finishDelegationRoundPreparation(
       ctx: ctx,
-      pirServerUrls: pirServerUrls,
       storedHotkeySecret: storedHotkeySecret,
-      bundleIndexes: bundleIndices,
+      bundleIndexes: bundleIndexes,
     );
   }
 
@@ -755,7 +756,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<int> deleteSkippedBundles({
+  Future<BigInt> deleteSkippedBundles({
     required String dbPath,
     required String accountUuid,
     required String roundId,

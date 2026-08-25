@@ -9,9 +9,9 @@ use std::{
 };
 
 use ff::PrimeField;
+use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_keys::keys::UnifiedSpendingKey;
-use zeroize::Zeroizing;
 use zip32::{fingerprint::SeedFingerprint, AccountId};
 
 use crate::wallet::sync::open_wallet_db_for_read;
@@ -26,9 +26,9 @@ use super::transport::fetch_snapshot_tree_state;
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
-    DelegationSigningRequest, GatherDelegationRoundParams, LoadPreparedDelegationRoundParams,
-    PrepareDelegationBundleParams, PreparedDelegationBundle, PreparedDelegationBundleSignature,
-    PreparedDelegationProof, PreparedDelegationRound,
+    DelegationSigningRequest, LoadPreparedDelegationRoundParams, PrepareDelegationBundleParams,
+    PreparedDelegationBundle, PreparedDelegationBundleSignature, PreparedDelegationProof,
+    PreparedDelegationRound,
 };
 use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
 use zcash_voting::storage::VotingDb;
@@ -41,7 +41,6 @@ const PROVING_CACHE_STACK_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CONCURRENT_DELEGATION_PROOFS: usize = 3;
 
 static PROVING_CACHE_WARMUP_STARTED: OnceLock<()> = OnceLock::new();
-
 /// Start a new bundle before adding a note would cross the whale threshold.
 ///
 /// `zcash_voting` owns the final bundle planning. Vizor only supplies the
@@ -273,58 +272,57 @@ fn connect_pir_client(
     Ok(client)
 }
 
-fn prepare_delegation_round_bulk(
+fn finish_delegation_round_preparation_inner(
     db_path: &str,
     account_uuid: &str,
-    pir_server_urls: &[String],
-    pir_layout: PirLayout,
-    lwd: zcash_voting::delegate::DelegationLwdInputs,
-    session_json: Option<&str>,
+    round_params: &zcash_voting::VotingRoundParams,
+    round_name: &str,
     voting_hotkey: &zcash_voting::VotingHotkey,
-    bundle_policy: BundlePolicy,
 ) -> Result<(VotingDb, PreparedDelegationRound), String> {
     let started = Instant::now();
+    let wallet_open_started = Instant::now();
     let wallet_db = open_wallet_db_for_read(db_path, wallet_network(voting_hotkey.network()))?;
-    let gathered_started = Instant::now();
-    let (voting_db, gathered) = with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-        zcash_voting::delegate::gather_delegation_round(
-            voting_db,
+    log::info!(
+        "[VOTING_TIMING] finish wallet-db-open elapsed={:.3}s",
+        wallet_open_started.elapsed().as_secs_f64()
+    );
+    let sidecar_open_started = Instant::now();
+    let voting_db = open_voting_db(db_path, account_uuid)?;
+    log::info!(
+        "[VOTING_TIMING] finish sidecar-open elapsed={:.3}s",
+        sidecar_open_started.elapsed().as_secs_f64()
+    );
+    let lock_started = Instant::now();
+    let prepared = with_voting_sidecar_write_lock(db_path, || {
+        log::info!(
+            "[VOTING_TIMING] finish sidecar-lock-wait elapsed={:.3}s",
+            lock_started.elapsed().as_secs_f64()
+        );
+        let crate_started = Instant::now();
+        zcash_voting::delegate::finish_delegation_round_preparation(
+            &voting_db,
             &wallet_db,
-            GatherDelegationRoundParams {
-                lwd,
-                session_json,
+            zcash_voting::delegate::FinishDelegationRoundPreparationParams {
                 account_uuid,
                 voting_hotkey,
-                bundle_policy: whale_protected_bundle_policy(bundle_policy),
+                round_params,
+                round_name,
             },
+            &zcash_voting::NoopProgressReporter,
         )
-        .map_err(|e| format!("gather delegation round failed: {e}"))
-    })?;
-    log::info!(
-        "[VOTING_PROVE] round={} gather elapsed={:.3}s",
-        gathered.round_id,
-        gathered_started.elapsed().as_secs_f64()
-    );
-
-    let prepare_started = Instant::now();
-    let prepared = with_pir_endpoint_failover(pir_server_urls, |pir_server_url| {
-        let pir_client = connect_pir_client(pir_server_url, pir_layout)?;
-        with_voting_sidecar_write_lock(db_path, || {
-            zcash_voting::delegate::prepare_delegation_round(
-                &voting_db,
-                &wallet_db,
-                gathered.clone(),
-                &pir_client,
-                &zcash_voting::NoopProgressReporter,
-            )
-            .map_err(|e| format!("prepare delegation round failed: {e}"))
+        .map_err(|e| format!("finish delegation round preparation failed: {e}"))
+        .inspect(|prepared| {
+            log::info!(
+                "[VOTING_TIMING] finish crate-call bundles={} elapsed={:.3}s",
+                prepared.layout.bundle_count,
+                crate_started.elapsed().as_secs_f64()
+            );
         })
     })?;
     log::info!(
-        "[VOTING_PROVE] round={} prepare bundles={} elapsed={:.3}s total={:.3}s",
+        "[VOTING_PROVE] round={} finish-preparation bundles={} total={:.3}s",
         prepared.round_id,
         prepared.layout.bundle_count,
-        prepare_started.elapsed().as_secs_f64(),
         started.elapsed().as_secs_f64()
     );
     Ok((voting_db, prepared))
@@ -340,20 +338,31 @@ where
     let started = Instant::now();
     let mut pending = VecDeque::from(captured);
     let mut proofs = Vec::with_capacity(pending.len());
+    let mut batch_index = 0usize;
     while !pending.is_empty() {
         let batch = (0..MAX_CONCURRENT_DELEGATION_PROOFS)
             .filter_map(|_| pending.pop_front())
             .collect::<Vec<_>>();
+        log::info!(
+            "[VOTING_TIMING] proof-batch index={batch_index} workers={} remaining={}",
+            batch.len(),
+            pending.len()
+        );
         let mut batch_proofs = thread::scope(|scope| {
             let mut workers = Vec::with_capacity(batch.len());
             for captured_bundle in batch {
                 let bundle_index = captured_bundle.bundle_index;
                 let progress = on_progress.clone();
+                let queued_at = Instant::now();
                 let handle = thread::Builder::new()
                     .name(format!("voting-delegation-proof-{bundle_index}"))
                     .stack_size(PROVING_CACHE_STACK_BYTES)
                     .spawn_scoped(scope, move || {
                         let proof_started = Instant::now();
+                        log::info!(
+                            "[VOTING_TIMING] proof-worker bundle={bundle_index} queue-wait={:.3}s",
+                            queued_at.elapsed().as_secs_f64()
+                        );
                         let reporter = zcash_voting::DelegationProgressBridge::new(move |event| {
                             progress(bundle_index, event);
                         });
@@ -385,6 +394,7 @@ where
                 .collect::<Result<Vec<_>, String>>()
         })?;
         proofs.append(&mut batch_proofs);
+        batch_index += 1;
     }
     proofs.sort_by_key(|proof| proof.bundle_index);
     log::info!(
@@ -520,87 +530,13 @@ where
     Ok(())
 }
 
-/// Select notes and create/reuse delegation bundle rows for a round.
+/// Persist the complete hotkey-free delegation snapshot tier.
 ///
-/// The selected notes are taken at the round snapshot height. Existing bundle
-/// rows are reused only when they match the current eligible note set.
-///
-/// # Errors
-///
-/// Returns an error if round initialization, lightwalletd note selection, or
-/// bundle setup/validation fails.
-pub async fn setup_delegation_bundles(
-    voting_db: &VotingDb,
-    db_path: &str,
-    lwd_params: zcash_voting::delegate::ResolveDelegationLwdParams<'_>,
-    session_json: Option<&str>,
-    bundle_policy: BundlePolicy,
-) -> Result<zcash_voting::round::BundleLayout, String> {
-    let zcash_voting::delegate::ResolveDelegationLwdParams {
-        lightwalletd_url,
-        network,
-        round_params,
-        round_name,
-    } = lwd_params;
-    let started = Instant::now();
-    log::info!("[VOTING_PROVE] setup-bundles start");
-    let context_started = Instant::now();
-    let round_context = with_voting_sidecar_write_lock(db_path, || {
-        zcash_voting::delegate::ensure_round_context(
-            voting_db,
-            network,
-            &round_params,
-            round_name,
-            session_json,
-        )
-        .map_err(|e| e.to_string())
-    })?;
-    log::info!(
-        "[VOTING_PROVE] setup-bundles round-context elapsed={:.3}s",
-        context_started.elapsed().as_secs_f64()
-    );
-    let select_started = Instant::now();
-    let selected = select_notes_with_lwd(
-        voting_db,
-        db_path,
-        lightwalletd_url,
-        network,
-        round_context.snapshot_height,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    let note_infos = selected.voting_note_infos();
-    log::info!(
-        "[VOTING_PROVE] setup-bundles note-selection notes={} elapsed={:.3}s",
-        note_infos.len(),
-        select_started.elapsed().as_secs_f64()
-    );
-    let bundle_policy = whale_protected_bundle_policy(bundle_policy);
-    let persist_started = Instant::now();
-    let layout = with_voting_sidecar_write_lock(db_path, || {
-        voting_db
-            .ensure_bundles_with_skipped_suffix_with_policy(
-                round_params.vote_round_id.as_str(),
-                &note_infos,
-                bundle_policy,
-            )
-            .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
-    })?;
-    log::info!(
-        "[VOTING_PROVE] setup-bundles persist elapsed={:.3}s total={:.3}s",
-        persist_started.elapsed().as_secs_f64(),
-        started.elapsed().as_secs_f64()
-    );
-    Ok(layout)
-}
-
-/// Persist the snapshot-stable bundle plan and warm PIR for every bundle.
-///
-/// This initializes the round, selects notes at its snapshot height, samples
-/// padded-note secrets, and caches PIR proofs for both real notes and padded
-/// slots. It deliberately does not require a voting hotkey or wallet seed;
-/// note witnesses remain part of the later prepared-bundle path.
-pub async fn precompute_snapshot_bundles(
+/// This initializes the round, selects notes and the anchor once, persists only
+/// minimal bundle identities, generates union witnesses, and caches PIR proofs
+/// for both real and padded slots. Confidential note material remains in the
+/// wallet DB and an optional process-memory cache.
+pub async fn prepare_delegation_snapshot(
     db_path: &str,
     account_uuid: &str,
     pir_server_url: &str,
@@ -608,7 +544,7 @@ pub async fn precompute_snapshot_bundles(
     lwd_params: zcash_voting::delegate::ResolveDelegationLwdParams<'_>,
     session_json: Option<&str>,
     bundle_policy: BundlePolicy,
-) -> Result<zcash_voting::precompute::SnapshotBundlePrecomputeReport, String> {
+) -> Result<zcash_voting::precompute::DelegationSnapshotPreparationReport, String> {
     let pir_server_url = pir_server_url.trim();
     if pir_server_url.is_empty() {
         return Err("PIR server URL must not be empty".to_string());
@@ -621,7 +557,7 @@ pub async fn precompute_snapshot_bundles(
         round_name,
     } = lwd_params;
     let started = Instant::now();
-    log::info!("[VOTING_PROVE] snapshot-bundles start");
+    log::info!("[VOTING_PROVE] delegation-snapshot start");
     start_proving_cache_warmup();
 
     let voting_db = open_voting_db(db_path, account_uuid)?;
@@ -660,6 +596,7 @@ pub async fn precompute_snapshot_bundles(
         }
     };
     let note_infos = selected.voting_note_infos().to_vec();
+    let tree_state_bytes = selected.anchor_tree_state.encode_to_vec();
     log::info!(
         "[VOTING_PROVE] snapshot-bundles note-selection notes={} elapsed={:.3}s",
         note_infos.len(),
@@ -668,7 +605,9 @@ pub async fn precompute_snapshot_bundles(
 
     let db_path = db_path.to_string();
     let account_uuid = account_uuid.to_string();
-    let round_id = round_params.vote_round_id;
+    let resolved_round_name = round_name.to_string();
+    let session_json = session_json.map(str::to_string);
+    let round_params_for_prepare = round_params;
     let policy = whale_protected_bundle_policy(bundle_policy);
     let precompute_started = Instant::now();
     let report = tokio::task::spawn_blocking(move || {
@@ -679,14 +618,22 @@ pub async fn precompute_snapshot_bundles(
             connect_started.elapsed().as_secs_f64()
         );
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
+        let wallet_db = open_wallet_db_for_read(&db_path, wallet_network(network))?;
         retry_voting_db_locks_coordinated(&db_path, || {
-            zcash_voting::precompute::precompute_snapshot_bundles(
+            zcash_voting::precompute::prepare_delegation_snapshot(
                 &voting_db,
-                &round_id,
-                &note_infos,
-                policy,
+                &wallet_db,
+                zcash_voting::precompute::PrepareDelegationSnapshotParams {
+                    account_uuid: &account_uuid,
+                    network,
+                    round_params: &round_params_for_prepare,
+                    round_name: &resolved_round_name,
+                    session_json: session_json.as_deref(),
+                    tree_state_bytes: &tree_state_bytes,
+                    notes: &note_infos,
+                    bundle_policy: policy,
+                },
                 &pir_client,
-                network,
             )
             .map_err(|e| e.to_string())
         })
@@ -700,6 +647,18 @@ pub async fn precompute_snapshot_bundles(
         started.elapsed().as_secs_f64()
     );
     Ok(report)
+}
+
+/// Read durable snapshot completeness without lightwalletd or PIR access.
+pub fn delegation_snapshot_status(
+    db_path: &str,
+    account_uuid: &str,
+    network: zcash_voting::Network,
+    round_params: &zcash_voting::VotingRoundParams,
+) -> Result<zcash_voting::precompute::DelegationSnapshotStatus, String> {
+    let voting_db = open_voting_db(db_path, account_uuid)?;
+    zcash_voting::precompute::delegation_snapshot_status(&voting_db, network, round_params)
+        .map_err(|e| e.to_string())
 }
 
 /// Minimum voting eligibility plus the note value the privacy trim withholds.
@@ -784,83 +743,6 @@ pub async fn check_voting_eligibility(
     voting_eligibility_report(voting_db, round_id, &note_infos, seed_policy)
 }
 
-/// Warms PIR state for a single delegation bundle.
-///
-/// Validates the PIR endpoint against the round snapshot, persists witnesses,
-/// initializes padded-note secrets, and precomputes delegation PIR rows for
-/// `bundle_index`.
-///
-/// # Errors
-///
-/// Returns an error if the round, endpoint, note selection, bundle index,
-/// witness generation, padded-secret initialization, or PIR precompute step
-/// fails.
-pub async fn precompute_delegation_pir(
-    db_path: &str,
-    pir_server_url: &str,
-    pir_layout: PirLayout,
-    prepare_params: PrepareDelegationBundleParams<'_>,
-) -> Result<zcash_voting::delegate::PreparedDelegationReport, String> {
-    let PrepareDelegationBundleParams {
-        lwd,
-        session_json,
-        account_uuid,
-        voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    } = prepare_params;
-
-    let db_path = db_path.to_string();
-    let account_uuid = account_uuid.to_string();
-    let session_json = session_json.map(str::to_string);
-    let network = voting_hotkey.network();
-    let stored_hotkey_secret = Zeroizing::new(voting_hotkey.stored_secret().to_vec());
-
-    start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_url, pir_layout)?;
-
-    tokio::task::spawn_blocking(move || {
-        let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
-            stored_hotkey_secret.as_slice(),
-            network,
-        )
-        .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
-        let wallet_db = open_wallet_db_for_read(&db_path, wallet_network(voting_hotkey.network()))?;
-        let prepare_params = PrepareDelegationBundleParams {
-            lwd,
-            session_json: session_json.as_deref(),
-            account_uuid: &account_uuid,
-            voting_hotkey: &voting_hotkey,
-            bundle_index,
-            bundle_policy,
-        };
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
-        let (voting_db, prepared) =
-            with_open_voting_db_write(&db_path, &account_uuid, |voting_db| {
-                zcash_voting::delegate::prepare_delegation_bundle(
-                    voting_db,
-                    &wallet_db,
-                    prepare_params,
-                )
-                .map_err(|e| e.to_string())
-            })?;
-        // Join the dedicated connect thread rather than calling
-        // `connect_pir_blocking` here: that API builds a nested Tokio runtime,
-        // and `Runtime::new` / `block_on` from this `spawn_blocking` worker
-        // panics or deadlocks.
-        let pir_client = pir_connect.join()?;
-        // Preserve parallel warm-up on the first attempt, but wait behind the
-        // per-wallet writer coordinator if persistence loses a SQLite race.
-        retry_voting_db_locks_coordinated(&db_path, || {
-            prepared
-                .precompute(&voting_db, &wallet_db, &pir_client)
-                .map_err(|e| e.to_string())
-        })
-    })
-    .await
-    .map_err(|e| format!("delegation PIR precompute task failed: {e}"))?
-}
-
 /// Outcome of the bundle-independent background PIR proof cache warm-up.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PirCacheWarmupOutcome {
@@ -881,8 +763,8 @@ pub struct PirCacheWarmupOutcome {
 /// Warms the bundle-independent PIR proof cache for the account's eligible
 /// notes at `snapshot_height`.
 ///
-/// Unlike [`precompute_delegation_pir`] this needs no hotkey, no round rows,
-/// and no bundles — only a wallet scanned to the snapshot height and a PIR
+/// This needs no hotkey, round rows, or bundles — only a wallet scanned to the
+/// snapshot height and a PIR
 /// endpoint serving it. Notes are planned with the same whale-protected
 /// default [`BundlePolicy`] round setup uses, so a selected-note dust tail is
 /// not PIR-queried. The delegation prove path reads the same cache, so
@@ -1027,21 +909,17 @@ pub async fn warm_pir_proof_cache(
 /// persist the proof batch, and assemble software-signed payloads.
 pub async fn build_prove_and_sign_delegation_round<F>(
     db_path: String,
-    pir_server_urls: Vec<String>,
-    pir_layout: PirLayout,
     seed: SecretVec<u8>,
-    lwd: zcash_voting::delegate::DelegationLwdInputs,
-    session_json: Option<String>,
     account_uuid: String,
+    round_params: zcash_voting::VotingRoundParams,
+    round_name: String,
     voting_hotkey: zcash_voting::VotingHotkey,
-    bundle_policy: BundlePolicy,
     bundle_indexes: Vec<u32>,
     on_progress: F,
 ) -> Result<Vec<zcash_voting::delegate::SignedDelegationBundle>, String>
 where
     F: Fn(u32, DelegationProgress) + Send + Sync + 'static,
 {
-    let pir_server_urls = normalize_pir_server_urls(&pir_server_urls)?;
     let bundle_indexes = normalize_bundle_indexes(&bundle_indexes)?;
     start_proving_cache_warmup();
     let worker = thread::Builder::new()
@@ -1049,15 +927,15 @@ where
         .spawn(move || {
             let total_started = Instant::now();
             let on_progress = Arc::new(on_progress);
-            let (voting_db, prepared) = prepare_delegation_round_bulk(
+            // Software has no external signing handoff, so finish and prove in
+            // one worker. This reuses transient note material immediately
+            // without persisting or caching it across operations.
+            let (voting_db, prepared) = finish_delegation_round_preparation_inner(
                 &db_path,
                 &account_uuid,
-                &pir_server_urls,
-                pir_layout,
-                lwd,
-                session_json.as_deref(),
+                &round_params,
+                &round_name,
                 &voting_hotkey,
-                bundle_policy,
             )?;
             let capture_started = Instant::now();
             let captured = zcash_voting::delegate::capture_delegation_proof_inputs(
@@ -1089,6 +967,7 @@ where
             let mut signatures = Vec::with_capacity(bundle_indexes.len());
             for bundle_index in &bundle_indexes {
                 on_progress(*bundle_index, DelegationProgress::SigningPayload);
+                let bundle_sign_started = Instant::now();
                 let bundle = prepared
                     .bundles
                     .iter()
@@ -1096,25 +975,42 @@ where
                     .ok_or_else(|| {
                         format!("prepared delegation bundle {bundle_index} not found")
                     })?;
-                let setup = prepared.setups.get(*bundle_index as usize).ok_or_else(|| {
-                    format!("delegation setup for bundle {bundle_index} not found")
-                })?;
                 let request = bundle.signing_request(&voting_db).map_err(|e| {
                     format!("delegation signing request for bundle {bundle_index} failed: {e}")
                 })?;
+                let request_elapsed = bundle_sign_started.elapsed();
+                let crypto_started = Instant::now();
                 let (sig, sighash) = sign_delegation_request(&seed, request).map_err(|e| {
                     format!("delegation signing for bundle {bundle_index} failed: {e}")
                 })?;
+                log::info!(
+                    "[VOTING_TIMING] sign bundle={bundle_index} request={:.3}s crypto={:.3}s",
+                    request_elapsed.as_secs_f64(),
+                    crypto_started.elapsed().as_secs_f64()
+                );
                 signatures.push(PreparedDelegationBundleSignature {
                     bundle_index: *bundle_index,
-                    pczt_bytes: setup.pczt_bytes.clone(),
+                    pczt_bytes: prepared
+                        .setups
+                        .get(*bundle_index as usize)
+                        .ok_or_else(|| {
+                            format!("delegation setup for bundle {bundle_index} not found")
+                        })?
+                        .pczt_bytes
+                        .clone(),
                     signer: zcash_voting::delegate::PreparedSigner::signature(sig, sighash),
                 });
             }
+            let assembly_started = Instant::now();
             let signed = zcash_voting::delegate::assemble_signed_delegation_bundles(
                 &voting_db, &prepared, signatures,
             )
             .map_err(|e| format!("assemble signed delegation bundles failed: {e}"))?;
+            log::info!(
+                "[VOTING_TIMING] sign assembly bundles={} elapsed={:.3}s",
+                signed.len(),
+                assembly_started.elapsed().as_secs_f64()
+            );
             for bundle in &signed {
                 on_progress(bundle.bundle_index, DelegationProgress::PayloadReady);
             }
@@ -1137,34 +1033,26 @@ where
     .map_err(|e| format!("software delegation round join task failed: {e}"))?
 }
 
-/// Gather and prepare a round once, returning signer-safe Keystone requests for
-/// the requested bundle indexes.
-pub async fn build_keystone_delegation_requests_round(
+/// Bind a durable snapshot to the hotkey and return signer-safe PCZT requests.
+pub async fn finish_delegation_round_preparation(
     db_path: String,
-    pir_server_urls: Vec<String>,
-    pir_layout: PirLayout,
-    lwd: zcash_voting::delegate::DelegationLwdInputs,
-    session_json: Option<String>,
     account_uuid: String,
+    round_params: zcash_voting::VotingRoundParams,
+    round_name: String,
     voting_hotkey: zcash_voting::VotingHotkey,
-    bundle_policy: BundlePolicy,
     bundle_indexes: Vec<u32>,
 ) -> Result<Vec<zcash_voting::delegate::KeystoneSigningRequest>, String> {
-    let pir_server_urls = normalize_pir_server_urls(&pir_server_urls)?;
     let bundle_indexes = normalize_bundle_indexes(&bundle_indexes)?;
     let worker = thread::Builder::new()
         .name("voting-delegation-keystone-prepare".to_string())
         .spawn(move || {
             let started = Instant::now();
-            let (_, prepared) = prepare_delegation_round_bulk(
+            let (_, prepared) = finish_delegation_round_preparation_inner(
                 &db_path,
                 &account_uuid,
-                &pir_server_urls,
-                pir_layout,
-                lwd,
-                session_json.as_deref(),
+                &round_params,
+                &round_name,
                 &voting_hotkey,
-                bundle_policy,
             )?;
             let mut requests = Vec::with_capacity(bundle_indexes.len());
             for bundle_index in bundle_indexes {
@@ -1203,7 +1091,6 @@ pub async fn build_prove_delegation_round_with_keystone_signatures<F>(
     round_params: zcash_voting::VotingRoundParams,
     round_name: String,
     voting_hotkey: zcash_voting::VotingHotkey,
-    bundle_policy: BundlePolicy,
     signatures: Vec<(u32, Vec<u8>, Vec<u8>)>,
     on_progress: F,
 ) -> Result<Vec<zcash_voting::delegate::SignedDelegationBundle>, String>
@@ -1230,7 +1117,6 @@ where
                     voting_hotkey: &voting_hotkey,
                     round_params: &round_params,
                     round_name: &round_name,
-                    bundle_policy: whale_protected_bundle_policy(bundle_policy),
                 },
             )
             .map_err(|e| format!("load prepared delegation round failed: {e}"))?;

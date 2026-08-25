@@ -108,8 +108,9 @@ directly. The mapping from FRB functions to crate APIs:
 | Stage | FRB entry (`api/voting.rs`) | Crate API |
 | --- | --- | --- |
 | Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
-| Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
-| Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
+| Delegation snapshot | `prepare_delegation_snapshot`, `get_delegation_snapshot_status` | `precompute::{prepare_delegation_snapshot, delegation_snapshot_status}` |
+| Hotkey-bound finish | `finish_delegation_round_preparation` | `delegate::finish_delegation_round_preparation` |
+| Delegation prove/sign | Round-scoped software and Keystone progress streams | `delegate::{load_prepared_delegation_round, capture_resumed_delegation_proof_inputs, prove_prepared_delegation_bundle, persist_prepared_delegation_proofs}` |
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
 | Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
