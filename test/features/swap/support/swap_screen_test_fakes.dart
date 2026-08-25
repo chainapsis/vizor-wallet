@@ -1031,6 +1031,8 @@ class _FakeSwapPersistenceStore
   var loadPreferencesCount = 0;
   var savePreferencesCount = 0;
   var savePayAssetCount = 0;
+  var activitySaveCount = 0;
+  Future<void> Function(int saveCount)? beforeActivitySave;
   final saveSnapshots = <List<SwapIntent>>[];
   final loadedAccounts = <String>[];
   final savedAccounts = <String>[];
@@ -1060,6 +1062,8 @@ class _FakeSwapPersistenceStore
     required String accountUuid,
     required List<SwapIntentRecord> records,
   }) async {
+    activitySaveCount++;
+    await beforeActivitySave?.call(activitySaveCount);
     savedAccounts.add(accountUuid);
     final recordIds = records.map((record) => record.id).toSet();
     _legacyIntents.removeWhere((intent) => recordIds.contains(intent.id));

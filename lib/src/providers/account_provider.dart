@@ -16,7 +16,7 @@ import '../core/profile_pictures.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
-import '../features/swap/providers/swap_activity_store.dart';
+import '../features/swap/providers/swap_activity_replica.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/voting/voting_flow_models.dart';
@@ -628,8 +628,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     try {
       await ref
-          .read(swapActivityStoreProvider)
-          .deleteForAccount(accountUuid: uuid);
+          .read(swapActivityReplicaProvider)
+          .deleteLocalAccount(accountUuid: uuid);
     } catch (_) {}
     try {
       await _storage.deleteVotingHotkeysForAccount(uuid);

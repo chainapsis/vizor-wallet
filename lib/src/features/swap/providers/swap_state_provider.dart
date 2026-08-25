@@ -13,6 +13,7 @@ import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'swap_activity_tracker.dart';
+import 'swap_activity_replica.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
@@ -70,6 +71,8 @@ class SwapNotifier extends Notifier<SwapState> {
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
   var _statusRefreshInFlight = false;
+  final Map<String, int> _activityWritesInFlight = {};
+  final Set<String> _remoteReplicaRefreshPending = {};
   SwapAsset? _payRetryAsset;
   String? _restoredPayAssetAccountUuid;
   String? _payAssetRestoreAccountUuid;
@@ -88,6 +91,21 @@ class SwapNotifier extends Notifier<SwapState> {
 
   @override
   SwapState build() {
+    ref.listen<SwapActivityReplicaChange?>(swapActivityReplicaChangeProvider, (
+      previous,
+      next,
+    ) {
+      if (next == null ||
+          next.source != SwapActivityReplicaChangeSource.remoteReconcile ||
+          next.accountUuid != _activeAccountUuidOrNull) {
+        return;
+      }
+      if ((_activityWritesInFlight[next.accountUuid] ?? 0) > 0) {
+        _remoteReplicaRefreshPending.add(next.accountUuid);
+        return;
+      }
+      _applyReplicaRecords(next.accountUuid, next.records);
+    });
     ref.listen<NetworkPrivacyState>(networkPrivacyProvider, (previous, next) {
       final becameDirect =
           !next.torEnabled &&
@@ -1015,7 +1033,77 @@ class SwapNotifier extends Notifier<SwapState> {
       clearSelectedIntent: nextSelectedId == null,
       clearStatusError: true,
     );
-    await _persistCurrentIntents();
+    final accountUuid = _activeAccountUuidOrNull;
+    if (accountUuid == null) return;
+    await _runActivityWrite(
+      accountUuid,
+      () => ref
+          .read(swapActivityTrackerProvider)
+          .removeIntent(accountUuid: accountUuid, intentId: intentId),
+    );
+  }
+
+  void _applyReplicaRecords(
+    String accountUuid,
+    List<SwapIntentRecord> records,
+  ) {
+    if (accountUuid != _activeAccountUuidOrNull) return;
+    final restored = swapIntentsFromRecords(records);
+    final selectedId = state.selectedIntentId;
+    final nextSelectedId =
+        selectedId != null && restored.any((intent) => intent.id == selectedId)
+        ? selectedId
+        : (restored.isEmpty ? null : restored.first.id);
+    final nextSelected = nextSelectedId == null
+        ? null
+        : restored.swapIntentById(nextSelectedId);
+    state = state.copyWith(
+      intents: restored,
+      selectedIntentId: nextSelectedId,
+      depositTxHashText: nextSelected?.depositTxHash ?? '',
+      clearSelectedIntent: nextSelectedId == null,
+    );
+  }
+
+  Future<void> _refreshReplicaUiWhenSettled(String accountUuid) async {
+    if (!ref.mounted) return;
+    if ((_activityWritesInFlight[accountUuid] ?? 0) > 0) {
+      _remoteReplicaRefreshPending.add(accountUuid);
+      return;
+    }
+    final records = await ref
+        .read(swapActivityReplicaProvider)
+        .loadRecords(accountUuid: accountUuid);
+    if (!ref.mounted) return;
+    if ((_activityWritesInFlight[accountUuid] ?? 0) > 0) {
+      _remoteReplicaRefreshPending.add(accountUuid);
+      return;
+    }
+    _applyReplicaRecords(accountUuid, records);
+  }
+
+  Future<T> _runActivityWrite<T>(
+    String accountUuid,
+    Future<T> Function() action,
+  ) async {
+    _activityWritesInFlight.update(
+      accountUuid,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
+    try {
+      return await action();
+    } finally {
+      final remaining = (_activityWritesInFlight[accountUuid] ?? 1) - 1;
+      if (remaining > 0) {
+        _activityWritesInFlight[accountUuid] = remaining;
+      } else {
+        _activityWritesInFlight.remove(accountUuid);
+        if (_remoteReplicaRefreshPending.remove(accountUuid) && ref.mounted) {
+          unawaited(_refreshReplicaUiWhenSettled(accountUuid));
+        }
+      }
+    }
   }
 
   Future<void> removeUnsentHardwareDepositIntent(String intentId) async {
@@ -1882,9 +1970,19 @@ class SwapNotifier extends Notifier<SwapState> {
     String? accountUuid,
     List<SwapIntent> intentsToPersist,
   ) async {
-    await ref
-        .read(swapActivityTrackerProvider)
-        .saveIntents(accountUuid: accountUuid, intents: intentsToPersist);
+    final scopedAccountUuid = SwapActivityTracker.normalizeAccountUuid(
+      accountUuid,
+    );
+    if (scopedAccountUuid == null) return;
+    await _runActivityWrite(
+      scopedAccountUuid,
+      () => ref
+          .read(swapActivityTrackerProvider)
+          .saveIntents(
+            accountUuid: scopedAccountUuid,
+            intents: intentsToPersist,
+          ),
+    );
   }
 
   bool _isAccountActive(String? accountUuid) {

@@ -42,6 +42,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
@@ -6356,6 +6357,81 @@ void main() {
     expect(container.read(swapStateProvider).intents, isEmpty);
     expect(sessionStore.savedIntents, isEmpty);
   });
+
+  testWidgets(
+    'remote reconcile waits for an in-flight local removal before updating UI',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final remoteSaveStarted = Completer<void>();
+      final releaseRemoteSave = Completer<void>();
+      final sessionStore =
+          _FakeSwapPersistenceStore(
+              initialIntents: [
+                _persistedIntent(
+                  id: 'local-swap',
+                  txHash: 'local-tx',
+                  status: SwapIntentStatus.complete,
+                  nextAction: 'Completed',
+                ),
+              ],
+            )
+            ..beforeActivitySave = (saveCount) async {
+              if (saveCount != 1) return;
+              remoteSaveStarted.complete();
+              await releaseRemoteSave.future;
+            };
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          sessionStore: sessionStore,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      final remoteRecord = SwapIntentRecord.fromIntent(
+        _persistedIntent(
+          id: 'remote-swap',
+          txHash: 'remote-tx',
+          status: SwapIntentStatus.complete,
+          nextAction: 'Completed',
+        ),
+      );
+      final remoteWrite = container
+          .read(swapActivityReplicaProvider)
+          .reconcileRemoteRecords(
+            accountUuid: 'account-1',
+            remoteRecords: [remoteRecord],
+            mergeConflict: (_, incoming) => incoming,
+          );
+      await remoteSaveStarted.future;
+
+      final localRemoval = container
+          .read(swapStateProvider.notifier)
+          .removeIntent('local-swap');
+      expect(container.read(swapStateProvider).intents, isEmpty);
+      releaseRemoteSave.complete();
+      await Future.wait([remoteWrite, localRemoval]);
+      await tester.pump();
+
+      expect(
+        container.read(swapStateProvider).intents.map((intent) => intent.id),
+        ['remote-swap'],
+      );
+      expect(sessionStore.savedIntents.map((intent) => intent.id), [
+        'remote-swap',
+      ]);
+    },
+  );
 
   testWidgets('deposit transaction submit uses the stored deposit address', (
     tester,

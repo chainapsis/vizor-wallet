@@ -4,6 +4,7 @@ import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
+import 'swap_activity_replica.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
@@ -13,11 +14,9 @@ const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
+    activityReplica: ref.read(swapActivityReplicaProvider),
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
-    onRecordsChanged: () {
-      ref.read(swapActivityRecordsRevisionProvider.notifier).bump();
-    },
   );
 });
 
@@ -147,23 +146,22 @@ class SwapActivityStatusRefresher {
 }
 
 class SwapActivityTracker {
-  const SwapActivityTracker({
+  SwapActivityTracker({
     required SwapActivityStore activityStore,
+    SwapActivityReplica? activityReplica,
     required SwapProvider swapProvider,
     bool Function()? isTorEnabled,
-    void Function()? onRecordsChanged,
-  }) : _activityStore = activityStore,
+  }) : _activityReplica =
+           activityReplica ?? SwapActivityReplica(activityStore: activityStore),
        _swapProvider = swapProvider,
-       _isTorEnabled = isTorEnabled,
-       _onRecordsChanged = onRecordsChanged;
+       _isTorEnabled = isTorEnabled;
 
-  final SwapActivityStore _activityStore;
+  final SwapActivityReplica _activityReplica;
   final SwapProvider _swapProvider;
 
   /// Read per refresh, not captured once: Tor can be toggled while an intent is
   /// still open, and the exit-block classification only applies while it is on.
   final bool Function()? _isTorEnabled;
-  final void Function()? _onRecordsChanged;
 
   static String? normalizeAccountUuid(String? accountUuid) {
     final scopedAccountUuid = accountUuid?.trim();
@@ -174,7 +172,7 @@ class SwapActivityTracker {
   Future<List<SwapIntent>> loadIntents({required String? accountUuid}) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return const [];
-    final records = await _activityStore.loadRecords(
+    final records = await _activityReplica.loadRecords(
       accountUuid: scopedAccountUuid,
     );
     return _intentsFromRecords(records);
@@ -186,7 +184,7 @@ class SwapActivityTracker {
   }) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return;
-    await _activityStore.saveRecords(
+    await _activityReplica.upsertRecords(
       accountUuid: scopedAccountUuid,
       records: [
         for (final intent in intents)
@@ -197,7 +195,18 @@ class SwapActivityTracker {
             ),
       ],
     );
-    _onRecordsChanged?.call();
+  }
+
+  Future<void> removeIntent({
+    required String? accountUuid,
+    required String intentId,
+  }) async {
+    final scopedAccountUuid = normalizeAccountUuid(accountUuid);
+    if (scopedAccountUuid == null) return;
+    await _activityReplica.removeRecord(
+      accountUuid: scopedAccountUuid,
+      intentId: intentId,
+    );
   }
 
   Future<SwapActivityRefreshResult> refreshOpenIntents({
@@ -312,14 +321,18 @@ class SwapActivityTracker {
     required List<SwapIntent> refreshedIntents,
     required Set<String> refreshedIds,
   }) async {
-    final latestIntents = await loadIntents(accountUuid: accountUuid);
-    var mergedIntents = latestIntents;
-    for (final id in refreshedIds) {
-      final refreshed = refreshedIntents.swapIntentById(id);
-      if (refreshed == null) continue;
-      mergedIntents = mergedIntents.replaceSwapIntent(id, refreshed);
-    }
-    await saveIntents(accountUuid: accountUuid, intents: mergedIntents);
+    await _activityReplica.updateExistingRecords(
+      accountUuid: accountUuid,
+      records: [
+        for (final id in refreshedIds)
+          if (refreshedIntents.swapIntentById(id) case final refreshed?)
+            if (_isPersistableIntent(refreshed, accountUuid: accountUuid))
+              swapIntentRecordForPersistence(
+                refreshed,
+                accountUuid: accountUuid,
+              ),
+      ],
+    );
   }
 
   Future<SwapIntent> _refreshProviderBackedIntent(
