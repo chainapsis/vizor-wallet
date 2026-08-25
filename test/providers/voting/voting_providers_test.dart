@@ -1827,6 +1827,57 @@ void main() {
     },
   );
 
+  test('account mutation drains an in-flight stalled recovery poll', () async {
+    final harness = await _draftBearingStallHarness();
+    addTearDown(harness.container.dispose);
+    harness.readiness.blockFromCall = 2;
+
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+    await harness.readiness.blockedCheckStarted.future;
+
+    final registry = harness.container.read(
+      votingShareTrackingRegistryProvider,
+    );
+    expect(registry.registeredSyncRecoveryKeys, contains(harness.key));
+
+    var drainCompleted = false;
+    final drain = registry
+        .quiesceAndDrain(accountUuid: harness.key.accountUuid)
+        .then((_) => drainCompleted = true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(
+      drainCompleted,
+      isFalse,
+      reason: 'mutation waits for the active poll',
+    );
+
+    harness.readiness.releaseBlockedChecks.complete();
+    await drain;
+    expect(drainCompleted, isTrue);
+    expect(registry.registeredSyncRecoveryKeys, isEmpty);
+    expect(
+      harness.container.read(votingSubmissionJobProvider(harness.key)).status,
+      VotingSubmissionJobStatus.idle,
+    );
+    expect(
+      harness.container.read(votingSubmissionJobsProvider).jobKeys,
+      isNot(contains(harness.key)),
+    );
+
+    final callsAfterDrain = harness.readiness.calls;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(harness.readiness.calls, callsAfterDrain);
+    registry.resume(accountUuid: harness.key.accountUuid);
+  });
+
   test('stalled-recovery failure limit requires manual retry', () async {
     final harness = await _draftBearingStallHarness();
     addTearDown(harness.container.dispose);
@@ -9605,6 +9656,9 @@ class _MutableVotingWalletSyncReadinessChecker
   bool ready;
   bool birthdayAfterSnapshot = false;
   Object? failure;
+  int? blockFromCall;
+  final blockedCheckStarted = Completer<void>();
+  final releaseBlockedChecks = Completer<void>();
 
   /// When set, only the first [readyCallBudget] checks may report ready.
   /// Models readiness regressing mid-job (a rewind or reorg after the
@@ -9619,6 +9673,11 @@ class _MutableVotingWalletSyncReadinessChecker
     required int snapshotHeight,
   }) async {
     calls++;
+    final firstBlockedCall = blockFromCall;
+    if (firstBlockedCall != null && calls >= firstBlockedCall) {
+      if (!blockedCheckStarted.isCompleted) blockedCheckStarted.complete();
+      await releaseBlockedChecks.future;
+    }
     final currentFailure = failure;
     if (currentFailure != null) throw currentFailure;
     final budget = readyCallBudget;

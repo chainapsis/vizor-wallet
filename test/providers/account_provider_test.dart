@@ -293,6 +293,7 @@ void main() {
 
       final shareTracking = VotingShareTrackingRegistry();
       var restoreRequests = 0;
+      var stoppedRecoveries = 0;
       shareTracking.addRestoreRequestListener(() => restoreRequests++);
       final container = ProviderContainer(
         overrides: [
@@ -303,12 +304,43 @@ void main() {
       addTearDown(container.dispose);
       await container.read(accountProvider.future);
 
+      final removeRecoveryOwner = Object();
+      expect(
+        shareTracking.registerSyncRecovery(
+          key: const VotingSessionKey(
+            accountUuid: 'account-2',
+            roundId: 'remove-recovery',
+          ),
+          owner: removeRecoveryOwner,
+          stopAndDrain: () async => stoppedRecoveries++,
+        ),
+        isTrue,
+      );
+      const retainedRecoveryKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: 'reset-recovery',
+      );
+      final retainedRecoveryOwner = Object();
+      expect(
+        shareTracking.registerSyncRecovery(
+          key: retainedRecoveryKey,
+          owner: retainedRecoveryOwner,
+          stopAndDrain: () async => stoppedRecoveries++,
+        ),
+        isTrue,
+      );
+
       await expectLater(
         container.read(accountProvider.notifier).removeAccount('account-2'),
         throwsA(isA<PlatformException>()),
       );
       expect(shareTracking.isQuiesced('account-2'), isFalse);
       expect(restoreRequests, 1);
+      expect(stoppedRecoveries, 1);
+      expect(
+        shareTracking.registeredSyncRecoveryKeys,
+        contains(retainedRecoveryKey),
+      );
 
       await expectLater(
         container.read(accountProvider.notifier).resetWallet(),
@@ -316,6 +348,7 @@ void main() {
       );
       expect(shareTracking.isQuiesced('account-1'), isFalse);
       expect(restoreRequests, 2);
+      expect(stoppedRecoveries, 2);
     },
   );
 

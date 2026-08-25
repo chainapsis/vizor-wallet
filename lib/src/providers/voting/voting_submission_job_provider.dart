@@ -16,6 +16,7 @@ import '../account_provider.dart';
 import '../app_security_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
@@ -236,6 +237,10 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     state = state.removeJobKey(key);
   }
 
+  void forgetCancelledRecovery(VotingSessionKey key) {
+    state = state.removeJobKey(key);
+  }
+
   Future<void> handleKeystoneBatchSignResponse(
     VotingSessionKey key,
     List<int> responseCbor,
@@ -290,6 +295,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   int? _walletSyncRecoverySnapshotHeight;
   Timer? _walletSyncRecoveryTimer;
   bool _walletSyncRecoveryInFlight = false;
+  Completer<void>? _walletSyncRecoveryPollCompletion;
+  bool _walletSyncRecoveryRegistered = false;
   int _walletSyncRecoveryFailureStreak = 0;
   bool _walletSyncRecoveryRetryOnUnlock = false;
   int _nextGeneration = 0;
@@ -1122,6 +1129,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       return;
     }
     _walletSyncRecoveryInFlight = true;
+    final pollCompletion = Completer<void>();
+    _walletSyncRecoveryPollCompletion = pollCompletion;
     try {
       // votingWalletDbPathProvider memoizes the resolve, so the 2s poll
       // does not repeat a support-directory lookup plus keychain read.
@@ -1176,6 +1185,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       // a persistent failure (e.g. the wallet DB was reset) stops recovery so
       // it does not log unhandled errors forever. The job stays in its error
       // state and manual retry remains available.
+      if (_walletSyncRecoveryGeneration != generation ||
+          state.status != VotingSubmissionJobStatus.error) {
+        return;
+      }
       _walletSyncRecoveryFailureStreak++;
       debugPrint(
         '[zcash] Voting: wallet sync recovery poll failed '
@@ -1192,10 +1205,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
     } finally {
       _walletSyncRecoveryInFlight = false;
+      if (identical(_walletSyncRecoveryPollCompletion, pollCompletion)) {
+        _walletSyncRecoveryPollCompletion = null;
+      }
+      if (!pollCompletion.isCompleted) pollCompletion.complete();
     }
   }
 
   void _startWalletSyncRecoveryPolling() {
+    if (!_registerWalletSyncRecovery()) {
+      state = state.copyWith(errorMessage: _walletSyncRecoveryStoppedMessage);
+      _cancelWalletSyncRecovery();
+      return;
+    }
     final configuredInterval = ref.read(votingWalletSyncPollIntervalProvider);
     final interval = configuredInterval > Duration.zero
         ? configuredInterval
@@ -1242,6 +1264,36 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoverySnapshotHeight = null;
     _walletSyncRecoveryFailureStreak = 0;
     _walletSyncRecoveryRetryOnUnlock = false;
+    if (_walletSyncRecoveryRegistered) {
+      ref
+          .read(votingShareTrackingRegistryProvider)
+          .unregisterSyncRecovery(key: _key, owner: this);
+      _walletSyncRecoveryRegistered = false;
+    }
+  }
+
+  bool _registerWalletSyncRecovery() {
+    if (_walletSyncRecoveryRegistered) return true;
+    final registered = ref
+        .read(votingShareTrackingRegistryProvider)
+        .registerSyncRecovery(
+          key: _key,
+          owner: this,
+          stopAndDrain: _stopAndDrainWalletSyncRecovery,
+        );
+    _walletSyncRecoveryRegistered = registered;
+    return registered;
+  }
+
+  Future<void> _stopAndDrainWalletSyncRecovery() async {
+    final pollCompletion = _walletSyncRecoveryPollCompletion?.future;
+    _cancelWalletSyncRecovery();
+    if (pollCompletion != null) await pollCompletion;
+    if (!ref.mounted) return;
+    dismiss();
+    ref
+        .read(votingSubmissionJobsProvider.notifier)
+        .forgetCancelledRecovery(_key);
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {

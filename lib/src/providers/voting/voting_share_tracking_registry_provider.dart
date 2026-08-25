@@ -6,9 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/voting/voting_flow_models.dart';
 
 typedef VotingShareTrackingStopper = Future<void> Function();
+typedef VotingSyncRecoveryStopper = Future<void> Function();
 
+/// Coordinates background voting work with destructive account mutations.
+///
+/// Share tracking and stalled-sync recovery both retain account-scoped DB
+/// access after the foreground submission guard is released. Account removal
+/// and reset quiesce this registry before deleting durable wallet state.
 class VotingShareTrackingRegistry {
   final Map<VotingSessionKey, _VotingShareTrackingRegistration> _sessions = {};
+  final Map<VotingSessionKey, _VotingSyncRecoveryRegistration> _recoveries = {};
   final Set<Completer<void>> _discoveries = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
   final Set<String> _quiescedAccounts = {};
@@ -60,6 +67,26 @@ class VotingShareTrackingRegistry {
     if (identical(_sessions[key]?.owner, owner)) _sessions.remove(key);
   }
 
+  bool registerSyncRecovery({
+    required VotingSessionKey key,
+    required Object owner,
+    required VotingSyncRecoveryStopper stopAndDrain,
+  }) {
+    if (isQuiesced(key.accountUuid)) return false;
+    _recoveries[key] = _VotingSyncRecoveryRegistration(
+      owner: owner,
+      stopAndDrain: stopAndDrain,
+    );
+    return true;
+  }
+
+  void unregisterSyncRecovery({
+    required VotingSessionKey key,
+    required Object owner,
+  }) {
+    if (identical(_recoveries[key]?.owner, owner)) _recoveries.remove(key);
+  }
+
   bool isQuiesced(String accountUuid) {
     return _globalQuiescenceDepth > 0 ||
         _quiescedAccounts.contains(accountUuid);
@@ -79,6 +106,10 @@ class VotingShareTrackingRegistry {
       for (final entry in _sessions.entries)
         if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
     ];
+    final recoveries = [
+      for (final entry in _recoveries.entries)
+        if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
+    ];
     final discoveries = [
       for (final completion in _discoveries) completion.future,
     ];
@@ -86,10 +117,14 @@ class VotingShareTrackingRegistry {
       await Future.wait([
         ...discoveries,
         ...sessions.map((entry) => entry.value.stopAndDrain()),
+        ...recoveries.map((entry) => entry.value.stopAndDrain()),
       ]);
     } finally {
       for (final entry in sessions) {
         unregister(key: entry.key, owner: entry.value.owner);
+      }
+      for (final entry in recoveries) {
+        unregisterSyncRecovery(key: entry.key, owner: entry.value.owner);
       }
     }
   }
@@ -104,6 +139,10 @@ class VotingShareTrackingRegistry {
 
   @visibleForTesting
   Set<VotingSessionKey> get registeredKeys => Set.unmodifiable(_sessions.keys);
+
+  @visibleForTesting
+  Set<VotingSessionKey> get registeredSyncRecoveryKeys =>
+      Set.unmodifiable(_recoveries.keys);
 }
 
 class _VotingShareTrackingRegistration {
@@ -114,6 +153,16 @@ class _VotingShareTrackingRegistration {
 
   final Object owner;
   final VotingShareTrackingStopper stopAndDrain;
+}
+
+class _VotingSyncRecoveryRegistration {
+  const _VotingSyncRecoveryRegistration({
+    required this.owner,
+    required this.stopAndDrain,
+  });
+
+  final Object owner;
+  final VotingSyncRecoveryStopper stopAndDrain;
 }
 
 final votingShareTrackingRegistryProvider = Provider((ref) {
