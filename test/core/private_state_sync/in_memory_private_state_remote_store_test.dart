@@ -76,90 +76,94 @@ void main() {
     },
   );
 
-  test('swap deletion and voting completion converge across devices', () async {
-    const desktopAccount = PrivateStateAccount(
-      dbPath: '/desktop/wallet.db',
-      network: 'main',
-      accountUuid: 'desktop-local-uuid',
-    );
-    const mobileAccount = PrivateStateAccount(
-      dbPath: '/mobile/wallet.db',
-      network: 'main',
-      accountUuid: 'mobile-local-uuid',
-    );
-    final desktopStore = _MemoryActivityStore([
-      _swapRecord('swap-1'),
-      _swapRecord('pay-1', payMode: true),
-    ]);
-    final mobileStore = _MemoryActivityStore(const []);
-    final desktopSync = SwapPrivateHistorySync(
-      repository: desktopRepository,
-      replica: SwapActivityReplica(activityStore: desktopStore),
-      metadataStore: _MemoryMetadataStore(),
-      now: () => now,
-    );
-    final mobileMetadata = _MemoryMetadataStore();
-    final mobileSync = SwapPrivateHistorySync(
-      repository: mobileRepository,
-      replica: SwapActivityReplica(activityStore: mobileStore),
-      metadataStore: mobileMetadata,
-      now: () => now.add(const Duration(minutes: 1)),
-    );
+  test(
+    'finalized activity and voting completion converge across devices',
+    () async {
+      const desktopAccount = PrivateStateAccount(
+        dbPath: '/desktop/wallet.db',
+        network: 'main',
+        accountUuid: 'desktop-local-uuid',
+      );
+      const mobileAccount = PrivateStateAccount(
+        dbPath: '/mobile/wallet.db',
+        network: 'main',
+        accountUuid: 'mobile-local-uuid',
+      );
+      final desktopStore = _MemoryActivityStore([
+        _swapRecord('swap-1'),
+        _swapRecord('pay-1', payMode: true),
+      ]);
+      final mobileStore = _MemoryActivityStore(const []);
+      final desktopSync = FinalizedActivityArchiveSync(
+        repository: desktopRepository,
+        replica: SwapActivityReplica(activityStore: desktopStore),
+        metadataStore: _MemoryMetadataStore(),
+      );
+      final mobileMetadata = _MemoryMetadataStore();
+      final mobileSync = FinalizedActivityArchiveSync(
+        repository: mobileRepository,
+        replica: SwapActivityReplica(activityStore: mobileStore),
+        metadataStore: mobileMetadata,
+      );
 
-    await desktopSync.synchronize(
-      account: desktopAccount,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-    await mobileSync.synchronize(
-      account: mobileAccount,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-    await desktopSync.synchronize(
-      account: desktopAccount,
-      kind: SwapPrivateHistoryKind.pay,
-    );
-    await mobileSync.synchronize(
-      account: mobileAccount,
-      kind: SwapPrivateHistoryKind.pay,
-    );
-    expect(mobileStore.records.map((record) => record.id).toSet(), {
-      'swap-1',
-      'pay-1',
-    });
+      await desktopSync.synchronize(
+        account: desktopAccount,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+      await mobileSync.synchronize(
+        account: mobileAccount,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+      await desktopSync.synchronize(
+        account: desktopAccount,
+        kind: SwapPrivateHistoryKind.pay,
+      );
+      await mobileSync.synchronize(
+        account: mobileAccount,
+        kind: SwapPrivateHistoryKind.pay,
+      );
+      expect(mobileStore.records.map((record) => record.id).toSet(), {
+        'swap-1',
+        'pay-1',
+      });
 
-    await mobileSync.recordLocalDeletions(
-      accountUuid: mobileAccount.accountUuid,
-      records: mobileStore.records.where((record) => record.id == 'swap-1'),
-    );
-    mobileStore.records = mobileStore.records
-        .where((record) => record.id != 'swap-1')
-        .toList();
-    await mobileSync.synchronize(
-      account: mobileAccount,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-    await desktopSync.synchronize(
-      account: desktopAccount,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-    expect(desktopStore.records.map((record) => record.id), ['pay-1']);
+      await mobileSync.recordLocalDeletions(
+        accountUuid: mobileAccount.accountUuid,
+        records: mobileStore.records.where((record) => record.id == 'swap-1'),
+      );
+      mobileStore.records = mobileStore.records
+          .where((record) => record.id != 'swap-1')
+          .toList();
+      await mobileSync.synchronize(
+        account: mobileAccount,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+      await desktopSync.synchronize(
+        account: desktopAccount,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+      expect(desktopStore.records.map((record) => record.id).toSet(), {
+        'swap-1',
+        'pay-1',
+      });
 
-    final desktopVoting = VotingPrivateStateSync(desktopRepository);
-    final mobileVoting = VotingPrivateStateSync(mobileRepository);
-    await desktopVoting.publishCompletion(
-      account: desktopAccount,
-      record: VotingCompletionRecord(
+      final desktopVoting = VotingPrivateStateSync(desktopRepository);
+      final mobileVoting = VotingPrivateStateSync(mobileRepository);
+      await desktopVoting.publishCompletion(
+        account: desktopAccount,
+        record: VotingCompletionRecord(
+          roundId: 'round-99',
+          completedAtSeconds: 1_724_000_100,
+          choicesByProposalId: const {7: 1},
+        ),
+      );
+      final completion = await mobileVoting.readCompletion(
+        account: mobileAccount,
         roundId: 'round-99',
-        completedAtSeconds: 1_724_000_100,
-        choicesByProposalId: const {7: 1},
-      ),
-    );
-    final completion = await mobileVoting.readCompletion(
-      account: mobileAccount,
-      roundId: 'round-99',
-    );
-    expect(completion?.choicesByProposalId, {7: 1});
-  });
+      );
+      expect(completion?.choicesByProposalId, {7: 1});
+    },
+  );
 
   test('challenge is single-use even for repeated authorized reads', () async {
     final challenge = await remote.createChallenge(object: _reference);
@@ -459,30 +463,28 @@ class _MemoryActivityStore implements SwapActivityStore {
   }
 }
 
-class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
-  final Map<String, SwapPrivateHistorySyncMetadata> values = {};
+class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
+  final Map<String, FinalizedActivityArchiveMetadata> values = {};
 
   String _key(String accountUuid, SwapPrivateHistoryKind kind) =>
       '$accountUuid:${kind.wireName}';
 
   @override
-  Future<void> addTombstones({
+  Future<void> hideRecords({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required Map<String, DateTime> tombstones,
+    required Iterable<String> recordIds,
   }) async {
     final key = _key(accountUuid, kind);
     final current = values[key];
-    values[key] = SwapPrivateHistorySyncMetadata(
-      plaintextHashBase64: current?.plaintextHashBase64 ?? 'pending',
-      synchronizedAt: current?.synchronizedAt ?? DateTime.now().toUtc(),
-      remoteVersion: current?.remoteVersion,
-      tombstones: {...?current?.tombstones, ...tombstones},
+    values[key] = FinalizedActivityArchiveMetadata(
+      lastSlot: current?.lastSlot ?? 0,
+      hiddenRecordIds: {...?current?.hiddenRecordIds, ...recordIds},
     );
   }
 
   @override
-  Future<SwapPrivateHistorySyncMetadata?> load({
+  Future<FinalizedActivityArchiveMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
   }) async => values[_key(accountUuid, kind)];
@@ -491,15 +493,16 @@ class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
   Future<void> save({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required SwapPrivateHistorySyncMetadata metadata,
+    required FinalizedActivityArchiveMetadata metadata,
   }) async {
     final key = _key(accountUuid, kind);
     final current = values[key];
-    values[key] = SwapPrivateHistorySyncMetadata(
-      plaintextHashBase64: metadata.plaintextHashBase64,
-      synchronizedAt: metadata.synchronizedAt,
-      remoteVersion: metadata.remoteVersion,
-      tombstones: {...?current?.tombstones, ...metadata.tombstones},
+    values[key] = FinalizedActivityArchiveMetadata(
+      lastSlot: metadata.lastSlot,
+      hiddenRecordIds: {
+        ...?current?.hiddenRecordIds,
+        ...metadata.hiddenRecordIds,
+      },
     );
   }
 

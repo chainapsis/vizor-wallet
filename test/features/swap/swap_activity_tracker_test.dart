@@ -252,7 +252,7 @@ void main() {
     expect(store.savedRecords.single.statusError, expectedMessage);
   });
 
-  test('records a tombstone before removing local activity', () async {
+  test('records local suppression before removing local activity', () async {
     final store = _MemorySwapActivityStore();
     final record = SwapIntentRecord.fromIntent(
       _intent(id: 'swap-a', depositAddress: 'deposit-a'),
@@ -266,18 +266,18 @@ void main() {
         expect(accountUuid, 'account-1');
         expect(records, [record]);
         expect(store.savedRecords, [record]);
-        events.add('tombstone');
+        events.add('suppressed');
       },
     );
 
     await tracker.removeIntent(accountUuid: 'account-1', intentId: 'swap-a');
     events.add('removed');
 
-    expect(events, ['tombstone', 'removed']);
+    expect(events, ['suppressed', 'removed']);
     expect(store.savedRecords, isEmpty);
   });
 
-  test('keeps local activity when tombstone persistence fails', () async {
+  test('keeps local activity when suppression persistence fails', () async {
     final store = _MemorySwapActivityStore();
     final record = SwapIntentRecord.fromIntent(
       _intent(id: 'swap-a', depositAddress: 'deposit-a'),

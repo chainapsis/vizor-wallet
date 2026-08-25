@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
-
-import 'package:crypto/crypto.dart';
 
 import '../../../core/private_state_sync/private_state_models.dart';
 import '../../../core/private_state_sync/private_state_object_repository.dart';
@@ -11,39 +8,36 @@ import '../providers/swap_activity_replica.dart';
 import 'swap_private_history_document.dart';
 import 'swap_private_history_sync_metadata.dart';
 
-const _privateHistoryItemKey = 'history-v1';
+const _archiveSlotPrefix = 'archive-v1:';
 
-class SwapPrivateHistorySyncResult {
-  SwapPrivateHistorySyncResult({
+class FinalizedActivityArchiveSyncResult {
+  FinalizedActivityArchiveSyncResult({
     required Iterable<SwapIntentRecord> records,
     required this.kind,
-    required this.remoteVersion,
+    required this.lastSlot,
     required this.remoteWritten,
     required this.truncated,
   }) : records = List.unmodifiable(records);
 
   final List<SwapIntentRecord> records;
   final SwapPrivateHistoryKind kind;
-  final PrivateStateVersion? remoteVersion;
+  final int lastSlot;
   final bool remoteWritten;
   final bool truncated;
 }
 
-class SwapPrivateHistoryConflictException implements Exception {
-  const SwapPrivateHistoryConflictException(this.attempts);
+class FinalizedActivityArchiveConflictException implements Exception {
+  const FinalizedActivityArchiveConflictException(this.attempts);
 
   final int attempts;
 
   @override
   String toString() =>
-      'Swap private history CAS did not converge after $attempts attempts.';
+      'Finalized activity archive did not converge after $attempts attempts.';
 }
 
-/// Reconciles the legacy local activity store with one encrypted remote object
-/// per account and feature namespace. Correctness never depends on metadata:
-/// every pass performs an authenticated remote read before deciding to write.
-abstract interface class SwapPrivateHistorySynchronizer {
-  Future<SwapPrivateHistorySyncResult> synchronize({
+abstract interface class FinalizedActivityArchiveSynchronizer {
+  Future<FinalizedActivityArchiveSyncResult> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   });
@@ -54,27 +48,31 @@ abstract interface class SwapPrivateHistorySynchronizer {
   });
 }
 
-class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
-  SwapPrivateHistorySync({
+/// Maintains a cumulative archive of only complete and refunded activities.
+///
+/// Every generation is written to a newly derived create-only object. The
+/// server therefore never sees a stable activity object identifier. A create
+/// conflict means another device won that slot; its snapshot is read, merged,
+/// and the combined snapshot is attempted at the following slot.
+class FinalizedActivityArchiveSync
+    implements FinalizedActivityArchiveSynchronizer {
+  FinalizedActivityArchiveSync({
     required PrivateStateObjectRepository repository,
     required SwapActivityReplica replica,
-    required SwapPrivateHistorySyncMetadataStore metadataStore,
-    this.maxCasAttempts = 4,
-    DateTime Function()? now,
+    required FinalizedActivityArchiveMetadataStore metadataStore,
+    this.maxCreateAttempts = 8,
   }) : _repository = repository,
        _replica = replica,
-       _metadataStore = metadataStore,
-       _now = now ?? DateTime.now {
-    if (maxCasAttempts < 1) {
-      throw ArgumentError.value(maxCasAttempts, 'maxCasAttempts');
+       _metadataStore = metadataStore {
+    if (maxCreateAttempts < 1) {
+      throw ArgumentError.value(maxCreateAttempts, 'maxCreateAttempts');
     }
   }
 
   final PrivateStateObjectRepository _repository;
   final SwapActivityReplica _replica;
-  final SwapPrivateHistorySyncMetadataStore _metadataStore;
-  final int maxCasAttempts;
-  final DateTime Function() _now;
+  final FinalizedActivityArchiveMetadataStore _metadataStore;
+  final int maxCreateAttempts;
   final Map<String, Future<void>> _syncTails = {};
 
   @override
@@ -82,22 +80,20 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
     required String accountUuid,
     required Iterable<SwapIntentRecord> records,
   }) async {
-    final deletedAt = _now().toUtc();
+    final materialized = records.toList(growable: false);
     for (final kind in SwapPrivateHistoryKind.values) {
-      final tombstones = {
-        for (final record in records)
-          if (record.payMode == kind.payMode) record.id: deletedAt,
-      };
-      await _metadataStore.addTombstones(
+      await _metadataStore.hideRecords(
         accountUuid: accountUuid,
         kind: kind,
-        tombstones: tombstones,
+        recordIds: materialized
+            .where((record) => record.payMode == kind.payMode)
+            .map((record) => record.id),
       );
     }
   }
 
   @override
-  Future<SwapPrivateHistorySyncResult> synchronize({
+  Future<FinalizedActivityArchiveSyncResult> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) {
@@ -105,166 +101,192 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
     return _serialize(scope, () => _synchronize(account: account, kind: kind));
   }
 
-  Future<SwapPrivateHistorySyncResult> _synchronize({
+  Future<FinalizedActivityArchiveSyncResult> _synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
-    var tombstones =
-        (await _metadataStore.load(
+    var metadata =
+        await _metadataStore.load(
           accountUuid: account.accountUuid,
           kind: kind,
-        ))?.tombstones ??
-        const <String, DateTime>{};
-    for (var attempt = 1; attempt <= maxCasAttempts; attempt++) {
-      final read = await _repository.read(account: account, key: _key(kind));
-      final remoteDocument = switch (read) {
-        PrivateStateReadAbsent() => null,
-        PrivateStateReadFound(:final plaintext) =>
-          SwapPrivateHistoryDocument.decode(plaintext, expectedKind: kind),
-      };
+        ) ??
+        const FinalizedActivityArchiveMetadata(lastSlot: 0);
+    var lastSlot = metadata.lastSlot;
+    SwapPrivateHistoryDocument? remote;
 
-      tombstones = _mergeHistoryTombstones(
-        tombstones,
-        remoteDocument?.tombstones ?? const {},
+    // Reload the latest known snapshot so a local-only deletion never removes
+    // that record from a later cumulative remote generation.
+    if (lastSlot > 0) {
+      final known = await _readSlot(
+        account: account,
+        kind: kind,
+        slot: lastSlot,
       );
-
-      if (tombstones.isNotEmpty) {
-        await _replica.applyRemoteTombstones(
-          accountUuid: account.accountUuid,
-          intentIds: tombstones.keys.toSet(),
-          payMode: kind.payMode,
-        );
+      if (known == null) {
+        lastSlot = 0;
+      } else {
+        remote = known;
       }
+    }
 
-      if (remoteDocument != null && remoteDocument.records.isNotEmpty) {
-        await _replica.reconcileRemoteRecords(
-          accountUuid: account.accountUuid,
-          remoteRecords: remoteDocument.records.where(
-            (record) => !tombstones.containsKey(record.id),
-          ),
-          mergeConflict: mergeSwapPrivateHistoryRecord,
-        );
-      }
+    // Discover generations created by another installation. Contiguous,
+    // create-only slots make the first absent object the end marker.
+    while (true) {
+      final next = await _readSlot(
+        account: account,
+        kind: kind,
+        slot: lastSlot + 1,
+      );
+      if (next == null) break;
+      remote = next;
+      lastSlot++;
+    }
 
-      // Reload after reconciliation so queued local mutations that completed
-      // during the network read are included in this upload candidate.
-      final allLocal = await _replica.loadRecords(
+    final hidden = metadata.hiddenRecordIds;
+    if (remote != null && remote.records.isNotEmpty) {
+      await _replica.reconcileRemoteRecords(
         accountUuid: account.accountUuid,
+        remoteRecords: remote.records.where(
+          (record) => !hidden.contains(record.id),
+        ),
+        mergeConflict: mergeSwapPrivateHistoryRecord,
+      );
+    }
+
+    for (var attempt = 1; attempt <= maxCreateAttempts; attempt++) {
+      final local = await _replica.loadRecords(
+        accountUuid: account.accountUuid,
+      );
+      final combined = _mergeFinalizedRecords(
+        remote?.records ?? const [],
+        local,
+        kind: kind,
       );
       var document = SwapPrivateHistoryDocument.compact(
         kind: kind,
-        records: allLocal.where((record) => !tombstones.containsKey(record.id)),
-        tombstones: tombstones,
+        records: combined,
       );
-      if (remoteDocument?.truncated == true && !document.truncated) {
+      if (remote?.truncated == true && !document.truncated) {
         document = SwapPrivateHistoryDocument(
           kind: kind,
           records: document.records,
-          tombstones: document.tombstones,
           truncated: true,
         );
       }
       final plaintext = document.encode();
-      final currentVersion = switch (read) {
-        PrivateStateReadFound(:final version) => version,
-        PrivateStateReadAbsent() => null,
-      };
-
-      if (remoteDocument == null &&
-          document.records.isEmpty &&
-          document.tombstones.isEmpty) {
+      if (document.records.isEmpty && remote == null) {
         await _saveMetadata(
           account: account,
           kind: kind,
-          plaintext: plaintext,
-          version: null,
-          tombstones: tombstones,
+          lastSlot: lastSlot,
+          hidden: hidden,
         );
-        return SwapPrivateHistorySyncResult(
-          records: allLocal,
+        return FinalizedActivityArchiveSyncResult(
+          records: local,
           kind: kind,
-          remoteVersion: null,
+          lastSlot: lastSlot,
           remoteWritten: false,
           truncated: false,
         );
       }
-
-      if (remoteDocument != null &&
-          _bytesEqual(remoteDocument.encode(), plaintext)) {
+      if (remote != null && _bytesEqual(remote.encode(), plaintext)) {
         await _saveMetadata(
           account: account,
           kind: kind,
-          plaintext: plaintext,
-          version: currentVersion,
-          tombstones: tombstones,
+          lastSlot: lastSlot,
+          hidden: hidden,
         );
-        return SwapPrivateHistorySyncResult(
-          records: allLocal,
+        return FinalizedActivityArchiveSyncResult(
+          records: local,
           kind: kind,
-          remoteVersion: currentVersion,
+          lastSlot: lastSlot,
           remoteWritten: false,
           truncated: document.truncated,
         );
       }
 
-      final write = currentVersion == null
-          ? await _repository.create(
-              account: account,
-              key: _key(kind),
-              plaintext: plaintext,
-            )
-          : await _repository.compareAndSet(
-              account: account,
-              key: _key(kind),
-              currentVersion: currentVersion,
-              plaintext: plaintext,
-            );
-      if (write case PrivateStateWriteStored(:final version)) {
+      final nextSlot = lastSlot + 1;
+      final write = await _repository.create(
+        account: account,
+        key: _key(kind, nextSlot),
+        plaintext: plaintext,
+      );
+      if (write is PrivateStateWriteStored) {
         await _saveMetadata(
           account: account,
           kind: kind,
-          plaintext: plaintext,
-          version: version,
-          tombstones: tombstones,
+          lastSlot: nextSlot,
+          hidden: hidden,
         );
-        return SwapPrivateHistorySyncResult(
-          records: allLocal,
+        return FinalizedActivityArchiveSyncResult(
+          records: local,
           kind: kind,
-          remoteVersion: version,
+          lastSlot: nextSlot,
           remoteWritten: true,
           truncated: document.truncated,
         );
       }
+
+      final winner = await _readSlot(
+        account: account,
+        kind: kind,
+        slot: nextSlot,
+      );
+      if (winner == null) continue;
+      remote = winner;
+      lastSlot = nextSlot;
+      await _replica.reconcileRemoteRecords(
+        accountUuid: account.accountUuid,
+        remoteRecords: winner.records.where(
+          (record) => !hidden.contains(record.id),
+        ),
+        mergeConflict: mergeSwapPrivateHistoryRecord,
+      );
     }
-    throw SwapPrivateHistoryConflictException(maxCasAttempts);
+    throw FinalizedActivityArchiveConflictException(maxCreateAttempts);
+  }
+
+  Future<SwapPrivateHistoryDocument?> _readSlot({
+    required PrivateStateAccount account,
+    required SwapPrivateHistoryKind kind,
+    required int slot,
+  }) async {
+    final read = await _repository.read(
+      account: account,
+      key: _key(kind, slot),
+    );
+    return switch (read) {
+      PrivateStateReadAbsent() => null,
+      PrivateStateReadFound(:final plaintext) =>
+        SwapPrivateHistoryDocument.decode(plaintext, expectedKind: kind),
+    };
   }
 
   Future<void> _saveMetadata({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
-    required Uint8List plaintext,
-    required PrivateStateVersion? version,
-    required Map<String, DateTime> tombstones,
-  }) {
-    final digest = sha256.convert(plaintext);
-    return _metadataStore.save(
-      accountUuid: account.accountUuid,
-      kind: kind,
-      metadata: SwapPrivateHistorySyncMetadata(
-        plaintextHashBase64: base64UrlEncode(digest.bytes).replaceAll('=', ''),
-        synchronizedAt: _now().toUtc(),
-        remoteVersion: version,
-        tombstones: tombstones,
-      ),
-    );
-  }
+    required int lastSlot,
+    required Set<String> hidden,
+  }) => _metadataStore.save(
+    accountUuid: account.accountUuid,
+    kind: kind,
+    metadata: FinalizedActivityArchiveMetadata(
+      lastSlot: lastSlot,
+      hiddenRecordIds: hidden,
+    ),
+  );
 
-  PrivateStateObjectKey _key(SwapPrivateHistoryKind kind) {
+  PrivateStateObjectKey _key(SwapPrivateHistoryKind kind, int slot) {
+    if (slot < 1) {
+      throw const PrivateStateProtocolException(
+        'Finalized activity archive slot must be positive.',
+      );
+    }
     return PrivateStateObjectKey(
       namespace: kind == SwapPrivateHistoryKind.swap
           ? PrivateStateNamespace.swapHistory
           : PrivateStateNamespace.payHistory,
-      itemKey: _privateHistoryItemKey,
+      itemKey: '$_archiveSlotPrefix$slot',
     );
   }
 
@@ -288,19 +310,25 @@ class SwapPrivateHistorySync implements SwapPrivateHistorySynchronizer {
   }
 }
 
-Map<String, DateTime> _mergeHistoryTombstones(
-  Map<String, DateTime> left,
-  Map<String, DateTime> right,
-) {
-  final merged = Map<String, DateTime>.of(left);
-  for (final entry in right.entries) {
-    final current = merged[entry.key];
-    if (current == null || entry.value.isAfter(current)) {
-      merged[entry.key] = entry.value.toUtc();
-    }
+List<SwapIntentRecord> _mergeFinalizedRecords(
+  Iterable<SwapIntentRecord> remote,
+  Iterable<SwapIntentRecord> local, {
+  required SwapPrivateHistoryKind kind,
+}) {
+  final merged = <String, SwapIntentRecord>{};
+  for (final record in [...remote, ...local]) {
+    if (record.payMode != kind.payMode || !_isFinalized(record)) continue;
+    final existing = merged[record.id];
+    merged[record.id] = existing == null
+        ? record
+        : mergeSwapPrivateHistoryRecord(existing, record);
   }
-  return merged;
+  return merged.values.toList(growable: false);
 }
+
+bool _isFinalized(SwapIntentRecord record) =>
+    record.status == SwapIntentStatus.complete ||
+    record.status == SwapIntentStatus.refunded;
 
 bool _bytesEqual(Uint8List left, Uint8List right) {
   if (left.length != right.length) return false;

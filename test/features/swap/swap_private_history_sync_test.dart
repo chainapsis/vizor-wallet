@@ -1,10 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
-import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_document.dart';
 import 'package:zcash_wallet/src/features/swap/private_state/swap_private_history_sync.dart';
@@ -13,131 +11,22 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.d
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   const account = PrivateStateAccount(
     dbPath: '/wallet.db',
     network: 'main',
-    accountUuid: 'local-account',
+    accountUuid: 'account-a',
   );
 
-  test(
-    'first pass uploads legacy local history and records metadata',
-    () async {
-      final activityStore = _MemoryActivityStore([_record('legacy')]);
-      final repository = _MemoryRepository();
-      final metadataStore = _MemoryMetadataStore();
-      final sync = SwapPrivateHistorySync(
-        repository: repository,
-        replica: SwapActivityReplica(activityStore: activityStore),
-        metadataStore: metadataStore,
-        now: () => DateTime.utc(2026, 8, 25),
-      );
-
-      final result = await sync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-
-      expect(result.remoteWritten, isTrue);
-      expect(repository.createCount, 1);
-      expect(repository.lastKey?.namespace, PrivateStateNamespace.swapHistory);
-      expect(repository.lastKey?.itemKey, 'history-v1');
-      final uploaded = SwapPrivateHistoryDocument.decode(
-        repository.plaintext!,
-        expectedKind: SwapPrivateHistoryKind.swap,
-      );
-      expect(uploaded.records.single.id, 'legacy');
-      expect(
-        metadataStore.values.values.single.remoteVersion?.revision,
-        BigInt.one,
-      );
-    },
-  );
-
-  test(
-    'remote-only history is restored locally without redundant write',
-    () async {
-      final activityStore = _MemoryActivityStore(const []);
-      final changes = <SwapActivityReplicaChange>[];
-      final remote = SwapPrivateHistoryDocument(
-        kind: SwapPrivateHistoryKind.swap,
-        records: [_record('remote')],
-      ).encode();
-      final repository = _MemoryRepository(
-        plaintext: remote,
-        version: _version(4),
-      );
-      final sync = SwapPrivateHistorySync(
-        repository: repository,
-        replica: SwapActivityReplica(
-          activityStore: activityStore,
-          onChanged: changes.add,
-        ),
-        metadataStore: _MemoryMetadataStore(),
-      );
-
-      final result = await sync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-
-      expect(result.remoteWritten, isFalse);
-      expect(repository.putCount, 0);
-      expect(activityStore.records.single.id, 'remote');
-      expect(activityStore.records.single.accountUuid, account.accountUuid);
-      expect(
-        changes.single.source,
-        SwapActivityReplicaChangeSource.remoteReconcile,
-      );
-    },
-  );
-
-  test(
-    'truncation marker remains sticky after remote-only restoration',
-    () async {
-      final remote = SwapPrivateHistoryDocument(
-        kind: SwapPrivateHistoryKind.swap,
-        records: [_record('remote')],
-        truncated: true,
-      ).encode();
-      final repository = _MemoryRepository(
-        plaintext: remote,
-        version: _version(4),
-      );
-      final sync = SwapPrivateHistorySync(
-        repository: repository,
-        replica: SwapActivityReplica(
-          activityStore: _MemoryActivityStore(const []),
-        ),
-        metadataStore: _MemoryMetadataStore(),
-      );
-
-      final result = await sync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-
-      expect(result.truncated, isTrue);
-      expect(result.remoteWritten, isFalse);
-      expect(repository.putCount, 0);
-    },
-  );
-
-  test('CAS conflict re-reads, merges the winner, and retries', () async {
-    final activityStore = _MemoryActivityStore([_record('local')]);
-    final repository = _MemoryRepository()
-      ..conflictFirstWriteWith(
-        SwapPrivateHistoryDocument(
-          kind: SwapPrivateHistoryKind.swap,
-          records: [_record('concurrent')],
-        ).encode(),
-      );
-    final sync = SwapPrivateHistorySync(
-      repository: repository,
-      replica: SwapActivityReplica(activityStore: activityStore),
-      metadataStore: _MemoryMetadataStore(),
-    );
+  test('backfills only complete and refunded activity into slot one', () async {
+    final repository = _MemoryRepository();
+    final store = _MemoryActivityStore([
+      _record('complete', SwapIntentStatus.complete),
+      _record('refunded', SwapIntentStatus.refunded),
+      _record('failed', SwapIntentStatus.failed),
+      _record('expired', SwapIntentStatus.expired),
+      _record('processing', SwapIntentStatus.processing),
+    ]);
+    final sync = _sync(repository: repository, store: store);
 
     final result = await sync.synchronize(
       account: account,
@@ -145,203 +34,270 @@ void main() {
     );
 
     expect(result.remoteWritten, isTrue);
-    expect(repository.readCount, 2);
-    expect(repository.createCount, 1);
-    expect(repository.putCount, 1);
-    final uploaded = SwapPrivateHistoryDocument.decode(
-      repository.plaintext!,
+    expect(result.lastSlot, 1);
+    expect(repository.createdKeys.single.itemKey, 'archive-v1:1');
+    final document = SwapPrivateHistoryDocument.decode(
+      repository.objects['archive-v1:1']!,
       expectedKind: SwapPrivateHistoryKind.swap,
     );
-    expect(uploaded.records.map((record) => record.id).toSet(), {
-      'local',
-      'concurrent',
-    });
-    expect(activityStore.records.map((record) => record.id).toSet(), {
-      'local',
-      'concurrent',
+    expect(document.records.map((record) => record.id).toSet(), {
+      'complete',
+      'refunded',
     });
   });
 
+  test('uses the pay namespace and excludes finalized swap records', () async {
+    final repository = _MemoryRepository();
+    final store = _MemoryActivityStore([
+      _record('swap', SwapIntentStatus.complete),
+      _record('pay', SwapIntentStatus.refunded, payMode: true),
+    ]);
+    final sync = _sync(repository: repository, store: store);
+
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.pay);
+
+    expect(
+      repository.createdKeys.single.namespace,
+      PrivateStateNamespace.payHistory,
+    );
+    final document = SwapPrivateHistoryDocument.decode(
+      repository.objects['archive-v1:1']!,
+      expectedKind: SwapPrivateHistoryKind.pay,
+    );
+    expect(document.records.map((record) => record.id), ['pay']);
+  });
+
   test(
-    'a local deletion tombstone removes stale records on every device',
+    'does not reveal an account with no complete or refunded history',
     () async {
-      final remoteRecord = _record('deleted');
-      final repository = _MemoryRepository(
-        plaintext: SwapPrivateHistoryDocument(
+      final repository = _MemoryRepository();
+      final sync = _sync(
+        repository: repository,
+        store: _MemoryActivityStore([
+          _record('failed', SwapIntentStatus.failed),
+          _record('expired', SwapIntentStatus.expired),
+        ]),
+      );
+
+      final result = await sync.synchronize(
+        account: account,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+
+      expect(result.remoteWritten, isFalse);
+      expect(repository.createdKeys, isEmpty);
+    },
+  );
+
+  test(
+    'fresh installation scans contiguous slots and restores latest',
+    () async {
+      final repository = _MemoryRepository()
+        ..objects['archive-v1:1'] = _document(['remote-a'])
+        ..objects['archive-v1:2'] = _document(['remote-a', 'remote-b']);
+      final store = _MemoryActivityStore(const []);
+      final metadata = _MemoryMetadataStore();
+      final sync = _sync(
+        repository: repository,
+        store: store,
+        metadata: metadata,
+      );
+
+      final result = await sync.synchronize(
+        account: account,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+
+      expect(result.lastSlot, 2);
+      expect(result.remoteWritten, isFalse);
+      expect(store.records.map((record) => record.id).toSet(), {
+        'remote-a',
+        'remote-b',
+      });
+      expect(metadata.value?.lastSlot, 2);
+    },
+  );
+
+  test('preserves a remote truncation marker without writing a slot', () async {
+    final repository = _MemoryRepository()
+      ..objects['archive-v1:1'] = SwapPrivateHistoryDocument(
+        kind: SwapPrivateHistoryKind.swap,
+        records: [_record('newest', SwapIntentStatus.complete)],
+        truncated: true,
+      ).encode();
+    final sync = _sync(
+      repository: repository,
+      store: _MemoryActivityStore(const []),
+    );
+
+    final result = await sync.synchronize(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(result.truncated, isTrue);
+    expect(result.remoteWritten, isFalse);
+    expect(repository.createdKeys, isEmpty);
+  });
+
+  test(
+    'create collision merges winner and advances to the next slot',
+    () async {
+      final repository = _MemoryRepository()
+        ..conflictSlot = 1
+        ..conflictWinner = _document(['concurrent']);
+      final store = _MemoryActivityStore([
+        _record('local', SwapIntentStatus.complete),
+      ]);
+      final sync = _sync(repository: repository, store: store);
+
+      final result = await sync.synchronize(
+        account: account,
+        kind: SwapPrivateHistoryKind.swap,
+      );
+
+      expect(result.lastSlot, 2);
+      expect(repository.createdKeys.map((key) => key.itemKey), [
+        'archive-v1:1',
+        'archive-v1:2',
+      ]);
+      final latest = SwapPrivateHistoryDocument.decode(
+        repository.objects['archive-v1:2']!,
+        expectedKind: SwapPrivateHistoryKind.swap,
+      );
+      expect(latest.records.map((record) => record.id).toSet(), {
+        'concurrent',
+        'local',
+      });
+    },
+  );
+
+  test(
+    'local deletion stays hidden without modifying remote archive',
+    () async {
+      final remoteRecord = _record('remote', SwapIntentStatus.complete);
+      final repository = _MemoryRepository()
+        ..objects['archive-v1:1'] = SwapPrivateHistoryDocument(
           kind: SwapPrivateHistoryKind.swap,
           records: [remoteRecord],
-        ).encode(),
-        version: _version(1),
+        ).encode();
+      final store = _MemoryActivityStore([remoteRecord]);
+      final metadata = _MemoryMetadataStore(
+        value: const FinalizedActivityArchiveMetadata(lastSlot: 1),
       );
-      final firstStore = _MemoryActivityStore([remoteRecord]);
-      final firstMetadata = _MemoryMetadataStore();
-      final firstSync = SwapPrivateHistorySync(
+      final sync = _sync(
         repository: repository,
-        replica: SwapActivityReplica(activityStore: firstStore),
-        metadataStore: firstMetadata,
-        now: () => DateTime.utc(2026, 8, 25, 12),
+        store: store,
+        metadata: metadata,
       );
-      await firstSync.recordLocalDeletions(
+      await sync.recordLocalDeletions(
         accountUuid: account.accountUuid,
         records: [remoteRecord],
       );
-      firstStore.records = const [];
-
-      await firstSync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-      final deletedRemote = SwapPrivateHistoryDocument.decode(
-        repository.plaintext!,
-        expectedKind: SwapPrivateHistoryKind.swap,
-      );
-      expect(deletedRemote.records, isEmpty);
-      expect(deletedRemote.tombstones.keys, ['deleted']);
-
-      final secondStore = _MemoryActivityStore([remoteRecord]);
-      final secondSync = SwapPrivateHistorySync(
-        repository: repository,
-        replica: SwapActivityReplica(activityStore: secondStore),
-        metadataStore: _MemoryMetadataStore(),
-      );
-      final secondResult = await secondSync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-
-      expect(secondStore.records, isEmpty);
-      expect(secondResult.remoteWritten, isFalse);
-    },
-  );
-
-  test('uploads a tombstone-only document when the remote is absent', () async {
-    final repository = _MemoryRepository();
-    final metadata = _MemoryMetadataStore();
-    final sync = SwapPrivateHistorySync(
-      repository: repository,
-      replica: SwapActivityReplica(
-        activityStore: _MemoryActivityStore(const []),
-      ),
-      metadataStore: metadata,
-      now: () => DateTime.utc(2026, 8, 25, 12),
-    );
-    await sync.recordLocalDeletions(
-      accountUuid: account.accountUuid,
-      records: [_record('deleted-before-first-sync')],
-    );
-
-    final result = await sync.synchronize(
-      account: account,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-
-    expect(result.remoteWritten, isTrue);
-    expect(repository.createCount, 1);
-    final uploaded = SwapPrivateHistoryDocument.decode(
-      repository.plaintext!,
-      expectedKind: SwapPrivateHistoryKind.swap,
-    );
-    expect(uploaded.records, isEmpty);
-    expect(uploaded.tombstones.keys, ['deleted-before-first-sync']);
-  });
-
-  test(
-    'empty local and absent remote do not reveal account presence',
-    () async {
-      final repository = _MemoryRepository();
-      final metadata = _MemoryMetadataStore();
-      final sync = SwapPrivateHistorySync(
-        repository: repository,
-        replica: SwapActivityReplica(
-          activityStore: _MemoryActivityStore(const []),
-        ),
-        metadataStore: metadata,
-      );
+      store.records = const [];
 
       final result = await sync.synchronize(
         account: account,
-        kind: SwapPrivateHistoryKind.pay,
+        kind: SwapPrivateHistoryKind.swap,
       );
 
       expect(result.remoteWritten, isFalse);
-      expect(repository.createCount, 0);
-      expect(repository.lastKey?.namespace, PrivateStateNamespace.payHistory);
-      expect(metadata.values.values.single.remoteVersion, isNull);
+      expect(store.records, isEmpty);
+      expect(repository.objects.keys, ['archive-v1:1']);
+      expect(metadata.value?.hiddenRecordIds, {'remote'});
     },
   );
-
-  test('corrupt metadata is ignored because it is only an optimization', () {
-    expect(SwapPrivateHistorySyncMetadata.fromJson({'schema': 1}), isNull);
-    expect(
-      SwapPrivateHistorySyncMetadata.fromJson({
-        'schema': 1,
-        'plaintext_hash': 'hash',
-        'synchronized_at': '2026-08-25T00:00:00Z',
-        'remote_revision': '0',
-        'remote_envelope_hash': 'envelope',
-      }),
-      isNull,
-    );
-  });
-
-  test('metadata save rejects an over-limit merged tombstone set', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
-    final store = AppSecureStoreSwapPrivateHistorySyncMetadataStore(
-      AppSecureStore.testing(storage: const FlutterSecureStorage()),
-    );
-    final deletedAt = DateTime.utc(2026, 8, 25);
-    await store.addTombstones(
-      accountUuid: account.accountUuid,
-      kind: SwapPrivateHistoryKind.swap,
-      tombstones: {
-        for (var index = 0; index < 2048; index++) 'deleted-$index': deletedAt,
-      },
-    );
-
-    await expectLater(
-      store.save(
-        accountUuid: account.accountUuid,
-        kind: SwapPrivateHistoryKind.swap,
-        metadata: SwapPrivateHistorySyncMetadata(
-          plaintextHashBase64: 'hash',
-          synchronizedAt: deletedAt,
-          tombstones: {'different-deletion': deletedAt},
-        ),
-      ),
-      throwsStateError,
-    );
-    final preserved = await store.load(
-      accountUuid: account.accountUuid,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-    expect(preserved?.tombstones, hasLength(2048));
-  });
 }
 
-PrivateStateVersion _version(int revision) => PrivateStateVersion(
-  revision: BigInt.from(revision),
-  envelopeHashBase64: 'hash-$revision',
+FinalizedActivityArchiveSync _sync({
+  required _MemoryRepository repository,
+  required _MemoryActivityStore store,
+  _MemoryMetadataStore? metadata,
+}) => FinalizedActivityArchiveSync(
+  repository: repository,
+  replica: SwapActivityReplica(activityStore: store),
+  metadataStore: metadata ?? _MemoryMetadataStore(),
 );
 
-SwapIntentRecord _record(String id, {bool payMode = false}) {
-  return SwapIntentRecord(
-    id: id,
-    providerLabel: 'NEAR Intents',
-    pairText: 'ZEC -> USDC',
-    sellAmountText: '1 ZEC',
-    receiveEstimateText: '70 USDC',
-    status: SwapIntentStatus.awaitingDeposit,
-    nextAction: 'Checking status',
-    sellAmountBaseUnits: BigInt.one,
-    direction: SwapDirection.zecToExternal,
-    externalAsset: SwapAsset.usdc,
-    depositAddress: 'deposit-$id',
-    providerQuoteId: 'quote-$id',
-    payMode: payMode,
-    createdAt: DateTime.utc(2026, 8, 25),
-    updatedAt: DateTime.utc(2026, 8, 25),
-  );
+Uint8List _document(List<String> ids) => SwapPrivateHistoryDocument(
+  kind: SwapPrivateHistoryKind.swap,
+  records: [for (final id in ids) _record(id, SwapIntentStatus.complete)],
+).encode();
+
+SwapIntentRecord _record(
+  String id,
+  SwapIntentStatus status, {
+  bool payMode = false,
+}) => SwapIntentRecord(
+  id: id,
+  providerLabel: 'NEAR Intents',
+  pairText: 'ZEC -> USDC',
+  sellAmountText: '1 ZEC',
+  receiveEstimateText: '70 USDC',
+  status: status,
+  nextAction: status.label,
+  sellAmountBaseUnits: BigInt.one,
+  direction: SwapDirection.zecToExternal,
+  externalAsset: SwapAsset.usdc,
+  payMode: payMode,
+  depositAddress: 'deposit-$id',
+  providerQuoteId: 'quote-$id',
+  createdAt: DateTime.utc(2026, 8, 25),
+  updatedAt: DateTime.utc(2026, 8, 25),
+);
+
+class _MemoryRepository implements PrivateStateObjectRepository {
+  final Map<String, Uint8List> objects = {};
+  final List<PrivateStateObjectKey> createdKeys = [];
+  int? conflictSlot;
+  Uint8List? conflictWinner;
+
+  @override
+  Future<PrivateStateReadResult> read({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+  }) async {
+    final plaintext = objects[key.itemKey];
+    return plaintext == null
+        ? const PrivateStateReadAbsent()
+        : PrivateStateReadFound(
+            plaintext: plaintext,
+            version: PrivateStateVersion(
+              revision: BigInt.one,
+              envelopeHashBase64: 'hash',
+            ),
+          );
+  }
+
+  @override
+  Future<PrivateStateWriteResult> create({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required Uint8List plaintext,
+  }) async {
+    createdKeys.add(key);
+    final slot = int.parse(key.itemKey.split(':').last);
+    if (slot == conflictSlot) {
+      objects[key.itemKey] = conflictWinner!;
+      conflictSlot = null;
+      return const PrivateStateWriteConflict();
+    }
+    if (objects.containsKey(key.itemKey)) {
+      return const PrivateStateWriteConflict();
+    }
+    objects[key.itemKey] = plaintext;
+    return PrivateStateWriteStored(
+      PrivateStateVersion(revision: BigInt.one, envelopeHashBase64: 'hash'),
+    );
+  }
+
+  @override
+  Future<PrivateStateWriteResult> compareAndSet({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required PrivateStateVersion currentVersion,
+    required Uint8List plaintext,
+  }) => throw UnsupportedError('append-only archive');
 }
 
 class _MemoryActivityStore implements SwapActivityStore {
@@ -369,126 +325,46 @@ class _MemoryActivityStore implements SwapActivityStore {
   }
 }
 
-class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
-  final Map<String, SwapPrivateHistorySyncMetadata> values = {};
+class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
+  _MemoryMetadataStore({this.value});
 
-  String _key(String accountUuid, SwapPrivateHistoryKind kind) =>
-      '$accountUuid:${kind.wireName}';
+  FinalizedActivityArchiveMetadata? value;
 
   @override
-  Future<void> addTombstones({
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    value = null;
+  }
+
+  @override
+  Future<void> hideRecords({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required Map<String, DateTime> tombstones,
+    required Iterable<String> recordIds,
   }) async {
-    final key = _key(accountUuid, kind);
-    final current = values[key];
-    values[key] = SwapPrivateHistorySyncMetadata(
-      plaintextHashBase64: current?.plaintextHashBase64 ?? 'pending',
-      synchronizedAt: current?.synchronizedAt ?? DateTime.now().toUtc(),
-      remoteVersion: current?.remoteVersion,
-      tombstones: {...?current?.tombstones, ...tombstones},
+    value = FinalizedActivityArchiveMetadata(
+      lastSlot: value?.lastSlot ?? 0,
+      hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
     );
   }
 
   @override
-  Future<SwapPrivateHistorySyncMetadata?> load({
+  Future<FinalizedActivityArchiveMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-  }) async => values[_key(accountUuid, kind)];
+  }) async => value;
 
   @override
   Future<void> save({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required SwapPrivateHistorySyncMetadata metadata,
+    required FinalizedActivityArchiveMetadata metadata,
   }) async {
-    final key = _key(accountUuid, kind);
-    final current = values[key];
-    values[key] = SwapPrivateHistorySyncMetadata(
-      plaintextHashBase64: metadata.plaintextHashBase64,
-      synchronizedAt: metadata.synchronizedAt,
-      remoteVersion: metadata.remoteVersion,
-      tombstones: {...?current?.tombstones, ...metadata.tombstones},
+    value = FinalizedActivityArchiveMetadata(
+      lastSlot: metadata.lastSlot,
+      hiddenRecordIds: {
+        ...?value?.hiddenRecordIds,
+        ...metadata.hiddenRecordIds,
+      },
     );
-  }
-
-  @override
-  Future<void> deleteForAccount({required String accountUuid}) async {
-    values.removeWhere((key, _) => key.startsWith('$accountUuid:'));
-  }
-}
-
-class _MemoryRepository implements PrivateStateObjectRepository {
-  _MemoryRepository({this.plaintext, this.version});
-
-  Uint8List? plaintext;
-  PrivateStateVersion? version;
-  Uint8List? _conflictPlaintext;
-  int readCount = 0;
-  int createCount = 0;
-  int putCount = 0;
-  PrivateStateObjectKey? lastKey;
-
-  void conflictFirstWriteWith(Uint8List value) {
-    _conflictPlaintext = value;
-  }
-
-  @override
-  Future<PrivateStateReadResult> read({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-  }) async {
-    readCount++;
-    lastKey = key;
-    final current = plaintext;
-    final currentVersion = version;
-    if (current == null || currentVersion == null) {
-      return const PrivateStateReadAbsent();
-    }
-    return PrivateStateReadFound(
-      plaintext: Uint8List.fromList(current),
-      version: currentVersion,
-    );
-  }
-
-  @override
-  Future<PrivateStateWriteResult> create({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required Uint8List plaintext,
-  }) async {
-    createCount++;
-    lastKey = key;
-    final conflict = _conflictPlaintext;
-    if (conflict != null) {
-      _conflictPlaintext = null;
-      this.plaintext = Uint8List.fromList(conflict);
-      version = _version(2);
-      return const PrivateStateWriteConflict();
-    }
-    if (this.plaintext != null) return const PrivateStateWriteConflict();
-    this.plaintext = Uint8List.fromList(plaintext);
-    version = _version(1);
-    return PrivateStateWriteStored(version!);
-  }
-
-  @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) async {
-    putCount++;
-    lastKey = key;
-    if (version?.revision != currentVersion.revision ||
-        version?.envelopeHashBase64 != currentVersion.envelopeHashBase64) {
-      return const PrivateStateWriteConflict();
-    }
-    final next = currentVersion.revision.toInt() + 1;
-    this.plaintext = Uint8List.fromList(plaintext);
-    version = _version(next);
-    return PrivateStateWriteStored(version!);
   }
 }

@@ -20,7 +20,7 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     recordDeletions: ({required accountUuid, required records}) async {
       await ref
-          .read(swapPrivateHistorySyncProvider)
+          .read(finalizedActivityArchiveSyncProvider)
           ?.recordLocalDeletions(accountUuid: accountUuid, records: records);
     },
   );

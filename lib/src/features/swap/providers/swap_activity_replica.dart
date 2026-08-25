@@ -17,13 +17,16 @@ class SwapActivityReplicaChange {
     required this.accountUuid,
     required this.source,
     required List<SwapIntentRecord> records,
+    List<SwapIntentRecord> changedRecords = const [],
     List<SwapIntentRecord> removedRecords = const [],
   }) : records = List.unmodifiable(records),
+       changedRecords = List.unmodifiable(changedRecords),
        removedRecords = List.unmodifiable(removedRecords);
 
   final String accountUuid;
   final SwapActivityReplicaChangeSource source;
   final List<SwapIntentRecord> records;
+  final List<SwapIntentRecord> changedRecords;
   final List<SwapIntentRecord> removedRecords;
 }
 
@@ -88,7 +91,7 @@ class SwapActivityReplica {
   }) {
     final incoming = List<SwapIntentRecord>.of(records);
     if (incoming.isEmpty) return loadRecords(accountUuid: accountUuid);
-    return _mutate(accountUuid, source, (current) {
+    return _mutate(accountUuid, source, incoming, (current) {
       final merged = List<SwapIntentRecord>.of(current);
       for (final record in incoming) {
         final scoped = record.copyWith(accountUuid: accountUuid);
@@ -114,7 +117,7 @@ class SwapActivityReplica {
   }) {
     final incoming = {for (final record in records) record.id: record};
     if (incoming.isEmpty) return loadRecords(accountUuid: accountUuid);
-    return _mutate(accountUuid, source, (current) {
+    return _mutate(accountUuid, source, incoming.values, (current) {
       return [
         for (final record in current)
           if (incoming[record.id] case final replacement?)
@@ -149,6 +152,7 @@ class SwapActivityReplica {
         accountUuid,
         SwapActivityReplicaChangeSource.localMutation,
         updated,
+        changedRecords: removed,
         removedRecords: removed,
       );
       return List.unmodifiable(updated);
@@ -157,7 +161,7 @@ class SwapActivityReplica {
 
   /// Adds remote-only records and delegates same-ID conflicts to the feature
   /// merger. Absence from a remote snapshot never deletes a local record;
-  /// global deletion must be represented explicitly by a future tombstone.
+  /// deletion is installation-local and is filtered before reconciliation.
   Future<List<SwapIntentRecord>> reconcileRemoteRecords({
     required String accountUuid,
     required Iterable<SwapIntentRecord> remoteRecords,
@@ -168,6 +172,7 @@ class SwapActivityReplica {
     return _mutate(
       accountUuid,
       SwapActivityReplicaChangeSource.remoteReconcile,
+      incoming,
       (current) {
         final merged = List<SwapIntentRecord>.of(current);
         for (final remote in incoming) {
@@ -187,23 +192,6 @@ class SwapActivityReplica {
     );
   }
 
-  Future<List<SwapIntentRecord>> applyRemoteTombstones({
-    required String accountUuid,
-    required Set<String> intentIds,
-    required bool payMode,
-  }) {
-    if (intentIds.isEmpty) return loadRecords(accountUuid: accountUuid);
-    return _mutate(
-      accountUuid,
-      SwapActivityReplicaChangeSource.remoteReconcile,
-      (current) => [
-        for (final record in current)
-          if (record.payMode != payMode || !intentIds.contains(record.id))
-            record,
-      ],
-    );
-  }
-
   Future<void> deleteLocalAccount({required String accountUuid}) async {
     await _serialize(accountUuid, () async {
       await _activityStore.deleteForAccount(accountUuid: accountUuid);
@@ -218,6 +206,7 @@ class SwapActivityReplica {
   Future<List<SwapIntentRecord>> _mutate(
     String accountUuid,
     SwapActivityReplicaChangeSource source,
+    Iterable<SwapIntentRecord> changedRecords,
     List<SwapIntentRecord> Function(List<SwapIntentRecord> current) transform,
   ) {
     return _serialize(accountUuid, () async {
@@ -229,7 +218,12 @@ class SwapActivityReplica {
         accountUuid: accountUuid,
         records: updated,
       );
-      _emit(accountUuid, source, updated);
+      _emit(
+        accountUuid,
+        source,
+        updated,
+        changedRecords: changedRecords.toList(growable: false),
+      );
       return List.unmodifiable(updated);
     });
   }
@@ -260,6 +254,7 @@ class SwapActivityReplica {
     String accountUuid,
     SwapActivityReplicaChangeSource source,
     List<SwapIntentRecord> records, {
+    List<SwapIntentRecord> changedRecords = const [],
     List<SwapIntentRecord> removedRecords = const [],
   }) {
     _onChanged?.call(
@@ -267,6 +262,7 @@ class SwapActivityReplica {
         accountUuid: accountUuid,
         source: source,
         records: records,
+        changedRecords: changedRecords,
         removedRecords: removedRecords,
       ),
     );

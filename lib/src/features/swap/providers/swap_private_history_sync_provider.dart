@@ -14,43 +14,45 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart'
     show privateStateRemoteStoreProvider;
+import '../models/swap_models.dart';
 import '../private_state/swap_private_history_document.dart';
 import '../private_state/swap_private_history_sync.dart';
 import '../private_state/swap_private_history_sync_metadata.dart';
 import 'swap_activity_replica.dart';
 import 'swap_activity_store.dart';
 
-typedef SwapPrivateHistoryAccountUuidLoader = Future<List<String>> Function();
-typedef SwapPrivateHistoryDbPathLoader = Future<String> Function();
-typedef SwapPrivateHistoryLocalAccountCleaner =
+typedef FinalizedActivityArchiveAccountUuidLoader =
+    Future<List<String>> Function();
+typedef FinalizedActivityArchiveDbPathLoader = Future<String> Function();
+typedef FinalizedActivityArchiveLocalAccountCleaner =
     Future<void> Function(String accountUuid);
 
-final swapPrivateHistoryMetadataStoreProvider =
-    Provider<SwapPrivateHistorySyncMetadataStore>((ref) {
-      return AppSecureStoreSwapPrivateHistorySyncMetadataStore(
+final finalizedActivityArchiveMetadataStoreProvider =
+    Provider<FinalizedActivityArchiveMetadataStore>((ref) {
+      return AppSecureStoreFinalizedActivityArchiveMetadataStore(
         AppSecureStore.instance,
       );
     });
 
-final swapPrivateHistorySyncProvider =
-    Provider<SwapPrivateHistorySynchronizer?>((ref) {
+final finalizedActivityArchiveSyncProvider =
+    Provider<FinalizedActivityArchiveSynchronizer?>((ref) {
       final remote = ref.watch(privateStateRemoteStoreProvider);
       if (remote == null) return null;
-      return SwapPrivateHistorySync(
+      return FinalizedActivityArchiveSync(
         repository: DefaultPrivateStateObjectRepository(
           crypto: const RustPrivateStateCrypto(),
           remote: remote,
         ),
         replica: ref.read(swapActivityReplicaProvider),
-        metadataStore: ref.read(swapPrivateHistoryMetadataStoreProvider),
+        metadataStore: ref.read(finalizedActivityArchiveMetadataStoreProvider),
       );
     });
 
-final swapPrivateHistoryDbPathLoaderProvider =
-    Provider<SwapPrivateHistoryDbPathLoader>((ref) => getWalletDbPath);
+final finalizedActivityArchiveDbPathLoaderProvider =
+    Provider<FinalizedActivityArchiveDbPathLoader>((ref) => getWalletDbPath);
 
-final swapPrivateHistoryAccountUuidLoaderProvider =
-    Provider<SwapPrivateHistoryAccountUuidLoader>((ref) {
+final finalizedActivityArchiveAccountUuidLoaderProvider =
+    Provider<FinalizedActivityArchiveAccountUuidLoader>((ref) {
       return () async {
         final accountState = await ref.read(accountProvider.future);
         return accountState.accounts
@@ -59,19 +61,19 @@ final swapPrivateHistoryAccountUuidLoaderProvider =
       };
     });
 
-final swapPrivateHistoryRetryDelayProvider = Provider<Duration>((ref) {
+final finalizedActivityArchiveRetryDelayProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 30);
 });
 
-class SwapPrivateHistoryLifecycleCoordinator {
-  SwapPrivateHistoryLifecycleCoordinator({
-    required SwapPrivateHistorySynchronizer synchronizer,
-    required SwapPrivateHistoryAccountUuidLoader accountUuidLoader,
-    required SwapPrivateHistoryDbPathLoader dbPathLoader,
+class FinalizedActivityArchiveLifecycleCoordinator {
+  FinalizedActivityArchiveLifecycleCoordinator({
+    required FinalizedActivityArchiveSynchronizer synchronizer,
+    required FinalizedActivityArchiveAccountUuidLoader accountUuidLoader,
+    required FinalizedActivityArchiveDbPathLoader dbPathLoader,
     required String Function() networkLoader,
     required bool Function() isLocked,
-    required SwapPrivateHistorySyncMetadataStore metadataStore,
-    required SwapPrivateHistoryLocalAccountCleaner localAccountCleaner,
+    required FinalizedActivityArchiveMetadataStore metadataStore,
+    required FinalizedActivityArchiveLocalAccountCleaner localAccountCleaner,
     required Duration retryDelay,
   }) : _synchronizer = synchronizer,
        _accountUuidLoader = accountUuidLoader,
@@ -82,13 +84,13 @@ class SwapPrivateHistoryLifecycleCoordinator {
        _localAccountCleaner = localAccountCleaner,
        _retryDelay = retryDelay.isNegative ? Duration.zero : retryDelay;
 
-  final SwapPrivateHistorySynchronizer _synchronizer;
-  final SwapPrivateHistoryAccountUuidLoader _accountUuidLoader;
-  final SwapPrivateHistoryDbPathLoader _dbPathLoader;
+  final FinalizedActivityArchiveSynchronizer _synchronizer;
+  final FinalizedActivityArchiveAccountUuidLoader _accountUuidLoader;
+  final FinalizedActivityArchiveDbPathLoader _dbPathLoader;
   final String Function() _networkLoader;
   final bool Function() _isLocked;
-  final SwapPrivateHistorySyncMetadataStore _metadataStore;
-  final SwapPrivateHistoryLocalAccountCleaner _localAccountCleaner;
+  final FinalizedActivityArchiveMetadataStore _metadataStore;
+  final FinalizedActivityArchiveLocalAccountCleaner _localAccountCleaner;
   final Duration _retryDelay;
   final Set<String> _queuedAccounts = {};
   final Set<String> _retryAccounts = {};
@@ -128,7 +130,13 @@ class SwapPrivateHistoryLifecycleCoordinator {
     switch (change.source) {
       case SwapActivityReplicaChangeSource.localMutation:
       case SwapActivityReplicaChangeSource.providerRefresh:
-        await synchronizeAccount(change.accountUuid);
+        if (change.changedRecords.any(
+          (record) =>
+              record.status == SwapIntentStatus.complete ||
+              record.status == SwapIntentStatus.refunded,
+        )) {
+          await synchronizeAccount(change.accountUuid);
+        }
       case SwapActivityReplicaChangeSource.remoteReconcile:
         return;
       case SwapActivityReplicaChangeSource.localAccountDeletion:
@@ -250,30 +258,31 @@ class SwapPrivateHistoryLifecycleCoordinator {
 
   void _logFailure(String operation, Object error, StackTrace stackTrace) {
     debugPrint(
-      '[zcash] Private history sync failed $operation: $error\n$stackTrace',
+      '[zcash] Finalized activity archive failed '
+      '$operation: $error\n$stackTrace',
     );
   }
 
   bool get _cannotRun => _disposed || _paused || _isLocked();
 }
 
-final swapPrivateHistoryLifecycleProvider =
-    Provider<SwapPrivateHistoryLifecycleCoordinator?>((ref) {
-      final synchronizer = ref.watch(swapPrivateHistorySyncProvider);
+final finalizedActivityArchiveLifecycleProvider =
+    Provider<FinalizedActivityArchiveLifecycleCoordinator?>((ref) {
+      final synchronizer = ref.watch(finalizedActivityArchiveSyncProvider);
       if (synchronizer == null) return null;
-      final coordinator = SwapPrivateHistoryLifecycleCoordinator(
+      final coordinator = FinalizedActivityArchiveLifecycleCoordinator(
         synchronizer: synchronizer,
         accountUuidLoader: ref.read(
-          swapPrivateHistoryAccountUuidLoaderProvider,
+          finalizedActivityArchiveAccountUuidLoaderProvider,
         ),
-        dbPathLoader: ref.read(swapPrivateHistoryDbPathLoaderProvider),
+        dbPathLoader: ref.read(finalizedActivityArchiveDbPathLoaderProvider),
         networkLoader: () => ref.read(rpcEndpointProvider).networkName,
         isLocked: () => ref.read(appSecurityProvider).requiresUnlock,
-        metadataStore: ref.read(swapPrivateHistoryMetadataStoreProvider),
+        metadataStore: ref.read(finalizedActivityArchiveMetadataStoreProvider),
         localAccountCleaner: (accountUuid) => ref
             .read(swapActivityStoreProvider)
             .deleteForAccount(accountUuid: accountUuid),
-        retryDelay: ref.read(swapPrivateHistoryRetryDelayProvider),
+        retryDelay: ref.read(finalizedActivityArchiveRetryDelayProvider),
       );
 
       ref.listen<AppSecurityState>(appSecurityProvider, (previous, next) {

@@ -9574,7 +9574,7 @@ Widget _routerHarness(
         hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
       swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
-      swapPrivateHistorySyncProvider.overrideWithValue(null),
+      finalizedActivityArchiveSyncProvider.overrideWithValue(null),
       if (activityTracker != null)
         swapActivityTrackerProvider.overrideWithValue(activityTracker),
       swapComposerPreferencesStoreProvider.overrideWithValue(

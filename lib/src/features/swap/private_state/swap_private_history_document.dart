@@ -4,10 +4,9 @@ import 'dart:typed_data';
 import '../../../core/private_state_sync/private_state_models.dart';
 import '../models/swap_models.dart';
 
-const swapPrivateHistorySchemaVersion = 1;
+const swapPrivateHistorySchemaVersion = 2;
 const maxSwapPrivateHistoryPlaintextBytes = 192 * 1024;
 const _maxHistoryRecords = 512;
-const _maxHistoryTombstones = 2048;
 const _maxShortTextBytes = 512;
 const _maxLongTextBytes = 4096;
 
@@ -25,16 +24,14 @@ class SwapPrivateHistoryDocument {
   SwapPrivateHistoryDocument({
     required this.kind,
     required Iterable<SwapIntentRecord> records,
-    Map<String, DateTime> tombstones = const {},
     this.truncated = false,
   }) : records = List.unmodifiable(records),
-       tombstones = Map.unmodifiable(tombstones) {
+       super() {
     _validateRecords();
   }
 
   final SwapPrivateHistoryKind kind;
   final List<SwapIntentRecord> records;
-  final Map<String, DateTime> tombstones;
   final bool truncated;
 
   Uint8List encode() {
@@ -47,12 +44,6 @@ class SwapPrivateHistoryDocument {
           'kind': kind.wireName,
           'truncated': truncated,
           'records': [for (final record in sorted) _recordToJson(record)],
-          'tombstones': [
-            for (final entry
-                in tombstones.entries.toList()
-                  ..sort((left, right) => left.key.compareTo(right.key)))
-              {'id': entry.key, 'deleted_at': _date(entry.value)},
-          ],
         }),
       ),
     );
@@ -64,17 +55,19 @@ class SwapPrivateHistoryDocument {
     return bytes;
   }
 
-  /// Builds a deterministic recovery snapshot. Open records and records with
-  /// deposit evidence are never compacted; oldest evidence-free terminal
-  /// records are omitted first when the object reaches its byte budget.
+  /// Builds a deterministic recovery snapshot containing only finalized
+  /// activities. The newest records are retained when the object reaches its
+  /// count or byte budget.
   static SwapPrivateHistoryDocument compact({
     required SwapPrivateHistoryKind kind,
     required Iterable<SwapIntentRecord> records,
-    Map<String, DateTime> tombstones = const {},
   }) {
     final scoped = [
       for (final record in records)
-        if (record.payMode == kind.payMode) record,
+        if (record.payMode == kind.payMode &&
+            (record.status == SwapIntentStatus.complete ||
+                record.status == SwapIntentStatus.refunded))
+          record,
     ];
     final identities = <String>{};
     for (final record in scoped) {
@@ -86,11 +79,7 @@ class SwapPrivateHistoryDocument {
       _recordToJson(record);
     }
     if (scoped.length <= _maxHistoryRecords) {
-      final full = SwapPrivateHistoryDocument(
-        kind: kind,
-        records: scoped,
-        tombstones: tombstones,
-      );
+      final full = SwapPrivateHistoryDocument(kind: kind, records: scoped);
       try {
         full.encode();
         return full;
@@ -99,25 +88,16 @@ class SwapPrivateHistoryDocument {
       }
     }
 
-    final mandatory = <SwapIntentRecord>[];
-    final optional = <SwapIntentRecord>[];
-    for (final record in scoped) {
-      if (!record.status.isTerminal || _hasDepositEvidence(record)) {
-        mandatory.add(record);
-      } else {
-        optional.add(record);
-      }
-    }
+    final optional = List<SwapIntentRecord>.of(scoped);
     optional.sort((left, right) {
       final byTime = _recordTimestamp(right).compareTo(_recordTimestamp(left));
       return byTime != 0 ? byTime : _compareCanonicalRecords(left, right);
     });
 
-    final selected = List<SwapIntentRecord>.of(mandatory);
+    final selected = <SwapIntentRecord>[];
     final requiredOnly = SwapPrivateHistoryDocument(
       kind: kind,
       records: selected,
-      tombstones: tombstones,
       truncated: true,
     );
     requiredOnly.encode();
@@ -127,7 +107,6 @@ class SwapPrivateHistoryDocument {
         SwapPrivateHistoryDocument(
           kind: kind,
           records: next,
-          tombstones: tombstones,
           truncated: true,
         ).encode();
         selected.add(candidate);
@@ -138,7 +117,6 @@ class SwapPrivateHistoryDocument {
     return SwapPrivateHistoryDocument(
       kind: kind,
       records: selected,
-      tombstones: tombstones,
       truncated: selected.length != scoped.length,
     );
   }
@@ -161,15 +139,10 @@ class SwapPrivateHistoryDocument {
       );
     }
     if (decoded is! Map<String, dynamic> ||
-        (decoded.length != 4 && decoded.length != 5) ||
+        decoded.length != 4 ||
         decoded.keys.any(
-          (key) => !const {
-            'schema',
-            'kind',
-            'truncated',
-            'records',
-            'tombstones',
-          }.contains(key),
+          (key) =>
+              !const {'schema', 'kind', 'truncated', 'records'}.contains(key),
         ) ||
         decoded['schema'] != swapPrivateHistorySchemaVersion ||
         decoded['kind'] != expectedKind.wireName ||
@@ -201,37 +174,9 @@ class SwapPrivateHistoryDocument {
       }
       records.add(record);
     }
-    final tombstones = <String, DateTime>{};
-    final rawTombstones = decoded['tombstones'];
-    if (rawTombstones != null) {
-      if (rawTombstones is! List ||
-          rawTombstones.length > _maxHistoryTombstones) {
-        throw const PrivateStateProtocolException(
-          'Swap history tombstone count is invalid.',
-        );
-      }
-      for (final raw in rawTombstones) {
-        if (raw is! Map<String, dynamic> ||
-            raw.length != 2 ||
-            !raw.containsKey('id') ||
-            !raw.containsKey('deleted_at')) {
-          throw const PrivateStateProtocolException(
-            'Swap history tombstone has an invalid shape.',
-          );
-        }
-        final id = _requiredText(raw['id'], 'tombstone ID');
-        if (tombstones.containsKey(id) || identities.contains(id)) {
-          throw const PrivateStateProtocolException(
-            'Swap history tombstone identity is duplicated or still live.',
-          );
-        }
-        tombstones[id] = _requiredDate(raw['deleted_at']);
-      }
-    }
     return SwapPrivateHistoryDocument(
       kind: expectedKind,
       records: records,
-      tombstones: tombstones,
       truncated: decoded['truncated'] as bool,
     );
   }
@@ -242,14 +187,11 @@ class SwapPrivateHistoryDocument {
         'Swap history record count exceeds the limit.',
       );
     }
-    if (tombstones.length > _maxHistoryTombstones) {
-      throw const PrivateStateProtocolException(
-        'Swap history tombstone count exceeds the limit.',
-      );
-    }
     final identities = <String>{};
     for (final record in records) {
       if (record.payMode != kind.payMode ||
+          (record.status != SwapIntentStatus.complete &&
+              record.status != SwapIntentStatus.refunded) ||
           !identities.add(_recordIdentity(record))) {
         throw const PrivateStateProtocolException(
           'Swap history record namespace or identity is invalid.',
@@ -257,18 +199,6 @@ class SwapPrivateHistoryDocument {
       }
       // Run through the encoder's length checks before encryption.
       _recordToJson(record);
-    }
-    for (final entry in tombstones.entries) {
-      final id = entry.key.trim();
-      if (id.isEmpty ||
-          utf8.encode(id).length > _maxShortTextBytes ||
-          identities.contains(id) ||
-          id != entry.key) {
-        throw const PrivateStateProtocolException(
-          'Swap history tombstone identity is invalid or still live.',
-        );
-      }
-      _date(entry.value);
     }
   }
 }

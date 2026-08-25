@@ -104,6 +104,30 @@ The unsigned `expected` field is only a concurrency hint. Direct-successor
 verification is mandatory to prevent replaying an older correctly signed
 envelope while replacing its CAS precondition.
 
+## App object policies
+
+Voting completion uses one immutable create-only object per authenticated
+round. It stores display recovery data, including the encrypted choices, while
+the Rust recovery database and chain remain authoritative.
+
+Swap and Pay share one finalized activity archive implementation but use
+separate namespaces. Only `complete` and `refunded` records are eligible.
+Pending, failed, and expired activity never leaves the installation. Each
+archive generation is a cumulative snapshot written as revision 1 to a new
+UFVK-derived slot (`archive-v1:1`, `archive-v1:2`, ...); existing slot objects
+are never updated. A create conflict is resolved by reading the winning slot,
+merging it locally, and creating the following slot. Consequently each slot
+has an unrelated public key and object ID at rest.
+
+Activity deletion is installation-local. Deleted IDs are suppressed only in
+local secure metadata, never uploaded as tombstones, and never remove a remote
+archive record. Re-importing on another installation can therefore restore a
+locally deleted activity.
+
+The rotating identifiers reduce durable database linkability. They do not
+prevent an online service from correlating closely timed requests by network
+metadata; Tor routing and minimal request logging remain separate controls.
+
 ## Limits and errors
 
 The protocol primitive limits plaintext to 256 KiB, which bounds ciphertext

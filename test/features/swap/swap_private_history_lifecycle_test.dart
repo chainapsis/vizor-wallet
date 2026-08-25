@@ -83,6 +83,48 @@ void main() {
     },
   );
 
+  test('only complete and refunded local/provider changes upload', () async {
+    final synchronizer = _RecordingSynchronizer();
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      accountUuids: const [],
+    );
+    addTearDown(coordinator.dispose);
+
+    for (final status in [
+      SwapIntentStatus.processing,
+      SwapIntentStatus.failed,
+      SwapIntentStatus.expired,
+    ]) {
+      for (final source in [
+        SwapActivityReplicaChangeSource.localMutation,
+        SwapActivityReplicaChangeSource.providerRefresh,
+      ]) {
+        await coordinator.handleReplicaChange(
+          SwapActivityReplicaChange(
+            accountUuid: 'account-a',
+            source: source,
+            records: const [],
+            changedRecords: [_finalizedRecord().copyWith(status: status)],
+          ),
+        );
+      }
+    }
+    expect(synchronizer.calls, isEmpty);
+
+    await coordinator.handleReplicaChange(
+      SwapActivityReplicaChange(
+        accountUuid: 'account-a',
+        source: SwapActivityReplicaChangeSource.providerRefresh,
+        records: const [],
+        changedRecords: [
+          _finalizedRecord().copyWith(status: SwapIntentStatus.refunded),
+        ],
+      ),
+    );
+    expect(synchronizer.calls, hasLength(2));
+  });
+
   test('account deletion fences and cleans up an in-flight restore', () async {
     final firstCallStarted = Completer<void>();
     final releaseFirstCall = Completer<void>();
@@ -163,15 +205,15 @@ void main() {
   });
 }
 
-SwapPrivateHistoryLifecycleCoordinator _coordinator({
+FinalizedActivityArchiveLifecycleCoordinator _coordinator({
   required _RecordingSynchronizer synchronizer,
   required List<String> accountUuids,
   _MemoryMetadataStore? metadataStore,
-  SwapPrivateHistoryLocalAccountCleaner? localAccountCleaner,
+  FinalizedActivityArchiveLocalAccountCleaner? localAccountCleaner,
   bool Function()? isLocked,
   Duration retryDelay = const Duration(seconds: 30),
 }) {
-  return SwapPrivateHistoryLifecycleCoordinator(
+  return FinalizedActivityArchiveLifecycleCoordinator(
     synchronizer: synchronizer,
     accountUuidLoader: () async => accountUuids,
     dbPathLoader: () async => '/wallet.db',
@@ -188,8 +230,25 @@ SwapActivityReplicaChange _change(SwapActivityReplicaChangeSource source) {
     accountUuid: 'account-a',
     source: source,
     records: const <SwapIntentRecord>[],
+    changedRecords:
+        source == SwapActivityReplicaChangeSource.localMutation ||
+            source == SwapActivityReplicaChangeSource.providerRefresh
+        ? [_finalizedRecord()]
+        : const [],
   );
 }
+
+SwapIntentRecord _finalizedRecord() => SwapIntentRecord(
+  id: 'complete-a',
+  providerLabel: 'NEAR Intents',
+  pairText: 'ZEC -> USDC',
+  sellAmountText: '1 ZEC',
+  receiveEstimateText: '70 USDC',
+  status: SwapIntentStatus.complete,
+  nextAction: 'Complete',
+  createdAt: DateTime.utc(2026, 8, 25),
+  updatedAt: DateTime.utc(2026, 8, 25),
+);
 
 class _SyncCall {
   const _SyncCall(this.account, this.kind);
@@ -198,7 +257,7 @@ class _SyncCall {
   final SwapPrivateHistoryKind kind;
 }
 
-class _RecordingSynchronizer implements SwapPrivateHistorySynchronizer {
+class _RecordingSynchronizer implements FinalizedActivityArchiveSynchronizer {
   _RecordingSynchronizer({
     this.failFirstCall = false,
     this.onCall,
@@ -222,7 +281,7 @@ class _RecordingSynchronizer implements SwapPrivateHistorySynchronizer {
   }
 
   @override
-  Future<SwapPrivateHistorySyncResult> synchronize({
+  Future<FinalizedActivityArchiveSyncResult> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
@@ -233,24 +292,24 @@ class _RecordingSynchronizer implements SwapPrivateHistorySynchronizer {
       await releaseFirstCall!.future;
     }
     if (failFirstCall && calls.length == 1) throw StateError('offline');
-    return SwapPrivateHistorySyncResult(
+    return FinalizedActivityArchiveSyncResult(
       records: const [],
       kind: kind,
-      remoteVersion: null,
+      lastSlot: 0,
       remoteWritten: false,
       truncated: false,
     );
   }
 }
 
-class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
+class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
   final List<String> deletedAccounts = [];
 
   @override
-  Future<void> addTombstones({
+  Future<void> hideRecords({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required Map<String, DateTime> tombstones,
+    required Iterable<String> recordIds,
   }) async {}
 
   @override
@@ -259,7 +318,7 @@ class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
   }
 
   @override
-  Future<SwapPrivateHistorySyncMetadata?> load({
+  Future<FinalizedActivityArchiveMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
   }) async => null;
@@ -268,6 +327,6 @@ class _MemoryMetadataStore implements SwapPrivateHistorySyncMetadataStore {
   Future<void> save({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required SwapPrivateHistorySyncMetadata metadata,
+    required FinalizedActivityArchiveMetadata metadata,
   }) async {}
 }

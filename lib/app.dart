@@ -1124,7 +1124,7 @@ class ZcashWalletApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
     ref.watch(votingPrivateStateLifecycleProvider);
-    ref.watch(swapPrivateHistoryLifecycleProvider);
+    ref.watch(finalizedActivityArchiveLifecycleProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);

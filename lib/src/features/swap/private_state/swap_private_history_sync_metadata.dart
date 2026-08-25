@@ -2,104 +2,62 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../../../core/storage/app_secure_store.dart';
-import '../../../core/private_state_sync/private_state_models.dart';
 import 'swap_private_history_document.dart';
 
-const _metadataSchemaVersion = 1;
-const _metadataKeyPrefix = 'zcash_private_history_sync_v1';
+const _metadataSchemaVersion = 2;
+const _metadataKeyPrefix = 'zcash_finalized_activity_archive_v2';
+const _maxLocallyHiddenRecords = 2048;
 
-class SwapPrivateHistorySyncMetadata {
-  const SwapPrivateHistorySyncMetadata({
-    required this.plaintextHashBase64,
-    required this.synchronizedAt,
-    this.remoteVersion,
-    this.tombstones = const {},
+/// Local-only progress for the append-only finalized activity archive.
+///
+/// [hiddenRecordIds] are deliberately never uploaded. They keep an activity
+/// deleted on this installation without deleting it from another device or
+/// from recovery storage.
+class FinalizedActivityArchiveMetadata {
+  const FinalizedActivityArchiveMetadata({
+    required this.lastSlot,
+    this.hiddenRecordIds = const {},
   });
 
-  final String plaintextHashBase64;
-  final DateTime synchronizedAt;
-  final PrivateStateVersion? remoteVersion;
-  final Map<String, DateTime> tombstones;
+  final int lastSlot;
+  final Set<String> hiddenRecordIds;
 
   Map<String, Object?> toJson() => {
     'schema': _metadataSchemaVersion,
-    'plaintext_hash': plaintextHashBase64,
-    'synchronized_at': synchronizedAt.toUtc().toIso8601String(),
-    'remote_revision': remoteVersion?.revision.toString(),
-    'remote_envelope_hash': remoteVersion?.envelopeHashBase64,
-    'tombstones': {
-      for (final entry in tombstones.entries)
-        entry.key: entry.value.toUtc().toIso8601String(),
-    },
+    'last_slot': lastSlot,
+    'hidden_record_ids': hiddenRecordIds.toList()..sort(),
   };
 
-  static SwapPrivateHistorySyncMetadata? fromJson(Object? raw) {
+  static FinalizedActivityArchiveMetadata? fromJson(Object? raw) {
     if (raw is! Map<String, dynamic> ||
-        (raw.length != 5 && raw.length != 6) ||
-        raw['schema'] != _metadataSchemaVersion) {
+        raw.length != 3 ||
+        raw['schema'] != _metadataSchemaVersion ||
+        raw.keys.any(
+          (key) =>
+              !const {'schema', 'last_slot', 'hidden_record_ids'}.contains(key),
+        )) {
       return null;
     }
-    const keys = {
-      'schema',
-      'plaintext_hash',
-      'synchronized_at',
-      'remote_revision',
-      'remote_envelope_hash',
-      'tombstones',
-    };
-    if (raw.keys.any((key) => !keys.contains(key))) return null;
-    final plaintextHash = raw['plaintext_hash'];
-    final synchronizedAtRaw = raw['synchronized_at'];
-    final revisionRaw = raw['remote_revision'];
-    final envelopeHash = raw['remote_envelope_hash'];
-    final tombstones = _tombstonesFromJson(raw['tombstones']);
-    if (tombstones == null) return null;
-    if (plaintextHash is! String ||
-        plaintextHash.isEmpty ||
-        synchronizedAtRaw is! String) {
+    final lastSlot = raw['last_slot'];
+    final hidden = raw['hidden_record_ids'];
+    if (lastSlot is! int ||
+        lastSlot < 0 ||
+        hidden is! List ||
+        hidden.length > _maxLocallyHiddenRecords ||
+        hidden.any((value) => value is! String || value.trim().isEmpty)) {
       return null;
     }
-    final synchronizedAt = DateTime.tryParse(synchronizedAtRaw)?.toUtc();
-    if (synchronizedAt == null) return null;
-    if (revisionRaw == null && envelopeHash == null) {
-      return SwapPrivateHistorySyncMetadata(
-        plaintextHashBase64: plaintextHash,
-        synchronizedAt: synchronizedAt,
-        tombstones: tombstones,
-      );
-    }
-    if (revisionRaw is! String || envelopeHash is! String) return null;
-    final revision = BigInt.tryParse(revisionRaw);
-    if (revision == null || revision < BigInt.one || envelopeHash.isEmpty) {
-      return null;
-    }
-    return SwapPrivateHistorySyncMetadata(
-      plaintextHashBase64: plaintextHash,
-      synchronizedAt: synchronizedAt,
-      remoteVersion: PrivateStateVersion(
-        revision: revision,
-        envelopeHashBase64: envelopeHash,
-      ),
-      tombstones: tombstones,
+    final hiddenIds = hidden.cast<String>().toSet();
+    if (hiddenIds.length != hidden.length) return null;
+    return FinalizedActivityArchiveMetadata(
+      lastSlot: lastSlot,
+      hiddenRecordIds: hiddenIds,
     );
-  }
-
-  static Map<String, DateTime>? _tombstonesFromJson(Object? raw) {
-    if (raw == null) return const {};
-    if (raw is! Map<String, dynamic> || raw.length > 2048) return null;
-    final result = <String, DateTime>{};
-    for (final entry in raw.entries) {
-      if (entry.key.trim().isEmpty || entry.value is! String) return null;
-      final deletedAt = DateTime.tryParse(entry.value as String)?.toUtc();
-      if (deletedAt == null) return null;
-      result[entry.key] = deletedAt;
-    }
-    return result;
   }
 }
 
-abstract interface class SwapPrivateHistorySyncMetadataStore {
-  Future<SwapPrivateHistorySyncMetadata?> load({
+abstract interface class FinalizedActivityArchiveMetadataStore {
+  Future<FinalizedActivityArchiveMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
   });
@@ -107,38 +65,36 @@ abstract interface class SwapPrivateHistorySyncMetadataStore {
   Future<void> save({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required SwapPrivateHistorySyncMetadata metadata,
+    required FinalizedActivityArchiveMetadata metadata,
   });
 
-  Future<void> addTombstones({
+  Future<void> hideRecords({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required Map<String, DateTime> tombstones,
+    required Iterable<String> recordIds,
   });
 
   Future<void> deleteForAccount({required String accountUuid});
 }
 
-class AppSecureStoreSwapPrivateHistorySyncMetadataStore
-    implements SwapPrivateHistorySyncMetadataStore {
-  AppSecureStoreSwapPrivateHistorySyncMetadataStore(this._storage);
+class AppSecureStoreFinalizedActivityArchiveMetadataStore
+    implements FinalizedActivityArchiveMetadataStore {
+  AppSecureStoreFinalizedActivityArchiveMetadataStore(this._storage);
 
   final AppSecureStore _storage;
   final Map<String, Future<void>> _mutationTails = {};
 
   @override
-  Future<SwapPrivateHistorySyncMetadata?> load({
+  Future<FinalizedActivityArchiveMetadata?> load({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-  }) async {
-    return _load(_key(accountUuid, kind));
-  }
+  }) => _load(_key(accountUuid, kind));
 
-  Future<SwapPrivateHistorySyncMetadata?> _load(String key) async {
+  Future<FinalizedActivityArchiveMetadata?> _load(String key) async {
     final encoded = await _storage.readString(key);
     if (encoded == null || encoded.isEmpty) return null;
     try {
-      return SwapPrivateHistorySyncMetadata.fromJson(jsonDecode(encoded));
+      return FinalizedActivityArchiveMetadata.fromJson(jsonDecode(encoded));
     } on FormatException {
       return null;
     }
@@ -148,58 +104,53 @@ class AppSecureStoreSwapPrivateHistorySyncMetadataStore
   Future<void> save({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required SwapPrivateHistorySyncMetadata metadata,
+    required FinalizedActivityArchiveMetadata metadata,
   }) {
     final key = _key(accountUuid, kind);
     return _serialize(key, () async {
       final current = await _load(key);
-      final merged = _mergeTombstones(
-        current?.tombstones ?? const {},
-        metadata.tombstones,
-      );
-      _validateTombstoneCount(merged);
-      await _storage.writeString(
+      final hidden = {
+        ...?current?.hiddenRecordIds,
+        ...metadata.hiddenRecordIds,
+      };
+      _validateHiddenCount(hidden);
+      await _write(
         key,
-        jsonEncode(
-          SwapPrivateHistorySyncMetadata(
-            plaintextHashBase64: metadata.plaintextHashBase64,
-            synchronizedAt: metadata.synchronizedAt,
-            remoteVersion: metadata.remoteVersion,
-            tombstones: merged,
-          ).toJson(),
+        FinalizedActivityArchiveMetadata(
+          lastSlot: metadata.lastSlot >= (current?.lastSlot ?? 0)
+              ? metadata.lastSlot
+              : current!.lastSlot,
+          hiddenRecordIds: hidden,
         ),
       );
     });
   }
 
   @override
-  Future<void> addTombstones({
+  Future<void> hideRecords({
     required String accountUuid,
     required SwapPrivateHistoryKind kind,
-    required Map<String, DateTime> tombstones,
+    required Iterable<String> recordIds,
   }) {
-    if (tombstones.isEmpty) return Future.value();
+    final ids = recordIds.where((id) => id.trim().isNotEmpty).toSet();
+    if (ids.isEmpty) return Future.value();
     final key = _key(accountUuid, kind);
     return _serialize(key, () async {
       final current = await _load(key);
-      final merged = _mergeTombstones(
-        current?.tombstones ?? const {},
-        tombstones,
-      );
-      _validateTombstoneCount(merged);
-      await _storage.writeString(
+      final hidden = {...?current?.hiddenRecordIds, ...ids};
+      _validateHiddenCount(hidden);
+      await _write(
         key,
-        jsonEncode(
-          SwapPrivateHistorySyncMetadata(
-            plaintextHashBase64: current?.plaintextHashBase64 ?? 'pending',
-            synchronizedAt: current?.synchronizedAt ?? DateTime.now().toUtc(),
-            remoteVersion: current?.remoteVersion,
-            tombstones: merged,
-          ).toJson(),
+        FinalizedActivityArchiveMetadata(
+          lastSlot: current?.lastSlot ?? 0,
+          hiddenRecordIds: hidden,
         ),
       );
     });
   }
+
+  Future<void> _write(String key, FinalizedActivityArchiveMetadata metadata) =>
+      _storage.writeString(key, jsonEncode(metadata.toJson()));
 
   @override
   Future<void> deleteForAccount({required String accountUuid}) async {
@@ -219,7 +170,7 @@ class AppSecureStoreSwapPrivateHistorySyncMetadataStore
       try {
         await previous;
       } on Object {
-        // A failed metadata mutation must not poison later tombstones.
+        // A failed metadata mutation must not poison later local operations.
       }
       return await action();
     } finally {
@@ -231,22 +182,8 @@ class AppSecureStoreSwapPrivateHistorySyncMetadataStore
   }
 }
 
-Map<String, DateTime> _mergeTombstones(
-  Map<String, DateTime> left,
-  Map<String, DateTime> right,
-) {
-  final merged = Map<String, DateTime>.of(left);
-  for (final entry in right.entries) {
-    final existing = merged[entry.key];
-    if (existing == null || entry.value.isAfter(existing)) {
-      merged[entry.key] = entry.value.toUtc();
-    }
-  }
-  return merged;
-}
-
-void _validateTombstoneCount(Map<String, DateTime> tombstones) {
-  if (tombstones.length > 2048) {
-    throw StateError('Private history tombstone limit exceeded.');
+void _validateHiddenCount(Set<String> hidden) {
+  if (hidden.length > _maxLocallyHiddenRecords) {
+    throw StateError('Locally hidden activity limit exceeded.');
   }
 }

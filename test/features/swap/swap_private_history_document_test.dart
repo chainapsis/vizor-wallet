@@ -8,7 +8,7 @@ import 'package:zcash_wallet/src/features/swap/private_state/swap_private_histor
 
 void main() {
   test('round-trips recovery fields without device-local metadata', () {
-    final source = _record('swap-a', status: SwapIntentStatus.processing)
+    final source = _record('swap-a', status: SwapIntentStatus.complete)
         .copyWith(
           accountUuid: 'local-account',
           userExternalContactId: 'local-contact',
@@ -31,7 +31,7 @@ void main() {
     expect(raw, isNot(contains('local network failed')));
     expect(raw, isNot(contains('local notice')));
     expect(decoded.id, source.id);
-    expect(decoded.status, SwapIntentStatus.processing);
+    expect(decoded.status, SwapIntentStatus.complete);
     expect(decoded.depositTxHash, source.depositTxHash);
     expect(decoded.accountUuid, isNull);
     expect(decoded.userExternalContactId, isNull);
@@ -96,30 +96,6 @@ void main() {
     expect(decoded.externalAsset, isNull);
     expect(decoded.depositAddress, isNull);
     expect(decoded.providerQuoteId, isNull);
-  });
-
-  test('round-trips tombstones and rejects a live/deleted overlap', () {
-    final deletedAt = DateTime.utc(2026, 8, 25, 12);
-    final document = SwapPrivateHistoryDocument(
-      kind: SwapPrivateHistoryKind.swap,
-      records: [_record('live')],
-      tombstones: {'deleted': deletedAt},
-    );
-
-    final decoded = SwapPrivateHistoryDocument.decode(
-      document.encode(),
-      expectedKind: SwapPrivateHistoryKind.swap,
-    );
-
-    expect(decoded.tombstones, {'deleted': deletedAt});
-    expect(
-      () => SwapPrivateHistoryDocument(
-        kind: SwapPrivateHistoryKind.swap,
-        records: [_record('same')],
-        tombstones: {'same': deletedAt},
-      ),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
   });
 
   test('evidence-bearing progress defeats local deadline expiry', () {
@@ -242,7 +218,7 @@ void main() {
     );
   });
 
-  test('compaction keeps mandatory records and newest terminal history', () {
+  test('compaction excludes non-final records and keeps newest history', () {
     final records = [
       _record(
         'open',
@@ -251,7 +227,7 @@ void main() {
       for (var index = 0; index < 100; index++)
         _record(
           'terminal-$index',
-          status: SwapIntentStatus.expired,
+          status: SwapIntentStatus.complete,
           includeEvidence: false,
         ).copyWith(
           providerStatusRaw: '${List.filled(3000, 'x').join()}-$index',
@@ -269,7 +245,7 @@ void main() {
     );
 
     expect(compacted.truncated, isTrue);
-    expect(decoded.records.any((record) => record.id == 'open'), isTrue);
+    expect(decoded.records.any((record) => record.id == 'open'), isFalse);
     expect(decoded.records.any((record) => record.id == 'terminal-99'), isTrue);
     expect(decoded.records.any((record) => record.id == 'terminal-0'), isFalse);
     expect(compacted.encode().length, lessThanOrEqualTo(192 * 1024));
@@ -282,7 +258,7 @@ void main() {
         for (var index = 0; index < 600; index++)
           _record(
             'terminal-$index',
-            status: SwapIntentStatus.expired,
+            status: SwapIntentStatus.complete,
             includeEvidence: false,
           ).copyWith(updatedAt: DateTime.utc(2025).add(Duration(days: index))),
       ],
@@ -303,7 +279,7 @@ void main() {
 
 SwapIntentRecord _record(
   String id, {
-  SwapIntentStatus status = SwapIntentStatus.awaitingDeposit,
+  SwapIntentStatus status = SwapIntentStatus.complete,
   bool includeEvidence = true,
 }) {
   return SwapIntentRecord(
