@@ -316,14 +316,14 @@ void main() {
         ),
         isTrue,
       );
-      const retainedRecoveryKey = VotingSessionKey(
+      const otherAccountRecoveryKey = VotingSessionKey(
         accountUuid: 'account-1',
         roundId: 'reset-recovery',
       );
       final retainedRecoveryOwner = Object();
       expect(
         shareTracking.registerSyncRecovery(
-          key: retainedRecoveryKey,
+          key: otherAccountRecoveryKey,
           owner: retainedRecoveryOwner,
           stopAndDrain: () async => stoppedRecoveries++,
         ),
@@ -336,11 +336,8 @@ void main() {
       );
       expect(shareTracking.isQuiesced('account-2'), isFalse);
       expect(restoreRequests, 1);
-      expect(stoppedRecoveries, 1);
-      expect(
-        shareTracking.registeredSyncRecoveryKeys,
-        contains(retainedRecoveryKey),
-      );
+      expect(stoppedRecoveries, 2);
+      expect(shareTracking.registeredSyncRecoveryKeys, isEmpty);
 
       await expectLater(
         container.read(accountProvider.notifier).resetWallet(),

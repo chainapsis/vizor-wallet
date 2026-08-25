@@ -72,7 +72,10 @@ class VotingShareTrackingRegistry {
     required Object owner,
     required VotingSyncRecoveryStopper stopAndDrain,
   }) {
-    if (isQuiesced(key.accountUuid)) return false;
+    // Readiness is wallet-wide: every recovery reads the same DB scan height
+    // and minimum account birthday. An account mutation therefore blocks new
+    // recovery work for every account, not only the account being changed.
+    if (_isSyncRecoveryQuiesced) return false;
     _recoveries[key] = _VotingSyncRecoveryRegistration(
       owner: owner,
       stopAndDrain: stopAndDrain,
@@ -92,6 +95,9 @@ class VotingShareTrackingRegistry {
         _quiescedAccounts.contains(accountUuid);
   }
 
+  bool get _isSyncRecoveryQuiesced =>
+      _globalQuiescenceDepth > 0 || _quiescedAccounts.isNotEmpty;
+
   /// Blocks matching discovery until paired with [resume].
   ///
   /// Global calls are reference counted so overlapping owners cannot release
@@ -106,10 +112,10 @@ class VotingShareTrackingRegistry {
       for (final entry in _sessions.entries)
         if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
     ];
-    final recoveries = [
-      for (final entry in _recoveries.entries)
-        if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
-    ];
+    // Unlike helper-share tracking, wallet-sync readiness is not
+    // account-scoped. Deleting any account can change the wallet's minimum
+    // birthday, so all recovery polls must stop before the shared DB mutates.
+    final recoveries = _recoveries.entries.toList(growable: false);
     final discoveries = [
       for (final completion in _discoveries) completion.future,
     ];

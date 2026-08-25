@@ -7212,6 +7212,95 @@ void main() {
     releaseDiscovery!();
   });
 
+  test(
+    'account mutation drains and blocks wallet-wide sync recoveries',
+    () async {
+      final registry = VotingShareTrackingRegistry();
+      var stoppedRecoveries = 0;
+      var stoppedOtherShareTracking = 0;
+      final releaseRecovery = Completer<void>();
+      final recoveryOwner1 = Object();
+      final recoveryOwner2 = Object();
+      final shareOwner = Object();
+      const recoveryKey1 = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      );
+      const recoveryKey2 = VotingSessionKey(
+        accountUuid: 'account-2',
+        roundId: 'round-2',
+      );
+      const shareKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: 'share-round',
+      );
+
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey1,
+          owner: recoveryOwner1,
+          stopAndDrain: () async {
+            stoppedRecoveries++;
+            await releaseRecovery.future;
+          },
+        ),
+        isTrue,
+      );
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey2,
+          owner: recoveryOwner2,
+          stopAndDrain: () async => stoppedRecoveries++,
+        ),
+        isTrue,
+      );
+      expect(
+        registry.register(
+          key: shareKey,
+          owner: shareOwner,
+          stopAndDrain: () async => stoppedOtherShareTracking++,
+        ),
+        isTrue,
+      );
+
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(stoppedRecoveries, 2);
+      expect(stoppedOtherShareTracking, 0);
+      expect(drained, isFalse);
+      expect(
+        registry.registerSyncRecovery(
+          key: const VotingSessionKey(
+            accountUuid: 'account-3',
+            roundId: 'late-recovery',
+          ),
+          owner: Object(),
+          stopAndDrain: () async {},
+        ),
+        isFalse,
+      );
+
+      releaseRecovery.complete();
+      await drain;
+      expect(registry.registeredSyncRecoveryKeys, isEmpty);
+      expect(registry.registeredKeys, {shareKey});
+
+      registry.resume(accountUuid: 'account-2');
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey1,
+          owner: recoveryOwner1,
+          stopAndDrain: () async {},
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('restore request restarts discovery after destructive drain', () async {
     var loadCount = 0;
     final container = _sessionContainer(
