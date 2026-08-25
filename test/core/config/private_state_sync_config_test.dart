@@ -41,4 +41,14 @@ void main() {
       );
     }
   });
+
+  test('allows a canonical signing audience distinct from transport URL', () {
+    expect(
+      parsePrivateStateAudience(
+        'http://localhost:3000/api/private-state/v1',
+        allowInsecureHttp: true,
+      ),
+      'http://localhost:3000/api/private-state/v1',
+    );
+  });
 }

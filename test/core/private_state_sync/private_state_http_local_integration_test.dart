@@ -15,6 +15,9 @@ import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.da
 const _integrationUrl = String.fromEnvironment(
   'VIZOR_PRIVATE_STATE_INTEGRATION_URL',
 );
+const _integrationAudience = String.fromEnvironment(
+  'VIZOR_PRIVATE_STATE_INTEGRATION_AUDIENCE',
+);
 
 void main() {
   test(
@@ -30,6 +33,9 @@ void main() {
       );
       final writer = HttpPrivateStateRemoteStore(
         baseUri: Uri.parse(_integrationUrl),
+        signingAudience: _integrationAudience.isEmpty
+            ? _integrationUrl
+            : _integrationAudience,
         transport: writerTransport,
       );
       addTearDown(() => writerTransport.close(force: true));
@@ -58,6 +64,9 @@ void main() {
       );
       final reader = HttpPrivateStateRemoteStore(
         baseUri: Uri.parse(_integrationUrl),
+        signingAudience: _integrationAudience.isEmpty
+            ? _integrationUrl
+            : _integrationAudience,
         transport: readerTransport,
       );
       addTearDown(() => readerTransport.close(force: true));

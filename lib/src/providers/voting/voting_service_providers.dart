@@ -172,6 +172,10 @@ final privateStateBaseUriProvider = Provider<Uri>((_) {
   return privateStateBaseUriForBuild();
 });
 
+final privateStateAudienceProvider = Provider<String>((ref) {
+  return privateStateAudienceForBuild(ref.watch(privateStateBaseUriProvider));
+});
+
 /// Opaque remote storage deployment seam. The network client follows the
 /// process-wide direct/Tor route and fails closed during route transitions.
 final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
@@ -181,6 +185,7 @@ final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
   ref.onDispose(() => transport.close(force: true));
   return HttpPrivateStateRemoteStore(
     baseUri: ref.watch(privateStateBaseUriProvider),
+    signingAudience: ref.watch(privateStateAudienceProvider),
     transport: transport,
   );
 });

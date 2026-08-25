@@ -62,6 +62,30 @@ void main() {
     );
   });
 
+  test(
+    'accepts a configured signing audience distinct from transport',
+    () async {
+      final aliasedTransport = _FakeTransport();
+      final aliasedStore = HttpPrivateStateRemoteStore(
+        baseUri: Uri.parse('http://10.0.2.2:3000/api/private-state/v1'),
+        signingAudience: _audience,
+        transport: aliasedTransport,
+      );
+      aliasedTransport.responses.add(
+        _jsonResponse(201, {
+          'challenge_base64': 'challenge',
+          'expires_at_seconds': 1800000000,
+          'audience': _audience,
+        }),
+      );
+
+      await aliasedStore.createChallenge(object: _object);
+
+      expect(aliasedStore.audience, _audience);
+      expect(aliasedTransport.requests.single.uri.host, '10.0.2.2');
+    },
+  );
+
   test('authenticated GET maps absence and parses an envelope', () async {
     transport.responses
       ..add(NetworkHttpResponse(statusCode: 404, bodyBytes: Uint8List(0)))

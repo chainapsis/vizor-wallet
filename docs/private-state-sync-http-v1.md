@@ -126,6 +126,7 @@ opt-in so a production endpoint cannot silently downgrade:
 ```bash
 fvm flutter run \
   --dart-define=VIZOR_PRIVATE_STATE_BASE_URL=http://127.0.0.1:3000/api/private-state/v1 \
+  --dart-define=VIZOR_PRIVATE_STATE_AUDIENCE=http://localhost:3000/api/private-state/v1 \
   --dart-define=VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP=true
 ```
 
@@ -145,6 +146,7 @@ fvm flutter test \
   --tags external-service \
   --run-skipped \
   --dart-define=VIZOR_PRIVATE_STATE_INTEGRATION_URL=http://127.0.0.1:3000/api/private-state/v1 \
+  --dart-define=VIZOR_PRIVATE_STATE_INTEGRATION_AUDIENCE=http://localhost:3000/api/private-state/v1 \
   test/core/private_state_sync/private_state_http_local_integration_test.dart
 ```
 

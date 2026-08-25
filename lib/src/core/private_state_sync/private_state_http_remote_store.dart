@@ -60,8 +60,10 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
   HttpPrivateStateRemoteStore({
     required Uri baseUri,
     required PrivateStateHttpTransport transport,
+    String? signingAudience,
     this.timeout = const Duration(seconds: 15),
   }) : _baseUri = baseUri,
+       _audience = signingAudience ?? baseUri.toString(),
        _transport = transport;
 
   static const _maximumChallengeResponseBytes = 4096;
@@ -69,11 +71,12 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
   static final _maximumWireRevision = BigInt.from(9007199254740991);
 
   final Uri _baseUri;
+  final String _audience;
   final PrivateStateHttpTransport _transport;
   final Duration timeout;
 
   @override
-  String get audience => _baseUri.toString();
+  String get audience => _audience;
 
   @override
   Future<PrivateStateServerChallenge> createChallenge({
