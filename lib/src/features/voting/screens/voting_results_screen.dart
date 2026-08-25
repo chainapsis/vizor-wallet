@@ -520,33 +520,36 @@ class _MobileTallyRow extends StatelessWidget {
     final progress = total <= 0
         ? 0.0
         : (amount / total).clamp(0.0, 1.0).toDouble();
-    return SizedBox(
-      height: 48,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.medium),
         child: Stack(
-          fit: StackFit.expand,
+          alignment: Alignment.center,
           children: [
-            ColoredBox(color: colors.background.base),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: progress,
-                heightFactor: 1,
-                child: ColoredBox(
-                  color: colors.background.neutralSubtleOpacity,
+            Positioned.fill(child: ColoredBox(color: colors.background.base)),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: progress,
+                  heightFactor: 1,
+                  child: ColoredBox(
+                    color: colors.background.neutralSubtleOpacity,
+                  ),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s,
+                vertical: AppSpacing.xs,
+              ),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       selected ? '${option.label} (your vote)' : option.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
