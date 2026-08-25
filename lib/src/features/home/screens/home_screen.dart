@@ -611,11 +611,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final migrationRequired =
-        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final payAvailable =
         swapFeatureEnabled &&
-        !migrationRequired &&
         (!migrationInProgress || widget.sync.ironwoodBalance > BigInt.zero);
     final animateMigrationCta = ref.watch(
       homeMigrationCtaPulseMotionEnabledProvider,
@@ -1704,7 +1701,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     key: const ValueKey('home_desktop_send_button'),
                     icon: AppIcons.plane,
                     label: 'Send',
-                    onTap: migrationRequired ? null : widget.onSend,
+                    onTap: widget.onSend,
                     primary: true,
                   ),
                 ),

@@ -995,7 +995,7 @@ void main() {
       tester
           .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
     expect(find.text('Receive'), findsOneWidget);
     expect(
@@ -1118,7 +1118,7 @@ void main() {
     expect(find.text('migration complete route'), findsNothing);
   });
 
-  testWidgets('keeps the required migration lock while the raw CTA is hidden', (
+  testWidgets('keeps wallet actions available while migration is required', (
     tester,
   ) async {
     const requiredCta = IronwoodHomeMigrationCtaState.start(
@@ -1138,8 +1138,13 @@ void main() {
       tester
           .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_home_send')));
+    await tester.pumpAndSettle();
+    expect(find.text('send route'), findsOneWidget);
   });
 
   testWidgets('shows total balance and remaining amount while migrating', (

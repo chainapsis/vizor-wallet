@@ -715,7 +715,7 @@ void main() {
   });
 
   testWidgets(
-    'sidebar disables Swap, Pay, and Vote while Ironwood migration is required',
+    'sidebar enables Swap and Pay but keeps Vote disabled while Ironwood migration is required',
     (tester) async {
       await tester.pumpWidget(
         _sidebarHarness(
@@ -739,22 +739,20 @@ void main() {
       final activity = _sidebarItemWithLabel(tester, 'Activity');
       final settings = _sidebarItemWithLabel(tester, 'Settings');
 
-      expect(swap.onTap, isNull);
-      expect(pay.onTap, isNull);
+      expect(swap.onTap, isNotNull);
+      expect(pay.onTap, isNotNull);
       expect(vote.onTap, isNull);
       expect(activity.onTap, isNotNull);
       expect(settings.onTap, isNotNull);
-      expect(_opacityForText(tester, 'Swap'), 0.5);
-      expect(_opacityForText(tester, 'Pay'), 0.5);
       expect(_opacityForText(tester, 'Vote'), 0.5);
 
       await tester.tap(find.text('Swap'));
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('swap'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('swap'), findsOneWidget);
 
       await tester.tap(find.text('Pay'));
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('pay'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('pay'), findsOneWidget);
 
       await tester.tap(find.text('Vote'));
       await tester.pump(const Duration(milliseconds: 50));

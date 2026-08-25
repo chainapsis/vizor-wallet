@@ -308,7 +308,7 @@ void main() {
   });
 
   testWidgets(
-    'home desktop disables send and shielding while migration is required',
+    'home desktop enables wallet actions but keeps shielding disabled while migration is required',
     (tester) async {
       await tester.pumpWidget(
         _appHarness(
@@ -360,11 +360,8 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('home_desktop_pay_button')),
-        findsNothing,
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('home_desktop_send_button')));
-      await tester.pump();
-      expect(find.byType(SendScreen), findsNothing);
       final shieldSemantics = tester.widget<Semantics>(
         find.byKey(const ValueKey('home_shield_balance_button')),
       );
@@ -378,6 +375,9 @@ void main() {
             ?.color,
         AppThemeData.light.colors.text.disabled,
       );
+      await tester.tap(find.byKey(const ValueKey('home_desktop_send_button')));
+      await _pumpUntilPresent(tester, find.byType(SendScreen));
+      expect(find.byType(SendScreen), findsOneWidget);
     },
   );
 
