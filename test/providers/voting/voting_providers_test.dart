@@ -8109,6 +8109,68 @@ void main() {
 
     expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
+
+  test(
+    'background PIR cache warmup skips hidden [TEST] rounds',
+    () async {
+      final rust = FakeVotingRustApi();
+      final testRound = roundStatusJson(roundId: kRoundId)
+        ..['title'] = '[TEST] Hidden poll';
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: testRound)
+          ..['/shielded-vote/v1/rounds'] = {
+            'rounds': [testRound],
+          },
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        http: http,
+        visibilityStore: FakeVotingRoundVisibilityStore(),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+
+      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+      expect(
+        http.requests.any(
+          (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'background PIR cache warmup includes [TEST] rounds when shown',
+    () async {
+      final rust = FakeVotingRustApi();
+      final testRound = roundStatusJson(roundId: kRoundId)
+        ..['title'] = '[TEST] Opt-in poll';
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: testRound)
+          ..['/shielded-vote/v1/rounds'] = {
+            'rounds': [testRound],
+          },
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        http: http,
+        visibilityStore: FakeVotingRoundVisibilityStore(showTestRounds: true),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+
+      expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+      expect(
+        http.requests.any(
+          (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+        ),
+        isTrue,
+      );
+    },
+  );
 }
 
 ProviderContainer _container({
@@ -8271,6 +8333,7 @@ ProviderContainer _sessionContainer({
   VotingDraftPersistence? draftPersistence,
   PirSnapshotResolver? pirResolver,
   VotingHotkeyStore? hotkeyStore,
+  VotingRoundVisibilityStore? visibilityStore,
   Future<String?> Function()? activeAccountUuid,
   ProviderListenable<String?>? activeAccountUuidListenable,
   bool accountIsHardware = false,
@@ -8306,6 +8369,9 @@ ProviderContainer _sessionContainer({
         ),
       votingConfigSourceStoreProvider.overrideWithValue(
         FakeVotingConfigSourceStore(),
+      ),
+      votingRoundVisibilityStoreProvider.overrideWithValue(
+        visibilityStore ?? FakeVotingRoundVisibilityStore(),
       ),
       votingHttpClientProvider.overrideWithValue(effectiveHttp),
       votingConfigLoaderProvider.overrideWithValue(

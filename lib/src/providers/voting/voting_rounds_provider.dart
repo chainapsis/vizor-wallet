@@ -13,7 +13,6 @@ import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
 const kVotingPollListRecentRefreshWindow = Duration(seconds: 10);
-const _hiddenTestRoundTitlePrefix = '[TEST]';
 DateTime? _lastVotingPollListRefreshAt;
 
 class VotingPollListRefreshRequestNotifier extends Notifier<int> {
@@ -124,7 +123,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         ? authenticatedRounds
         : authenticatedRounds
               .where(
-                (round) => !round.title.startsWith(_hiddenTestRoundTitlePrefix),
+                (round) => !isHiddenTestVotingRoundTitle(round.title),
               )
               .toList(growable: false);
     if (visibleRounds.length != authenticatedRounds.length) {

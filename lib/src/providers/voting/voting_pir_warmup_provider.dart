@@ -7,6 +7,7 @@ import '../../features/voting/voting_poll_ordering.dart';
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import 'voting_config_provider.dart';
+import 'voting_round_visibility_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
@@ -40,12 +41,14 @@ final votingPirWarmupProvider = Provider<VotingPirWarmupCoordinator>((ref) {
 
 /// Warms the bundle-independent PIR nullifier-proof cache for active rounds.
 ///
-/// For every authenticated round with active status, this resolves a PIR
-/// endpoint serving exactly the round's snapshot height, waits for the wallet
-/// to be scanned to that height, then fetches and caches the eligible notes'
-/// IMT non-membership proofs in the voting sidecar. The delegation prove path
-/// reads the same cache, so proofs warmed here are never refetched when the
-/// user later delegates; only the per-bundle padded-slot nullifiers remain.
+/// For every visible authenticated round with active status, this resolves a
+/// PIR endpoint serving exactly the round's snapshot height, waits for the
+/// wallet to be scanned to that height, then fetches and caches the eligible
+/// notes' IMT non-membership proofs in the voting sidecar. Rounds hidden by
+/// the "Show test rounds" preference are skipped before status/PIR traffic.
+/// The delegation prove path reads the same cache, so proofs warmed here are
+/// never refetched when the user later delegates; only the per-bundle
+/// padded-slot nullifiers remain.
 ///
 /// Deliberately unlike the session provider's bundle-scoped precompute, this
 /// path reads no hotkey, mints nothing, and creates no round or bundle rows —
@@ -132,12 +135,18 @@ class VotingPirWarmupCoordinator {
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
         .toSet();
+    final showTestRounds = await _ref.read(
+      showTestVotingRoundsProvider.future,
+    );
 
     final rounds = await api.listRounds();
     final activeRounds = <VotingRoundDetails>[];
     var statusFailed = false;
     for (final round in rounds) {
       if (!authenticatedRoundIds.contains(round.roundId)) continue;
+      if (!showTestRounds && isHiddenTestVotingRoundTitle(round.title)) {
+        continue;
+      }
       if (votingPollListStatus(round.status) != VotingPollListStatus.active) {
         continue;
       }
