@@ -9,6 +9,8 @@ use super::voting_helpers::{
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
+    network::WalletNetwork,
+    sync::open_wallet_db_for_read,
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
 use rand::{rngs::OsRng, RngCore};
@@ -782,6 +784,26 @@ pub async fn check_voting_eligibility(
         distinct_note_count,
         eligible_weight_zatoshi: eligibility.eligible_weight,
         privacy_trim_dropped_value_zatoshi: report.privacy_trim_dropped_value_zatoshi,
+    })
+}
+
+/// Return whether the wallet has scanned every required Ironwood block through
+/// the voting snapshot.
+///
+/// Unlike the wallet's contiguous fully-scanned height, this becomes true
+/// after the prioritized Ironwood window completes even while older history is
+/// still being backfilled.
+pub fn is_wallet_scanned_to_voting_snapshot(
+    db_path: String,
+    network: String,
+    snapshot_height: u64,
+) -> Result<bool, String> {
+    catch(|| {
+        let network = WalletNetwork::from_str(&network)
+            .ok_or_else(|| format!("Unsupported network: {network}"))?;
+        let wallet_db = open_wallet_db_for_read(&db_path, network)?;
+        zcash_voting::is_wallet_scanned_to_voting_snapshot(&wallet_db, snapshot_height)
+            .map_err(|e| e.to_string())
     })
 }
 

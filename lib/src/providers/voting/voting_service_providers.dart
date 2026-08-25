@@ -229,7 +229,7 @@ final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
   return const Duration(minutes: 3);
 });
 
-/// Checks whether wallet scan progress has reached a voting snapshot height.
+/// Checks whether the wallet has enough scan coverage for a voting snapshot.
 final votingWalletSyncReadinessCheckerProvider =
     Provider<VotingWalletSyncReadinessChecker>((ref) {
       return const FrbVotingWalletSyncReadinessChecker();
@@ -240,15 +240,19 @@ class VotingWalletSyncReadiness {
     required this.scannedHeight,
     required this.snapshotHeight,
     required this.chainTipHeight,
+    this.hasIronwoodSnapshotCoverage = false,
   });
 
   final int scannedHeight;
   final int snapshotHeight;
   final int chainTipHeight;
+  final bool hasIronwoodSnapshotCoverage;
 
-  bool get isReady => scannedHeight >= snapshotHeight;
+  bool get isReady =>
+      scannedHeight >= snapshotHeight || hasIronwoodSnapshotCoverage;
 
   int get blocksRemaining {
+    if (isReady) return 0;
     final remaining = snapshotHeight - scannedHeight;
     return remaining > 0 ? remaining : 0;
   }
@@ -276,10 +280,17 @@ class FrbVotingWalletSyncReadinessChecker
       dbPath: dbPath,
       network: network,
     );
+    final hasIronwoodSnapshotCoverage = await rust_api
+        .isWalletScannedToVotingSnapshot(
+          dbPath: dbPath,
+          network: network,
+          snapshotHeight: BigInt.from(snapshotHeight),
+        );
     return VotingWalletSyncReadiness(
       scannedHeight: status.scannedHeight.toInt(),
       snapshotHeight: snapshotHeight,
       chainTipHeight: status.chainTipHeight.toInt(),
+      hasIronwoodSnapshotCoverage: hasIronwoodSnapshotCoverage,
     );
   }
 }

@@ -215,6 +215,22 @@ Future<ApiVotingEligibility> checkVotingEligibility({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingCheckVotingEligibility(ctx: ctx);
 
+/// Return whether the wallet has scanned every required Ironwood block through
+/// the voting snapshot.
+///
+/// Unlike the wallet's contiguous fully-scanned height, this becomes true
+/// after the prioritized Ironwood window completes even while older history is
+/// still being backfilled.
+Future<bool> isWalletScannedToVotingSnapshot({
+  required String dbPath,
+  required String network,
+  required BigInt snapshotHeight,
+}) => RustLib.instance.api.crateApiVotingIsWalletScannedToVotingSnapshot(
+  dbPath: dbPath,
+  network: network,
+  snapshotHeight: snapshotHeight,
+);
+
 /// Persist the snapshot-stable bundle plan and warm all bundle PIR inputs.
 ///
 /// This is the vote-screen warm-up path. It requires an initialized round and
@@ -570,8 +586,10 @@ Future<void> resetVotingSessionState({
 ///
 /// This removes every persisted round scoped to `account_uuid`, relying on the
 /// `zcash_voting` round deletion cascade for bundles, recovery rows, share
-/// history, ballot intent, and cached tree state. Use this only at account
-/// deletion boundaries, not for ordinary voting-session retries.
+/// history, ballot intent, and cached tree state. It also deletes
+/// round-independent `pir_proof_cache` rows for the same wallet id — browse-
+/// only warm-up can persist those without ever creating a round. Use this only
+/// at account deletion boundaries, not for ordinary voting-session retries.
 Future<int> deleteVotingAccountState({
   required String dbPath,
   required String accountUuid,

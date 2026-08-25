@@ -1508,6 +1508,18 @@ void main() {
     },
   );
 
+  test('Ironwood snapshot coverage satisfies wallet readiness', () {
+    const readiness = VotingWalletSyncReadiness(
+      scannedHeight: 122,
+      snapshotHeight: 123,
+      chainTipHeight: 130,
+      hasIronwoodSnapshotCoverage: true,
+    );
+
+    expect(readiness.isReady, isTrue);
+    expect(readiness.blocksRemaining, 0);
+  });
+
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
