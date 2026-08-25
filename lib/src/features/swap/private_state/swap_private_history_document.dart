@@ -199,15 +199,6 @@ class SwapPrivateHistoryDocument {
           'Swap history record namespace or identity is invalid.',
         );
       }
-      if (record.direction == null ||
-          record.externalAsset == null ||
-          record.depositAddress?.trim().isEmpty != false ||
-          (record.providerQuoteId?.trim().isEmpty != false &&
-              record.depositTxHash?.trim().isEmpty != false)) {
-        throw const PrivateStateProtocolException(
-          'Swap history record is missing recovery identity fields.',
-        );
-      }
       // Run through the encoder's length checks before encryption.
       _recordToJson(record);
     }
@@ -224,6 +215,7 @@ SwapIntentRecord mergeSwapPrivateHistoryRecord(
       'Cannot merge different swap history identities.',
     );
   }
+  _requireCompatible('provider', local.providerLabel, remote.providerLabel);
   _requireCompatible(
     'direction',
     local.direction?.name,
@@ -494,7 +486,9 @@ SwapIntentRecord _recordFromJson(
   final status = _enumValue(SwapIntentStatus.values, json['status']);
   final direction = _optionalEnumValue(SwapDirection.values, json['direction']);
   final asset = SwapAsset.fromPersistedJson(json['external_asset']);
-  if (status == null || direction == null || asset == null) {
+  if (status == null ||
+      (json['direction'] != null && direction == null) ||
+      (json['external_asset'] != null && asset == null)) {
     throw const PrivateStateProtocolException(
       'Swap history record has invalid enum or asset fields.',
     );
@@ -652,8 +646,7 @@ SwapFiatValueBasis? _fiatFromJson(Object? raw) {
   return basis;
 }
 
-String _recordIdentity(SwapIntentRecord record) =>
-    '${record.providerLabel.trim().toLowerCase()}\u0000${record.id.trim()}';
+String _recordIdentity(SwapIntentRecord record) => record.id.trim();
 
 int _compareCanonicalRecords(SwapIntentRecord left, SwapIntentRecord right) =>
     _recordIdentity(left).compareTo(_recordIdentity(right));

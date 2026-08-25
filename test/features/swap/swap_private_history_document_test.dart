@@ -58,6 +58,44 @@ void main() {
       ),
       throwsA(isA<PrivateStateProtocolException>()),
     );
+    expect(
+      () => SwapPrivateHistoryDocument(
+        kind: SwapPrivateHistoryKind.swap,
+        records: [
+          _record('swap-a'),
+          _record('swap-a').copyWith(providerLabel: 'Another provider'),
+        ],
+      ),
+      throwsA(isA<PrivateStateProtocolException>()),
+    );
+  });
+
+  test('round-trips the minimal record shape accepted by legacy v1', () {
+    final source = _record('legacy');
+    final minimal = SwapIntentRecord(
+      id: source.id,
+      providerLabel: source.providerLabel,
+      pairText: source.pairText,
+      sellAmountText: source.sellAmountText,
+      receiveEstimateText: source.receiveEstimateText,
+      status: source.status,
+      nextAction: source.nextAction,
+      createdAt: source.createdAt,
+      updatedAt: source.updatedAt,
+    );
+
+    final decoded = SwapPrivateHistoryDocument.decode(
+      SwapPrivateHistoryDocument(
+        kind: SwapPrivateHistoryKind.swap,
+        records: [minimal],
+      ).encode(),
+      expectedKind: SwapPrivateHistoryKind.swap,
+    ).records.single;
+
+    expect(decoded.direction, isNull);
+    expect(decoded.externalAsset, isNull);
+    expect(decoded.depositAddress, isNull);
+    expect(decoded.providerQuoteId, isNull);
   });
 
   test('evidence-bearing progress defeats local deadline expiry', () {
