@@ -5,6 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Install-local preference for showing authenticated test voting rounds.
 const votingShowTestRoundsStorageKey = 'vizor_voting_show_test_rounds';
 
+/// Title prefix that marks authenticated rounds as hideable test polls.
+const votingHiddenTestRoundTitlePrefix = '[TEST]';
+
+/// Whether [title] is an authenticated test round that can be hidden.
+bool isHiddenTestVotingRoundTitle(String title) =>
+    title.startsWith(votingHiddenTestRoundTitlePrefix);
+
 /// Persists whether test voting rounds should appear in the vote menu.
 abstract interface class VotingRoundVisibilityStore {
   Future<bool> readShowTestRounds();

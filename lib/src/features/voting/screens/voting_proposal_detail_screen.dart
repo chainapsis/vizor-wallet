@@ -12,6 +12,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -67,8 +68,20 @@ class _VotingProposalDetailViewState
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
-  String? _delegationPirPrecomputeKey;
+  String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Second entry point for the background nullifier-proof warm-up, for
+      // users who deep-link into a round without visiting the polls list.
+      // The coordinator dedupes work already started from the polls screen.
+      unawaited(ref.read(votingPirWarmupProvider).maybeWarmActiveRounds());
+    });
+  }
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailView oldWidget) {
@@ -77,7 +90,7 @@ class _VotingProposalDetailViewState
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
-      _delegationPirPrecomputeKey = null;
+      _snapshotBundlePrecomputeKey = null;
       _resultsRedirectRoundId = null;
     }
   }
@@ -192,7 +205,7 @@ class _VotingProposalDetailViewState
         final votingEligibilityError = votingError == null
             ? false
             : isVotingEligibilityErrorText(votingError.message);
-        _maybePrecomputeDelegationPir(state);
+        _maybePrecomputeSnapshotBundles(state);
         return _ActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
           roundId: roundId,
@@ -313,10 +326,9 @@ class _VotingProposalDetailViewState
     _maybePrepareVotingPower(state, force: true);
   }
 
-  // Warm the delegation PIR / padded-note secrets as soon as the round page
-  // opens, rather than waiting for the review screen. The warm-up is decoupled
-  // from PCZT construction, so it only needs the stored voting hotkey secret.
-  void _maybePrecomputeDelegationPir(VotingSessionState state) {
+  // Lock in the snapshot-stable bundle plan and warm real/padded PIR inputs as
+  // soon as voting power is confirmed, rather than waiting for review.
+  void _maybePrecomputeSnapshotBundles(VotingSessionState state) {
     final accountUuid = state.accountUuid;
     if (accountUuid == null ||
         !state.hasConfirmedVotingEligibility ||
@@ -325,21 +337,21 @@ class _VotingProposalDetailViewState
     }
 
     final key = '${widget.roundId}|$accountUuid';
-    if (_delegationPirPrecomputeKey == key) return;
-    _delegationPirPrecomputeKey = key;
+    if (_snapshotBundlePrecomputeKey == key) return;
+    _snapshotBundlePrecomputeKey = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_startDelegationPirPrecompute(accountUuid));
+      unawaited(_startSnapshotBundlePrecompute(accountUuid));
     });
   }
 
-  Future<void> _startDelegationPirPrecompute(String accountUuid) async {
+  Future<void> _startSnapshotBundlePrecompute(String accountUuid) async {
     try {
       await ref
           .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeDelegationPir(accountUuid: accountUuid);
+          .precomputeSnapshotBundles(accountUuid: accountUuid);
     } catch (e) {
-      debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
+      debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
     }
   }
 }
