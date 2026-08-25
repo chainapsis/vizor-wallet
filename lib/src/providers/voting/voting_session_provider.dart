@@ -4076,6 +4076,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     } finally {
       registry.unregisterWalletReadinessWait(owner: registrationOwner);
+      if (stopRequested.isCompleted) {
+        final current = state.value;
+        if (current?.phase == VotingSessionPhase.waitingForWalletSync) {
+          _setStateForContext(
+            context,
+            current!.copyWith(
+              phase: VotingSessionPhase.idle,
+              clearWalletSyncReadiness: true,
+              clearError: true,
+            ),
+          );
+        }
+      }
       if (!waitCompleted.isCompleted) waitCompleted.complete();
     }
   }

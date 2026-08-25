@@ -311,12 +311,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _walletSyncRecoveryInFlight = false;
   Completer<void>? _walletSyncRecoveryPollCompletion;
   bool _walletSyncRecoveryRegistered = false;
+  bool _walletSyncRecoveryPausedForMutation = false;
   int _walletSyncRecoveryFailureStreak = 0;
   bool _walletSyncRecoveryRetryOnUnlock = false;
+  VoidCallback? _walletSyncRecoveryRestoreListener;
+  late VotingShareTrackingRegistry _shareTrackingRegistry;
   int _nextGeneration = 0;
 
   @override
   VotingSubmissionJobState build() {
+    _shareTrackingRegistry = ref.read(votingShareTrackingRegistryProvider);
+    _walletSyncRecoveryRestoreListener ??= () {
+      unawaited(_restoreWalletSyncRecoveryAfterMutation());
+    };
     ref.listen<AppSecurityState>(appSecurityProvider, (previous, next) {
       if (_walletSyncRecoveryRetryOnUnlock &&
           previous?.requiresUnlock == true &&
@@ -325,6 +332,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
     });
     ref.onDispose(() {
+      _shareTrackingRegistry.removeRestoreRequestListener(
+        _walletSyncRecoveryRestoreListener!,
+      );
       _completionPollTimer?.cancel();
       _completionPollTimer = null;
       _cancelWalletSyncRecovery();
@@ -1175,6 +1185,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         snapshotHeight == null ||
         state.status != VotingSubmissionJobStatus.error ||
         state.generation != generation ||
+        _walletSyncRecoveryPausedForMutation ||
         _walletSyncRecoveryInFlight) {
       return;
     }
@@ -1201,6 +1212,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             snapshotHeight: snapshotHeight,
           );
       if (_walletSyncRecoveryGeneration != generation ||
+          _walletSyncRecoveryPausedForMutation ||
           state.status != VotingSubmissionJobStatus.error) {
         return;
       }
@@ -1254,6 +1266,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       // it does not log unhandled errors forever. The job stays in its error
       // state and manual retry remains available.
       if (_walletSyncRecoveryGeneration != generation ||
+          _walletSyncRecoveryPausedForMutation ||
           state.status != VotingSubmissionJobStatus.error) {
         return;
       }
@@ -1281,6 +1294,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   void _startWalletSyncRecoveryPolling() {
+    _walletSyncRecoveryPausedForMutation = false;
     if (!_registerWalletSyncRecovery()) {
       state = state.copyWith(errorMessage: _walletSyncRecoveryStoppedMessage);
       _cancelWalletSyncRecovery();
@@ -1332,36 +1346,87 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoverySnapshotHeight = null;
     _walletSyncRecoveryFailureStreak = 0;
     _walletSyncRecoveryRetryOnUnlock = false;
+    _walletSyncRecoveryPausedForMutation = false;
+    final restoreListener = _walletSyncRecoveryRestoreListener;
+    if (restoreListener != null) {
+      _shareTrackingRegistry.removeRestoreRequestListener(restoreListener);
+    }
     if (_walletSyncRecoveryRegistered) {
-      ref
-          .read(votingShareTrackingRegistryProvider)
-          .unregisterSyncRecovery(key: _key, owner: this);
+      _shareTrackingRegistry.unregisterSyncRecovery(key: _key, owner: this);
       _walletSyncRecoveryRegistered = false;
     }
   }
 
   bool _registerWalletSyncRecovery() {
     if (_walletSyncRecoveryRegistered) return true;
-    final registered = ref
-        .read(votingShareTrackingRegistryProvider)
-        .registerSyncRecovery(
-          key: _key,
-          owner: this,
-          stopAndDrain: _stopAndDrainWalletSyncRecovery,
-        );
+    final registered = _shareTrackingRegistry.registerSyncRecovery(
+      key: _key,
+      owner: this,
+      stopAndDrain: _stopAndDrainWalletSyncRecovery,
+    );
     _walletSyncRecoveryRegistered = registered;
     return registered;
   }
 
   Future<void> _stopAndDrainWalletSyncRecovery() async {
     final pollCompletion = _walletSyncRecoveryPollCompletion?.future;
-    _cancelWalletSyncRecovery();
+    _walletSyncRecoveryPausedForMutation = true;
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = null;
+    _walletSyncRecoveryRetryOnUnlock = false;
+    _shareTrackingRegistry.addRestoreRequestListener(
+      _walletSyncRecoveryRestoreListener!,
+    );
+    if (_walletSyncRecoveryRegistered) {
+      _shareTrackingRegistry.unregisterSyncRecovery(key: _key, owner: this);
+      _walletSyncRecoveryRegistered = false;
+    }
     if (pollCompletion != null) await pollCompletion;
-    if (!ref.mounted) return;
-    dismiss();
-    ref
-        .read(votingSubmissionJobsProvider.notifier)
-        .forgetCancelledRecovery(_key);
+  }
+
+  Future<void> _restoreWalletSyncRecoveryAfterMutation() async {
+    if (!ref.mounted || !_walletSyncRecoveryPausedForMutation) return;
+
+    final AccountState accountState;
+    try {
+      accountState =
+          ref.read(accountProvider).value ??
+          await ref.read(accountProvider.future);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: could not restore wallet sync recovery after '
+        'account mutation: $error',
+      );
+      return;
+    }
+    if (!ref.mounted || !_walletSyncRecoveryPausedForMutation) return;
+
+    _shareTrackingRegistry.removeRestoreRequestListener(
+      _walletSyncRecoveryRestoreListener!,
+    );
+
+    final accountStillExists = accountState.accounts.any(
+      (account) => account.uuid == _key.accountUuid,
+    );
+    if (!accountStillExists) {
+      dismiss();
+      ref
+          .read(votingSubmissionJobsProvider.notifier)
+          .forgetCancelledRecovery(_key);
+      return;
+    }
+
+    final generation = _walletSyncRecoveryGeneration;
+    final snapshotHeight = _walletSyncRecoverySnapshotHeight;
+    if (generation == null ||
+        snapshotHeight == null ||
+        state.status != VotingSubmissionJobStatus.error ||
+        state.generation != generation) {
+      _cancelWalletSyncRecovery();
+      return;
+    }
+    _walletSyncRecoveryPausedForMutation = false;
+    _startWalletSyncRecoveryPolling();
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {

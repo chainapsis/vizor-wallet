@@ -1627,7 +1627,7 @@ void main() {
   test('destructive mutation drains a session wallet readiness wait', () async {
     final rust = FakeVotingRustApi();
     final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false)
-      ..blockFromCall = 1;
+      ..blockFromCall = 2;
     var syncStartCalls = 0;
     final container = _sessionContainer(
       rust: rust,
@@ -1642,6 +1642,17 @@ void main() {
     final prepared = container
         .read(votingSessionProvider(kRoundId).notifier)
         .prepareDelegation();
+    for (var attempt = 0; attempt < 100; attempt++) {
+      if (container.read(votingSessionProvider(kRoundId)).value?.phase ==
+          VotingSessionPhase.waitingForWalletSync) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.waitingForWalletSync,
+    );
     await readiness.blockedCheckStarted.future;
 
     final registry = container.read(votingShareTrackingRegistryProvider);
@@ -1656,13 +1667,17 @@ void main() {
     await prepared;
 
     expect(drained, isTrue);
-    expect(readiness.calls, 1);
-    expect(syncStartCalls, 0);
+    expect(readiness.calls, 2);
+    expect(syncStartCalls, 1);
     expect(rust.setupCalls, 0);
     expect(registry.registeredWalletReadinessWaitCount, 0);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.idle,
+    );
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(readiness.calls, 1);
+    expect(readiness.calls, 2);
     registry.resume();
   });
 
@@ -1881,10 +1896,72 @@ void main() {
     },
   );
 
-  test('account mutation drains an in-flight stalled recovery poll', () async {
+  test(
+    'account mutation pauses and restores an unaffected stalled recovery',
+    () async {
+      final harness = await _draftBearingStallHarness();
+      addTearDown(harness.container.dispose);
+      harness.readiness.blockFromCall = 2;
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+      await harness.readiness.blockedCheckStarted.future;
+
+      final registry = harness.container.read(
+        votingShareTrackingRegistryProvider,
+      );
+      expect(registry.registeredSyncRecoveryKeys, contains(harness.key));
+
+      var drainCompleted = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drainCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        drainCompleted,
+        isFalse,
+        reason: 'mutation waits for the active poll',
+      );
+
+      harness.readiness.releaseBlockedChecks.complete();
+      await drain;
+      expect(drainCompleted, isTrue);
+      expect(registry.registeredSyncRecoveryKeys, isEmpty);
+      expect(
+        harness.container.read(votingSubmissionJobProvider(harness.key)).status,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(
+        harness.container.read(votingSubmissionJobsProvider).jobKeys,
+        contains(harness.key),
+      );
+
+      final callsAfterDrain = harness.readiness.calls;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(harness.readiness.calls, callsAfterDrain);
+      registry.resume(accountUuid: 'account-2');
+      registry.requestRestore();
+      harness.readiness.ready = true;
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
+        greaterThan(1),
+      );
+    },
+  );
+
+  test('account mutation discards recovery for a deleted account', () async {
     final harness = await _draftBearingStallHarness();
     addTearDown(harness.container.dispose);
-    harness.readiness.blockFromCall = 2;
 
     final startedKey = await harness.container
         .read(votingSubmissionJobsProvider.notifier)
@@ -1895,28 +1972,19 @@ void main() {
       harness.key,
       VotingSubmissionJobStatus.error,
     );
-    await harness.readiness.blockedCheckStarted.future;
 
     final registry = harness.container.read(
       votingShareTrackingRegistryProvider,
     );
-    expect(registry.registeredSyncRecoveryKeys, contains(harness.key));
-
-    var drainCompleted = false;
-    final drain = registry
-        .quiesceAndDrain(accountUuid: harness.key.accountUuid)
-        .then((_) => drainCompleted = true);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(
-      drainCompleted,
-      isFalse,
-      reason: 'mutation waits for the active poll',
+    await registry.quiesceAndDrain(accountUuid: harness.key.accountUuid);
+    final accounts = harness.container.read(accountProvider.notifier);
+    (accounts as _FakeVotingAccountNotifier).removeAccountForTest(
+      harness.key.accountUuid,
     );
+    registry.resume(accountUuid: harness.key.accountUuid);
+    registry.requestRestore();
+    await pumpEventQueue();
 
-    harness.readiness.releaseBlockedChecks.complete();
-    await drain;
-    expect(drainCompleted, isTrue);
-    expect(registry.registeredSyncRecoveryKeys, isEmpty);
     expect(
       harness.container.read(votingSubmissionJobProvider(harness.key)).status,
       VotingSubmissionJobStatus.idle,
@@ -1925,11 +1993,6 @@ void main() {
       harness.container.read(votingSubmissionJobsProvider).jobKeys,
       isNot(contains(harness.key)),
     );
-
-    final callsAfterDrain = harness.readiness.calls;
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(harness.readiness.calls, callsAfterDrain);
-    registry.resume(accountUuid: harness.key.accountUuid);
   });
 
   test('stalled-recovery failure limit requires manual retry', () async {
@@ -9672,6 +9735,22 @@ class _FakeVotingAccountNotifier extends AccountNotifier {
         ),
       ],
       activeAccountUuid: 'account-1',
+    );
+  }
+
+  void removeAccountForTest(String accountUuid) {
+    final current = state.value ?? const AccountState();
+    final remaining = [
+      for (final account in current.accounts)
+        if (account.uuid != accountUuid) account,
+    ];
+    state = AsyncData(
+      AccountState(
+        accounts: remaining,
+        activeAccountUuid: current.activeAccountUuid == accountUuid
+            ? null
+            : current.activeAccountUuid,
+      ),
     );
   }
 
