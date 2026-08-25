@@ -4917,6 +4917,17 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     );
   }
 
+  void markWalletSyncRecoveryStopped(String message) {
+    final current = state.value ?? VotingSessionState(roundId: _roundId);
+    state = AsyncData(
+      current.copyWith(
+        phase: VotingSessionPhase.error,
+        walletSyncStalled: false,
+        error: VotingSessionError(message: message),
+      ),
+    );
+  }
+
   @override
   bool _retainAutomaticShareTracking() {
     if (_closeShareTrackingKeepAlive != null) return true;

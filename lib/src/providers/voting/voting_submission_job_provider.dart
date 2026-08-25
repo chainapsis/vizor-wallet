@@ -1184,6 +1184,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       );
       if (_walletSyncRecoveryFailureStreak >=
           _kWalletSyncRecoveryMaxFailureStreak) {
+        ref
+            .read(votingSubmissionSessionProvider(_key).notifier)
+            .markWalletSyncRecoveryStopped(_walletSyncRecoveryStoppedMessage);
+        state = state.copyWith(errorMessage: _walletSyncRecoveryStoppedMessage);
         _cancelWalletSyncRecovery();
       }
     } finally {
@@ -1450,6 +1454,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   static const _genericVotingStatusErrorMessage =
       'Voting could not continue for this account. Retry, or switch to an '
       'eligible account if this account cannot vote in this voting round.';
+
+  static const _walletSyncRecoveryStoppedMessage =
+      'Automatic recovery could not continue. Retry to check wallet sync '
+      'again.';
 
   /// Consecutive readiness-check failures tolerated before auto-recovery
   /// stops polling. At the default 2s interval this rides out ~1 minute of

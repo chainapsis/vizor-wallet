@@ -1827,6 +1827,67 @@ void main() {
     },
   );
 
+  test('stalled-recovery failure limit requires manual retry', () async {
+    final harness = await _draftBearingStallHarness();
+    addTearDown(harness.container.dispose);
+    final sessionSubscription = harness.container.listen(
+      votingSubmissionSessionProvider(harness.key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(sessionSubscription.close);
+
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+
+    harness.readiness.failure = StateError('wallet DB unavailable');
+    VotingSubmissionJobState? stopped;
+    for (var attempt = 0; attempt < 100; attempt++) {
+      final current = harness.container.read(
+        votingSubmissionJobProvider(harness.key),
+      );
+      if (current.errorMessage?.contains('Retry to check wallet sync') ??
+          false) {
+        stopped = current;
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(stopped, isNotNull);
+    expect(stopped!.status, VotingSubmissionJobStatus.error);
+    expect(stopped.errorMessage, isNot(contains('retry automatically')));
+
+    final session = harness.container
+        .read(votingSubmissionSessionProvider(harness.key))
+        .value!;
+    expect(session.phase, VotingSessionPhase.error);
+    expect(session.walletSyncStalled, isFalse);
+    expect(session.error?.message, stopped.errorMessage);
+
+    final stoppedAt = harness.readiness.calls;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(
+      harness.readiness.calls,
+      stoppedAt,
+      reason: 'recovery stopped after the consecutive-failure limit',
+    );
+
+    harness.readiness
+      ..failure = null
+      ..ready = true;
+    await harness.container
+        .read(votingSubmissionJobProvider(harness.key).notifier)
+        .retry();
+    await _waitForVoteCommitmentKey(harness.rust, '0:7');
+  });
+
   test(
     'stalled-recovery polling waits for unlock instead of spinning',
     () async {
@@ -9543,6 +9604,7 @@ class _MutableVotingWalletSyncReadinessChecker
 
   bool ready;
   bool birthdayAfterSnapshot = false;
+  Object? failure;
 
   /// When set, only the first [readyCallBudget] checks may report ready.
   /// Models readiness regressing mid-job (a rewind or reorg after the
@@ -9557,6 +9619,8 @@ class _MutableVotingWalletSyncReadinessChecker
     required int snapshotHeight,
   }) async {
     calls++;
+    final currentFailure = failure;
+    if (currentFailure != null) throw currentFailure;
     final budget = readyCallBudget;
     final isReady = ready && (budget == null || calls <= budget);
     return VotingWalletSyncReadiness(
