@@ -4,7 +4,7 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v3.1.0-rc.8
+## v3.1.0-rc.9
 
 ### Added
 - `lwd::anchor_tree_state_with_retry_on` fetches the snapshot note-commitment
@@ -19,6 +19,18 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   bundle rows are the intended lock-in rather than a stale-plan hazard.
   Witnesses still come from `prepare_delegation_bundle`. New type:
   `SnapshotBundlePrecomputeReport`.
+
+### Removed
+- **Breaking:** URL-taking lightwalletd helpers that opened their own channel:
+  `latest_block_height`, `latest_block_height_with_retry`, `tree_state_bytes`,
+  `anchor_tree_state_with_retry`, and `anchor_tree_state_bytes_with_retry`.
+  They always dialed a direct connection, which overrode any host-owned route.
+  Open a client on the route you want and call `get_latest_block`,
+  `get_tree_state`, or `anchor_tree_state_with_retry_on`.
+
+## v3.1.0-rc.8
+
+### Added
 - Added a bundle- and round-independent PIR proof cache. `precompute_pir_proofs`
   fetches and persists IMT non-membership proofs for notes that survive the
   caller-supplied `BundlePolicy` (the same plan round setup uses: sub-ballot
@@ -46,14 +58,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - `precompute_pir_proofs` now prunes PIR proof cache rows created more than
   four weeks ago before warming the requested notes. Prove-time cache access
   remains non-pruning so an already cached proof can still complete a bundle.
-
-### Removed
-- **Breaking:** URL-taking lightwalletd helpers that opened their own channel:
-  `latest_block_height`, `latest_block_height_with_retry`, `tree_state_bytes`,
-  `anchor_tree_state_with_retry`, and `anchor_tree_state_bytes_with_retry`.
-  They always dialed a direct connection, which overrode any host-owned route.
-  Open a client on the route you want and call `get_latest_block`,
-  `get_tree_state`, or `anchor_tree_state_with_retry_on`.
 
 ## v3.1.0-rc.7
 
