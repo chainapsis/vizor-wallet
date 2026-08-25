@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use secrecy::SecretVec;
 use zeroize::Zeroizing;
 
@@ -37,9 +35,7 @@ pub(super) async fn resolve_delegation_lwd_inputs(
     round_name: &str,
     voting_network: zcash_voting::Network,
 ) -> Result<zcash_voting::delegate::DelegationLwdInputs, String> {
-    let started = Instant::now();
-    log::info!("[VOTING_PROVE] lwd-inputs start");
-    let inputs = zcash_voting::delegate::gather_delegation_lwd_inputs(
+    zcash_voting::delegate::gather_delegation_lwd_inputs(
         zcash_voting::delegate::ResolveDelegationLwdParams {
             lightwalletd_url,
             network: voting_network,
@@ -48,12 +44,7 @@ pub(super) async fn resolve_delegation_lwd_inputs(
         },
     )
     .await
-    .map_err(|e| e.to_string())?;
-    log::info!(
-        "[VOTING_PROVE] lwd-inputs complete elapsed={:.3}s",
-        started.elapsed().as_secs_f64()
-    );
-    Ok(inputs)
+    .map_err(|e| e.to_string())
 }
 
 /// Build the common `PrepareDelegationBundleParams` shape for wallet-layer

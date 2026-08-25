@@ -971,22 +971,14 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    let frb_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} frb-stream start");
     // Resolve static delegation inputs and validate the app-owned stored hotkey.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} frb-local-inputs elapsed={:.3}s",
-        frb_started.elapsed().as_secs_f64()
-    );
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
-    let lwd_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -994,12 +986,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         voting_network,
     )
     .await?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
-         since_frb_start={:.3}s",
-        lwd_started.elapsed().as_secs_f64(),
-        frb_started.elapsed().as_secs_f64()
-    );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -1012,7 +998,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
-    let wallet_flow_started = Instant::now();
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_urls,
@@ -1029,10 +1014,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     .and_then(|bundle| {
         zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} wallet-prove-sign elapsed={:.3}s",
-        wallet_flow_started.elapsed().as_secs_f64()
-    );
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
@@ -1253,21 +1234,13 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     keystone_sighash: Vec<u8>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    let frb_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} keystone-frb-stream start");
     // Resolve static inputs and validate the persisted Keystone hotkey seed.
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} keystone-frb-local-inputs elapsed={:.3}s",
-        frb_started.elapsed().as_secs_f64()
-    );
 
     // Resolve round inputs and build delegation preparation parameters.
-    let lwd_started = Instant::now();
-    log::info!("[VOTING_PROVE] bundle={bundle_index} lwd-inputs start");
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -1275,12 +1248,6 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         voting_network,
     )
     .await?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s \
-         since_frb_start={:.3}s",
-        lwd_started.elapsed().as_secs_f64(),
-        frb_started.elapsed().as_secs_f64()
-    );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
