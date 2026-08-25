@@ -10,7 +10,12 @@ import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_su
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(loadFigmaCompareFonts);
+
   test('maps submission phases to the simplified three-step presentation', () {
     expect(
       votingSubmissionProgressStepFor(
@@ -139,8 +144,15 @@ void main() {
     );
     await tester.pumpWidget(
       _app(
-        const MobileVotingSubmissionProgressScreen(
-          activeStep: VotingSubmissionProgressStep.finalizing,
+        const MediaQuery(
+          data: MediaQueryData(
+            size: Size(375, 667),
+            padding: EdgeInsets.only(top: 47, bottom: 34),
+            viewPadding: EdgeInsets.only(top: 47, bottom: 34),
+          ),
+          child: MobileVotingSubmissionProgressScreen(
+            activeStep: VotingSubmissionProgressStep.finalizing,
+          ),
         ),
       ),
     );
@@ -149,11 +161,7 @@ void main() {
     expect(notice, findsOneWidget);
     expect(tester.getSize(find.byType(Scaffold)), const Size(375, 667));
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    await tester.drag(
-      find.byType(SingleChildScrollView),
-      const Offset(0, -200),
-    );
-    await tester.pump();
+    expect(find.byType(RawScrollbar), findsNothing);
     expect(
       tester
           .getSize(
@@ -162,10 +170,108 @@ void main() {
             ),
           )
           .height,
-      740,
+      490,
     );
-    expect(tester.getBottomRight(notice).dy, lessThanOrEqualTo(667));
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
+    expect(scrollable.position.maxScrollExtent, 0);
+
+    final contentRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_voting_submission_progress_content')),
+    );
+    final proofNoticeRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_voting_submission_proof_notice')),
+    );
+    expect(proofNoticeRect.size, const Size(277, 75));
+    expect(proofNoticeRect.bottom, lessThanOrEqualTo(contentRect.bottom));
+    final topGap =
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('mobile_voting_submission_notice')),
+            )
+            .dy -
+        contentRect.top;
+    final bottomGap = contentRect.bottom - proofNoticeRect.bottom;
+    expect(topGap, closeTo(bottomGap, 0.01));
+    expect(topGap, lessThan(AppSpacing.sm));
+    expect(topGap, greaterThanOrEqualTo(AppSpacing.xxs));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('matches the Figma anchors at the reference mobile size', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        const MediaQuery(
+          data: MediaQueryData(
+            size: Size(393, 852),
+            padding: EdgeInsets.only(top: 55),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: MobileVotingSubmissionProgressScreen(
+            activeStep: VotingSubmissionProgressStep.castingVotes,
+          ),
+        ),
+      ),
+    );
+
+    final content = find.byKey(
+      const ValueKey('mobile_voting_submission_progress_content'),
+    );
+    final contentRect = tester.getRect(content);
+    expect(contentRect.size, const Size(361, 701));
+    expect(find.byType(RawScrollbar), findsNothing);
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
+    expect(scrollable.position.maxScrollExtent, 0);
+
+    void expectTop(String key, double expected) {
+      final top = tester.getTopLeft(find.byKey(ValueKey(key))).dy;
+      expect(top - contentRect.top, closeTo(expected, 0.01));
+    }
+
+    expectTop('mobile_voting_submission_notice', 30);
+    expectTop('mobile_voting_submission_badge', 163);
+    expectTop('mobile_voting_submission_title', 291);
+    expectTop('mobile_voting_submission_steps', 380);
+    expectTop('mobile_voting_submission_proof_notice', 552);
+  });
+
+  testWidgets('adapts continuously just below the Figma reference height', (
+    tester,
+  ) async {
+    await _setMobileViewport(
+      tester,
+      size: const Size(393, 851),
+      viewPadding: const FakeViewPadding(top: 55),
+    );
+    await tester.pumpWidget(
+      _app(
+        const MediaQuery(
+          data: MediaQueryData(
+            size: Size(393, 851),
+            padding: EdgeInsets.only(top: 55),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: MobileVotingSubmissionProgressScreen(
+            activeStep: VotingSubmissionProgressStep.castingVotes,
+          ),
+        ),
+      ),
+    );
+
+    final contentRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_voting_submission_progress_content')),
+    );
+    final noticeTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey('mobile_voting_submission_notice')),
+        )
+        .dy;
+    expect(contentRect.height, 700);
+    expect(noticeTop - contentRect.top, closeTo(30, 0.5));
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
+    expect(scrollable.position.maxScrollExtent, 0);
   });
 
   testWidgets('renders the shared voted success presentation', (tester) async {

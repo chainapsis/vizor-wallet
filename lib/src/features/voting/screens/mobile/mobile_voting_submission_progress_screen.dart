@@ -7,8 +7,40 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
-import '../../widgets/voting_pane_scroll_area.dart';
 import '../voting_status_screen.dart';
+
+const _referenceContentHeight = 701.0;
+const _minimumContentHeight = 317.0;
+const _referenceLayoutTransitionExtent = AppSpacing.xl;
+const _minimumResponsiveOuterPadding = AppSpacing.xxs;
+const _maximumResponsiveOuterPadding = AppSpacing.sm;
+
+const _noticeHeight = 26.0;
+const _statusBadgeHeight = 64.0;
+const _titleHeight = 40.0;
+const _stepsHeight = 112.0;
+const _proofNoticeHeight = 75.0;
+
+const _referenceNoticeTop = 30.0;
+const _referenceStatusBadgeTop = 163.0;
+const _referenceTitleTop = 291.0;
+const _referenceStepsTop = 380.0;
+const _referenceProofNoticeTop = 552.0;
+
+const _noticeToStatusBadgeGap =
+    _referenceStatusBadgeTop - _referenceNoticeTop - _noticeHeight;
+const _statusBadgeToTitleGap =
+    _referenceTitleTop - _referenceStatusBadgeTop - _statusBadgeHeight;
+const _titleToStepsGap = _referenceStepsTop - _referenceTitleTop - _titleHeight;
+const _stepsToProofNoticeGap =
+    _referenceProofNoticeTop - _referenceStepsTop - _stepsHeight;
+const _referenceBottomGap =
+    _referenceContentHeight - _referenceProofNoticeTop - _proofNoticeHeight;
+const _referenceInternalGapTotal =
+    _noticeToStatusBadgeGap +
+    _statusBadgeToTitleGap +
+    _titleToStepsGap +
+    _stepsToProofNoticeGap;
 
 class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   const MobileVotingSubmissionProgressScreen({
@@ -23,6 +55,16 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final noticeStyle = AppTypography.bodyLarge.copyWith(
+      color: colors.text.accent,
+      fontWeight: FontWeight.w600,
+    );
+    final titleStyle = AppTypography.displayLarge.copyWith(
+      color: colors.text.accent,
+    );
+    final proofNoticeStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.primary,
+    );
     return PopScope<void>(
       canPop: false,
       child: Scaffold(
@@ -45,97 +87,148 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        const scrollContentHeight = 740.0;
-                        return VotingPaneScrollbar(
-                          scrollbarKey: const ValueKey(
-                            'mobile_voting_submission_progress_scrollbar',
+                        final textDirection = Directionality.of(context);
+                        final textScaler = MediaQuery.textScalerOf(context);
+                        final contentWidth =
+                            constraints.maxWidth - AppSpacing.sm * 2;
+                        final noticeHeight = _measureTextHeight(
+                          text: 'Don’t leave this window.',
+                          style: noticeStyle,
+                          maxWidth: contentWidth,
+                          textDirection: textDirection,
+                          textScaler: textScaler,
+                        );
+                        final titleHeight = _measureTextHeight(
+                          text: 'Submitting votes...',
+                          style: titleStyle,
+                          maxWidth: contentWidth,
+                          textDirection: textDirection,
+                          textScaler: textScaler,
+                        );
+                        final proofNoticeHeight = _measureTextHeight(
+                          text:
+                              'Generating zero-knowledge proofs can take '
+                              'about 60 seconds, closing now may lose '
+                              'in-flight proof work.',
+                          style: proofNoticeStyle,
+                          maxWidth: contentWidth - 66,
+                          textDirection: textDirection,
+                          textScaler: textScaler,
+                        );
+                        final paddedViewportHeight =
+                            constraints.maxHeight - AppSpacing.s * 2;
+                        final measuredFixedContentHeight =
+                            noticeHeight +
+                            _statusBadgeHeight +
+                            titleHeight +
+                            _stepsHeight +
+                            proofNoticeHeight;
+                        final contentHeight = math.max(
+                          math.max(
+                            _minimumContentHeight,
+                            measuredFixedContentHeight,
                           ),
-                          builder: (context, controller) => SingleChildScrollView(
-                            controller: controller,
-                            primary: false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
-                                vertical: AppSpacing.s,
-                              ),
-                              child: SizedBox(
-                                height: scrollContentHeight,
-                                child: Stack(
-                                  key: const ValueKey(
-                                    'mobile_voting_submission_progress_content',
-                                  ),
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Positioned(
-                                      top: 30,
-                                      left: 0,
-                                      right: 0,
-                                      child: Text(
-                                        'Don’t leave this window.',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.bodyLarge.copyWith(
-                                          color: colors.text.accent,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 163,
-                                      left: 0,
-                                      right: 0,
-                                      child: Center(
-                                        child: MobileTransactionProgressBadge(
-                                          phase: MobileTransactionProgressPhase
-                                              .inProgress,
-                                          inProgressCircleColor:
-                                              colors.background.inverse,
-                                          inProgressIconColor:
-                                              colors.icon.inverse,
-                                          progressIconKey: const ValueKey(
-                                            'mobile_voting_submission_loader',
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 291,
-                                      left: 0,
-                                      right: 0,
-                                      child: Text(
-                                        'Submitting votes...',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.displayLarge
-                                            .copyWith(
-                                              color: colors.text.accent,
-                                            ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 380,
-                                      left: 0,
-                                      right: 0,
-                                      child: _VotingSubmissionSteps(
-                                        activeStep: activeStep,
-                                        activeStepProgress: activeStepProgress,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 552,
-                                      left: 33,
-                                      right: 33,
-                                      child: Text(
-                                        'Generating zero-knowledge proofs can take '
-                                        'about 60 seconds, closing now may lose '
-                                        'in-flight proof work.',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.bodyMedium
-                                            .copyWith(
-                                              color: colors.text.primary,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
+                          paddedViewportHeight,
+                        );
+                        final positions = _VotingSubmissionPositions.forHeight(
+                          contentHeight,
+                          noticeHeight: noticeHeight,
+                          titleHeight: titleHeight,
+                          proofNoticeHeight: proofNoticeHeight,
+                        );
+                        return SingleChildScrollView(
+                          key: const ValueKey(
+                            'mobile_voting_submission_progress_scroll_view',
+                          ),
+                          primary: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                              vertical: AppSpacing.s,
+                            ),
+                            child: SizedBox(
+                              height: contentHeight,
+                              child: Stack(
+                                key: const ValueKey(
+                                  'mobile_voting_submission_progress_content',
                                 ),
+                                fit: StackFit.expand,
+                                children: [
+                                  Positioned(
+                                    top: positions.noticeTop,
+                                    left: 0,
+                                    right: 0,
+                                    child: Text(
+                                      'Don’t leave this window.',
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_notice',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: noticeStyle,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: positions.statusBadgeTop,
+                                    left: 0,
+                                    right: 0,
+                                    child: Center(
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_badge',
+                                      ),
+                                      child: MobileTransactionProgressBadge(
+                                        phase: MobileTransactionProgressPhase
+                                            .inProgress,
+                                        inProgressCircleColor:
+                                            colors.background.inverse,
+                                        inProgressIconColor:
+                                            colors.icon.inverse,
+                                        progressIconKey: const ValueKey(
+                                          'mobile_voting_submission_loader',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: positions.titleTop,
+                                    left: 0,
+                                    right: 0,
+                                    child: Text(
+                                      'Submitting votes...',
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_title',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: titleStyle,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: positions.stepsTop,
+                                    left: 0,
+                                    right: 0,
+                                    child: _VotingSubmissionSteps(
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_steps',
+                                      ),
+                                      activeStep: activeStep,
+                                      activeStepProgress: activeStepProgress,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: positions.proofNoticeTop,
+                                    left: 33,
+                                    right: 33,
+                                    child: Text(
+                                      'Generating zero-knowledge proofs can take '
+                                      'about 60 seconds, closing now may lose '
+                                      'in-flight proof work.',
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_proof_notice',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: proofNoticeStyle,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -153,10 +246,142 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   }
 }
 
+double _measureTextHeight({
+  required String text,
+  required TextStyle style,
+  required double maxWidth,
+  required TextDirection textDirection,
+  required TextScaler textScaler,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textAlign: TextAlign.center,
+    textDirection: textDirection,
+    textScaler: textScaler,
+  )..layout(maxWidth: maxWidth);
+  return painter.height;
+}
+
+class _VotingSubmissionPositions {
+  const _VotingSubmissionPositions({
+    required this.noticeTop,
+    required this.statusBadgeTop,
+    required this.titleTop,
+    required this.stepsTop,
+    required this.proofNoticeTop,
+  });
+
+  factory _VotingSubmissionPositions.forHeight(
+    double height, {
+    required double noticeHeight,
+    required double titleHeight,
+    required double proofNoticeHeight,
+  }) {
+    final usesReferenceMetrics =
+        (noticeHeight - _noticeHeight).abs() < 0.5 &&
+        (titleHeight - _titleHeight).abs() < 0.5 &&
+        (proofNoticeHeight - _proofNoticeHeight).abs() < 0.5;
+    final fixedContentHeight =
+        noticeHeight +
+        _statusBadgeHeight +
+        titleHeight +
+        _stepsHeight +
+        proofNoticeHeight;
+    final flexibleHeight = math.max(0.0, height - fixedContentHeight);
+    final referenceFlexibleHeight =
+        _referenceContentHeight - _minimumContentHeight;
+    final outerPaddingScale = math.min(
+      1.0,
+      flexibleHeight / referenceFlexibleHeight,
+    );
+    final responsiveOuterPadding =
+        _minimumResponsiveOuterPadding +
+        (_maximumResponsiveOuterPadding - _minimumResponsiveOuterPadding) *
+            outerPaddingScale;
+    final availableInternalGap = math.max(
+      0.0,
+      height - fixedContentHeight - responsiveOuterPadding * 2,
+    );
+    final gapScale = math.min(
+      1.0,
+      availableInternalGap / _referenceInternalGapTotal,
+    );
+    final internalGapHeight = _referenceInternalGapTotal * gapScale;
+    final centeredOuterGap = math.max(
+      0.0,
+      (flexibleHeight - internalGapHeight) / 2,
+    );
+    final transitionProgress = usesReferenceMetrics
+        ? math.min(
+            1.0,
+            (height - _referenceContentHeight).abs() /
+                _referenceLayoutTransitionExtent,
+          )
+        : 1.0;
+    final blendedGaps = <double>[
+      _lerpGap(_referenceNoticeTop, centeredOuterGap, transitionProgress),
+      _lerpGap(
+        _noticeToStatusBadgeGap,
+        _noticeToStatusBadgeGap * gapScale,
+        transitionProgress,
+      ),
+      _lerpGap(
+        _statusBadgeToTitleGap,
+        _statusBadgeToTitleGap * gapScale,
+        transitionProgress,
+      ),
+      _lerpGap(
+        _titleToStepsGap,
+        _titleToStepsGap * gapScale,
+        transitionProgress,
+      ),
+      _lerpGap(
+        _stepsToProofNoticeGap,
+        _stepsToProofNoticeGap * gapScale,
+        transitionProgress,
+      ),
+      _lerpGap(_referenceBottomGap, centeredOuterGap, transitionProgress),
+    ];
+    final blendedGapTotal = blendedGaps.fold<double>(
+      0,
+      (sum, gap) => sum + gap,
+    );
+    final normalizationScale = blendedGapTotal == 0
+        ? 0.0
+        : flexibleHeight / blendedGapTotal;
+    final normalizedGaps = [
+      for (final gap in blendedGaps) gap * normalizationScale,
+    ];
+    final noticeTop = normalizedGaps[0];
+    final statusBadgeTop = noticeTop + noticeHeight + normalizedGaps[1];
+    final titleTop = statusBadgeTop + _statusBadgeHeight + normalizedGaps[2];
+    final stepsTop = titleTop + titleHeight + normalizedGaps[3];
+    final proofNoticeTop = stepsTop + _stepsHeight + normalizedGaps[4];
+
+    return _VotingSubmissionPositions(
+      noticeTop: noticeTop,
+      statusBadgeTop: statusBadgeTop,
+      titleTop: titleTop,
+      stepsTop: stepsTop,
+      proofNoticeTop: proofNoticeTop,
+    );
+  }
+
+  final double noticeTop;
+  final double statusBadgeTop;
+  final double titleTop;
+  final double stepsTop;
+  final double proofNoticeTop;
+}
+
+double _lerpGap(double reference, double responsive, double progress) =>
+    reference + (responsive - reference) * progress;
+
 class _VotingSubmissionSteps extends StatelessWidget {
   const _VotingSubmissionSteps({
     required this.activeStep,
     required this.activeStepProgress,
+    super.key,
   });
 
   final VotingSubmissionProgressStep activeStep;

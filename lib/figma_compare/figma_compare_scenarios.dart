@@ -266,6 +266,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-submission-casting-compact',
+    description: 'Compact mobile voting submission while casting votes',
+    builder: buildMobileVotingSubmissionCastingCompactUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-submission-finalizing',
     description: 'Mobile voting submission while finalizing',
     builder: buildMobileVotingSubmissionFinalizingUseCase,

@@ -138,6 +138,18 @@ Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingSubmissionCastingCompactUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.castingVotes,
+      activeStepProgress: 0.6,
+    ),
+    size: const Size(375, 667),
+    safeArea: const EdgeInsets.only(top: 47, bottom: 34),
+  );
+}
+
 Widget buildMobileVotingSubmissionFinalizingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,
@@ -154,15 +166,19 @@ Widget buildMobileVotingSubmittedUseCase(BuildContext context) {
   );
 }
 
-Widget _mobileVotingFullPagePreview(BuildContext context, Widget child) {
+Widget _mobileVotingFullPagePreview(
+  BuildContext context,
+  Widget child, {
+  Size size = const Size(393, 852),
+  EdgeInsets safeArea = const EdgeInsets.only(top: 55),
+}) {
   final mediaQuery = MediaQuery.of(context);
-  const safeArea = EdgeInsets.only(top: 55);
   return SizedBox(
-    width: 393,
-    height: 852,
+    width: size.width,
+    height: size.height,
     child: MediaQuery(
       data: mediaQuery.copyWith(
-        size: const Size(393, 852),
+        size: size,
         padding: safeArea,
         viewPadding: safeArea,
       ),
