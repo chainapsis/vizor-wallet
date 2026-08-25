@@ -31,7 +31,6 @@ import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
-import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
@@ -230,12 +229,6 @@ final _routerProvider = Provider<_AppRouter>((ref) {
   ref.listen(swapFeatureEnabledProvider, (_, _) {
     refresh.requestRefresh();
   });
-  ref.listen(ironwoodPostMigrationStateProvider, (_, _) {
-    final path = router.routerDelegate.currentConfiguration.uri.path;
-    if (_isIronwoodMigrationRestrictedRoute(path)) {
-      refresh.requestRefresh();
-    }
-  });
   log('router: initialized');
 
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -387,29 +380,8 @@ String? appRedirect({
   if (hasWallet && state.matchedLocation == '/welcome') {
     return requiresUnlock ? '/unlock' : '/home';
   }
-  final locksIronwoodNavigation = kAppFormFactor == AppFormFactor.mobile
-      ? ref.read(ironwoodHomeMigrationPresentationProvider).mode ==
-            IronwoodHomeMigrationCtaMode.start
-      : ref.read(ironwoodPostMigrationStateProvider).value?.locksNavigation ==
-            true;
-  if (locksIronwoodNavigation &&
-      _isIronwoodMigrationRestrictedRoute(state.matchedLocation)) {
-    return '/migration';
-  }
   if (!swapFeatureEnabled && isSwap) return '/home';
   return null;
-}
-
-bool _isIronwoodMigrationRestrictedRoute(String matchedLocation) {
-  return _matchesRoutePrefix(matchedLocation, '/send') ||
-      _matchesRoutePrefix(matchedLocation, '/receive') ||
-      _matchesRoutePrefix(matchedLocation, '/pay') ||
-      _matchesRoutePrefix(matchedLocation, '/swap');
-}
-
-bool _matchesRoutePrefix(String matchedLocation, String routePath) {
-  return matchedLocation == routePath ||
-      matchedLocation.startsWith('$routePath/');
 }
 
 /// Entry, onboarding, and auth routes shared by the desktop and mobile

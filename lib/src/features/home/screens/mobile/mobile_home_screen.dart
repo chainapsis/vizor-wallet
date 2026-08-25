@@ -970,8 +970,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
     final sendDisabled =
-        migrationRequired ||
-        (migrationInProgress && sync.ironwoodBalance <= BigInt.zero);
+        migrationInProgress && sync.ironwoodBalance <= BigInt.zero;
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -997,7 +996,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
     final showPayEntry =
         payEnabled &&
-        !migrationRequired &&
         (!migrationInProgress || sync.ironwoodBalance > BigInt.zero);
     final migrationAttention = mobileIronwoodMigrationAttention(
       widget.ironwoodMigrationCta.status,

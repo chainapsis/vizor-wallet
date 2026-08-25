@@ -429,15 +429,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final ironwoodPostMigrationState = ref
         .watch(ironwoodPostMigrationStateProvider)
         .value;
-    final ironwoodMigrationNavigationLocked =
+    final ironwoodVoteNavigationLocked =
         ironwoodPostMigrationState?.locksNavigation ??
         (ironwoodHomeMigrationPresentation.mode ==
             IronwoodHomeMigrationCtaMode.start);
     final payNavigationLocked =
-        ironwoodMigrationNavigationLocked ||
-        (ironwoodHomeMigrationPresentation.mode ==
-                IronwoodHomeMigrationCtaMode.resume &&
-            accountSync.ironwoodBalance <= BigInt.zero);
+        ironwoodHomeMigrationPresentation.mode ==
+            IronwoodHomeMigrationCtaMode.resume &&
+        accountSync.ironwoodBalance <= BigInt.zero;
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );
@@ -529,8 +528,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         active: _matches('/swap'),
                         onTap:
                             isImporting ||
-                                widget.disabledRoutePaths.contains('/swap') ||
-                                ironwoodMigrationNavigationLocked
+                                widget.disabledRoutePaths.contains('/swap')
                             ? null
                             : () => _navigateTo('/swap'),
                       ),
@@ -559,7 +557,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       onTap:
                           isImporting ||
                               widget.disabledRoutePaths.contains('/voting') ||
-                              ironwoodMigrationNavigationLocked
+                              ironwoodVoteNavigationLocked
                           ? null
                           : () => _navigateTo('/voting'),
                     ),

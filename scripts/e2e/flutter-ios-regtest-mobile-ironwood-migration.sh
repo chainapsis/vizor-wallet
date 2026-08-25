@@ -17,6 +17,6 @@ UDID="$(pick_simulator)"
 FLUTTER_DEVICE="$UDID" \
 VIZOR_FORM_FACTOR=mobile \
 E2E_DRIVER_PORT="${E2E_DRIVER_PORT:-39084}" \
-E2E_TEST_FILE=integration_test/regtest_mobile_ironwood_migration_test.dart \
+E2E_TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_mobile_ironwood_migration_test.dart}" \
 E2E_ORCHARD_FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.01095}" \
   exec "$ROOT_DIR/scripts/e2e/flutter-macos-ironwood-migration.sh"

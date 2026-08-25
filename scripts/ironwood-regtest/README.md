@@ -41,6 +41,24 @@ test on the macOS device. It verifies all of the following through the app UI:
 - confirmation completes the run, creates spendable Ironwood funds, and removes
   the home migration CTA.
 
+Verify that a required migration does not block an ordinary Orchard-funded
+send before the migration run starts:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-pre-migration-send.sh
+```
+
+This activates Ironwood, verifies the migration CTA is pending, sends through
+the desktop UI, and confirms the transaction without creating a migration run.
+Once the legacy Orchard note is spent, only post-activation Orchard change
+remains, so the migration becomes unnecessary and the CTA disappears.
+
+Run the equivalent mobile flow on an iOS Simulator:
+
+```bash
+scripts/e2e/flutter-ios-regtest-mobile-ironwood-pre-migration-send.sh
+```
+
 Test recovery across a real Flutter process restart and a lightwalletd outage:
 
 ```bash
