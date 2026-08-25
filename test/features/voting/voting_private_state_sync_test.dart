@@ -62,6 +62,25 @@ void main() {
     expect(winner.completedAtSeconds, 10);
     expect(winner.choicesByProposalId, {7: 0});
   });
+
+  test('reports remotely read and locally published completions', () async {
+    final repository = _MemoryRepository();
+    final observed = <VotingCompletionRecord>[];
+    final sync = VotingPrivateStateSync(
+      repository,
+      onCompletionObserved: (_, record) => observed.add(record),
+    );
+    final record = VotingCompletionRecord(
+      roundId: 'round-42',
+      completedAtSeconds: 20,
+      choicesByProposalId: const {7: 1},
+    );
+
+    await sync.publishCompletion(account: account, record: record);
+    await sync.readCompletion(account: account, roundId: 'round-42');
+
+    expect(observed, [record, isA<VotingCompletionRecord>()]);
+  });
 }
 
 class _ConflictRepository implements PrivateStateObjectRepository {
@@ -96,6 +115,44 @@ class _ConflictRepository implements PrivateStateObjectRepository {
       version: PrivateStateVersion(
         revision: BigInt.one,
         envelopeHashBase64: 'winner-hash',
+      ),
+    );
+  }
+}
+
+class _MemoryRepository implements PrivateStateObjectRepository {
+  Uint8List? plaintext;
+
+  @override
+  Future<PrivateStateWriteResult> compareAndSet({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required PrivateStateVersion currentVersion,
+    required Uint8List plaintext,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PrivateStateWriteResult> create({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+    required Uint8List plaintext,
+  }) async {
+    this.plaintext = Uint8List.fromList(plaintext);
+    return PrivateStateWriteStored(
+      PrivateStateVersion(revision: BigInt.one, envelopeHashBase64: 'hash'),
+    );
+  }
+
+  @override
+  Future<PrivateStateReadResult> read({
+    required PrivateStateAccount account,
+    required PrivateStateObjectKey key,
+  }) async {
+    return PrivateStateReadFound(
+      plaintext: Uint8List.fromList(plaintext!),
+      version: PrivateStateVersion(
+        revision: BigInt.one,
+        envelopeHashBase64: 'hash',
       ),
     );
   }

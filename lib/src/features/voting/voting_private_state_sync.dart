@@ -149,22 +149,33 @@ class VotingCompletionRecord {
 /// Immutable completion adapter. Local chain/recovery state remains the source
 /// of truth; this object only restores cross-installation presentation state.
 class VotingPrivateStateSync {
-  const VotingPrivateStateSync(this._repository);
+  const VotingPrivateStateSync(
+    this._repository, {
+    void Function(PrivateStateAccount account, VotingCompletionRecord record)?
+    onCompletionObserved,
+  }) : _onCompletionObserved = onCompletionObserved;
 
   final PrivateStateObjectRepository _repository;
+  final void Function(
+    PrivateStateAccount account,
+    VotingCompletionRecord record,
+  )?
+  _onCompletionObserved;
 
   Future<VotingCompletionRecord?> readCompletion({
     required PrivateStateAccount account,
     required String roundId,
   }) async {
     final result = await _repository.read(account: account, key: _key(roundId));
-    return switch (result) {
+    final record = switch (result) {
       PrivateStateReadAbsent() => null,
       PrivateStateReadFound(:final plaintext) => VotingCompletionRecord.decode(
         plaintext,
         expectedRoundId: roundId,
       ),
     };
+    if (record != null) _onCompletionObserved?.call(account, record);
+    return record;
   }
 
   /// Publishes once. A concurrent winner is read and returned without merging
@@ -178,7 +189,10 @@ class VotingPrivateStateSync {
       key: _key(record.roundId),
       plaintext: record.encode(),
     );
-    if (result is PrivateStateWriteStored) return record;
+    if (result is PrivateStateWriteStored) {
+      _onCompletionObserved?.call(account, record);
+      return record;
+    }
     final existing = await readCompletion(
       account: account,
       roundId: record.roundId,

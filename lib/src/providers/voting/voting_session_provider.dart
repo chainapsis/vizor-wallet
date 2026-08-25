@@ -106,6 +106,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   @override
   Future<VotingSessionState> build() async {
+    ref.watch(votingPrivateCompletionRevisionProvider);
     _reactivateForBuild();
     _registerSubmissionGuardListener();
     _registerDisposeHandler();

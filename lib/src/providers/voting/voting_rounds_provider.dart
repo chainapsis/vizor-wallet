@@ -70,6 +70,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
 
   @override
   Future<List<VotingRoundView>> build() async {
+    ref.watch(votingPrivateCompletionRevisionProvider);
     ref.watch(votingActiveAccountUuidProvider);
     final showTestRounds = await ref.watch(showTestVotingRoundsProvider.future);
     return _load(showTestRounds: showTestRounds);
