@@ -101,6 +101,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiPirCacheWarmupResult dco_decode_api_pir_cache_warmup_result(dynamic raw);
 
   @protected
+  ApiSnapshotBundlePirResult dco_decode_api_snapshot_bundle_pir_result(
+    dynamic raw,
+  );
+
+  @protected
+  ApiSnapshotBundlePrecomputeResult
+  dco_decode_api_snapshot_bundle_precompute_result(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
@@ -320,6 +329,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ApiPendingShareRound> dco_decode_list_api_pending_share_round(
     dynamic raw,
   );
+
+  @protected
+  List<ApiSnapshotBundlePirResult>
+  dco_decode_list_api_snapshot_bundle_pir_result(dynamic raw);
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -912,6 +925,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSnapshotBundlePirResult sse_decode_api_snapshot_bundle_pir_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiSnapshotBundlePrecomputeResult
+  sse_decode_api_snapshot_bundle_precompute_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   );
@@ -1191,6 +1215,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ApiPendingShareRound> sse_decode_list_api_pending_share_round(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<ApiSnapshotBundlePirResult>
+  sse_decode_list_api_snapshot_bundle_pir_result(SseDeserializer deserializer);
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -1931,6 +1959,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_snapshot_bundle_pir_result(
+    ApiSnapshotBundlePirResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_snapshot_bundle_precompute_result(
+    ApiSnapshotBundlePrecomputeResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -2266,6 +2306,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_pending_share_round(
     List<ApiPendingShareRound> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_snapshot_bundle_pir_result(
+    List<ApiSnapshotBundlePirResult> self,
     SseSerializer serializer,
   );
 

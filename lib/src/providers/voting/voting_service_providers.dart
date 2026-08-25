@@ -370,12 +370,9 @@ abstract interface class VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   });
 
-  Future<rust_voting.DelegationPirPrecomputeResultView>
-  precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   });
 
   /// Bundle-independent background PIR proof cache warm-up.
@@ -653,18 +650,13 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.DelegationPirPrecomputeResultView>
-  precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) {
-    return rust_api.precomputeDelegationPir(
+    return rust_api.precomputeSnapshotBundles(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
     );
   }
 

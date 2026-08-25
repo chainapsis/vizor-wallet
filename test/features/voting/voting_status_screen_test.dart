@@ -5166,17 +5166,24 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) async {
-    return rust_wire.DelegationPirPrecomputeResultView(
-      cachedCount: 0,
-      fetchedCount: 1,
+    return rust_api.ApiSnapshotBundlePrecomputeResult(
       bundleCount: bundleCount,
-      bundleIndex: bundleIndex,
+      eligibleWeight: eligibilityWeightZatoshi ?? BigInt.from(100),
+      droppedCount: 0,
+      privacyTrimDroppedBundles: 0,
+      privacyTrimDroppedNotes: 0,
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
+      bundles: List.generate(
+        bundleCount,
+        (_) => const rust_api.ApiSnapshotBundlePirResult(
+          cachedCount: 0,
+          fetchedCount: 1,
+        ),
+      ),
     );
   }
 
