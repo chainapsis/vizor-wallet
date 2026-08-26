@@ -40,6 +40,17 @@ class DirectNetworkRequestsBlockedException implements Exception {
       'Direct network requests are blocked while the app switches to Tor.';
 }
 
+class _DirectRequestOperation<T> {
+  _DirectRequestOperation({required this.result, required Future<T> source})
+    : drained = source.then<void>((_) {}, onError: (_, _) {});
+
+  factory _DirectRequestOperation.fromFuture(Future<T> source) =>
+      _DirectRequestOperation(result: source, source: source);
+
+  final Future<T> result;
+  final Future<void> drained;
+}
+
 /// Tor transport boundary used after the process-wide route selects Tor.
 ///
 /// Implementations must apply each timeout to the underlying transport
@@ -262,7 +273,9 @@ class NetworkHttpClient {
             timeout: null,
           )
         : _runDirectRequest(
-            () => _downloadDirect(uri, destination, headers: headers),
+            () => _DirectRequestOperation.fromFuture(
+              _downloadDirect(uri, destination, headers: headers),
+            ),
           );
     return timeout == null ? future : future.timeout(timeout);
   }
@@ -274,20 +287,30 @@ class NetworkHttpClient {
     if (_activeDirectRequests == 0) _instances.remove(this);
   }
 
-  Future<T> _runDirectRequest<T>(Future<T> Function() request) async {
+  Future<T> _runDirectRequest<T>(
+    _DirectRequestOperation<T> Function() request,
+  ) {
     if (_directRequestsBlocked || _closed) {
-      throw const DirectNetworkRequestsBlockedException();
+      return Future.error(const DirectNetworkRequestsBlockedException());
     }
     _activeDirectRequests++;
+    final _DirectRequestOperation<T> operation;
     try {
-      return await request();
-    } finally {
-      _activeDirectRequests--;
-      if (_activeDirectRequests == 0) {
-        _directRequestsDrained?.complete();
-        _directRequestsDrained = null;
-        if (_closed) _instances.remove(this);
-      }
+      operation = request();
+    } catch (error, stackTrace) {
+      _finishDirectRequest();
+      return Future.error(error, stackTrace);
+    }
+    unawaited(operation.drained.whenComplete(_finishDirectRequest));
+    return operation.result;
+  }
+
+  void _finishDirectRequest() {
+    _activeDirectRequests--;
+    if (_activeDirectRequests == 0) {
+      _directRequestsDrained?.complete();
+      _directRequestsDrained = null;
+      if (_closed) _instances.remove(this);
     }
   }
 
@@ -368,7 +391,7 @@ class NetworkHttpClient {
     throw const HttpException('Too many HTTP redirects');
   }
 
-  Future<NetworkHttpResponse> _requestDirect(
+  _DirectRequestOperation<NetworkHttpResponse> _requestDirect(
     String method,
     Uri uri, {
     required Map<String, String> headers,
@@ -412,27 +435,31 @@ class NetworkHttpClient {
         headers: Map.unmodifiable(responseHeaders),
       );
     }();
-    if (timeout == null) return request;
-    return request.timeout(
-      timeout,
-      onTimeout: () async {
-        timedOut = true;
-        final error = _timeoutException(timeout);
-        try {
-          activeRequest?.abort(error);
-        } catch (_) {
-          // Continue cleanup and preserve the timeout as the public failure.
-        }
-        try {
-          await responseSubscription?.cancel();
-        } catch (_) {
-          // Continue cleanup and preserve the timeout as the public failure.
-        }
-        final body = responseBody;
-        if (body != null && !body.isCompleted) body.completeError(error);
-        throw error;
-      },
-    );
+    final result = timeout == null
+        ? request
+        : request.timeout(
+            timeout,
+            onTimeout: () async {
+              timedOut = true;
+              final error = _timeoutException(timeout);
+              try {
+                activeRequest?.abort(error);
+              } catch (_) {
+                // Continue cleanup and preserve the timeout as the public failure.
+              }
+              try {
+                await responseSubscription?.cancel();
+              } catch (_) {
+                // Continue cleanup and preserve the timeout as the public failure.
+              }
+              final body = responseBody;
+              if (body != null && !body.isCompleted) {
+                body.completeError(error);
+              }
+              throw error;
+            },
+          );
+    return _DirectRequestOperation(result: result, source: request);
   }
 
   Future<NetworkHttpResponse> _downloadDirect(

@@ -262,6 +262,39 @@ void main() {
     );
   });
 
+  test('direct timeout keeps its slot until openUrl unwinds', () async {
+    final directClient = _StallingHttpClient();
+    final client = NetworkHttpClient(
+      directClient: directClient,
+      torDesired: () => false,
+    );
+    addTearDown(() {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+    });
+
+    await expectLater(
+      client.request(
+        'GET',
+        Uri.parse('https://example.com/stalled'),
+        timeout: const Duration(milliseconds: 10),
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+
+    var drained = false;
+    final quiesce = NetworkHttpClient.quiesceDirectRequests().then(
+      (_) => drained = true,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(directClient.forceClosed, isTrue);
+    expect(drained, isFalse);
+
+    directClient.failPendingOpen();
+    await quiesce.timeout(const Duration(seconds: 1));
+    expect(drained, isTrue);
+  });
+
   test(
     'Tor activation drains in-flight direct requests after client disposal',
     () async {
@@ -303,6 +336,27 @@ void main() {
       );
     },
   );
+}
+
+class _StallingHttpClient implements HttpClient {
+  final _pendingOpen = Completer<HttpClientRequest>();
+  bool forceClosed = false;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) =>
+      _pendingOpen.future;
+
+  @override
+  void close({bool force = false}) {
+    forceClosed = force;
+  }
+
+  void failPendingOpen() {
+    _pendingOpen.completeError(StateError('direct client closed'));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _RecordingTorBridge implements TorHttpBridge {
