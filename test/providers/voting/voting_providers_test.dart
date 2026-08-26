@@ -6930,6 +6930,52 @@ void main() {
     },
   );
 
+  test('round plan designates the immediate share batch position', () async {
+    final beforeChoice = apiRoundPlan(
+      roundId: kRoundId,
+      pendingRecovery: false,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([7]),
+      allDecided: false,
+    );
+    final afterChoice = apiRoundPlan(
+      roundId: kRoundId,
+      pendingRecovery: false,
+      nextSteps: const [],
+      openProposals: Uint32List(0),
+      allDecided: true,
+      immediateShareKey: const rust_share_policy.ImmediateShareKey(
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+      ),
+    );
+    final initial = _singleVoteRecoveryApi();
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: initial.state,
+      roundPlanSequence: [beforeChoice, beforeChoice, afterChoice],
+    );
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 2,
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    expect(rust.planImmediateShareIndexes, [0]);
+    expect(
+      rust.recordedShares
+          .singleWhere((share) => share.shareIndex == 0)
+          .submitAt,
+      BigInt.zero,
+    );
+  });
+
   test(
     'vote and share submissions match Swift SDK snake case wire shapes',
     () async {
@@ -9941,6 +9987,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final draftSingleShareValues = <bool>[];
   final planLastMomentBufferSeconds = <BigInt?>[];
   final planSingleShareValues = <bool>[];
+  final planImmediateShareIndexes = <int?>[];
   final rankedCandidatePreviousSelections = <List<String>>[];
   final rankedCandidatePreviousSelectionsByShare = <List<List<String>>>[];
   final accountUuids = <String>[];
@@ -10634,9 +10681,11 @@ class FakeVotingRustApi implements VotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    required int? immediateShareIndex,
   }) async {
     planLastMomentBufferSeconds.add(lastMomentBufferSeconds);
     planSingleShareValues.add(singleShare);
+    planImmediateShareIndexes.add(immediateShareIndex);
     final targetCount = serverUrls.length > 5 ? 5 : serverUrls.length;
     final now = nowSeconds.toInt();
     final voteEnd = voteEndTimeSeconds.toInt();
@@ -10648,8 +10697,8 @@ class FakeVotingRustApi implements VotingRustApi {
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
-          immediate: false,
-          submitAt: submitAt,
+          immediate: i == immediateShareIndex,
+          submitAt: i == immediateShareIndex ? BigInt.zero : submitAt,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),

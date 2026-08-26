@@ -68,6 +68,8 @@ Future<String> voteShareWireJson({
 /// This mirrors the zcash-swift-wallet-sdk wrapper around
 /// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
 /// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// `immediate_share_index` is the designated share's position in this batch,
+/// not its domain share index.
 ///
 /// # Errors
 ///
@@ -80,6 +82,7 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   required BigInt voteEndTimeSeconds,
   BigInt? lastMomentBufferSeconds,
   required bool singleShare,
+  int? immediateShareIndex,
 }) => RustLib.instance.api.crateApiVotingPlanShareSubmissions(
   shareCount: shareCount,
   serverUrls: serverUrls,
@@ -87,6 +90,7 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   voteEndTimeSeconds: voteEndTimeSeconds,
   lastMomentBufferSeconds: lastMomentBufferSeconds,
   singleShare: singleShare,
+  immediateShareIndex: immediateShareIndex,
 );
 
 /// Return the crate-owned progressive helper probe and privacy policy.

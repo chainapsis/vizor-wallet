@@ -4795,6 +4795,7 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
             let api_vote_end_time_seconds = <u64>::sse_decode(&mut deserializer);
             let api_last_moment_buffer_seconds = <Option<u64>>::sse_decode(&mut deserializer);
             let api_single_share = <bool>::sse_decode(&mut deserializer);
+            let api_immediate_share_index = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4805,6 +4806,7 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
                         api_vote_end_time_seconds,
                         api_last_moment_buffer_seconds,
                         api_single_share,
+                        api_immediate_share_index,
                     )?;
                     Ok(output_ok)
                 })())

@@ -5515,12 +5515,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    required int? immediateShareIndex,
   }) async {
     final targetCount = serverUrls.length > 5 ? 5 : serverUrls.length;
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
-          immediate: false,
+          immediate: i == immediateShareIndex,
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),

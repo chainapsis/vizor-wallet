@@ -1166,6 +1166,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (!await writeBallotIntents()) {
         return;
       }
+      if (effectiveDraftVotes.isNotEmpty) {
+        roundPlan = await _loadRoundPlan(context);
+      }
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1291,6 +1294,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           helperPreflight: helperPreflight,
           helperSelectionPolicy: helperSelectionPolicy,
           helperPostPool: helperPostPool,
+          immediateShareKey: roundPlan?.immediateShareKey,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           shareIndexFilter: shareIndexFilter,
@@ -1346,6 +1350,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperPreflight: helperPreflight,
             helperSelectionPolicy: helperSelectionPolicy,
             helperPostPool: helperPostPool,
+            immediateShareKey: roundPlan?.immediateShareKey,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1517,6 +1522,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Future<List<String>> helperPreflight,
     required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
     required _AsyncPermitPool helperPostPool,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
@@ -1552,6 +1558,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 .toList(growable: false);
       if (shares.isEmpty) continue;
       final vcTreePosition = vcTreePositions[commitment.proposalId];
+      final designatedSharePosition =
+          immediateShareKey != null &&
+              immediateShareKey.bundleIndex == commitments.bundleIndex &&
+              immediateShareKey.proposalId == commitment.proposalId
+          ? shares.indexWhere(
+              (share) => share.shareIndex == immediateShareKey.shareIndex,
+            )
+          : -1;
       final plans = await rust.planShareSubmissions(
         shareCount: shares.length,
         serverUrls: serverUrls,
@@ -1559,6 +1573,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
         lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
         singleShare: singleShare,
+        immediateShareIndex: designatedSharePosition < 0
+            ? null
+            : designatedSharePosition,
       );
       if (plans.length != shares.length) {
         throw StateError(
@@ -2040,6 +2057,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Future<List<String>> helperPreflight,
     required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
     required _AsyncPermitPool helperPostPool,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2379,6 +2397,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 helperPreflight: helperPreflight,
                 helperSelectionPolicy: helperSelectionPolicy,
                 helperPostPool: helperPostPool,
+                immediateShareKey: immediateShareKey,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,

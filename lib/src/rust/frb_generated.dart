@@ -867,6 +867,7 @@ abstract class RustLibApi extends BaseApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   });
 
   Future<DelegationPirPrecomputeResultView>
@@ -6349,6 +6350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6360,6 +6362,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(voteEndTimeSeconds, serializer);
           sse_encode_opt_box_autoadd_u_64(lastMomentBufferSeconds, serializer);
           sse_encode_bool(singleShare, serializer);
+          sse_encode_opt_box_autoadd_u_32(immediateShareIndex, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6379,6 +6382,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           voteEndTimeSeconds,
           lastMomentBufferSeconds,
           singleShare,
+          immediateShareIndex,
         ],
         apiImpl: this,
       ),
@@ -6395,6 +6399,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "voteEndTimeSeconds",
           "lastMomentBufferSeconds",
           "singleShare",
+          "immediateShareIndex",
         ],
       );
 
