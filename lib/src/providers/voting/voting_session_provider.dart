@@ -1751,6 +1751,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 proposalId: prepared.share.proposalId,
                 shareIndex: prepared.share.shareIndex,
                 newUrls: [serverUrl],
+                submitAt: prepared.submitAt,
               ),
             ),
           ),
@@ -3336,6 +3337,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         proposalId: share.proposalId,
         shareIndex: share.shareIndex,
         newUrls: [serverUrl],
+        submitAt: share.submitAt,
       );
       try {
         await api.resubmitShare(

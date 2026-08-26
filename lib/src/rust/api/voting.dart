@@ -758,7 +758,7 @@ Future<void> addSentServers({
 /// # Errors
 ///
 /// Returns an error if opening the voting DB fails or the share record cannot
-/// be updated.
+/// be created or updated.
 Future<void> addAttemptedServers({
   required String dbPath,
   required String accountUuid,
@@ -767,6 +767,7 @@ Future<void> addAttemptedServers({
   required int proposalId,
   required int shareIndex,
   required List<String> newUrls,
+  required BigInt submitAt,
 }) => RustLib.instance.api.crateApiVotingAddAttemptedServers(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -775,6 +776,7 @@ Future<void> addAttemptedServers({
   proposalId: proposalId,
   shareIndex: shareIndex,
   newUrls: newUrls,
+  submitAt: submitAt,
 );
 
 /// Clear vote/delegation recovery columns and share-tracking rows for a round.

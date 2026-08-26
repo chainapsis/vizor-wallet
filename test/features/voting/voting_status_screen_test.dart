@@ -5770,6 +5770,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   }) async {
     final existing = recoveryApi.state.shareDelegations.firstWhere(
       (share) =>
@@ -5789,7 +5790,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       shareIndex: shareIndex,
       sentToUrls: existing.sentToUrls,
       attemptedServerUrls: attempted.toList(growable: false),
-      submitAt: existing.submitAt,
+      submitAt: submitAt,
     );
   }
 

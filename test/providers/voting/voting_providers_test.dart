@@ -11051,6 +11051,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   }) async {
     attemptedServerAdds.add(
       _AddedSentServers(bundleIndex, proposalId, shareIndex, newUrls),
@@ -11062,6 +11063,17 @@ class FakeVotingRustApi implements VotingRustApi {
           share.shareIndex == shareIndex,
     );
     if (existingIndex == -1) {
+      operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
+      recordedShares.add(
+        _RecordedShare(
+          bundleIndex: bundleIndex,
+          proposalId: proposalId,
+          shareIndex: shareIndex,
+          submitAt: submitAt,
+          sentToUrls: const [],
+          attemptedServerUrls: List<String>.of(newUrls, growable: false),
+        ),
+      );
       return;
     }
     final existing = recordedShares[existingIndex];
@@ -11071,7 +11083,7 @@ class FakeVotingRustApi implements VotingRustApi {
       bundleIndex: existing.bundleIndex,
       proposalId: existing.proposalId,
       shareIndex: existing.shareIndex,
-      submitAt: existing.submitAt,
+      submitAt: submitAt,
       sentToUrls: existing.sentToUrls,
       attemptedServerUrls: attempted.toList(growable: false),
     );

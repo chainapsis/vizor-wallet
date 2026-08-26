@@ -605,6 +605,7 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   });
 
   Future<void> markShareConfirmed({
@@ -1130,6 +1131,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   }) {
     return rust_api.addAttemptedServers(
       dbPath: dbPath,
@@ -1139,6 +1141,7 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       newUrls: newUrls,
+      submitAt: submitAt,
     );
   }
 

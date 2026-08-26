@@ -117,6 +117,7 @@ abstract class RustLibApi extends BaseApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   });
 
   Future<Uint8List> crateApiSyncAddProofsToPczt({
@@ -1390,6 +1391,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+    required BigInt submitAt,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1402,6 +1404,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(proposalId, serializer);
           sse_encode_u_32(shareIndex, serializer);
           sse_encode_list_String(newUrls, serializer);
+          sse_encode_u_64(submitAt, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1422,6 +1425,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           proposalId,
           shareIndex,
           newUrls,
+          submitAt,
         ],
         apiImpl: this,
       ),
@@ -1439,6 +1443,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "proposalId",
           "shareIndex",
           "newUrls",
+          "submitAt",
         ],
       );
 

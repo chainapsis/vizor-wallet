@@ -1799,7 +1799,7 @@ pub fn add_sent_servers(
 /// # Errors
 ///
 /// Returns an error if opening the voting DB fails or the share record cannot
-/// be updated.
+/// be created or updated.
 pub fn add_attempted_servers(
     db_path: String,
     account_uuid: String,
@@ -1808,6 +1808,7 @@ pub fn add_attempted_servers(
     proposal_id: u32,
     share_index: u32,
     new_urls: Vec<String>,
+    submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
         db::with_voting_sidecar_write_lock(&db_path, || {
@@ -1819,6 +1820,7 @@ pub fn add_attempted_servers(
                 proposal_id,
                 share_index,
                 &new_urls,
+                submit_at,
             )
             .map_err(|e| format!("add_attempted_servers failed: {e}"))
         })
@@ -3135,6 +3137,7 @@ mod tests {
             2,
             0,
             vec!["https://interrupted.example".to_string()],
+            123,
         )
         .unwrap();
         let state = get_round_recovery_state(

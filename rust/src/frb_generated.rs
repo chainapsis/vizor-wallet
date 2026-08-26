@@ -164,6 +164,7 @@ fn wire__crate__api__voting__add_attempted_servers_impl(
             let api_proposal_id = <u32>::sse_decode(&mut deserializer);
             let api_share_index = <u32>::sse_decode(&mut deserializer);
             let api_new_urls = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_submit_at = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -175,6 +176,7 @@ fn wire__crate__api__voting__add_attempted_servers_impl(
                         api_proposal_id,
                         api_share_index,
                         api_new_urls,
+                        api_submit_at,
                     )?;
                     Ok(output_ok)
                 })())
