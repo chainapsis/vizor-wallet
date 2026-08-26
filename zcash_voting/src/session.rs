@@ -1212,6 +1212,7 @@ mod tests {
             ],
             share_blinds: vec![[0x41; 32], [0x42; 32]],
             share_comms: vec![[0x51; 32], [0x52; 32]],
+            batch: None,
         }
     }
 

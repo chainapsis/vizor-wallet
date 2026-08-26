@@ -25,10 +25,14 @@ precompute → delegate → vote → share lifecycle:
    through the wallet's chain client, and use `record_submission` while polling
    plus `confirm_delegation_submission` after confirmation.
 6. Record each terminal ballot decision with `set_ballot_intent`, passing the
-   proposal's declared option count so choices are validated before persistence,
-   then use `vote::commit` to commit votes locally and submit cast-vote
-   transactions. Submit helper shares after the cast-vote transaction is
-   confirmed.
+   proposal's declared option count so choices are validated before persistence.
+   For multiple answered proposals in one bundle, call `vote::commit_batch` once
+   with their canonical order and submit the returned `batch_json` to the
+   chain's `cast-vote-batch` endpoint. Every action signs the same batch digest,
+   so the chain either accepts the complete authority chain or none of it. Use
+   `confirm_vote_batch_submission` after confirmation, then submit each vote's
+   helper shares. `vote::commit` and `confirm_vote_submission` remain the
+   singleton path.
 7. After restart, call `resume_plan` with the round's full proposal id list and
    execute one returned `NextStep`, persist its result, then call `resume_plan`
    again. `CastVote` includes the recorded choice, and `SubmitVote` resumes an
@@ -57,8 +61,8 @@ precompute → delegate → vote → share lifecycle:
 | `round` | `VotingDb`, `RoundParams`, `RoundInfo`, idempotent `ensure_bundles`, and policy-aware bundle planning. |
 | `precompute` | Shielded note witness generation and PIR precompute wrappers. |
 | `delegate` | PCZT setup, proof generation, submission assembly, and chain recovery writes. |
-| `confirmation` | Chain tx event parsing plus atomic delegation and cast-vote confirmation recording. |
-| `vote` | ZKP2 construction, cast-vote signing, and vote recovery bundle persistence. |
+| `confirmation` | Chain tx event parsing plus atomic delegation, singleton-vote, and vote-batch confirmation recording. |
+| `vote` | ZKP2 construction, bounded parallel batch proving, cast-vote signing, and atomic recovery-bundle persistence. |
 | `share` | Helper-share payload recovery, nullifier computation, and share confirmation state. |
 | `session` | Durable ballot intent plus the round-level resume planner. |
 | `phases` | Per-bundle `DelegationPhase` derived from persisted artifacts. |
@@ -68,7 +72,10 @@ precompute → delegate → vote → share lifecycle:
 | `governance` | Low-level governance derivations, `BALLOT_DIVISOR`, and the circuit note-slot count. |
 
 Wallet integrations should use the lifecycle modules above instead of writing
-storage rows directly.
+storage rows directly. An atomic batch preserves the original proof's
+privacy for choices, notes, amounts, and voting keys. Its deliberate metadata
+tradeoff is transaction-level linkage: observers can see that the ordered
+proposal actions in the batch were submitted together.
 
 ## Config resolution
 
@@ -396,7 +403,8 @@ boundary, so production builds should not enable this feature.
   both software and hardware wallets, persist `VotingHotkey::stored_secret()`,
   and use `VotingHotkey::from_stored_secret` to reconstruct the same hotkey
   later. The crate no longer derives voting hotkeys from root wallet seeds.
-- Use `confirmation::{confirm_delegation_submission, confirm_vote_submission}`
+- Use `confirmation::{confirm_delegation_submission, confirm_vote_submission,
+  confirm_vote_batch_submission}`
   after chain clients report confirmed delegation or cast-vote tx events. The
   confirmation API parses the chain `leaf_index` events and records tx hashes,
   VAN positions, and VC positions atomically.
@@ -404,7 +412,9 @@ boundary, so production builds should not enable this feature.
   delegation, vote, and share phases in wallet code. Fetch step execution
   material through crate APIs such as `vote::submission`,
   `vote::recover_commit`, `share::*`, and the tx hash accessors.
-- Use `vote::commit`, `vote::submission`, `vote::recover_commit`,
+- Use `vote::commit` for singleton transactions or `vote::commit_batch` for one
+  atomic, canonical multi-question transaction. Use `vote::submission`,
+  `vote::recover_commit`,
   `vote::record_submission`, and `vote::record_vc_position` for the cast-vote
   lifecycle. Wallets should not write recovery JSON, submission flags, or vote
   commitment positions directly.

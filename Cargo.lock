@@ -3148,8 +3148,7 @@ dependencies = [
 [[package]]
 name = "voting-circuits"
 version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "253e5b264156444bc8d314aa4a96ff04c5952bb48a11d4df22264c87935d8c77"
+source = "git+https://github.com/valargroup/voting-circuits.git?rev=644f9bc4c809341064d0529f274caedc4f8fea6f#644f9bc4c809341064d0529f274caedc4f8fea6f"
 dependencies = [
  "blake2b_simd",
  "incrementalmerkletree",
@@ -3161,8 +3160,7 @@ dependencies = [
 [[package]]
 name = "voting-crypto-deps"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f34b3dc14dfd6f1ea3bff693b7efcb0f6689bd94d86feb85236852743ffa6e1e"
+source = "git+https://github.com/valargroup/voting-circuits.git?rev=644f9bc4c809341064d0529f274caedc4f8fea6f#644f9bc4c809341064d0529f274caedc4f8fea6f"
 dependencies = [
  "halo2_gadgets",
  "halo2_poseidon",

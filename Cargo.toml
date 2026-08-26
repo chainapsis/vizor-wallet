@@ -32,3 +32,7 @@ opt-level = 3
 
 [profile.test.package.valar-spiral-rs]
 opt-level = 3
+
+[patch.crates-io]
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", rev = "644f9bc4c809341064d0529f274caedc4f8fea6f" }
+voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits.git", rev = "644f9bc4c809341064d0529f274caedc4f8fea6f" }

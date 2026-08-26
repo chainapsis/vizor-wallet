@@ -357,6 +357,7 @@ mod tests {
             ],
             share_blinds: vec![field_bytes(1), field_bytes(2)],
             share_comms: vec![[0x51; 32], [0x52; 32]],
+            batch: None,
         }
     }
 

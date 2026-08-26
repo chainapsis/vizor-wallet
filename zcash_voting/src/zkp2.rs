@@ -6,7 +6,9 @@ use pasta_curves::group::{
 };
 use pasta_curves::pallas;
 
-use voting_circuits::vote_proof::build_vote_proof_from_delegation;
+use voting_circuits::vote_proof::{
+    build_vote_proof_from_delegation, derive_vote_authority_transition,
+};
 use voting_circuits::VOTE_COMM_TREE_DEPTH;
 
 use crate::hotkey::VOTING_HOTKEY_ACCOUNT_INDEX;
@@ -18,6 +20,66 @@ use crate::types::{
 // Vote proof build runs circuit synthesis + MockProver + proof generation, which can
 // overflow the default simulator thread stack. Run it on a dedicated large-stack thread.
 const VOTE_PROOF_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Public VAN values and authority masks for one preplanned vote action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VoteAuthorityTransitionPlan {
+    pub vote_authority_note_old: [u8; 32],
+    pub vote_authority_note_new: [u8; 32],
+    pub proposal_authority_old: u64,
+    pub proposal_authority_new: u64,
+}
+
+/// Derives one authority transition with the same native implementation used
+/// by the proof builder, without constructing a proof.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn plan_vote_authority_transition(
+    hotkey_seed: &[u8],
+    network: Network,
+    address_index: u32,
+    total_note_value: u64,
+    gov_comm_rand: &[u8],
+    voting_round_id: &[u8],
+    proposal_id: u32,
+    proposal_authority_old: u64,
+) -> Result<VoteAuthorityTransitionPlan, VotingError> {
+    let sk = crate::hotkey::spending_key_from_hotkey_seed(
+        hotkey_seed,
+        network,
+        VOTING_HOTKEY_ACCOUNT_INDEX,
+    )?;
+    let gov_comm_rand = parse_base("gov_comm_rand", gov_comm_rand)?;
+    let voting_round_id = parse_base("voting_round_id", voting_round_id)?;
+    let transition = derive_vote_authority_transition(
+        &sk,
+        address_index,
+        total_note_value,
+        gov_comm_rand,
+        voting_round_id,
+        proposal_id as u64,
+        proposal_authority_old,
+    )
+    .map_err(|e| VotingError::InvalidInput {
+        message: format!("cannot plan vote authority transition: {e}"),
+    })?;
+
+    Ok(VoteAuthorityTransitionPlan {
+        vote_authority_note_old: transition.vote_authority_note_old.to_repr(),
+        vote_authority_note_new: transition.vote_authority_note_new.to_repr(),
+        proposal_authority_old: transition.proposal_authority_old,
+        proposal_authority_new: transition.proposal_authority_new,
+    })
+}
+
+fn parse_base(name: &str, bytes: &[u8]) -> Result<pallas::Base, VotingError> {
+    let bytes: [u8; 32] = bytes.try_into().map_err(|_| VotingError::InvalidInput {
+        message: format!("{name} must be 32 bytes, got {}", bytes.len()),
+    })?;
+    ct_option_to_result(
+        pallas::Base::from_repr(bytes),
+        &format!("{name} is not a canonical Pallas field element"),
+    )
+}
 
 /// Build vote commitment + ZKP #2.
 ///
@@ -95,33 +157,10 @@ pub(crate) fn build_vote_commitment(
     )?;
 
     // Parse gov_comm_rand → pallas::Base
-    let gcr_bytes: [u8; 32] = gov_comm_rand
-        .try_into()
-        .map_err(|_| VotingError::InvalidInput {
-            message: format!(
-                "gov_comm_rand must be 32 bytes, got {}",
-                gov_comm_rand.len()
-            ),
-        })?;
-    let gcr = ct_option_to_result(
-        pallas::Base::from_repr(gcr_bytes),
-        "gov_comm_rand is not a valid Pallas field element",
-    )?;
+    let gcr = parse_base("gov_comm_rand", gov_comm_rand)?;
 
     // Parse voting_round_id → pallas::Base (canonical Fp).
-    let vri_bytes: [u8; 32] =
-        voting_round_id
-            .try_into()
-            .map_err(|_| VotingError::InvalidInput {
-                message: format!(
-                    "voting_round_id must be 32 bytes, got {}",
-                    voting_round_id.len()
-                ),
-            })?;
-    let vri = ct_option_to_result(
-        pallas::Base::from_repr(vri_bytes),
-        "voting_round_id is not a canonical Pallas Fp element",
-    )?;
+    let vri = parse_base("voting_round_id", voting_round_id)?;
 
     // Parse ea_pk → pallas::Affine (compressed point)
     let ea_pk_bytes: [u8; 32] = ea_pk.try_into().map_err(|_| VotingError::InvalidInput {

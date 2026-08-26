@@ -26,9 +26,9 @@ use crate::{
         DelegationRecoveryView, DelegationRecoveryWorkView, DelegationStatusView,
         DelegationSubmissionWire, NextStepView, RoundPlanView, RoundRecoveryStateView,
         ShareDelegationRecordView, ShareWorkflowRecoveryView, SignedDelegationPayloadView,
-        SignedVoteCommitmentView, SignedVoteCommitmentsView, VoteCommitmentWire, VoteRecoveryView,
-        VoteRecoveryWorkView, VoteShareWire, VotingHotkeyTargetV1, VotingNoteRefView,
-        VotingNoteSelectionResultView, VotingRoundParams,
+        SignedVoteCommitmentView, SignedVoteCommitmentsView, VoteCommitmentBatchWire,
+        VoteCommitmentWire, VoteRecoveryView, VoteRecoveryWorkView, VoteShareWire,
+        VotingHotkeyTargetV1, VotingNoteRefView, VotingNoteSelectionResultView, VotingRoundParams,
     },
     BundlePolicy,
 };
@@ -191,6 +191,15 @@ impl VoteCommitmentWire {
     pub fn to_json(&self) -> Result<String, VotingError> {
         serde_json::to_string(self).map_err(|e| VotingError::Internal {
             message: format!("serialize vote commitment wire JSON failed: {e}"),
+        })
+    }
+}
+
+impl VoteCommitmentBatchWire {
+    /// Serializes the exact JSON request accepted by vote-sdk's batch endpoint.
+    pub fn to_json(&self) -> Result<String, VotingError> {
+        serde_json::to_string(self).map_err(|e| VotingError::Internal {
+            message: format!("serialize vote commitment batch JSON failed: {e}"),
         })
     }
 }
@@ -420,6 +429,8 @@ impl TryFrom<SignedVoteCommitments> for SignedVoteCommitmentsView {
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect::<Result<Vec<_>, _>>()?,
+            batch_digest: commitments.batch_digest.map(|digest| digest.to_vec()),
+            batch_json: commitments.batch_json,
         })
     }
 }
@@ -1301,9 +1312,13 @@ mod tests {
                 vote_auth_sig: [9; 64],
                 commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
             }],
+            batch_digest: Some([0xAB; 32]),
+            batch_json: Some("{\"votes\":[]}".to_string()),
         })
         .unwrap();
         assert_eq!(view.bundle_index, 1);
+        assert_eq!(view.batch_digest, Some(vec![0xAB; 32]));
+        assert_eq!(view.batch_json.as_deref(), Some("{\"votes\":[]}"));
         assert_eq!(view.commitments[0].proposal_id, 2);
         assert_eq!(view.commitments[0].wire.proposal_id, 2);
         assert_eq!(view.commitments[0].shares[0].vote_round_id, "00".repeat(32));

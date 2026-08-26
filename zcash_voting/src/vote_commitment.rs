@@ -95,30 +95,6 @@ pub(crate) fn sign_cast_vote(
     anchor_height: u32,
     alpha_v: &[u8],
 ) -> Result<CastVoteSignature, VotingError> {
-    use pasta_curves::group::ff::PrimeField;
-
-    // Derive the voting hotkey SpendingKey from seed.
-    let sk = crate::hotkey::spending_key_from_hotkey_seed(
-        hotkey_seed,
-        network,
-        crate::hotkey::VOTING_HOTKEY_ACCOUNT_INDEX,
-    )?;
-    let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
-
-    // Deserialize alpha_v
-    let alpha_v_arr: [u8; 32] = alpha_v.try_into().map_err(|_| VotingError::Internal {
-        message: format!("alpha_v must be 32 bytes, got {}", alpha_v.len()),
-    })?;
-    let alpha_v_scalar: pasta_curves::pallas::Scalar =
-        Option::from(pasta_curves::pallas::Scalar::from_repr(alpha_v_arr)).ok_or_else(|| {
-            VotingError::Internal {
-                message: "alpha_v is not a valid Pallas scalar".to_string(),
-            }
-        })?;
-
-    // Compute rsk_v = ask_v.randomize(alpha_v)
-    let rsk_v = ask.randomize(&alpha_v_scalar);
-
     // Validate r_vpk is 32 bytes
     if r_vpk_bytes.len() != 32 {
         return Err(VotingError::Internal {
@@ -136,13 +112,80 @@ pub(crate) fn sign_cast_vote(
         anchor_height,
     )?;
 
-    // Sign
-    let sig = rsk_v.sign(voting_crypto_deps::rand::rngs::OsRng, &sighash);
+    sign_cast_vote_digest(hotkey_seed, network, &sighash, alpha_v)
+}
+
+/// Signs a precomputed singleton or batch cast-vote digest with the randomized
+/// voting key selected by `alpha_v`.
+pub(crate) fn sign_cast_vote_digest(
+    hotkey_seed: &[u8],
+    network: Network,
+    digest: &[u8; 32],
+    alpha_v: &[u8],
+) -> Result<CastVoteSignature, VotingError> {
+    use pasta_curves::group::ff::PrimeField;
+
+    let sk = crate::hotkey::spending_key_from_hotkey_seed(
+        hotkey_seed,
+        network,
+        crate::hotkey::VOTING_HOTKEY_ACCOUNT_INDEX,
+    )?;
+    let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
+    let alpha_v_arr: [u8; 32] = alpha_v.try_into().map_err(|_| VotingError::Internal {
+        message: format!("alpha_v must be 32 bytes, got {}", alpha_v.len()),
+    })?;
+    let alpha_v_scalar: pasta_curves::pallas::Scalar =
+        Option::from(pasta_curves::pallas::Scalar::from_repr(alpha_v_arr)).ok_or_else(|| {
+            VotingError::Internal {
+                message: "alpha_v is not a valid Pallas scalar".to_string(),
+            }
+        })?;
+    let rsk_v = ask.randomize(&alpha_v_scalar);
+    let sig = rsk_v.sign(voting_crypto_deps::rand::rngs::OsRng, digest);
     let sig_bytes: [u8; 64] = (&sig).into();
 
     Ok(CastVoteSignature {
         vote_auth_sig: sig_bytes.to_vec(),
     })
+}
+
+/// Effecting public fields committed by one action in a batch sighash.
+pub(crate) struct CastVoteBatchSighashAction<'a> {
+    pub r_vpk: &'a [u8],
+    pub van_nullifier: &'a [u8],
+    pub vote_authority_note_new: &'a [u8],
+    pub vote_commitment: &'a [u8],
+    pub proposal_id: u32,
+}
+
+/// Computes the digest shared by every action signature in an atomic batch.
+/// This encoding must match vote-sdk's `ComputeCastVoteBatchSighash` exactly.
+pub(crate) fn cast_vote_batch_sighash(
+    vote_round_id_hex: &str,
+    anchor_height: u64,
+    actions: &[CastVoteBatchSighashAction<'_>],
+) -> Result<[u8; 32], VotingError> {
+    let vote_round_id = hex::decode(vote_round_id_hex).map_err(|e| VotingError::Internal {
+        message: format!("invalid vote_round_id hex: {e}"),
+    })?;
+    const DOMAIN: &[u8] = b"SVOTE_CAST_VOTE_BATCH_SIGHASH_V1";
+    let mut canonical = Vec::with_capacity(DOMAIN.len() + 32 * (3 + 6 * actions.len()));
+    canonical.extend_from_slice(DOMAIN);
+    extend_padded32(&mut canonical, &vote_round_id);
+    extend_u64_padded32(&mut canonical, anchor_height);
+    extend_u32_padded32(&mut canonical, actions.len() as u32);
+    for (index, action) in actions.iter().enumerate() {
+        extend_u32_padded32(&mut canonical, index as u32);
+        extend_padded32(&mut canonical, action.r_vpk);
+        extend_padded32(&mut canonical, action.van_nullifier);
+        extend_padded32(&mut canonical, action.vote_authority_note_new);
+        extend_padded32(&mut canonical, action.vote_commitment);
+        extend_u32_padded32(&mut canonical, action.proposal_id);
+    }
+    let hash = blake2b_simd::Params::new().hash_length(32).hash(&canonical);
+    let mut digest = [0u8; 32];
+    digest.copy_from_slice(hash.as_bytes());
+    Ok(digest)
 }
 
 pub(crate) fn cast_vote_sighash(
@@ -168,13 +211,8 @@ pub(crate) fn cast_vote_sighash(
     extend_padded32(&mut canonical, vote_authority_note_new);
     extend_padded32(&mut canonical, vote_commitment);
 
-    let mut pid_buf = [0u8; 32];
-    pid_buf[..4].copy_from_slice(&proposal_id.to_le_bytes());
-    canonical.extend_from_slice(&pid_buf);
-
-    let mut ah_buf = [0u8; 32];
-    ah_buf[..8].copy_from_slice(&(anchor_height as u64).to_le_bytes());
-    canonical.extend_from_slice(&ah_buf);
+    extend_u32_padded32(&mut canonical, proposal_id);
+    extend_u64_padded32(&mut canonical, anchor_height as u64);
 
     let sighash_full = blake2b_simd::Params::new().hash_length(32).hash(&canonical);
     let mut sighash = [0u8; 32];
@@ -187,6 +225,18 @@ fn extend_padded32(out: &mut Vec<u8>, b: &[u8]) {
     let mut buf = [0u8; 32];
     let n = b.len().min(32);
     buf[..n].copy_from_slice(&b[..n]);
+    out.extend_from_slice(&buf);
+}
+
+fn extend_u32_padded32(out: &mut Vec<u8>, value: u32) {
+    let mut buf = [0u8; 32];
+    buf[..4].copy_from_slice(&value.to_le_bytes());
+    out.extend_from_slice(&buf);
+}
+
+fn extend_u64_padded32(out: &mut Vec<u8>, value: u64) {
+    let mut buf = [0u8; 32];
+    buf[..8].copy_from_slice(&value.to_le_bytes());
     out.extend_from_slice(&buf);
 }
 
@@ -227,6 +277,34 @@ mod tests {
             r_vpk_bytes: vec![0xEE; 32],
             alpha_v: vec![0xFF; 32],
         }
+    }
+
+    #[test]
+    fn batch_sighash_matches_vote_sdk_frozen_vector() {
+        let action_0 = CastVoteBatchSighashAction {
+            r_vpk: &[2; 32],
+            van_nullifier: &[3; 32],
+            vote_authority_note_new: &[4; 32],
+            vote_commitment: &[5; 32],
+            proposal_id: 1,
+        };
+        let action_1 = CastVoteBatchSighashAction {
+            r_vpk: &[6; 32],
+            van_nullifier: &[7; 32],
+            vote_authority_note_new: &[8; 32],
+            vote_commitment: &[9; 32],
+            proposal_id: 15,
+        };
+        let digest = cast_vote_batch_sighash(
+            &"01".repeat(32),
+            0x0102_0304_0506_0708,
+            &[action_0, action_1],
+        )
+        .unwrap();
+        assert_eq!(
+            hex::encode(digest),
+            "7381e034bee32634f6983f851d0aeaea39110725be97fa3b43973e358b7ce3db"
+        );
     }
 
     #[test]

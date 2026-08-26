@@ -79,8 +79,10 @@ stage-oriented API:
   `CastVote` steps include the recorded choice. `SubmitVote` steps mean a vote
   was already committed locally and should be reconstructed with
   `vote::submission` rather than rebuilt from a draft. Submit those recovered
-  cast-vote fields, persist the cast-vote tx hash with `vote::record_submission`
-  while polling, then record confirmed tx events with
+  cast-vote fields. For a recovered batch, submit its canonical `batch_json`
+  once, persist the shared tx hash with `vote::record_batch_submission`, and
+  record its ordered event with `confirmation::confirm_vote_batch_submission`.
+  Singleton submissions continue to use `vote::record_submission` and
   `confirmation::confirm_vote_submission`. After confirmation, call
   `vote::recover_commit` again and use its helper-share payloads so they carry
   the confirmed VC position. Persist each accepted helper share with
@@ -119,11 +121,13 @@ custody provider integrations.
   `delegate::PreparedDelegationBundle`. Callers can use the prepared lifecycle
   for setup, witness completion, proving, signing request construction, signed
   payload assembly, and Keystone request construction.
-- Use `confirmation::{confirm_delegation_submission, confirm_vote_submission}`
+- Use `confirmation::{confirm_delegation_submission, confirm_vote_submission,
+  confirm_vote_batch_submission}`
   after chain clients report confirmed delegation or cast-vote tx events. The
   confirmation API parses the chain `leaf_index` events and records tx hashes,
   VAN positions, and VC positions atomically.
-- Use `vote::commit`, `vote::submission`, `vote::recover_commit`,
+- Use `vote::commit` for singletons or `vote::commit_batch` for an atomic,
+  ordered multi-question transaction. Use `vote::submission`, `vote::recover_commit`,
   `vote::record_submission`, and `vote::record_vc_position` for the cast-vote
   lifecycle. Wallets should not write recovery JSON, submission flags, or vote
   commitment positions directly.
