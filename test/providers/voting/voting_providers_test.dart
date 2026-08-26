@@ -3798,6 +3798,91 @@ void main() {
   );
 
   test(
+    'unconfirmed immediate share fails the submission job when voting ends',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final voteEndSeconds = nowSeconds + 2;
+      final shareNullifier = Uint8List.fromList(List.filled(32, 9));
+      final shareId = _hexFromBytes(shareNullifier);
+      final acceptedShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        nullifier: shareNullifier,
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+              roundStatus: roundStatusJson(
+                roundId: kRoundId,
+                voteEnd: voteEndSeconds,
+              ),
+              dynamicConfig: dynamicConfigJson(
+                voteServers: const [
+                  {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                ],
+              ),
+            )..addAll({
+              'https://helper-a.example/shielded-vote/v1/share-status/$kRoundId/$shareId':
+                  StateError('helper unavailable'),
+            }),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(
+          acceptedShare,
+          designateImmediateShare: true,
+        ),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final key = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      await _waitForStoredVanPosition(rust, '0:0');
+      expect(
+        container.read(votingSubmissionJobProvider(key!)).status,
+        VotingSubmissionJobStatus.running,
+      );
+
+      final waitUntilExpiry = DateTime.fromMillisecondsSinceEpoch(
+        voteEndSeconds * 1000,
+      ).difference(DateTime.now());
+      if (waitUntilExpiry > Duration.zero) {
+        await Future<void>.delayed(
+          waitUntilExpiry + const Duration(milliseconds: 50),
+        );
+      }
+      final failed = await _waitForJobStatus(
+        container,
+        key,
+        VotingSubmissionJobStatus.error,
+      );
+
+      expect(
+        failed.errorMessage,
+        'The voting round ended before a helper confirmed the immediate share. '
+        'Check the voting status before retrying.',
+      );
+      expect(
+        container
+            .read(votingSubmissionGuardProvider.notifier)
+            .guardForAccount('account-1'),
+        isNull,
+      );
+    },
+  );
+
+  test(
     'share tracking releases its registration when the round expires',
     () async {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
