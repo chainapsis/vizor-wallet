@@ -6430,13 +6430,13 @@ void main() {
           request.uri.path == '/shielded-vote/v1/shares',
     );
     expect(sharePosts, hasLength(3));
-    expect(rust.rankedCandidatePreviousSelectionsByShare.single, [
+    expect(rust.rankedCandidatePreviousSelectionsByShare.first, [
       previouslyAccepted,
     ]);
-    expect(rust.rankedCandidatePreviousAttemptsByShare.single, [
+    expect(rust.rankedCandidatePreviousAttemptsByShare.first, [
       previouslyAttempted,
     ]);
-    expect(rust.rankedCandidatePreviousSelections.single, previouslyAttempted);
+    expect(rust.rankedCandidatePreviousSelections.first, previouslyAttempted);
     expect(
       sharePosts.map((request) => request.body!['submit_at']),
       everyElement(123),
@@ -6510,7 +6510,7 @@ void main() {
     },
   );
 
-  test('share timeout preserves the planner fallback order', () async {
+  test('share timeout replans before choosing a replacement', () async {
     final serverUrls = [
       for (var i = 1; i <= 11; i++) 'https://helper-$i.example',
     ];
@@ -6532,12 +6532,35 @@ void main() {
       emitCommitments: true,
       helperPostTimeoutMilliseconds: 20,
       initialDeliveryTimeoutMilliseconds: 100,
-      rankedCandidatePlans: [
-        rust_share_policy.ShareServerCandidatePlan(
-          remainingTargetCount: 1,
-          candidateServers: [serverUrls[5], serverUrls[10], serverUrls[0]],
-        ),
-      ],
+      rankedCandidatePlanner:
+          (
+            rankedServerUrls,
+            previouslySelectedServerUrls,
+            previouslyAttemptedServerUrlsByShare,
+            previouslyAcceptedServerUrlsByShare,
+          ) {
+            final accepted = previouslyAcceptedServerUrlsByShare.single;
+            if (accepted.isNotEmpty) {
+              return [
+                rust_share_policy.ShareServerCandidatePlan(
+                  remainingTargetCount: 0,
+                  candidateServers: const [],
+                ),
+              ];
+            }
+            final attempted = previouslyAttemptedServerUrlsByShare.single;
+            final order = [serverUrls[5], serverUrls[10], serverUrls[0]];
+            return [
+              rust_share_policy.ShareServerCandidatePlan(
+                remainingTargetCount: 1,
+                candidateServers: [
+                  order.firstWhere(
+                    (serverUrl) => !attempted.contains(serverUrl),
+                  ),
+                ],
+              ),
+            ];
+          },
     );
     final container = _sessionContainer(
       http: http,
@@ -6564,41 +6587,94 @@ void main() {
   });
 
   test(
-    'queued share posts use healthy fallbacks after slow helpers time out',
+    'concentrated share timeouts use unused helpers before exceeding the cap',
     () async {
       final serverUrls = [
-        for (var i = 1; i <= 10; i++) 'https://helper-$i.example',
+        for (var i = 0; i < 12; i++) 'https://helper-$i.example',
       ];
-      final helperUrls = [
-        for (var i = 0; i < serverUrls.length; i++)
-          {'url': serverUrls[i], 'label': 'helper-${i + 1}'},
-      ];
-      final fastServers = serverUrls.take(5).toList(growable: false);
-      final slowServers = serverUrls.skip(5).toList(growable: false);
-      final blackholedSharePost = Completer<VotingHttpResponse>();
-      final http = FakeVotingHttpClient(
-        responses: {
-          ...votingHttpResponses(
-            dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
-          ),
-          for (final serverUrl in slowServers)
-            '$serverUrl/shielded-vote/v1/shares': blackholedSharePost.future,
+      final http = _ConcentratedShareFailureHttpClient(
+        failedShareIndex: 0,
+        failedHosts: {
+          Uri.parse(serverUrls[4]).host,
+          Uri.parse(serverUrls[10]).host,
         },
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: [
+              for (var i = 0; i < serverUrls.length; i++)
+                {'url': serverUrls[i], 'label': 'helper-$i'},
+            ],
+          ),
+        ),
       );
       final rust = FakeVotingRustApi(
         emitCommitments: true,
         commitmentShareCount: 16,
-        helperPostTimeoutMilliseconds: 100,
-        initialDeliveryTimeoutMilliseconds: 200,
-        rankedCandidatePlans: [
-          for (var shareIndex = 0; shareIndex < 16; shareIndex++)
-            rust_share_policy.ShareServerCandidatePlan(
-              remainingTargetCount: 5,
-              candidateServers: shareIndex < 8
-                  ? [...fastServers, ...slowServers]
-                  : [...slowServers, ...fastServers],
-            ),
-        ],
+        maxConcurrentHelperPosts: 80,
+        rankedCandidatePlanner:
+            (
+              rankedServerUrls,
+              previouslySelectedServerUrls,
+              previouslyAttemptedServerUrlsByShare,
+              previouslyAcceptedServerUrlsByShare,
+            ) {
+              final usage = <String, int>{};
+              for (final serverUrl in previouslySelectedServerUrls) {
+                usage[serverUrl] = (usage[serverUrl] ?? 0) + 1;
+              }
+              final rank = {
+                for (var i = 0; i < rankedServerUrls.length; i++)
+                  rankedServerUrls[i]: i,
+              };
+              return [
+                for (
+                  var shareIndex = 0;
+                  shareIndex < previouslyAttemptedServerUrlsByShare.length;
+                  shareIndex++
+                )
+                  () {
+                    final attempted =
+                        previouslyAttemptedServerUrlsByShare[shareIndex]
+                            .toSet();
+                    final accepted =
+                        previouslyAcceptedServerUrlsByShare[shareIndex].toSet();
+                    final remaining = 5 - accepted.length;
+                    final initialTargets = shareIndex < 8
+                        ? serverUrls.take(5).toList(growable: false)
+                        : serverUrls.skip(5).take(5).toList(growable: false);
+                    final untriedFallbacks = rankedServerUrls
+                        .where(
+                          (serverUrl) =>
+                              !initialTargets.contains(serverUrl) &&
+                              !attempted.contains(serverUrl),
+                        )
+                        .toList();
+                    untriedFallbacks.sort((left, right) {
+                      final usageComparison = (usage[left] ?? 0).compareTo(
+                        usage[right] ?? 0,
+                      );
+                      return usageComparison != 0
+                          ? usageComparison
+                          : rank[left]!.compareTo(rank[right]!);
+                    });
+                    final candidates = [
+                      ...initialTargets.where(
+                        (serverUrl) => !attempted.contains(serverUrl),
+                      ),
+                      ...untriedFallbacks,
+                      ...rankedServerUrls.where(
+                        (serverUrl) =>
+                            attempted.contains(serverUrl) &&
+                            !accepted.contains(serverUrl),
+                      ),
+                    ].take(remaining).toList(growable: false);
+                    return rust_share_policy.ShareServerCandidatePlan(
+                      remainingTargetCount: remaining,
+                      candidateServers: candidates,
+                    );
+                  }(),
+              ];
+            },
       );
       final container = _sessionContainer(
         http: http,
@@ -6612,21 +6688,128 @@ void main() {
           .read(votingSessionProvider(kRoundId).notifier)
           .castVotes(draftVotes: _singleProposalDrafts());
 
-      final session = container.read(votingSessionProvider(kRoundId)).value!;
-      expect(session.phase, isNot(VotingSessionPhase.error));
-      expect(rust.recordedShares, hasLength(16));
+      final attemptsByShare = <int, List<String>>{};
+      for (final attempt in rust.attemptedServerAdds) {
+        attemptsByShare
+            .putIfAbsent(attempt.shareIndex, () => <String>[])
+            .addAll(attempt.newUrls);
+      }
+      expect(attemptsByShare[0], [
+        ...serverUrls.take(5),
+        serverUrls[10],
+        serverUrls[11],
+      ]);
+      final usage = <String, int>{};
+      for (final attempts in attemptsByShare.values) {
+        for (final serverUrl in attempts.toSet()) {
+          usage[serverUrl] = (usage[serverUrl] ?? 0) + 1;
+        }
+      }
       expect(
-        rust.recordedShares,
+        serverUrls.take(10),
         everyElement(
-          isA<_RecordedShare>().having(
-            (share) => share.sentToUrls.length,
-            'accepted helper count',
-            5,
+          predicate<String>(
+            (serverUrl) => usage[serverUrl] == 8,
+            'used by exactly eight shares',
           ),
         ),
       );
+      expect(usage[serverUrls[10]], 1);
+      expect(usage[serverUrls[11]], 1);
+      expect(
+        rust.recordedShares
+            .singleWhere((share) => share.shareIndex == 0)
+            .sentToUrls,
+        unorderedEquals([...serverUrls.take(4), serverUrls[11]]),
+      );
     },
   );
+
+  test('queued share posts replan after another share times out', () async {
+    const slowServer = 'https://helper-slow.example';
+    const fastServer = 'https://helper-fast.example';
+    final blackholedSharePost = Completer<VotingHttpResponse>();
+    final http = FakeVotingHttpClient(
+      responses: {
+        ...votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': slowServer, 'label': 'slow'},
+              {'url': fastServer, 'label': 'fast'},
+            ],
+          ),
+        ),
+        '$slowServer/shielded-vote/v1/shares': blackholedSharePost.future,
+      },
+    );
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 2,
+      helperPostTimeoutMilliseconds: 20,
+      initialDeliveryTimeoutMilliseconds: 100,
+      maxConcurrentHelperPosts: 1,
+      rankedCandidatePlanner:
+          (
+            rankedServerUrls,
+            previouslySelectedServerUrls,
+            previouslyAttemptedServerUrlsByShare,
+            previouslyAcceptedServerUrlsByShare,
+          ) {
+            return [
+              for (
+                var row = 0;
+                row < previouslyAttemptedServerUrlsByShare.length;
+                row++
+              )
+                rust_share_policy.ShareServerCandidatePlan(
+                  remainingTargetCount:
+                      previouslyAcceptedServerUrlsByShare[row].isEmpty ? 1 : 0,
+                  candidateServers:
+                      previouslyAcceptedServerUrlsByShare[row].isNotEmpty
+                      ? const []
+                      : [
+                          previouslySelectedServerUrls.contains(slowServer) ||
+                                  previouslyAttemptedServerUrlsByShare[row]
+                                      .contains(slowServer)
+                              ? fastServer
+                              : slowServer,
+                        ],
+                ),
+            ];
+          },
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    final sharePosts = http.requests
+        .where((request) => request.uri.path == '/shielded-vote/v1/shares')
+        .map((request) => request.uri.toString())
+        .toList(growable: false);
+    expect(sharePosts, [
+      '$slowServer/shielded-vote/v1/shares',
+      '$fastServer/shielded-vote/v1/shares',
+      '$fastServer/shielded-vote/v1/shares',
+    ]);
+    expect(
+      rust.recordedShares,
+      everyElement(
+        isA<_RecordedShare>().having(
+          (share) => share.sentToUrls,
+          'accepted helpers',
+          [fastServer],
+        ),
+      ),
+    );
+  });
 
   test('initial share delivery stops at the shared overall budget', () async {
     final helperUrls = [
@@ -8425,6 +8608,34 @@ class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
   }
 }
 
+class _ConcentratedShareFailureHttpClient extends FakeVotingHttpClient {
+  _ConcentratedShareFailureHttpClient({
+    required this.failedShareIndex,
+    required this.failedHosts,
+    super.responses,
+  });
+
+  final int failedShareIndex;
+  final Set<String> failedHosts;
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) {
+    if (uri.path == '/shielded-vote/v1/shares' &&
+        body['share_index'] == failedShareIndex &&
+        failedHosts.contains(uri.host)) {
+      requests.add(
+        FakeVotingHttpRequest('POST', uri, body: body, timeout: timeout),
+      );
+      throw TimeoutException('injected concentrated share timeout');
+    }
+    return super.postJson(uri, body, timeout: timeout);
+  }
+}
+
 Future<void> _waitForAcceptedRecordedShareCount(
   FakeVotingRustApi rust,
   int expectedCount,
@@ -10102,6 +10313,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.initialDeliveryTimeoutMilliseconds = 60000,
     this.maxConcurrentHelperPosts = 16,
     this.rankedCandidatePlans,
+    this.rankedCandidatePlanner,
   });
 
   final Duration setupDelay;
@@ -10141,6 +10353,13 @@ class FakeVotingRustApi implements VotingRustApi {
   final int initialDeliveryTimeoutMilliseconds;
   final int maxConcurrentHelperPosts;
   final List<rust_share_policy.ShareServerCandidatePlan>? rankedCandidatePlans;
+  final List<rust_share_policy.ShareServerCandidatePlan> Function(
+    List<String> rankedServerUrls,
+    List<String> previouslySelectedServerUrls,
+    List<List<String>> previouslyAttemptedServerUrlsByShare,
+    List<List<String>> previouslyAcceptedServerUrlsByShare,
+  )?
+  rankedCandidatePlanner;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -10942,6 +11161,15 @@ class FakeVotingRustApi implements VotingRustApi {
       for (final serverUrls in previouslyAcceptedServerUrlsByShare)
         List<String>.of(serverUrls, growable: false),
     ]);
+    final planner = rankedCandidatePlanner;
+    if (planner != null) {
+      return planner(
+        rankedServerUrls,
+        previouslySelectedServerUrls,
+        previouslyAttemptedServerUrlsByShare,
+        previouslyAcceptedServerUrlsByShare,
+      );
+    }
     final configuredPlans = rankedCandidatePlans;
     if (configuredPlans != null) {
       if (configuredPlans.length != shareCount) {
@@ -10966,10 +11194,25 @@ class FakeVotingRustApi implements VotingRustApi {
         : rankedServerUrls.length;
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_share_policy.ShareServerCandidatePlan(
-          remainingTargetCount: targetCount,
-          candidateServers: List<String>.of(rankedServerUrls, growable: false),
-        ),
+        () {
+          final attempted = previouslyAttemptedServerUrlsByShare[i].toSet();
+          final accepted = previouslyAcceptedServerUrlsByShare[i].toSet();
+          final remainingTargetCount = targetCount - accepted.length;
+          final candidates = [
+            ...rankedServerUrls.where(
+              (serverUrl) => !attempted.contains(serverUrl),
+            ),
+            ...rankedServerUrls.where(
+              (serverUrl) =>
+                  attempted.contains(serverUrl) &&
+                  !accepted.contains(serverUrl),
+            ),
+          ].take(remainingTargetCount).toList(growable: false);
+          return rust_share_policy.ShareServerCandidatePlan(
+            remainingTargetCount: remainingTargetCount,
+            candidateServers: candidates,
+          );
+        }(),
     ];
   }
 

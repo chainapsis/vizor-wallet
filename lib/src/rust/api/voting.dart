@@ -100,18 +100,20 @@ ShareServerSelectionPolicy shareServerSelectionPolicy({
   serverCount: serverCount,
 );
 
-/// Return one crate-owned helper candidate order for each encrypted share.
+/// Return the next crate-owned helper attempt wave for each encrypted share.
 ///
 /// Ready helpers must lead `ranked_server_urls` in response order. Configured
 /// helpers that missed the progressive probe deadline follow in stable order.
 /// `previously_selected_server_urls` carries one entry per prior attempt for
 /// the same commitment so resumed work preserves the cap.
-/// `previously_attempted_server_urls_by_share` keeps ambiguous attempts behind
-/// helpers untried for that share.
+/// `previously_attempted_server_urls_by_share` keeps ambiguous attempts in the
+/// exposure history so replacements are planned from work that actually ran.
 /// `previously_accepted_server_urls_by_share` identifies prior acceptances for
 /// each share being planned so partial shares request only their remaining
 /// targets.
 /// Entries for helpers that are no longer configured are ignored.
+/// Persist the returned attempts and known acceptances, then call again before
+/// choosing replacements.
 List<ShareServerCandidatePlan> rankedShareSubmissionServerCandidates({
   required int shareCount,
   required List<String> rankedServerUrls,

@@ -5560,10 +5560,25 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         : rankedServerUrls.length;
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_share_policy.ShareServerCandidatePlan(
-          remainingTargetCount: targetCount,
-          candidateServers: List<String>.of(rankedServerUrls, growable: false),
-        ),
+        () {
+          final attempted = previouslyAttemptedServerUrlsByShare[i].toSet();
+          final accepted = previouslyAcceptedServerUrlsByShare[i].toSet();
+          final remainingTargetCount = targetCount - accepted.length;
+          final candidates = [
+            ...rankedServerUrls.where(
+              (serverUrl) => !attempted.contains(serverUrl),
+            ),
+            ...rankedServerUrls.where(
+              (serverUrl) =>
+                  attempted.contains(serverUrl) &&
+                  !accepted.contains(serverUrl),
+            ),
+          ].take(remainingTargetCount).toList(growable: false);
+          return rust_share_policy.ShareServerCandidatePlan(
+            remainingTargetCount: remainingTargetCount,
+            candidateServers: candidates,
+          );
+        }(),
     ];
   }
 

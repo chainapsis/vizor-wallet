@@ -1611,6 +1611,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           previouslyAttemptedServersByShareIndex[share.shareIndex] ??
               const <String>[],
       ];
+      final previouslySelectedServerUrls = [
+        for (final priorShare in priorShares)
+          for (final serverUrl in priorShare.attemptedServerUrls.toSet())
+            serverUrl,
+      ];
       final priorSubmitAtByShareIndex = {
         for (final priorShare in priorShares)
           priorShare.shareIndex: priorShare.submitAt,
@@ -1618,11 +1623,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final candidatePlans = rust.rankedShareSubmissionServerCandidates(
         shareCount: shares.length,
         rankedServerUrls: rankedServerUrls,
-        previouslySelectedServerUrls: [
-          for (final priorShare in priorShares)
-            for (final serverUrl in priorShare.attemptedServerUrls.toSet())
-              serverUrl,
-        ],
+        previouslySelectedServerUrls: previouslySelectedServerUrls,
         previouslyAttemptedServerUrlsByShare:
             previouslyAttemptedServerUrlsByShare,
         previouslyAcceptedServerUrlsByShare:
@@ -1642,14 +1643,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final plan = plans[payloadIndex];
         final candidatePlan = candidatePlans[payloadIndex];
         final targetCount = candidatePlan.remainingTargetCount;
-        final candidateServers = candidatePlan.candidateServers;
         final submitAt =
             priorSubmitAtByShareIndex[share.shareIndex] ?? plan.submitAt;
         if (targetCount == 0) continue;
-        if (targetCount > candidateServers.length) {
+        if (targetCount != candidatePlan.candidateServers.length) {
           throw StateError(
-            'Share server policy requested $targetCount helper(s) from '
-            '${candidateServers.length} candidate(s) for share '
+            'Share server policy requested $targetCount helper(s) but '
+            'returned ${candidatePlan.candidateServers.length} assignment(s) '
+            'for share '
             '${share.shareIndex}.',
           );
         }
@@ -1684,7 +1685,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           _PreparedInitialShareSubmission(
             share: share,
             body: body,
-            candidateServers: candidateServers,
             targetCount: targetCount,
             submitAt: submitAt,
           ),
@@ -1733,6 +1733,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final helperPostTimeout = Duration(
         milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
       );
+      final assignmentPlanner = _InitialShareAssignmentPlanner(
+        rust: rust,
+        rankedServerUrls: rankedServerUrls,
+        shareIndexes: [
+          for (final prepared in persistedSubmissions)
+            prepared.share.shareIndex,
+        ],
+        previouslySelectedServerUrls: previouslySelectedServerUrls,
+        previouslyAttemptedServerUrlsByShare: [
+          for (final prepared in persistedSubmissions)
+            previouslyAttemptedServersByShareIndex[prepared.share.shareIndex] ??
+                const <String>[],
+        ],
+        previouslyAcceptedServerUrlsByShare: [
+          for (final prepared in persistedSubmissions)
+            previouslyAcceptedServersByShareIndex[prepared.share.shareIndex] ??
+                const <String>[],
+        ],
+      );
       final submissions = [
         for (final prepared in persistedSubmissions)
           _submitInitialShareToHelpers(
@@ -1740,7 +1759,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperHealth: helperHealth,
             share: prepared.share,
             body: prepared.body,
-            candidateServers: prepared.candidateServers,
+            assignmentPlanner: assignmentPlanner,
             targetCount: prepared.targetCount,
             submitAt: prepared.submitAt,
             helperPostPool: helperPostPool,
@@ -1812,7 +1831,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required VotingHelperHealthTracker helperHealth,
     required rust_wire.VoteShareWire share,
     required Map<String, dynamic> body,
-    required List<String> candidateServers,
+    required _InitialShareAssignmentPlanner assignmentPlanner,
     required int targetCount,
     required BigInt submitAt,
     required _AsyncPermitPool helperPostPool,
@@ -1822,21 +1841,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Future<void> Function(String serverUrl) recordAcceptance,
   }) async {
     var acceptedServerCount = 0;
-    final remainingServers = LinkedHashSet<String>.of(candidateServers);
 
     Future<({bool attempted, String? acceptedServer})> submitNext() {
       return helperPostPool.run(() async {
         final budgetRemaining = deliveryBudget.remaining;
-        if (budgetRemaining == Duration.zero || remainingServers.isEmpty) {
+        if (budgetRemaining == Duration.zero) {
           return (attempted: false, acceptedServer: null);
         }
         // Choose only after receiving a permit. A queued request must see
-        // failures reported by earlier attempts instead of remaining bound to
-        // a helper that became degraded while it waited.
-        final serverUrl = helperHealth
-            .candidateServers(deliveryBudget.rankCandidates(remainingServers))
-            .first;
-        remainingServers.remove(serverUrl);
+        // actual attempts and failures instead of remaining bound to a stale
+        // fallback projection.
+        final serverUrl = assignmentPlanner.reserveNext(
+          shareIndex: share.shareIndex,
+          rankCandidates: (candidates) => helperHealth.candidateServers(
+            deliveryBudget.rankCandidates(candidates),
+          ),
+        );
+        if (serverUrl == null) {
+          return (attempted: false, acceptedServer: null);
+        }
         final requestTimeout = budgetRemaining < helperPostTimeout
             ? budgetRemaining
             : helperPostTimeout;
@@ -1870,6 +1893,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return (attempted: true, acceptedServer: null);
         }
         await recordAcceptance(serverUrl);
+        assignmentPlanner.recordAcceptance(
+          shareIndex: share.shareIndex,
+          serverUrl: serverUrl,
+        );
         helperHealth.recordSuccess(serverUrl);
         deliveryBudget.recordSuccess(serverUrl);
         debugPrint(
@@ -1882,7 +1909,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     Future<void> submitUntilAccepted() async {
-      while (!deliveryBudget.expired && remainingServers.isNotEmpty) {
+      while (!deliveryBudget.expired) {
         final result = await submitNext();
         if (!result.attempted) return;
         final serverUrl = result.acceptedServer;
@@ -5186,18 +5213,151 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   }
 }
 
+class _InitialShareAssignmentPlanner {
+  _InitialShareAssignmentPlanner({
+    required VotingRustApi rust,
+    required List<String> rankedServerUrls,
+    required List<int> shareIndexes,
+    required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
+    required List<List<String>> previouslyAcceptedServerUrlsByShare,
+  }) : _rust = rust,
+       _rankedServerUrls = List<String>.of(rankedServerUrls, growable: false),
+       _shareIndexes = List<int>.of(shareIndexes, growable: false),
+       _previouslySelectedServerUrls = List<String>.of(
+         previouslySelectedServerUrls,
+       ),
+       _attemptedServerUrlsByShare = [
+         for (final urls in previouslyAttemptedServerUrlsByShare)
+           LinkedHashSet<String>.of(urls),
+       ],
+       _acceptedServerUrlsByShare = [
+         for (final urls in previouslyAcceptedServerUrlsByShare)
+           LinkedHashSet<String>.of(urls),
+       ],
+       _attemptedThisRunByShare = [
+         for (var i = 0; i < shareIndexes.length; i++) <String>{},
+       ] {
+    if (_attemptedServerUrlsByShare.length != _shareIndexes.length ||
+        _acceptedServerUrlsByShare.length != _shareIndexes.length) {
+      throw StateError(
+        'Share helper history does not match the active shares.',
+      );
+    }
+    _rowByShareIndex = {
+      for (var row = 0; row < _shareIndexes.length; row++)
+        _shareIndexes[row]: row,
+    };
+    if (_rowByShareIndex.length != _shareIndexes.length) {
+      throw StateError('Active share indexes must be unique.');
+    }
+  }
+
+  final VotingRustApi _rust;
+  final List<String> _rankedServerUrls;
+  final List<int> _shareIndexes;
+  final List<String> _previouslySelectedServerUrls;
+  final List<LinkedHashSet<String>> _attemptedServerUrlsByShare;
+  final List<LinkedHashSet<String>> _acceptedServerUrlsByShare;
+  final List<Set<String>> _attemptedThisRunByShare;
+  late final Map<int, int> _rowByShareIndex;
+
+  String? reserveNext({
+    required int shareIndex,
+    required Iterable<String> Function(Iterable<String>) rankCandidates,
+  }) {
+    final row = _rowByShareIndex[shareIndex];
+    if (row == null) {
+      throw StateError('Share $shareIndex is not active for helper delivery.');
+    }
+    final plans = _rust.rankedShareSubmissionServerCandidates(
+      shareCount: _shareIndexes.length,
+      rankedServerUrls: _rankedServerUrls,
+      previouslySelectedServerUrls: _previouslySelectedServerUrls,
+      previouslyAttemptedServerUrlsByShare: [
+        for (final urls in _attemptedServerUrlsByShare)
+          urls.toList(growable: false),
+      ],
+      previouslyAcceptedServerUrlsByShare: [
+        for (final urls in _acceptedServerUrlsByShare)
+          urls.toList(growable: false),
+      ],
+    );
+    if (plans.length != _shareIndexes.length) {
+      throw StateError(
+        'Share server policy returned ${plans.length} plan(s) for '
+        '${_shareIndexes.length} active share(s).',
+      );
+    }
+    final plan = plans[row];
+    if (plan.candidateServers.length != plan.remainingTargetCount) {
+      throw StateError(
+        'Share server policy requested ${plan.remainingTargetCount} helper(s) '
+        'but returned ${plan.candidateServers.length} assignment(s) for '
+        'share $shareIndex.',
+      );
+    }
+    if (plan.remainingTargetCount == 0) {
+      return null;
+    }
+    final candidates = LinkedHashSet<String>.of(plan.candidateServers);
+    if (candidates.length != plan.candidateServers.length ||
+        candidates.any((serverUrl) => !_rankedServerUrls.contains(serverUrl))) {
+      throw StateError(
+        'Share server policy returned invalid assignments for share '
+        '$shareIndex.',
+      );
+    }
+    final attempted = _attemptedServerUrlsByShare[row];
+    final accepted = _acceptedServerUrlsByShare[row];
+    final attemptedThisRun = _attemptedThisRunByShare[row];
+    final available = candidates
+        .where(
+          (serverUrl) =>
+              !accepted.contains(serverUrl) &&
+              !attemptedThisRun.contains(serverUrl),
+        )
+        .toList(growable: false);
+    final untried = available
+        .where((serverUrl) => !attempted.contains(serverUrl))
+        .toList(growable: false);
+    final eligible = untried.isEmpty ? available : untried;
+    if (eligible.isEmpty) {
+      return null;
+    }
+    final ranked = rankCandidates(eligible).toList(growable: false);
+    if (ranked.isEmpty || !eligible.contains(ranked.first)) {
+      throw StateError(
+        'Share helper health ranking returned an invalid assignment.',
+      );
+    }
+    final serverUrl = ranked.first;
+    if (attempted.add(serverUrl)) {
+      _previouslySelectedServerUrls.add(serverUrl);
+    }
+    attemptedThisRun.add(serverUrl);
+    return serverUrl;
+  }
+
+  void recordAcceptance({required int shareIndex, required String serverUrl}) {
+    final row = _rowByShareIndex[shareIndex];
+    if (row == null || !_attemptedThisRunByShare[row].contains(serverUrl)) {
+      throw StateError('Share helper acceptance was not attempted.');
+    }
+    _acceptedServerUrlsByShare[row].add(serverUrl);
+  }
+}
+
 class _PreparedInitialShareSubmission {
   const _PreparedInitialShareSubmission({
     required this.share,
     required this.body,
-    required this.candidateServers,
     required this.targetCount,
     required this.submitAt,
   });
 
   final rust_wire.VoteShareWire share;
   final Map<String, dynamic> body;
-  final List<String> candidateServers;
   final int targetCount;
   final BigInt submitAt;
 }

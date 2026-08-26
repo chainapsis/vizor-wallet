@@ -34,13 +34,13 @@ class ImmediateShareKey {
           shareIndex == other.shareIndex;
 }
 
-/// Remaining delivery work and ordered helpers for one encrypted share.
+/// Remaining delivery work and the next helper attempt wave for one share.
 class ShareServerCandidatePlan {
   /// Additional distinct helpers needed to reach the shared target.
   final int remainingTargetCount;
 
-  /// Helpers not already known to have accepted this share, with planned
-  /// targets first and liveness fallbacks after them.
+  /// Helpers selected for the next attempt wave. Replan from the resulting
+  /// durable attempt and acceptance state before sending any replacements.
   final List<String> candidateServers;
 
   const ShareServerCandidatePlan({
@@ -72,9 +72,9 @@ class ShareServerCandidatePlan {
 /// [`ranked_share_submission_server_candidates_with_attempts`] so prior
 /// attempts still count toward the privacy cap and each share tries untried
 /// helpers first. Treat a timed-out share POST as ambiguous because the helper
-/// may have accepted it before the response was lost. Continue with the next
-/// candidate instead of immediately retrying the same helper; overdue recovery
-/// can revisit it later if needed.
+/// may have accepted it before the response was lost. Persist every wave's
+/// attempts and acceptances, then replan before sending replacements. Overdue
+/// recovery can revisit attempted helpers later if needed.
 class ShareServerSelectionPolicy {
   /// Number of helpers each share should reach.
   final int targetCount;

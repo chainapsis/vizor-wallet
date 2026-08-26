@@ -506,6 +506,8 @@ class ShareDelegationRecordView {
   final int proposalId;
   final int shareIndex;
   final List<String> sentToUrls;
+
+  /// Includes known acceptances when decoding records written before this field existed.
   final List<String> attemptedServerUrls;
   final Uint8List nullifier;
   final String phase;
