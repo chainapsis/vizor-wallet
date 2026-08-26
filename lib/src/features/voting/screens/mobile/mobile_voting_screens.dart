@@ -322,8 +322,8 @@ class _MobileVotingSettingsButton extends StatelessWidget {
           child: Center(
             child: AppIcon(
               AppIcons.cog,
-              size: 22,
-              color: context.colors.icon.accent,
+              size: 20,
+              color: context.colors.text.primary,
             ),
           ),
         ),

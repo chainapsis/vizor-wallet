@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,9 +11,53 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 void main() {
+  testWidgets(
+    'only confirmed eligibility shows View, and refresh clears stale labels',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      var result = Completer<VotingPollEligibility>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: Builder(
+              builder: (context) => buildMobileVotingPollsEligibilityUseCase(
+                context,
+                loadEligibility: (_) => result.future,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      expect(find.text('Vote'), findsNWidgets(2));
+      result.complete(VotingPollEligibility.ineligible);
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNWidgets(2));
+      expect(find.text('View'), findsNWidgets(2));
+      result = Completer<VotingPollEligibility>();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(VotingPollsView)),
+      );
+      container.invalidate(votingPollEligibilityProvider);
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      result.completeError(StateError('Eligibility unavailable'));
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      expect(find.text('Vote'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('mobile polls use the standard header and 16px content inset', (
     tester,
   ) async {
@@ -102,7 +148,7 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_config_sheet')),
       findsOneWidget,
     );
-    expect(find.text('Voting config'), findsOneWidget);
+    expect(find.text('Vote config'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_voting_add_source')),
       findsOneWidget,
@@ -128,5 +174,33 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_source_url')),
       findsOneWidget,
     );
+
+    final cancel = find.text('Cancel');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    final close = find.byKey(const ValueKey('mobile_voting_config_close'));
+    await tester.ensureVisible(close);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_config_sheet')),
+      findsNothing,
+    );
+    expect(container.read(showTestVotingRoundsProvider).value, isTrue);
+    expect(find.text('Coinholder voting'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_settings_button')),
+    );
+    await tester.pumpAndSettle();
+    final closeIcon = find.bySemanticsLabel('Close').last;
+    expect(tester.getSize(closeIcon), const Size(32, 32));
+    await tester.tap(closeIcon);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_config_sheet')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
   });
 }
