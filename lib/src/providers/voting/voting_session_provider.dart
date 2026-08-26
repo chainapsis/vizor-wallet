@@ -1751,12 +1751,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 submitAt: prepared.submitAt,
               ),
             ),
+          ).then<_InitialShareSubmissionResult?>(
+            (result) => result,
+            onError: (Object error, StackTrace stackTrace) {
+              persistenceError ??= error;
+              persistenceStackTrace ??= stackTrace;
+              return null;
+            },
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
       // Persist in completion order so accepted shares become durable promptly
       // while Rust DB writes remain sequential.
       await for (final result in Stream.fromFutures(submissions)) {
+        if (result == null) continue;
         final previouslyAcceptedServers =
             previouslyAcceptedServersByShareIndex[result.share.shareIndex] ??
             const <String>[];
@@ -1790,8 +1798,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           persistenceStackTrace ??= stackTrace;
         }
       }
-      if (persistenceError != null) {
-        Error.throwWithStackTrace(persistenceError, persistenceStackTrace!);
+      final finalPersistenceError = persistenceError;
+      if (finalPersistenceError != null) {
+        Error.throwWithStackTrace(
+          finalPersistenceError,
+          persistenceStackTrace!,
+        );
       }
       if (failedResult != null) {
         throw StateError(

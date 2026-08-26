@@ -6196,6 +6196,49 @@ void main() {
     },
   );
 
+  test(
+    'attempt persistence failure drains and persists sibling submissions',
+    () async {
+      final http = _GatedSharePostVotingHttpClient(
+        expectedShareCount: 1,
+        gatedShareIndexes: const {1},
+        responses: votingHttpResponses(),
+      );
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        commitmentShareCount: 2,
+        failingAddAttemptedShareIndexes: const {0},
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _singleVoteRecoveryApi(),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: _singleProposalDrafts());
+
+      await http.allSharePostsStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
+      http.releaseSharePosts.complete();
+      await cast;
+
+      final session = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(session.phase, VotingSessionPhase.error);
+      expect(session.error?.message, contains('attempt persistence failed 0'));
+      expect(
+        rust.recordedShares
+            .singleWhere((share) => share.shareIndex == 1)
+            .sentToUrls,
+        ['https://voting.example'],
+      );
+    },
+  );
+
   test('share submission deprioritizes a degraded planner target', () async {
     const helperA = 'https://helper-a.example';
     const helperB = 'https://helper-b.example';
@@ -9955,6 +9998,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.shareTrackingFlagsGate,
     this.failingVoteShareWireIndexes = const {},
     this.failingRecordShareIndexes = const {},
+    this.failingAddAttemptedShareIndexes = const {},
     this.helperPostTimeoutMilliseconds = 30000,
     this.initialDeliveryTimeoutMilliseconds = 60000,
     this.maxConcurrentHelperPosts = 16,
@@ -9993,6 +10037,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Completer<void>? shareTrackingFlagsGate;
   final Set<int> failingVoteShareWireIndexes;
   final Set<int> failingRecordShareIndexes;
+  final Set<int> failingAddAttemptedShareIndexes;
   final int helperPostTimeoutMilliseconds;
   final int initialDeliveryTimeoutMilliseconds;
   final int maxConcurrentHelperPosts;
@@ -11106,6 +11151,9 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<String> newUrls,
     required BigInt submitAt,
   }) async {
+    if (failingAddAttemptedShareIndexes.contains(shareIndex)) {
+      throw StateError('attempt persistence failed $shareIndex');
+    }
     attemptedServerAdds.add(
       _AddedSentServers(bundleIndex, proposalId, shareIndex, newUrls),
     );
