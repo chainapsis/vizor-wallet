@@ -102,6 +102,7 @@ ShareServerSelectionPolicy shareServerSelectionPolicy({
 /// helpers that missed the progressive probe deadline follow in stable order.
 /// `previously_selected_server_urls` carries one entry per prior accepted
 /// assignment for the same commitment so resumed work preserves the cap.
+/// Entries for helpers that are no longer configured are ignored.
 List<List<String>> rankedShareSubmissionServerCandidates({
   required int shareCount,
   required List<String> rankedServerUrls,

@@ -303,6 +303,7 @@ pub fn share_server_selection_policy(
 /// helpers that missed the progressive probe deadline follow in stable order.
 /// `previously_selected_server_urls` carries one entry per prior accepted
 /// assignment for the same commitment so resumed work preserves the cap.
+/// Entries for helpers that are no longer configured are ignored.
 #[flutter_rust_bridge::frb(sync)]
 pub fn ranked_share_submission_server_candidates(
     share_count: u32,

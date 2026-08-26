@@ -16,7 +16,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// [`ranked_share_submission_server_candidates`] in response order, followed by
 /// the remaining configured helpers. When resuming interrupted work, use
 /// [`ranked_share_submission_server_candidates_with_usage`] so prior accepted
-/// assignments still count toward the privacy cap.
+/// assignments still count toward the privacy cap. Treat a timed-out share POST
+/// as ambiguous because the helper may have accepted it before the response was
+/// lost. Continue with the next candidate instead of immediately retrying the
+/// same helper; overdue recovery can revisit it later if needed.
 class ShareServerSelectionPolicy {
   /// Number of helpers each share should reach.
   final int targetCount;
@@ -36,7 +39,9 @@ class ShareServerSelectionPolicy {
   /// Absolute deadline for collecting enough ready helper responses.
   final BigInt preflightHardTimeoutMilliseconds;
 
-  /// Maximum duration of one helper share POST.
+  /// Maximum duration of one helper share POST. A timeout is ambiguous, so
+  /// callers should continue with another candidate rather than retrying the
+  /// same helper immediately.
   final BigInt postTimeoutMilliseconds;
 
   /// Overall deadline for initial helper delivery before durable recovery.
