@@ -147,6 +147,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
@@ -262,6 +265,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  ImmediateShareKey dco_decode_immediate_share_key(dynamic raw);
 
   @protected
   ImportBirthdayMetadata dco_decode_import_birthday_metadata(dynamic raw);
@@ -594,6 +600,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
+    dynamic raw,
+  );
 
   @protected
   MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
@@ -983,6 +994,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   );
@@ -1130,6 +1146,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  ImmediateShareKey sse_decode_immediate_share_key(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ImportBirthdayMetadata sse_decode_import_birthday_metadata(
@@ -1548,6 +1569,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
@@ -2025,6 +2051,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -2203,6 +2235,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_import_birthday_metadata(
@@ -2719,6 +2757,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_immediate_share_key(
+    ImmediateShareKey? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_migration_outbox_batch(

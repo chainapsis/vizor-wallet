@@ -164,7 +164,9 @@ class _VotingSubmissionConfirmationViewState
     final pollTitle = state.round?.title.isNotEmpty == true
         ? state.round!.title
         : 'Token holder voting';
-    final hasCompletedSubmission = hasCompletedVoteForDisplay(state.roundPlan);
+    final hasCompletedSubmission =
+        hasCompletedVoteForDisplay(state.roundPlan) &&
+        hasConfirmedImmediateShare(state.roundPlan, state.resumePlan);
     if (hasCompletedSubmission) {
       _lastSubmissionState = state;
     }

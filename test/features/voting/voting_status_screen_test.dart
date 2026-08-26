@@ -422,6 +422,96 @@ void main() {
     );
   });
 
+  testWidgets('submitted route waits for the designated immediate share', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final pendingShare = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.one,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        shareDelegations: [pendingShare],
+        unconfirmedShareDelegations: [pendingShare],
+      );
+    final resumePlan = await VotingRecoveryService(api: recoveryApi)
+        .loadResumePlan(
+          dbPath: 'wallet.db',
+          accountUuid: 'account-1',
+          roundId: _roundId,
+        );
+    final completedRoundPlan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      blockingRecovery: false,
+      nextSteps: const [
+        rust_wire.NextStepView(
+          kind: 'confirm_share',
+          bundleIndex: 0,
+          proposalId: 1,
+          choice: 0,
+          shareIndex: 0,
+        ),
+      ],
+      openProposals: Uint32List(0),
+      immediateShareKey: const rust_share_policy.ImmediateShareKey(
+        bundleIndex: 0,
+        proposalId: 1,
+        shareIndex: 0,
+      ),
+      allDecided: true,
+      completedVoteArtifact: true,
+      completedForDisplay: true,
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSessionProvider(_roundId).overrideWith(
+          () => _StaticVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: completedRoundPlan,
+              resumePlan: resumePlan,
+              eligibleWeightZatoshi: BigInt.from(100),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Submission not complete'));
+
+    expect(find.text('Submission confirmed!'), findsNothing);
+    expect(
+      find.text(
+        'This account has not completed submission for this voting round.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('submitted route does not confirm without eligibility', (
     tester,
   ) async {
@@ -5539,11 +5629,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) async {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
+          immediate: immediateShareIndex == i,
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),

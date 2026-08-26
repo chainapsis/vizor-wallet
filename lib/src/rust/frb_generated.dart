@@ -857,6 +857,7 @@ abstract class RustLibApi extends BaseApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   });
 
   Future<DelegationPirPrecomputeResultView>
@@ -6280,6 +6281,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6291,6 +6293,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(voteEndTimeSeconds, serializer);
           sse_encode_opt_box_autoadd_u_64(lastMomentBufferSeconds, serializer);
           sse_encode_bool(singleShare, serializer);
+          sse_encode_opt_box_autoadd_u_32(immediateShareIndex, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6310,6 +6313,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           voteEndTimeSeconds,
           lastMomentBufferSeconds,
           singleShare,
+          immediateShareIndex,
         ],
         apiImpl: this,
       ),
@@ -6326,6 +6330,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "voteEndTimeSeconds",
           "lastMomentBufferSeconds",
           "singleShare",
+          "immediateShareIndex",
         ],
       );
 
@@ -9308,6 +9313,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_immediate_share_key(raw);
+  }
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   ) {
@@ -9638,6 +9649,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  ImmediateShareKey dco_decode_immediate_share_key(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ImmediateShareKey(
+      bundleIndex: dco_decode_u_32(arr[0]),
+      proposalId: dco_decode_u_32(arr[1]),
+      shareIndex: dco_decode_u_32(arr[2]),
+    );
   }
 
   @protected
@@ -10558,6 +10582,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_immediate_share_key(raw);
+  }
+
+  @protected
   MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
     dynamic raw,
   ) {
@@ -10763,8 +10795,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 17)
+      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
@@ -10784,7 +10816,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ),
       recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[13]),
       openProposals: dco_decode_list_prim_u_32_strict(arr[14]),
-      allDecided: dco_decode_bool(arr[15]),
+      immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
+        arr[15],
+      ),
+      allDecided: dco_decode_bool(arr[16]),
     );
   }
 
@@ -10881,12 +10916,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ShareSubmissionPlan(
-      submitAt: dco_decode_u_64(arr[0]),
-      targetCount: dco_decode_u_32(arr[1]),
-      targetServers: dco_decode_list_String(arr[2]),
+      immediate: dco_decode_bool(arr[0]),
+      submitAt: dco_decode_u_64(arr[1]),
+      targetCount: dco_decode_u_32(arr[2]),
+      targetServers: dco_decode_list_String(arr[3]),
     );
   }
 
@@ -11939,6 +11975,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_immediate_share_key(deserializer));
+  }
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   ) {
@@ -12323,6 +12367,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  ImmediateShareKey sse_decode_immediate_share_key(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_bundleIndex = sse_decode_u_32(deserializer);
+    var var_proposalId = sse_decode_u_32(deserializer);
+    var var_shareIndex = sse_decode_u_32(deserializer);
+    return ImmediateShareKey(
+      bundleIndex: var_bundleIndex,
+      proposalId: var_proposalId,
+      shareIndex: var_shareIndex,
+    );
   }
 
   @protected
@@ -13683,6 +13742,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_immediate_share_key(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   ) {
@@ -14013,6 +14085,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_openProposals = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_immediateShareKey = sse_decode_opt_box_autoadd_immediate_share_key(
+      deserializer,
+    );
     var var_allDecided = sse_decode_bool(deserializer);
     return RoundPlanView(
       roundId: var_roundId,
@@ -14030,6 +14105,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       recoveredDelegationWork: var_recoveredDelegationWork,
       recoveredVoteWork: var_recoveredVoteWork,
       openProposals: var_openProposals,
+      immediateShareKey: var_immediateShareKey,
       allDecided: var_allDecided,
     );
   }
@@ -14141,10 +14217,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_immediate = sse_decode_bool(deserializer);
     var var_submitAt = sse_decode_u_64(deserializer);
     var var_targetCount = sse_decode_u_32(deserializer);
     var var_targetServers = sse_decode_list_String(deserializer);
     return ShareSubmissionPlan(
+      immediate: var_immediate,
       submitAt: var_submitAt,
       targetCount: var_targetCount,
       targetServers: var_targetServers,
@@ -15246,6 +15324,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_immediate_share_key(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -15569,6 +15656,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.bundleIndex, serializer);
+    sse_encode_u_32(self.proposalId, serializer);
+    sse_encode_u_32(self.shareIndex, serializer);
   }
 
   @protected
@@ -16676,6 +16774,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_immediate_share_key(
+    ImmediateShareKey? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_immediate_share_key(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch? self,
     SseSerializer serializer,
@@ -16944,6 +17055,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_list_vote_recovery_work_view(self.recoveredVoteWork, serializer);
     sse_encode_list_prim_u_32_strict(self.openProposals, serializer);
+    sse_encode_opt_box_autoadd_immediate_share_key(
+      self.immediateShareKey,
+      serializer,
+    );
     sse_encode_bool(self.allDecided, serializer);
   }
 
@@ -17034,6 +17149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.immediate, serializer);
     sse_encode_u_64(self.submitAt, serializer);
     sse_encode_u_32(self.targetCount, serializer);
     sse_encode_list_String(self.targetServers, serializer);

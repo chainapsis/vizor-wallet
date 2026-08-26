@@ -1178,7 +1178,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _canCompleteSubmission(VotingSessionState? session) {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
-        _hasCompletedSubmissionArtifacts(session);
+        _hasCompletedSubmissionArtifacts(session) &&
+        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
   }
 
   Future<VotingSessionState?> _ensureEligibilityForCompletedSession({
