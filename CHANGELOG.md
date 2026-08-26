@@ -4,7 +4,7 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v3.1.0-rc.9
+## v3.1.0-rc.10
 
 ### Added
 - Added deterministic round-level immediate-share selection: share index 0 of
@@ -12,6 +12,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   for immediate helper submission. `RoundPlan` and `RoundPlanView` expose the
   selected `ImmediateShareKey`, while batch submission plans mark the matching
   caller-supplied batch position with `immediate = true` and `submit_at = 0`.
+
+## v3.1.0-rc.9
+
+### Added
 - `lwd::anchor_tree_state_with_retry_on` fetches the snapshot note-commitment
   tree on a caller-owned lightwalletd client, so a wallet that already holds a
   channel (Tor, a proxy, a pool) keeps that route instead of the crate dialing
