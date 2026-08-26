@@ -284,6 +284,7 @@ pub fn plan_share_submissions(
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
+    immediate_share_index: Option<u32>,
 ) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlan>, String> {
     catch(|| {
         // Convert to usize once for policy sizing and planner inputs.
@@ -318,6 +319,7 @@ pub fn plan_share_submissions(
             vote_end_time_seconds,
             last_moment_buffer_seconds,
             single_share,
+            immediate_share_index,
             &submit_at_random_bytes,
             &server_random_bytes,
         )
@@ -2584,11 +2586,17 @@ mod tests {
             "https://helper-b.example".to_string(),
         ];
         let plans =
-            plan_share_submissions(3, server_urls.clone(), 100, 600, Some(120), false).unwrap();
+            plan_share_submissions(3, server_urls.clone(), 100, 600, Some(120), false, Some(1))
+                .unwrap();
 
         assert_eq!(plans.len(), 3);
-        for plan in plans {
-            assert!(plan.submit_at >= 100);
+        for (index, plan) in plans.into_iter().enumerate() {
+            assert_eq!(plan.immediate, index == 1);
+            if plan.immediate {
+                assert_eq!(plan.submit_at, 0);
+            } else {
+                assert!(plan.submit_at >= 100);
+            }
             assert!(!plan.target_servers.is_empty());
             assert!(plan.target_servers.len() <= plan.target_count as usize);
             assert!(plan
@@ -3878,11 +3886,7 @@ mod tests {
             .unwrap();
     }
 
-    fn seed_pir_cache_row(
-        db: &zcash_voting::storage::VotingDb,
-        wallet_id: &str,
-        marker: u8,
-    ) {
+    fn seed_pir_cache_row(db: &zcash_voting::storage::VotingDb, wallet_id: &str, marker: u8) {
         db.conn()
             .execute(
                 "INSERT INTO pir_proof_cache

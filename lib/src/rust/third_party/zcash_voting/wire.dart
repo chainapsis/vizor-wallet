@@ -5,6 +5,7 @@
 
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'share_policy.dart';
 import 'types.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
@@ -383,6 +384,9 @@ class RoundPlanView {
   final List<DelegationRecoveryWorkView> recoveredDelegationWork;
   final List<VoteRecoveryWorkView> recoveredVoteWork;
   final Uint32List openProposals;
+
+  /// The round's single immediate helper-share submission, if designated.
+  final ImmediateShareKey? immediateShareKey;
   final bool allDecided;
 
   const RoundPlanView({
@@ -401,6 +405,7 @@ class RoundPlanView {
     required this.recoveredDelegationWork,
     required this.recoveredVoteWork,
     required this.openProposals,
+    this.immediateShareKey,
     required this.allDecided,
   });
 
@@ -421,6 +426,7 @@ class RoundPlanView {
       recoveredDelegationWork.hashCode ^
       recoveredVoteWork.hashCode ^
       openProposals.hashCode ^
+      immediateShareKey.hashCode ^
       allDecided.hashCode;
 
   @override
@@ -443,6 +449,7 @@ class RoundPlanView {
           recoveredDelegationWork == other.recoveredDelegationWork &&
           recoveredVoteWork == other.recoveredVoteWork &&
           openProposals == other.openProposals &&
+          immediateShareKey == other.immediateShareKey &&
           allDecided == other.allDecided;
 }
 

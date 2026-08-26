@@ -14,6 +14,8 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
+import '../../rust/third_party/zcash_voting/share_policy.dart'
+    as rust_share_policy;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -1157,6 +1159,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (!await writeBallotIntents()) {
         return;
       }
+      if (effectiveDraftVotes.isNotEmpty) {
+        // The immediate-share key is derived from durable ballot intents.
+        // Reload after writing them so a fresh cast uses the same stable key
+        // that recovery will derive after a restart.
+        roundPlan = await _loadRoundPlan(context);
+      }
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1252,6 +1260,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           helperAvailability: helperAvailability,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
+          immediateShareKey: roundPlan?.immediateShareKey,
           shareIndexFilter: shareIndexFilter,
           completedQuestions: completedQuestions,
           totalQuestions: totalQuestions,
@@ -1303,6 +1312,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             completedQuestions: completedQuestions,
             totalQuestions: totalQuestions,
             helperAvailability: helperAvailability,
+            immediateShareKey: roundPlan?.immediateShareKey,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1469,6 +1479,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
     required bool singleShare,
+    rust_share_policy.ImmediateShareKey? immediateShareKey,
     required int completedQuestions,
     required int totalQuestions,
     required double? voteSubmissionProgress,
@@ -1499,6 +1510,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 .toList(growable: false);
       if (shares.isEmpty) continue;
       final vcTreePosition = vcTreePositions[commitment.proposalId];
+      final immediateShareIndex = _immediateShareBatchPosition(
+        immediateShareKey: immediateShareKey,
+        bundleIndex: commitments.bundleIndex,
+        proposalId: commitment.proposalId,
+        shares: shares,
+      );
       final plans = await rust.planShareSubmissions(
         shareCount: shares.length,
         serverUrls: serverUrls,
@@ -1506,6 +1523,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
         lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
         singleShare: singleShare,
+        immediateShareIndex: immediateShareIndex,
       );
       if (plans.length != shares.length) {
         throw StateError(
@@ -1513,6 +1531,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '${shares.length} payload(s).',
         );
       }
+      _validateImmediateSharePlan(
+        plans: plans,
+        immediateShareIndex: immediateShareIndex,
+      );
       // Validate every body before starting helper requests. Otherwise a later
       // serialization failure could abandon already accepted submissions.
       final preparedSubmissions = <_PreparedInitialShareSubmission>[];
@@ -1612,6 +1634,49 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'for proposal ${failedResult.share.proposalId}.',
         );
       }
+    }
+  }
+
+  int? _immediateShareBatchPosition({
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
+    required int bundleIndex,
+    required int proposalId,
+    required List<rust_wire.VoteShareWire> shares,
+  }) {
+    if (immediateShareKey == null ||
+        immediateShareKey.bundleIndex != bundleIndex ||
+        immediateShareKey.proposalId != proposalId) {
+      return null;
+    }
+    final batchPosition = shares.indexWhere(
+      (share) => share.shareIndex == immediateShareKey.shareIndex,
+    );
+    return batchPosition < 0 ? null : batchPosition;
+  }
+
+  void _validateImmediateSharePlan({
+    required List<rust_share_policy.ShareSubmissionPlan> plans,
+    required int? immediateShareIndex,
+  }) {
+    final designatedIndexes = [
+      for (var index = 0; index < plans.length; index++)
+        if (plans[index].immediate) index,
+    ];
+    if (immediateShareIndex == null) {
+      if (designatedIndexes.isNotEmpty) {
+        throw StateError(
+          'Share submission policy designated an unexpected immediate share.',
+        );
+      }
+      return;
+    }
+    if (designatedIndexes.length != 1 ||
+        designatedIndexes.single != immediateShareIndex ||
+        plans[immediateShareIndex].submitAt != BigInt.zero) {
+      throw StateError(
+        'Share submission policy did not preserve the immediate-share '
+        'designation.',
+      );
     }
   }
 
@@ -1836,6 +1901,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int completedQuestions,
     required int totalQuestions,
     required Future<Map<String, bool>> helperAvailability,
+    rust_share_policy.ImmediateShareKey? immediateShareKey,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2176,6 +2242,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,
+                immediateShareKey: immediateShareKey,
                 completedQuestions: completedQuestions,
                 totalQuestions: totalQuestions,
                 voteSubmissionProgress: aggregateProgress(),

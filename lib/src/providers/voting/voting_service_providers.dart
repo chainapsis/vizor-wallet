@@ -537,6 +537,7 @@ abstract interface class VotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   });
 
   Future<List<String>> shareResubmissionServerOrder({
@@ -959,6 +960,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) {
     return rust_api.planShareSubmissions(
       shareCount: shareCount,
@@ -967,6 +969,7 @@ class FrbVotingRustApi implements VotingRustApi {
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+      immediateShareIndex: immediateShareIndex,
     );
   }
 

@@ -974,6 +974,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       done = completedEligibilitySession;
     }
     if (!_canCompleteSubmission(done)) {
+      if (_hasExpiredUnconfirmedImmediateShare(done)) {
+        _failForExpiredImmediateShare(key: key, generation: generation);
+        return;
+      }
       _scheduleCompletionPoll(key: key, generation: generation);
       return;
     }
@@ -1166,6 +1170,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (_canCompleteSubmission(session)) {
         _completeJob(key: key, generation: generation);
+        return;
+      }
+      if (_hasExpiredUnconfirmedImmediateShare(session)) {
+        _failForExpiredImmediateShare(key: key, generation: generation);
       }
     });
   }
@@ -1178,7 +1186,33 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _canCompleteSubmission(VotingSessionState? session) {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
-        _hasCompletedSubmissionArtifacts(session);
+        _hasCompletedSubmissionArtifacts(session) &&
+        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
+  }
+
+  bool _hasExpiredUnconfirmedImmediateShare(
+    VotingSessionState? session, {
+    DateTime? now,
+  }) {
+    if (session == null ||
+        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan)) {
+      return false;
+    }
+    final voteEnd = session.round?.voteEndTime;
+    return voteEnd != null && !(now ?? DateTime.now()).isBefore(voteEnd);
+  }
+
+  void _failForExpiredImmediateShare({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    _failJob(
+      key: key,
+      generation: generation,
+      message:
+          'The voting round ended before a helper confirmed the immediate '
+          'share. Check the voting status before retrying.',
+    );
   }
 
   Future<VotingSessionState?> _ensureEligibilityForCompletedSession({

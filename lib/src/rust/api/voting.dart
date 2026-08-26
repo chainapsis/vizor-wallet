@@ -80,6 +80,7 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   required BigInt voteEndTimeSeconds,
   BigInt? lastMomentBufferSeconds,
   required bool singleShare,
+  int? immediateShareIndex,
 }) => RustLib.instance.api.crateApiVotingPlanShareSubmissions(
   shareCount: shareCount,
   serverUrls: serverUrls,
@@ -87,6 +88,7 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   voteEndTimeSeconds: voteEndTimeSeconds,
   lastMomentBufferSeconds: lastMomentBufferSeconds,
   singleShare: singleShare,
+  immediateShareIndex: immediateShareIndex,
 );
 
 /// Return the crate-owned randomized helper order for one share retry.
@@ -570,8 +572,10 @@ Future<void> resetVotingSessionState({
 ///
 /// This removes every persisted round scoped to `account_uuid`, relying on the
 /// `zcash_voting` round deletion cascade for bundles, recovery rows, share
-/// history, ballot intent, and cached tree state. Use this only at account
-/// deletion boundaries, not for ordinary voting-session retries.
+/// history, ballot intent, and cached tree state. It also deletes
+/// round-independent `pir_proof_cache` rows for the same wallet id — browse-
+/// only warm-up can persist those without ever creating a round. Use this only
+/// at account deletion boundaries, not for ordinary voting-session retries.
 Future<int> deleteVotingAccountState({
   required String dbPath,
   required String accountUuid,

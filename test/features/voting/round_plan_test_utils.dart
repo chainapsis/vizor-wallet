@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
+    as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
@@ -20,6 +22,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   List<rust_wire.DelegationStatusView> delegationStatuses = const [],
   List<rust_wire.DelegationRecoveryWorkView>? recoveredDelegationWork,
   List<rust_wire.VoteRecoveryWorkView>? recoveredVoteWork,
+  rust_share_policy.ImmediateShareKey? immediateShareKey,
 }) {
   final resolvedDelegationWork =
       recoveredDelegationWork ?? _delegationRecoveryWork(nextSteps);
@@ -62,6 +65,7 @@ rust_wire.RoundPlanView apiRoundPlan({
     recoveredDelegationWork: resolvedDelegationWork,
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
+    immediateShareKey: immediateShareKey,
     allDecided: allDecided,
   );
 }
