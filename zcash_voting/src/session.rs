@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::phases::{DelegationPhase, SharePhase, VotePhase};
+use crate::share_policy::{round_immediate_share_key, ImmediateShareKey};
 use crate::storage::{queries, VotingDb};
 use crate::types::{
     validate_proposal_id, validate_vote_decision, validate_vote_options, VotingError,
@@ -374,6 +375,8 @@ pub struct RoundPlan {
     /// `Decision::Skipped` is terminal for this plan, so skipped proposals are
     /// not returned here.
     pub open_proposals: Vec<u32>,
+    /// The round's single immediate helper-share submission, if designated.
+    pub immediate_share_key: Option<ImmediateShareKey>,
     /// Informational: every proposal is either a confirmed Choice or Skipped.
     pub all_decided: bool,
     /// Durable delegation status for every eligible bundle in the round.
@@ -1003,6 +1006,10 @@ pub fn resume_plan(
         pending_recovery,
         next_steps: steps,
         open_proposals,
+        immediate_share_key: round_immediate_share_key(
+            bundles.iter().copied().max(),
+            &choice_proposals,
+        ),
         all_decided,
         delegation_statuses,
         blocking_recovery,
@@ -1649,6 +1656,63 @@ mod tests {
         assert!(!plan.completed_vote_artifact);
         assert!(!plan.completed_for_display);
         assert_eq!(plan.primary_action, RoundPlanAction::Idle);
+    }
+
+    #[test]
+    fn round_plan_selects_share_zero_of_lowest_voted_proposal() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Skipped, 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 3, Decision::Choice(1), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(0), 3)
+            .unwrap();
+
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2, 3])
+                .unwrap()
+                .immediate_share_key,
+            Some(ImmediateShareKey {
+                bundle_index: 0,
+                proposal_id: 2,
+                share_index: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn round_plan_has_no_immediate_share_before_a_vote_choice() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Skipped, 3)
+            .unwrap();
+
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2, 3])
+                .unwrap()
+                .immediate_share_key,
+            None
+        );
+    }
+
+    #[test]
+    fn round_plan_immediate_share_is_stable_after_vote_completion() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(1), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(0), 3)
+            .unwrap();
+        let before = resume_plan(&db, ROUND, &[1, 2, 3])
+            .unwrap()
+            .immediate_share_key;
+
+        confirm_vote_fixture(&db, 0, 1, 1);
+
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2, 3])
+                .unwrap()
+                .immediate_share_key,
+            before
+        );
     }
 
     #[test]

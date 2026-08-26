@@ -62,12 +62,49 @@ impl Default for ShareTimingPolicy {
 /// Planned helper-share submission values that SDKs can apply to payloads.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareSubmissionPlan {
+    /// True only for the round's designated immediate share.
+    ///
+    /// This is distinct from `submit_at == 0`: last-moment and single-share
+    /// planning can schedule other, undesignated shares immediately.
+    #[serde(default)]
+    pub immediate: bool,
     /// Unix seconds when helpers should submit the share, or 0 for immediate.
     pub submit_at: u64,
     /// Number of helpers each share should reach.
     pub target_count: u32,
     /// Helper targets selected for initial share submission.
     pub target_servers: Vec<String>,
+}
+
+/// Identifies the round's single designated immediate helper share.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImmediateShareKey {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    /// Domain share index, always [`IMMEDIATE_SHARE_INDEX`].
+    pub share_index: u32,
+}
+
+/// Domain share index used for the round's immediate submission.
+///
+/// ZKP #2 shuffles denominations before assigning share indexes, so this is a
+/// stable identity rather than a guarantee about the share's value.
+pub const IMMEDIATE_SHARE_INDEX: u32 = 0;
+
+/// Select the round's immediate share from durable round state.
+///
+/// Bundles are ordered by value descending, so `highest_bundle_index` denotes
+/// the lowest-value eligible bundle. The lowest proposal ID with a recorded
+/// ballot choice owns the designation; skipped proposals must not be included.
+pub fn round_immediate_share_key(
+    highest_bundle_index: Option<u32>,
+    voted_proposal_ids: &[u32],
+) -> Option<ImmediateShareKey> {
+    Some(ImmediateShareKey {
+        bundle_index: highest_bundle_index?,
+        proposal_id: voted_proposal_ids.iter().copied().min()?,
+        share_index: IMMEDIATE_SHARE_INDEX,
+    })
 }
 
 /// Random byte counts needed to plan one or more share submissions.
@@ -578,7 +615,7 @@ pub fn plan_share_submission(
         submit_at_random_bytes,
     )?;
 
-    build_share_submission_plan(target_count, target_servers, submit_at)
+    build_share_submission_plan(false, target_count, target_servers, submit_at)
 }
 
 /// Plan independent timing and initial helper targets for multiple shares.
@@ -601,6 +638,11 @@ pub fn plan_share_submission(
 /// does not parse URLs or probe helper health. Callers are responsible for
 /// validating endpoints and assessing health before planning, because
 /// unavailable helpers can prevent reaching the returned `target_count`.
+///
+/// `immediate_share_index` is a position in the caller-supplied batch, not a
+/// domain share index. The caller maps the round's [`ImmediateShareKey`] to its
+/// batch position. The designated plan remains positionally aligned with the
+/// input batch, is marked `immediate`, and receives `submit_at = 0`.
 pub fn plan_share_submissions(
     share_count: usize,
     server_urls: &[String],
@@ -608,9 +650,16 @@ pub fn plan_share_submissions(
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
+    immediate_share_index: Option<u32>,
     submit_at_random_bytes: &[u8],
     server_random_bytes: &[u8],
 ) -> Result<Vec<ShareSubmissionPlan>, VotingError> {
+    if immediate_share_index.is_some_and(|index| index as usize >= share_count) {
+        return Err(VotingError::InvalidInput {
+            message: format!("immediate_share_index must be less than share_count {share_count}"),
+        });
+    }
+
     if share_count == 0 {
         return Ok(Vec::new());
     }
@@ -662,14 +711,20 @@ pub fn plan_share_submissions(
             spread_initial_targets,
             &server_random_bytes[server_start..server_end],
         )?;
-        let submit_at = scheduled_share_submit_at_from_entropy(
-            now_seconds,
-            vote_end_time_seconds,
-            last_moment_buffer_seconds,
-            single_share,
-            &submit_at_random_bytes[submit_at_start..submit_at_end],
-        )?;
+        let immediate = immediate_share_index == Some(share_index as u32);
+        let submit_at = if immediate {
+            0
+        } else {
+            scheduled_share_submit_at_from_entropy(
+                now_seconds,
+                vote_end_time_seconds,
+                last_moment_buffer_seconds,
+                single_share,
+                &submit_at_random_bytes[submit_at_start..submit_at_end],
+            )?
+        };
         plans.push(build_share_submission_plan(
+            immediate,
             target_count,
             target_servers,
             submit_at,
@@ -728,15 +783,17 @@ fn plan_share_submission_with_targets(
         random_unit,
     )?;
 
-    build_share_submission_plan(target_count, target_servers, submit_at)
+    build_share_submission_plan(false, target_count, target_servers, submit_at)
 }
 
 fn build_share_submission_plan(
+    immediate: bool,
     target_count: usize,
     target_servers: Vec<String>,
     submit_at: u64,
 ) -> Result<ShareSubmissionPlan, VotingError> {
     Ok(ShareSubmissionPlan {
+        immediate,
         submit_at,
         target_count: BoundedU32::try_from(target_count)
             .map_err(|_| VotingError::InvalidInput {
@@ -1508,6 +1565,7 @@ mod tests {
             2_000,
             Some(100),
             false,
+            None,
             &random_bytes(&[0, 1u64 << 63]),
             &random_bytes(&[1, 0, 0, 1]),
         )
@@ -1548,6 +1606,7 @@ mod tests {
             2_000,
             None,
             false,
+            None,
             &[],
             &random_bytes(&repeated_shuffle),
         )
@@ -1597,6 +1656,7 @@ mod tests {
             2_000,
             None,
             false,
+            None,
             &[],
             &server_random_bytes,
         )
@@ -1628,6 +1688,7 @@ mod tests {
             2_000,
             None,
             false,
+            None,
             &[],
             &random_bytes(&repeated_shuffle),
         )
@@ -1648,8 +1709,8 @@ mod tests {
     fn share_submission_batch_plan_allows_one_helper_when_no_alternative_exists() {
         let servers = vec!["https://only.example.com".to_string()];
 
-        let plans =
-            plan_share_submissions(16, &servers, 1_000, 2_000, None, false, &[], &[]).unwrap();
+        let plans = plan_share_submissions(16, &servers, 1_000, 2_000, None, false, None, &[], &[])
+            .unwrap();
 
         assert!(plans.iter().all(|plan| plan.target_servers == servers));
     }
@@ -1670,6 +1731,7 @@ mod tests {
                 2_000,
                 Some(100),
                 false,
+                None,
                 &random_bytes(&[0]),
                 &random_bytes(&[1, 0, 0, 1]),
             ),
@@ -1683,11 +1745,101 @@ mod tests {
                 2_000,
                 Some(100),
                 false,
+                None,
                 &random_bytes(&[0, 1u64 << 63]),
                 &random_bytes(&[1, 0, 0]),
             ),
             Err(VotingError::InvalidInput { .. })
         ));
+    }
+
+    #[test]
+    fn round_immediate_share_key_uses_highest_bundle_lowest_voted_proposal_and_share_zero() {
+        assert_eq!(
+            round_immediate_share_key(Some(3), &[7, 2, 5]),
+            Some(ImmediateShareKey {
+                bundle_index: 3,
+                proposal_id: 2,
+                share_index: 0,
+            })
+        );
+        assert_eq!(round_immediate_share_key(None, &[2]), None);
+        assert_eq!(round_immediate_share_key(Some(3), &[]), None);
+    }
+
+    #[test]
+    fn immediate_batch_position_stays_aligned_and_does_not_perturb_other_plan() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+            "https://three.example.com".to_string(),
+        ];
+        let submit_at = random_bytes(&[0, 1u64 << 63]);
+        let server_order = random_bytes(&[1, 0, 0, 1]);
+        let baseline = plan_share_submissions(
+            2,
+            &servers,
+            1_000,
+            2_000,
+            Some(100),
+            false,
+            None,
+            &submit_at,
+            &server_order,
+        )
+        .unwrap();
+        let designated = plan_share_submissions(
+            2,
+            &servers,
+            1_000,
+            2_000,
+            Some(100),
+            false,
+            Some(1),
+            &submit_at,
+            &server_order,
+        )
+        .unwrap();
+
+        assert!(!designated[0].immediate);
+        assert_eq!(designated[0], baseline[0]);
+        assert!(designated[1].immediate);
+        assert_eq!(designated[1].submit_at, 0);
+        assert_eq!(designated[1].target_servers, baseline[1].target_servers);
+    }
+
+    #[test]
+    fn immediate_batch_position_is_validated() {
+        let servers = vec!["https://one.example.com".to_string()];
+        assert!(matches!(
+            plan_share_submissions(0, &servers, 1_000, 2_000, None, false, Some(0), &[], &[],),
+            Err(VotingError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            plan_share_submissions(1, &servers, 1_000, 2_000, None, false, Some(1), &[], &[],),
+            Err(VotingError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn immediate_marker_is_distinct_when_all_shares_submit_immediately() {
+        let servers = vec!["https://one.example.com".to_string()];
+        let plans = plan_share_submissions(
+            2,
+            &servers,
+            1_950,
+            2_000,
+            Some(100),
+            false,
+            Some(1),
+            &[],
+            &[],
+        )
+        .unwrap();
+
+        assert!(plans.iter().all(|plan| plan.submit_at == 0));
+        assert_eq!(plans.iter().filter(|plan| plan.immediate).count(), 1);
+        assert!(plans[1].immediate);
     }
 
     #[test]

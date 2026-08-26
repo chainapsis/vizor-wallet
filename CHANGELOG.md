@@ -7,6 +7,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## v3.1.0-rc.9
 
 ### Added
+- Added deterministic round-level immediate-share selection: share index 0 of
+  the lowest voted proposal in the lowest-value eligible bundle is designated
+  for immediate helper submission. `RoundPlan` and `RoundPlanView` expose the
+  selected `ImmediateShareKey`, while batch submission plans mark the matching
+  caller-supplied batch position with `immediate = true` and `submit_at = 0`.
 - `lwd::anchor_tree_state_with_retry_on` fetches the snapshot note-commitment
   tree on a caller-owned lightwalletd client, so a wallet that already holds a
   channel (Tor, a proxy, a pool) keeps that route instead of the crate dialing

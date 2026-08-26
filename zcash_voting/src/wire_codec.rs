@@ -655,6 +655,7 @@ impl TryFrom<session::RoundPlan> for RoundPlanView {
                 .map(Into::into)
                 .collect(),
             open_proposals: plan.open_proposals,
+            immediate_share_key: plan.immediate_share_key,
             all_decided: plan.all_decided,
         })
     }
@@ -1144,6 +1145,7 @@ mod tests {
     #[test]
     fn share_submission_plan_serde_roundtrip_preserves_fields() {
         let plan = crate::share_policy::ShareSubmissionPlan {
+            immediate: true,
             submit_at: 123,
             target_count: 2,
             target_servers: vec![
@@ -1151,12 +1153,18 @@ mod tests {
                 "https://helper-2.example".to_string(),
             ],
         };
-        let json = serde_json::to_value(&plan).unwrap();
+        let mut json = serde_json::to_value(&plan).unwrap();
+        assert!(json["immediate"].as_bool().unwrap());
         assert_eq!(json["target_count"].as_u64().unwrap(), 2);
         assert_eq!(json["target_servers"].as_array().unwrap().len(), 2);
         let decoded: crate::share_policy::ShareSubmissionPlan =
-            serde_json::from_value(json).unwrap();
+            serde_json::from_value(json.clone()).unwrap();
         assert_eq!(decoded, plan);
+
+        json.as_object_mut().unwrap().remove("immediate");
+        let legacy: crate::share_policy::ShareSubmissionPlan =
+            serde_json::from_value(json).unwrap();
+        assert!(!legacy.immediate);
     }
 
     #[test]
@@ -1460,6 +1468,11 @@ mod tests {
                 share_indexes: vec![0, 1],
             }],
             open_proposals: vec![11, 12],
+            immediate_share_key: Some(crate::share_policy::ImmediateShareKey {
+                bundle_index: 7,
+                proposal_id: 11,
+                share_index: 0,
+            }),
             all_decided: false,
         };
 
@@ -1488,6 +1501,14 @@ mod tests {
         assert!(!view.needs_draft_setup);
         assert_eq!(view.primary_action, "vote");
         assert_eq!(view.open_proposals, vec![11, 12]);
+        assert_eq!(
+            view.immediate_share_key,
+            Some(crate::share_policy::ImmediateShareKey {
+                bundle_index: 7,
+                proposal_id: 11,
+                share_index: 0,
+            })
+        );
         assert!(!view.all_decided);
 
         let kinds = view

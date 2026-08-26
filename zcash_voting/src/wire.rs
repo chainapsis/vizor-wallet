@@ -66,7 +66,7 @@ pub use crate::config::{
 pub use crate::delegate::KeystoneSigningRequest;
 pub use crate::note_bundling::PrivacyTrim;
 pub use crate::round::BundleLayout;
-pub use crate::share_policy::ShareSubmissionPlan;
+pub use crate::share_policy::{ImmediateShareKey, ShareSubmissionPlan};
 pub use crate::types::WireEncryptedShare;
 pub use crate::vote::VanWitness;
 
@@ -374,5 +374,7 @@ pub struct RoundPlanView {
     pub recovered_delegation_work: Vec<DelegationRecoveryWorkView>,
     pub recovered_vote_work: Vec<VoteRecoveryWorkView>,
     pub open_proposals: Vec<u32>,
+    /// The round's single immediate helper-share submission, if designated.
+    pub immediate_share_key: Option<ImmediateShareKey>,
     pub all_decided: bool,
 }

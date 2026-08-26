@@ -40,14 +40,17 @@ pub mod policy {
         share_recovery_base_time, share_server_order_random_bytes_required,
         share_submission_random_bytes_required, share_submission_target_count,
         share_submit_at_random_bytes_required, should_resubmit_share, shuffled_share_server_order,
-        summarize_share_tracking, ShareSubmissionPlan, ShareSubmissionRandomBytesRequired,
-        ShareTimingPolicy, ShareTrackingSummary, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
+        summarize_share_tracking, ImmediateShareKey, ShareSubmissionPlan,
+        ShareSubmissionRandomBytesRequired, ShareTimingPolicy, ShareTrackingSummary,
+        IMMEDIATE_SHARE_INDEX, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
         LAST_MOMENT_BUFFER_FRACTION_NUMERATOR, LAST_MOMENT_BUFFER_MAX_SECONDS,
         SHARE_SUBMIT_AT_MAX_DELAY_SECONDS,
     };
 }
 
-pub use policy::{ShareSubmissionPlan as SharePlan, ShareTimingPolicy, ShareTrackingSummary};
+pub use policy::{
+    ImmediateShareKey, ShareSubmissionPlan as SharePlan, ShareTimingPolicy, ShareTrackingSummary,
+};
 
 /// Computes the 32-byte share reveal nullifier.
 pub fn compute_nullifier(
