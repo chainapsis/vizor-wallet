@@ -6,6 +6,60 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Identifies the round's single designated immediate helper share.
+class ImmediateShareKey {
+  final int bundleIndex;
+  final int proposalId;
+
+  /// Domain share index, always [`IMMEDIATE_SHARE_INDEX`].
+  final int shareIndex;
+
+  const ImmediateShareKey({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImmediateShareKey &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
+}
+
+/// Remaining delivery work and ordered helpers for one encrypted share.
+class ShareServerCandidatePlan {
+  /// Additional distinct helpers needed to reach the shared target.
+  final int remainingTargetCount;
+
+  /// Helpers not already known to have accepted this share, with planned
+  /// targets first and liveness fallbacks after them.
+  final List<String> candidateServers;
+
+  const ShareServerCandidatePlan({
+    required this.remainingTargetCount,
+    required this.candidateServers,
+  });
+
+  @override
+  int get hashCode => remainingTargetCount.hashCode ^ candidateServers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareServerCandidatePlan &&
+          runtimeType == other.runtimeType &&
+          remainingTargetCount == other.remainingTargetCount &&
+          candidateServers == other.candidateServers;
+}
+
 /// Shared helper selection values for one complete vote commitment.
 ///
 /// Clients own the HTTP requests, but should use these values to keep probe
@@ -95,6 +149,12 @@ class ShareServerSelectionPolicy {
 
 /// Planned helper-share submission values that SDKs can apply to payloads.
 class ShareSubmissionPlan {
+  /// True only for the round's designated immediate share.
+  ///
+  /// This is distinct from `submit_at == 0`: last-moment and single-share
+  /// planning can schedule other, undesignated shares immediately.
+  final bool immediate;
+
   /// Unix seconds when helpers should submit the share, or 0 for immediate.
   final BigInt submitAt;
 
@@ -105,6 +165,7 @@ class ShareSubmissionPlan {
   final List<String> targetServers;
 
   const ShareSubmissionPlan({
+    required this.immediate,
     required this.submitAt,
     required this.targetCount,
     required this.targetServers,
@@ -112,13 +173,17 @@ class ShareSubmissionPlan {
 
   @override
   int get hashCode =>
-      submitAt.hashCode ^ targetCount.hashCode ^ targetServers.hashCode;
+      immediate.hashCode ^
+      submitAt.hashCode ^
+      targetCount.hashCode ^
+      targetServers.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ShareSubmissionPlan &&
           runtimeType == other.runtimeType &&
+          immediate == other.immediate &&
           submitAt == other.submitAt &&
           targetCount == other.targetCount &&
           targetServers == other.targetServers;

@@ -522,10 +522,12 @@ abstract interface class VotingRustApi {
     required int serverCount,
   });
 
-  List<List<String>> rankedShareSubmissionServerCandidates({
+  List<rust_share_policy.ShareServerCandidatePlan>
+  rankedShareSubmissionServerCandidates({
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAcceptedServerUrlsByShare,
   });
 
   Future<List<String>> shareResubmissionServerOrder({
@@ -949,15 +951,18 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  List<List<String>> rankedShareSubmissionServerCandidates({
+  List<rust_share_policy.ShareServerCandidatePlan>
+  rankedShareSubmissionServerCandidates({
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
     return rust_api.rankedShareSubmissionServerCandidates(
       shareCount: shareCount,
       rankedServerUrls: rankedServerUrls,
       previouslySelectedServerUrls: previouslySelectedServerUrls,
+      previouslyAcceptedServerUrlsByShare: previouslyAcceptedServerUrlsByShare,
     );
   }
 

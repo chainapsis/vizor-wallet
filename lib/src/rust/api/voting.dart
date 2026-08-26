@@ -102,15 +102,20 @@ ShareServerSelectionPolicy shareServerSelectionPolicy({
 /// helpers that missed the progressive probe deadline follow in stable order.
 /// `previously_selected_server_urls` carries one entry per prior accepted
 /// assignment for the same commitment so resumed work preserves the cap.
+/// `previously_accepted_server_urls_by_share` identifies prior acceptances for
+/// each share being planned so partial shares request only their remaining
+/// targets.
 /// Entries for helpers that are no longer configured are ignored.
-List<List<String>> rankedShareSubmissionServerCandidates({
+List<ShareServerCandidatePlan> rankedShareSubmissionServerCandidates({
   required int shareCount,
   required List<String> rankedServerUrls,
   required List<String> previouslySelectedServerUrls,
+  required List<List<String>> previouslyAcceptedServerUrlsByShare,
 }) => RustLib.instance.api.crateApiVotingRankedShareSubmissionServerCandidates(
   shareCount: shareCount,
   rankedServerUrls: rankedServerUrls,
   previouslySelectedServerUrls: previouslySelectedServerUrls,
+  previouslyAcceptedServerUrlsByShare: previouslyAcceptedServerUrlsByShare,
 );
 
 /// Return the crate-owned randomized helper order for one share retry.

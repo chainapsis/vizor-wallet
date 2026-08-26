@@ -275,6 +275,7 @@ pub fn plan_share_submissions(
             vote_end_time_seconds,
             last_moment_buffer_seconds,
             single_share,
+            None,
             &submit_at_random_bytes,
             &server_random_bytes,
         )
@@ -298,13 +299,17 @@ pub fn share_server_selection_policy(
 /// helpers that missed the progressive probe deadline follow in stable order.
 /// `previously_selected_server_urls` carries one entry per prior accepted
 /// assignment for the same commitment so resumed work preserves the cap.
+/// `previously_accepted_server_urls_by_share` identifies prior acceptances for
+/// each share being planned so partial shares request only their remaining
+/// targets.
 /// Entries for helpers that are no longer configured are ignored.
 #[flutter_rust_bridge::frb(sync)]
 pub fn ranked_share_submission_server_candidates(
     share_count: u32,
     ranked_server_urls: Vec<String>,
     previously_selected_server_urls: Vec<String>,
-) -> Result<Vec<Vec<String>>, String> {
+    previously_accepted_server_urls_by_share: Vec<Vec<String>>,
+) -> Result<Vec<zcash_voting::share_policy::ShareServerCandidatePlan>, String> {
     catch(|| {
         let share_count = usize::try_from(share_count)
             .map_err(|_| "share_count does not fit in usize".to_string())?;
@@ -312,6 +317,7 @@ pub fn ranked_share_submission_server_candidates(
             share_count,
             &ranked_server_urls,
             &previously_selected_server_urls,
+            &previously_accepted_server_urls_by_share,
         )
         .map_err(|e| e.to_string())
     })
@@ -2492,10 +2498,17 @@ mod tests {
         let servers: Vec<String> = (0..10)
             .map(|index| format!("https://helper-{index}.example"))
             .collect();
-        let candidates =
-            ranked_share_submission_server_candidates(2, servers.clone(), Vec::new()).unwrap();
+        let candidates = ranked_share_submission_server_candidates(
+            2,
+            servers.clone(),
+            Vec::new(),
+            vec![Vec::new(); 2],
+        )
+        .unwrap();
         assert_eq!(candidates.len(), 2);
-        assert!(candidates.iter().all(|row| row.len() == servers.len()));
+        assert!(candidates.iter().all(|plan| {
+            plan.remaining_target_count == 5 && plan.candidate_servers.len() == servers.len()
+        }));
     }
 
     #[test]

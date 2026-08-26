@@ -5517,6 +5517,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
+          immediate: false,
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -5542,14 +5543,22 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  List<List<String>> rankedShareSubmissionServerCandidates({
+  List<rust_share_policy.ShareServerCandidatePlan>
+  rankedShareSubmissionServerCandidates({
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
+    final targetCount = rankedServerUrls.length > 5
+        ? 5
+        : rankedServerUrls.length;
     return [
       for (var i = 0; i < shareCount; i++)
-        List<String>.of(rankedServerUrls, growable: false),
+        rust_share_policy.ShareServerCandidatePlan(
+          remainingTargetCount: targetCount,
+          candidateServers: List<String>.of(rankedServerUrls, growable: false),
+        ),
     ];
   }
 

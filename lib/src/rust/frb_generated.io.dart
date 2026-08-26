@@ -133,6 +133,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
@@ -245,6 +248,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  ImmediateShareKey dco_decode_immediate_share_key(dynamic raw);
 
   @protected
   ImportBirthdayMetadata dco_decode_import_birthday_metadata(dynamic raw);
@@ -447,6 +453,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ShareServerCandidatePlan> dco_decode_list_share_server_candidate_plan(
+    dynamic raw,
+  );
+
+  @protected
   List<ShareSubmissionPlan> dco_decode_list_share_submission_plan(dynamic raw);
 
   @protected
@@ -578,6 +589,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
 
   @protected
+  ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
+    dynamic raw,
+  );
+
+  @protected
   MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
@@ -668,6 +684,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ShareDelegationRecordView dco_decode_share_delegation_record_view(
     dynamic raw,
   );
+
+  @protected
+  ShareServerCandidatePlan dco_decode_share_server_candidate_plan(dynamic raw);
 
   @protected
   ShareServerSelectionPolicy dco_decode_share_server_selection_policy(
@@ -954,6 +973,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   );
@@ -1098,6 +1122,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  ImmediateShareKey sse_decode_immediate_share_key(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ImportBirthdayMetadata sse_decode_import_birthday_metadata(
@@ -1352,6 +1381,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ShareServerCandidatePlan> sse_decode_list_share_server_candidate_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ShareSubmissionPlan> sse_decode_list_share_submission_plan(
     SseDeserializer deserializer,
   );
@@ -1517,6 +1551,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   );
@@ -1625,6 +1664,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareDelegationRecordView sse_decode_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareServerCandidatePlan sse_decode_share_server_candidate_plan(
     SseDeserializer deserializer,
   );
 
@@ -1979,6 +2023,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -2151,6 +2201,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_immediate_share_key(
+    ImmediateShareKey self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_import_birthday_metadata(
@@ -2471,6 +2527,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_share_server_candidate_plan(
+    List<ShareServerCandidatePlan> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_share_submission_plan(
     List<ShareSubmissionPlan> self,
     SseSerializer serializer,
@@ -2669,6 +2731,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_immediate_share_key(
+    ImmediateShareKey? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch? self,
     SseSerializer serializer,
@@ -2797,6 +2865,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_share_delegation_record_view(
     ShareDelegationRecordView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_server_candidate_plan(
+    ShareServerCandidatePlan self,
     SseSerializer serializer,
   );
 

@@ -1565,15 +1565,38 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '${shares.length} payload(s).',
         );
       }
+      final priorShares = [
+        for (final priorShare in context.resumePlan.shareDelegations)
+          if (priorShare.bundleIndex == commitments.bundleIndex &&
+              priorShare.proposalId == commitment.proposalId)
+            priorShare,
+      ];
+      final previouslyAcceptedServerUrlsByShare = [
+        for (final share in shares)
+          [
+            for (final priorShare in priorShares)
+              if (priorShare.shareIndex == share.shareIndex)
+                for (final serverUrl in priorShare.sentToUrls.toSet())
+                  serverUrl,
+          ],
+      ];
+      final previouslyAcceptedServersByShareIndex = {
+        for (var i = 0; i < shares.length; i++)
+          shares[i].shareIndex: previouslyAcceptedServerUrlsByShare[i],
+      };
+      final priorSubmitAtByShareIndex = {
+        for (final priorShare in priorShares)
+          priorShare.shareIndex: priorShare.submitAt,
+      };
       final candidatePlans = rust.rankedShareSubmissionServerCandidates(
         shareCount: shares.length,
         rankedServerUrls: rankedServerUrls,
         previouslySelectedServerUrls: [
-          for (final priorShare in context.resumePlan.shareDelegations)
-            if (priorShare.bundleIndex == commitments.bundleIndex &&
-                priorShare.proposalId == commitment.proposalId)
-              for (final serverUrl in priorShare.sentToUrls.toSet()) serverUrl,
+          for (final priorShare in priorShares)
+            for (final serverUrl in priorShare.sentToUrls.toSet()) serverUrl,
         ],
+        previouslyAcceptedServerUrlsByShare:
+            previouslyAcceptedServerUrlsByShare,
       );
       if (candidatePlans.length != shares.length) {
         throw StateError(
@@ -1587,15 +1610,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       for (var payloadIndex = 0; payloadIndex < shares.length; payloadIndex++) {
         final share = shares[payloadIndex];
         final plan = plans[payloadIndex];
-        final targetCount = plan.targetCount
-            .clamp(1, serverUrls.length)
-            .toInt();
-        final candidateServers = candidatePlans[payloadIndex];
+        final candidatePlan = candidatePlans[payloadIndex];
+        final targetCount = candidatePlan.remainingTargetCount;
+        final candidateServers = candidatePlan.candidateServers;
+        final submitAt =
+            priorSubmitAtByShareIndex[share.shareIndex] ?? plan.submitAt;
+        if (targetCount == 0) continue;
+        if (targetCount > candidateServers.length) {
+          throw StateError(
+            'Share server policy requested $targetCount helper(s) from '
+            '${candidateServers.length} candidate(s) for share '
+            '${share.shareIndex}.',
+          );
+        }
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
             share: share,
             vcTreePosition: vcTreePosition,
-            submitAt: plan.submitAt,
+            submitAt: submitAt,
           ),
         );
         if (publishProgress == null) {
@@ -1624,7 +1656,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             body: body,
             candidateServers: candidateServers,
             targetCount: targetCount,
-            submitAt: plan.submitAt,
+            submitAt: submitAt,
           ),
         );
       }
@@ -1662,10 +1694,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // Persist in completion order so accepted shares become durable promptly
       // while Rust DB writes remain sequential.
       await for (final result in Stream.fromFutures(submissions)) {
-        if (result.acceptedServers.isEmpty) {
+        final previouslyAcceptedServers =
+            previouslyAcceptedServersByShareIndex[result.share.shareIndex] ??
+            const <String>[];
+        if (result.acceptedServers.isEmpty &&
+            previouslyAcceptedServers.isEmpty) {
           failedResult ??= result;
           continue;
         }
+        if (result.acceptedServers.isEmpty) continue;
+        final acceptedServers = LinkedHashSet<String>.of(
+          previouslyAcceptedServers,
+        )..addAll(result.acceptedServers);
         try {
           await rust.recordShareDelegation(
             dbPath: context.dbPath,
@@ -1674,7 +1714,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             bundleIndex: commitments.bundleIndex,
             proposalId: result.share.proposalId,
             shareIndex: result.share.shareIndex,
-            sentToUrls: result.acceptedServers,
+            sentToUrls: acceptedServers.toList(growable: false),
             submitAt: result.submitAt,
           );
         } catch (error, stackTrace) {
