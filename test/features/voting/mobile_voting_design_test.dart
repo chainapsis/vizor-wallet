@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
@@ -149,7 +150,7 @@ void main() {
       find.byKey(const ValueKey('voting_selected_choice_indicator')),
       findsNothing,
     );
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.byKey(const ValueKey('voting_ineligible_close')));
     await tester.pumpAndSettle();
 
     await tester.drag(
@@ -162,6 +163,113 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Not eligible for this voting round'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ineligible modal matches Figma geometry and styled live values', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingIneligibleModalUseCase);
+    expect(
+      tester.getRect(find.byType(MobileModalCard)),
+      const Rect.fromLTWH(16, 238.5, 361, 375),
+    );
+    final switchButton = find.byKey(
+      const ValueKey('voting_ineligible_switch_account'),
+    );
+    final closeButton = find.byKey(const ValueKey('voting_ineligible_close'));
+    expect(tester.getSize(switchButton), const Size(329, 50));
+    expect(tester.getTopLeft(switchButton).dy, 469.5);
+    expect(
+      tester.getTopLeft(closeButton).dy - tester.getBottomLeft(switchButton).dy,
+      12,
+    );
+    final text = tester.widget<Text>(find.textContaining('Voting requires'));
+    expect(text.style?.fontSize, 16);
+    expect(text.style?.height, 25 / 16);
+    final span = text.textSpan! as TextSpan;
+    expect(
+      span.toPlainText(),
+      'Voting requires at least one eligible shielded note bundle '
+      'with 0.125 ZEC at snapshot block 3,459,350\n\nSwitch to an eligible account to vote.',
+    );
+    final amount = span.children!.cast<TextSpan>().singleWhere(
+      (s) => s.text == '0.125 ZEC',
+    );
+    expect(amount.style?.color, AppThemeData.dark.colors.text.destructive);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ineligible modal preserves the actual no-funds reason and block', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(
+      tester,
+      (_) => const VotingIneligibleDialog(
+        message:
+            'This account is not eligible for this voting round. It had no eligible '
+            'shielded funds at snapshot block 123,456. Switch to an eligible account to vote.',
+      ),
+    );
+    final text = tester.widget<Text>(find.textContaining('It had no eligible'));
+    expect(
+      text.textSpan!.toPlainText(),
+      contains('snapshot block 123,456\n\nSwitch'),
+    );
+    expect(text.textSpan!.toPlainText(), isNot(contains('0.125')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('short viewport and enlarged text keep modal actions reachable', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(
+      tester,
+      // Only the modal is under test; retain the existing background scale.
+      (context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+        child: Builder(builder: buildMobileVotingIneligibleUseCase),
+      ),
+      size: const Size(320, 480),
+      textScaler: const TextScaler.linear(2),
+    );
+    final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
+    await tester.ensureVisible(option);
+    await tester.pumpAndSettle();
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('voting_ineligible_switch_account')),
+          )
+          .height,
+      100,
+    );
+    final close = find.byKey(const ValueKey('voting_ineligible_close'));
+    await tester.ensureVisible(close);
+    await tester.pumpAndSettle();
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(find.byType(VotingIneligibleDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('top close and scrim dismiss without opening account selection', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
+    final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Close').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(VotingIneligibleDialog), findsNothing);
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(5, 200));
+    await tester.pumpAndSettle();
+    expect(find.byType(VotingIneligibleDialog), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,10 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
@@ -160,6 +161,22 @@ Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
       ),
     ),
     size: MediaQuery.sizeOf(context),
+  );
+}
+
+Widget buildMobileVotingIneligibleModalUseCase(BuildContext context) {
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      buildMobileVotingIneligibleUseCase(context),
+      ColoredBox(color: context.colors.background.neutralScrim),
+      const VotingIneligibleDialog(
+        message:
+            'Voting requires at least one eligible shielded note bundle '
+            'with 0.125 ZEC at snapshot block 3,459,350. '
+            'Switch to an eligible account to vote.',
+      ),
+    ],
   );
 }
 

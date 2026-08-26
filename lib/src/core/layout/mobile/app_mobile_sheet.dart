@@ -97,6 +97,7 @@ class MobileModalCard extends StatelessWidget {
   const MobileModalCard({
     required this.child,
     this.transparentBackground = false,
+    this.margin,
     super.key,
   });
 
@@ -105,6 +106,10 @@ class MobileModalCard extends StatelessWidget {
   /// For content that is already its own card (e.g. the birthday calendar
   /// panel): only the outer margins are applied, not the base surface.
   final bool transparentBackground;
+
+  /// Centered dialogs own their outer insets and pass [EdgeInsets.zero].
+  /// Bottom sheets retain the default side and safe-area-aware bottom gaps.
+  final EdgeInsets? margin;
 
   @override
   Widget build(BuildContext context) {
@@ -154,11 +159,13 @@ class MobileModalCard extends StatelessWidget {
     // bottom gap applies there.
     final double sideMargin = transparentBackground ? 0 : AppSpacing.sm;
     return Padding(
-      padding: EdgeInsets.only(
-        left: sideMargin,
-        right: sideMargin,
-        bottom: bottomGap,
-      ),
+      padding:
+          margin ??
+          EdgeInsets.only(
+            left: sideMargin,
+            right: sideMargin,
+            bottom: bottomGap,
+          ),
       child: card,
     );
   }
