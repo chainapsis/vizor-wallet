@@ -18,6 +18,7 @@ class VotingApiClient {
     List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
+    Duration helperPostTimeout = const Duration(seconds: 30),
     VotingRetryPolicy? readRetryPolicy,
     VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
@@ -27,6 +28,7 @@ class VotingApiClient {
        _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
        _helperTimeout = helperTimeout,
+       _helperPostTimeout = helperPostTimeout,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
@@ -55,6 +57,7 @@ class VotingApiClient {
   final VotingHttpClient _httpClient;
   final Duration _timeout;
   final Duration _helperTimeout;
+  final Duration _helperPostTimeout;
   final VotingRetryPolicy _readRetryPolicy;
   final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
@@ -346,14 +349,19 @@ class VotingApiClient {
   /// The share map is expected to be the complete service JSON body produced
   /// by the voting pipeline. Fast transient failures retain the helper retry
   /// policy. An ambiguous timeout is never retried against the same helper so
-  /// the caller can promptly move to another candidate.
+  /// the caller can promptly move to another candidate. [timeout] bounds each
+  /// transport attempt; [overallTimeout] also bounds retries and their delays.
   Future<VotingShareSubmissionResult> submitShare({
     required Uri serverUrl,
     required Map<String, dynamic> share,
+    Duration? timeout,
+    Duration? overallTimeout,
   }) async {
     final decoded = await _postInitialShareJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
+      timeout: timeout,
+      overallTimeout: overallTimeout,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -387,15 +395,17 @@ class VotingApiClient {
   /// key nearby, but the current helper endpoint accepts the same body as the
   /// initial submission. This makes one transport attempt because a timeout is
   /// ambiguous; the caller decides whether to try another helper or wait.
+  /// [timeout] overrides the default helper POST timeout.
   Future<VotingShareSubmissionResult> resubmitShare({
     required Uri serverUrl,
     required String shareId,
     required Map<String, dynamic> share,
+    Duration? timeout,
   }) async {
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
-      timeout: _helperTimeout,
+      timeout: timeout ?? _helperPostTimeout,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -465,26 +475,65 @@ class VotingApiClient {
 
   Future<Object?> _postInitialShareJson(
     Uri uri,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    Duration? timeout,
+    Duration? overallTimeout,
+  }) async {
+    final requestTimeout = timeout ?? _helperPostTimeout;
+    if (requestTimeout <= Duration.zero) {
+      throw ArgumentError.value(requestTimeout, 'timeout', 'must be positive');
+    }
+    if (overallTimeout != null && overallTimeout <= Duration.zero) {
+      throw ArgumentError.value(
+        overallTimeout,
+        'overallTimeout',
+        'must be positive',
+      );
+    }
+    final stopwatch = Stopwatch()..start();
+    var budgetExpired = false;
     final retryPolicy = VotingRetryPolicy(
       name: '${_helperRetryPolicy.name}-initial',
       delays: _helperRetryPolicy.delays,
       shouldRetry: (error) =>
           error is! TimeoutException && _helperRetryPolicy.shouldRetry(error),
     );
-    final response = await _runRequestWithRetry(
+    final request = _runRequestWithRetry(
       retryPolicy: retryPolicy,
+      isCancelled: () => budgetExpired,
       operation: () async {
+        var attemptTimeout = requestTimeout;
+        if (overallTimeout != null) {
+          final remaining = overallTimeout - stopwatch.elapsed;
+          if (remaining <= Duration.zero) {
+            throw TimeoutException(
+              'Initial helper delivery attempt exceeded its overall timeout',
+              overallTimeout,
+            );
+          }
+          if (remaining < attemptTimeout) attemptTimeout = remaining;
+        }
         final response = await _post(
           uri,
           body,
-          timeout: _helperTimeout,
-        ).timeout(_helperTimeout);
+          timeout: attemptTimeout,
+        ).timeout(attemptTimeout);
         _throwIfNotSuccess(uri, response);
         return response;
       },
     );
+    final response = overallTimeout == null
+        ? await request
+        : await request.timeout(
+            overallTimeout,
+            onTimeout: () {
+              budgetExpired = true;
+              throw TimeoutException(
+                'Initial helper delivery attempt exceeded its overall timeout',
+                overallTimeout,
+              );
+            },
+          );
     return jsonDecode(response.bodyText);
   }
 

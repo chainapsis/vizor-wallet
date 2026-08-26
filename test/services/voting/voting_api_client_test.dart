@@ -77,6 +77,9 @@ void main() {
     ]);
     expect(http.requests[4].uri.host, 'helper.example');
     expect(http.requests[5].uri.host, 'helper.example');
+    expect(http.requests[4].timeout, const Duration(seconds: 30));
+    expect(http.requests[5].timeout, const Duration(seconds: 5));
+    expect(http.requests[6].timeout, const Duration(seconds: 30));
     expect(rounds.single.roundId, hexRoundId);
     expect(status.roundId, hexRoundId);
     expect(tally.roundId, hexRoundId);
@@ -788,7 +791,68 @@ void main() {
       'share_index': 7,
       'vote_round_id': hexRoundId,
     });
-    expect(http.requests.single.timeout, const Duration(seconds: 5));
+    expect(http.requests.single.timeout, const Duration(seconds: 30));
+  });
+
+  test('share requests honor a shorter per-request timeout', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://helper.example/shielded-vote/v1/shares': {'status': 'queued'},
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+
+    await client.submitShare(
+      serverUrl: Uri.parse('https://helper.example'),
+      share: {'share_index': 7, 'vote_round_id': hexRoundId},
+      timeout: const Duration(seconds: 12),
+    );
+
+    expect(http.requests.single.timeout, const Duration(seconds: 12));
+  });
+
+  test('share retries stop when the overall delivery budget expires', () async {
+    final retryDelayStarted = Completer<void>();
+    final releaseRetryDelay = Completer<void>();
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://helper.example/shielded-vote/v1/shares':
+            SequentialVotingHttpResponses([
+              jsonResponse({'error': 'unavailable'}, statusCode: 503),
+              {'status': 'queued'},
+            ]),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+      helperRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-helper-retry',
+        delays: const [Duration(seconds: 1)],
+      ),
+      delay: (_) {
+        retryDelayStarted.complete();
+        return releaseRetryDelay.future;
+      },
+    );
+
+    final pending = client.submitShare(
+      serverUrl: Uri.parse('https://helper.example'),
+      share: {'share_index': 7, 'vote_round_id': hexRoundId},
+      timeout: const Duration(milliseconds: 30),
+      overallTimeout: const Duration(milliseconds: 20),
+    );
+    await retryDelayStarted.future;
+
+    await expectLater(pending, throwsA(isA<TimeoutException>()));
+    expect(http.requests, hasLength(1));
+
+    releaseRetryDelay.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(http.requests, hasLength(1));
   });
 
   test(
@@ -985,7 +1049,7 @@ void main() {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
       httpClient: http,
-      helperTimeout: const Duration(milliseconds: 30),
+      helperPostTimeout: const Duration(milliseconds: 30),
       helperRetryPolicy: VotingRetryPolicy.transientHttp(
         name: 'test-helper-retry',
         delays: const [Duration(milliseconds: 2), Duration(milliseconds: 4)],

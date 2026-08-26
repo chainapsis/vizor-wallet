@@ -10793,13 +10793,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ShareServerSelectionPolicy(
       targetCount: dco_decode_u_32(arr[0]),
       maxSharesPerServer: dco_decode_u_32(arr[1]),
-      preflightSoftTimeoutMilliseconds: dco_decode_u_64(arr[2]),
-      preflightHardTimeoutMilliseconds: dco_decode_u_64(arr[3]),
+      minServerCount: dco_decode_u_32(arr[2]),
+      privacyCapFeasible: dco_decode_bool(arr[3]),
+      preflightSoftTimeoutMilliseconds: dco_decode_u_64(arr[4]),
+      preflightHardTimeoutMilliseconds: dco_decode_u_64(arr[5]),
+      postTimeoutMilliseconds: dco_decode_u_64(arr[6]),
+      initialDeliveryTimeoutMilliseconds: dco_decode_u_64(arr[7]),
+      maxConcurrentPosts: dco_decode_u_32(arr[8]),
     );
   }
 
@@ -14004,13 +14009,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_targetCount = sse_decode_u_32(deserializer);
     var var_maxSharesPerServer = sse_decode_u_32(deserializer);
+    var var_minServerCount = sse_decode_u_32(deserializer);
+    var var_privacyCapFeasible = sse_decode_bool(deserializer);
     var var_preflightSoftTimeoutMilliseconds = sse_decode_u_64(deserializer);
     var var_preflightHardTimeoutMilliseconds = sse_decode_u_64(deserializer);
+    var var_postTimeoutMilliseconds = sse_decode_u_64(deserializer);
+    var var_initialDeliveryTimeoutMilliseconds = sse_decode_u_64(deserializer);
+    var var_maxConcurrentPosts = sse_decode_u_32(deserializer);
     return ShareServerSelectionPolicy(
       targetCount: var_targetCount,
       maxSharesPerServer: var_maxSharesPerServer,
+      minServerCount: var_minServerCount,
+      privacyCapFeasible: var_privacyCapFeasible,
       preflightSoftTimeoutMilliseconds: var_preflightSoftTimeoutMilliseconds,
       preflightHardTimeoutMilliseconds: var_preflightHardTimeoutMilliseconds,
+      postTimeoutMilliseconds: var_postTimeoutMilliseconds,
+      initialDeliveryTimeoutMilliseconds:
+          var_initialDeliveryTimeoutMilliseconds,
+      maxConcurrentPosts: var_maxConcurrentPosts,
     );
   }
 
@@ -16867,8 +16883,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.targetCount, serializer);
     sse_encode_u_32(self.maxSharesPerServer, serializer);
+    sse_encode_u_32(self.minServerCount, serializer);
+    sse_encode_bool(self.privacyCapFeasible, serializer);
     sse_encode_u_64(self.preflightSoftTimeoutMilliseconds, serializer);
     sse_encode_u_64(self.preflightHardTimeoutMilliseconds, serializer);
+    sse_encode_u_64(self.postTimeoutMilliseconds, serializer);
+    sse_encode_u_64(self.initialDeliveryTimeoutMilliseconds, serializer);
+    sse_encode_u_32(self.maxConcurrentPosts, serializer);
   }
 
   @protected

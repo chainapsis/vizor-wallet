@@ -14,7 +14,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// and keep waiting until `target_count` helpers are ready or the hard timeout
 /// expires. Pass ready helpers to
 /// [`ranked_share_submission_server_candidates`] in response order, followed by
-/// the remaining configured helpers.
+/// the remaining configured helpers. When resuming interrupted work, use
+/// [`ranked_share_submission_server_candidates_with_usage`] so prior accepted
+/// assignments still count toward the privacy cap.
 class ShareServerSelectionPolicy {
   /// Number of helpers each share should reach.
   final int targetCount;
@@ -22,25 +24,50 @@ class ShareServerSelectionPolicy {
   /// Normal maximum number of one commitment's shares sent to one helper.
   final int maxSharesPerServer;
 
+  /// Minimum configured helpers needed to honor the target and privacy cap.
+  final int minServerCount;
+
+  /// Whether this configured fleet can honor the normal privacy cap.
+  final bool privacyCapFeasible;
+
   /// Time to collect the first group of fast helper responses.
   final BigInt preflightSoftTimeoutMilliseconds;
 
   /// Absolute deadline for collecting enough ready helper responses.
   final BigInt preflightHardTimeoutMilliseconds;
 
+  /// Maximum duration of one helper share POST.
+  final BigInt postTimeoutMilliseconds;
+
+  /// Overall deadline for initial helper delivery before durable recovery.
+  final BigInt initialDeliveryTimeoutMilliseconds;
+
+  /// Maximum helper share POSTs a client should keep in flight at once.
+  final int maxConcurrentPosts;
+
   const ShareServerSelectionPolicy({
     required this.targetCount,
     required this.maxSharesPerServer,
+    required this.minServerCount,
+    required this.privacyCapFeasible,
     required this.preflightSoftTimeoutMilliseconds,
     required this.preflightHardTimeoutMilliseconds,
+    required this.postTimeoutMilliseconds,
+    required this.initialDeliveryTimeoutMilliseconds,
+    required this.maxConcurrentPosts,
   });
 
   @override
   int get hashCode =>
       targetCount.hashCode ^
       maxSharesPerServer.hashCode ^
+      minServerCount.hashCode ^
+      privacyCapFeasible.hashCode ^
       preflightSoftTimeoutMilliseconds.hashCode ^
-      preflightHardTimeoutMilliseconds.hashCode;
+      preflightHardTimeoutMilliseconds.hashCode ^
+      postTimeoutMilliseconds.hashCode ^
+      initialDeliveryTimeoutMilliseconds.hashCode ^
+      maxConcurrentPosts.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -49,10 +76,16 @@ class ShareServerSelectionPolicy {
           runtimeType == other.runtimeType &&
           targetCount == other.targetCount &&
           maxSharesPerServer == other.maxSharesPerServer &&
+          minServerCount == other.minServerCount &&
+          privacyCapFeasible == other.privacyCapFeasible &&
           preflightSoftTimeoutMilliseconds ==
               other.preflightSoftTimeoutMilliseconds &&
           preflightHardTimeoutMilliseconds ==
-              other.preflightHardTimeoutMilliseconds;
+              other.preflightHardTimeoutMilliseconds &&
+          postTimeoutMilliseconds == other.postTimeoutMilliseconds &&
+          initialDeliveryTimeoutMilliseconds ==
+              other.initialDeliveryTimeoutMilliseconds &&
+          maxConcurrentPosts == other.maxConcurrentPosts;
 }
 
 /// Planned helper-share submission values that SDKs can apply to payloads.

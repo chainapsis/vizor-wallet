@@ -5513,7 +5513,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
   }) async {
-    final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
+    final targetCount = serverUrls.length > 5 ? 5 : serverUrls.length;
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
@@ -5529,10 +5529,15 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int serverCount,
   }) {
     return rust_share_policy.ShareServerSelectionPolicy(
-      targetCount: serverCount == 0 ? 0 : (serverCount / 2).ceil(),
+      targetCount: serverCount > 5 ? 5 : serverCount,
       maxSharesPerServer: 8,
+      minServerCount: 10,
+      privacyCapFeasible: serverCount >= 10,
       preflightSoftTimeoutMilliseconds: BigInt.zero,
       preflightHardTimeoutMilliseconds: BigInt.one,
+      postTimeoutMilliseconds: BigInt.from(30000),
+      initialDeliveryTimeoutMilliseconds: BigInt.from(60000),
+      maxConcurrentPosts: 16,
     );
   }
 

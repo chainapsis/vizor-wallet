@@ -7389,8 +7389,13 @@ const _: fn() = || {
             None::<zcash_voting::share_policy::ShareServerSelectionPolicy>.unwrap();
         let _: u32 = ShareServerSelectionPolicy.target_count;
         let _: u32 = ShareServerSelectionPolicy.max_shares_per_server;
+        let _: u32 = ShareServerSelectionPolicy.min_server_count;
+        let _: bool = ShareServerSelectionPolicy.privacy_cap_feasible;
         let _: u64 = ShareServerSelectionPolicy.preflight_soft_timeout_milliseconds;
         let _: u64 = ShareServerSelectionPolicy.preflight_hard_timeout_milliseconds;
+        let _: u64 = ShareServerSelectionPolicy.post_timeout_milliseconds;
+        let _: u64 = ShareServerSelectionPolicy.initial_delivery_timeout_milliseconds;
+        let _: u32 = ShareServerSelectionPolicy.max_concurrent_posts;
     }
     {
         let ShareSubmissionPlan = None::<zcash_voting::share_policy::ShareSubmissionPlan>.unwrap();
@@ -9934,13 +9939,23 @@ impl SseDecode for zcash_voting::share_policy::ShareServerSelectionPolicy {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_targetCount = <u32>::sse_decode(deserializer);
         let mut var_maxSharesPerServer = <u32>::sse_decode(deserializer);
+        let mut var_minServerCount = <u32>::sse_decode(deserializer);
+        let mut var_privacyCapFeasible = <bool>::sse_decode(deserializer);
         let mut var_preflightSoftTimeoutMilliseconds = <u64>::sse_decode(deserializer);
         let mut var_preflightHardTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_postTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_initialDeliveryTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_maxConcurrentPosts = <u32>::sse_decode(deserializer);
         return zcash_voting::share_policy::ShareServerSelectionPolicy {
             target_count: var_targetCount,
             max_shares_per_server: var_maxSharesPerServer,
+            min_server_count: var_minServerCount,
+            privacy_cap_feasible: var_privacyCapFeasible,
             preflight_soft_timeout_milliseconds: var_preflightSoftTimeoutMilliseconds,
             preflight_hard_timeout_milliseconds: var_preflightHardTimeoutMilliseconds,
+            post_timeout_milliseconds: var_postTimeoutMilliseconds,
+            initial_delivery_timeout_milliseconds: var_initialDeliveryTimeoutMilliseconds,
+            max_concurrent_posts: var_maxConcurrentPosts,
         };
     }
 }
@@ -12802,6 +12817,8 @@ impl flutter_rust_bridge::IntoDart
         [
             self.0.target_count.into_into_dart().into_dart(),
             self.0.max_shares_per_server.into_into_dart().into_dart(),
+            self.0.min_server_count.into_into_dart().into_dart(),
+            self.0.privacy_cap_feasible.into_into_dart().into_dart(),
             self.0
                 .preflight_soft_timeout_milliseconds
                 .into_into_dart()
@@ -12810,6 +12827,15 @@ impl flutter_rust_bridge::IntoDart
                 .preflight_hard_timeout_milliseconds
                 .into_into_dart()
                 .into_dart(),
+            self.0
+                .post_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .initial_delivery_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0.max_concurrent_posts.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15493,8 +15519,13 @@ impl SseEncode for zcash_voting::share_policy::ShareServerSelectionPolicy {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.target_count, serializer);
         <u32>::sse_encode(self.max_shares_per_server, serializer);
+        <u32>::sse_encode(self.min_server_count, serializer);
+        <bool>::sse_encode(self.privacy_cap_feasible, serializer);
         <u64>::sse_encode(self.preflight_soft_timeout_milliseconds, serializer);
         <u64>::sse_encode(self.preflight_hard_timeout_milliseconds, serializer);
+        <u64>::sse_encode(self.post_timeout_milliseconds, serializer);
+        <u64>::sse_encode(self.initial_delivery_timeout_milliseconds, serializer);
+        <u32>::sse_encode(self.max_concurrent_posts, serializer);
     }
 }
 

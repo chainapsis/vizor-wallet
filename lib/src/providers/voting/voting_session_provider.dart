@@ -14,6 +14,8 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
+import '../../rust/third_party/zcash_voting/share_policy.dart'
+    as rust_share_policy;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -1174,6 +1176,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final helperSelectionPolicy = rust.shareServerSelectionPolicy(
         serverCount: context.config.apiServers.all.length,
       );
+      final helperPostPool = _AsyncPermitPool(
+        helperSelectionPolicy.maxConcurrentPosts,
+      );
+      if (!helperSelectionPolicy.privacyCapFeasible) {
+        debugPrint(
+          '[zcash] Voting: helper distribution is degraded '
+          'configured=${context.config.apiServers.all.length} '
+          'minimum=${helperSelectionPolicy.minServerCount} '
+          'target=${helperSelectionPolicy.targetCount} '
+          'maxSharesPerServer=${helperSelectionPolicy.maxSharesPerServer}',
+        );
+      }
       final helperPreflightCancellation = Completer<void>();
       activeHelperPreflightCancellation = helperPreflightCancellation;
       final helperPreflight = totalBundleTasks == 0
@@ -1282,6 +1296,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           context,
           commitments,
           helperPreflight: helperPreflight,
+          helperSelectionPolicy: helperSelectionPolicy,
+          helperPostPool: helperPostPool,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           shareIndexFilter: shareIndexFilter,
@@ -1335,6 +1351,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             completedQuestions: completedQuestions,
             totalQuestions: totalQuestions,
             helperPreflight: helperPreflight,
+            helperSelectionPolicy: helperSelectionPolicy,
+            helperPostPool: helperPostPool,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1505,6 +1523,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments, {
     required Future<VotingHelperPreflightResult> helperPreflight,
+    required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
@@ -1619,6 +1639,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
+      final deliveryBudget = _InitialShareDeliveryBudget(
+        Duration(
+          milliseconds: helperSelectionPolicy.initialDeliveryTimeoutMilliseconds
+              .toInt(),
+        ),
+      );
+      final helperPostTimeout = Duration(
+        milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
+      );
       final submissions = [
         for (final prepared in preparedSubmissions)
           _submitInitialShareToHelpers(
@@ -1629,6 +1658,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             candidateServers: prepared.candidateServers,
             targetCount: prepared.targetCount,
             submitAt: prepared.submitAt,
+            helperPostPool: helperPostPool,
+            helperPostTimeout: helperPostTimeout,
+            deliveryBudget: deliveryBudget,
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
@@ -1677,31 +1709,64 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<String> candidateServers,
     required int targetCount,
     required BigInt submitAt,
+    required _AsyncPermitPool helperPostPool,
+    required Duration helperPostTimeout,
+    required _InitialShareDeliveryBudget deliveryBudget,
   }) async {
     final acceptedServers = <String>[];
     final remainingServers = LinkedHashSet<String>.of(candidateServers);
-    while (remainingServers.isNotEmpty &&
-        acceptedServers.length < targetCount) {
-      // Re-evaluate health before every attempt so failures observed by
-      // concurrent submissions can move a degraded helper behind healthy
-      // alternatives. The tracker still returns every helper when all are
-      // degraded, preserving the liveness fallback.
-      final serverUrl = helperHealth.candidateServers(remainingServers).first;
-      remainingServers.remove(serverUrl);
+    final inFlight = <int, Future<_InitialSharePostAttempt>>{};
+    var nextAttemptId = 0;
+
+    Future<_InitialSharePostAttempt> startAttempt(
+      int attemptId,
+      String serverUrl,
+    ) async {
+      var attempted = false;
       try {
-        debugPrint(
-          '[zcash] Voting: submitting share '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl treePosition=${body['tree_position']} '
-          'submitAt=$submitAt target=$targetCount',
-        );
-        await api.submitShare(serverUrl: Uri.parse(serverUrl), share: body);
+        final accepted = await helperPostPool.run(() async {
+          final budgetRemaining = deliveryBudget.remaining;
+          if (budgetRemaining == Duration.zero) return false;
+          final requestTimeout = budgetRemaining < helperPostTimeout
+              ? budgetRemaining
+              : helperPostTimeout;
+          attempted = true;
+          debugPrint(
+            '[zcash] Voting: submitting share '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl treePosition=${body['tree_position']} '
+            'submitAt=$submitAt target=$targetCount '
+            'timeoutMs=${requestTimeout.inMilliseconds} '
+            'budgetRemainingMs=${budgetRemaining.inMilliseconds}',
+          );
+          await api.submitShare(
+            serverUrl: Uri.parse(serverUrl),
+            share: body,
+            timeout: requestTimeout,
+            overallTimeout: budgetRemaining,
+          );
+          return true;
+        });
+        if (!attempted) {
+          return _InitialSharePostAttempt(
+            id: attemptId,
+            serverUrl: serverUrl,
+            accepted: false,
+          );
+        }
+        if (!accepted) {
+          throw StateError('share POST completed without an acceptance');
+        }
         helperHealth.recordSuccess(serverUrl);
-        acceptedServers.add(serverUrl);
         debugPrint(
           '[zcash] Voting: share accepted '
           'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
+          'server=$serverUrl',
+        );
+        return _InitialSharePostAttempt(
+          id: attemptId,
+          serverUrl: serverUrl,
+          accepted: true,
         );
       } catch (e) {
         debugPrint(
@@ -1709,9 +1774,44 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'proposal=${share.proposalId} share=${share.shareIndex} '
           'server=$serverUrl error=$e',
         );
-        helperHealth.recordFailure(serverUrl);
+        if (attempted) helperHealth.recordFailure(serverUrl);
         // Recovery retries helpers that did not accept this share.
+        return _InitialSharePostAttempt(
+          id: attemptId,
+          serverUrl: serverUrl,
+          accepted: false,
+        );
       }
+    }
+
+    void fillAttempts() {
+      while (!deliveryBudget.expired &&
+          remainingServers.isNotEmpty &&
+          acceptedServers.length + inFlight.length < targetCount) {
+        // Re-evaluate health before every launch so failures observed by
+        // concurrent submissions move a degraded helper behind healthy
+        // alternatives. The tracker still returns every helper when all are
+        // degraded, preserving the liveness fallback.
+        final serverUrl = helperHealth.candidateServers(remainingServers).first;
+        remainingServers.remove(serverUrl);
+        final attemptId = nextAttemptId++;
+        inFlight[attemptId] = startAttempt(attemptId, serverUrl);
+      }
+    }
+
+    fillAttempts();
+    while (acceptedServers.length < targetCount && inFlight.isNotEmpty) {
+      final completed = await Future.any(inFlight.values);
+      inFlight.remove(completed.id);
+      if (completed.accepted) {
+        acceptedServers.add(completed.serverUrl);
+        debugPrint(
+          '[zcash] Voting: share acceptance progress '
+          'proposal=${share.proposalId} share=${share.shareIndex} '
+          'accepted=${acceptedServers.length}/$targetCount',
+        );
+      }
+      fillAttempts();
     }
     if (acceptedServers.length < targetCount && acceptedServers.isNotEmpty) {
       debugPrint(
@@ -1871,6 +1971,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int completedQuestions,
     required int totalQuestions,
     required Future<VotingHelperPreflightResult> helperPreflight,
+    required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2208,6 +2310,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 context,
                 commitments,
                 helperPreflight: helperPreflight,
+                helperSelectionPolicy: helperSelectionPolicy,
+                helperPostPool: helperPostPool,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,
@@ -2958,6 +3062,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final configuredServerUrls = context.config.apiServers.all
           .map((endpoint) => endpoint.toString())
           .toList(growable: false);
+      final helperSelectionPolicy = rust.shareServerSelectionPolicy(
+        serverCount: configuredServerUrls.length,
+      );
+      final helperPostTimeout = Duration(
+        milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
+      );
       final configuredServerUrlSet = configuredServerUrls.toSet();
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final voteEnd = context.round.voteEndTime;
@@ -3015,6 +3125,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             share: share,
             configuredServerUrls: configuredServerUrls,
             sentToUrls: acceptedUrls,
+            helperPostTimeout: helperPostTimeout,
           );
           if (retryServer != null && acceptedUrls.add(retryServer)) {
             await ref
@@ -3078,6 +3189,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_wire.ShareDelegationRecordView share,
     required List<String> configuredServerUrls,
     required Set<String> sentToUrls,
+    required Duration helperPostTimeout,
   }) async {
     if (!ref.mounted || !_isCurrentContext(context)) return null;
     final rust = ref.read(votingRustApiProvider);
@@ -3132,6 +3244,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
           share: body,
+          timeout: helperPostTimeout,
         );
         // Preserve a known acceptance even if a stop arrived during the POST;
         // forgetting it could resend the same share after unlock.
@@ -4999,6 +5112,34 @@ class _InitialShareSubmissionResult {
   final rust_wire.VoteShareWire share;
   final BigInt submitAt;
   final List<String> acceptedServers;
+}
+
+class _InitialSharePostAttempt {
+  const _InitialSharePostAttempt({
+    required this.id,
+    required this.serverUrl,
+    required this.accepted,
+  });
+
+  final int id;
+  final String serverUrl;
+  final bool accepted;
+}
+
+class _InitialShareDeliveryBudget {
+  _InitialShareDeliveryBudget(this.timeout) : assert(timeout > Duration.zero) {
+    _stopwatch.start();
+  }
+
+  final Duration timeout;
+  final Stopwatch _stopwatch = Stopwatch();
+
+  Duration get remaining {
+    final remaining = timeout - _stopwatch.elapsed;
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool get expired => remaining == Duration.zero;
 }
 
 final votingSessionProvider =
