@@ -116,8 +116,7 @@ version = "0.1.0-rc2"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "ddce017b2d4959465b2c52d36263d9aa5da1c7fc"
+version = "3.1.0-rc.10"
 default-features = false
 features = ["zakura"]
 
