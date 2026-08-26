@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/features/accounts/widgets/mobile/mobile_account
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
+import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -107,6 +109,7 @@ Widget _app({
   required _FakeAccountNotifier accountNotifier,
   required _FakeReceiveAddressService addressService,
   AccountState accountState = _accounts,
+  WidgetBuilder? homeBuilder,
 }) {
   return ProviderScope(
     overrides: [
@@ -119,12 +122,14 @@ Widget _app({
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: AppToastHost(
         child: Builder(
-          builder: (context) => Center(
-            child: GestureDetector(
-              onTap: () => showMobileAccountsSheet(context),
-              child: const Text('open accounts'),
-            ),
-          ),
+          builder:
+              homeBuilder ??
+              (context) => Center(
+                child: GestureDetector(
+                  onTap: () => showMobileAccountsSheet(context),
+                  child: const Text('open accounts'),
+                ),
+              ),
         ),
       ),
     ),
@@ -137,6 +142,40 @@ Future<void> _openSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('voting eligibility dialog opens the existing account switcher', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final notifier = _FakeAccountNotifier();
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: notifier,
+        addressService: _FakeReceiveAddressService('u1other'),
+        homeBuilder: buildMobileVotingIneligibleUseCase,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
+    await tester.ensureVisible(option);
+    await tester.pumpAndSettle();
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('voting_ineligible_switch_account')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(VotingIneligibleDialog), findsNothing);
+    expect(find.byType(MobileAccountsSheet), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('account_row_account-2')));
+    await tester.pumpAndSettle();
+    expect(notifier.switched, ['account-2']);
+    expect(find.byType(MobileAccountsSheet), findsNothing);
+    expect(find.byType(VotingActivePollContent), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('lists the active account and the others', (tester) async {
     final notifier = _FakeAccountNotifier();
     await tester.pumpWidget(

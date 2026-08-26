@@ -33,7 +33,7 @@ void main() {
     expect(tester.getRect(find.byType(RawScrollbar)).right, 393);
   });
 
-  testWidgets('submission progress keeps padding inside the edge scrollbar', (
+  testWidgets('submission progress does not show an edge scrollbar', (
     tester,
   ) async {
     await _setMobileViewport(tester);
@@ -45,10 +45,7 @@ void main() {
       ),
     );
 
-    const scrollbarKey = ValueKey(
-      'mobile_voting_submission_progress_scrollbar',
-    );
-    _expectEdgeScrollbar(tester, scrollbarKey);
+    expect(find.byType(RawScrollbar), findsNothing);
     expect(
       tester
           .getRect(
