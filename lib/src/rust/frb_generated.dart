@@ -183,6 +183,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> storedHotkeySecret,
     required VanWitness vanWitness,
     required List<DraftVote> draftVotes,
+    required int maxProofConcurrency,
   });
 
   void crateApiSyncCancelFullSync();
@@ -1823,6 +1824,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> storedHotkeySecret,
     required VanWitness vanWitness,
     required List<DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) {
     final sink = RustStreamSink<ApiVoteCommitEvent>();
     unawaited(
@@ -1838,6 +1840,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_box_autoadd_van_witness(vanWitness, serializer);
             sse_encode_list_draft_vote(draftVotes, serializer);
+            sse_encode_u_32(maxProofConcurrency, serializer);
             sse_encode_StreamSink_api_vote_commit_event_Sse(sink, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
@@ -1860,6 +1863,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             storedHotkeySecret,
             vanWitness,
             draftVotes,
+            maxProofConcurrency,
             sink,
           ],
           apiImpl: this,
@@ -1881,6 +1885,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "storedHotkeySecret",
           "vanWitness",
           "draftVotes",
+          "maxProofConcurrency",
           "sink",
         ],
       );

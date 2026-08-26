@@ -510,6 +510,7 @@ abstract interface class VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   });
 
   Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
@@ -939,6 +940,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) {
     return rust_api.buildVoteCommitmentsWithProgress(
       dbPath: dbPath,
@@ -949,6 +951,7 @@ class FrbVotingRustApi implements VotingRustApi {
       storedHotkeySecret: storedHotkeySecret,
       vanWitness: vanWitness,
       draftVotes: draftVotes,
+      maxProofConcurrency: maxProofConcurrency,
     );
   }
 

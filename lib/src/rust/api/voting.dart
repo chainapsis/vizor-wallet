@@ -617,7 +617,8 @@ Future<SignedVoteCommitmentsView> recoverVoteCommitment({
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// `SignedVoteCommitmentsView`. `max_proof_concurrency` bounds the number of
+/// expensive ZKP #2 builders active within this atomic bundle.
 Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String dbPath,
   required String accountUuid,
@@ -627,6 +628,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
+  required int maxProofConcurrency,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -636,6 +638,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
+  maxProofConcurrency: maxProofConcurrency,
 );
 
 /// Load the full recovery/share-tracking summary for one voting round.

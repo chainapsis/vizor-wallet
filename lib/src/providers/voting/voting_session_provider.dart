@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../core/formatting/hex_codec.dart';
+import '../../core/layout/app_form_factor.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
@@ -53,9 +54,21 @@ const _votingWorkConcurrency = int.fromEnvironment(
   'VIZOR_VOTING_WORK_CONCURRENCY',
   defaultValue: 3,
 );
-// One bundle feeds three concurrent ZKP #2 workers inside Rust. Keeping one
-// bundle proof active at a time bounds the process-wide proof fan-out at three
-// while submission, confirmation, and helper delivery continue to pipeline.
+const _configuredVotingActionProofConcurrency = int.fromEnvironment(
+  'VIZOR_VOTING_ACTION_PROOF_CONCURRENCY',
+);
+// Desktop has enough memory and CPU for a wider ZKP #2 wave. Mobile retains
+// the established three-worker bound. The build-time override supports device
+// benchmarking without changing the production default.
+const _votingActionProofConcurrency =
+    _configuredVotingActionProofConcurrency > 0
+    ? _configuredVotingActionProofConcurrency
+    : kAppFormFactor == AppFormFactor.desktop
+    ? 6
+    : 3;
+// Keep one bundle proof active at a time so the configured action-worker count
+// is also the process-wide ZKP #2 bound. Submission, confirmation, and helper
+// delivery continue to pipeline behind it.
 const _votingBatchProofConcurrency = 1;
 
 const _configuredMaxRealNotesPerBundle = int.fromEnvironment(
@@ -1916,8 +1929,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// one broadcast, and one confirmation regardless of question count.
   ///
   /// Different bundles remain independent. One bundle proof is admitted at a
-  /// time and Rust runs three action proofs concurrently inside it; the next
-  /// bundle can prove while the previous batch waits on helper delivery.
+  /// time and Rust runs a form-factor-bounded action-proof wave inside it; the
+  /// next bundle can prove while the previous batch waits on helper delivery.
   ///
   /// Returns the number of bundle tasks that completed through share
   /// submission. Throws [_VoteWaveBatchException] if any task failed.
@@ -2116,6 +2129,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 storedHotkeySecret: storedHotkeySecret,
                 vanWitness: witness,
                 draftVotes: timedDrafts,
+                maxProofConcurrency: _votingActionProofConcurrency,
               )) {
                 _throwIfContextStale(context, 'vote-batch-proof-progress');
                 final eventKey = VotingVoteKey(
@@ -2308,7 +2322,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'round=${context.round.roundId} proposals=${voteWork.length} '
       'bundles=${draftsByBundle.length} tasks=${voteKeys.length} '
       'treeSyncs=$syncCount bundleConcurrency=$_votingBatchProofConcurrency '
-      'proofConcurrency=3 '
+      'proofConcurrency=$_votingActionProofConcurrency '
       'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
       'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
     );

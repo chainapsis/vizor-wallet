@@ -1426,6 +1426,73 @@ void main() {
     },
   );
 
+  testWidgets(
+    'status screen shows aggregate casting progress without a question counter',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.castingVotes,
+                voteSubmissionCompletedCount: 0,
+                voteSubmissionTotalCount: 15,
+                voteSubmissionProgress: 0.42,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(
+            initialLocation: votingStatusRoute(
+              _roundId,
+              accountUuid: key.accountUuid,
+            ),
+          ),
+        ),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.text('Casting votes and submitting shares'),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('Question '), findsNothing);
+      final determinate = tester
+          .widgetList<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .where((indicator) => indicator.value != null)
+          .toList(growable: false);
+      expect(determinate, hasLength(1));
+      expect(determinate.single.value, closeTo(0.42, 0.001));
+    },
+  );
+
   testWidgets('status screen shows finalizing step before job completion', (
     tester,
   ) async {
@@ -4980,6 +5047,7 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     throw Exception(
       'Invalid input: no spendable voting notes at snapshot height 3359740',
@@ -5472,6 +5540,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     voteCommitmentCalls++;
     for (final draft in draftVotes) {

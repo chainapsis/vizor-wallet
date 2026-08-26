@@ -1621,6 +1621,7 @@ async fn build_vote_commitments_result<F>(
     stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
+    max_proof_concurrency: u32,
     on_stage: F,
 ) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String>
 where
@@ -1657,7 +1658,7 @@ where
                 drafts: &draft_votes,
                 witness: &van_witness,
                 stages: &reporter,
-                max_proof_concurrency: 3,
+                max_proof_concurrency: max_proof_concurrency as usize,
             },
         )
         .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
@@ -1690,7 +1691,8 @@ where
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// `SignedVoteCommitmentsView`. `max_proof_concurrency` bounds the number of
+/// expensive ZKP #2 builders active within this atomic bundle.
 pub async fn build_vote_commitments_with_progress(
     db_path: String,
     account_uuid: String,
@@ -1700,6 +1702,7 @@ pub async fn build_vote_commitments_with_progress(
     stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
+    max_proof_concurrency: u32,
     sink: StreamSink<ApiVoteCommitEvent>,
 ) -> Result<(), String> {
     // Bridge stage callbacks into stream events for UI progress updates.
@@ -1714,6 +1717,7 @@ pub async fn build_vote_commitments_with_progress(
         stored_hotkey_secret,
         van_witness,
         draft_votes,
+        max_proof_concurrency,
         move |stage| {
             if progress_sink.add(stage.into()).is_err() {
                 log_sink_closed(VOTE_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);

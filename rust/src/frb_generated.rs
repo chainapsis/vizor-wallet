@@ -461,6 +461,7 @@ fn wire__crate__api__voting__build_vote_commitments_with_progress_impl(
             let api_van_witness = <zcash_voting::vote::VanWitness>::sse_decode(&mut deserializer);
             let api_draft_votes =
                 <Vec<zcash_voting::wire::DraftVote>>::sse_decode(&mut deserializer);
+            let api_max_proof_concurrency = <u32>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::voting::ApiVoteCommitEvent,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -478,6 +479,7 @@ fn wire__crate__api__voting__build_vote_commitments_with_progress_impl(
                             api_stored_hotkey_secret,
                             api_van_witness,
                             api_draft_votes,
+                            api_max_proof_concurrency,
                             api_sink,
                         )
                         .await?;

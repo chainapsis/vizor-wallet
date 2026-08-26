@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override, ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -4952,6 +4953,13 @@ void main() {
     }
     expect(rust.syncedVoteTrees, [kRoundId]);
     expect(rust.maxConcurrentVoteTreeSyncs, 1);
+    final expectedProofConcurrency = kAppFormFactor == AppFormFactor.desktop
+        ? 6
+        : 3;
+    expect(rust.voteCommitmentProofConcurrencies, [
+      expectedProofConcurrency,
+      expectedProofConcurrency,
+    ]);
   });
 
   test('vote tree failover waits for prior sync witnesses', () async {
@@ -5161,6 +5169,7 @@ void main() {
                   singleShare: false,
                 ),
               ],
+              maxProofConcurrency: 3,
             )
             .drain<void>();
       }
@@ -9975,6 +9984,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationPirServerUrlBatches = <List<String>>[];
   final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
+  final voteCommitmentProofConcurrencies = <int>[];
   final voteCommitmentKeys = <String>[];
   final recoveredVoteCommitmentKeys = <String>[];
   final storedDelegationTxHashes = <String>[];
@@ -10609,8 +10619,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     voteCommitBundleCalls.add(bundleIndex);
+    voteCommitmentProofConcurrencies.add(maxProofConcurrency);
     _activeVoteCommitments++;
     if (_activeVoteCommitments > maxConcurrentVoteCommitments) {
       maxConcurrentVoteCommitments = _activeVoteCommitments;

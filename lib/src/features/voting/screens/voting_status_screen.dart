@@ -423,7 +423,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         return _StatusContent(
           phase: phase,
           horizontalPadding: widget.contentHorizontalPadding,
-          voteSubmissionDetail: _voteSubmissionDetail(state),
           voteSubmissionProgress: voteSubmissionProgress,
           delegationProgress: delegationProgress,
           completedSubmission: completedSubmission,
@@ -516,34 +515,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     }
     return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
         'block $expected.';
-  }
-
-  String? _shareSubmissionDetail(VotingSessionState state) {
-    final key = state.currentVoteKey;
-    if (key != null) {
-      final message = state.voteProgress[key]?.message;
-      if (message != null && message.isNotEmpty) return message;
-    }
-    final messages = state.voteProgress.values
-        .where(
-          (progress) =>
-              progress.phase == 'submitting_shares' &&
-              progress.message != null &&
-              progress.message!.isNotEmpty,
-        )
-        .map((progress) => progress.message!)
-        .toList(growable: false);
-    return messages.isEmpty ? null : messages.last;
-  }
-
-  String? _voteSubmissionDetail(VotingSessionState state) {
-    final total = state.voteSubmissionTotalCount;
-    if (total > 0) {
-      final completed = state.voteSubmissionCompletedCount.clamp(0, total);
-      final current = completed >= total ? total : completed + 1;
-      return 'Question $current/$total';
-    }
-    return _shareSubmissionDetail(state);
   }
 
   double? _voteSubmissionProgress(
@@ -730,7 +701,6 @@ class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
     this.horizontalPadding = 0,
-    this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
     this.completedSubmission = false,
@@ -758,7 +728,6 @@ class _StatusContent extends StatelessWidget {
 
   final VotingSessionPhase phase;
   final double horizontalPadding;
-  final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
   final bool completedSubmission;
@@ -875,7 +844,6 @@ class _StatusContent extends StatelessWidget {
                         phase == VotingSessionPhase.castingVotes ||
                         phase == VotingSessionPhase.submittingShares),
                 complete: voteStepComplete,
-                detail: voteStepComplete ? null : voteSubmissionDetail,
                 progressValue: voteStepComplete ? null : voteSubmissionProgress,
               ),
               _StepRow(
@@ -1403,14 +1371,12 @@ class _StepRow extends StatelessWidget {
     required this.label,
     this.active = false,
     this.complete = false,
-    this.detail,
     this.progressValue,
   });
 
   final String label;
   final bool active;
   final bool complete;
-  final String? detail;
   final double? progressValue;
 
   @override
@@ -1438,27 +1404,13 @@ class _StepRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: active || complete
-                        ? colors.text.accent
-                        : colors.text.secondary,
-                  ),
-                ),
-                if (detail != null && detail!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    detail!,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                ],
-              ],
+            child: Text(
+              label,
+              style: AppTypography.bodyMedium.copyWith(
+                color: active || complete
+                    ? colors.text.accent
+                    : colors.text.secondary,
+              ),
             ),
           ),
         ],
