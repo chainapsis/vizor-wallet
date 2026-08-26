@@ -53,6 +53,9 @@ http = "1"
 http-body-util = "0.1"
 hyper = "1"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+# Direct-route TLS for voting helper HTTP. The connector is wrapped so the
+# direct-route lease still governs the socket.
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
 tower-service = "0.3"
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep

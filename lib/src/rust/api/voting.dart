@@ -12,8 +12,9 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ShareTrackingOperationGuard`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -163,6 +164,78 @@ Future<int> shareTrackingFlags({
   share: share,
   nowSeconds: nowSeconds,
   voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Registers one tracking pass and returns its process-unique operation ID.
+BigInt beginShareTracking() =>
+    RustLib.instance.api.crateApiVotingBeginShareTracking();
+
+/// Stops one registered tracking pass, if it is still active.
+///
+/// Dart owns the reasons a pass should stop — app lock, round expiry, session
+/// disposal, a destructive wallet operation — and pushes them here instead of
+/// the pass polling Dart state it cannot see. Cancellation is operation-scoped
+/// so draining one account cannot interrupt another account's concurrent pass.
+void cancelShareTracking({required BigInt operationId}) => RustLib.instance.api
+    .crateApiVotingCancelShareTracking(operationId: operationId);
+
+/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
+///
+/// This is the whole helper-facing workflow: the crate polls helpers, applies
+/// the confirm-on-any-helper policy, retries overdue shares against helpers
+/// that missed them, and persists both outcomes. Dart keeps only the timer and
+/// the cancellation triggers.
+///
+/// The sidecar write lock is held for the open (which may migrate) and then
+/// released. Holding it across the pass would block user-initiated voting
+/// writes for as long as helper polling takes; the writes this pass makes are
+/// short and self-contained, and the sidecar runs in WAL mode with a busy
+/// timeout.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or a share record cannot be
+/// read or updated. Helper failures are not errors: they are scored and
+/// reported through the returned pass result.
+Future<ApiShareTrackingReport> trackPendingShares({
+  required BigInt operationId,
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required List<String> configuredServerUrls,
+  required BigInt nowSeconds,
+  BigInt? voteEndTimeSeconds,
+}) => RustLib.instance.api.crateApiVotingTrackPendingShares(
+  operationId: operationId,
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  configuredServerUrls: configuredServerUrls,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Submits one freshly built share to helpers until `target_count` accept it.
+///
+/// Helper choice, health ordering, and the per-attempt retry rules live in the
+/// crate. Accepting fewer helpers than requested is a normal outcome and is
+/// reported by returning a shorter list; the caller persists exactly the
+/// helpers that accepted, and later tracking passes spread the share further.
+///
+/// # Errors
+///
+/// Returns an error only if the share body is not valid JSON. Helper refusals
+/// are scored, not raised.
+Future<List<String>> submitShareToHelpers({
+  required String shareWireJson,
+  required List<String> candidateServers,
+  required int targetCount,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingSubmitShareToHelpers(
+  shareWireJson: shareWireJson,
+  candidateServers: candidateServers,
+  targetCount: targetCount,
+  nowSeconds: nowSeconds,
 );
 
 /// Return the next share-tracking delay in seconds using crate policy.
@@ -1125,6 +1198,96 @@ class ApiPirCacheWarmupResult {
           fetchedCount == other.fetchedCount &&
           servedRoot == other.servedRoot &&
           prunedCount == other.prunedCount;
+}
+
+/// One share that reached a new helper during a tracking pass.
+class ApiResubmittedShare {
+  final ApiShareKey share;
+  final String serverUrl;
+
+  const ApiResubmittedShare({required this.share, required this.serverUrl});
+
+  @override
+  int get hashCode => share.hashCode ^ serverUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiResubmittedShare &&
+          runtimeType == other.runtimeType &&
+          share == other.share &&
+          serverUrl == other.serverUrl;
+}
+
+/// One helper share identified within its round.
+class ApiShareKey {
+  final int bundleIndex;
+  final int proposalId;
+  final int shareIndex;
+
+  const ApiShareKey({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareKey &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
+}
+
+/// What one helper share-tracking pass did.
+class ApiShareTrackingReport {
+  /// Shares confirmed and durably marked during this pass.
+  final List<ApiShareKey> confirmed;
+
+  /// Shares that reached an additional helper during this pass.
+  final List<ApiResubmittedShare> resubmitted;
+
+  /// Shares whose recovery material is missing, so no retry can help.
+  final List<ApiShareKey> unrecoverable;
+
+  /// True when the pass stopped early because Dart cancelled it.
+  final bool cancelled;
+
+  /// Seconds until the next pass, or `None` when nothing is pending.
+  final BigInt? nextDelaySeconds;
+
+  const ApiShareTrackingReport({
+    required this.confirmed,
+    required this.resubmitted,
+    required this.unrecoverable,
+    required this.cancelled,
+    this.nextDelaySeconds,
+  });
+
+  @override
+  int get hashCode =>
+      confirmed.hashCode ^
+      resubmitted.hashCode ^
+      unrecoverable.hashCode ^
+      cancelled.hashCode ^
+      nextDelaySeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareTrackingReport &&
+          runtimeType == other.runtimeType &&
+          confirmed == other.confirmed &&
+          resubmitted == other.resubmitted &&
+          unrecoverable == other.unrecoverable &&
+          cancelled == other.cancelled &&
+          nextDelaySeconds == other.nextDelaySeconds;
 }
 
 /// PIR cache result for one snapshot-precomputed delegation bundle.

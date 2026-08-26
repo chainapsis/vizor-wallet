@@ -1,4 +1,13 @@
-use std::{panic, path::Path, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    panic,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, LazyLock, Mutex,
+    },
+    time::Instant,
+};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -459,6 +468,232 @@ pub fn share_tracking_flags(
         }
         Ok(flags)
     })
+}
+
+/// One helper share identified within its round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiShareKey {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub share_index: u32,
+}
+
+/// One share that reached a new helper during a tracking pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiResubmittedShare {
+    pub share: ApiShareKey,
+    pub server_url: String,
+}
+
+/// What one helper share-tracking pass did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiShareTrackingReport {
+    /// Shares confirmed and durably marked during this pass.
+    pub confirmed: Vec<ApiShareKey>,
+    /// Shares that reached an additional helper during this pass.
+    pub resubmitted: Vec<ApiResubmittedShare>,
+    /// Shares whose recovery material is missing, so no retry can help.
+    pub unrecoverable: Vec<ApiShareKey>,
+    /// True when the pass stopped early because Dart cancelled it.
+    pub cancelled: bool,
+    /// Seconds until the next pass, or `None` when nothing is pending.
+    pub next_delay_seconds: Option<u64>,
+}
+
+impl From<zcash_voting::share_tracking::ShareKey> for ApiShareKey {
+    fn from(key: zcash_voting::share_tracking::ShareKey) -> Self {
+        Self {
+            bundle_index: key.bundle_index,
+            proposal_id: key.proposal_id,
+            share_index: key.share_index,
+        }
+    }
+}
+
+/// Process-unique IDs and cancellation tokens for helper-share tracking.
+///
+/// Dart registers each pass synchronously before dispatching its async work.
+/// That ordering lets an immediate destructive drain cancel the exact pass even
+/// if the async FRB call has not started executing yet.
+static NEXT_SHARE_TRACKING_OPERATION_ID: AtomicU64 = AtomicU64::new(1);
+static SHARE_TRACKING_OPERATIONS: LazyLock<Mutex<HashMap<u64, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+struct ShareTrackingOperationGuard {
+    operation_id: u64,
+}
+
+impl Drop for ShareTrackingOperationGuard {
+    fn drop(&mut self) {
+        SHARE_TRACKING_OPERATIONS
+            .lock()
+            .expect("share tracking operation lock poisoned")
+            .remove(&self.operation_id);
+    }
+}
+
+/// Process-wide helper transport, so connections and TLS sessions are reused.
+static HELPER_TRANSPORT: std::sync::OnceLock<
+    Arc<crate::wallet::voting::helper_transport::VotingHelperTransport>,
+> = std::sync::OnceLock::new();
+/// Process-wide helper health, so scores survive across tracking passes.
+///
+/// Scores describe the current network moment and are deliberately not
+/// persisted; a relaunch starts every helper even.
+static HELPER_HEALTH: std::sync::OnceLock<zcash_voting::HelperHealth> = std::sync::OnceLock::new();
+
+fn helper_client() -> zcash_voting::HelperClient {
+    let transport = HELPER_TRANSPORT
+        .get_or_init(|| {
+            Arc::new(crate::wallet::voting::helper_transport::VotingHelperTransport::new())
+        })
+        .clone();
+    let health = HELPER_HEALTH
+        .get_or_init(zcash_voting::HelperHealth::default)
+        .clone();
+    zcash_voting::HelperClient::new(transport, health)
+}
+
+/// Registers one tracking pass and returns its process-unique operation ID.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_share_tracking() -> u64 {
+    let operation_id = NEXT_SHARE_TRACKING_OPERATION_ID.fetch_add(1, Ordering::Relaxed);
+    SHARE_TRACKING_OPERATIONS
+        .lock()
+        .expect("share tracking operation lock poisoned")
+        .insert(operation_id, Arc::new(AtomicBool::new(false)));
+    operation_id
+}
+
+/// Stops one registered tracking pass, if it is still active.
+///
+/// Dart owns the reasons a pass should stop — app lock, round expiry, session
+/// disposal, a destructive wallet operation — and pushes them here instead of
+/// the pass polling Dart state it cannot see. Cancellation is operation-scoped
+/// so draining one account cannot interrupt another account's concurrent pass.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel_share_tracking(operation_id: u64) {
+    if let Some(cancelled) = SHARE_TRACKING_OPERATIONS
+        .lock()
+        .expect("share tracking operation lock poisoned")
+        .get(&operation_id)
+    {
+        cancelled.store(true, Ordering::Release);
+    }
+}
+
+/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
+///
+/// This is the whole helper-facing workflow: the crate polls helpers, applies
+/// the confirm-on-any-helper policy, retries overdue shares against helpers
+/// that missed them, and persists both outcomes. Dart keeps only the timer and
+/// the cancellation triggers.
+///
+/// The sidecar write lock is held for the open (which may migrate) and then
+/// released. Holding it across the pass would block user-initiated voting
+/// writes for as long as helper polling takes; the writes this pass makes are
+/// short and self-contained, and the sidecar runs in WAL mode with a busy
+/// timeout.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or a share record cannot be
+/// read or updated. Helper failures are not errors: they are scored and
+/// reported through the returned pass result.
+pub async fn track_pending_shares(
+    operation_id: u64,
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    configured_server_urls: Vec<String>,
+    now_seconds: u64,
+    vote_end_time_seconds: Option<u64>,
+) -> Result<ApiShareTrackingReport, String> {
+    let cancelled = SHARE_TRACKING_OPERATIONS
+        .lock()
+        .map_err(|_| "share tracking operation lock poisoned".to_string())?
+        .get(&operation_id)
+        .cloned()
+        .ok_or_else(|| format!("share tracking operation {operation_id} is not registered"))?;
+    let _operation = ShareTrackingOperationGuard { operation_id };
+    let cancel = move || cancelled.load(Ordering::Acquire);
+
+    // Open under the sidecar lock so a concurrent opener cannot race schema
+    // migration, then run the network pass without holding it.
+    let db = db::with_voting_sidecar_write_lock(&db_path, || {
+        db::open_voting_db(&db_path, &account_uuid)
+    })?;
+
+    let client = helper_client();
+    let params = zcash_voting::share_tracking::ShareTrackingParams {
+        round_id: &round_id,
+        configured_server_urls: &configured_server_urls,
+        now_seconds,
+        vote_end_time_seconds,
+        policy: zcash_voting::share::ShareTimingPolicy::default(),
+        random_bytes: &zcash_voting::share_tracking::os_random_bytes,
+    };
+
+    let report = zcash_voting::share_tracking::track_pending_shares(&db, &params, &client, &cancel)
+        .await
+        .map_err(|e| format!("track_pending_shares failed: {e}"))?;
+
+    Ok(ApiShareTrackingReport {
+        confirmed: report
+            .confirmed
+            .into_iter()
+            .map(ApiShareKey::from)
+            .collect(),
+        resubmitted: report
+            .resubmitted
+            .into_iter()
+            .map(|entry| ApiResubmittedShare {
+                share: entry.share.into(),
+                server_url: entry.server_url,
+            })
+            .collect(),
+        unrecoverable: report
+            .unrecoverable
+            .into_iter()
+            .map(ApiShareKey::from)
+            .collect(),
+        cancelled: report.cancelled,
+        next_delay_seconds: report.next_delay_seconds,
+    })
+}
+
+/// Submits one freshly built share to helpers until `target_count` accept it.
+///
+/// Helper choice, health ordering, and the per-attempt retry rules live in the
+/// crate. Accepting fewer helpers than requested is a normal outcome and is
+/// reported by returning a shorter list; the caller persists exactly the
+/// helpers that accepted, and later tracking passes spread the share further.
+///
+/// # Errors
+///
+/// Returns an error only if the share body is not valid JSON. Helper refusals
+/// are scored, not raised.
+pub async fn submit_share_to_helpers(
+    share_wire_json: String,
+    candidate_servers: Vec<String>,
+    target_count: u32,
+    now_seconds: u64,
+) -> Result<Vec<String>, String> {
+    // Initial submission is foreground cast work, not a tracking operation.
+    // Its lifecycle is owned by the submission action and must not be cancelled
+    // when an unrelated account drains background tracking.
+    let cancel = || false;
+
+    let client = helper_client();
+    Ok(zcash_voting::share_tracking::submit_share_to_helpers(
+        &client,
+        &share_wire_json,
+        &candidate_servers,
+        target_count as usize,
+        now_seconds,
+        &cancel,
+    )
+    .await)
 }
 
 /// Return the next share-tracking delay in seconds using crate policy.
@@ -2187,6 +2422,22 @@ mod tests {
     fn warm_voting_proving_caches_is_idempotent() {
         warm_voting_proving_caches();
         warm_voting_proving_caches();
+    }
+
+    #[test]
+    fn share_tracking_cancellation_is_operation_scoped_before_async_start() {
+        let first = begin_share_tracking();
+        let second = begin_share_tracking();
+
+        cancel_share_tracking(first);
+
+        let operations = SHARE_TRACKING_OPERATIONS.lock().unwrap();
+        assert!(operations[&first].load(Ordering::Acquire));
+        assert!(!operations[&second].load(Ordering::Acquire));
+        drop(operations);
+
+        SHARE_TRACKING_OPERATIONS.lock().unwrap().remove(&first);
+        SHARE_TRACKING_OPERATIONS.lock().unwrap().remove(&second);
     }
 
     #[test]

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
-import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
@@ -20,7 +19,6 @@ import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
-import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_models.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
@@ -52,6 +50,14 @@ const _ironwoodPcztPool = 1;
 /// Cap for independent voting work pools: delegation proofs, vote proofs,
 /// share submission, and recovery polling.
 const _votingWorkConcurrency = 3;
+
+/// How often a running share-tracking pass re-checks Dart-owned stop
+/// conditions.
+///
+/// The pass itself runs in Rust, so this is the granularity at which app lock,
+/// round expiry, or disposal reach it. Short enough that a lock screen stops
+/// helper traffic promptly, long enough not to spin.
+const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
@@ -97,6 +103,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   Future<void>? _shareTrackingPass;
+  BigInt? _shareTrackingOperationId;
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -180,6 +187,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _snapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
+      final shareTrackingOperationId = _shareTrackingOperationId;
+      if (shareTrackingOperationId != null) {
+        rust.cancelShareTracking(shareTrackingOperationId);
+      }
       _releaseAutomaticShareTracking();
       if (context == null) return;
       if (ownsSubmission) {
@@ -1520,9 +1531,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalQuestions,
     required double? voteSubmissionProgress,
   }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
-    final helperHealth = ref.read(votingHelperHealthTrackerProvider);
     final serverUrls = context.config.apiServers.all
         .map((endpoint) => endpoint.toString())
         .toList(growable: false);
@@ -1605,17 +1614,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final targetCount = plan.targetCount
             .clamp(1, serverUrls.length)
             .toInt();
-        final candidateServers = <String>{
-          ...plan.targetServers,
-          ...rankedServerUrls,
-        }.toList(growable: false);
-        final body = await _wireJsonMap(
-          rust.voteShareWireJson(
-            share: share,
-            vcTreePosition: vcTreePosition,
-            submitAt: plan.submitAt,
-          ),
+        final candidateServers = _plannedShareServers(
+          plannedServers: plan.targetServers,
+          // The crate re-orders by helper health inside the fan-out, so the
+          // fallback list only has to be complete, not pre-ranked.
+          fallbackServers: serverUrls,
+          helperAvailability: availableHelpers,
         );
+        final bodyJson = await rust.voteShareWireJson(
+          share: share,
+          vcTreePosition: vcTreePosition,
+          submitAt: plan.submitAt,
+        );
+        // Decoding is validation only; the crate submits the original text.
+        await _wireJsonMap(Future<String>.value(bodyJson));
         if (publishProgress == null) {
           _setShareSubmissionProgress(
             context: context,
@@ -1639,7 +1651,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         preparedSubmissions.add(
           _PreparedInitialShareSubmission(
             share: share,
-            body: body,
+            bodyJson: bodyJson,
             candidateServers: candidateServers,
             targetCount: targetCount,
             submitAt: plan.submitAt,
@@ -1662,10 +1674,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final submissions = [
         for (final prepared in preparedSubmissions)
           _submitInitialShareToHelpers(
-            api: api,
-            helperHealth: helperHealth,
+            rust: rust,
             share: prepared.share,
-            body: prepared.body,
+            bodyJson: prepared.bodyJson,
             candidateServers: prepared.candidateServers,
             targetCount: prepared.targetCount,
             submitAt: prepared.submitAt,
@@ -1755,11 +1766,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
+  /// Submits one share to helpers through the crate's health-ordered fan-out.
+  ///
+  /// Helper choice, ordering, per-attempt retry rules, and health scoring all
+  /// live in `zcash_voting`, so initial submission and later recovery share one
+  /// view of which helpers are healthy. An empty result means no helper
+  /// accepted; a short one means the share is under-placed and a later tracking
+  /// pass will spread it further.
   Future<_InitialShareSubmissionResult> _submitInitialShareToHelpers({
-    required VotingApiClient api,
-    required VotingHelperHealthTracker helperHealth,
+    required VotingRustApi rust,
     required rust_wire.VoteShareWire share,
-    required Map<String, dynamic> body,
+    required String bodyJson,
     required List<String> candidateServers,
     required int targetCount,
     required BigInt submitAt,
@@ -1767,83 +1784,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Duration helperPostTimeout,
     required _InitialShareDeliveryBudget deliveryBudget,
   }) async {
-    final acceptedServers = <String>[];
-    final remainingServers = LinkedHashSet<String>.of(candidateServers);
-
-    Future<({bool attempted, String? acceptedServer})> submitNext() {
-      return helperPostPool.run(() async {
-        final budgetRemaining = deliveryBudget.remaining;
-        if (budgetRemaining == Duration.zero || remainingServers.isEmpty) {
-          return (attempted: false, acceptedServer: null);
-        }
-        // Choose only after receiving a permit. A queued request must see
-        // failures reported by earlier attempts instead of remaining bound to
-        // a helper that became degraded while it waited.
-        final serverUrl = helperHealth
-            .candidateServers(deliveryBudget.rankCandidates(remainingServers))
-            .first;
-        remainingServers.remove(serverUrl);
-        final requestTimeout = budgetRemaining < helperPostTimeout
-            ? budgetRemaining
-            : helperPostTimeout;
-        try {
-          debugPrint(
-            '[zcash] Voting: submitting share '
-            'proposal=${share.proposalId} share=${share.shareIndex} '
-            'server=$serverUrl treePosition=${body['tree_position']} '
-            'submitAt=$submitAt target=$targetCount '
-            'timeoutMs=${requestTimeout.inMilliseconds} '
-            'budgetRemainingMs=${budgetRemaining.inMilliseconds}',
-          );
-          await api.submitShare(
-            serverUrl: Uri.parse(serverUrl),
-            share: body,
-            timeout: requestTimeout,
-            overallTimeout: budgetRemaining,
-          );
-          helperHealth.recordSuccess(serverUrl);
-          deliveryBudget.recordSuccess(serverUrl);
-          debugPrint(
-            '[zcash] Voting: share accepted '
-            'proposal=${share.proposalId} share=${share.shareIndex} '
-            'server=$serverUrl',
-          );
-          return (attempted: true, acceptedServer: serverUrl);
-        } catch (e) {
-          debugPrint(
-            '[zcash] Voting: share rejected '
-            'proposal=${share.proposalId} share=${share.shareIndex} '
-            'server=$serverUrl error=$e',
-          );
-          helperHealth.recordFailure(serverUrl);
-          if (e is TimeoutException) {
-            deliveryBudget.recordTimeout(serverUrl);
-          }
-          // Recovery retries helpers that did not accept this share.
-          return (attempted: true, acceptedServer: null);
-        }
-      });
-    }
-
-    Future<void> submitUntilAccepted() async {
-      while (!deliveryBudget.expired && remainingServers.isNotEmpty) {
-        final result = await submitNext();
-        if (!result.attempted) return;
-        final serverUrl = result.acceptedServer;
-        if (serverUrl != null) {
-          acceptedServers.add(serverUrl);
-          debugPrint(
-            '[zcash] Voting: share acceptance progress '
-            'proposal=${share.proposalId} share=${share.shareIndex} '
-            'accepted=${acceptedServers.length}/$targetCount',
-          );
-          return;
-        }
-      }
-    }
-
-    await Future.wait(List.generate(targetCount, (_) => submitUntilAccepted()));
-    if (acceptedServers.length < targetCount && acceptedServers.isNotEmpty) {
+    debugPrint(
+      '[zcash] Voting: submitting share '
+      'proposal=${share.proposalId} share=${share.shareIndex} '
+      'candidates=${candidateServers.length} submitAt=$submitAt '
+      'target=$targetCount',
+    );
+    final acceptedServers = await rust.submitShareToHelpers(
+      shareWireJson: bodyJson,
+      candidateServers: candidateServers,
+      targetCount: targetCount,
+      nowSeconds: BigInt.from(_nowSeconds()),
+    );
+    if (acceptedServers.length < targetCount) {
       debugPrint(
         '[zcash] Voting: share accepted by fewer helpers than planned '
         'proposal=${share.proposalId} share=${share.shareIndex} '
@@ -3184,92 +3137,57 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
 
-      final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
-      final helperHealth = ref.read(votingHelperHealthTrackerProvider);
       final configuredServerUrls = context.config.apiServers.all
           .map((endpoint) => endpoint.toString())
           .toList(growable: false);
-      final helperSelectionPolicy = rust.shareServerSelectionPolicy(
-        serverCount: configuredServerUrls.length,
-      );
-      final helperPostTimeout = Duration(
-        milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
-      );
-      final configuredServerUrlSet = configuredServerUrls.toSet();
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final voteEnd = context.round.voteEndTime;
       final voteEndSeconds = voteEnd == null
           ? null
           : voteEnd.millisecondsSinceEpoch ~/ 1000;
-      for (final share in plan.unconfirmedShareDelegations) {
-        final acceptedUrls = LinkedHashSet<String>.of(
-          share.sentToUrls.where(configuredServerUrlSet.contains),
-        );
-        final trackingFlags = await rust.shareTrackingFlags(
-          share: share,
+
+      // One crate call performs the whole pass: helper status polling, the
+      // confirm-on-any-helper policy, overdue resubmission, and the durable
+      // writes for both. Dart no longer sees individual helper requests, so
+      // its stop conditions are pushed in by the watchdog below instead of
+      // being polled between them.
+      final operationId = rust.beginShareTracking();
+      _shareTrackingOperationId = operationId;
+      final cancellationWatchdog = _watchShareTrackingCancellation(
+        context,
+        operationId,
+      );
+      final rust_api.ApiShareTrackingReport report;
+      try {
+        report = await rust.trackPendingShares(
+          operationId: operationId,
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          configuredServerUrls: configuredServerUrls,
           nowSeconds: BigInt.from(nowSeconds),
           voteEndTimeSeconds: voteEndSeconds == null
               ? null
               : BigInt.from(voteEndSeconds),
         );
-        if (_shareTrackingCancelled(context)) {
-          _releaseAutomaticShareTrackingIfRoundExpired(context);
-          return;
-        }
-        final readyForStatusCheck = (trackingFlags & 1) != 0;
-        final overdueForRetry = (trackingFlags & 2) != 0;
-
-        if (!readyForStatusCheck && !overdueForRetry) continue;
-
-        if (acceptedUrls.isNotEmpty && readyForStatusCheck) {
-          // Helpers can reveal at slightly different times. Confirmation by any
-          // helper is enough to advance the local workflow for this share.
-          final confirmed = await _shareConfirmedByAnyHelper(
-            api: api,
-            context: context,
-            helperHealth: helperHealth,
-            share: share,
-            serverUrls: acceptedUrls,
-            isCancelled: () => _shareTrackingCancelled(context),
-          );
-          if (confirmed) {
-            await rust.markShareConfirmed(
-              dbPath: context.dbPath,
-              accountUuid: context.accountUuid,
-              roundId: share.roundId,
-              bundleIndex: share.bundleIndex,
-              proposalId: share.proposalId,
-              shareIndex: share.shareIndex,
-            );
-            continue;
-          }
-        }
-
-        if (overdueForRetry) {
-          final retryServer = await _resubmitShare(
-            api: api,
-            context: context,
-            plan: plan,
-            share: share,
-            configuredServerUrls: configuredServerUrls,
-            sentToUrls: acceptedUrls,
-            helperPostTimeout: helperPostTimeout,
-          );
-          if (retryServer != null && acceptedUrls.add(retryServer)) {
-            await ref
-                .read(votingRecoveryServiceProvider)
-                .addSentServersForShare(
-                  dbPath: context.dbPath,
-                  accountUuid: context.accountUuid,
-                  share: share,
-                  newUrls: [retryServer],
-                );
-          }
+      } finally {
+        cancellationWatchdog.cancel();
+        if (_shareTrackingOperationId == operationId) {
+          _shareTrackingOperationId = null;
         }
       }
 
-      if (_shareTrackingCancelled(context)) {
+      if (report.unrecoverable.isNotEmpty) {
+        // These cannot be repaired by retrying; log once per pass rather than
+        // spinning on them silently.
+        debugPrint(
+          '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
+          'recovery material round=${context.round.roundId}',
+        );
+      }
+
+      if (report.cancelled || _shareTrackingCancelled(context)) {
         _releaseAutomaticShareTrackingIfRoundExpired(context);
         return;
       }
@@ -3296,6 +3214,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _shareTrackingTimer?.cancel();
     _shareTrackingTimer = null;
     _advanceSessionGeneration();
+    // Stop the in-flight Rust pass now rather than waiting for the watchdog's
+    // next tick: destructive wallet operations block on this draining.
+    final operationId = _shareTrackingOperationId;
+    if (operationId != null) {
+      ref.read(votingRustApiProvider).cancelShareTracking(operationId);
+    }
     final pass = _shareTrackingPass;
     try {
       if (pass != null) await pass;
@@ -3309,97 +3233,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void resumeShareTracking() {
     _automaticShareTrackingStopped = false;
-  }
-
-  Future<String?> _resubmitShare({
-    required VotingApiClient api,
-    required _VotingSessionContext context,
-    required VotingResumePlan plan,
-    required rust_wire.ShareDelegationRecordView share,
-    required List<String> configuredServerUrls,
-    required Set<String> sentToUrls,
-    required Duration helperPostTimeout,
-  }) async {
-    if (!ref.mounted || !_isCurrentContext(context)) return null;
-    final rust = ref.read(votingRustApiProvider);
-    final key = VotingVoteKey(
-      bundleIndex: share.bundleIndex,
-      proposalId: share.proposalId,
-    );
-    final commitmentBundle = plan.commitmentBundleFor(key);
-    if (commitmentBundle == null) {
-      debugPrint(
-        '[zcash] Voting: share resubmit skipped; missing commitment bundle '
-        'round=${share.roundId} bundle=${share.bundleIndex} '
-        'proposal=${share.proposalId} share=${share.shareIndex}',
-      );
-      return null;
-    }
-    final Map<String, dynamic> body;
-    try {
-      body = await _wireJsonMap(
-        rust.recoveredVoteShareWireJson(
-          commitmentBundleJson: commitmentBundle.commitmentBundleJson,
-          proposalId: share.proposalId,
-          shareIndex: share.shareIndex,
-          vcTreePosition: commitmentBundle.vcTreePosition,
-          submitAt: BigInt.zero,
-        ),
-      );
-    } catch (e) {
-      debugPrint(
-        '[zcash] Voting: share resubmit skipped; invalid recovery payload '
-        'round=${share.roundId} bundle=${share.bundleIndex} '
-        'proposal=${share.proposalId} share=${share.shareIndex} error=$e',
-      );
-      return null;
-    }
-
-    final retryOrder = await rust.shareResubmissionServerOrder(
-      configuredServerUrls: configuredServerUrls,
-      sentToUrls: sentToUrls.toList(growable: false),
-    );
-    final shareId = bytesToHex(share.nullifier);
-    final helperHealth = ref.read(votingHelperHealthTrackerProvider);
-    for (final serverUrl in retryOrder) {
-      if (_automaticShareTrackingStopped ||
-          !_isCurrentContext(context) ||
-          ref.read(appSecurityProvider).requiresUnlock ||
-          !shouldTrackPendingVotingShares(context.round)) {
-        return null;
-      }
-      try {
-        await api.resubmitShare(
-          serverUrl: Uri.parse(serverUrl),
-          shareId: shareId,
-          share: body,
-          timeout: helperPostTimeout,
-        );
-        // Preserve a known acceptance even if a stop arrived during the POST;
-        // forgetting it could resend the same share after unlock.
-        helperHealth.recordSuccess(serverUrl);
-        debugPrint(
-          '[zcash] Voting: share resubmitted '
-          'round=${share.roundId} bundle=${share.bundleIndex} '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl',
-        );
-        return serverUrl;
-      } catch (e) {
-        debugPrint(
-          '[zcash] Voting: share resubmit failed '
-          'round=${share.roundId} bundle=${share.bundleIndex} '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl error=$e',
-        );
-        // Overdue recovery deliberately favors liveness. An ambiguous error
-        // may follow acceptance, but it may also mean the request never
-        // arrived, so keep this helper eligible and continue until one
-        // acknowledges or the round ends. This accepts possible duplicates.
-        helperHealth.recordFailure(serverUrl);
-      }
-    }
-    return null;
   }
 
   Future<void> _scheduleShareTracking(
@@ -3500,39 +3333,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<bool> _shareConfirmedByAnyHelper({
-    required VotingApiClient api,
-    required _VotingSessionContext context,
-    required VotingHelperHealthTracker helperHealth,
-    required rust_wire.ShareDelegationRecordView share,
-    required Iterable<String> serverUrls,
-    required bool Function() isCancelled,
-  }) async {
-    final shareId = bytesToHex(share.nullifier);
-    for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
-      if (isCancelled()) return false;
-      try {
-        final status = await api.getShareStatus(
-          roundId: share.roundId,
-          serverUrl: Uri.parse(serverUrl),
-          shareId: shareId,
-          isCancelled: isCancelled,
-        );
-        if (isCancelled()) return false;
-        helperHealth.recordSuccess(serverUrl);
-        if (status.status == 'confirmed') return true;
-      } catch (e) {
-        if (isCancelled()) return false;
-        debugPrint(
-          '[zcash] Voting: share status check failed '
-          'round=${share.roundId} bundle=${share.bundleIndex} '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl error=$e',
-        );
-        helperHealth.recordFailure(serverUrl);
-      }
-    }
-    return false;
+  /// Pushes Dart-owned stop conditions into the in-flight Rust pass.
+  ///
+  /// The pass runs to completion inside the crate, so app lock, round expiry,
+  /// session disposal, and context change can no longer be checked between
+  /// helper requests the way the old Dart loop did. This polls them for the
+  /// duration of the pass and cancels once, which keeps the stop conditions
+  /// and their ownership exactly where they were.
+  ///
+  /// Callers must cancel the returned timer when the pass settles.
+  Timer _watchShareTrackingCancellation(
+    _VotingSessionContext context,
+    BigInt operationId,
+  ) {
+    // Captured before the first tick: `_shareTrackingCancelled` returns true
+    // once the notifier is disposed, and reading a provider then would throw.
+    final rust = ref.read(votingRustApiProvider);
+    return Timer.periodic(_shareTrackingCancellationPollInterval, (timer) {
+      if (!_shareTrackingCancelled(context)) return;
+      timer.cancel();
+      rust.cancelShareTracking(operationId);
+    });
   }
 
   bool _finalConfirmationCheckCancelled(_VotingSessionContext context) {
@@ -5223,14 +5044,14 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
 class _PreparedInitialShareSubmission {
   const _PreparedInitialShareSubmission({
     required this.share,
-    required this.body,
+    required this.bodyJson,
     required this.candidateServers,
     required this.targetCount,
     required this.submitAt,
   });
 
   final rust_wire.VoteShareWire share;
-  final Map<String, dynamic> body;
+  final String bodyJson;
   final List<String> candidateServers;
   final int targetCount;
   final BigInt submitAt;

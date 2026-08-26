@@ -4030,6 +4030,9 @@ ProviderContainer _statusContainer({
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: _votingHttpResponses());
+  // Helper requests are made by the crate in production; point the fake at the
+  // test transport so these tests can still observe them.
+  if (rust is _VotingStatusRustApi) rust.helperTransport = effectiveHttp;
   final effectiveHardwareAccountUuids =
       hardwareAccountUuids ??
       (accountIsHardware ? {'account-1', 'hardware-1'} : <String>{});
@@ -5697,6 +5700,124 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return deadline != null &&
         nowSeconds >= deadline &&
         nowSeconds < voteEndTimeSeconds;
+  }
+
+  /// Transport used so helper requests stay observable from widget tests.
+  ///
+  /// Production helper traffic is made by the crate over its own transport.
+  FakeVotingHttpClient? helperTransport;
+
+  /// Mirrors the crate's tracking pass over this fake's share rows.
+  ///
+  /// Helper protocol behavior lives in `zcash_voting` and is tested there;
+  /// these widget tests only need a pass that confirms ready shares so the
+  /// screen can advance.
+  @override
+  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
+    required BigInt operationId,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required List<String> configuredServerUrls,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) async {
+    final confirmed = <rust_api.ApiShareKey>[];
+    final pending = List.of(recoveryApi.state.unconfirmedShareDelegations);
+    for (final share in pending) {
+      final flags = await shareTrackingFlags(
+        share: share,
+        nowSeconds: nowSeconds,
+        voteEndTimeSeconds: voteEndTimeSeconds,
+      );
+      if ((flags & 1) == 0) continue;
+
+      // Mirror the crate's poll so tests can observe helper status traffic.
+      // Confirmation by any helper is enough, so stop at the first one.
+      final transport = helperTransport;
+      if (transport != null && share.sentToUrls.isNotEmpty) {
+        final shareId = share.nullifier
+            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+            .join();
+        var isConfirmed = false;
+        for (final serverUrl in share.sentToUrls) {
+          try {
+            final response = await transport.get(
+              Uri.parse(
+                '$serverUrl/shielded-vote/v1/share-status/'
+                '${share.roundId}/$shareId',
+              ),
+            );
+            final status =
+                (jsonDecode(response.bodyText) as Map)['status'] as String?;
+            if (status == 'confirmed') {
+              isConfirmed = true;
+              break;
+            }
+          } catch (_) {
+            // Helper scoring belongs to the crate; skip and try the next.
+          }
+        }
+        if (!isConfirmed) continue;
+      }
+
+      await markShareConfirmed(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: share.roundId,
+        bundleIndex: share.bundleIndex,
+        proposalId: share.proposalId,
+        shareIndex: share.shareIndex,
+      );
+      confirmed.add(
+        rust_api.ApiShareKey(
+          bundleIndex: share.bundleIndex,
+          proposalId: share.proposalId,
+          shareIndex: share.shareIndex,
+        ),
+      );
+    }
+    return rust_api.ApiShareTrackingReport(
+      confirmed: confirmed,
+      resubmitted: const [],
+      unrecoverable: const [],
+      cancelled: false,
+      nextDelaySeconds: null,
+    );
+  }
+
+  @override
+  BigInt beginShareTracking() => BigInt.one;
+
+  @override
+  void cancelShareTracking(BigInt operationId) {}
+
+  @override
+  Future<List<String>> submitShareToHelpers({
+    required String shareWireJson,
+    required List<String> candidateServers,
+    required int targetCount,
+    required BigInt nowSeconds,
+  }) async {
+    final transport = helperTransport;
+    if (transport == null) {
+      return candidateServers.take(targetCount).toList(growable: false);
+    }
+    final body = jsonDecode(shareWireJson) as Map<String, dynamic>;
+    final accepted = <String>[];
+    for (final serverUrl in candidateServers) {
+      if (accepted.length >= targetCount) break;
+      try {
+        await transport.postJson(
+          Uri.parse('$serverUrl/shielded-vote/v1/shares'),
+          body,
+        );
+        accepted.add(serverUrl);
+      } catch (_) {
+        // The crate moves on to the next helper.
+      }
+    }
+    return accepted;
   }
 
   @override

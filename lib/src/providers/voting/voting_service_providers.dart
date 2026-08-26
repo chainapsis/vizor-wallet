@@ -23,7 +23,6 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
 import '../../services/voting/voting_endpoint_mapper.dart';
-import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_http.dart';
 import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
@@ -132,20 +131,10 @@ final votingApiClientProvider =
         fallbackBaseUrls: servers.failovers,
         httpClient: ref.watch(votingHttpClientProvider),
         timeout: ref.watch(votingApiRequestTimeoutProvider),
-        helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
-        helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
         broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
       );
     });
-
-/// Tracks helper servers that repeatedly fail so recovery can prefer healthier
-/// endpoints without blocking voting when every helper is degraded.
-final votingHelperHealthTrackerProvider = Provider<VotingHelperHealthTracker>((
-  ref,
-) {
-  return VotingHelperHealthTracker();
-});
 
 /// Resolves PIR endpoints before proof generation.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
@@ -559,6 +548,41 @@ abstract interface class VotingRustApi {
     required rust_voting.ShareDelegationRecordView share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
+  });
+
+  /// Runs one helper confirm-or-retry pass for a round inside the crate.
+  ///
+  /// Helper polling, the confirm-on-any-helper policy, overdue resubmission,
+  /// and the durable writes for both all happen in Rust. Dart supplies timing
+  /// and cancellation only.
+  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
+    required BigInt operationId,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required List<String> configuredServerUrls,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  });
+
+  /// Registers a tracking pass before its asynchronous Rust work is dispatched.
+  BigInt beginShareTracking();
+
+  /// Stops one registered tracking pass, if it is still active.
+  ///
+  /// Cancellation is scoped to [operationId], so draining one account cannot
+  /// interrupt a concurrent pass for another account.
+  void cancelShareTracking(BigInt operationId);
+
+  /// Fans one freshly built share out to helpers until enough accept it.
+  ///
+  /// Returns the helpers that accepted. A short list is a normal outcome, not
+  /// an error: later tracking passes spread an under-placed share further.
+  Future<List<String>> submitShareToHelpers({
+    required String shareWireJson,
+    required List<String> candidateServers,
+    required int targetCount,
+    required BigInt nowSeconds,
   });
 
   Future<BigInt?> nextShareTrackingDelaySeconds({
@@ -1026,6 +1050,49 @@ class FrbVotingRustApi implements VotingRustApi {
       share: share,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
+    required BigInt operationId,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required List<String> configuredServerUrls,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) {
+    return rust_api.trackPendingShares(
+      operationId: operationId,
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      configuredServerUrls: configuredServerUrls,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  BigInt beginShareTracking() => rust_api.beginShareTracking();
+
+  @override
+  void cancelShareTracking(BigInt operationId) =>
+      rust_api.cancelShareTracking(operationId: operationId);
+
+  @override
+  Future<List<String>> submitShareToHelpers({
+    required String shareWireJson,
+    required List<String> candidateServers,
+    required int targetCount,
+    required BigInt nowSeconds,
+  }) {
+    return rust_api.submitShareToHelpers(
+      shareWireJson: shareWireJson,
+      candidateServers: candidateServers,
+      targetCount: targetCount,
+      nowSeconds: nowSeconds,
     );
   }
 

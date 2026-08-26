@@ -276,6 +276,20 @@ impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for DirectRouteIo<T> {
     }
 }
 
+/// Reports the wrapped connection's metadata unchanged.
+///
+/// The route lease governs when the connection may be polled, not what it is
+/// connected to, so ALPN and peer details pass through untouched. Without this
+/// the hyper pooling client cannot accept a leased connection at all.
+impl<T> hyper_util::client::legacy::connect::Connection for DirectRouteIo<T>
+where
+    T: hyper_util::client::legacy::connect::Connection,
+{
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
+        self.inner.connected()
+    }
+}
+
 /// Puts a Tor client to sleep, or wakes it up.
 ///
 /// Arti keeps guard connections and directory tasks running; an idle client
