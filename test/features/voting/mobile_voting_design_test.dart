@@ -79,24 +79,44 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final scale in [1.0, 1.3]) {
-    testWidgets('compact poll list remains usable at text scale $scale', (
+  for (final (width, scale) in [
+    (320.0, 1.0),
+    (320.0, 1.3),
+    (360.0, 1.0),
+    (393.0, 1.0),
+  ]) {
+    testWidgets('poll dates remain visible at width $width and scale $scale', (
       tester,
     ) async {
       await _pumpMobileFixture(
         tester,
         buildMobileVotingPollsEligibilityUseCase,
-        size: const Size(320, 667),
+        size: Size(width, 667),
         textScaler: TextScaler.linear(scale),
       );
+      void expectFullDate(String roundId, String date) {
+        final card = find.byKey(ValueKey('voting_poll_card_$roundId'));
+        final label = find.descendant(of: card, matching: find.text(date));
+        expect(label, findsOneWidget);
+        final paragraph = tester.renderObject<RenderParagraph>(label);
+        expect(paragraph.didExceedMaxLines, isFalse);
+        expect(
+          tester.getRect(card).contains(tester.getRect(label).bottomRight),
+          isTrue,
+        );
+      }
+
       expect(find.text('Not eligible for this round'), findsOneWidget);
       expect(find.text('View'), findsOneWidget);
+      expectFullDate('nu7-ineligible', 'Closes Aug 24');
       await tester.drag(
         find.byType(VotingPaneListView),
         const Offset(0, -1200),
       );
       await tester.pumpAndSettle();
       expect(find.text('View results'), findsOneWidget);
+      expectFullDate('snack-governance-voted', 'Closes Aug 24');
+      expectFullDate('snack-governance-closed', 'Aug 24');
       expect(tester.takeException(), isNull);
     });
   }
