@@ -1190,12 +1190,14 @@ abstract class RustLibApi extends BaseApi {
   Future<NetworkHttpResponse> crateApiNetworkPrivacyTorHttpGet({
     required String url,
     required List<NetworkHttpHeader> headers,
+    BigInt? timeoutMilliseconds,
   });
 
   Future<NetworkHttpResponse> crateApiNetworkPrivacyTorHttpPost({
     required String url,
     required List<NetworkHttpHeader> headers,
     required List<int> body,
+    BigInt? timeoutMilliseconds,
   });
 
   Future<VotingRoundParams> crateApiVotingTrustedVotingRoundParamsFromConfig({
@@ -8470,6 +8472,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<NetworkHttpResponse> crateApiNetworkPrivacyTorHttpGet({
     required String url,
     required List<NetworkHttpHeader> headers,
+    BigInt? timeoutMilliseconds,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8477,6 +8480,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(url, serializer);
           sse_encode_list_network_http_header(headers, serializer);
+          sse_encode_opt_box_autoadd_u_64(timeoutMilliseconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8489,7 +8493,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiNetworkPrivacyTorHttpGetConstMeta,
-        argValues: [url, headers],
+        argValues: [url, headers, timeoutMilliseconds],
         apiImpl: this,
       ),
     );
@@ -8498,7 +8502,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiNetworkPrivacyTorHttpGetConstMeta =>
       const TaskConstMeta(
         debugName: "tor_http_get",
-        argNames: ["url", "headers"],
+        argNames: ["url", "headers", "timeoutMilliseconds"],
       );
 
   @override
@@ -8506,6 +8510,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String url,
     required List<NetworkHttpHeader> headers,
     required List<int> body,
+    BigInt? timeoutMilliseconds,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8514,6 +8519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(url, serializer);
           sse_encode_list_network_http_header(headers, serializer);
           sse_encode_list_prim_u_8_loose(body, serializer);
+          sse_encode_opt_box_autoadd_u_64(timeoutMilliseconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8526,7 +8532,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiNetworkPrivacyTorHttpPostConstMeta,
-        argValues: [url, headers, body],
+        argValues: [url, headers, body, timeoutMilliseconds],
         apiImpl: this,
       ),
     );
@@ -8535,7 +8541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiNetworkPrivacyTorHttpPostConstMeta =>
       const TaskConstMeta(
         debugName: "tor_http_post",
-        argNames: ["url", "headers", "body"],
+        argNames: ["url", "headers", "body", "timeoutMilliseconds"],
       );
 
   @override

@@ -6777,12 +6777,17 @@ fn wire__crate__api__network_privacy__tor_http_get_impl(
             let api_headers = <Vec<crate::api::network_privacy::NetworkHttpHeader>>::sse_decode(
                 &mut deserializer,
             );
+            let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::network_privacy::tor_http_get(api_url, api_headers).await?;
+                        let output_ok = crate::api::network_privacy::tor_http_get(
+                            api_url,
+                            api_headers,
+                            api_timeout_milliseconds,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -6818,6 +6823,7 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
                 &mut deserializer,
             );
             let api_body = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -6826,6 +6832,7 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
                             api_url,
                             api_headers,
                             api_body,
+                            api_timeout_milliseconds,
                         )
                         .await?;
                         Ok(output_ok)

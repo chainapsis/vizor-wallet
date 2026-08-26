@@ -270,10 +270,16 @@ class _LinuxUpdateTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
   }) {
     requests.add(uri);
     this.headers.add(Map<String, String>.of(headers));
-    if (waitForever) return Completer<NetworkHttpResponse>().future;
+    if (waitForever) {
+      return Future<NetworkHttpResponse>.delayed(
+        timeout!,
+        () => throw TimeoutException('Tor request timed out', timeout),
+      );
+    }
     return Future.value(response!);
   }
 
@@ -282,6 +288,7 @@ class _LinuxUpdateTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
   }) => throw UnimplementedError();
 
   @override

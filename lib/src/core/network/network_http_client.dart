@@ -40,16 +40,22 @@ class DirectNetworkRequestsBlockedException implements Exception {
       'Direct network requests are blocked while the app switches to Tor.';
 }
 
+/// Tor transport boundary used after the process-wide route selects Tor.
+///
+/// Implementations must apply each timeout to the underlying transport
+/// operation, not only to the Future returned to Dart.
 abstract interface class TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
   });
 
   Future<NetworkHttpResponse> post(
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
   });
 
   Future<NetworkHttpResponse> download(
@@ -62,16 +68,22 @@ abstract interface class TorHttpBridge {
 class RustTorHttpBridge implements TorHttpBridge {
   const RustTorHttpBridge();
 
+  static const _requestTimeoutError = 'Tor HTTP request timed out';
+
   @override
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
-  }) async {
-    final response = await rust_network_privacy.torHttpGet(
-      url: uri.toString(),
-      headers: _rustHeaders(headers),
+    required Duration? timeout,
+  }) {
+    return _request(
+      timeout,
+      () => rust_network_privacy.torHttpGet(
+        url: uri.toString(),
+        headers: _rustHeaders(headers),
+        timeoutMilliseconds: _timeoutMilliseconds(timeout),
+      ),
     );
-    return networkHttpResponseFromRust(response);
   }
 
   @override
@@ -79,13 +91,17 @@ class RustTorHttpBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
-  }) async {
-    final response = await rust_network_privacy.torHttpPost(
-      url: uri.toString(),
-      headers: _rustHeaders(headers),
-      body: bodyBytes,
+    required Duration? timeout,
+  }) {
+    return _request(
+      timeout,
+      () => rust_network_privacy.torHttpPost(
+        url: uri.toString(),
+        headers: _rustHeaders(headers),
+        body: bodyBytes,
+        timeoutMilliseconds: _timeoutMilliseconds(timeout),
+      ),
     );
-    return networkHttpResponseFromRust(response);
   }
 
   @override
@@ -100,6 +116,28 @@ class RustTorHttpBridge implements TorHttpBridge {
       destinationPath: destinationPath,
     );
     return networkHttpResponseFromRust(response);
+  }
+
+  static BigInt? _timeoutMilliseconds(Duration? timeout) {
+    if (timeout == null) return null;
+    if (timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'must be positive');
+    }
+    return BigInt.from(timeout.inMilliseconds < 1 ? 1 : timeout.inMilliseconds);
+  }
+
+  Future<NetworkHttpResponse> _request(
+    Duration? timeout,
+    Future<rust_network_privacy.NetworkHttpResponse> Function() send,
+  ) async {
+    try {
+      return networkHttpResponseFromRust(await send());
+    } catch (error, stackTrace) {
+      if (timeout != null && error.toString().contains(_requestTimeoutError)) {
+        throw TimeoutException(_requestTimeoutError, timeout);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   static List<rust_network_privacy.NetworkHttpHeader> _rustHeaders(
@@ -185,12 +223,14 @@ class NetworkHttpClient {
     List<int> bodyBytes = const [],
     Duration? timeout,
   }) {
-    final future = _torDesired()
+    _requirePositiveTimeout(timeout);
+    return _torDesired()
         ? _requestViaTorWithRedirects(
             method.toUpperCase(),
             uri,
             headers: headers,
             bodyBytes: bodyBytes,
+            timeout: timeout,
           )
         : _runDirectRequest(
             () => _requestDirect(
@@ -198,9 +238,9 @@ class NetworkHttpClient {
               uri,
               headers: headers,
               bodyBytes: bodyBytes,
+              timeout: timeout,
             ),
           );
-    return timeout == null ? future : future.timeout(timeout);
   }
 
   /// Streams a GET response to [destination] without retaining the response
@@ -219,6 +259,7 @@ class NetworkHttpClient {
             headers: headers,
             bodyBytes: const [],
             destinationPath: destination.path,
+            timeout: null,
           )
         : _runDirectRequest(
             () => _downloadDirect(uri, destination, headers: headers),
@@ -269,6 +310,7 @@ class NetworkHttpClient {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     String? destinationPath,
+    required Duration? timeout,
   }) async {
     if (method != 'GET' && method != 'POST') {
       throw TorUnsupportedHttpMethodException(method);
@@ -278,7 +320,9 @@ class NetworkHttpClient {
     var currentUri = initialUri;
     var currentHeaders = Map<String, String>.of(headers);
     var currentBody = bodyBytes;
+    final stopwatch = Stopwatch()..start();
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
+      final remainingTimeout = _remainingTimeout(timeout, stopwatch);
       final response = destinationPath != null
           ? await _torBridge.download(
               currentUri,
@@ -286,11 +330,16 @@ class NetworkHttpClient {
               destinationPath: destinationPath,
             )
           : currentMethod == 'GET'
-          ? await _torBridge.get(currentUri, headers: currentHeaders)
+          ? await _torBridge.get(
+              currentUri,
+              headers: currentHeaders,
+              timeout: remainingTimeout,
+            )
           : await _torBridge.post(
               currentUri,
               headers: currentHeaders,
               bodyBytes: currentBody,
+              timeout: remainingTimeout,
             );
       final location = response.header(HttpHeaders.locationHeader);
       if (!_isRedirect(response.statusCode) || location == null) {
@@ -324,23 +373,54 @@ class NetworkHttpClient {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
-  }) async {
-    final request = await _directClient.openUrl(method, uri);
-    headers.forEach(request.headers.set);
-    if (bodyBytes.isNotEmpty) request.add(bodyBytes);
-    final response = await request.close();
-    final bytes = await response.fold<List<int>>(
-      <int>[],
-      (buffer, chunk) => buffer..addAll(chunk),
-    );
-    final responseHeaders = <String, List<String>>{};
-    response.headers.forEach((name, values) {
-      responseHeaders[name.toLowerCase()] = List.unmodifiable(values);
-    });
-    return NetworkHttpResponse(
-      statusCode: response.statusCode,
-      bodyBytes: Uint8List.fromList(bytes),
-      headers: Map.unmodifiable(responseHeaders),
+    required Duration? timeout,
+  }) {
+    HttpClientRequest? activeRequest;
+    StreamSubscription<List<int>>? responseSubscription;
+    Completer<Uint8List>? responseBody;
+    var timedOut = false;
+    return _withDirectDeadline(
+      timeout,
+      (error) async {
+        timedOut = true;
+        activeRequest?.abort(error);
+        await responseSubscription?.cancel();
+        final body = responseBody;
+        if (body != null && !body.isCompleted) body.completeError(error);
+      },
+      () async {
+        final request = await _directClient.openUrl(method, uri);
+        activeRequest = request;
+        if (timedOut) {
+          final error = _timeoutException(timeout!);
+          request.abort(error);
+          throw error;
+        }
+        headers.forEach(request.headers.set);
+        if (bodyBytes.isNotEmpty) request.add(bodyBytes);
+        final response = await request.close();
+        final body = responseBody = Completer<Uint8List>();
+        final bytes = BytesBuilder();
+        responseSubscription = response.listen(
+          bytes.add,
+          onError: (Object error, StackTrace stackTrace) {
+            if (!body.isCompleted) body.completeError(error, stackTrace);
+          },
+          onDone: () {
+            if (!body.isCompleted) body.complete(bytes.takeBytes());
+          },
+          cancelOnError: true,
+        );
+        final responseHeaders = <String, List<String>>{};
+        response.headers.forEach((name, values) {
+          responseHeaders[name.toLowerCase()] = List.unmodifiable(values);
+        });
+        return NetworkHttpResponse(
+          statusCode: response.statusCode,
+          bodyBytes: await body.future,
+          headers: Map.unmodifiable(responseHeaders),
+        );
+      },
     );
   }
 
@@ -363,6 +443,57 @@ class NetworkHttpClient {
       headers: Map.unmodifiable(responseHeaders),
     );
   }
+
+  static Future<T> _withDirectDeadline<T>(
+    Duration? timeout,
+    Future<void> Function(TimeoutException) abort,
+    Future<T> Function() operation,
+  ) {
+    if (timeout == null) return operation();
+    final result = Completer<T>();
+    final operationFuture = operation();
+    var expiring = false;
+    final timer = Timer(timeout, () async {
+      expiring = true;
+      final error = _timeoutException(timeout);
+      try {
+        await abort(error);
+      } catch (_) {
+        // Preserve the timeout as the public failure after best-effort cleanup.
+      } finally {
+        if (!result.isCompleted) result.completeError(error);
+      }
+    });
+    operationFuture.then(
+      (value) {
+        timer.cancel();
+        if (!expiring && !result.isCompleted) result.complete(value);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        timer.cancel();
+        if (!expiring && !result.isCompleted) {
+          result.completeError(error, stackTrace);
+        }
+      },
+    );
+    return result.future;
+  }
+
+  static Duration? _remainingTimeout(Duration? timeout, Stopwatch stopwatch) {
+    if (timeout == null) return null;
+    final remaining = timeout - stopwatch.elapsed;
+    if (remaining <= Duration.zero) throw _timeoutException(timeout);
+    return remaining;
+  }
+
+  static void _requirePositiveTimeout(Duration? timeout) {
+    if (timeout != null && timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'must be positive');
+    }
+  }
+
+  static TimeoutException _timeoutException(Duration timeout) =>
+      TimeoutException('Network HTTP request timed out', timeout);
 
   static Map<String, String> _headersForRedirect(
     Uri from,

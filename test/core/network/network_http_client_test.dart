@@ -31,6 +31,25 @@ void main() {
     ]);
   });
 
+  test('Tor mode passes the caller deadline into the Rust request', () async {
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
+    ]);
+    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    addTearDown(() => client.close());
+
+    await client.request(
+      'POST',
+      Uri.parse('https://example.com/data'),
+      timeout: const Duration(seconds: 30),
+    );
+
+    expect(
+      bridge.timeouts.single!.inMilliseconds,
+      inInclusiveRange(29_000, 30_000),
+    );
+  });
+
   test('Rust Tor responses preserve typed repeated headers', () {
     final response = networkHttpResponseFromRust(
       rust_network_privacy.NetworkHttpResponse(
@@ -210,6 +229,39 @@ void main() {
     expect(await destination.readAsBytes(), [0, 1, 2, 3]);
   });
 
+  test('direct timeout aborts transport and drains its request slot', () async {
+    final requestReceived = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.write('partial response');
+      await request.response.flush();
+      if (!requestReceived.isCompleted) requestReceived.complete();
+    });
+    final client = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() async {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+      await server.close(force: true);
+    });
+
+    final request = client.request(
+      'GET',
+      Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: server.port,
+        path: '/stalled',
+      ),
+      timeout: const Duration(milliseconds: 250),
+    );
+    await requestReceived.future;
+
+    await expectLater(request, throwsA(isA<TimeoutException>()));
+    await NetworkHttpClient.quiesceDirectRequests().timeout(
+      const Duration(seconds: 1),
+    );
+  });
+
   test(
     'Tor activation drains in-flight direct requests after client disposal',
     () async {
@@ -258,6 +310,7 @@ class _RecordingTorBridge implements TorHttpBridge {
 
   final List<NetworkHttpResponse> responses;
   final requests = <_RecordedRequest>[];
+  final timeouts = <Duration?>[];
 
   @override
   Future<NetworkHttpResponse> download(
@@ -285,7 +338,9 @@ class _RecordingTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
   }) async {
+    timeouts.add(timeout);
     requests.add(
       _RecordedRequest(
         method: 'GET',
@@ -301,7 +356,9 @@ class _RecordingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
   }) async {
+    timeouts.add(timeout);
     requests.add(
       _RecordedRequest(
         method: 'POST',
@@ -328,6 +385,7 @@ class _FailingTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
   }) => throw StateError('Tor is not ready');
 
   @override
@@ -335,6 +393,7 @@ class _FailingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
   }) => throw StateError('Tor is not ready');
 }
 
