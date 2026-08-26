@@ -891,11 +891,7 @@ void main() {
 
       expect(completed, isFalse);
       final result = await pending;
-      expect(result.rankedServerUrls, [
-        'https://helper-1.example',
-        'https://helper-2.example',
-      ]);
-      expect(result.readiness.values, everyElement(isTrue));
+      expect(result, ['https://helper-1.example', 'https://helper-2.example']);
     },
   );
 
@@ -939,16 +935,11 @@ void main() {
 
       secondaryResponse.complete(jsonResponse({'status': 'ok'}));
       final result = await pending;
-      expect(result.rankedServerUrls, [
+      expect(result, [
         'https://helper-1.example',
         'https://helper-2.example',
         'https://helper-3.example',
       ]);
-      expect(result.readiness, {
-        'https://helper-1.example': true,
-        'https://helper-2.example': true,
-        'https://helper-3.example': false,
-      });
       expect(
         http.requests.map((request) => request.timeout),
         everyElement(const Duration(milliseconds: 500)),
@@ -959,14 +950,14 @@ void main() {
   test(
     'preflight returns the available helpers at the hard deadline',
     () async {
-      final primaryResponse = Completer<VotingHttpResponse>();
       final blackholedResponse = Completer<VotingHttpResponse>();
+      final readyResponse = Completer<VotingHttpResponse>();
       final http = FakeVotingHttpClient(
         responses: {
           'https://helper-1.example/shielded-vote/v1/status':
-              primaryResponse.future,
-          'https://helper-2.example/shielded-vote/v1/status':
               blackholedResponse.future,
+          'https://helper-2.example/shielded-vote/v1/status':
+              readyResponse.future,
         },
       );
       final client = VotingApiClient(
@@ -984,7 +975,7 @@ void main() {
         hardTimeout: const Duration(milliseconds: 60),
       );
       await Future<void>.delayed(Duration.zero);
-      primaryResponse.complete(jsonResponse({'status': 'ok'}));
+      readyResponse.complete(jsonResponse({'status': 'ok'}));
 
       final result = await pending;
 
@@ -993,10 +984,7 @@ void main() {
         greaterThanOrEqualTo(const Duration(milliseconds: 40)),
       );
       expect(timer.elapsed, lessThan(const Duration(seconds: 1)));
-      expect(result.readiness, {
-        'https://helper-1.example': true,
-        'https://helper-2.example': false,
-      });
+      expect(result, ['https://helper-2.example', 'https://helper-1.example']);
     },
   );
 
@@ -1027,8 +1015,7 @@ void main() {
       cancellation.complete();
       final result = await pending.timeout(const Duration(seconds: 1));
 
-      expect(result.rankedServerUrls, ['https://helper.example']);
-      expect(result.readiness, {'https://helper.example': false});
+      expect(result, ['https://helper.example']);
       expect(http.requests.single.timeout, const Duration(seconds: 30));
     },
   );

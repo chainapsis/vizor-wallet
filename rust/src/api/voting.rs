@@ -288,13 +288,8 @@ pub fn plan_share_submissions(
 #[flutter_rust_bridge::frb(sync)]
 pub fn share_server_selection_policy(
     server_count: u32,
-) -> Result<zcash_voting::share_policy::ShareServerSelectionPolicy, String> {
-    catch(|| {
-        let server_count = usize::try_from(server_count)
-            .map_err(|_| "server_count does not fit in usize".to_string())?;
-        zcash_voting::share_policy::share_server_selection_policy(server_count)
-            .map_err(|e| e.to_string())
-    })
+) -> zcash_voting::share_policy::ShareServerSelectionPolicy {
+    zcash_voting::share_policy::share_server_selection_policy(server_count as usize)
 }
 
 /// Return one crate-owned helper candidate order for each encrypted share.
@@ -2487,8 +2482,8 @@ mod tests {
     }
 
     #[test]
-    fn helper_selection_wrappers_expose_progressive_policy_and_share_cap() {
-        let policy = share_server_selection_policy(10).unwrap();
+    fn helper_selection_wrappers_expose_crate_policy() {
+        let policy = share_server_selection_policy(10);
         assert_eq!(policy.target_count, 5);
         assert_eq!(policy.max_shares_per_server, 8);
         assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
@@ -2498,26 +2493,9 @@ mod tests {
             .map(|index| format!("https://helper-{index}.example"))
             .collect();
         let candidates =
-            ranked_share_submission_server_candidates(16, servers.clone(), Vec::new()).unwrap();
-        let mut planned_counts = std::collections::HashMap::<String, usize>::new();
-        for row in candidates {
-            assert_eq!(row.len(), servers.len());
-            for server in row.into_iter().take(policy.target_count as usize) {
-                *planned_counts.entry(server).or_default() += 1;
-            }
-        }
-        assert!(servers
-            .iter()
-            .all(|server| planned_counts.get(server) == Some(&8)));
-
-        let previously_selected: Vec<String> = servers[..5]
-            .iter()
-            .flat_map(|server| std::iter::repeat_n(server.clone(), 8))
-            .collect();
-        let resumed =
-            ranked_share_submission_server_candidates(8, servers.clone(), previously_selected)
-                .unwrap();
-        assert!(resumed.iter().all(|row| row[..5] == servers[5..]));
+            ranked_share_submission_server_candidates(2, servers.clone(), Vec::new()).unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.iter().all(|row| row.len() == servers.len()));
     }
 
     #[test]

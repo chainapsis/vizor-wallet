@@ -6202,20 +6202,7 @@ void main() {
       failureThreshold: 1,
       cooldown: const Duration(hours: 1),
     );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
+    final recoveryApi = _singleVoteRecoveryApi();
     final container = _sessionContainer(
       http: http,
       rust: rust,
@@ -6228,17 +6215,7 @@ void main() {
     helperHealth.recordFailure(helperA);
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
+        .castVotes(draftVotes: _singleProposalDrafts());
 
     final sharePostHosts = http.requests
         .where(
@@ -6271,20 +6248,7 @@ void main() {
       ),
     );
     final rust = FakeVotingRustApi(emitCommitments: true);
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
+    final recoveryApi = _singleVoteRecoveryApi();
     final container = _sessionContainer(
       http: http,
       rust: rust,
@@ -6295,17 +6259,7 @@ void main() {
     await container.read(votingSessionProvider(kRoundId).future);
     final cast = container
         .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
+        .castVotes(draftVotes: _singleProposalDrafts());
 
     await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
     http.releaseSharePosts.complete();
@@ -6344,20 +6298,7 @@ void main() {
       emitCommitments: true,
       maxConcurrentHelperPosts: 2,
     );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
+    final recoveryApi = _singleVoteRecoveryApi();
     final container = _sessionContainer(
       http: http,
       rust: rust,
@@ -6368,17 +6309,7 @@ void main() {
     await container.read(votingSessionProvider(kRoundId).future);
     final cast = container
         .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
+        .castVotes(draftVotes: _singleProposalDrafts());
 
     await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
     expect(http.startedSharePostCount, 2);
@@ -6408,20 +6339,7 @@ void main() {
       },
     );
     final rust = FakeVotingRustApi(emitCommitments: true);
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
+    final recoveryApi = _singleVoteRecoveryApi();
     final container = _sessionContainer(
       http: http,
       rust: rust,
@@ -6432,17 +6350,7 @@ void main() {
     await container.read(votingSessionProvider(kRoundId).future);
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
+        .castVotes(draftVotes: _singleProposalDrafts());
 
     final sharePostHosts = http.requests
         .where(
@@ -6494,20 +6402,7 @@ void main() {
       initialDeliveryTimeoutMilliseconds: 40,
       maxConcurrentHelperPosts: 5,
     );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationTxHashes: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'delegation-0',
-            vanLeafPosition: null,
-          ),
-        ],
-        votes: [vote(bundleIndex: 0, proposalId: 7)],
-      ),
-    );
+    final recoveryApi = _singleVoteRecoveryApi();
     final container = _sessionContainer(
       http: http,
       rust: rust,
@@ -6519,17 +6414,7 @@ void main() {
     final timer = Stopwatch()..start();
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
-          ],
-        );
+        .castVotes(draftVotes: _singleProposalDrafts());
 
     final session = container.read(votingSessionProvider(kRoundId)).value!;
     expect(timer.elapsed, lessThan(const Duration(seconds: 1)));

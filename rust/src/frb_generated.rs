@@ -6155,9 +6155,10 @@ fn wire__crate__api__voting__share_server_selection_policy_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_server_count = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok =
-                    crate::api::voting::share_server_selection_policy(api_server_count)?;
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::voting::share_server_selection_policy(api_server_count),
+                )?;
                 Ok(output_ok)
             })())
         },

@@ -263,7 +263,7 @@ class VotingApiClient {
   /// when its public status endpoint returns `{"status":"ok"}` successfully.
   /// Completing [cancelSignal] stops the wait and returns the responses already
   /// collected so callers can abandon the preflight promptly.
-  Future<VotingHelperPreflightResult> preflightHelpers(
+  Future<List<String>> preflightHelpers(
     Iterable<Uri> serverUrls, {
     required int readyTargetCount,
     required Duration softTimeout,
@@ -282,10 +282,7 @@ class VotingApiClient {
         if (seen.add(serverUrl.toString())) serverUrl,
     ];
     if (servers.isEmpty) {
-      return VotingHelperPreflightResult(
-        rankedServerUrls: const [],
-        readiness: const {},
-      );
+      return const [];
     }
 
     final targetCount = readyTargetCount.clamp(1, servers.length).toInt();
@@ -309,39 +306,30 @@ class VotingApiClient {
     }
 
     final softDeadline = Completer<void>();
+    final hardDeadline = Completer<void>();
     final softTimer = Timer(softTimeout, softDeadline.complete);
-    late final bool cancelledDuringSoftWait;
+    final hardTimer = Timer(hardTimeout, hardDeadline.complete);
     try {
-      cancelledDuringSoftWait = await Future.any([
+      final cancelled = await Future.any([
         softDeadline.future.then((_) => false),
         if (cancelSignal != null) cancelSignal.then((_) => true),
       ]);
-    } finally {
-      softTimer.cancel();
-    }
-    if (cancelledDuringSoftWait) {
-      acceptingResults = false;
-      return _helperPreflightResult(servers, readyServers);
-    }
-
-    if (readyServers.length < targetCount &&
-        completedServerCount < servers.length) {
-      final hardDeadline = Completer<void>();
-      final remainingTimeout = hardTimeout - softTimeout;
-      final hardTimer = Timer(remainingTimeout, hardDeadline.complete);
-      try {
+      if (!cancelled &&
+          readyServers.length < targetCount &&
+          completedServerCount < servers.length) {
         await Future.any([
           targetOrAllCompleted.future,
           hardDeadline.future,
           ?cancelSignal,
         ]);
-      } finally {
-        hardTimer.cancel();
       }
+    } finally {
+      softTimer.cancel();
+      hardTimer.cancel();
+      acceptingResults = false;
     }
 
-    acceptingResults = false;
-    return _helperPreflightResult(servers, readyServers);
+    return _rankedHelperUrls(servers, readyServers);
   }
 
   /// Posts one encrypted share directly to a helper server.
@@ -629,22 +617,13 @@ class VotingApiClient {
   }
 }
 
-VotingHelperPreflightResult _helperPreflightResult(
-  List<Uri> servers,
-  List<String> readyServers,
-) {
+List<String> _rankedHelperUrls(List<Uri> servers, List<String> readyServers) {
   final readySet = readyServers.toSet();
-  final configuredServers = servers.map((server) => server.toString()).toList();
-  return VotingHelperPreflightResult(
-    rankedServerUrls: [
-      ...readyServers,
-      for (final server in configuredServers)
-        if (!readySet.contains(server)) server,
-    ],
-    readiness: {
-      for (final server in configuredServers) server: readySet.contains(server),
-    },
-  );
+  return List<String>.unmodifiable([
+    ...readyServers,
+    for (final server in servers.map((server) => server.toString()))
+      if (!readySet.contains(server)) server,
+  ]);
 }
 
 Map<String, dynamic> _objectFromValue(Object? value) {
