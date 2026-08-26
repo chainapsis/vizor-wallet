@@ -31,6 +31,25 @@ void main() {
     ]);
   });
 
+  test('Tor mode passes the caller deadline into the Rust request', () async {
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
+    ]);
+    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    addTearDown(() => client.close());
+
+    await client.request(
+      'POST',
+      Uri.parse('https://example.com/data'),
+      timeout: const Duration(seconds: 30),
+    );
+
+    expect(
+      bridge.timeouts.single!.inMilliseconds,
+      inInclusiveRange(29_000, 30_000),
+    );
+  });
+
   test('Rust Tor responses preserve typed repeated headers', () {
     final response = networkHttpResponseFromRust(
       rust_network_privacy.NetworkHttpResponse(
@@ -210,6 +229,110 @@ void main() {
     expect(await destination.readAsBytes(), [0, 1, 2, 3]);
   });
 
+  test('direct timeout aborts transport and drains its request slot', () async {
+    final requestReceived = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.write('partial response');
+      await request.response.flush();
+      if (!requestReceived.isCompleted) requestReceived.complete();
+    });
+    final client = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() async {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+      await server.close(force: true);
+    });
+
+    final request = client.request(
+      'GET',
+      Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: server.port,
+        path: '/stalled',
+      ),
+      timeout: const Duration(milliseconds: 250),
+    );
+    await requestReceived.future;
+
+    await expectLater(request, throwsA(isA<TimeoutException>()));
+    await NetworkHttpClient.quiesceDirectRequests().timeout(
+      const Duration(seconds: 1),
+    );
+  });
+
+  test('direct cancellation aborts the active transport', () async {
+    final requestReceived = Completer<void>();
+    final cancellation = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) {
+      if (!requestReceived.isCompleted) requestReceived.complete();
+    });
+    final client = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() async {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+      await server.close(force: true);
+    });
+
+    final pending = client.request(
+      'GET',
+      Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: server.port,
+        path: '/stalled',
+      ),
+      timeout: const Duration(seconds: 30),
+      cancelSignal: cancellation.future,
+    );
+    await requestReceived.future;
+
+    cancellation.complete();
+
+    await expectLater(
+      pending,
+      throwsA(isA<NetworkHttpRequestCancelledException>()),
+    );
+    await NetworkHttpClient.quiesceDirectRequests().timeout(
+      const Duration(seconds: 1),
+    );
+  });
+
+  test('direct timeout keeps its slot until openUrl unwinds', () async {
+    final directClient = _StallingHttpClient();
+    final client = NetworkHttpClient(
+      directClient: directClient,
+      torDesired: () => false,
+    );
+    addTearDown(() {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+    });
+
+    await expectLater(
+      client.request(
+        'GET',
+        Uri.parse('https://example.com/stalled'),
+        timeout: const Duration(milliseconds: 10),
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+
+    var drained = false;
+    final quiesce = NetworkHttpClient.quiesceDirectRequests().then(
+      (_) => drained = true,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(directClient.forceClosed, isTrue);
+    expect(drained, isFalse);
+
+    directClient.failPendingOpen();
+    await quiesce.timeout(const Duration(seconds: 1));
+    expect(drained, isTrue);
+  });
+
   test(
     'Tor activation drains in-flight direct requests after client disposal',
     () async {
@@ -253,11 +376,33 @@ void main() {
   );
 }
 
+class _StallingHttpClient implements HttpClient {
+  final _pendingOpen = Completer<HttpClientRequest>();
+  bool forceClosed = false;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) =>
+      _pendingOpen.future;
+
+  @override
+  void close({bool force = false}) {
+    forceClosed = force;
+  }
+
+  void failPendingOpen() {
+    _pendingOpen.completeError(StateError('direct client closed'));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _RecordingTorBridge implements TorHttpBridge {
   _RecordingTorBridge(this.responses);
 
   final List<NetworkHttpResponse> responses;
   final requests = <_RecordedRequest>[];
+  final timeouts = <Duration?>[];
 
   @override
   Future<NetworkHttpResponse> download(
@@ -285,7 +430,10 @@ class _RecordingTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
+    timeouts.add(timeout);
     requests.add(
       _RecordedRequest(
         method: 'GET',
@@ -301,7 +449,10 @@ class _RecordingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
+    timeouts.add(timeout);
     requests.add(
       _RecordedRequest(
         method: 'POST',
@@ -328,6 +479,8 @@ class _FailingTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw StateError('Tor is not ready');
 
   @override
@@ -335,6 +488,8 @@ class _FailingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw StateError('Tor is not ready');
 }
 

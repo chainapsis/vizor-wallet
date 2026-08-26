@@ -116,7 +116,7 @@ version = "0.1.0-rc2"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "3.1.0-rc.10"
+version = "=3.1.0-rc.10"
 default-features = false
 features = ["zakura"]
 
@@ -193,3 +193,8 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "994cc7f56095e2441225d3986859f23d8cbfb169" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "994cc7f56095e2441225d3986859f23d8cbfb169" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "994cc7f56095e2441225d3986859f23d8cbfb169" }

@@ -102,6 +102,8 @@ class _RecordingTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw UnsupportedError('Unexpected GET');
 
   @override
@@ -109,6 +111,8 @@ class _RecordingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     posts.add(_RecordedPost(uri: uri, bodyBytes: List.of(bodyBytes)));
     return responses[posts.length - 1];

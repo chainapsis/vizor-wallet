@@ -699,6 +699,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ShareServerSelectionPolicy dco_decode_share_server_selection_policy(
+    dynamic raw,
+  );
+
+  @protected
   ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw);
 
   @protected
@@ -1684,6 +1689,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareDelegationRecordView sse_decode_share_delegation_record_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShareServerSelectionPolicy sse_decode_share_server_selection_policy(
     SseDeserializer deserializer,
   );
 
@@ -2893,6 +2903,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_share_delegation_record_view(
     ShareDelegationRecordView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_share_server_selection_policy(
+    ShareServerSelectionPolicy self,
     SseSerializer serializer,
   );
 
