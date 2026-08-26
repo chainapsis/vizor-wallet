@@ -794,6 +794,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VanWitness dco_decode_van_witness(dynamic raw);
 
   @protected
+  VoteBatchConfirmation dco_decode_vote_batch_confirmation(dynamic raw);
+
+  @protected
   VoteCommitmentWire dco_decode_vote_commitment_wire(dynamic raw);
 
   @protected
@@ -1782,6 +1785,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VanWitness sse_decode_van_witness(SseDeserializer deserializer);
+
+  @protected
+  VoteBatchConfirmation sse_decode_vote_batch_confirmation(
+    SseDeserializer deserializer,
+  );
 
   @protected
   VoteCommitmentWire sse_decode_vote_commitment_wire(
@@ -3001,6 +3009,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_van_witness(VanWitness self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_vote_batch_confirmation(
+    VoteBatchConfirmation self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_vote_commitment_wire(

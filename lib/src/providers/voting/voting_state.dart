@@ -223,6 +223,11 @@ class VotingSessionState {
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;
 
+  /// Number of snapshot-stable voting bundles prepared for this round.
+  ///
+  /// Null means bundle preparation has not reported a count yet.
+  final int? bundleCount;
+
   /// Raw note value the privacy trim withholds from this round.
   ///
   /// Null until a Rust call reports it; zero means nothing was withheld. The
@@ -258,6 +263,7 @@ class VotingSessionState {
     this.roundPlan,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
+    this.bundleCount,
     this.privacyTrimDroppedValueZatoshi,
     this.walletScannedHeight,
     this.walletSnapshotHeight,
@@ -331,6 +337,7 @@ class VotingSessionState {
     bool clearRoundPlan = false,
     Uri? pirEndpoint,
     BigInt? eligibleWeightZatoshi,
+    int? bundleCount,
     BigInt? privacyTrimDroppedValueZatoshi,
     int? walletScannedHeight,
     int? walletSnapshotHeight,
@@ -367,6 +374,7 @@ class VotingSessionState {
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
           eligibleWeightZatoshi ?? this.eligibleWeightZatoshi,
+      bundleCount: bundleCount ?? this.bundleCount,
       privacyTrimDroppedValueZatoshi:
           privacyTrimDroppedValueZatoshi ?? this.privacyTrimDroppedValueZatoshi,
       walletScannedHeight: clearWalletSyncReadiness

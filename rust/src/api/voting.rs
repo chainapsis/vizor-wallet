@@ -1657,6 +1657,7 @@ where
                 drafts: &draft_votes,
                 witness: &van_witness,
                 stages: &reporter,
+                max_proof_concurrency: 3,
             },
         )
         .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
@@ -1765,6 +1766,35 @@ pub fn mark_vote_submitted(
     })
 }
 
+/// Record one submitted transaction hash for every action in an atomic batch.
+///
+/// # Errors
+///
+/// Returns an error if the digest is malformed, the complete persisted batch
+/// cannot be recovered, or any stored transaction hash conflicts.
+pub fn mark_vote_batch_submitted(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    batch_digest: Vec<u8>,
+    tx_hash: String,
+) -> Result<(), String> {
+    catch(|| {
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::vote::record_batch_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                &batch_digest,
+                &tx_hash,
+            )
+            .map_err(|e| e.to_string())
+        })
+    })
+}
+
 /// Parse tx events and record a confirmed vote submission.
 ///
 /// # Errors
@@ -1790,6 +1820,38 @@ pub fn confirm_vote_submission(
                 &round_id,
                 bundle_index,
                 proposal_id,
+                &tx_hash,
+                &events,
+            )
+            .map_err(|e| e.to_string())
+        })
+    })
+}
+
+/// Parse one batch event and atomically record all confirmed vote positions.
+///
+/// # Errors
+///
+/// Returns an error if the event digest, action order, proposal ids, or
+/// nullifiers differ from the persisted batch, or confirmation cannot commit.
+pub fn confirm_vote_batch_submission(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    batch_digest: Vec<u8>,
+    tx_hash: String,
+    events_json: String,
+) -> Result<zcash_voting::wire::VoteBatchConfirmation, String> {
+    catch(|| {
+        let events = parse_tx_events_json(&events_json)?;
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::confirmation::confirm_vote_batch_submission(
+                &db,
+                &round_id,
+                bundle_index,
+                &batch_digest,
                 &tx_hash,
                 &events,
             )
@@ -2131,6 +2193,61 @@ mod tests {
         }
     }
 
+    fn cast_vote_batch_event(
+        round_id: &str,
+        digest: [u8; 32],
+        van_position: u32,
+        proposal_ids: &[u32],
+        vc_tree_positions: &[u64],
+        van_nullifiers: &[[u8; 32]],
+    ) -> TxEvent {
+        TxEvent {
+            event_type: "cast_vote_batch".to_string(),
+            attributes: vec![
+                TxEventAttribute {
+                    key: "vote_round_id".to_string(),
+                    value: round_id.to_string(),
+                },
+                TxEventAttribute {
+                    key: "batch_digest".to_string(),
+                    value: hex::encode(digest),
+                },
+                TxEventAttribute {
+                    key: "batch_size".to_string(),
+                    value: proposal_ids.len().to_string(),
+                },
+                TxEventAttribute {
+                    key: "final_van_leaf_index".to_string(),
+                    value: van_position.to_string(),
+                },
+                TxEventAttribute {
+                    key: "vote_commitment_leaf_indices".to_string(),
+                    value: vc_tree_positions
+                        .iter()
+                        .map(u64::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                },
+                TxEventAttribute {
+                    key: "proposal_ids".to_string(),
+                    value: proposal_ids
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                },
+                TxEventAttribute {
+                    key: "van_nullifiers".to_string(),
+                    value: van_nullifiers
+                        .iter()
+                        .map(hex::encode)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                },
+            ],
+        }
+    }
+
     fn test_round_context(
         db_path: &std::path::Path,
         network: &str,
@@ -2458,6 +2575,7 @@ mod tests {
                 ],
                 share_blinds: vec![[9; 32], [10; 32]],
                 share_comms: vec![[7; 32], [8; 32]],
+                batch: None,
             })
             .unwrap();
         let recovered = recovered_vote_share_wire_json(recovery_json, 7, 1, 99, 0).unwrap();
@@ -2711,6 +2829,8 @@ mod tests {
             commitments: Some(zcash_voting::wire::SignedVoteCommitmentsView {
                 bundle_index: 2,
                 commitments: vec![],
+                batch_digest: None,
+                batch_json: None,
             }),
         };
         assert_eq!(result.phase, "result");
@@ -2757,6 +2877,8 @@ mod tests {
                     vote_auth_sig: [9; 64],
                     commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
                 }],
+                batch_digest: None,
+                batch_json: None,
             },
         )
         .unwrap();
@@ -3628,6 +3750,82 @@ mod tests {
     }
 
     #[test]
+    fn batch_submission_apis_record_atomic_confirmation_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+
+        let mut first =
+            zcash_voting::vote::parse_recovery(&test_vote_recovery_json(0, 7, 1, 88)).unwrap();
+        let mut second =
+            zcash_voting::vote::parse_recovery(&test_vote_recovery_json(0, 8, 0, 89)).unwrap();
+        second.van_nullifier = [0x22; 32];
+        second.vote_authority_note_new = [0x23; 32];
+        second.vote_commitment = [0x24; 32];
+        second.r_vpk = [0x25; 32];
+        // Frozen digest for these two effecting actions under the v1 batch
+        // domain. The core crate independently pins the same encoding.
+        let digest: [u8; 32] =
+            hex::decode("ad0f658aa9be20ed8f52b0af3be2c7f29e1c53a63d86764d1661a52f38be5763")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        first.batch = Some(zcash_voting::vote::VoteBatchRecovery {
+            digest,
+            index: 0,
+            size: 2,
+        });
+        second.batch = Some(zcash_voting::vote::VoteBatchRecovery {
+            digest,
+            index: 1,
+            size: 2,
+        });
+        seed_recovery_bundle(&db, TEST_ACCOUNT_UUID, &first);
+        seed_recovery_bundle(&db, TEST_ACCOUNT_UUID, &second);
+        drop(db);
+
+        mark_vote_batch_submitted(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            0,
+            digest.to_vec(),
+            "batch-submitted-tx".to_string(),
+        )
+        .unwrap();
+
+        let confirmation = confirm_vote_batch_submission(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            0,
+            digest.to_vec(),
+            "batch-submitted-tx".to_string(),
+            tx_events_json(vec![cast_vote_batch_event(
+                ROUND_ID,
+                digest,
+                42,
+                &[7, 8],
+                &[88, 89],
+                &[first.van_nullifier, second.van_nullifier],
+            )]),
+        )
+        .unwrap();
+
+        assert_eq!(confirmation.tx_hash, "batch-submitted-tx");
+        assert_eq!(confirmation.van_leaf_position, 42);
+        assert_eq!(confirmation.proposal_ids, vec![7, 8]);
+        assert_eq!(confirmation.vc_tree_positions, vec![88, 89]);
+    }
+
+    #[test]
     fn setup_delegation_bundles_rejects_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -3830,6 +4028,7 @@ mod tests {
             }],
             share_blinds: vec![[12u8; 32]],
             share_comms: vec![[13u8; 32]],
+            batch: None,
         })
         .unwrap()
     }
@@ -3845,20 +4044,29 @@ mod tests {
         let recovery_json =
             test_vote_recovery_json(bundle_index, proposal_id, vote_decision, vc_tree_position);
         let recovery = zcash_voting::vote::parse_recovery(&recovery_json).unwrap();
+        seed_recovery_bundle(db, account_uuid, &recovery);
+    }
+
+    fn seed_recovery_bundle(
+        db: &zcash_voting::storage::VotingDb,
+        account_uuid: &str,
+        recovery: &zcash_voting::vote::VoteRecoveryBundle,
+    ) {
+        let recovery_json = zcash_voting::vote::serialize_recovery(recovery).unwrap();
         let commitment_bytes = serde_json::to_vec(&serde_json::json!({
             "van_nullifier": hex::encode(recovery.van_nullifier),
             "vote_authority_note_new": hex::encode(recovery.vote_authority_note_new),
             "vote_commitment": hex::encode(recovery.vote_commitment),
-            "proof": hex::encode(recovery.proof),
+            "proof": hex::encode(&recovery.proof),
         }))
         .unwrap();
         zcash_voting::storage::queries::store_vote(
             &db.conn(),
             ROUND_ID,
             account_uuid,
-            bundle_index,
-            proposal_id,
-            vote_decision,
+            recovery.bundle_index,
+            recovery.proposal_id,
+            recovery.vote_decision,
             &commitment_bytes,
         )
         .unwrap();
@@ -3871,18 +4079,14 @@ mod tests {
                     ":json": recovery_json,
                     ":round_id": ROUND_ID,
                     ":wallet_id": account_uuid,
-                    ":bundle_index": i64::from(bundle_index),
-                    ":proposal_id": i64::from(proposal_id),
+                    ":bundle_index": i64::from(recovery.bundle_index),
+                    ":proposal_id": i64::from(recovery.proposal_id),
                 },
             )
             .unwrap();
     }
 
-    fn seed_pir_cache_row(
-        db: &zcash_voting::storage::VotingDb,
-        wallet_id: &str,
-        marker: u8,
-    ) {
+    fn seed_pir_cache_row(db: &zcash_voting::storage::VotingDb, wallet_id: &str, marker: u8) {
         db.conn()
             .execute(
                 "INSERT INTO pir_proof_cache

@@ -570,8 +570,10 @@ Future<void> resetVotingSessionState({
 ///
 /// This removes every persisted round scoped to `account_uuid`, relying on the
 /// `zcash_voting` round deletion cascade for bundles, recovery rows, share
-/// history, ballot intent, and cached tree state. Use this only at account
-/// deletion boundaries, not for ordinary voting-session retries.
+/// history, ballot intent, and cached tree state. It also deletes
+/// round-independent `pir_proof_cache` rows for the same wallet id — browse-
+/// only warm-up can persist those without ever creating a round. Use this only
+/// at account deletion boundaries, not for ordinary voting-session retries.
 Future<int> deleteVotingAccountState({
   required String dbPath,
   required String accountUuid,
@@ -671,6 +673,28 @@ Future<void> markVoteSubmitted({
   txHash: txHash,
 );
 
+/// Record one submitted transaction hash for every action in an atomic batch.
+///
+/// # Errors
+///
+/// Returns an error if the digest is malformed, the complete persisted batch
+/// cannot be recovered, or any stored transaction hash conflicts.
+Future<void> markVoteBatchSubmitted({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required List<int> batchDigest,
+  required String txHash,
+}) => RustLib.instance.api.crateApiVotingMarkVoteBatchSubmitted(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  batchDigest: batchDigest,
+  txHash: txHash,
+);
+
 /// Parse tx events and record a confirmed vote submission.
 ///
 /// # Errors
@@ -691,6 +715,30 @@ Future<VoteConfirmation> confirmVoteSubmission({
   roundId: roundId,
   bundleIndex: bundleIndex,
   proposalId: proposalId,
+  txHash: txHash,
+  eventsJson: eventsJson,
+);
+
+/// Parse one batch event and atomically record all confirmed vote positions.
+///
+/// # Errors
+///
+/// Returns an error if the event digest, action order, proposal ids, or
+/// nullifiers differ from the persisted batch, or confirmation cannot commit.
+Future<VoteBatchConfirmation> confirmVoteBatchSubmission({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required List<int> batchDigest,
+  required String txHash,
+  required String eventsJson,
+}) => RustLib.instance.api.crateApiVotingConfirmVoteBatchSubmission(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  batchDigest: batchDigest,
   txHash: txHash,
   eventsJson: eventsJson,
 );

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' as frb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override, ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
@@ -3286,13 +3287,19 @@ void main() {
           .start(kRoundId);
       expect(startedKey, key);
       await _waitForVoteCommitmentKey(rust, '0:7');
+      for (var attempt = 0; attempt < 100; attempt++) {
+        if (_postRequestCount(http, '/shielded-vote/v1/cast-vote-batch') == 1) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
 
       expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, isEmpty);
       expect(rust.generateVotingHotkeyCalls, 1);
       expect(hotkeyStore.hotkey, [42, 43, 44]);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
-      expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+      expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote-batch'), 1);
     },
   );
 
@@ -4265,7 +4272,7 @@ void main() {
 
   test('spent nullifier reports status and stops queued broadcasts', () async {
     final responses = votingHttpResponses();
-    responses['/shielded-vote/v1/cast-vote'] = {
+    responses['/shielded-vote/v1/cast-vote-batch'] = {
       'tx_hash': 'rejected-vote-tx',
       'code': 1,
       'log': 'nullifier already spent: abc123',
@@ -4314,7 +4321,7 @@ void main() {
       'the submission status. If you used another wallet, return to it to see '
       'the status.',
     );
-    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote-batch'), 1);
     expect(rust.storedVoteTxHashes, isEmpty);
   });
 
@@ -4322,7 +4329,7 @@ void main() {
     'spent nullifier rejection resumes when its tx already landed',
     () async {
       final responses = votingHttpResponses();
-      responses['/shielded-vote/v1/cast-vote'] = {
+      responses['/shielded-vote/v1/cast-vote-batch'] = {
         'tx_hash': 'vote-tx',
         'code': 1,
         'log': 'nullifier already spent: abc123',
@@ -4430,7 +4437,7 @@ void main() {
       expect(state.voteSubmissionCompletedCount, 2);
       expect(state.voteSubmissionTotalCount, 2);
       expect(state.voteSubmissionProgress, 1);
-      expect(rust.voteCommitBundleCalls, [0, 1, 0, 1]);
+      expect(rust.voteCommitBundleCalls, [0, 1]);
 
       final activeProgressCounts = observed
           .where((state) => state.voteSubmissionTotalCount == 2)
@@ -4464,7 +4471,7 @@ void main() {
     },
   );
 
-  test('proposal wave proves at most three bundles concurrently', () async {
+  test('bundle batches serialize to cap total ZKP2 concurrency', () async {
     final proofGate = Completer<void>();
     final rust = FakeVotingRustApi(
       emitCommitments: true,
@@ -4506,34 +4513,30 @@ void main() {
             ),
           ],
         );
-    while (rust.voteCommitBundleCalls.length < 3 ||
+    while (rust.voteCommitBundleCalls.isEmpty ||
         (container
                     .read(votingSessionProvider(kRoundId))
                     .value
                     ?.voteProgress
                     .length ??
                 0) <
-            3) {
+            1) {
       await Future<void>.delayed(Duration.zero);
     }
 
-    expect(rust.voteCommitBundleCalls, [0, 1, 2]);
-    expect(rust.maxConcurrentVoteCommitments, 3);
+    expect(rust.voteCommitBundleCalls, [0]);
+    expect(rust.maxConcurrentVoteCommitments, 1);
     expect(rust.syncedVoteTrees, [kRoundId]);
     expect(
       container.read(votingSessionProvider(kRoundId)).value!.voteProgress.keys,
-      {
-        const VotingVoteKey(bundleIndex: 0, proposalId: 7),
-        const VotingVoteKey(bundleIndex: 1, proposalId: 7),
-        const VotingVoteKey(bundleIndex: 2, proposalId: 7),
-      },
+      {const VotingVoteKey(bundleIndex: 0, proposalId: 7)},
     );
 
     proofGate.complete();
     await cast;
 
     expect(rust.voteCommitBundleCalls, [0, 1, 2, 3]);
-    expect(rust.maxConcurrentVoteCommitments, 3);
+    expect(rust.maxConcurrentVoteCommitments, 1);
   });
 
   test(
@@ -4884,7 +4887,7 @@ void main() {
     },
   );
 
-  test('each bundle confirms a proposal before proving the next one', () async {
+  test('each bundle submits its proposal chain as one atomic batch', () async {
     final confirmationResponse =
         votingHttpResponses()['/shielded-vote/v1/tx/vote-tx']!;
     final http = _UniqueVoteTxHttpClient(
@@ -4927,38 +4930,28 @@ void main() {
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(draftVotes: _twoProposalDrafts());
 
-    // The fake rejects a vote proved against an already-spent vote authority
-    // note, so reaching four submissions is itself the ordering proof.
     expect(
       rust.operationLog
-          .where((entry) => entry.startsWith('mark_vote_submitted:'))
+          .where((entry) => entry.startsWith('mark_vote_batch_submitted:'))
           .toSet(),
-      {
-        'mark_vote_submitted:0:7',
-        'mark_vote_submitted:1:7',
-        'mark_vote_submitted:0:8',
-        'mark_vote_submitted:1:8',
-      },
+      {'mark_vote_batch_submitted:0:7,8', 'mark_vote_batch_submitted:1:7,8'},
     );
     for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
       expect(
-        rust.operationLog.indexOf('build_vote:$bundleIndex:8'),
+        rust.operationLog.indexOf('mark_vote_batch_submitted:$bundleIndex:7,8'),
+        greaterThan(rust.operationLog.indexOf('build_vote:$bundleIndex:8')),
+      );
+      expect(
+        rust.operationLog.indexOf('mark_vote_confirmed:$bundleIndex:7'),
         greaterThan(
-          rust.operationLog.indexOf('mark_vote_confirmed:$bundleIndex:7'),
+          rust.operationLog.indexOf(
+            'mark_vote_batch_submitted:$bundleIndex:7,8',
+          ),
         ),
-        reason:
-            'bundle $bundleIndex must confirm proposal 7 before proving '
-            'proposal 8 — the confirmation is what advances its VAN',
       );
     }
-    // At least one sync per proposal step, and never more than one per
-    // (bundle, proposal) pair. How many of the four collapse depends on
-    // whether the bundles reach a step together; the deterministic
-    // coalescing case is pinned by the 4-bundle single-proposal test.
-    expect(rust.syncedVoteTrees.length, greaterThanOrEqualTo(2));
-    expect(rust.syncedVoteTrees.length, lessThanOrEqualTo(4));
+    expect(rust.syncedVoteTrees, [kRoundId]);
     expect(rust.maxConcurrentVoteTreeSyncs, 1);
-    expect(rust.syncedVoteTrees.toSet(), {kRoundId});
   });
 
   test('vote tree failover waits for prior sync witnesses', () async {
@@ -5013,9 +5006,8 @@ void main() {
     }
     expect(rust.operationLog, contains('mark_vote_confirmed:1:7'));
 
-    // Bundle 1 has requested its next fresh sync, but bundle 0 is still using
-    // the tree produced by the first sync. Starting failover now would clear
-    // bundle 0's witness source before it can materialize the witness.
+    // Both bundle witnesses consume the same synchronized tree. The gated
+    // witness must not trigger a second sync or reset while it is in use.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(rust.syncedVoteTreeNodeUrls, ['https://voting.example']);
     expect(rust.resetVoteTreeCalls, isEmpty);
@@ -5023,26 +5015,14 @@ void main() {
     rust.releaseFirstWitness();
     await cast;
 
-    expect(
-      rust.syncedVoteTreeNodeUrls,
-      containsAllInOrder([
-        'https://voting.example',
-        'https://voting.example',
-        'https://voting-failover.example',
-      ]),
-    );
-    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.syncedVoteTreeNodeUrls, ['https://voting.example']);
+    expect(rust.resetVoteTreeCalls, isEmpty);
     expect(rust.resetVotingSessionStateCalls, isEmpty);
     expect(
       rust.operationLog
-          .where((entry) => entry.startsWith('mark_vote_submitted:'))
+          .where((entry) => entry.startsWith('mark_vote_batch_submitted:'))
           .toSet(),
-      {
-        'mark_vote_submitted:0:7',
-        'mark_vote_submitted:1:7',
-        'mark_vote_submitted:0:8',
-        'mark_vote_submitted:1:8',
-      },
+      {'mark_vote_batch_submitted:0:7,8', 'mark_vote_batch_submitted:1:7,8'},
     );
   });
 
@@ -5102,18 +5082,23 @@ void main() {
     final gatedBundle = int.parse(gatedEntry.split(':').first);
     final freeBundle = gatedBundle == 0 ? 1 : 0;
 
-    // The unblocked bundle must reach its second proposal while the gated one
-    // is still waiting on its first confirmation.
+    // The unblocked bundle must confirm its complete batch while the other
+    // bundle is still waiting on confirmation.
     for (var attempt = 0; attempt < 200; attempt++) {
-      if (rust.operationLog.contains('build_vote:$freeBundle:8')) break;
+      if (rust.operationLog.contains('mark_vote_confirmed:$freeBundle:8')) {
+        break;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
     expect(
       rust.operationLog,
-      contains('build_vote:$freeBundle:8'),
+      contains('mark_vote_confirmed:$freeBundle:8'),
       reason: 'bundle $freeBundle must not wait on bundle $gatedBundle',
     );
-    expect(rust.operationLog, isNot(contains('build_vote:$gatedBundle:8')));
+    expect(
+      rust.operationLog,
+      isNot(contains('mark_vote_confirmed:$gatedBundle:8')),
+    );
 
     http.releaseSlowConfirmation.complete();
     await cast;
@@ -5244,13 +5229,13 @@ void main() {
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(draftVotes: _twoProposalDrafts());
 
-    // Bundle 1 runs to completion; bundle 0 stops at the failed step because
-    // proposal 8 cannot be proved without proposal 7's VAN advance.
+    // Bundle 1 runs to completion; bundle 0 submits nothing because any failed
+    // action invalidates the atomic batch.
+    expect(rust.operationLog, contains('mark_vote_batch_submitted:1:7,8'));
     expect(
       rust.operationLog,
-      containsAll(['mark_vote_submitted:1:7', 'mark_vote_submitted:1:8']),
+      isNot(contains('mark_vote_batch_submitted:0:7,8')),
     );
-    expect(rust.operationLog, isNot(contains('mark_vote_submitted:0:7')));
     expect(rust.operationLog, isNot(contains('build_vote:0:8')));
     final message = container
         .read(votingSessionProvider(kRoundId))
@@ -5695,7 +5680,9 @@ void main() {
             ],
           );
 
-      expect(rust.recoveredVoteCommitmentKeys, ['1:7']);
+      // Recovery reads once to persist the landed singleton confirmation and
+      // once more after the refreshed plan exposes its pending shares.
+      expect(rust.recoveredVoteCommitmentKeys, ['1:7', '1:7']);
       expect(
         rust.recordedShares
             .where((share) => share.bundleIndex == 1 && share.proposalId == 7)
@@ -5704,7 +5691,8 @@ void main() {
         [0, 1],
       );
       expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
-      expect(rust.operationLog.take(5).toList(), [
+      expect(rust.operationLog.take(6).toList(), [
+        'recover_vote:1:7',
         'mark_vote_confirmed:1:7',
         'recover_vote:1:7',
         'record_share:1:7:0',
@@ -6012,7 +6000,7 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
-  test('vote tree sync runs before each proposal', () async {
+  test('vote tree sync runs once for an atomic proposal batch', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final container = _sessionContainer(rust: rust);
     addTearDown(container.dispose);
@@ -6022,10 +6010,8 @@ void main() {
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(draftVotes: _twoProposalDrafts());
 
-    // A bundle's second vote needs the VAN leaf its first vote created, and
-    // that leaf is only witnessable after another sync.
-    expect(rust.syncedVoteTrees, [kRoundId, kRoundId]);
-    expect(rust.voteCommitBundleCalls, [0, 0]);
+    expect(rust.syncedVoteTrees, [kRoundId]);
+    expect(rust.voteCommitBundleCalls, [0]);
   });
 
   test('cast-time vote tree sync retries failover servers', () async {
@@ -6754,8 +6740,8 @@ void main() {
           );
 
       expect(
-        _postBodyJson(http, '/shielded-vote/v1/cast-vote'),
-        _voteCommitmentWireGolden,
+        _postBodyJson(http, '/shielded-vote/v1/cast-vote-batch'),
+        _voteBatchWireGolden,
       );
       expect(
         _postBodyJson(http, '/shielded-vote/v1/shares'),
@@ -8110,36 +8096,33 @@ void main() {
     expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
 
-  test(
-    'background PIR cache warmup skips hidden [TEST] rounds',
-    () async {
-      final rust = FakeVotingRustApi();
-      final testRound = roundStatusJson(roundId: kRoundId)
-        ..['title'] = '[TEST] Hidden poll';
-      final http = FakeVotingHttpClient(
-        responses: votingHttpResponses(roundStatus: testRound)
-          ..['/shielded-vote/v1/rounds'] = {
-            'rounds': [testRound],
-          },
-      );
-      final container = _sessionContainer(
-        rust: rust,
-        http: http,
-        visibilityStore: FakeVotingRoundVisibilityStore(),
-      );
-      addTearDown(container.dispose);
+  test('background PIR cache warmup skips hidden [TEST] rounds', () async {
+    final rust = FakeVotingRustApi();
+    final testRound = roundStatusJson(roundId: kRoundId)
+      ..['title'] = '[TEST] Hidden poll';
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(roundStatus: testRound)
+        ..['/shielded-vote/v1/rounds'] = {
+          'rounds': [testRound],
+        },
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      http: http,
+      visibilityStore: FakeVotingRoundVisibilityStore(),
+    );
+    addTearDown(container.dispose);
 
-      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+    await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
 
-      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
-      expect(
-        http.requests.any(
-          (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
-        ),
-        isFalse,
-      );
-    },
-  );
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+    expect(
+      http.requests.any(
+        (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+      ),
+      isFalse,
+    );
+  });
 
   test(
     'background PIR cache warmup includes [TEST] rounds when shown',
@@ -8853,6 +8836,11 @@ Map<String, Object> votingHttpResponses({
     ],
   },
   '/shielded-vote/v1/cast-vote': {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+  '/shielded-vote/v1/cast-vote-batch': {
+    'tx_hash': 'vote-tx',
+    'code': 0,
+    'log': '',
+  },
   '/shielded-vote/v1/status': {'status': 'ok'},
   '/shielded-vote/v1/shares': {'status': 'queued'},
   '/shielded-vote/v1/tx/vote-tx': {
@@ -8865,6 +8853,21 @@ Map<String, Object> votingHttpResponses({
         'attributes': [
           {'key': 'leaf_index', 'value': '1,2'},
           {'key': 'vote_round_id', 'value': kRoundId},
+        ],
+      },
+      {
+        'type': 'cast_vote_batch',
+        'attributes': [
+          {'key': 'vote_round_id', 'value': kRoundId},
+          {
+            'key': 'batch_digest',
+            'value':
+                '0000000000000000000000000000000000000000000000000000000000000000',
+          },
+          {'key': 'batch_size', 'value': '2'},
+          {'key': 'final_van_leaf_index', 'value': '1'},
+          {'key': 'vote_commitment_leaf_indices', 'value': '2,3'},
+          {'key': 'proposal_ids', 'value': '7,8'},
         ],
       },
     ],
@@ -8894,6 +8897,7 @@ const _delegationSubmissionWireGolden =
     '{"rk":"Ag==","spend_auth_sig":"Aw==","tx1_effects":"BA==","signed_note_nullifier":"BQ==","cmx_new":"Bg==","van_cmx":"Bw==","gov_nullifiers":["CA=="],"proof":"AQ==","vote_round_id":"$_roundIdBase64"}';
 const _voteCommitmentWireGolden =
     '{"van_nullifier":"$_bytes1x32Base64","vote_authority_note_new":"$_bytes2x32Base64","vote_commitment":"$_bytes3x32Base64","proposal_id":7,"proof":"BA==","vote_round_id":"$_roundIdBase64","vote_comm_tree_anchor_height":10,"r_vpk":"$_bytes13x32Base64","vote_auth_sig":"$_bytes12x64Base64"}';
+const _voteBatchWireGolden = '{"votes":[$_voteCommitmentWireGolden]}';
 const _voteShareWireGolden =
     '{"vote_round_id":"$kRoundId","shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0}';
 const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
@@ -9635,7 +9639,9 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
     Duration? timeout,
   }) async {
     final isDelegation = uri.path.endsWith('/delegate-vote');
-    final isVote = uri.path.endsWith('/cast-vote');
+    final isVote =
+        uri.path.endsWith('/cast-vote') ||
+        uri.path.endsWith('/cast-vote-batch');
     if (!isDelegation && !isVote) {
       return super.postJson(uri, body, timeout: timeout);
     }
@@ -9698,7 +9704,8 @@ class _UniqueVoteTxHttpClient extends FakeVotingHttpClient {
     Map<String, dynamic> body, {
     Duration? timeout,
   }) async {
-    if (!uri.path.endsWith('/cast-vote')) {
+    if (!uri.path.endsWith('/cast-vote') &&
+        !uri.path.endsWith('/cast-vote-batch')) {
       return super.postJson(uri, body, timeout: timeout);
     }
     requests.add(
@@ -10024,18 +10031,22 @@ class FakeVotingRustApi implements VotingRustApi {
 
   // --- Vote authority note (VAN) model -------------------------------------
   //
-  // A cast vote spends the bundle's VAN: the proof binds the bundle's current
-  // proposal-authority mask and VAN leaf position, submission clears that
-  // proposal's bit, and confirmation appends the replacement leaf. Two votes on
-  // one bundle proved against the same state share a `van_nullifier`, so the
-  // second is a double spend. The fake reproduces that so the provider's
-  // ordering is checked here instead of on-chain.
+  // A vote batch spends the bundle's current VAN once and derives each later
+  // action from its predecessor. Submission clears every proposal bit in the
+  // batch, and confirmation appends only the final replacement VAN. The fake
+  // retains the legacy singleton double-spend check for recovery tests while
+  // modelling the atomic path used by fresh votes.
   static const int _fullProposalAuthority = 0xFFFE; // bit 0 is the sentinel
   final Map<int, int> _bundleAuthority = <int, int>{};
   final Map<int, int> _bundleVanPosition = <int, int>{};
   final Map<int, int> _bundleMinAnchor = <int, int>{};
   final Map<String, int> _capturedAuthority = <String, int>{};
   final Map<String, int> _capturedVanPosition = <String, int>{};
+  final Map<String, List<int>> _batchProposalIdsByDigest =
+      <String, List<int>>{};
+  final Map<String, int> _batchAuthorityByDigest = <String, int>{};
+  final Map<String, int> _batchVanPositionByDigest = <String, int>{};
+  int _nextBatchDigestTag = 1;
   int _voteTreeAnchor = 10;
   int _nextVanPosition = 1000;
   int _activeVoteTreeSyncs = 0;
@@ -10643,22 +10654,31 @@ class FakeVotingRustApi implements VotingRustApi {
         voteCommitmentKeys.add(key);
         operationLog.add('build_vote:$key');
         draftSingleShareValues.add(draft.singleShare);
-        yield rust_api.ApiVoteCommitEvent(
-          phase: 'result',
-          proposalId: draft.proposalId,
-          bundleIndex: bundleIndex,
-          proofProgress: null,
-          commitments: emitCommitments
-              ? _commitments(
-                  roundId: roundId,
-                  bundleIndex: bundleIndex,
-                  proposalId: draft.proposalId,
-                  choice: draft.choice,
-                  shareCount: commitmentShareCount,
-                )
-              : null,
-        );
       }
+      final digest = Uint8List.fromList(
+        List<int>.filled(32, (_nextBatchDigestTag++ & 0xff)),
+      );
+      final digestKey = base64Encode(digest);
+      _batchProposalIdsByDigest[digestKey] = [
+        for (final draft in draftVotes) draft.proposalId,
+      ];
+      _batchAuthorityByDigest[digestKey] = _authorityFor(bundleIndex);
+      _batchVanPositionByDigest[digestKey] = _vanPositionFor(bundleIndex);
+      yield rust_api.ApiVoteCommitEvent(
+        phase: 'result',
+        proposalId: draftVotes.last.proposalId,
+        bundleIndex: bundleIndex,
+        proofProgress: null,
+        commitments: emitCommitments
+            ? _batchCommitments(
+                roundId: roundId,
+                bundleIndex: bundleIndex,
+                draftVotes: draftVotes,
+                shareCount: commitmentShareCount,
+                digest: digest,
+              )
+            : null,
+      );
     } finally {
       _activeVoteCommitments--;
     }
@@ -10936,6 +10956,38 @@ class FakeVotingRustApi implements VotingRustApi {
     operationLog.add('mark_vote_submitted:$bundleIndex:$proposalId');
   }
 
+  @override
+  Future<void> markVoteBatchSubmitted({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
+    required String txHash,
+  }) async {
+    final digestKey = base64Encode(batchDigest);
+    final proposalIds = _batchProposalIdsByDigest[digestKey];
+    if (proposalIds == null || proposalIds.isEmpty) {
+      throw StateError('unknown fake vote batch digest');
+    }
+    if (_batchAuthorityByDigest[digestKey] != _authorityFor(bundleIndex) ||
+        _batchVanPositionByDigest[digestKey] != _vanPositionFor(bundleIndex)) {
+      throw StateError(
+        'cast-vote-batch rejected: stale vote authority for bundle '
+        '$bundleIndex',
+      );
+    }
+    var nextAuthority = _authorityFor(bundleIndex);
+    for (final proposalId in proposalIds) {
+      nextAuthority &= ~(1 << proposalId);
+      _addUnique(storedVoteTxHashes, '$bundleIndex:$proposalId:$txHash');
+    }
+    _bundleAuthority[bundleIndex] = nextAuthority;
+    operationLog.add(
+      'mark_vote_batch_submitted:$bundleIndex:${proposalIds.join(',')}',
+    );
+  }
+
   void _recordVoteConfirmed({
     required int bundleIndex,
     required int proposalId,
@@ -10984,6 +11036,85 @@ class FakeVotingRustApi implements VotingRustApi {
       txHash: txHash,
       vanLeafPosition: leafPositions.vanPosition,
       vcTreePosition: leafPositions.vcTreePosition,
+    );
+  }
+
+  @override
+  Future<rust_wire.VoteBatchConfirmation> confirmVoteBatchSubmission({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
+    required String txHash,
+    required String eventsJson,
+  }) async {
+    final digestKey = base64Encode(batchDigest);
+    final proposalIds = _batchProposalIdsByDigest[digestKey];
+    if (proposalIds == null || proposalIds.isEmpty) {
+      throw StateError('unknown fake vote batch digest');
+    }
+    String? failingProposal;
+    for (final proposalId in proposalIds) {
+      final key = '$bundleIndex:$proposalId';
+      if (failingVoteConfirmationKeys.contains(key)) {
+        failingProposal = key;
+        break;
+      }
+    }
+    if (failingProposal != null) {
+      throw StateError(
+        'injected vote confirmation persistence failure $failingProposal',
+      );
+    }
+    final events = jsonDecode(eventsJson) as List<dynamic>;
+    final batchEvents = events.cast<Map<String, dynamic>>().where(
+      (candidate) => candidate['type'] == 'cast_vote_batch',
+    );
+    final attributes = batchEvents.isEmpty
+        ? const <String, String>{}
+        : {
+            for (final attribute
+                in (batchEvents.single['attributes'] as List<dynamic>)
+                    .cast<Map<String, dynamic>>())
+              attribute['key'] as String: attribute['value'] as String,
+          };
+    final eventProposalIds = attributes['proposal_ids']
+        ?.split(',')
+        .map(int.parse)
+        .toList(growable: false);
+    final eventVcPositions = attributes['vote_commitment_leaf_indices']
+        ?.split(',')
+        .map(BigInt.parse)
+        .toList(growable: false);
+    final eventMatches =
+        listEquals(eventProposalIds, proposalIds) &&
+        eventVcPositions?.length == proposalIds.length;
+    final vcPositions = eventMatches
+        ? eventVcPositions!
+        : [
+            for (var index = 0; index < proposalIds.length; index++)
+              BigInt.from(2 + index),
+          ];
+    final finalVanPosition =
+        int.tryParse(attributes['final_van_leaf_index'] ?? '') ?? 1;
+    _bundleVanPosition[bundleIndex] = ++_nextVanPosition;
+    _bundleMinAnchor[bundleIndex] = _voteTreeAnchor + 1;
+    for (var index = 0; index < proposalIds.length; index++) {
+      _recordVoteConfirmed(
+        bundleIndex: bundleIndex,
+        proposalId: proposalIds[index],
+        txHash: txHash,
+        vanPosition: finalVanPosition,
+        vcTreePosition: vcPositions[index],
+      );
+    }
+    return rust_wire.VoteBatchConfirmation(
+      txHash: txHash,
+      batchDigest: Uint8List.fromList(batchDigest),
+      vanLeafPosition: finalVanPosition,
+      proposalIds: Uint32List.fromList(proposalIds),
+      vcTreePositions: frb.Uint64List.fromList(vcPositions),
     );
   }
 
@@ -11165,5 +11296,45 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         shares: shares,
       ),
     ],
+  );
+}
+
+rust_wire.SignedVoteCommitmentsView _batchCommitments({
+  required String roundId,
+  required int bundleIndex,
+  required List<rust_wire.DraftVote> draftVotes,
+  required int shareCount,
+  required Uint8List digest,
+}) {
+  final commitments = [
+    for (final draft in draftVotes)
+      _commitments(
+        roundId: roundId,
+        bundleIndex: bundleIndex,
+        proposalId: draft.proposalId,
+        choice: draft.choice,
+        shareCount: shareCount,
+      ).commitments.single,
+  ];
+  return rust_wire.SignedVoteCommitmentsView(
+    bundleIndex: bundleIndex,
+    commitments: commitments,
+    batchDigest: digest,
+    batchJson: jsonEncode({
+      'votes': [
+        for (final commitment in commitments)
+          {
+            'van_nullifier': commitment.wire.vanNullifier,
+            'vote_authority_note_new': commitment.wire.voteAuthorityNoteNew,
+            'vote_commitment': commitment.wire.voteCommitment,
+            'proposal_id': commitment.wire.proposalId,
+            'proof': commitment.wire.proof,
+            'vote_round_id': commitment.wire.voteRoundId,
+            'vote_comm_tree_anchor_height': commitment.wire.anchorHeight,
+            'r_vpk': commitment.wire.rVpk,
+            'vote_auth_sig': commitment.wire.voteAuthSig,
+          },
+      ],
+    }),
   );
 }

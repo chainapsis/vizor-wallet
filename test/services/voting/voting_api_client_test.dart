@@ -636,6 +636,34 @@ void main() {
     expect(delays, const [Duration(milliseconds: 1)]);
   });
 
+  test('submits atomic vote batches to the batch endpoint', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/cast-vote-batch': {
+          'tx_hash': 'batch-tx',
+          'code': 0,
+          'log': '',
+        },
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+    final body = {
+      'votes': [
+        {'proposal_id': 1},
+        {'proposal_id': 2},
+      ],
+    };
+
+    final result = await client.submitVoteCommitmentBatch(batch: body);
+
+    expect(result.txHash, 'batch-tx');
+    expect(http.requests.single.uri.path, '/shielded-vote/v1/cast-vote-batch');
+    expect(http.requests.single.body, body);
+  });
+
   test('retries transient round reads for 500 responses', () async {
     final delays = <Duration>[];
     final http = FakeVotingHttpClient(

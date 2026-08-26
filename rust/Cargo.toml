@@ -116,10 +116,16 @@ version = "0.1.0-rc2"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "f02ffe030376126b3606e667d957bb6b0053c247"
+version = "=3.1.0-rc.9"
 default-features = false
 features = ["zakura"]
+
+[patch.crates-io]
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "c12306e898bed1bbd00f3e43d304a2a0d4eda306" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "c12306e898bed1bbd00f3e43d304a2a0d4eda306" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "c12306e898bed1bbd00f3e43d304a2a0d4eda306" }
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", rev = "644f9bc4c809341064d0529f274caedc4f8fea6f" }
+voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits.git", rev = "644f9bc4c809341064d0529f274caedc4f8fea6f" }
 
 [dependencies.orchard]
 package = "zakura-orchard"

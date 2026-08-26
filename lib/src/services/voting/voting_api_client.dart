@@ -227,6 +227,24 @@ class VotingApiClient {
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
 
+  /// Broadcasts one atomic, ordered batch of vote commitments.
+  ///
+  /// Every action is accepted or rejected in the same vote-chain transaction.
+  Future<VotingTxResult> submitVoteCommitmentBatch({
+    required Map<String, dynamic> batch,
+  }) async {
+    final decoded = await _withVoteServerFailover(
+      policy: _broadcastRetryPolicy,
+      operation: (baseUrl) => _postJson(
+        _endpoint(['cast-vote-batch'], baseUrl: baseUrl),
+        batch,
+        allowStatusCodes: const {422},
+        retryPolicy: _broadcastRetryPolicy,
+      ),
+    );
+    return VotingTxResult.fromJson(_objectFromValue(decoded));
+  }
+
   Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
     final VotingHttpResponse response;
     try {

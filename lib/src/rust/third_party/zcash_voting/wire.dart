@@ -7,8 +7,8 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `VoteCommitmentBatchWire`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -654,13 +654,25 @@ class SignedVoteCommitmentsView {
   final int bundleIndex;
   final List<SignedVoteCommitmentView> commitments;
 
+  /// Raw 32-byte batch digest signed by every action.
+  final Uint8List? batchDigest;
+
+  /// Canonical JSON body to POST to the batch vote endpoint.
+  final String? batchJson;
+
   const SignedVoteCommitmentsView({
     required this.bundleIndex,
     required this.commitments,
+    this.batchDigest,
+    this.batchJson,
   });
 
   @override
-  int get hashCode => bundleIndex.hashCode ^ commitments.hashCode;
+  int get hashCode =>
+      bundleIndex.hashCode ^
+      commitments.hashCode ^
+      batchDigest.hashCode ^
+      batchJson.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -668,7 +680,54 @@ class SignedVoteCommitmentsView {
       other is SignedVoteCommitmentsView &&
           runtimeType == other.runtimeType &&
           bundleIndex == other.bundleIndex &&
-          commitments == other.commitments;
+          commitments == other.commitments &&
+          batchDigest == other.batchDigest &&
+          batchJson == other.batchJson;
+}
+
+/// Parsed confirmation data for one atomic cast-vote batch.
+class VoteBatchConfirmation {
+  /// Confirmed transaction hash shared by every action.
+  final String txHash;
+
+  /// Raw 32-byte digest emitted by the chain.
+  final Uint8List batchDigest;
+
+  /// Leaf position of the batch's final vote-authority note.
+  final int vanLeafPosition;
+
+  /// Proposal identifiers in signed action order.
+  final Uint32List proposalIds;
+
+  /// Vote-commitment leaf positions in signed action order.
+  final Uint64List vcTreePositions;
+
+  const VoteBatchConfirmation({
+    required this.txHash,
+    required this.batchDigest,
+    required this.vanLeafPosition,
+    required this.proposalIds,
+    required this.vcTreePositions,
+  });
+
+  @override
+  int get hashCode =>
+      txHash.hashCode ^
+      batchDigest.hashCode ^
+      vanLeafPosition.hashCode ^
+      proposalIds.hashCode ^
+      vcTreePositions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VoteBatchConfirmation &&
+          runtimeType == other.runtimeType &&
+          txHash == other.txHash &&
+          batchDigest == other.batchDigest &&
+          vanLeafPosition == other.vanLeafPosition &&
+          proposalIds == other.proposalIds &&
+          vcTreePositions == other.vcTreePositions;
 }
 
 class VoteCommitmentWire {

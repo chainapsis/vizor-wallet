@@ -26,6 +26,31 @@ enum VotingSubmissionJobStatus {
   error,
 }
 
+enum _VotingSubmissionTimingStage {
+  preparing,
+  delegating,
+  castingVotes,
+  finalizing,
+}
+
+/// Elapsed wall-clock time for the user-visible submission stages.
+@immutable
+class VotingSubmissionTiming {
+  const VotingSubmissionTiming({
+    required this.preparing,
+    required this.delegating,
+    required this.castingVotes,
+    required this.finalizing,
+    required this.total,
+  });
+
+  final Duration preparing;
+  final Duration delegating;
+  final Duration castingVotes;
+  final Duration finalizing;
+  final Duration total;
+}
+
 /// Display metadata for requests included in the currently shown Keystone QR.
 @immutable
 class VotingKeystoneBatchMemo {
@@ -47,6 +72,8 @@ class VotingSubmissionJobState {
     this.status = VotingSubmissionJobStatus.idle,
     this.generation = 0,
     this.errorMessage,
+    this.bundleCount,
+    this.timing,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
     this.keystoneBatchMemos = const [],
@@ -63,6 +90,8 @@ class VotingSubmissionJobState {
   final VotingSubmissionJobStatus status;
   final int generation;
   final String? errorMessage;
+  final int? bundleCount;
+  final VotingSubmissionTiming? timing;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
   final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
@@ -87,6 +116,10 @@ class VotingSubmissionJobState {
     int? generation,
     String? errorMessage,
     bool clearErrorMessage = false,
+    int? bundleCount,
+    bool clearBundleCount = false,
+    VotingSubmissionTiming? timing,
+    bool clearTiming = false,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
     List<VotingKeystoneBatchMemo>? keystoneBatchMemos,
@@ -107,6 +140,8 @@ class VotingSubmissionJobState {
       errorMessage: clearErrorMessage
           ? null
           : errorMessage ?? this.errorMessage,
+      bundleCount: clearBundleCount ? null : bundleCount ?? this.bundleCount,
+      timing: clearTiming ? null : timing ?? this.timing,
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
@@ -286,12 +321,20 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Timer? _completionPollTimer;
   _VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
+  Stopwatch? _submissionStopwatch;
+  Stopwatch? _stageStopwatch;
+  _VotingSubmissionTimingStage? _timingStage;
+  Duration _preparingDuration = Duration.zero;
+  Duration _delegatingDuration = Duration.zero;
+  Duration _castingVotesDuration = Duration.zero;
+  Duration _finalizingDuration = Duration.zero;
 
   @override
   VotingSubmissionJobState build() {
     ref.onDispose(() {
       _completionPollTimer?.cancel();
       _completionPollTimer = null;
+      _resetTiming();
       _releaseSessionSubscription();
     });
     return VotingSubmissionJobState(key: _key);
@@ -316,6 +359,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _releaseGuard();
     _releaseSessionSubscription();
     _keystoneSigningRound = null;
+    _resetTiming();
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
   }
 
@@ -329,6 +373,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     );
     sessionNotifier.clearVoteSubmissionProgressForJobStart();
     final generation = ++_nextGeneration;
+    _startTiming();
     state = VotingSubmissionJobState(
       key: key,
       status: VotingSubmissionJobStatus.running,
@@ -682,6 +727,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        _transitionTiming(_VotingSubmissionTimingStage.delegating);
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,
         );
@@ -842,6 +888,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
     if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
+      _transitionTiming(_VotingSubmissionTimingStage.delegating);
       await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final afterDelegation = _sessionForJob(key);
@@ -893,6 +940,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionState? initialSession,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    _transitionTiming(_VotingSubmissionTimingStage.castingVotes);
     var votePollingSession = _sessionForJob(key) ?? initialSession;
     final canContinueWithoutDraft =
         votePollingSession != null &&
@@ -974,6 +1022,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       done = completedEligibilitySession;
     }
     if (!_canCompleteSubmission(done)) {
+      _transitionTiming(_VotingSubmissionTimingStage.finalizing);
       _scheduleCompletionPoll(key: key, generation: generation);
       return;
     }
@@ -1013,6 +1062,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   void _completeJob({required VotingSessionKey key, required int generation}) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    _transitionTiming(_VotingSubmissionTimingStage.finalizing);
+    final timing = _finishTiming();
+    final completedSession = _sessionForJob(key);
+    final reportedBundleCount =
+        completedSession?.bundleCount ??
+        completedSession?.resumePlan?.bundleCount;
+    final bundleCount = reportedBundleCount != null && reportedBundleCount > 0
+        ? reportedBundleCount
+        : null;
     _cancelCompletionPoll();
     // Register live helper-share tracking before releasing the submission
     // guard. Account delete/reset drain through the registry; they must not
@@ -1025,6 +1083,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = state.copyWith(
       status: VotingSubmissionJobStatus.complete,
       clearErrorMessage: true,
+      bundleCount: bundleCount,
+      timing: timing,
       softwareAccountRequired: false,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],
@@ -1057,6 +1117,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     bool softwareAccountRequired = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    _resetTiming();
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
@@ -1075,6 +1136,68 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
+  }
+
+  void _startTiming() {
+    _resetTiming();
+    _submissionStopwatch = Stopwatch()..start();
+    _timingStage = _VotingSubmissionTimingStage.preparing;
+    _stageStopwatch = Stopwatch()..start();
+  }
+
+  void _transitionTiming(_VotingSubmissionTimingStage stage) {
+    if (_submissionStopwatch == null || _timingStage == stage) return;
+    _recordCurrentTimingStage();
+    _timingStage = stage;
+    _stageStopwatch = Stopwatch()..start();
+  }
+
+  void _recordCurrentTimingStage() {
+    final stage = _timingStage;
+    final stopwatch = _stageStopwatch;
+    if (stage == null || stopwatch == null) return;
+    stopwatch.stop();
+    final elapsed = stopwatch.elapsed;
+    switch (stage) {
+      case _VotingSubmissionTimingStage.preparing:
+        _preparingDuration += elapsed;
+      case _VotingSubmissionTimingStage.delegating:
+        _delegatingDuration += elapsed;
+      case _VotingSubmissionTimingStage.castingVotes:
+        _castingVotesDuration += elapsed;
+      case _VotingSubmissionTimingStage.finalizing:
+        _finalizingDuration += elapsed;
+    }
+    _timingStage = null;
+    _stageStopwatch = null;
+  }
+
+  VotingSubmissionTiming? _finishTiming() {
+    final totalStopwatch = _submissionStopwatch;
+    if (totalStopwatch == null) return null;
+    _recordCurrentTimingStage();
+    totalStopwatch.stop();
+    final timing = VotingSubmissionTiming(
+      preparing: _preparingDuration,
+      delegating: _delegatingDuration,
+      castingVotes: _castingVotesDuration,
+      finalizing: _finalizingDuration,
+      total: totalStopwatch.elapsed,
+    );
+    _submissionStopwatch = null;
+    return timing;
+  }
+
+  void _resetTiming() {
+    _submissionStopwatch?.stop();
+    _stageStopwatch?.stop();
+    _submissionStopwatch = null;
+    _stageStopwatch = null;
+    _timingStage = null;
+    _preparingDuration = Duration.zero;
+    _delegatingDuration = Duration.zero;
+    _castingVotesDuration = Duration.zero;
+    _finalizingDuration = Duration.zero;
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {

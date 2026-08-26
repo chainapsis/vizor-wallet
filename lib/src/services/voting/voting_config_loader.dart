@@ -7,6 +7,7 @@ import '../../core/config/network_config.dart';
 import '../../rust/api/voting.dart' as rust_config_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import 'voting_http.dart';
+import 'voting_endpoint_mapper.dart';
 import 'voting_models.dart';
 
 /// Production static trust anchor used to discover the mutable voting config.
@@ -69,16 +70,19 @@ const kStageStaticVotingConfigMirrors = <String>[
 ];
 
 /// Bundled voting config for the selected launch network.
-const kDefaultStaticVotingConfigSource =
-    kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
+const _useE2eVotingConfig =
+    (kZcashDefaultNetworkRaw == 'regtest' ||
+        (kZcashDefaultNetworkRaw == 'test' && kE2eVotingTestnetHarness)) &&
+    kE2eStaticVotingConfigSource != '';
+
+const kDefaultStaticVotingConfigSource = _useE2eVotingConfig
     ? kE2eStaticVotingConfigSource
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigSource
     : kProductionStaticVotingConfigSource;
 
 /// Mirrors for the selected launch network's bundled trust anchor.
-const kDefaultStaticVotingConfigMirrors =
-    kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
+const kDefaultStaticVotingConfigMirrors = _useE2eVotingConfig
     ? <String>[kE2eStaticVotingConfigSource]
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigMirrors

@@ -42,6 +42,23 @@ void main() {
       );
     });
 
+    test('explicit testnet harness maps the same reserved identities', () {
+      final mapper = VotingEndpointMapper(
+        isRegtest: false,
+        allowTestnetHarness: true,
+        gatewayUrl: 'http://127.0.0.1:18080',
+      );
+
+      expect(
+        mapper.map(Uri.parse('https://vote.vizor-vote.invalid/rounds')),
+        Uri.parse('http://127.0.0.1:18080/vote.vizor-vote.invalid/rounds'),
+      );
+      expect(
+        mapper.map(Uri.parse('https://stage-pir.example/root')),
+        Uri.parse('https://stage-pir.example/root'),
+      );
+    });
+
     test('rejects non-loopback or HTTPS gateways', () {
       expect(
         () => VotingEndpointMapper(

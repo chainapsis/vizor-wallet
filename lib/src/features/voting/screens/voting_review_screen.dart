@@ -195,6 +195,12 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
           state,
           preparing: votingPowerPreparing,
         );
+        final reportedBundleCount =
+            state.bundleCount ?? state.resumePlan?.bundleCount;
+        final bundleCount =
+            reportedBundleCount != null && reportedBundleCount > 0
+            ? reportedBundleCount
+            : null;
         final onSubmit = draft.isEmpty || !state.hasConfirmedVotingEligibility
             ? null
             : () {
@@ -221,6 +227,15 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
+            ],
+            if (state.hasConfirmedVotingEligibility) ...[
+              _Message(
+                bundleCount == null
+                    ? 'Preparing voting bundle count.'
+                    : 'This submission will use $bundleCount voting '
+                          '${bundleCount == 1 ? 'bundle' : 'bundles'}.',
+              ),
+              const SizedBox(height: AppSpacing.sm),
             ],
             if (state.hasConfirmedVotingEligibility)
               for (final entry in proposals.asMap().entries) ...[

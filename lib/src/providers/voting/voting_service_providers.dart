@@ -583,12 +583,31 @@ abstract interface class VotingRustApi {
     required String txHash,
   });
 
+  Future<void> markVoteBatchSubmitted({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
+    required String txHash,
+  });
+
   Future<rust_voting.VoteConfirmation> confirmVoteSubmission({
     required String dbPath,
     required String accountUuid,
     required String roundId,
     required int bundleIndex,
     required int proposalId,
+    required String txHash,
+    required String eventsJson,
+  });
+
+  Future<rust_voting.VoteBatchConfirmation> confirmVoteBatchSubmission({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
     required String txHash,
     required String eventsJson,
   });
@@ -632,6 +651,25 @@ class FrbVotingRustApi implements VotingRustApi {
       snapshotHeight: snapshotHeight,
       ncRoot: ncRoot,
       nullifierImtRoot: nullifierImtRoot,
+    );
+  }
+
+  @override
+  Future<void> markVoteBatchSubmitted({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
+    required String txHash,
+  }) {
+    return rust_api.markVoteBatchSubmitted(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      batchDigest: batchDigest,
+      txHash: txHash,
     );
   }
 
@@ -1081,6 +1119,27 @@ class FrbVotingRustApi implements VotingRustApi {
       roundId: roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
+      txHash: txHash,
+      eventsJson: eventsJson,
+    );
+  }
+
+  @override
+  Future<rust_voting.VoteBatchConfirmation> confirmVoteBatchSubmission({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> batchDigest,
+    required String txHash,
+    required String eventsJson,
+  }) {
+    return rust_api.confirmVoteBatchSubmission(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      batchDigest: batchDigest,
       txHash: txHash,
       eventsJson: eventsJson,
     );

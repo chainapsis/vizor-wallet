@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/duration_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -115,6 +116,9 @@ class _VotingSubmissionConfirmationViewState
             roundId: widget.roundId,
             accountUuid: widget.accountUuid!,
           );
+    final job = jobKey == null
+        ? null
+        : ref.watch(votingSubmissionJobProvider(jobKey));
     final session = jobKey == null
         ? ref.watch(votingSessionProvider(widget.roundId))
         : ref.watch(votingSubmissionJobSessionProvider(jobKey));
@@ -131,6 +135,7 @@ class _VotingSubmissionConfirmationViewState
           return _buildSubmissionContent(
             state: cachedState,
             jobKey: jobKey,
+            job: job,
             loadError: error,
           );
         }
@@ -147,7 +152,7 @@ class _VotingSubmissionConfirmationViewState
         );
       },
       data: (state) {
-        return _buildSubmissionContent(state: state, jobKey: jobKey);
+        return _buildSubmissionContent(state: state, jobKey: jobKey, job: job);
       },
     );
   }
@@ -159,6 +164,7 @@ class _VotingSubmissionConfirmationViewState
   Widget _buildSubmissionContent({
     required VotingSessionState state,
     required VotingSessionKey? jobKey,
+    required VotingSubmissionJobState? job,
     Object? loadError,
   }) {
     final pollTitle = state.round?.title.isNotEmpty == true
@@ -247,6 +253,11 @@ class _VotingSubmissionConfirmationViewState
         votingPower: _formatVotingPower(
           _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
         ),
+        bundleCount:
+            job?.bundleCount ??
+            state.bundleCount ??
+            state.resumePlan?.bundleCount,
+        timing: job?.timing,
         isReturningToPolls: _isReturningToPolls,
         doneEnabled: !_isReturningToPolls,
         doneLabel: _isReturningToPolls ? 'Updating...' : 'Done',
@@ -447,6 +458,8 @@ class _ConfirmationScaffold extends StatelessWidget {
     required this.pollTitle,
     required this.message,
     required this.votingPower,
+    this.bundleCount,
+    this.timing,
     this.onDone,
     this.isReturningToPolls = false,
     this.doneEnabled = true,
@@ -462,6 +475,8 @@ class _ConfirmationScaffold extends StatelessWidget {
   final String pollTitle;
   final String message;
   final String votingPower;
+  final int? bundleCount;
+  final VotingSubmissionTiming? timing;
   final VoidCallback? onDone;
   final bool isReturningToPolls;
   final bool doneEnabled;
@@ -572,6 +587,35 @@ class _ConfirmationScaffold extends StatelessWidget {
                               label: 'Voting power',
                               value: votingPower,
                             ),
+                            if (bundleCount != null && bundleCount! > 0)
+                              _ReceiptRow(
+                                label: 'Voting bundles',
+                                value: bundleCount.toString(),
+                              ),
+                            if (timing != null) ...[
+                              _ReceiptRow(
+                                label: 'Total time',
+                                value: formatElapsedSeconds(timing!.total),
+                              ),
+                              _ReceiptRow(
+                                label: 'Preparing',
+                                value: formatElapsedSeconds(timing!.preparing),
+                              ),
+                              _ReceiptRow(
+                                label: 'Delegating',
+                                value: formatElapsedSeconds(timing!.delegating),
+                              ),
+                              _ReceiptRow(
+                                label: 'Casting and shares',
+                                value: formatElapsedSeconds(
+                                  timing!.castingVotes,
+                                ),
+                              ),
+                              _ReceiptRow(
+                                label: 'Finalizing',
+                                value: formatElapsedSeconds(timing!.finalizing),
+                              ),
+                            ],
                           ],
                         ),
                         const Spacer(flex: 2),
