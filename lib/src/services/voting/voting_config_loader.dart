@@ -44,10 +44,11 @@ const kStageStaticVotingConfigMirror =
     'v2-static-voting-config.json'
     '?checksum=sha256:17484ebabab92225205a02a962add09f1659c9798c2e2e325bd8eac56ab3bf8f';
 
-/// Hash-pinned logical source injected by the desktop regtest voting harness.
+/// Hash-pinned logical source injected by a desktop local voting harness.
 ///
-/// It is ignored unless the app is also compiled for regtest. Transport to the
-/// local fixture is handled separately by `VotingEndpointMapper`.
+/// It is ignored unless the app is compiled for regtest or for testnet with the
+/// explicit harness flag. Transport to the local fixture is handled separately
+/// by `VotingEndpointMapper`.
 const kE2eStaticVotingConfigSourceEnvKey = 'ZCASH_E2E_VOTING_STATIC_CONFIG_URL';
 const kE2eStaticVotingConfigSource = String.fromEnvironment(
   kE2eStaticVotingConfigSourceEnvKey,

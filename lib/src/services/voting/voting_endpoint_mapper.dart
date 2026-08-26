@@ -8,17 +8,19 @@ const kE2eVotingTestnetHarness = bool.fromEnvironment(
   kE2eVotingTestnetHarnessEnvKey,
 );
 
-/// Reserved logical DNS suffix used by the regtest voting harness.
+/// Reserved logical DNS suffix used by local voting harnesses.
 ///
 /// Signed voting config keeps HTTPS identities under this suffix. Only a
-/// regtest build with an explicit loopback gateway maps them to local HTTP.
+/// regtest build, or an explicitly enabled testnet harness build, maps them to
+/// a configured loopback HTTP gateway.
 const kE2eVotingLogicalHostSuffix = '.vizor-vote.invalid';
 
-/// Maps authenticated logical voting endpoints onto a local regtest gateway.
+/// Maps authenticated logical voting endpoints onto a local voting gateway.
 ///
-/// Production and testnet builds always use identity mapping. The regtest
-/// mapping is intentionally narrow: the configured gateway must be loopback,
-/// and only HTTPS hosts below [kE2eVotingLogicalHostSuffix] are rewritten.
+/// Production and ordinary testnet builds always use identity mapping. Local
+/// harness mapping is intentionally narrow: the configured gateway must be
+/// loopback, and only HTTPS hosts below [kE2eVotingLogicalHostSuffix] are
+/// rewritten.
 class VotingEndpointMapper {
   VotingEndpointMapper({
     required bool isRegtest,
