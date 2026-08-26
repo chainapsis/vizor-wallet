@@ -8305,9 +8305,15 @@ class _YieldingFakeVotingHttpClient extends FakeVotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     await Future<void>.delayed(Duration.zero);
-    return super.get(uri, headers: headers, timeout: timeout);
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 
@@ -8819,13 +8825,19 @@ class _GatedVotingHttpClient extends FakeVotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     _recordGet(uri.path);
     final gates = _getGates[uri.path];
     if (gates != null && gates.isNotEmpty) {
       await gates.removeAt(0).future;
     }
-    return super.get(uri, headers: headers, timeout: timeout);
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 
   void _recordGet(String path) {
@@ -9744,9 +9756,15 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     if (!uri.path.contains('/tx/')) {
-      return super.get(uri, headers: headers, timeout: timeout);
+      return super.get(
+        uri,
+        headers: headers,
+        timeout: timeout,
+        cancelSignal: cancelSignal,
+      );
     }
     _activeConfirmationGets++;
     if (_activeConfirmationGets > maxConcurrentConfirmationGets) {
@@ -9757,7 +9775,12 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
       // a confirmation wait spans blocks. This is what makes "confirmations
       // overlap the next bundle's broadcast" observable.
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      return await super.get(uri, headers: headers, timeout: timeout);
+      return await super.get(
+        uri,
+        headers: headers,
+        timeout: timeout,
+        cancelSignal: cancelSignal,
+      );
     } finally {
       _activeConfirmationGets--;
     }
@@ -9800,6 +9823,7 @@ class _GatedVoteConfirmationHttpClient extends _UniqueVoteTxHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     if (uri.path.endsWith('/tx/vote-tx-0')) {
       if (!slowConfirmationStarted.isCompleted) {
@@ -9807,7 +9831,12 @@ class _GatedVoteConfirmationHttpClient extends _UniqueVoteTxHttpClient {
       }
       await releaseSlowConfirmation.future;
     }
-    return super.get(uri, headers: headers, timeout: timeout);
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 
@@ -9822,6 +9851,7 @@ class _GatedSubmittedVoteConfirmationHttpClient extends FakeVotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     if (uri.path.endsWith('/tx/submitted-vote-tx')) {
       if (!confirmationStarted.isCompleted) {
@@ -9829,7 +9859,12 @@ class _GatedSubmittedVoteConfirmationHttpClient extends FakeVotingHttpClient {
       }
       await releaseConfirmation.future;
     }
-    return super.get(uri, headers: headers, timeout: timeout);
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 
@@ -9877,12 +9912,18 @@ class _SeparatedVoteStagePoolsHttpClient extends _UniqueVoteTxHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     if (uri.path.endsWith('/tx/vote-tx-3') &&
         !fourthConfirmationStarted.isCompleted) {
       fourthConfirmationStarted.complete();
     }
-    return super.get(uri, headers: headers, timeout: timeout);
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 

@@ -1,5 +1,10 @@
 use std::{
+    collections::{hash_map::Entry, HashMap},
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        LazyLock, Mutex,
+    },
     time::Duration,
 };
 
@@ -17,10 +22,14 @@ pub use crate::network_privacy::NetworkPrivacyStatus;
 
 const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const TOR_HTTP_REQUEST_TIMEOUT_ERROR: &str = "Tor HTTP request timed out";
+const TOR_HTTP_REQUEST_CANCELLED_ERROR: &str = "Tor HTTP request cancelled";
 const MAINNET_SAPLING_ACTIVATION_HEIGHT: u64 = 419_200;
 const MAINNET_SAPLING_ACTIVATION_TIME: u32 = 1_540_779_337;
 const BIRTHDAY_ESTIMATE_TOLERANCE_SECONDS: i64 = 6 * 60 * 60;
 const MAX_BIRTHDAY_CORRECTION_PROBES: usize = 2;
+static TOR_HTTP_CANCELLATIONS: LazyLock<Mutex<HashMap<u64, tokio::sync::watch::Sender<bool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static NEXT_TOR_HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BirthdayAnchor {
@@ -150,22 +159,26 @@ pub async fn tor_http_get(
     url: String,
     headers: Vec<NetworkHttpHeader>,
     timeout_milliseconds: Option<u64>,
+    request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
-    let client = crate::network_privacy::tor_client_for_route(true)?
-        .ok_or_else(|| "Tor is not enabled".to_string())?;
-    let uri = url
-        .parse()
-        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
-    let response = with_tor_http_request_timeout(
-        timeout_milliseconds,
-        client.http_get(
-            uri,
-            |builder| apply_headers(builder, &headers),
-            collect_body,
-            0,
-            |_| None,
-        ),
-    )
+    let response = with_tor_http_request_cancellation(request_id, async {
+        let client = crate::network_privacy::tor_client_for_route(true)?
+            .ok_or_else(|| "Tor is not enabled".to_string())?;
+        let uri = url
+            .parse()
+            .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+        with_tor_http_request_timeout(
+            timeout_milliseconds,
+            client.http_get(
+                uri,
+                |builder| apply_headers(builder, &headers),
+                collect_body,
+                0,
+                |_| None,
+            ),
+        )
+        .await
+    })
     .await?;
     network_http_response(response)
 }
@@ -177,25 +190,90 @@ pub async fn tor_http_post(
     headers: Vec<NetworkHttpHeader>,
     body: Vec<u8>,
     timeout_milliseconds: Option<u64>,
+    request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
-    let client = crate::network_privacy::tor_client_for_route(true)?
-        .ok_or_else(|| "Tor is not enabled".to_string())?;
-    let uri = url
-        .parse()
-        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
-    let response = with_tor_http_request_timeout(
-        timeout_milliseconds,
-        client.http_post(
-            uri,
-            |builder| apply_headers(builder, &headers),
-            Full::new(Bytes::from(body)),
-            collect_body,
-            0,
-            |_| None,
-        ),
-    )
+    let response = with_tor_http_request_cancellation(request_id, async {
+        let client = crate::network_privacy::tor_client_for_route(true)?
+            .ok_or_else(|| "Tor is not enabled".to_string())?;
+        let uri = url
+            .parse()
+            .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+        with_tor_http_request_timeout(
+            timeout_milliseconds,
+            client.http_post(
+                uri,
+                |builder| apply_headers(builder, &headers),
+                Full::new(Bytes::from(body)),
+                collect_body,
+                0,
+                |_| None,
+            ),
+        )
+        .await
+    })
     .await?;
     network_http_response(response)
+}
+
+/// Reserves a process-unique cancellation token for one Tor HTTP request.
+#[flutter_rust_bridge::frb(sync)]
+pub fn tor_http_begin_request() -> u64 {
+    loop {
+        let request_id = NEXT_TOR_HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        if request_id == 0 {
+            continue;
+        }
+        let mut cancellations = TOR_HTTP_CANCELLATIONS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Entry::Vacant(entry) = cancellations.entry(request_id) {
+            let (sender, _) = tokio::sync::watch::channel(false);
+            entry.insert(sender);
+            return request_id;
+        }
+    }
+}
+
+/// Cancels one in-flight Tor HTTP request without affecting other circuits.
+#[flutter_rust_bridge::frb(sync)]
+pub fn tor_http_cancel_request(request_id: u64) {
+    let cancellations = TOR_HTTP_CANCELLATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(sender) = cancellations.get(&request_id) {
+        sender.send_replace(true);
+    }
+}
+
+async fn with_tor_http_request_cancellation<T>(
+    request_id: Option<u64>,
+    request: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let Some(request_id) = request_id else {
+        return request.await;
+    };
+    let mut cancellation = {
+        let cancellations = TOR_HTTP_CANCELLATIONS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cancellations
+            .get(&request_id)
+            .ok_or_else(|| "Tor HTTP request cancellation token is not registered".to_string())?
+            .subscribe()
+    };
+    let result = if *cancellation.borrow() {
+        Err(TOR_HTTP_REQUEST_CANCELLED_ERROR.to_string())
+    } else {
+        tokio::select! {
+            result = request => result,
+            _ = cancellation.changed() => Err(TOR_HTTP_REQUEST_CANCELLED_ERROR.to_string()),
+        }
+    };
+    TOR_HTTP_CANCELLATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&request_id);
+    result
 }
 
 /// Streams an HTTP GET response over an isolated Tor route directly to disk.
@@ -612,7 +690,8 @@ mod tests {
 
     use super::{
         correct_estimated_height, interpolate_height, mainnet_anchor_segment,
-        with_api_response_body_timeout, with_tor_http_request_timeout, BirthdayAnchor,
+        tor_http_begin_request, tor_http_cancel_request, with_api_response_body_timeout,
+        with_tor_http_request_cancellation, with_tor_http_request_timeout, BirthdayAnchor,
         MAINNET_BIRTHDAY_ANCHORS,
     };
 
@@ -713,5 +792,33 @@ mod tests {
             Err("Tor HTTP request timed out after 1 ms".to_string())
         );
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn explicit_cancellation_drops_only_the_selected_tor_request() {
+        let cancelled_id = tor_http_begin_request();
+        let retained_id = tor_http_begin_request();
+        let cancelled = tokio::spawn(with_tor_http_request_cancellation(
+            Some(cancelled_id),
+            std::future::pending::<Result<(), String>>(),
+        ));
+        let retained = tokio::spawn(with_tor_http_request_cancellation(
+            Some(retained_id),
+            std::future::pending::<Result<(), String>>(),
+        ));
+        tokio::task::yield_now().await;
+
+        tor_http_cancel_request(cancelled_id);
+
+        assert_eq!(
+            cancelled.await.unwrap(),
+            Err("Tor HTTP request cancelled".to_string())
+        );
+        assert!(!retained.is_finished());
+        tor_http_cancel_request(retained_id);
+        assert_eq!(
+            retained.await.unwrap(),
+            Err("Tor HTTP request cancelled".to_string())
+        );
     }
 }

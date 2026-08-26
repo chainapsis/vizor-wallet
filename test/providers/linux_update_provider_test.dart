@@ -271,6 +271,7 @@ class _LinuxUpdateTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
     requests.add(uri);
     this.headers.add(Map<String, String>.of(headers));
@@ -289,6 +290,7 @@ class _LinuxUpdateTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw UnimplementedError();
 
   @override

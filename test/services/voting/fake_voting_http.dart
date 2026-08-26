@@ -15,6 +15,7 @@ class FakeVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     requests.add(
       FakeVotingHttpRequest('GET', uri, headers: headers, timeout: timeout),

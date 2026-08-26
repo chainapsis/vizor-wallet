@@ -259,7 +259,7 @@ class VotingApiClient {
   /// racing until enough arrive or [hardTimeout] expires. A helper is ready only
   /// when its public status endpoint returns `{"status":"ok"}` successfully.
   /// Completing [cancelSignal] stops the wait and returns the responses already
-  /// collected so callers can abandon the preflight promptly.
+  /// collected. Outstanding probe transports are cancelled before returning.
   Future<List<String>> preflightHelpers(
     Iterable<Uri> serverUrls, {
     required int readyTargetCount,
@@ -286,10 +286,15 @@ class VotingApiClient {
     final readyServers = <String>[];
     var completedServerCount = 0;
     var acceptingResults = true;
+    final cancelProbes = Completer<void>();
     final targetOrAllCompleted = Completer<void>();
     for (final serverUrl in servers) {
       unawaited(
-        _probeHelper(serverUrl, timeout: hardTimeout).then((isReady) {
+        _probeHelper(
+          serverUrl,
+          timeout: hardTimeout,
+          cancelSignal: cancelProbes.future,
+        ).then((isReady) {
           if (!acceptingResults) return;
           completedServerCount++;
           if (isReady) readyServers.add(serverUrl.toString());
@@ -324,6 +329,7 @@ class VotingApiClient {
       softTimer.cancel();
       hardTimer.cancel();
       acceptingResults = false;
+      cancelProbes.complete();
     }
 
     return _rankedHelperUrls(servers, readyServers);
@@ -446,10 +452,18 @@ class VotingApiClient {
     return jsonDecode(response.bodyText);
   }
 
-  Future<bool> _probeHelper(Uri serverUrl, {required Duration timeout}) async {
+  Future<bool> _probeHelper(
+    Uri serverUrl, {
+    required Duration timeout,
+    required Future<void> cancelSignal,
+  }) async {
     final uri = _endpoint(['status'], baseUrl: serverUrl);
     try {
-      final response = await _get(uri, timeout: timeout);
+      final response = await _get(
+        uri,
+        timeout: timeout,
+        cancelSignal: cancelSignal,
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) return false;
       final status = _objectFromValue(jsonDecode(response.bodyText))['status'];
       return status?.toString().trim().toLowerCase() == 'ok';
@@ -522,8 +536,12 @@ class VotingApiClient {
     return jsonDecode(response.bodyText);
   }
 
-  Future<VotingHttpResponse> _get(Uri uri, {required Duration timeout}) {
-    return _httpClient.get(uri, timeout: timeout);
+  Future<VotingHttpResponse> _get(
+    Uri uri, {
+    required Duration timeout,
+    Future<void>? cancelSignal,
+  }) {
+    return _httpClient.get(uri, timeout: timeout, cancelSignal: cancelSignal);
   }
 
   Future<VotingHttpResponse> _post(

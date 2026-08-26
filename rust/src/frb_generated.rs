@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1846257739;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1645099250;
 
 // Section: executor
 
@@ -6762,6 +6762,68 @@ fn wire__crate__api__voting__sync_vote_tree_impl(
         },
     )
 }
+fn wire__crate__api__network_privacy__tor_http_begin_request_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tor_http_begin_request",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::network_privacy::tor_http_begin_request())?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tor_http_cancel_request",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::network_privacy::tor_http_cancel_request(api_request_id);
+                })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__network_privacy__tor_http_download_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6834,6 +6896,7 @@ fn wire__crate__api__network_privacy__tor_http_get_impl(
                 &mut deserializer,
             );
             let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_request_id = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -6842,6 +6905,7 @@ fn wire__crate__api__network_privacy__tor_http_get_impl(
                             api_url,
                             api_headers,
                             api_timeout_milliseconds,
+                            api_request_id,
                         )
                         .await?;
                         Ok(output_ok)
@@ -6880,6 +6944,7 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
             );
             let api_body = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_request_id = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -6889,6 +6954,7 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
                             api_headers,
                             api_body,
                             api_timeout_milliseconds,
+                            api_request_id,
                         )
                         .await?;
                         Ok(output_ok)
@@ -10982,16 +11048,16 @@ fn pde_ffi_dispatcher_primary_impl(
 166 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
 167 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
 168 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-169 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
-170 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
-171 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
-172 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-173 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-174 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-176 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
-177 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-180 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-181 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+171 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
+172 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
+173 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
+174 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+175 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+176 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+178 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
+179 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+182 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+183 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -11049,9 +11115,19 @@ fn pde_ffi_dispatcher_sync_impl(
             data_len,
         ),
         162 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        175 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        178 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
-        179 => {
+        169 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        170 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        177 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        180 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        181 => {
             wire__crate__api__voting__warm_voting_proving_caches_impl(ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),

@@ -893,7 +893,7 @@ void main() {
       final primaryResponse = Completer<VotingHttpResponse>();
       final secondaryResponse = Completer<VotingHttpResponse>();
       final blackholedResponse = Completer<VotingHttpResponse>();
-      final http = FakeVotingHttpClient(
+      final http = _CancellationTrackingVotingHttpClient(
         responses: {
           'https://helper-1.example/shielded-vote/v1/status':
               primaryResponse.future,
@@ -936,6 +936,10 @@ void main() {
         http.requests.map((request) => request.timeout),
         everyElement(const Duration(milliseconds: 500)),
       );
+      await Future<void>.delayed(Duration.zero);
+      expect(http.cancelledRequests, [
+        Uri.parse('https://helper-3.example/shielded-vote/v1/status'),
+      ]);
     },
   );
 
@@ -1150,4 +1154,40 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+}
+
+class _CancellationTrackingVotingHttpClient extends FakeVotingHttpClient {
+  _CancellationTrackingVotingHttpClient({super.responses});
+
+  final cancelledRequests = <Uri>[];
+
+  @override
+  Future<VotingHttpResponse> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+    Future<void>? cancelSignal,
+  }) {
+    var completed = false;
+    final response = super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
+    unawaited(
+      response.then<void>(
+        (_) => completed = true,
+        onError: (_, _) => completed = true,
+      ),
+    );
+    if (cancelSignal != null) {
+      unawaited(
+        cancelSignal.then((_) {
+          if (!completed) cancelledRequests.add(uri);
+        }, onError: (_, _) {}),
+      );
+    }
+    return response;
+  }
 }

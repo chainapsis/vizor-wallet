@@ -262,6 +262,44 @@ void main() {
     );
   });
 
+  test('direct cancellation aborts the active transport', () async {
+    final requestReceived = Completer<void>();
+    final cancellation = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) {
+      if (!requestReceived.isCompleted) requestReceived.complete();
+    });
+    final client = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() async {
+      NetworkHttpClient.allowDirectRequests();
+      client.close(force: true);
+      await server.close(force: true);
+    });
+
+    final pending = client.request(
+      'GET',
+      Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: server.port,
+        path: '/stalled',
+      ),
+      timeout: const Duration(seconds: 30),
+      cancelSignal: cancellation.future,
+    );
+    await requestReceived.future;
+
+    cancellation.complete();
+
+    await expectLater(
+      pending,
+      throwsA(isA<NetworkHttpRequestCancelledException>()),
+    );
+    await NetworkHttpClient.quiesceDirectRequests().timeout(
+      const Duration(seconds: 1),
+    );
+  });
+
   test('direct timeout keeps its slot until openUrl unwinds', () async {
     final directClient = _StallingHttpClient();
     final client = NetworkHttpClient(
@@ -393,6 +431,7 @@ class _RecordingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     timeouts.add(timeout);
     requests.add(
@@ -411,6 +450,7 @@ class _RecordingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     timeouts.add(timeout);
     requests.add(
@@ -440,6 +480,7 @@ class _FailingTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw StateError('Tor is not ready');
 
   @override
@@ -448,6 +489,7 @@ class _FailingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw StateError('Tor is not ready');
 }
 

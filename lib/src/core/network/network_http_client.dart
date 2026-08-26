@@ -40,6 +40,13 @@ class DirectNetworkRequestsBlockedException implements Exception {
       'Direct network requests are blocked while the app switches to Tor.';
 }
 
+class NetworkHttpRequestCancelledException implements Exception {
+  const NetworkHttpRequestCancelledException();
+
+  @override
+  String toString() => 'Network HTTP request cancelled';
+}
+
 class _DirectRequestOperation<T> {
   _DirectRequestOperation({required this.result, required Future<T> source})
     : drained = source.then<void>((_) {}, onError: (_, _) {});
@@ -60,6 +67,7 @@ abstract interface class TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   });
 
   Future<NetworkHttpResponse> post(
@@ -67,6 +75,7 @@ abstract interface class TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   });
 
   Future<NetworkHttpResponse> download(
@@ -86,13 +95,16 @@ class RustTorHttpBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
     return _request(
       timeout,
-      () => rust_network_privacy.torHttpGet(
+      cancelSignal,
+      (requestId) => rust_network_privacy.torHttpGet(
         url: uri.toString(),
         headers: _rustHeaders(headers),
         timeoutMilliseconds: _timeoutMilliseconds(timeout),
+        requestId: requestId,
       ),
     );
   }
@@ -103,14 +115,17 @@ class RustTorHttpBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
     return _request(
       timeout,
-      () => rust_network_privacy.torHttpPost(
+      cancelSignal,
+      (requestId) => rust_network_privacy.torHttpPost(
         url: uri.toString(),
         headers: _rustHeaders(headers),
         body: bodyBytes,
         timeoutMilliseconds: _timeoutMilliseconds(timeout),
+        requestId: requestId,
       ),
     );
   }
@@ -139,15 +154,33 @@ class RustTorHttpBridge implements TorHttpBridge {
 
   Future<NetworkHttpResponse> _request(
     Duration? timeout,
-    Future<rust_network_privacy.NetworkHttpResponse> Function() send,
+    Future<void>? cancelSignal,
+    Future<rust_network_privacy.NetworkHttpResponse> Function(BigInt? requestId)
+    send,
   ) async {
+    final signal = cancelSignal;
+    final requestId = signal == null
+        ? null
+        : rust_network_privacy.torHttpBeginRequest();
+    var completed = false;
+    if (requestId != null) {
+      unawaited(
+        signal!.then((_) {
+          if (!completed) {
+            rust_network_privacy.torHttpCancelRequest(requestId: requestId);
+          }
+        }, onError: (_, _) {}),
+      );
+    }
     try {
-      return networkHttpResponseFromRust(await send());
+      return networkHttpResponseFromRust(await send(requestId));
     } catch (error, stackTrace) {
       if (timeout != null && error.toString().contains(_requestTimeoutError)) {
         throw TimeoutException(_requestTimeoutError, timeout);
       }
       Error.throwWithStackTrace(error, stackTrace);
+    } finally {
+      completed = true;
     }
   }
 
@@ -233,6 +266,7 @@ class NetworkHttpClient {
     Map<String, String> headers = const {},
     List<int> bodyBytes = const [],
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
     _requirePositiveTimeout(timeout);
     return _torDesired()
@@ -242,6 +276,7 @@ class NetworkHttpClient {
             headers: headers,
             bodyBytes: bodyBytes,
             timeout: timeout,
+            cancelSignal: cancelSignal,
           )
         : _runDirectRequest(
             () => _requestDirect(
@@ -250,6 +285,7 @@ class NetworkHttpClient {
               headers: headers,
               bodyBytes: bodyBytes,
               timeout: timeout,
+              cancelSignal: cancelSignal,
             ),
           );
   }
@@ -271,6 +307,7 @@ class NetworkHttpClient {
             bodyBytes: const [],
             destinationPath: destination.path,
             timeout: null,
+            cancelSignal: null,
           )
         : _runDirectRequest(
             () => _DirectRequestOperation.fromFuture(
@@ -334,6 +371,7 @@ class NetworkHttpClient {
     required List<int> bodyBytes,
     String? destinationPath,
     required Duration? timeout,
+    required Future<void>? cancelSignal,
   }) async {
     if (method != 'GET' && method != 'POST') {
       throw TorUnsupportedHttpMethodException(method);
@@ -357,12 +395,14 @@ class NetworkHttpClient {
               currentUri,
               headers: currentHeaders,
               timeout: remainingTimeout,
+              cancelSignal: cancelSignal,
             )
           : await _torBridge.post(
               currentUri,
               headers: currentHeaders,
               bodyBytes: currentBody,
               timeout: remainingTimeout,
+              cancelSignal: cancelSignal,
             );
       final location = response.header(HttpHeaders.locationHeader);
       if (!_isRedirect(response.statusCode) || location == null) {
@@ -397,16 +437,33 @@ class NetworkHttpClient {
     required Map<String, String> headers,
     required List<int> bodyBytes,
     required Duration? timeout,
+    required Future<void>? cancelSignal,
   }) {
     HttpClientRequest? activeRequest;
     StreamSubscription<List<int>>? responseSubscription;
     Completer<Uint8List>? responseBody;
-    var timedOut = false;
+    Object? terminationError;
+    Future<void> abort(Object error) async {
+      try {
+        activeRequest?.abort(error);
+      } catch (_) {
+        // Continue cleanup and preserve the original public failure.
+      }
+      try {
+        await responseSubscription?.cancel();
+      } catch (_) {
+        // Continue cleanup and preserve the original public failure.
+      }
+      final body = responseBody;
+      if (body != null && !body.isCompleted) body.completeError(error);
+    }
+
     final request = () async {
       final request = await _directClient.openUrl(method, uri);
       activeRequest = request;
-      if (timedOut) {
-        final error = _timeoutException(timeout!);
+      final pendingError = terminationError;
+      if (pendingError != null) {
+        final error = pendingError;
         request.abort(error);
         throw error;
       }
@@ -435,27 +492,32 @@ class NetworkHttpClient {
         headers: Map.unmodifiable(responseHeaders),
       );
     }();
-    final result = timeout == null
+    final signal = cancelSignal;
+    final cancellation = signal == null
+        ? null
+        : Completer<NetworkHttpResponse>();
+    if (cancellation != null) {
+      unawaited(
+        signal!.then((_) async {
+          final error = terminationError ??=
+              const NetworkHttpRequestCancelledException();
+          await abort(error);
+          if (!cancellation.isCompleted) {
+            cancellation.completeError(error);
+          }
+        }, onError: (_, _) {}),
+      );
+    }
+    final cancellableRequest = cancellation == null
         ? request
-        : request.timeout(
+        : Future.any([request, cancellation.future]);
+    final result = timeout == null
+        ? cancellableRequest
+        : cancellableRequest.timeout(
             timeout,
             onTimeout: () async {
-              timedOut = true;
-              final error = _timeoutException(timeout);
-              try {
-                activeRequest?.abort(error);
-              } catch (_) {
-                // Continue cleanup and preserve the timeout as the public failure.
-              }
-              try {
-                await responseSubscription?.cancel();
-              } catch (_) {
-                // Continue cleanup and preserve the timeout as the public failure.
-              }
-              final body = responseBody;
-              if (body != null && !body.isCompleted) {
-                body.completeError(error);
-              }
+              final error = terminationError ??= _timeoutException(timeout);
+              await abort(error);
               throw error;
             },
           );
