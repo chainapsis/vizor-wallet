@@ -148,7 +148,7 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_config_sheet')),
       findsOneWidget,
     );
-    expect(find.text('Voting config'), findsOneWidget);
+    expect(find.text('Vote config'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_voting_add_source')),
       findsOneWidget,
@@ -174,5 +174,33 @@ void main() {
       find.byKey(const ValueKey('mobile_voting_source_url')),
       findsOneWidget,
     );
+
+    final cancel = find.text('Cancel');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    final close = find.byKey(const ValueKey('mobile_voting_config_close'));
+    await tester.ensureVisible(close);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_config_sheet')),
+      findsNothing,
+    );
+    expect(container.read(showTestVotingRoundsProvider).value, isTrue);
+    expect(find.text('Coinholder voting'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_settings_button')),
+    );
+    await tester.pumpAndSettle();
+    final closeIcon = find.bySemanticsLabel('Close').last;
+    expect(tester.getSize(closeIcon), const Size(32, 32));
+    await tester.tap(closeIcon);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_config_sheet')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

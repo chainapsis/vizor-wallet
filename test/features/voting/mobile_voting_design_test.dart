@@ -423,6 +423,105 @@ void main() {
     expect(scrollable.position.maxScrollExtent, initialMaxExtent);
   });
 
+  testWidgets('vote config matches the default mobile Figma modal', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await _pumpMobileFixture(tester, buildMobileVotingConfigDefaultUseCase);
+      final modal = find.byKey(const ValueKey('mobile_voting_config_sheet'));
+      final source = find.byKey(const ValueKey('mobile_voting_source_default'));
+      final add = find.byKey(const ValueKey('mobile_voting_add_source'));
+      final toggle = find.byKey(
+        const ValueKey('mobile_voting_test_rounds_toggle'),
+      );
+      final close = find.byKey(const ValueKey('mobile_voting_config_close'));
+      expect(tester.getRect(modal), const Rect.fromLTWH(16, 294, 361, 526));
+      expect(tester.getRect(source), const Rect.fromLTWH(32, 467, 329, 64));
+      expect(tester.getRect(add), const Rect.fromLTWH(32, 543, 329, 64));
+      expect(tester.getRect(toggle), const Rect.fromLTWH(297, 639, 64, 28));
+      expect(tester.getRect(close), const Rect.fromLTWH(32, 738, 329, 50));
+      expect(
+        tester.getRect(
+          find.byKey(const ValueKey('mobile_voting_source_selected')),
+        ),
+        const Rect.fromLTWH(325, 487, 24, 24),
+      );
+      final title = tester.widget<Text>(find.text('Vote config'));
+      expect(title.style?.fontSize, 18);
+      expect(title.style?.fontWeight, FontWeight.w600);
+      expect(tester.widget<Text>(find.text('Default')).style?.fontSize, 16);
+      expect(find.text('Sources'), findsOneWidget);
+      expect(
+        tester.widget<AppButton>(close).variant,
+        AppButtonVariant.secondary,
+      );
+      final toggleSemantics = find.bySemanticsLabel('Show test rounds');
+      expect(toggleSemantics, findsOneWidget);
+      expect(
+        tester.getSemantics(toggleSemantics),
+        matchesSemantics(
+          label: 'Show test rounds',
+          hasEnabledState: true,
+          isEnabled: true,
+          hasToggledState: true,
+          isToggled: true,
+          hasTapAction: true,
+        ),
+      );
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(toggleSemantics),
+        matchesSemantics(
+          label: 'Show test rounds',
+          hasEnabledState: true,
+          isEnabled: true,
+          hasToggledState: true,
+          isToggled: false,
+          hasTapAction: true,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('config editor and validation remain reachable above keyboard', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(
+      tester,
+      buildMobileVotingConfigDefaultUseCase,
+      size: const Size(320, 667),
+      textScaler: TextScaler.linear(1.4),
+    );
+    final add = find.byKey(const ValueKey('mobile_voting_add_source'));
+    await tester.ensureVisible(add);
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    final save = find.byKey(const ValueKey('mobile_voting_source_save'));
+    await tester.ensureVisible(save);
+    await tester.pumpAndSettle();
+    expect(save.hitTestable(), findsOneWidget);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final error = find.byKey(const ValueKey('mobile_voting_config_error'));
+    expect(find.text('Enter a title and source URL.'), findsOneWidget);
+    expect(
+      tester.getBottomLeft(error).dy,
+      lessThan(tester.getTopLeft(save).dy),
+    );
+    await tester.ensureVisible(error);
+    await tester.pumpAndSettle();
+    expect(error.hitTestable(), findsOneWidget);
+    expect(tester.getBottomLeft(error).dy, lessThan(667 - 280));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('results card matches the mobile geometry and selected vote', (
     tester,
   ) async {

@@ -79,7 +79,16 @@ Widget buildMobileVotingPollsEligibilityUseCase(
   );
 }
 
-Widget buildMobileVotingConfigUseCase(BuildContext context) {
+Widget buildMobileVotingConfigUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(context);
+
+Widget buildMobileVotingConfigDefaultUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(context, defaultOnly: true);
+
+Widget _buildMobileVotingConfigPreview(
+  BuildContext context, {
+  bool defaultOnly = false,
+}) {
   return ProviderScope(
     overrides: [
       votingPollEligibilityProvider.overrideWith(
@@ -88,10 +97,17 @@ Widget buildMobileVotingConfigUseCase(BuildContext context) {
       votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
       votingRoundsProvider.overrideWith(_PreviewVotingRoundsNotifier.new),
       votingConfigSourceProvider.overrideWith(
-        _PreviewVotingConfigSourceNotifier.new,
+        () => _PreviewVotingConfigSourceNotifier(
+          initialState: defaultOnly
+              ? const VotingConfigSourceState(
+                  sourceUrl: kDefaultStaticVotingConfigSource,
+                  isDefault: true,
+                )
+              : _previewSourceState,
+        ),
       ),
       showTestVotingRoundsProvider.overrideWith(
-        _PreviewShowTestVotingRoundsNotifier.new,
+        () => _PreviewShowTestVotingRoundsNotifier(initialValue: defaultOnly),
       ),
     ],
     child: const MobileModalOverlay(
@@ -471,8 +487,11 @@ final _eligibilityPreviewRounds = [
 ];
 
 class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
+  _PreviewVotingConfigSourceNotifier({this.initialState = _previewSourceState});
+  final VotingConfigSourceState initialState;
+
   @override
-  Future<VotingConfigSourceState> build() async => _previewSourceState;
+  Future<VotingConfigSourceState> build() async => initialState;
 
   @override
   Future<void> resetDefault() async {
@@ -495,8 +514,11 @@ class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
 
 class _PreviewShowTestVotingRoundsNotifier
     extends ShowTestVotingRoundsNotifier {
+  _PreviewShowTestVotingRoundsNotifier({this.initialValue = false});
+  final bool initialValue;
+
   @override
-  Future<bool> build() async => false;
+  Future<bool> build() async => initialValue;
 
   @override
   Future<void> setShowTestRounds(bool show) async {
