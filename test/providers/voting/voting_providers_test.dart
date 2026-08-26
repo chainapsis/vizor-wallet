@@ -6323,6 +6323,69 @@ void main() {
     expect(rust.recordedShares.single.sentToUrls, hasLength(5));
   });
 
+  test(
+    'queued share posts use healthy fallbacks after slow helpers time out',
+    () async {
+      final serverUrls = [
+        for (var i = 1; i <= 10; i++) 'https://helper-$i.example',
+      ];
+      final helperUrls = [
+        for (var i = 0; i < serverUrls.length; i++)
+          {'url': serverUrls[i], 'label': 'helper-${i + 1}'},
+      ];
+      final fastServers = serverUrls.take(5).toList(growable: false);
+      final slowServers = serverUrls.skip(5).toList(growable: false);
+      final blackholedSharePost = Completer<VotingHttpResponse>();
+      final http = FakeVotingHttpClient(
+        responses: {
+          ...votingHttpResponses(
+            dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
+          ),
+          for (final serverUrl in slowServers)
+            '$serverUrl/shielded-vote/v1/shares': blackholedSharePost.future,
+        },
+      );
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        commitmentShareCount: 16,
+        helperPostTimeoutMilliseconds: 100,
+        initialDeliveryTimeoutMilliseconds: 200,
+        rankedCandidatePlans: [
+          for (var shareIndex = 0; shareIndex < 16; shareIndex++)
+            if (shareIndex < 8)
+              [...fastServers, ...slowServers]
+            else
+              [...slowServers, ...fastServers],
+        ],
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _singleVoteRecoveryApi(),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: _singleProposalDrafts());
+
+      final session = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(session.phase, isNot(VotingSessionPhase.error));
+      expect(rust.recordedShares, hasLength(16));
+      expect(
+        rust.recordedShares,
+        everyElement(
+          isA<_RecordedShare>().having(
+            (share) => share.sentToUrls.length,
+            'accepted helper count',
+            5,
+          ),
+        ),
+      );
+    },
+  );
+
   test('share submission replaces a helper that rejects its POST', () async {
     final helperUrls = [
       for (var i = 1; i <= 6; i++)
@@ -9739,6 +9802,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.helperPostTimeoutMilliseconds = 30000,
     this.initialDeliveryTimeoutMilliseconds = 60000,
     this.maxConcurrentHelperPosts = 16,
+    this.rankedCandidatePlans,
   });
 
   final Duration setupDelay;
@@ -9776,6 +9840,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final int helperPostTimeoutMilliseconds;
   final int initialDeliveryTimeoutMilliseconds;
   final int maxConcurrentHelperPosts;
+  final List<List<String>>? rankedCandidatePlans;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -10559,6 +10624,19 @@ class FakeVotingRustApi implements VotingRustApi {
     rankedCandidatePreviousSelections.add(
       List<String>.of(previouslySelectedServerUrls),
     );
+    final configuredPlans = rankedCandidatePlans;
+    if (configuredPlans != null) {
+      if (configuredPlans.length != shareCount) {
+        throw StateError(
+          'Expected $shareCount ranked candidate plans, got '
+          '${configuredPlans.length}.',
+        );
+      }
+      return [
+        for (final plan in configuredPlans)
+          List<String>.of(plan, growable: false),
+      ];
+    }
     return [
       for (var i = 0; i < shareCount; i++)
         List<String>.of(rankedServerUrls, growable: false),

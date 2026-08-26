@@ -1637,6 +1637,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           milliseconds: helperSelectionPolicy.initialDeliveryTimeoutMilliseconds
               .toInt(),
         ),
+        preferredFallbackServers: rankedServerUrls.take(
+          helperSelectionPolicy.targetCount,
+        ),
       );
       final helperPostTimeout = Duration(
         milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
@@ -1709,16 +1712,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final acceptedServers = <String>[];
     final remainingServers = LinkedHashSet<String>.of(candidateServers);
 
-    Future<bool> submitTo(String serverUrl) async {
-      var attempted = false;
-      try {
-        return await helperPostPool.run(() async {
-          final budgetRemaining = deliveryBudget.remaining;
-          if (budgetRemaining == Duration.zero) return false;
-          final requestTimeout = budgetRemaining < helperPostTimeout
-              ? budgetRemaining
-              : helperPostTimeout;
-          attempted = true;
+    Future<({bool attempted, String? acceptedServer})> submitNext() {
+      return helperPostPool.run(() async {
+        final budgetRemaining = deliveryBudget.remaining;
+        if (budgetRemaining == Duration.zero || remainingServers.isEmpty) {
+          return (attempted: false, acceptedServer: null);
+        }
+        // Choose only after receiving a permit. A queued request must see
+        // failures reported by earlier attempts instead of remaining bound to
+        // a helper that became degraded while it waited.
+        final serverUrl = helperHealth
+            .candidateServers(deliveryBudget.rankCandidates(remainingServers))
+            .first;
+        remainingServers.remove(serverUrl);
+        final requestTimeout = budgetRemaining < helperPostTimeout
+            ? budgetRemaining
+            : helperPostTimeout;
+        try {
           debugPrint(
             '[zcash] Voting: submitting share '
             'proposal=${share.proposalId} share=${share.shareIndex} '
@@ -1734,34 +1744,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             overallTimeout: budgetRemaining,
           );
           helperHealth.recordSuccess(serverUrl);
+          deliveryBudget.recordSuccess(serverUrl);
           debugPrint(
             '[zcash] Voting: share accepted '
             'proposal=${share.proposalId} share=${share.shareIndex} '
             'server=$serverUrl',
           );
-          return true;
-        });
-      } catch (e) {
-        debugPrint(
-          '[zcash] Voting: share rejected '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl error=$e',
-        );
-        if (attempted) helperHealth.recordFailure(serverUrl);
-        // Recovery retries helpers that did not accept this share.
-        return false;
-      }
+          return (attempted: true, acceptedServer: serverUrl);
+        } catch (e) {
+          debugPrint(
+            '[zcash] Voting: share rejected '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl error=$e',
+          );
+          helperHealth.recordFailure(serverUrl);
+          if (e is TimeoutException) {
+            deliveryBudget.recordTimeout(serverUrl);
+          }
+          // Recovery retries helpers that did not accept this share.
+          return (attempted: true, acceptedServer: null);
+        }
+      });
     }
 
     Future<void> submitUntilAccepted() async {
       while (!deliveryBudget.expired && remainingServers.isNotEmpty) {
-        // Re-evaluate health before every launch so failures observed by
-        // concurrent submissions move a degraded helper behind healthy
-        // alternatives. The tracker still returns every helper when all are
-        // degraded, preserving the liveness fallback.
-        final serverUrl = helperHealth.candidateServers(remainingServers).first;
-        remainingServers.remove(serverUrl);
-        if (await submitTo(serverUrl)) {
+        final result = await submitNext();
+        if (!result.attempted) return;
+        final serverUrl = result.acceptedServer;
+        if (serverUrl != null) {
           acceptedServers.add(serverUrl);
           debugPrint(
             '[zcash] Voting: share acceptance progress '
@@ -5076,9 +5087,15 @@ class _InitialShareSubmissionResult {
 }
 
 class _InitialShareDeliveryBudget {
-  _InitialShareDeliveryBudget(this.timeout) : assert(timeout > Duration.zero);
+  _InitialShareDeliveryBudget(
+    this.timeout, {
+    required Iterable<String> preferredFallbackServers,
+  }) : assert(timeout > Duration.zero),
+       _preferredFallbackServers = preferredFallbackServers.toSet();
 
   final Duration timeout;
+  final Set<String> _preferredFallbackServers;
+  final Set<String> _timedOutServers = {};
   final Stopwatch _stopwatch = Stopwatch()..start();
 
   Duration get remaining {
@@ -5087,6 +5104,34 @@ class _InitialShareDeliveryBudget {
   }
 
   bool get expired => remaining == Duration.zero;
+
+  Iterable<String> rankCandidates(Iterable<String> candidates) {
+    if (_timedOutServers.isEmpty) return candidates;
+    // A full POST timeout has consumed half of the normal delivery budget.
+    // Use helpers from the readiness-winning prefix before spending the
+    // remainder on unproven or already timed-out candidates.
+    final candidateList = candidates.toList(growable: false);
+    return [
+      for (final candidate in candidateList)
+        if (_preferredFallbackServers.contains(candidate) &&
+            !_timedOutServers.contains(candidate))
+          candidate,
+      for (final candidate in candidateList)
+        if (!_preferredFallbackServers.contains(candidate) &&
+            !_timedOutServers.contains(candidate))
+          candidate,
+      for (final candidate in candidateList)
+        if (_timedOutServers.contains(candidate)) candidate,
+    ];
+  }
+
+  void recordTimeout(String serverUrl) {
+    _timedOutServers.add(serverUrl);
+  }
+
+  void recordSuccess(String serverUrl) {
+    _timedOutServers.remove(serverUrl);
+  }
 }
 
 final votingSessionProvider =
