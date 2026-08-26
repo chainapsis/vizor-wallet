@@ -6412,6 +6412,59 @@ void main() {
     },
   );
 
+  test('share timeout preserves the planner fallback order', () async {
+    final serverUrls = [
+      for (var i = 1; i <= 11; i++) 'https://helper-$i.example',
+    ];
+    final blackholedSharePost = Completer<VotingHttpResponse>();
+    final http = FakeVotingHttpClient(
+      responses: {
+        ...votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: [
+              for (var i = 0; i < serverUrls.length; i++)
+                {'url': serverUrls[i], 'label': 'helper-${i + 1}'},
+            ],
+          ),
+        ),
+        '${serverUrls[5]}/shielded-vote/v1/shares': blackholedSharePost.future,
+      },
+    );
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      helperPostTimeoutMilliseconds: 20,
+      initialDeliveryTimeoutMilliseconds: 100,
+      rankedCandidatePlans: [
+        rust_share_policy.ShareServerCandidatePlan(
+          remainingTargetCount: 1,
+          candidateServers: [serverUrls[5], serverUrls[10], serverUrls[0]],
+        ),
+      ],
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    final sharePostHosts = http.requests
+        .where(
+          (request) =>
+              request.method == 'POST' &&
+              request.uri.path == '/shielded-vote/v1/shares',
+        )
+        .map((request) => request.uri.host)
+        .toList(growable: false);
+    expect(sharePostHosts, ['helper-6.example', 'helper-11.example']);
+    expect(rust.recordedShares.single.sentToUrls, [serverUrls[10]]);
+  });
+
   test(
     'queued share posts use healthy fallbacks after slow helpers time out',
     () async {

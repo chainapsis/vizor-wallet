@@ -1722,9 +1722,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           milliseconds: helperSelectionPolicy.initialDeliveryTimeoutMilliseconds
               .toInt(),
         ),
-        preferredFallbackServers: rankedServerUrls.take(
-          helperSelectionPolicy.targetCount,
-        ),
       );
       final helperPostTimeout = Duration(
         milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
@@ -5217,14 +5214,9 @@ class _InitialShareSubmissionResult {
 }
 
 class _InitialShareDeliveryBudget {
-  _InitialShareDeliveryBudget(
-    this.timeout, {
-    required Iterable<String> preferredFallbackServers,
-  }) : assert(timeout > Duration.zero),
-       _preferredFallbackServers = preferredFallbackServers.toSet();
+  _InitialShareDeliveryBudget(this.timeout) : assert(timeout > Duration.zero);
 
   final Duration timeout;
-  final Set<String> _preferredFallbackServers;
   final Set<String> _timedOutServers = {};
   final Stopwatch _stopwatch = Stopwatch()..start();
 
@@ -5237,19 +5229,12 @@ class _InitialShareDeliveryBudget {
 
   Iterable<String> rankCandidates(Iterable<String> candidates) {
     if (_timedOutServers.isEmpty) return candidates;
-    // A full POST timeout has consumed half of the normal delivery budget.
-    // Use helpers from the readiness-winning prefix before spending the
-    // remainder on unproven or already timed-out candidates.
+    // Preserve the shared policy's per-share privacy order. Only move helpers
+    // with an observed timeout behind candidates that have not timed out.
     final candidateList = candidates.toList(growable: false);
     return [
       for (final candidate in candidateList)
-        if (_preferredFallbackServers.contains(candidate) &&
-            !_timedOutServers.contains(candidate))
-          candidate,
-      for (final candidate in candidateList)
-        if (!_preferredFallbackServers.contains(candidate) &&
-            !_timedOutServers.contains(candidate))
-          candidate,
+        if (!_timedOutServers.contains(candidate)) candidate,
       for (final candidate in candidateList)
         if (_timedOutServers.contains(candidate)) candidate,
     ];
