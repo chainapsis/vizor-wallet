@@ -1097,6 +1097,15 @@ class _MobilePollSummary extends StatelessWidget {
             ],
           ],
         ),
+        if (!isIneligible && votingEligibilityMessage != null) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            votingEligibilityMessage!,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
         if (description.trim().isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
           VotingExpandableText(
@@ -1142,15 +1151,6 @@ class _MobilePollSummary extends StatelessWidget {
         ] else if (forum != null) ...[
           const SizedBox(height: AppSpacing.sm),
           Align(alignment: Alignment.centerRight, child: forum),
-        ],
-        if (!isIneligible && votingEligibilityMessage != null) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            votingEligibilityMessage!,
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
         ],
       ],
     );

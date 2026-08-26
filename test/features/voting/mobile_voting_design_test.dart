@@ -166,6 +166,59 @@ void main() {
     }
   }
 
+  for (final (builder, message, power) in [
+    (
+      buildMobileVotingPrivacyTrimUseCase,
+      '0.125 ZEC is left out of this vote '
+          'to keep your submission less identifiable.',
+      'Voting power 0.375 ZEC',
+    ),
+    (
+      buildMobileVotingEligibilityErrorUseCase,
+      'Unable to check voting eligibility.',
+      'Voting power unavailable',
+    ),
+  ]) {
+    for (final brightness in Brightness.values) {
+      testWidgets(
+        'notice stays below power and above description: $power, $brightness',
+        (tester) async {
+          await _pumpMobileFixture(
+            tester,
+            builder,
+            size: const Size(320, 852),
+            brightness: brightness,
+          );
+          final notice = find.text(message);
+          final description = find.byType(VotingExpandableText).first;
+          expect(notice, findsOneWidget);
+          expect(
+            tester.getTopLeft(notice).dy,
+            greaterThan(tester.getBottomLeft(find.text(power)).dy),
+          );
+          expect(
+            tester.getBottomLeft(notice).dy,
+            lessThan(tester.getTopLeft(description).dy),
+          );
+          expect(
+            tester.renderObject<RenderParagraph>(notice).didExceedMaxLines,
+            isFalse,
+          );
+          final noticeRect = tester.getRect(notice);
+          final collapsedDescriptionHeight = tester.getSize(description).height;
+          await tester.tap(find.text('Show description'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.getSize(description).height,
+            greaterThan(collapsedDescriptionHeight),
+          );
+          expect(tester.getRect(notice), noticeRect);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('ineligible detail keeps round timing but hides voting power', (
     tester,
   ) async {

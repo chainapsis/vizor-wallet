@@ -274,6 +274,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-privacy-trim',
+    description: 'Mobile voting detail with the excluded voting power notice',
+    builder: buildMobileVotingPrivacyTrimUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-eligibility-error',
+    description: 'Mobile voting detail with an eligibility lookup error',
+    builder: buildMobileVotingEligibilityErrorUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-ineligible',
     description: 'Mobile ineligible voting detail matching Figma 8048:35024',
     builder: buildMobileVotingIneligibleUseCase,
