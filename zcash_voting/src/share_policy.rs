@@ -792,11 +792,6 @@ pub fn plan_share_submissions_with_preferred_servers(
         .max(target_count)
         .min(ranked_server_urls.len());
     let planning_servers = &ranked_server_urls[..planning_server_count];
-    let max_shares_per_server = if !single_share && share_count == VOTE_COMMITMENT_SHARE_COUNT {
-        SHARE_HELPER_MAX_SHARES_PER_SERVER
-    } else {
-        usize::MAX
-    };
     let mut server_usage = HashMap::<String, usize>::new();
 
     let mut plans = Vec::with_capacity(share_count);
@@ -808,7 +803,6 @@ pub fn plan_share_submissions_with_preferred_servers(
         let target_servers = select_batch_share_submission_targets(
             planning_servers,
             target_count,
-            max_shares_per_server,
             &mut server_usage,
             &server_random_bytes[server_start..server_end],
         )?;
@@ -932,7 +926,6 @@ fn require_unique_share_servers(server_urls: &[String]) -> Result<(), VotingErro
 fn select_batch_share_submission_targets(
     server_urls: &[String],
     target_count: usize,
-    max_shares_per_server: usize,
     server_usage: &mut HashMap<String, usize>,
     server_random_bytes: &[u8],
 ) -> Result<Vec<String>, VotingError> {
@@ -940,7 +933,7 @@ fn select_batch_share_submission_targets(
     let mut ranked: Vec<_> = randomized_order.iter().enumerate().collect();
     ranked.sort_by_key(|(random_rank, server)| {
         let usage = server_usage.get(*server).copied().unwrap_or(0);
-        (usage >= max_shares_per_server, usage, *random_rank)
+        (usage, *random_rank)
     });
     let selected: Vec<_> = ranked
         .into_iter()
