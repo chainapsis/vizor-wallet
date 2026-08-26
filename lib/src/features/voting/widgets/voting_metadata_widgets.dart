@@ -45,12 +45,14 @@ class VotingForumLinkButton extends StatelessWidget {
     required this.uri,
     this.label = 'Forum discussion',
     this.size = AppButtonSize.small,
+    this.mobilePollList = false,
     super.key,
   });
 
   final Uri uri;
   final String label;
   final AppButtonSize size;
+  final bool mobilePollList;
 
   @override
   Widget build(BuildContext context) {
@@ -60,8 +62,15 @@ class VotingForumLinkButton extends StatelessWidget {
       },
       variant: AppButtonVariant.ghost,
       size: size,
-      leading: const AppIcon(AppIcons.link),
-      child: Text(label),
+      contentPadding: mobilePollList
+          ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
+          : null,
+      leading: mobilePollList ? null : const AppIcon(AppIcons.link),
+      trailing: mobilePollList ? const AppIcon(AppIcons.link) : null,
+      child: Text(
+        label,
+        style: mobilePollList ? AppTypography.labelLarge : null,
+      ),
     );
   }
 }

@@ -217,6 +217,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-polls-eligibility',
+    description: 'Mobile voting list: ineligible, active, voted, closed',
+    builder: buildMobileVotingPollsEligibilityUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-config',
     description: 'Mobile voting config source modal',
     builder: buildMobileVotingConfigUseCase,

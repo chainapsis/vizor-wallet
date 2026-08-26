@@ -17,6 +17,7 @@ import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
+import '../src/providers/voting/voting_poll_eligibility_provider.dart';
 import '../src/providers/voting/voting_round_visibility_provider.dart';
 import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
@@ -28,6 +29,9 @@ import '../src/services/voting/voting_config_loader.dart';
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [
+      votingPollEligibilityProvider.overrideWith(
+        (ref, roundId) async => VotingPollEligibility.eligible,
+      ),
       votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
       votingRoundsProvider.overrideWith(_PreviewVotingRoundsNotifier.new),
       votingConfigSourceProvider.overrideWith(
@@ -41,9 +45,45 @@ Widget buildMobileVotingPollsUseCase(BuildContext context) {
   );
 }
 
+/// Matches the four list states in Figma 8045:24064 without wallet I/O.
+Widget buildMobileVotingPollsEligibilityUseCase(
+  BuildContext context, {
+  Future<VotingPollEligibility> Function(String)? loadEligibility,
+}) {
+  return _mobileVotingFullPagePreview(
+    context,
+    ProviderScope(
+      overrides: [
+        votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
+        votingRoundsProvider.overrideWith(
+          _EligibilityPreviewRoundsNotifier.new,
+        ),
+        votingConfigSourceProvider.overrideWith(
+          _PreviewVotingConfigSourceNotifier.new,
+        ),
+        showTestVotingRoundsProvider.overrideWith(
+          _PreviewShowTestVotingRoundsNotifier.new,
+        ),
+        votingPollEligibilityProvider.overrideWith(
+          (ref, roundId) async => loadEligibility != null
+              ? loadEligibility(roundId)
+              : roundId == 'nu7-ineligible'
+              ? VotingPollEligibility.ineligible
+              : VotingPollEligibility.eligible,
+        ),
+      ],
+      child: const MobileVotingPollsScreen(),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
 Widget buildMobileVotingConfigUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [
+      votingPollEligibilityProvider.overrideWith(
+        (ref, roundId) async => VotingPollEligibility.eligible,
+      ),
       votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
       votingRoundsProvider.overrideWith(_PreviewVotingRoundsNotifier.new),
       votingConfigSourceProvider.overrideWith(
@@ -262,6 +302,41 @@ class _PreviewVotingRoundsNotifier extends VotingRoundsNotifier {
     state = const AsyncData(_previewVotingRounds);
   }
 }
+
+class _EligibilityPreviewRoundsNotifier extends VotingRoundsNotifier {
+  @override
+  Future<List<VotingRoundView>> build() async => _eligibilityPreviewRounds;
+
+  @override
+  Future<void> reload() async {
+    state = AsyncData(_eligibilityPreviewRounds);
+  }
+}
+
+final _eligibilityPreviewRounds = [
+  for (final id in ['nu7-ineligible', 'nu7-active'])
+    VotingRoundView(
+      roundId: id,
+      title: 'NU7 Scope',
+      status: 'active',
+      rawJson: {
+        'description':
+            'This vote concerns the scope of NU7. It is one component of '
+            "governance, but it represents the coinholders' view about NSM, supply...",
+        'vote_end_time': '2026-08-24T12:00:00Z',
+        if (id == 'nu7-ineligible')
+          'forum_url': 'https://forum.zcashcommunity.com/t/nu7-scope',
+      },
+    ),
+  for (final round in _previewVotingRounds.skip(1))
+    VotingRoundView(
+      roundId: round.roundId,
+      title: round.title,
+      status: round.status,
+      voted: round.voted,
+      rawJson: {...round.rawJson}..remove('forum_url'),
+    ),
+];
 
 class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
   @override

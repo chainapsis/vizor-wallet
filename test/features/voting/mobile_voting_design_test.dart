@@ -2,8 +2,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -17,6 +19,86 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadFigmaCompareFonts);
+
+  testWidgets('poll list matches Figma eligibility and active card geometry', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingPollsEligibilityUseCase);
+    final ineligible = find.byKey(
+      const ValueKey('voting_poll_card_nu7-ineligible'),
+    );
+    final active = find.byKey(const ValueKey('voting_poll_card_nu7-active'));
+    expect(tester.getTopLeft(ineligible), const Offset(16, 139));
+    expect(tester.getSize(ineligible), const Size(361, 285.5));
+    expect(tester.getTopLeft(active), const Offset(16, 448.5));
+    expect(tester.getSize(active), const Size(361, 222.5));
+    final label = tester.widget<Text>(find.text('Not eligible for this round'));
+    expect(label.style?.color, AppThemeData.dark.colors.text.destructive);
+    expect(label.style?.fontSize, 16);
+    final action = find.byKey(
+      const ValueKey('voting_poll_action_nu7-ineligible'),
+    );
+    expect(
+      find.descendant(of: action, matching: find.text('View')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(action).variant, AppButtonVariant.primary);
+    expect(tester.widget<AppButton>(action).onPressed, isNotNull);
+    final forum = find.byType(VotingForumLinkButton);
+    expect(tester.getTopLeft(forum).dx, 32);
+    expect(tester.getSize(forum).height, 24);
+    expect(tester.widget<VotingForumLinkButton>(forum).mobilePollList, isTrue);
+    await tester.drag(find.byType(VotingPaneListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(find.text('Voted'), findsOneWidget);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Closed'), findsOneWidget);
+    expect(find.text('View results'), findsOneWidget);
+    final votedDate = find.descendant(
+      of: find.byKey(const ValueKey('voting_poll_card_snack-governance-voted')),
+      matching: find.text('Closes Aug 24'),
+    );
+    expect(votedDate, findsOneWidget);
+    expect(
+      tester.renderObject<RenderParagraph>(votedDate).didExceedMaxLines,
+      isFalse,
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('voting_poll_card_snack-governance-voted')),
+      ),
+      const Size(361, 248.5),
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('voting_poll_card_snack-governance-closed')),
+      ),
+      const Size(361, 248.5),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final scale in [1.0, 1.3]) {
+    testWidgets('compact poll list remains usable at text scale $scale', (
+      tester,
+    ) async {
+      await _pumpMobileFixture(
+        tester,
+        buildMobileVotingPollsEligibilityUseCase,
+        size: const Size(320, 667),
+        textScaler: TextScaler.linear(scale),
+      );
+      expect(find.text('Not eligible for this round'), findsOneWidget);
+      expect(find.text('View'), findsOneWidget);
+      await tester.drag(
+        find.byType(VotingPaneListView),
+        const Offset(0, -1200),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('View results'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('selected proposal matches the mobile card geometry', (
     tester,
@@ -326,15 +408,21 @@ void main() {
 
 Future<void> _pumpMobileFixture(
   WidgetTester tester,
-  WidgetBuilder builder,
-) async {
+  WidgetBuilder builder, {
+  Size size = const Size(393, 852),
+  TextScaler textScaler = TextScaler.noScaling,
+}) async {
   tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = const Size(393, 852);
+  tester.view.physicalSize = size;
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData.dark(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      ),
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

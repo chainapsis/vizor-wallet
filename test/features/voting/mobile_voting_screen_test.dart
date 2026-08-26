@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,9 +11,53 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 void main() {
+  testWidgets(
+    'only confirmed eligibility shows View, and refresh clears stale labels',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      var result = Completer<VotingPollEligibility>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: Builder(
+              builder: (context) => buildMobileVotingPollsEligibilityUseCase(
+                context,
+                loadEligibility: (_) => result.future,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      expect(find.text('Vote'), findsNWidgets(2));
+      result.complete(VotingPollEligibility.ineligible);
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNWidgets(2));
+      expect(find.text('View'), findsNWidgets(2));
+      result = Completer<VotingPollEligibility>();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(VotingPollsView)),
+      );
+      container.invalidate(votingPollEligibilityProvider);
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      result.completeError(StateError('Eligibility unavailable'));
+      await tester.pumpAndSettle();
+      expect(find.text('Not eligible for this round'), findsNothing);
+      expect(find.text('Vote'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('mobile polls use the standard header and 16px content inset', (
     tester,
   ) async {
