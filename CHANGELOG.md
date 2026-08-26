@@ -4,6 +4,19 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Added shared progressive helper timing and initial-delivery limits, plus
+  readiness-ranked batch planning that balances a commitment's initial shares
+  across the preferred helper pool.
+
+### Changed
+- **Breaking:** Initial share delivery now targets at most five helpers instead
+  of half the configured fleet. A complete 16-share commitment normally assigns
+  no more than eight initial shares to one helper when at least ten helpers are
+  preferred; retries may exceed that limit for liveness.
+
 ## v3.1.0-rc.10
 
 ### Added
