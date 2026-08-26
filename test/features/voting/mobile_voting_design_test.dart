@@ -121,6 +121,51 @@ void main() {
     });
   }
 
+  for (final eligible in [true, false]) {
+    for (final brightness in Brightness.values) {
+      for (final width in [320.0, 393.0]) {
+        testWidgets(
+          'round metadata precedes description: eligible=$eligible, $brightness, width=$width',
+          (tester) async {
+            await _pumpMobileFixture(
+              tester,
+              eligible
+                  ? buildMobileVotingEligibleUseCase
+                  : buildMobileVotingIneligibleUseCase,
+              size: Size(width, 852),
+              brightness: brightness,
+            );
+            final title = find.text('[TEST] Very Serious Snack Governance 3');
+            final description = find.byType(VotingExpandableText).first;
+            final date = find.text('Ends Aug 24, 2026');
+            final remaining = find.textContaining(
+              RegExp(r'^(Ends today|1 day left|\d+ days left)$'),
+            );
+            final power = find.text('Voting power 0.375 ZEC');
+            expect(power, eligible ? findsOneWidget : findsNothing);
+            expect(remaining, findsNothing);
+            for (final label in [date, if (eligible) power]) {
+              expect(label, findsOneWidget);
+              expect(
+                tester.getTopLeft(label).dy,
+                greaterThan(tester.getBottomLeft(title).dy),
+              );
+              expect(
+                tester.getBottomLeft(label).dy,
+                lessThan(tester.getTopLeft(description).dy),
+              );
+              expect(
+                tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
+                isFalse,
+              );
+            }
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    }
+  }
+
   testWidgets('ineligible detail keeps round timing but hides voting power', (
     tester,
   ) async {
@@ -140,9 +185,9 @@ void main() {
     expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
     expect(
       find.textContaining(RegExp(r'^(Ends today|1 day left|\d+ days left)$')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('·'), findsOneWidget);
+    expect(find.text('·'), findsNothing);
     expect(tester.getTopLeft(find.text('Show description')).dx, 36);
     final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
     expect(tester.getTopLeft(option), const Offset(32, 713));
@@ -920,6 +965,7 @@ Future<void> _pumpMobileFixture(
   WidgetBuilder builder, {
   Size size = const Size(393, 852),
   TextScaler textScaler = TextScaler.noScaling,
+  Brightness brightness = Brightness.dark,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -927,9 +973,11 @@ Future<void> _pumpMobileFixture(
 
   await tester.pumpWidget(
     MaterialApp(
-      theme: ThemeData.dark(),
+      theme: ThemeData(brightness: brightness),
       builder: (context, child) => AppTheme(
-        data: AppThemeData.dark,
+        data: brightness == Brightness.dark
+            ? AppThemeData.dark
+            : AppThemeData.light,
         child: MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
           child: child!,

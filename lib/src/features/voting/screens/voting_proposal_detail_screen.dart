@@ -1077,6 +1077,26 @@ class _MobilePollSummary extends StatelessWidget {
             color: colors.text.accent,
           ),
         ),
+        // Round timing is useful even when this account cannot vote.
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
+          children: [
+            _MetaText(
+              endDate == null
+                  ? 'Voting active'
+                  : 'Ends ${formatMonthDayYear(endDate!)}',
+            ),
+            if (!isIneligible) ...[
+              const _MetaText('·'),
+              _VotingPowerMeta(
+                zatoshi: votingPowerZatoshi,
+                preparing: votingPowerPreparing,
+              ),
+            ],
+          ],
+        ),
         if (description.trim().isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
           VotingExpandableText(
@@ -1123,30 +1143,6 @@ class _MobilePollSummary extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Align(alignment: Alignment.centerRight, child: forum),
         ],
-        // Round timing is useful even when this account cannot vote.
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xxs,
-          children: [
-            _MetaText(
-              endDate == null
-                  ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
-            ),
-            if (!isIneligible) ...[
-              const _MetaText('·'),
-              _VotingPowerMeta(
-                zatoshi: votingPowerZatoshi,
-                preparing: votingPowerPreparing,
-              ),
-            ],
-            if (endDate != null) ...[
-              const _MetaText('·'),
-              _MetaText(_daysLeftLabel(endDate!)),
-            ],
-          ],
-        ),
         if (!isIneligible && votingEligibilityMessage != null) ...[
           const SizedBox(height: AppSpacing.xxs),
           Text(

@@ -147,7 +147,16 @@ Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
+Widget buildMobileVotingEligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: true);
+
+Widget buildMobileVotingIneligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: false);
+
+Widget _buildMobileVotingActiveUseCase(
+  BuildContext context, {
+  required bool eligible,
+}) {
   return _mobileVotingFullPagePreview(
     context,
     MobileVotingScaffold(
@@ -162,14 +171,15 @@ Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
             'without using real governance content.',
         forumUri: Uri.parse('https://forum.zcashcommunity.com/t/nsm'),
         endDate: DateTime(2026, 8, 24),
-        votingPowerZatoshi: BigInt.zero,
+        votingPowerZatoshi: eligible ? BigInt.from(37500000) : BigInt.zero,
         votingPowerPreparing: false,
-        votingEligibilityConfirmed: false,
-        answersEditable: false,
+        votingEligibilityConfirmed: eligible,
+        answersEditable: eligible,
         votingEligibilityMessage: null,
-        votingEligibilityErrorMessage:
-            'This account did not have enough eligible '
-            'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+        votingEligibilityErrorMessage: eligible
+            ? null
+            : 'This account did not have enough eligible '
+                  'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
         onVotingEligibilityRetry: _previewNoop,
         proposals: const [_previewNsmProposal],
         draft: const VotingDraftState(),
