@@ -430,9 +430,9 @@ void main() {
 
     final card = find.byType(VotingResultCard);
     expect(card, findsOneWidget);
-    expect(tester.getSize(card), const Size(361, 378));
+    expect(tester.getSize(card), const Size(361, 547));
     expect(find.byType(VotingForumLinkButton), findsOneWidget);
-    expect(find.text('Option 2 (your vote)'), findsOneWidget);
+    expect(find.text('Your vote'), findsOneWidget);
     expect(find.text('490.36 ZEC'), findsWidgets);
   });
 
@@ -440,7 +440,7 @@ void main() {
     const optionLabel =
         'Ship NU7 as soon as possible, removing any feature that is not '
         'implemented by the September 30th deadline.';
-    const displayedOptionLabel = '$optionLabel (your vote)';
+    const displayedOptionLabel = optionLabel;
     await _pumpMobileFixture(
       tester,
       (_) => const MobileVotingScaffold(
@@ -464,14 +464,144 @@ void main() {
     );
 
     final option = tester.widget<Text>(find.text(displayedOptionLabel));
-    final row = find.ancestor(
-      of: find.text(displayedOptionLabel),
-      matching: find.byType(ClipRRect),
-    );
+    final row = find.byKey(const ValueKey('voting-result-98-option-1'));
     expect(option.maxLines, isNull);
     expect(option.overflow, isNull);
     expect(row, findsOneWidget);
     expect(tester.getSize(row).height, greaterThan(48));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'result summary and option rows match Figma with accurate totals',
+    (tester) async {
+      await _pumpMobileFixture(tester, buildMobileVotingResultsFullUseCase);
+      final card = find.byType(VotingResultCard);
+      expect(tester.getTopLeft(card), const Offset(16, 371));
+      expect(tester.getSize(card), const Size(361, 832));
+      expect(find.text('Voted'), findsOneWidget);
+      expect(find.text('Results'), findsNothing);
+      expect(find.text('985 ZEC (98.5%)'), findsOneWidget);
+      expect(find.text('10 ZEC (1%)'), findsOneWidget);
+      expect(find.text('5 ZEC (0.5%)'), findsOneWidget);
+      expect(find.text('0 ZEC (0%)'), findsOneWidget);
+      expect(find.text('1,000 ZEC'), findsOneWidget);
+      final winner = find.text('Winner');
+      final yours = find.text('Your vote');
+      expect(tester.getTopLeft(winner).dx, 76);
+      expect(tester.getTopLeft(yours).dx, 76);
+      expect(
+        tester.getTopLeft(find.text('985 ZEC (98.5%)')).dy,
+        tester.getTopLeft(winner).dy,
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('voting-result-1-option-1'))),
+        const Size(329, 151),
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('voting-result-1-option-2'))),
+        const Size(329, 101),
+      );
+      final nav = tester.widget<Text>(find.text('Voting results'));
+      expect(nav.style?.fontFamily, 'Young Serif');
+      expect(nav.style?.fontSize, 32);
+      await tester.tap(find.text('Show description'));
+      await tester.pumpAndSettle();
+      expect(find.text('Hide description'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('winning personal vote has a separate lower marker row', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingResultsWinnerUseCase);
+    final option = find.byKey(const ValueKey('voting-result-1-option-1'));
+    final winner = find.descendant(of: option, matching: find.text('Winner'));
+    final yours = find.descendant(of: option, matching: find.text('Your vote'));
+    expect(winner, findsOneWidget);
+    expect(yours, findsOneWidget);
+    expect(tester.getTopLeft(yours).dx, tester.getTopLeft(winner).dx);
+    expect(tester.getTopLeft(yours).dy - tester.getTopLeft(winner).dy, 36);
+    expect(tester.getSize(option), const Size(329, 187));
+    expect(find.text('985 ZEC (98.5%)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final amounts in [
+    <int, num>{1: 0, 2: 0},
+    <int, num>{1: 4, 2: 4},
+  ]) {
+    testWidgets('zero and tied results do not invent a winner: $amounts', (
+      tester,
+    ) async {
+      await _pumpMobileFixture(
+        tester,
+        (_) => MobileVotingScaffold(
+          title: 'Voting results',
+          child: VotingResultsContent(
+            title: 'Round',
+            snapshotHeight: 42,
+            description: '',
+            forumUri: null,
+            proposals: const [
+              VotingProposalView(
+                id: 1,
+                title: 'Question',
+                description: '',
+                options: [
+                  VotingOptionView(index: 1, label: 'A'),
+                  VotingOptionView(index: 2, label: 'B'),
+                ],
+              ),
+            ],
+            tallies: {1: amounts},
+          ),
+        ),
+      );
+      expect(find.text('Winner'), findsNothing);
+      expect(find.text('Your vote'), findsNothing);
+      expect(find.text('Voted'), findsNothing);
+      expect(
+        find.text(amounts[1] == 0 ? '0 ZEC (0%)' : '0.5 ZEC (50%)'),
+        findsNWidgets(2),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('large result amounts and scaled copy fit a narrow viewport', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(
+      tester,
+      (_) => const MobileVotingScaffold(
+        title: 'Voting results',
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: VotingResultCard(
+            proposal: VotingProposalView(
+              id: 1,
+              title: 'Question',
+              description: '',
+              options: [
+                VotingOptionView(
+                  index: 1,
+                  label: 'A long option with a large result',
+                ),
+              ],
+            ),
+            tally: {1: 168000000},
+            selectedChoice: 1,
+          ),
+        ),
+      ),
+      size: const Size(320, 667),
+      textScaler: TextScaler.linear(1.5),
+    );
+    expect(find.text('21,000,000 ZEC (100%)'), findsOneWidget);
+    expect(find.text('Winner'), findsOneWidget);
+    expect(find.text('Your vote'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
@@ -9,6 +10,8 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_config_provider.dart';
@@ -131,60 +134,28 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                 return _pendingResults();
               }
               _clearPendingTallyRefresh();
-              return VotingPaneScrollView(
-                maxWidth: 560,
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.showDesktopToolbar ? 0 : AppSpacing.sm,
-                ),
-                scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _ResultsHeader(
-                      title: _roundTitle(round),
-                      snapshotHeight: round.snapshotHeight,
-                      description: _roundDescription(round) ?? '',
-                      forumUri: votingRoundForumUriFromJson(round.rawJson),
+              return VotingResultsContent(
+                title: _roundTitle(round),
+                snapshotHeight: round.snapshotHeight,
+                description: _roundDescription(round) ?? '',
+                forumUri: votingRoundForumUriFromJson(round.rawJson),
+                proposals: proposals,
+                tallies: {
+                  for (final proposal in proposals)
+                    proposal.id: _proposalTally(result.rawJson, proposal.id),
+                },
+                selectedChoices: {
+                  for (final proposal in proposals)
+                    proposal.id: _selectedChoiceForProposal(
+                      session.value,
+                      proposal.id,
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Results',
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: context.colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    if (proposals.isEmpty)
-                      const _Message('No proposals in this round.')
-                    else
-                      for (var index = 0; index < proposals.length; index++)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            bottom: index == proposals.length - 1
-                                ? 0
-                                : AppSpacing.s,
-                          ),
-                          child: VotingResultCard(
-                            key: ValueKey(
-                              'voting-result-card-${proposals[index].id}',
-                            ),
-                            proposal: proposals[index],
-                            tally: _proposalTally(
-                              result.rawJson,
-                              proposals[index].id,
-                            ),
-                            selectedChoice: _selectedChoiceForProposal(
-                              session.value,
-                              proposals[index].id,
-                            ),
-                            profilePictureId: _profilePictureIdForAccount(
-                              accountState,
-                              session.value?.accountUuid,
-                            ),
-                          ),
-                        ),
-                  ],
+                },
+                profilePictureId: _profilePictureIdForAccount(
+                  accountState,
+                  session.value?.accountUuid,
                 ),
+                showDesktopToolbar: widget.showDesktopToolbar,
               );
             },
           ),
@@ -210,6 +181,212 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
   void _clearPendingTallyRefresh() {
     _pendingTallyRefreshTimer?.cancel();
     _pendingTallyRefreshTimer = null;
+  }
+}
+
+/// Pure results presentation shared by the live view and visual fixtures.
+class VotingResultsContent extends StatelessWidget {
+  const VotingResultsContent({
+    super.key,
+    required this.title,
+    required this.snapshotHeight,
+    required this.description,
+    required this.forumUri,
+    required this.proposals,
+    required this.tallies,
+    this.selectedChoices = const {},
+    this.profilePictureId,
+    this.showDesktopToolbar = false,
+  });
+
+  final String title;
+  final int snapshotHeight;
+  final String description;
+  final Uri? forumUri;
+  final List<VotingProposalView> proposals;
+  final Map<int, Map<int, num>> tallies;
+  final Map<int, int?> selectedChoices;
+  final String? profilePictureId;
+  final bool showDesktopToolbar;
+
+  @override
+  Widget build(BuildContext context) {
+    return VotingPaneScrollView(
+      maxWidth: 560,
+      padding: EdgeInsets.symmetric(
+        horizontal: showDesktopToolbar ? 0 : AppSpacing.sm,
+      ),
+      scrollPadding: const EdgeInsets.only(
+        top: kAppFormFactor == AppFormFactor.mobile ? AppSpacing.s : 0,
+        bottom: AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (kAppFormFactor == AppFormFactor.mobile)
+            _MobileResultsHeader(
+              title: title,
+              snapshotHeight: snapshotHeight,
+              description: description,
+              forumUri: forumUri,
+              hasVoted: proposals.any(
+                (proposal) => proposal.options.any(
+                  (option) => option.index == selectedChoices[proposal.id],
+                ),
+              ),
+            )
+          else
+            _ResultsHeader(
+              title: title,
+              snapshotHeight: snapshotHeight,
+              description: description,
+              forumUri: forumUri,
+            ),
+          const SizedBox(height: AppSpacing.md),
+          if (kAppFormFactor != AppFormFactor.mobile) ...[
+            Text(
+              'Results',
+              style: AppTypography.headlineSmall.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
+          if (proposals.isEmpty)
+            const _Message('No proposals in this round.')
+          else
+            for (var index = 0; index < proposals.length; index++)
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: index == proposals.length - 1 ? 0 : AppSpacing.s,
+                ),
+                child: VotingResultCard(
+                  key: ValueKey('voting-result-card-${proposals[index].id}'),
+                  proposal: proposals[index],
+                  tally: tallies[proposals[index].id] ?? const {},
+                  selectedChoice: selectedChoices[proposals[index].id],
+                  profilePictureId: profilePictureId,
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileResultsHeader extends StatelessWidget {
+  const _MobileResultsHeader({
+    required this.title,
+    required this.snapshotHeight,
+    required this.description,
+    required this.forumUri,
+    required this.hasVoted,
+  });
+
+  final String title;
+  final int snapshotHeight;
+  final String description;
+  final Uri? forumUri;
+  final bool hasVoted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final forum = forumUri == null
+        ? null
+        : VotingForumLinkButton(uri: forumUri!, mobilePollList: true);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            Text(
+              '#${formatGroupedInteger(snapshotHeight)}',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+                letterSpacing: -0.04,
+              ),
+            ),
+            if (hasVoted)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.checkCircle,
+                    size: 20,
+                    color: colors.text.positiveStrong,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'Voted',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.positiveStrong,
+                      letterSpacing: -0.04,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          title,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        if (description.trim().isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          VotingExpandableText(
+            text: description,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
+            ),
+            showToggleWhenNotOverflowing: true,
+            controlsBuilder: (expanded, onToggle) => Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  AppButton(
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.small,
+                    contentPadding: EdgeInsets.zero,
+                    onPressed: onToggle,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AppIcon(AppIcons.expand, size: 16),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Text(
+                          expanded ? 'Hide description' : 'Show description',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: -0.04,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ?forum,
+                ],
+              ),
+            ),
+          ),
+        ] else if (forum != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Align(alignment: Alignment.centerRight, child: forum),
+        ],
+      ],
+    );
   }
 }
 
@@ -308,6 +485,7 @@ class VotingResultCard extends StatelessWidget {
         proposal: proposal,
         tally: tally,
         total: total,
+        winningOption: winningOption,
         selectedChoice: selectedChoice,
         profilePictureId: profilePictureId,
         forumUri: forumUri,
@@ -392,6 +570,7 @@ class _MobileResultCard extends StatelessWidget {
     required this.proposal,
     required this.tally,
     required this.total,
+    required this.winningOption,
     required this.selectedChoice,
     required this.profilePictureId,
     required this.forumUri,
@@ -400,6 +579,7 @@ class _MobileResultCard extends StatelessWidget {
   final VotingProposalView proposal;
   final Map<int, num> tally;
   final num total;
+  final int? winningOption;
   final int? selectedChoice;
   final String? profilePictureId;
   final Uri? forumUri;
@@ -436,28 +616,28 @@ class _MobileResultCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           Text(
             proposal.title,
-            style: AppTypography.bodyMedium.copyWith(
+            style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
-              height: 24 / 16,
-              letterSpacing: -0.24,
             ),
           ),
           if (proposal.description.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
             Text(
               proposal.description.trim(),
-              style: AppTypography.bodySmall.copyWith(
+              style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
-                height: 21 / 14,
-                letterSpacing: -0.21,
               ),
             ),
           ],
           const SizedBox(height: AppSpacing.md),
           for (var index = 0; index < proposal.options.length; index++) ...[
             _MobileTallyRow(
+              key: ValueKey(
+                'voting-result-${proposal.id}-option-${proposal.options[index].index}',
+              ),
               option: proposal.options[index],
+              winner: winningOption == proposal.options[index].index,
               amount: tally[proposal.options[index].index] ?? 0,
               total: total,
               selected: selectedChoice == proposal.options[index].index,
@@ -468,28 +648,35 @@ class _MobileResultCard extends StatelessWidget {
           ],
           if (total > 0) ...[
             const SizedBox(height: AppSpacing.s),
-            SizedBox(
-              height: 24,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    'Total',
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: FontWeight.w500,
-                      height: 16 / 14,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 24),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  runAlignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    Text(
+                      'Total',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: -0.04,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    _formatTallyZec(total),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.primary,
-                      height: 16 / 14,
+                    Text(
+                      _formatMobileTallyZec(total),
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: -0.04,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -501,9 +688,11 @@ class _MobileResultCard extends StatelessWidget {
 
 class _MobileTallyRow extends StatelessWidget {
   const _MobileTallyRow({
+    super.key,
     required this.option,
     required this.amount,
     required this.total,
+    required this.winner,
     required this.selected,
     required this.profilePictureId,
   });
@@ -511,78 +700,147 @@ class _MobileTallyRow extends StatelessWidget {
   final VotingOptionView option;
   final num amount;
   final num total;
+  final bool winner;
   final bool selected;
   final String? profilePictureId;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final progress = total <= 0
-        ? 0.0
-        : (amount / total).clamp(0.0, 1.0).toDouble();
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
-      child: ClipRRect(
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w400,
+      letterSpacing: -0.04,
+      color: colors.text.secondary,
+    );
+    final yourVote = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (profilePictureId != null) ...[
+          AppProfilePicture(profilePictureId: profilePictureId!),
+          const SizedBox(width: AppSpacing.xs),
+        ],
+        Text('Your vote', style: labelStyle),
+      ],
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.medium),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned.fill(child: ColoredBox(color: colors.background.base)),
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: progress,
-                  heightFactor: 1,
-                  child: ColoredBox(
-                    color: colors.background.neutralSubtleOpacity,
-                  ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+            child: Text(
+              option.label,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 32),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: winner || selected
+                      ? WrapAlignment.spaceBetween
+                      : WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    if (winner)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _VotingWinnerAward(),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            'Winner',
+                            style: labelStyle.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (selected)
+                      yourVote,
+                    Text(
+                      '${_formatMobileTallyZec(amount)} (${_formatTallyPercentage(amount, total)})',
+                      textAlign: TextAlign.right,
+                      style: labelStyle,
+                    ),
+                  ],
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.s,
-                vertical: AppSpacing.xs,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      selected ? '${option.label} (your vote)' : option.label,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w500,
-                        height: 16 / 14,
-                        letterSpacing: -0.06,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    _formatTallyZec(amount),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: FontWeight.w500,
-                      height: 16 / 14,
-                      letterSpacing: -0.06,
-                    ),
-                  ),
-                  if (selected && profilePictureId != null) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    AppProfilePicture(
-                      profilePictureId: profilePictureId!,
-                      size: AppProfilePictureSize.medium,
-                    ),
-                  ],
-                ],
-              ),
+          ),
+          // Keep the voter's marker below the winning result, never on top of it.
+          if (winner && selected) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 32),
+              child: Align(alignment: Alignment.centerLeft, child: yourVote),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
+}
+
+/// Original multicolor Figma artwork (8069:72597), without AppIcon's tint.
+class _VotingWinnerAward extends StatelessWidget {
+  const _VotingWinnerAward();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 24,
+    height: 24,
+    child: Stack(
+      children: [
+        Positioned(
+          left: 1,
+          top: 1,
+          width: 22,
+          height: 22,
+          child: SvgPicture.asset(
+            'assets/icons/voting_award_gold.svg',
+            excludeFromSemantics: true,
+          ),
+        ),
+        Positioned(
+          left: 7,
+          top: 9,
+          width: 10,
+          height: 6,
+          child: SvgPicture.asset(
+            'assets/icons/voting_award_star.svg',
+            excludeFromSemantics: true,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+String _formatMobileTallyZec(num amount) => _formatTallyZec(amount)
+    .replaceFirst(RegExp(r'\.00 ZEC$'), ' ZEC')
+    .replaceFirstMapped(RegExp(r'(\.\d)0 ZEC$'), (match) => '${match[1]} ZEC');
+
+String _formatTallyPercentage(num amount, num total) {
+  final percentage = total <= 0 ? 0.0 : (amount / total).clamp(0.0, 1.0) * 100;
+  if (percentage > 0 && percentage < 0.05) return '<0.1%';
+  return '${percentage.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}%';
 }
 
 class _TallyRow extends StatelessWidget {

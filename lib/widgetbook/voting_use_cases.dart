@@ -233,6 +233,63 @@ Widget buildMobileVotingResultsUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingResultsFullUseCase(BuildContext context) =>
+    _buildMobileVotingResultsPreview(context, selectedChoice: 2);
+
+Widget buildMobileVotingResultsWinnerUseCase(BuildContext context) =>
+    _buildMobileVotingResultsPreview(context, selectedChoice: 1);
+
+Widget _buildMobileVotingResultsPreview(
+  BuildContext context, {
+  required int selectedChoice,
+}) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingScaffold(
+      title: 'Voting results',
+      child: VotingResultsContent(
+        title: '[TEST] Very Serious Snack Governance 3',
+        snapshotHeight: 3543600,
+        description:
+            'A silly sample round for testing the shielded vote builder without using real governance content.',
+        forumUri: Uri.parse(
+          'https://forum.zcashcommunity.com/t/snack-governance',
+        ),
+        proposals: const [_previewResultsDesignProposal],
+        // Consistent real tally units: 985 + 10 + 5 = 1,000 ZEC.
+        tallies: const {
+          1: {1: 7880, 2: 80, 3: 40, 4: 0},
+        },
+        selectedChoices: {1: selectedChoice},
+        profilePictureId: kDefaultProfilePictureId,
+      ),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
+const _previewResultsDesignProposal = VotingProposalView(
+  id: 1,
+  title: 'Official Snack of the Next Team Sync',
+  description:
+      'NU7 will be consistent with the results of this poll, assuming each applicable feature is implemented by September 30th.\n\nHow should features that are not ready by the deadline be handled?',
+  zipNumber: 'ZIP-2033 ZIP-2033',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label:
+          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
+    ),
+    VotingOptionView(index: 2, label: 'Abstain'),
+    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
+    VotingOptionView(
+      index: 4,
+      label:
+          'Delay NU7 until every applicable feature approved in this poll is deemed complete.',
+    ),
+  ],
+);
+
 Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,

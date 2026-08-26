@@ -266,6 +266,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-results-full',
+    description:
+        'Mobile voting results with round summary and full option states',
+    builder: buildMobileVotingResultsFullUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-results-winner',
+    description: 'Mobile voting results with the selected winning option',
+    builder: buildMobileVotingResultsWinnerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-results',
     description: 'Mobile coinholder voting proposal result card',
     builder: buildMobileVotingResultsUseCase,
