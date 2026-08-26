@@ -18,7 +18,6 @@ class VotingApiClient {
     List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
-    Duration helperPostTimeout = const Duration(seconds: 30),
     VotingRetryPolicy? readRetryPolicy,
     VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
@@ -28,7 +27,6 @@ class VotingApiClient {
        _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
        _helperTimeout = helperTimeout,
-       _helperPostTimeout = helperPostTimeout,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
@@ -57,7 +55,6 @@ class VotingApiClient {
   final VotingHttpClient _httpClient;
   final Duration _timeout;
   final Duration _helperTimeout;
-  final Duration _helperPostTimeout;
   final VotingRetryPolicy _readRetryPolicy;
   final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
@@ -342,7 +339,7 @@ class VotingApiClient {
   Future<VotingShareSubmissionResult> submitShare({
     required Uri serverUrl,
     required Map<String, dynamic> share,
-    Duration? timeout,
+    required Duration timeout,
     Duration? overallTimeout,
   }) async {
     final decoded = await _postInitialShareJson(
@@ -383,17 +380,17 @@ class VotingApiClient {
   /// key nearby, but the current helper endpoint accepts the same body as the
   /// initial submission. This makes one transport attempt because a timeout is
   /// ambiguous; the caller decides whether to try another helper or wait.
-  /// [timeout] overrides the default helper POST timeout.
+  /// [timeout] bounds the transport attempt.
   Future<VotingShareSubmissionResult> resubmitShare({
     required Uri serverUrl,
     required String shareId,
     required Map<String, dynamic> share,
-    Duration? timeout,
+    required Duration timeout,
   }) async {
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       share,
-      timeout: timeout ?? _helperPostTimeout,
+      timeout: timeout,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -464,10 +461,10 @@ class VotingApiClient {
   Future<Object?> _postInitialShareJson(
     Uri uri,
     Map<String, dynamic> body, {
-    Duration? timeout,
+    required Duration timeout,
     Duration? overallTimeout,
   }) async {
-    final requestTimeout = timeout ?? _helperPostTimeout;
+    final requestTimeout = timeout;
     if (requestTimeout <= Duration.zero) {
       throw ArgumentError.value(requestTimeout, 'timeout', 'must be positive');
     }

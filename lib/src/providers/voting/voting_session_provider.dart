@@ -942,7 +942,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
   }) {
-    Completer<void>? activeHelperPreflightCancellation;
+    final helperPreflightCancellation = Completer<void>();
     Future<List<String>>? activeHelperPreflight;
     final operation = _enqueue(() async {
       final current = await future;
@@ -1188,8 +1188,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'maxSharesPerServer=${helperSelectionPolicy.maxSharesPerServer}',
         );
       }
-      final helperPreflightCancellation = Completer<void>();
-      activeHelperPreflightCancellation = helperPreflightCancellation;
       final helperPreflight = totalBundleTasks == 0
           ? Future.value(const <String>[])
           : ref
@@ -1423,9 +1421,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       await _scheduleShareTracking(context, refreshedPlan);
     }, cleanupProcessStateOnError: false);
     return operation.whenComplete(() async {
-      final cancellation = activeHelperPreflightCancellation;
-      if (cancellation != null && !cancellation.isCompleted) {
-        cancellation.complete();
+      if (!helperPreflightCancellation.isCompleted) {
+        helperPreflightCancellation.complete();
       }
       final preflight = activeHelperPreflight;
       if (preflight != null) await preflight;

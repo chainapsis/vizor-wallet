@@ -13,6 +13,7 @@ void main() {
       '125e5475f653b074d5f4c36730852695f356416c2b6c3042516a912e5bffdd11';
   const otherHexRoundId =
       'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+  const helperPostTimeout = Duration(seconds: 30);
 
   test('composes vote-sdk URLs under shielded-vote v1', () async {
     final http = FakeVotingHttpClient(
@@ -54,6 +55,7 @@ void main() {
     await client.submitShare(
       serverUrl: Uri.parse('https://helper.example'),
       share: {'share_index': 0, 'vote_round_id': hexRoundId},
+      timeout: helperPostTimeout,
     );
     await client.getShareStatus(
       roundId: encodedRoundId,
@@ -64,6 +66,7 @@ void main() {
       serverUrl: Uri.parse('https://helper.example'),
       shareId: 'share-1',
       share: {'share_index': 0, 'vote_round_id': hexRoundId},
+      timeout: helperPostTimeout,
     );
 
     expect(http.requests.map((request) => request.uri.path), [
@@ -770,7 +773,7 @@ void main() {
     },
   );
 
-  test('share request payloads forward crate wire JSON unchanged', () async {
+  test('share requests preserve payloads and apply their timeout', () async {
     final http = FakeVotingHttpClient(
       responses: {
         'https://helper.example/shielded-vote/v1/shares': {'status': 'queued'},
@@ -784,34 +787,23 @@ void main() {
     final result = await client.submitShare(
       serverUrl: Uri.parse('https://helper.example'),
       share: {'share_index': 7, 'vote_round_id': hexRoundId},
+      timeout: helperPostTimeout,
     );
-
-    expect(result.status, 'queued');
-    expect(http.requests.single.body, {
-      'share_index': 7,
-      'vote_round_id': hexRoundId,
-    });
-    expect(http.requests.single.timeout, const Duration(seconds: 30));
-  });
-
-  test('share requests honor a shorter per-request timeout', () async {
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://helper.example/shielded-vote/v1/shares': {'status': 'queued'},
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-    );
-
     await client.submitShare(
       serverUrl: Uri.parse('https://helper.example'),
-      share: {'share_index': 7, 'vote_round_id': hexRoundId},
+      share: {'share_index': 8, 'vote_round_id': hexRoundId},
       timeout: const Duration(seconds: 12),
     );
 
-    expect(http.requests.single.timeout, const Duration(seconds: 12));
+    expect(result.status, 'queued');
+    expect(http.requests.first.body, {
+      'share_index': 7,
+      'vote_round_id': hexRoundId,
+    });
+    expect(http.requests.map((request) => request.timeout), [
+      const Duration(seconds: 30),
+      const Duration(seconds: 12),
+    ]);
   });
 
   test('share retries stop when the overall delivery budget expires', () async {
@@ -1036,7 +1028,6 @@ void main() {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
       httpClient: http,
-      helperPostTimeout: const Duration(milliseconds: 30),
       helperRetryPolicy: VotingRetryPolicy.transientHttp(
         name: 'test-helper-retry',
         delays: const [Duration(milliseconds: 2), Duration(milliseconds: 4)],
@@ -1049,6 +1040,7 @@ void main() {
       client.submitShare(
         serverUrl: Uri.parse('https://helper.example'),
         share: {'share_index': 0, 'vote_round_id': hexRoundId},
+        timeout: const Duration(milliseconds: 30),
       ),
       throwsA(isA<TimeoutException>()),
     );
@@ -1084,6 +1076,7 @@ void main() {
         serverUrl: Uri.parse('https://helper.example'),
         shareId: 'share-1',
         share: {'share_index': 0, 'vote_round_id': hexRoundId},
+        timeout: helperPostTimeout,
       ),
       throwsA(isA<TimeoutException>()),
     );
@@ -1109,6 +1102,7 @@ void main() {
     final submitted = await acceptedClient.submitShare(
       serverUrl: Uri.parse('https://helper.example'),
       share: {'share_index': 0, 'vote_round_id': hexRoundId},
+      timeout: helperPostTimeout,
     );
     final status = await acceptedClient.getShareStatus(
       roundId: hexRoundId,
@@ -1133,6 +1127,7 @@ void main() {
       rejectedSubmitClient.submitShare(
         serverUrl: Uri.parse('https://helper.example'),
         share: {'share_index': 0, 'vote_round_id': hexRoundId},
+        timeout: helperPostTimeout,
       ),
       throwsA(isA<FormatException>()),
     );

@@ -379,47 +379,58 @@ class NetworkHttpClient {
     StreamSubscription<List<int>>? responseSubscription;
     Completer<Uint8List>? responseBody;
     var timedOut = false;
-    return _withDirectDeadline(
+    final request = () async {
+      final request = await _directClient.openUrl(method, uri);
+      activeRequest = request;
+      if (timedOut) {
+        final error = _timeoutException(timeout!);
+        request.abort(error);
+        throw error;
+      }
+      headers.forEach(request.headers.set);
+      if (bodyBytes.isNotEmpty) request.add(bodyBytes);
+      final response = await request.close();
+      final body = responseBody = Completer<Uint8List>();
+      final bytes = BytesBuilder();
+      responseSubscription = response.listen(
+        bytes.add,
+        onError: (Object error, StackTrace stackTrace) {
+          if (!body.isCompleted) body.completeError(error, stackTrace);
+        },
+        onDone: () {
+          if (!body.isCompleted) body.complete(bytes.takeBytes());
+        },
+        cancelOnError: true,
+      );
+      final responseHeaders = <String, List<String>>{};
+      response.headers.forEach((name, values) {
+        responseHeaders[name.toLowerCase()] = List.unmodifiable(values);
+      });
+      return NetworkHttpResponse(
+        statusCode: response.statusCode,
+        bodyBytes: await body.future,
+        headers: Map.unmodifiable(responseHeaders),
+      );
+    }();
+    if (timeout == null) return request;
+    return request.timeout(
       timeout,
-      (error) async {
+      onTimeout: () async {
         timedOut = true;
-        activeRequest?.abort(error);
-        await responseSubscription?.cancel();
+        final error = _timeoutException(timeout);
+        try {
+          activeRequest?.abort(error);
+        } catch (_) {
+          // Continue cleanup and preserve the timeout as the public failure.
+        }
+        try {
+          await responseSubscription?.cancel();
+        } catch (_) {
+          // Continue cleanup and preserve the timeout as the public failure.
+        }
         final body = responseBody;
         if (body != null && !body.isCompleted) body.completeError(error);
-      },
-      () async {
-        final request = await _directClient.openUrl(method, uri);
-        activeRequest = request;
-        if (timedOut) {
-          final error = _timeoutException(timeout!);
-          request.abort(error);
-          throw error;
-        }
-        headers.forEach(request.headers.set);
-        if (bodyBytes.isNotEmpty) request.add(bodyBytes);
-        final response = await request.close();
-        final body = responseBody = Completer<Uint8List>();
-        final bytes = BytesBuilder();
-        responseSubscription = response.listen(
-          bytes.add,
-          onError: (Object error, StackTrace stackTrace) {
-            if (!body.isCompleted) body.completeError(error, stackTrace);
-          },
-          onDone: () {
-            if (!body.isCompleted) body.complete(bytes.takeBytes());
-          },
-          cancelOnError: true,
-        );
-        final responseHeaders = <String, List<String>>{};
-        response.headers.forEach((name, values) {
-          responseHeaders[name.toLowerCase()] = List.unmodifiable(values);
-        });
-        return NetworkHttpResponse(
-          statusCode: response.statusCode,
-          bodyBytes: await body.future,
-          headers: Map.unmodifiable(responseHeaders),
-        );
+        throw error;
       },
     );
   }
@@ -442,41 +453,6 @@ class NetworkHttpClient {
       bodyBytes: Uint8List(0),
       headers: Map.unmodifiable(responseHeaders),
     );
-  }
-
-  static Future<T> _withDirectDeadline<T>(
-    Duration? timeout,
-    Future<void> Function(TimeoutException) abort,
-    Future<T> Function() operation,
-  ) {
-    if (timeout == null) return operation();
-    final result = Completer<T>();
-    final operationFuture = operation();
-    var expiring = false;
-    final timer = Timer(timeout, () async {
-      expiring = true;
-      final error = _timeoutException(timeout);
-      try {
-        await abort(error);
-      } catch (_) {
-        // Preserve the timeout as the public failure after best-effort cleanup.
-      } finally {
-        if (!result.isCompleted) result.completeError(error);
-      }
-    });
-    operationFuture.then(
-      (value) {
-        timer.cancel();
-        if (!expiring && !result.isCompleted) result.complete(value);
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        timer.cancel();
-        if (!expiring && !result.isCompleted) {
-          result.completeError(error, stackTrace);
-        }
-      },
-    );
-    return result.future;
   }
 
   static Duration? _remainingTimeout(Duration? timeout, Stopwatch stopwatch) {

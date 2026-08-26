@@ -6229,99 +6229,66 @@ void main() {
     expect(rust.recordedShares.single.sentToUrls, [helperB, helperA]);
   });
 
-  test('share submission starts planned helper posts concurrently', () async {
-    const helperA = 'https://helper-a.example';
-    const helperB = 'https://helper-b.example';
-    const helperC = 'https://helper-c.example';
-    final http = _GatedSharePostVotingHttpClient(
-      expectedShareCount: 1,
-      expectedSharePostCount: 3,
-      gatedShareIndexes: const {0},
-      responses: votingHttpResponses(
-        dynamicConfig: dynamicConfigJson(
-          voteServers: const [
-            {'url': helperA, 'label': 'helper-a'},
-            {'url': helperB, 'label': 'helper-b'},
-            {'url': helperC, 'label': 'helper-c'},
-          ],
-        ),
-      ),
-    );
-    final rust = FakeVotingRustApi(emitCommitments: true);
-    final recoveryApi = _singleVoteRecoveryApi();
-    final container = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(container.dispose);
+  test(
+    'share submission bounds concurrency and replaces a rejection',
+    () async {
+      final helperUrls = [
+        for (var i = 1; i <= 6; i++)
+          {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
+      ];
+      final http = _GatedSharePostVotingHttpClient(
+        expectedShareCount: 1,
+        expectedSharePostCount: 2,
+        gatedShareIndexes: const {0},
+        responses: {
+          ...votingHttpResponses(
+            dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
+          ),
+          'https://helper-1.example/shielded-vote/v1/shares': jsonResponse({
+            'error': 'rejected',
+          }, statusCode: 400),
+        },
+      );
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        maxConcurrentHelperPosts: 2,
+      );
+      final recoveryApi = _singleVoteRecoveryApi();
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    final cast = container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(draftVotes: _singleProposalDrafts());
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: _singleProposalDrafts());
 
-    await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
-    http.releaseSharePosts.complete();
-    await cast;
+      await http.allSharePostsStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
+      expect(http.startedSharePostCount, 2);
+      expect(http.maxConcurrentSharePostCount, 2);
 
-    final sharePostHosts = http.requests
-        .where(
-          (request) =>
-              request.method == 'POST' &&
-              request.uri.path == '/shielded-vote/v1/shares',
-        )
-        .map((request) => request.uri.host)
-        .toList(growable: false);
-    expect(sharePostHosts, [
-      'helper-a.example',
-      'helper-b.example',
-      'helper-c.example',
-    ]);
-    expect(rust.recordedShares.single.sentToUrls, [helperA, helperB, helperC]);
-  });
+      http.releaseSharePosts.complete();
+      await cast;
 
-  test('share submission respects the shared POST concurrency limit', () async {
-    final helperUrls = [
-      for (var i = 1; i <= 6; i++)
-        {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
-    ];
-    final http = _GatedSharePostVotingHttpClient(
-      expectedShareCount: 1,
-      expectedSharePostCount: 2,
-      gatedShareIndexes: const {0},
-      responses: votingHttpResponses(
-        dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
-      ),
-    );
-    final rust = FakeVotingRustApi(
-      emitCommitments: true,
-      maxConcurrentHelperPosts: 2,
-    );
-    final recoveryApi = _singleVoteRecoveryApi();
-    final container = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(container.dispose);
-
-    await container.read(votingSessionProvider(kRoundId).future);
-    final cast = container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(draftVotes: _singleProposalDrafts());
-
-    await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
-    expect(http.startedSharePostCount, 2);
-    expect(http.maxConcurrentSharePostCount, 2);
-
-    http.releaseSharePosts.complete();
-    await cast;
-
-    expect(http.startedSharePostCount, 5);
-    expect(http.maxConcurrentSharePostCount, 2);
-    expect(rust.recordedShares.single.sentToUrls, hasLength(5));
-  });
+      expect(http.startedSharePostCount, 6);
+      expect(http.maxConcurrentSharePostCount, 2);
+      expect(
+        rust.recordedShares.single.sentToUrls,
+        unorderedEquals([
+          'https://helper-2.example',
+          'https://helper-3.example',
+          'https://helper-4.example',
+          'https://helper-5.example',
+          'https://helper-6.example',
+        ]),
+      );
+    },
+  );
 
   test(
     'queued share posts use healthy fallbacks after slow helpers time out',
@@ -6385,65 +6352,6 @@ void main() {
       );
     },
   );
-
-  test('share submission replaces a helper that rejects its POST', () async {
-    final helperUrls = [
-      for (var i = 1; i <= 6; i++)
-        {'url': 'https://helper-$i.example', 'label': 'helper-$i'},
-    ];
-    final http = FakeVotingHttpClient(
-      responses: {
-        ...votingHttpResponses(
-          dynamicConfig: dynamicConfigJson(voteServers: helperUrls),
-        ),
-        'https://helper-1.example/shielded-vote/v1/shares': jsonResponse({
-          'error': 'rejected',
-        }, statusCode: 400),
-      },
-    );
-    final rust = FakeVotingRustApi(emitCommitments: true);
-    final recoveryApi = _singleVoteRecoveryApi();
-    final container = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(container.dispose);
-
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(draftVotes: _singleProposalDrafts());
-
-    final sharePostHosts = http.requests
-        .where(
-          (request) =>
-              request.method == 'POST' &&
-              request.uri.path == '/shielded-vote/v1/shares',
-        )
-        .map((request) => request.uri.host);
-    expect(
-      sharePostHosts,
-      unorderedEquals([
-        'helper-1.example',
-        'helper-2.example',
-        'helper-3.example',
-        'helper-4.example',
-        'helper-5.example',
-        'helper-6.example',
-      ]),
-    );
-    expect(
-      rust.recordedShares.single.sentToUrls,
-      unorderedEquals([
-        'https://helper-2.example',
-        'https://helper-3.example',
-        'https://helper-4.example',
-        'https://helper-5.example',
-        'https://helper-6.example',
-      ]),
-    );
-  });
 
   test('initial share delivery stops at the shared overall budget', () async {
     final helperUrls = [
