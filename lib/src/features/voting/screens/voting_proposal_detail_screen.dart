@@ -1123,39 +1123,38 @@ class _MobilePollSummary extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Align(alignment: Alignment.centerRight, child: forum),
         ],
-        // Keep power, timing, loading, and retry context for eligible or unknown
-        // accounts. The confirmed-ineligible design replaces it with the badge.
-        if (!isIneligible) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xxs,
-            children: [
-              _MetaText(
-                endDate == null
-                    ? 'Voting active'
-                    : 'Ends ${formatMonthDayYear(endDate!)}',
-              ),
+        // Round timing is useful even when this account cannot vote.
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
+          children: [
+            _MetaText(
+              endDate == null
+                  ? 'Voting active'
+                  : 'Ends ${formatMonthDayYear(endDate!)}',
+            ),
+            if (!isIneligible) ...[
               const _MetaText('·'),
               _VotingPowerMeta(
                 zatoshi: votingPowerZatoshi,
                 preparing: votingPowerPreparing,
               ),
-              if (endDate != null) ...[
-                const _MetaText('·'),
-                _MetaText(_daysLeftLabel(endDate!)),
-              ],
             ],
-          ),
-          if (votingEligibilityMessage != null) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              votingEligibilityMessage!,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
+            if (endDate != null) ...[
+              const _MetaText('·'),
+              _MetaText(_daysLeftLabel(endDate!)),
+            ],
           ],
+        ),
+        if (!isIneligible && votingEligibilityMessage != null) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            votingEligibilityMessage!,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
         ],
       ],
     );

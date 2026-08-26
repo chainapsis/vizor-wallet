@@ -101,7 +101,7 @@ void main() {
     });
   }
 
-  testWidgets('ineligible detail matches Figma and keeps the existing header', (
+  testWidgets('ineligible detail keeps round timing but hides voting power', (
     tester,
   ) async {
     await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
@@ -114,13 +114,18 @@ void main() {
     expect(tester.getTopLeft(badge).dy, 140.5);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 371),
+      const Offset(16, 406),
     );
     expect(find.textContaining('Voting power'), findsNothing);
-    expect(find.textContaining('Ends Aug'), findsNothing);
+    expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'^(Ends today|1 day left|\d+ days left)$')),
+      findsOneWidget,
+    );
+    expect(find.text('·'), findsOneWidget);
     expect(tester.getTopLeft(find.text('Show description')).dx, 36);
     final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
-    expect(tester.getTopLeft(option), const Offset(32, 678));
+    expect(tester.getTopLeft(option), const Offset(32, 713));
     expect(tester.getSize(option), const Size(329, 115));
     expect(
       tester
@@ -139,7 +144,7 @@ void main() {
     expect(find.text('Hide description'), findsOneWidget);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 371),
+      const Offset(16, 406),
     );
     await tester.tap(find.text('Hide description'));
     await tester.pumpAndSettle();
