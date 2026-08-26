@@ -5523,9 +5523,7 @@ void main() {
     expect(rust.rankedCandidatePreviousSelections.first, [
       'https://voting.example',
     ]);
-    expect(rust.rankedCandidatePreviousAttemptsByShare.first, [
-      <String>[],
-    ]);
+    expect(rust.rankedCandidatePreviousAttemptsByShare.first, [<String>[]]);
     expect(rust.rankedCandidatePreviousSelectionsByShare.first, [<String>[]]);
     expect(
       rust.recordedShares
@@ -6198,6 +6196,57 @@ void main() {
       );
     },
   );
+
+  test('share acceptance is durable while a sibling post is pending', () async {
+    const fastHelper = 'https://helper-fast.example';
+    const slowHelper = 'https://helper-slow.example';
+    final http = _GatedSharePostVotingHttpClient(
+      expectedShareCount: 1,
+      expectedSharePostCount: 2,
+      gatedShareIndexes: const {},
+      gatedHosts: const {'helper-slow.example'},
+      responses: votingHttpResponses(
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': fastHelper, 'label': 'fast'},
+            {'url': slowHelper, 'label': 'slow'},
+          ],
+        ),
+      ),
+    );
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      maxConcurrentHelperPosts: 2,
+      rankedCandidatePlans: [
+        rust_share_policy.ShareServerCandidatePlan(
+          remainingTargetCount: 2,
+          candidateServers: const [fastHelper, slowHelper],
+        ),
+      ],
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
+    await _waitForAcceptedRecordedShareCount(rust, 1);
+    expect(rust.recordedShares.single.sentToUrls, [fastHelper]);
+
+    http.releaseSharePosts.complete();
+    await cast;
+    expect(
+      rust.recordedShares.single.sentToUrls,
+      unorderedEquals([fastHelper, slowHelper]),
+    );
+  });
 
   test(
     'attempt persistence failure drains and persists sibling submissions',
@@ -8328,12 +8377,14 @@ class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
     required this.expectedShareCount,
     this.expectedSharePostCount,
     required this.gatedShareIndexes,
+    this.gatedHosts = const {},
     super.responses,
   });
 
   final int expectedShareCount;
   final int? expectedSharePostCount;
   final Set<int> gatedShareIndexes;
+  final Set<String> gatedHosts;
   final Set<int> startedShareIndexes = {};
   int startedSharePostCount = 0;
   int _activeSharePostCount = 0;
@@ -8362,7 +8413,8 @@ class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
         allSharePostsStarted.complete();
       }
       try {
-        if (gatedShareIndexes.contains(shareIndex)) {
+        if (gatedShareIndexes.contains(shareIndex) ||
+            gatedHosts.contains(uri.host)) {
           await releaseSharePosts.future;
         }
       } finally {
@@ -11189,7 +11241,19 @@ class FakeVotingRustApi implements VotingRustApi {
       operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
       recordedShares.add(recorded);
     } else {
-      recordedShares[existingIndex] = recorded;
+      final existing = recordedShares[existingIndex];
+      recordedShares[existingIndex] = _RecordedShare(
+        bundleIndex: bundleIndex,
+        proposalId: proposalId,
+        shareIndex: shareIndex,
+        submitAt: submitAt,
+        sentToUrls: (LinkedHashSet<String>.of(
+          existing.sentToUrls,
+        )..addAll(sentToUrls)).toList(growable: false),
+        attemptedServerUrls: (LinkedHashSet<String>.of(
+          existing.attemptedServerUrls,
+        )..addAll(attemptedServerUrls)).toList(growable: false),
+      );
     }
   }
 

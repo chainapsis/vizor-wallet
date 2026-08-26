@@ -1548,7 +1548,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       bundleIndex: commitments.bundleIndex,
       bundleCount: context.resumePlan.bundleCount,
     );
-    final shareAttemptPersistencePool = _AsyncPermitPool(1);
+    final sharePersistencePool = _AsyncPermitPool(1);
 
     for (final commitment in commitments.commitments) {
       final shares = shareIndexFilter == null
@@ -1746,7 +1746,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperPostPool: helperPostPool,
             helperPostTimeout: helperPostTimeout,
             deliveryBudget: deliveryBudget,
-            recordAttempt: (serverUrl) => shareAttemptPersistencePool.run(
+            recordAttempt: (serverUrl) => sharePersistencePool.run(
               () => rust.addAttemptedServers(
                 dbPath: context.dbPath,
                 accountUuid: context.accountUuid,
@@ -1755,6 +1755,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 proposalId: prepared.share.proposalId,
                 shareIndex: prepared.share.shareIndex,
                 newUrls: [serverUrl],
+                submitAt: prepared.submitAt,
+              ),
+            ),
+            recordAcceptance: (serverUrl) => sharePersistencePool.run(
+              () => rust.recordShareDelegation(
+                dbPath: context.dbPath,
+                accountUuid: context.accountUuid,
+                roundId: context.round.roundId,
+                bundleIndex: commitments.bundleIndex,
+                proposalId: prepared.share.proposalId,
+                shareIndex: prepared.share.shareIndex,
+                sentToUrls: [serverUrl],
+                attemptedServerUrls: [serverUrl],
                 submitAt: prepared.submitAt,
               ),
             ),
@@ -1768,41 +1781,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
-      // Persist in completion order so accepted shares become durable promptly
-      // while Rust DB writes remain sequential.
       await for (final result in Stream.fromFutures(submissions)) {
         if (result == null) continue;
         final previouslyAcceptedServers =
             previouslyAcceptedServersByShareIndex[result.share.shareIndex] ??
             const <String>[];
-        if (result.acceptedServers.isEmpty &&
+        if (result.acceptedServerCount == 0 &&
             previouslyAcceptedServers.isEmpty) {
           failedResult ??= result;
-          continue;
-        }
-        if (result.acceptedServers.isEmpty) continue;
-        final acceptedServers = LinkedHashSet<String>.of(
-          previouslyAcceptedServers,
-        )..addAll(result.acceptedServers);
-        final attemptedServers = LinkedHashSet<String>.of(
-          previouslyAttemptedServersByShareIndex[result.share.shareIndex] ??
-              const <String>[],
-        )..addAll(result.attemptedServers);
-        try {
-          await rust.recordShareDelegation(
-            dbPath: context.dbPath,
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-            bundleIndex: commitments.bundleIndex,
-            proposalId: result.share.proposalId,
-            shareIndex: result.share.shareIndex,
-            sentToUrls: acceptedServers.toList(growable: false),
-            attemptedServerUrls: attemptedServers.toList(growable: false),
-            submitAt: result.submitAt,
-          );
-        } catch (error, stackTrace) {
-          persistenceError ??= error;
-          persistenceStackTrace ??= stackTrace;
         }
       }
       final finalPersistenceError = persistenceError;
@@ -1833,9 +1819,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Duration helperPostTimeout,
     required _InitialShareDeliveryBudget deliveryBudget,
     required Future<void> Function(String serverUrl) recordAttempt,
+    required Future<void> Function(String serverUrl) recordAcceptance,
   }) async {
-    final acceptedServers = <String>[];
-    final attemptedServers = <String>[];
+    var acceptedServerCount = 0;
     final remainingServers = LinkedHashSet<String>.of(candidateServers);
 
     Future<({bool attempted, String? acceptedServer})> submitNext() {
@@ -1855,7 +1841,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? budgetRemaining
             : helperPostTimeout;
         await recordAttempt(serverUrl);
-        attemptedServers.add(serverUrl);
         try {
           debugPrint(
             '[zcash] Voting: submitting share '
@@ -1871,14 +1856,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             timeout: requestTimeout,
             overallTimeout: budgetRemaining,
           );
-          helperHealth.recordSuccess(serverUrl);
-          deliveryBudget.recordSuccess(serverUrl);
-          debugPrint(
-            '[zcash] Voting: share accepted '
-            'proposal=${share.proposalId} share=${share.shareIndex} '
-            'server=$serverUrl',
-          );
-          return (attempted: true, acceptedServer: serverUrl);
         } catch (e) {
           debugPrint(
             '[zcash] Voting: share rejected '
@@ -1892,6 +1869,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           // Recovery retries helpers that did not accept this share.
           return (attempted: true, acceptedServer: null);
         }
+        await recordAcceptance(serverUrl);
+        helperHealth.recordSuccess(serverUrl);
+        deliveryBudget.recordSuccess(serverUrl);
+        debugPrint(
+          '[zcash] Voting: share accepted '
+          'proposal=${share.proposalId} share=${share.shareIndex} '
+          'server=$serverUrl',
+        );
+        return (attempted: true, acceptedServer: serverUrl);
       });
     }
 
@@ -1901,11 +1887,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (!result.attempted) return;
         final serverUrl = result.acceptedServer;
         if (serverUrl != null) {
-          acceptedServers.add(serverUrl);
+          acceptedServerCount++;
           debugPrint(
             '[zcash] Voting: share acceptance progress '
             'proposal=${share.proposalId} share=${share.shareIndex} '
-            'accepted=${acceptedServers.length}/$targetCount',
+            'accepted=$acceptedServerCount/$targetCount',
           );
           return;
         }
@@ -1913,18 +1899,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     await Future.wait(List.generate(targetCount, (_) => submitUntilAccepted()));
-    if (acceptedServers.length < targetCount && acceptedServers.isNotEmpty) {
+    if (acceptedServerCount < targetCount && acceptedServerCount > 0) {
       debugPrint(
         '[zcash] Voting: share accepted by fewer helpers than planned '
         'proposal=${share.proposalId} share=${share.shareIndex} '
-        'accepted=${acceptedServers.length}/$targetCount',
+        'accepted=$acceptedServerCount/$targetCount',
       );
     }
     return _InitialShareSubmissionResult(
       share: share,
-      submitAt: submitAt,
-      acceptedServers: acceptedServers,
-      attemptedServers: attemptedServers,
+      acceptedServerCount: acceptedServerCount,
     );
   }
 
@@ -5221,15 +5205,11 @@ class _PreparedInitialShareSubmission {
 class _InitialShareSubmissionResult {
   const _InitialShareSubmissionResult({
     required this.share,
-    required this.submitAt,
-    required this.acceptedServers,
-    required this.attemptedServers,
+    required this.acceptedServerCount,
   });
 
   final rust_wire.VoteShareWire share;
-  final BigInt submitAt;
-  final List<String> acceptedServers;
-  final List<String> attemptedServers;
+  final int acceptedServerCount;
 }
 
 class _InitialShareDeliveryBudget {
