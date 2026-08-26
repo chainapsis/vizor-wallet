@@ -151,6 +151,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsMainUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-settings-footer',
+    description: 'Mobile settings scrolled to the branded version footer',
+    builder: buildMobileSettingsFooterUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-tor-connecting',
     description: 'Desktop settings while Tor is connecting',
     builder: buildSettingsTorConnectingUseCase,

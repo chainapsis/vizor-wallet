@@ -7,13 +7,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/app_version_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_art.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -24,6 +29,7 @@ import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -125,6 +131,9 @@ Widget _app({
   _FakeSyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   NetworkPrivacyState? networkPrivacyState,
   List<bool>? networkPrivacyCalls,
+  AppThemeData? themeData,
+  bool withTabBar = false,
+  double textScale = 1,
 }) {
   return ProviderScope(
     overrides: [
@@ -149,8 +158,28 @@ Widget _app({
         ),
     ],
     child: MaterialApp(
-      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
-      home: const MobileSettingsScreen(),
+      builder: (context, child) => AppTheme(
+        data: themeData ?? AppThemeData.dark,
+        child: MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+      ),
+      home: withTabBar
+          ? AppMobileShell(
+              body: const MobileSettingsScreen(),
+              tabBar: AppMobileTabBar(
+                items: const [
+                  AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
+                  AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
+                ],
+                currentIndex: 1,
+                onSelect: (_) {},
+              ),
+            )
+          : const MobileSettingsScreen(),
     ),
   );
 }
@@ -180,6 +209,129 @@ void main() {
       ..physicalSize = const Size(520, 1200)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final isDark in [false, true]) {
+      for (final compact in [false, true]) {
+        testWidgets(
+          'branded version footer clears the tab bar: $platform, '
+          '${isDark ? 'dark' : 'light'}, ${compact ? 'compact' : 'large text'}',
+          (tester) async {
+            await loadFigmaCompareFonts();
+            tester.view.physicalSize = compact
+                ? const Size(320, 640)
+                : const Size(393, 852);
+            tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+            tester.view.viewPadding = const FakeViewPadding(
+              top: 47,
+              bottom: 34,
+            );
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetPadding);
+            addTearDown(tester.view.resetViewPadding);
+            final theme = isDark ? AppThemeData.dark : AppThemeData.light;
+            await tester.pumpWidget(
+              _app(
+                themeData: theme,
+                withTabBar: true,
+                textScale: compact ? 1 : 1.5,
+                biometric: BiometricUnlockState.initial,
+                networkPrivacyState: const NetworkPrivacyState.off(),
+              ),
+            );
+            await tester.pumpAndSettle();
+            final footer = find.byKey(
+              const ValueKey('mobile_settings_version'),
+            );
+            await tester.scrollUntilVisible(footer, 300);
+            await tester.pumpAndSettle();
+
+            final value = find.descendant(
+              of: footer,
+              matching: find.text('v$kVizorReleaseVersion'),
+            );
+            final text = tester.widget<Text>(value);
+            expect(
+              text.style,
+              AppTypography.codeSmall.copyWith(
+                color: theme.colors.text.secondary,
+              ),
+            );
+            expect(text.maxLines, isNull, reason: 'Long versions may wrap');
+            expect(
+              text.overflow,
+              isNull,
+              reason: 'Do not truncate prereleases',
+            );
+            expect(
+              tester.getTopLeft(footer).dy,
+              greaterThan(tester.getBottomLeft(find.text('Theme')).dy),
+            );
+            expect(
+              tester.getBottomLeft(footer).dy,
+              lessThanOrEqualTo(
+                tester.getTopLeft(find.byType(AppMobileTabBar)).dy -
+                    AppSpacing.md,
+              ),
+            );
+            expect(
+              tester.getTopLeft(footer).dy -
+                  tester
+                      .getBottomLeft(
+                        find.ancestor(
+                          of: find.text('Theme'),
+                          matching: find.byType(MobileSurfaceCard),
+                        ),
+                      )
+                      .dy,
+              AppSpacing.base,
+            );
+            expect(
+              find.ancestor(
+                of: footer,
+                matching: find.byType(MobileSurfaceCard),
+              ),
+              findsNothing,
+            );
+            final wordmark = find.descendant(
+              of: footer,
+              matching: find.byType(VizorWordmark),
+            );
+            expect(wordmark, findsOneWidget);
+            expect(
+              tester.widget<VizorWordmark>(wordmark).color,
+              theme.colors.text.secondary,
+            );
+            expect(
+              (tester.getTopLeft(wordmark).dx + tester.getTopRight(value).dx) /
+                  2,
+              closeTo(tester.view.physicalSize.width / 2, 0.01),
+            );
+            expect(
+              find.descendant(
+                of: footer,
+                matching: find.byType(GestureDetector),
+              ),
+              findsNothing,
+            );
+            expect(find.text('About Vizor'), findsNothing);
+            final semantics = tester.ensureSemantics();
+            try {
+              await tester.pump();
+              expect(
+                find.bySemanticsLabel('Vizor, version $kVizorReleaseVersion'),
+                findsOneWidget,
+              );
+            } finally {
+              semantics.dispose();
+            }
+            expect(tester.takeException(), isNull);
+          },
+          variant: TargetPlatformVariant({platform}),
+        );
+      }
+    }
+  }
 
   testWidgets('the Tor card reports the off route', (tester) async {
     await tester.pumpWidget(

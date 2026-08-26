@@ -64,6 +64,7 @@ import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
+import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
@@ -657,6 +658,79 @@ Widget buildAccountsRemoveUseCase(BuildContext context) {
 
 Widget buildSettingsMainUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
+}
+
+/// Real mobile settings and tab bar, pinned to the app footer for visual review.
+/// The version still comes from VIZOR_RELEASE_VERSION, just as in a release.
+Widget buildMobileSettingsFooterUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsFooterPreview()),
+    ),
+  );
+}
+
+class _MobileSettingsFooterPreview extends StatefulWidget {
+  const _MobileSettingsFooterPreview();
+
+  @override
+  State<_MobileSettingsFooterPreview> createState() =>
+      _MobileSettingsFooterPreviewState();
+}
+
+class _MobileSettingsFooterPreviewState
+    extends State<_MobileSettingsFooterPreview> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          // ListView refines its extent as lazy children are laid out. Follow
+          // those updates so the preview settles at the actual list end.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_controller.hasClients) return;
+            final position = _controller.position;
+            if (position.pixels != position.maxScrollExtent) {
+              _controller.jumpTo(position.maxScrollExtent);
+            }
+          });
+          return false;
+        },
+        child: PrimaryScrollController(
+          controller: _controller,
+          child: const MobileSettingsScreen(),
+        ),
+      ),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
 }
 
 Widget buildSettingsTorConnectingUseCase(BuildContext context) {
