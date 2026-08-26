@@ -4608,6 +4608,88 @@ void main() {
     },
   );
 
+  test(
+    'background share tracking refreshes a round that closes early',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final activeRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: nowSeconds + 1000,
+      );
+      final closedRound = Map<String, dynamic>.of(activeRound)
+        ..['status'] = 'closed';
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: activeRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': activeRound},
+                    {'round': activeRound},
+                    {'round': closedRound},
+                    {'round': closedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+      );
+      addTearDown(container.dispose);
+      final roundProvider = votingSessionProvider(kRoundId);
+      final roundSubscription = container
+          .listen<AsyncValue<VotingSessionState>>(
+            roundProvider,
+            (_, _) {},
+            fireImmediately: true,
+          );
+      addTearDown(roundSubscription.close);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+
+      final initialRound = await container.read(roundProvider.future);
+      expect(initialRound.round?.status, 'active');
+      await container.read(votingSubmissionSessionProvider(trackingKey).future);
+
+      await container
+          .read(votingSubmissionSessionProvider(trackingKey).notifier)
+          .submitPendingShares();
+      final refreshedRound = await container.read(roundProvider.future);
+
+      expect(refreshedRound.round?.status, 'closed');
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        isEmpty,
+      );
+    },
+  );
+
   test('share tracking failure fails the job and releases its guard', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final pendingShare = rust_frb_types.ShareDelegationRecordView(

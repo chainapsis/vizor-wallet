@@ -10,6 +10,7 @@ import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
+import '../../features/voting/voting_share_status.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
@@ -59,17 +60,11 @@ const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
-  final status = round.status.trim().toLowerCase();
-  if (!const {
-    'active',
-    'open',
-    '1',
-    'session_status_active',
-  }.contains(status)) {
-    return false;
-  }
-  final voteEnd = round.voteEndTime;
-  return voteEnd != null && (now ?? DateTime.now()).isBefore(voteEnd);
+  return isVotingShareTrackingOpen(
+    roundStatus: round.status,
+    voteEndTime: round.voteEndTime,
+    now: now ?? DateTime.now(),
+  );
 }
 
 /// Orchestrates one round's voting lifecycle for the UI.
@@ -3031,7 +3026,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (_isDisposed || !ref.mounted) return;
       final context = await _loadContext(_roundId);
       if (_shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        _releaseAutomaticShareTrackingIfRoundClosed(context);
         return;
       }
       _currentContext = context;
@@ -3106,7 +3101,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       if (report.cancelled || _shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        _releaseAutomaticShareTrackingIfRoundClosed(context);
         return;
       }
       final refreshedPlan = await _loadResumePlan(context);
@@ -3293,10 +3288,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !shouldTrackPendingVotingShares(context.round);
   }
 
-  void _releaseAutomaticShareTrackingIfRoundExpired(
+  void _releaseAutomaticShareTrackingIfRoundClosed(
     _VotingSessionContext context,
   ) {
     if (!shouldTrackPendingVotingShares(context.round)) {
+      if (_ownsAutomaticShareTracking && !_isDisposed && ref.mounted) {
+        ref.invalidate(votingSessionProvider(_roundId));
+      }
       _releaseAutomaticShareTracking();
     }
   }

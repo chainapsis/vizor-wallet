@@ -1,5 +1,7 @@
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,6 +18,7 @@ import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/features/voting/voting_flow_models.dart';
 import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
+import '../src/features/voting/widgets/voting_share_status_card.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
 import '../src/providers/voting/voting_poll_eligibility_provider.dart';
@@ -24,8 +27,45 @@ import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/rust/third_party/zcash_voting/config.dart';
+import '../src/rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
+
+Widget buildVotingShareStatusUseCase(BuildContext context) {
+  return _buildVotingShareStatusUseCase(
+    context,
+    records: _previewVotingShareRecords,
+  );
+}
+
+Widget buildVotingShareStatusCompleteUseCase(BuildContext context) {
+  return _buildVotingShareStatusUseCase(
+    context,
+    records: _previewVotingShareCompleteRecords,
+  );
+}
+
+Widget _buildVotingShareStatusUseCase(
+  BuildContext context, {
+  required List<rust_wire.ShareDelegationRecordView> records,
+}) {
+  return ColoredBox(
+    color: context.colors.background.ground,
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: VotingShareStatusCard(
+            records: records,
+            now: _previewVotingShareNow,
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
   return ProviderScope(
@@ -118,6 +158,16 @@ Widget _buildMobileVotingConfigPreview(
 }
 
 Widget buildMobileVotingVotedUseCase(BuildContext context) {
+  return _buildMobileVotingVotedUseCase(_previewVotingShareRecords);
+}
+
+Widget buildMobileVotingVotedCompleteUseCase(BuildContext context) {
+  return _buildMobileVotingVotedUseCase(_previewVotingShareCompleteRecords);
+}
+
+Widget _buildMobileVotingVotedUseCase(
+  List<rust_wire.ShareDelegationRecordView> records,
+) {
   return MobileVotingScaffold(
     title: 'Voted',
     child: VotingVotedPollContent(
@@ -133,6 +183,8 @@ Widget buildMobileVotingVotedUseCase(BuildContext context) {
       votedAt: DateTime(2026, 8, 24),
       proposals: const [_previewSnackProposal],
       choicesByProposalId: const {1: 1},
+      shareDelegations: records,
+      shareStatusNow: _previewVotingShareNow,
     ),
   );
 }
@@ -465,6 +517,51 @@ void _previewNoop() {}
 
 const _previewVotingKeystoneUr =
     'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
+
+final _previewVotingShareNow = DateTime.utc(2026, 8, 23, 12);
+
+final _previewVotingShareRecords = [
+  _previewVotingShare(0, 1, confirmed: true),
+  _previewVotingShare(1, 1, hours: 3, minutes: 24),
+  _previewVotingShare(2, 1, hours: 29, minutes: 10),
+  _previewVotingShare(0, 2, confirmed: true),
+  _previewVotingShare(1, 2, hours: 51, minutes: 42),
+];
+
+final _previewVotingShareCompleteRecords = [
+  _previewVotingShare(0, 1, confirmed: true),
+  _previewVotingShare(1, 1, hours: 3, minutes: 24, confirmed: true),
+  _previewVotingShare(2, 1, hours: 29, minutes: 10, confirmed: true),
+  _previewVotingShare(0, 2, confirmed: true),
+  _previewVotingShare(1, 2, hours: 51, minutes: 42, confirmed: true),
+];
+
+rust_wire.ShareDelegationRecordView _previewVotingShare(
+  int shareIndex,
+  int proposalId, {
+  int hours = 0,
+  int minutes = 0,
+  bool confirmed = false,
+}) {
+  final scheduled = _previewVotingShareNow.add(
+    Duration(hours: hours, minutes: minutes),
+  );
+  final epoch = BigInt.from(
+    scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
+  );
+  return rust_wire.ShareDelegationRecordView(
+    roundId: 'preview-round',
+    bundleIndex: 0,
+    proposalId: proposalId,
+    shareIndex: shareIndex,
+    sentToUrls: const ['https://helper.example'],
+    nullifier: Uint8List.fromList(List.filled(32, shareIndex)),
+    phase: confirmed ? 'confirmed' : 'submitted_share',
+    confirmed: confirmed,
+    submitAt: epoch,
+    createdAt: epoch,
+  );
+}
 
 class _PreviewVotingConfigNotifier extends VotingConfigNotifier {
   @override

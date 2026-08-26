@@ -15,6 +15,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
+import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
@@ -27,6 +28,7 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../widgets/voting_share_status_card.dart';
 
 class VotingProposalDetailScreen extends StatelessWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
@@ -72,6 +74,9 @@ class _VotingProposalDetailViewState
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+  Timer? _shareStatusDeadlineTimer;
+  DateTime? _shareStatusDeadline;
+  bool _shareStatusDeadlinePassed = false;
 
   @override
   void initState() {
@@ -94,14 +99,45 @@ class _VotingProposalDetailViewState
       _votingPowerPreparationKey = null;
       _snapshotBundlePrecomputeKey = null;
       _resultsRedirectRoundId = null;
+      _clearShareStatusDeadline();
     }
+  }
+
+  @override
+  void dispose() {
+    _shareStatusDeadlineTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final roundId = widget.roundId;
-    final session = ref.watch(votingSessionProvider(roundId));
-    return session.when(
+    final roundSession = ref.watch(votingSessionProvider(roundId));
+    final roundState = roundSession.value;
+    final accountUuid = roundState?.accountUuid;
+    final round = roundState?.round;
+    final hasPersistedShares =
+        roundState?.resumePlan?.shareDelegations.isNotEmpty ?? false;
+    final shareTrackingOpen =
+        round != null && shouldTrackPendingVotingShares(round);
+    _syncShareStatusDeadline(
+      shareTrackingOpen && hasPersistedShares ? round.voteEndTime : null,
+    );
+    final hasShareStatus =
+        shareTrackingOpen && !_shareStatusDeadlinePassed && hasPersistedShares;
+    final trackedSession = accountUuid == null || !hasShareStatus
+        ? null
+        : ref.watch(
+            votingSubmissionJobSessionProvider(
+              VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
+            ),
+          );
+    // The submission session owns background share tracking, but its other
+    // fields can carry an unrelated transient error. Keep the round session
+    // authoritative for this screen and project only the live share records.
+    final trackedShareDelegations =
+        trackedSession?.value?.resumePlan?.shareDelegations;
+    return roundSession.when(
       skipLoadingOnRefresh: false,
       loading: () => _stateView(const VotingPaneLoading()),
       error: (error, _) => _stateView(
@@ -168,6 +204,11 @@ class _VotingProposalDetailViewState
             votedAt: completedVote.votedAt,
             proposals: proposals,
             choicesByProposalId: completedVote.choicesByProposalId,
+            shareDelegations: hasShareStatus
+                ? trackedShareDelegations ??
+                      state.resumePlan?.shareDelegations ??
+                      const []
+                : const [],
           );
         }
         if (pendingVote != null && hasConfirmedVotingEligibility) {
@@ -254,6 +295,39 @@ class _VotingProposalDetailViewState
         );
       },
     );
+  }
+
+  void _syncShareStatusDeadline(DateTime? deadline) {
+    if (deadline == null) {
+      _clearShareStatusDeadline();
+      return;
+    }
+    if (_shareStatusDeadline == deadline) return;
+
+    _shareStatusDeadlineTimer?.cancel();
+    _shareStatusDeadline = deadline;
+    final delay = deadline.difference(DateTime.now());
+    if (delay <= Duration.zero) {
+      _shareStatusDeadlineTimer = null;
+      _shareStatusDeadlinePassed = true;
+      return;
+    }
+
+    _shareStatusDeadlinePassed = false;
+    _shareStatusDeadlineTimer = Timer(delay, () {
+      if (!mounted || _shareStatusDeadline != deadline) return;
+      _shareStatusDeadlineTimer = null;
+      setState(() {
+        _shareStatusDeadlinePassed = true;
+      });
+    });
+  }
+
+  void _clearShareStatusDeadline() {
+    _shareStatusDeadlineTimer?.cancel();
+    _shareStatusDeadlineTimer = null;
+    _shareStatusDeadline = null;
+    _shareStatusDeadlinePassed = false;
   }
 
   Widget _stateView(Widget child) {
@@ -1336,6 +1410,8 @@ class VotingVotedPollContent extends StatelessWidget {
     required this.votedAt,
     required this.proposals,
     required this.choicesByProposalId,
+    this.shareDelegations = const [],
+    this.shareStatusNow,
   });
 
   final bool showDesktopToolbar;
@@ -1348,9 +1424,15 @@ class VotingVotedPollContent extends StatelessWidget {
   final DateTime? votedAt;
   final List<VotingProposalView> proposals;
   final Map<int, int?> choicesByProposalId;
+  final List<rust_wire.ShareDelegationRecordView> shareDelegations;
+
+  /// Fixed current time for deterministic vote-share previews.
+  final DateTime? shareStatusNow;
 
   @override
   Widget build(BuildContext context) {
+    final shareStatusOffset = shareDelegations.isEmpty ? 0 : 1;
+    final itemCount = proposals.length + shareStatusOffset;
     if (kAppFormFactor == AppFormFactor.desktop) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1379,7 +1461,7 @@ class VotingVotedPollContent extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Expanded(
-            child: proposals.isEmpty
+            child: itemCount == 0
                 ? const _Message(
                     title: 'No proposals',
                     message:
@@ -1393,10 +1475,16 @@ class VotingVotedPollContent extends StatelessWidget {
                       showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                       AppSpacing.md,
                     ),
-                    itemCount: proposals.length,
+                    itemCount: itemCount,
                     separatorBuilder: (_, _) =>
                         const SizedBox(height: AppSpacing.s),
                     itemBuilder: (context, index) {
+                      if (index == proposals.length) {
+                        return VotingShareStatusCard(
+                          records: shareDelegations,
+                          now: shareStatusNow,
+                        );
+                      }
                       final proposal = proposals[index];
                       final choice = choicesByProposalId[proposal.id];
                       return VotingProposalCard(
@@ -1459,6 +1547,13 @@ class VotingVotedPollContent extends StatelessWidget {
                     if (index < proposals.length - 1)
                       const SizedBox(height: AppSpacing.md),
                   ],
+                if (shareDelegations.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  VotingShareStatusCard(
+                    records: shareDelegations,
+                    now: shareStatusNow,
+                  ),
+                ],
               ],
             ),
           ),
