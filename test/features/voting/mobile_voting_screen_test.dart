@@ -117,7 +117,6 @@ void main() {
       tester.renderObject<RenderParagraph>(descriptionFinder).didExceedMaxLines,
       isTrue,
     );
-    expect(tester.getSize(card).height, tester.getSize(secondCard).height);
     final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
     expect(cardDecoration.boxShadow, isNotEmpty);
     final cardTap = tester.widget<InkWell>(

@@ -79,29 +79,147 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final scale in [1.0, 1.3]) {
-    testWidgets('compact poll list remains usable at text scale $scale', (
+  for (final (width, scale) in [
+    (320.0, 1.0),
+    (320.0, 1.3),
+    (360.0, 1.0),
+    (393.0, 1.0),
+  ]) {
+    testWidgets('poll dates remain visible at width $width and scale $scale', (
       tester,
     ) async {
       await _pumpMobileFixture(
         tester,
         buildMobileVotingPollsEligibilityUseCase,
-        size: const Size(320, 667),
+        size: Size(width, 667),
         textScaler: TextScaler.linear(scale),
       );
+      void expectFullDate(String roundId, String date) {
+        final card = find.byKey(ValueKey('voting_poll_card_$roundId'));
+        final label = find.descendant(of: card, matching: find.text(date));
+        expect(label, findsOneWidget);
+        final paragraph = tester.renderObject<RenderParagraph>(label);
+        expect(paragraph.didExceedMaxLines, isFalse);
+        expect(
+          tester.getRect(card).contains(tester.getRect(label).bottomRight),
+          isTrue,
+        );
+      }
+
       expect(find.text('Not eligible for this round'), findsOneWidget);
       expect(find.text('View'), findsOneWidget);
+      expectFullDate('nu7-ineligible', 'Closes Aug 24');
       await tester.drag(
         find.byType(VotingPaneListView),
         const Offset(0, -1200),
       );
       await tester.pumpAndSettle();
       expect(find.text('View results'), findsOneWidget);
+      expectFullDate('snack-governance-voted', 'Closes Aug 24');
+      expectFullDate('snack-governance-closed', 'Aug 24');
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('ineligible detail matches Figma and keeps the existing header', (
+  for (final eligible in [true, false]) {
+    for (final brightness in Brightness.values) {
+      for (final width in [320.0, 393.0]) {
+        testWidgets(
+          'round metadata precedes description: eligible=$eligible, $brightness, width=$width',
+          (tester) async {
+            await _pumpMobileFixture(
+              tester,
+              eligible
+                  ? buildMobileVotingEligibleUseCase
+                  : buildMobileVotingIneligibleUseCase,
+              size: Size(width, 852),
+              brightness: brightness,
+            );
+            final title = find.text('[TEST] Very Serious Snack Governance 3');
+            final description = find.byType(VotingExpandableText).first;
+            final date = find.text('Ends Aug 24, 2026');
+            final remaining = find.textContaining(
+              RegExp(r'^(Ends today|1 day left|\d+ days left)$'),
+            );
+            final power = find.text('Voting power 0.375 ZEC');
+            expect(power, eligible ? findsOneWidget : findsNothing);
+            expect(remaining, findsNothing);
+            for (final label in [date, if (eligible) power]) {
+              expect(label, findsOneWidget);
+              expect(
+                tester.getTopLeft(label).dy,
+                greaterThan(tester.getBottomLeft(title).dy),
+              );
+              expect(
+                tester.getBottomLeft(label).dy,
+                lessThan(tester.getTopLeft(description).dy),
+              );
+              expect(
+                tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
+                isFalse,
+              );
+            }
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    }
+  }
+
+  for (final (builder, message, power) in [
+    (
+      buildMobileVotingPrivacyTrimUseCase,
+      '0.125 ZEC is left out of this vote '
+          'to keep your submission less identifiable.',
+      'Voting power 0.375 ZEC',
+    ),
+    (
+      buildMobileVotingEligibilityErrorUseCase,
+      'Unable to check voting eligibility.',
+      'Voting power unavailable',
+    ),
+  ]) {
+    for (final brightness in Brightness.values) {
+      testWidgets(
+        'notice stays below power and above description: $power, $brightness',
+        (tester) async {
+          await _pumpMobileFixture(
+            tester,
+            builder,
+            size: const Size(320, 852),
+            brightness: brightness,
+          );
+          final notice = find.text(message);
+          final description = find.byType(VotingExpandableText).first;
+          expect(notice, findsOneWidget);
+          expect(
+            tester.getTopLeft(notice).dy,
+            greaterThan(tester.getBottomLeft(find.text(power)).dy),
+          );
+          expect(
+            tester.getBottomLeft(notice).dy,
+            lessThan(tester.getTopLeft(description).dy),
+          );
+          expect(
+            tester.renderObject<RenderParagraph>(notice).didExceedMaxLines,
+            isFalse,
+          );
+          final noticeRect = tester.getRect(notice);
+          final collapsedDescriptionHeight = tester.getSize(description).height;
+          await tester.tap(find.text('Show description'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.getSize(description).height,
+            greaterThan(collapsedDescriptionHeight),
+          );
+          expect(tester.getRect(notice), noticeRect);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('ineligible detail keeps round timing but hides voting power', (
     tester,
   ) async {
     await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
@@ -114,13 +232,18 @@ void main() {
     expect(tester.getTopLeft(badge).dy, 140.5);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 371),
+      const Offset(16, 406),
     );
     expect(find.textContaining('Voting power'), findsNothing);
-    expect(find.textContaining('Ends Aug'), findsNothing);
+    expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'^(Ends today|1 day left|\d+ days left)$')),
+      findsNothing,
+    );
+    expect(find.text('·'), findsNothing);
     expect(tester.getTopLeft(find.text('Show description')).dx, 36);
     final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
-    expect(tester.getTopLeft(option), const Offset(32, 678));
+    expect(tester.getTopLeft(option), const Offset(32, 713));
     expect(tester.getSize(option), const Size(329, 115));
     expect(
       tester
@@ -139,7 +262,7 @@ void main() {
     expect(find.text('Hide description'), findsOneWidget);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 371),
+      const Offset(16, 406),
     );
     await tester.tap(find.text('Hide description'));
     await tester.pumpAndSettle();
@@ -895,6 +1018,7 @@ Future<void> _pumpMobileFixture(
   WidgetBuilder builder, {
   Size size = const Size(393, 852),
   TextScaler textScaler = TextScaler.noScaling,
+  Brightness brightness = Brightness.dark,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -902,9 +1026,11 @@ Future<void> _pumpMobileFixture(
 
   await tester.pumpWidget(
     MaterialApp(
-      theme: ThemeData.dark(),
+      theme: ThemeData(brightness: brightness),
       builder: (context, child) => AppTheme(
-        data: AppThemeData.dark,
+        data: brightness == Brightness.dark
+            ? AppThemeData.dark
+            : AppThemeData.light,
         child: MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
           child: child!,

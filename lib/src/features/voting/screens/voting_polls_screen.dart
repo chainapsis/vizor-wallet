@@ -573,47 +573,41 @@ class _MobilePollStatus extends StatelessWidget {
         : state == _PollCardState.closed
         ? context.colors.text.primary
         : context.colors.text.accent;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Give the status its intrinsic width before allocating the date.
-        // Equal flex shares clip dates even when the full footer would fit.
-        final showDate =
-            displayedDate != null &&
-            constraints.maxWidth >= MediaQuery.textScalerOf(context).scale(160);
-        final status = Text(
-          _statusLabel(state),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelLarge.copyWith(
-            color: statusColor,
-            letterSpacing: -0.04,
-          ),
-        );
-        return Row(
-          children: [
-            if (voted) ...[
+    final status = Text(
+      _statusLabel(state),
+      style: AppTypography.labelLarge.copyWith(
+        color: statusColor,
+        letterSpacing: -0.04,
+      ),
+    );
+    // The parent gives this footer all space left beside the action button.
+    // Use intrinsic text widths on one line, then wrap instead of hiding dates.
+    return Wrap(
+      spacing: 7,
+      runSpacing: AppSpacing.xxs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (voted)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               AppIcon(AppIcons.checkCircle, size: 20, color: statusColor),
               const SizedBox(width: 7),
+              Flexible(child: status),
             ],
-            if (showDate) status else Flexible(child: status),
-            if (showDate) ...[
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  displayedDate,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: context.colors.text.primary,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: -0.04,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        );
-      },
+          )
+        else
+          status,
+        if (displayedDate != null)
+          Text(
+            displayedDate,
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.primary,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.04,
+            ),
+          ),
+      ],
     );
   }
 }

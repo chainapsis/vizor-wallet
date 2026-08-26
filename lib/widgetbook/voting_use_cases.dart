@@ -147,7 +147,35 @@ Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
+Widget buildMobileVotingEligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: true);
+
+Widget buildMobileVotingIneligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: false);
+
+Widget buildMobileVotingPrivacyTrimUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: true,
+      votingEligibilityMessage:
+          '0.125 ZEC is left out of this vote '
+          'to keep your submission less identifiable.',
+    );
+
+Widget buildMobileVotingEligibilityErrorUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: false,
+      eligibilityUnknown: true,
+      votingEligibilityMessage: 'Unable to check voting eligibility.',
+    );
+
+Widget _buildMobileVotingActiveUseCase(
+  BuildContext context, {
+  required bool eligible,
+  bool eligibilityUnknown = false,
+  String? votingEligibilityMessage,
+}) {
   return _mobileVotingFullPagePreview(
     context,
     MobileVotingScaffold(
@@ -162,14 +190,19 @@ Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
             'without using real governance content.',
         forumUri: Uri.parse('https://forum.zcashcommunity.com/t/nsm'),
         endDate: DateTime(2026, 8, 24),
-        votingPowerZatoshi: BigInt.zero,
+        votingPowerZatoshi: eligibilityUnknown
+            ? null
+            : eligible
+            ? BigInt.from(37500000)
+            : BigInt.zero,
         votingPowerPreparing: false,
-        votingEligibilityConfirmed: false,
-        answersEditable: false,
-        votingEligibilityMessage: null,
-        votingEligibilityErrorMessage:
-            'This account did not have enough eligible '
-            'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+        votingEligibilityConfirmed: eligible,
+        answersEditable: eligible,
+        votingEligibilityMessage: votingEligibilityMessage,
+        votingEligibilityErrorMessage: eligible || eligibilityUnknown
+            ? null
+            : 'This account did not have enough eligible '
+                  'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
         onVotingEligibilityRetry: _previewNoop,
         proposals: const [_previewNsmProposal],
         draft: const VotingDraftState(),
