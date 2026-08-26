@@ -100,6 +100,153 @@ void main() {
     });
   }
 
+  testWidgets('ineligible detail matches Figma and keeps the existing header', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
+
+    final header = tester.widget<Text>(find.text('Coinholder voting'));
+    expect(header.style?.fontFamily, 'Young Serif');
+    expect(header.style?.fontSize, 32);
+    final badge = find.byKey(const ValueKey('voting_detail_ineligible_badge'));
+    expect(badge, findsOneWidget);
+    expect(tester.getTopLeft(badge).dy, 140.5);
+    expect(
+      tester.getTopLeft(find.byType(VotingProposalCard)),
+      const Offset(16, 371),
+    );
+    expect(find.textContaining('Voting power'), findsNothing);
+    expect(find.textContaining('Ends Aug'), findsNothing);
+    expect(tester.getTopLeft(find.text('Show description')).dx, 36);
+    final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
+    expect(tester.getTopLeft(option), const Offset(32, 678));
+    expect(tester.getSize(option), const Size(329, 115));
+    expect(
+      tester
+          .widget<Opacity>(
+            find.descendant(of: option, matching: find.byType(Opacity)).first,
+          )
+          .opacity,
+      1,
+    );
+    final label = find.descendant(of: option, matching: find.byType(Text));
+    expect(tester.getSize(label).width, 305);
+    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w400);
+
+    await tester.tap(find.text('Show description'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hide description'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(VotingProposalCard)),
+      const Offset(16, 371),
+    );
+    await tester.tap(find.text('Hide description'));
+    await tester.pumpAndSettle();
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    expect(find.text('Not eligible for this voting round'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voting_selected_choice_indicator')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byType(VotingPaneScrollView),
+      const Offset(0, -1000),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('voting_review_answers_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Not eligible for this voting round'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final scale in [1.0, 1.3]) {
+    testWidgets(
+      'compact ineligible detail expands safely at text scale $scale',
+      (tester) async {
+        await _pumpMobileFixture(
+          tester,
+          buildMobileVotingIneligibleUseCase,
+          size: const Size(320, 667),
+          textScaler: TextScaler.linear(scale),
+        );
+        final card = find.byType(VotingProposalCard);
+        final collapsedTop = tester.getTopLeft(card).dy;
+        await tester.tap(find.text('Show description'));
+        await tester.pumpAndSettle();
+        expect(tester.getTopLeft(card).dy, greaterThan(collapsedTop));
+        expect(find.byType(VotingForumLinkButton), findsOneWidget);
+        await tester.drag(
+          find.byType(VotingPaneScrollView),
+          const Offset(0, -1600),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('voting_review_answers_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Not eligible for this voting round'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'unknown eligibility keeps retry context without an ineligible badge',
+    (tester) async {
+      var retries = 0;
+      await _pumpMobileFixture(
+        tester,
+        (_) => MobileVotingScaffold(
+          title: 'Coinholder voting',
+          child: VotingActivePollContent(
+            showDesktopToolbar: false,
+            roundId: 'retry',
+            title: 'Retry round',
+            snapshotHeight: 100,
+            description: '',
+            forumUri: Uri.parse('https://forum.zcashcommunity.com'),
+            endDate: DateTime(2026, 8, 24),
+            votingPowerZatoshi: null,
+            votingPowerPreparing: false,
+            votingEligibilityConfirmed: false,
+            answersEditable: false,
+            votingEligibilityMessage: 'Unable to check voting eligibility.',
+            votingEligibilityErrorMessage: null,
+            onVotingEligibilityRetry: () => retries++,
+            proposals: const [
+              VotingProposalView(
+                id: 1,
+                title: 'Question',
+                description: '',
+                options: [VotingOptionView(index: 1, label: 'Yes')],
+              ),
+            ],
+            draft: const VotingDraftState(),
+            onChoice: (_, _) =>
+                fail('Unknown eligibility must not accept choices'),
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('voting_detail_ineligible_badge')),
+        findsNothing,
+      );
+      expect(find.text('Unable to check voting eligibility.'), findsOneWidget);
+      expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
+      expect(find.byType(VotingForumLinkButton), findsOneWidget);
+      await tester.tap(find.text('Yes'));
+      await tester.tap(find.text('Retry eligibility'));
+      expect(retries, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('selected proposal matches the mobile card geometry', (
     tester,
   ) async {
@@ -107,7 +254,7 @@ void main() {
 
     final card = find.byType(VotingProposalCard);
     expect(card, findsOneWidget);
-    expect(tester.getSize(card), const Size(361, 477));
+    expect(tester.getSize(card), const Size(361, 562));
     expect(
       find.byKey(const ValueKey('voting_selected_choice_indicator')),
       findsOneWidget,
@@ -347,7 +494,7 @@ void main() {
       firstOptionInkWell.overlayColor?.resolve({WidgetState.focused}),
       isNull,
     );
-    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w500);
+    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w400);
 
     await tester.tap(firstOption);
     await tester.pumpAndSettle();
@@ -356,7 +503,7 @@ void main() {
     expect(tester.getRect(firstOption), initialFirstOptionRect);
     expect(tester.getRect(secondOption), initialSecondOptionRect);
     expect(tester.getRect(label), initialLabelRect);
-    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w500);
+    expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w400);
     expect(
       find.byKey(const ValueKey('voting_selected_choice_indicator')),
       findsOneWidget,
@@ -419,14 +566,14 @@ Future<void> _pumpMobileFixture(
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData.dark(),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      ),
-      home: AppTheme(
+      builder: (context, child) => AppTheme(
         data: AppThemeData.dark,
-        child: Builder(builder: builder),
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        ),
       ),
+      home: Builder(builder: builder),
     ),
   );
   await tester.pumpAndSettle();

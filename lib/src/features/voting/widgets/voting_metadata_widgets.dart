@@ -371,21 +371,17 @@ class _MobileVotingProposalCard extends StatelessWidget {
           ],
           Text(
             proposal.title,
-            style: AppTypography.bodyMedium.copyWith(
+            style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
-              height: 24 / 16,
-              letterSpacing: -0.24,
             ),
           ),
           if (proposal.description.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
             Text(
               proposal.description.trim(),
-              style: AppTypography.bodySmall.copyWith(
+              style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
-                height: 21 / 14,
-                letterSpacing: -0.21,
               ),
             ),
           ],
@@ -443,18 +439,24 @@ class MobileVotingProposalMetadataRow extends StatelessWidget {
             child: Text.rich(
               TextSpan(
                 children: [
-                  for (var index = 0; index < metadataLabels.length; index++)
+                  for (
+                    var index = 0;
+                    index < metadataLabels.length;
+                    index++
+                  ) ...[
+                    if (index > 0)
+                      const WidgetSpan(child: SizedBox(width: AppSpacing.xs)),
                     TextSpan(
-                      text:
-                          '${index == 0 ? '' : '   '}${metadataLabels[index]}',
-                      style: AppTypography.bodySmall.copyWith(
+                      text: metadataLabels[index],
+                      style: AppTypography.labelLarge.copyWith(
                         color: index < zipBadges.length
                             ? context.colors.text.primary
                             : context.colors.text.secondary,
-                        height: 16 / 14,
-                        letterSpacing: -0.06,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: -0.04,
                       ),
                     ),
+                  ],
                 ],
               ),
               maxLines: 1,
@@ -492,8 +494,9 @@ class _MobileVotingProposalOption extends StatelessWidget {
     final colors = context.colors;
     final interactive = enabled && !readOnly;
     final description = option.description.trim();
+    final ineligiblePreview = !enabled && onDisabledTap != null;
     return Opacity(
-      opacity: enabled || readOnly ? 1 : 0.56,
+      opacity: enabled || readOnly || ineligiblePreview ? 1 : 0.56,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadii.medium),
         splashFactory: NoSplash.splashFactory,
@@ -507,10 +510,16 @@ class _MobileVotingProposalOption extends StatelessWidget {
             ? null
             : onDisabledTap,
         child: Container(
-          constraints: BoxConstraints(minHeight: description.isEmpty ? 48 : 94),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: 20,
+          ),
           decoration: BoxDecoration(
             color: colors.background.base,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
+          // Paint selection inside the existing bounds without moving text.
+          foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadii.medium),
             border: Border.all(
               color: selected ? colors.border.strong : Colors.transparent,
@@ -525,38 +534,35 @@ class _MobileVotingProposalOption extends StatelessWidget {
                   Expanded(
                     child: Text(
                       option.label,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.accent,
-                        fontWeight: FontWeight.w500,
-                        height: 16 / 14,
-                        letterSpacing: -0.06,
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                  SizedBox.square(
-                    dimension: 20,
-                    child: selected
-                        ? AppIcon(
-                            AppIcons.checkCircle,
-                            key: const ValueKey(
-                              'voting_selected_choice_indicator',
-                            ),
-                            size: 20,
-                            color: colors.icon.accent,
-                          )
-                        : null,
-                  ),
+                  if (!ineligiblePreview) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    SizedBox.square(
+                      dimension: 20,
+                      child: selected
+                          ? AppIcon(
+                              AppIcons.checkCircle,
+                              key: const ValueKey(
+                                'voting_selected_choice_indicator',
+                              ),
+                              size: 20,
+                              color: colors.icon.accent,
+                            )
+                          : null,
+                    ),
+                  ],
                 ],
               ),
               if (description.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   description,
-                  style: AppTypography.bodySmall.copyWith(
+                  style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.primary,
-                    height: 21 / 14,
-                    letterSpacing: -0.21,
                   ),
                 ),
               ],
@@ -689,6 +695,7 @@ class VotingExpandableText extends StatefulWidget {
     this.expandedLabel = 'View less',
     this.buttonAlignment = Alignment.centerRight,
     this.showToggleWhenNotOverflowing = false,
+    this.controlsBuilder,
     super.key,
   });
 
@@ -699,6 +706,7 @@ class VotingExpandableText extends StatefulWidget {
   final String expandedLabel;
   final AlignmentGeometry buttonAlignment;
   final bool showToggleWhenNotOverflowing;
+  final Widget Function(bool expanded, VoidCallback onToggle)? controlsBuilder;
 
   @override
   State<VotingExpandableText> createState() => _VotingExpandableTextState();
@@ -743,7 +751,12 @@ class _VotingExpandableTextState extends State<VotingExpandableText> {
                   : TextOverflow.ellipsis,
               style: widget.style,
             ),
-            if (showToggle)
+            if (showToggle && widget.controlsBuilder != null)
+              widget.controlsBuilder!(
+                _expanded,
+                () => setState(() => _expanded = !_expanded),
+              )
+            else if (showToggle)
               Align(
                 alignment: widget.buttonAlignment,
                 child: _VotingViewMoreButton(

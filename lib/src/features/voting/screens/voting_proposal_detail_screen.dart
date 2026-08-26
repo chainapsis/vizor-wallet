@@ -193,7 +193,7 @@ class _VotingProposalDetailViewState
             ? false
             : isVotingEligibilityErrorText(votingError.message);
         _maybePrecomputeDelegationPir(state);
-        return _ActivePollContent(
+        return VotingActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
           roundId: roundId,
           title: round.title.isEmpty ? 'Token holder voting' : round.title,
@@ -392,8 +392,10 @@ String? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
       'to keep your submission less identifiable.';
 }
 
-class _ActivePollContent extends StatefulWidget {
-  const _ActivePollContent({
+/// Session-free presentation shared by the live route and deterministic previews.
+class VotingActivePollContent extends StatefulWidget {
+  const VotingActivePollContent({
+    super.key,
     required this.showDesktopToolbar,
     required this.roundId,
     required this.title,
@@ -436,10 +438,10 @@ class _ActivePollContent extends StatefulWidget {
   final void Function(int proposalId, int? choice) onChoice;
 
   @override
-  State<_ActivePollContent> createState() => _ActivePollContentState();
+  State<VotingActivePollContent> createState() => _ActivePollContentState();
 }
 
-class _ActivePollContentState extends State<_ActivePollContent> {
+class _ActivePollContentState extends State<VotingActivePollContent> {
   Future<void> _showIneligibleDialog() async {
     final message = widget.votingEligibilityErrorMessage;
     if (message == null) return;
@@ -485,6 +487,21 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   }
 
   Widget _buildPollSummary() {
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return _MobilePollSummary(
+        title: widget.title,
+        snapshotHeight: widget.snapshotHeight,
+        description: widget.description,
+        forumUri: widget.forumUri,
+        isIneligible:
+            !widget.votingEligibilityConfirmed &&
+            widget.votingEligibilityErrorMessage != null,
+        endDate: widget.endDate,
+        votingPowerZatoshi: widget.votingPowerZatoshi,
+        votingPowerPreparing: widget.votingPowerPreparing,
+        votingEligibilityMessage: widget.votingEligibilityMessage,
+      );
+    }
     return _PollSummary(
       title: widget.title,
       snapshotHeight: widget.snapshotHeight,
@@ -537,7 +554,7 @@ class _ActivePollContentState extends State<_ActivePollContent> {
       maxWidth: 560,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.sm,
+        AppSpacing.s,
         AppSpacing.sm,
         AppSpacing.md,
       ),
@@ -843,6 +860,166 @@ class _IneligiblePollDialog extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MobilePollSummary extends StatelessWidget {
+  const _MobilePollSummary({
+    required this.title,
+    required this.snapshotHeight,
+    required this.description,
+    required this.forumUri,
+    required this.isIneligible,
+    required this.endDate,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
+    required this.votingEligibilityMessage,
+  });
+
+  final String title;
+  final int snapshotHeight;
+  final String description;
+  final Uri? forumUri;
+  final bool isIneligible;
+  final DateTime? endDate;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
+  final String? votingEligibilityMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final forum = forumUri == null
+        ? null
+        : VotingForumLinkButton(uri: forumUri!, mobilePollList: true);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            Text(
+              '#${formatGroupedInteger(snapshotHeight)}',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+                letterSpacing: -0.04,
+              ),
+            ),
+            if (isIneligible)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.warning,
+                    size: 20,
+                    color: colors.text.destructive,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'Not eligible',
+                    key: const ValueKey('voting_detail_ineligible_badge'),
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.destructive,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -0.04,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          title,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        if (description.trim().isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          VotingExpandableText(
+            text: description,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
+            ),
+            showToggleWhenNotOverflowing: true,
+            controlsBuilder: (expanded, onToggle) => Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  AppButton(
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.small,
+                    contentPadding: EdgeInsets.zero,
+                    onPressed: onToggle,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AppIcon(AppIcons.expand, size: 16),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Text(
+                          expanded ? 'Hide description' : 'Show description',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: -0.04,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ?forum,
+                ],
+              ),
+            ),
+          ),
+        ] else if (forum != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Align(alignment: Alignment.centerRight, child: forum),
+        ],
+        // Keep power, timing, loading, and retry context for eligible or unknown
+        // accounts. The confirmed-ineligible design replaces it with the badge.
+        if (!isIneligible) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xxs,
+            children: [
+              _MetaText(
+                endDate == null
+                    ? 'Voting active'
+                    : 'Ends ${formatMonthDayYear(endDate!)}',
+              ),
+              const _MetaText('·'),
+              _VotingPowerMeta(
+                zatoshi: votingPowerZatoshi,
+                preparing: votingPowerPreparing,
+              ),
+              if (endDate != null) ...[
+                const _MetaText('·'),
+                _MetaText(_daysLeftLabel(endDate!)),
+              ],
+            ],
+          ),
+          if (votingEligibilityMessage != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              votingEligibilityMessage!,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ],
+        ],
+      ],
     );
   }
 }

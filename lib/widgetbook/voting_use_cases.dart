@@ -130,6 +130,64 @@ Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingIneligibleUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingScaffold(
+      title: 'Coinholder voting',
+      child: VotingActivePollContent(
+        showDesktopToolbar: false,
+        roundId: 'preview-nsm',
+        title: '[TEST] Very Serious Snack Governance 3',
+        snapshotHeight: 3543600,
+        description:
+            'A silly sample round for testing the shielded vote builder '
+            'without using real governance content.',
+        forumUri: Uri.parse('https://forum.zcashcommunity.com/t/nsm'),
+        endDate: DateTime(2026, 8, 24),
+        votingPowerZatoshi: BigInt.zero,
+        votingPowerPreparing: false,
+        votingEligibilityConfirmed: false,
+        answersEditable: false,
+        votingEligibilityMessage: null,
+        votingEligibilityErrorMessage:
+            'This account did not have enough eligible '
+            'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+        onVotingEligibilityRetry: _previewNoop,
+        proposals: const [_previewNsmProposal],
+        draft: const VotingDraftState(),
+        onChoice: (_, _) {},
+      ),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
+const _previewNsmProposal = VotingProposalView(
+  id: 1,
+  title: 'NSM Issuance Smoothing',
+  zipNumber: 'ZIP-233 ZIP-234',
+  description:
+      'The component of the Network Sustainability Mechanism that removes '
+      'ZEC from circulation is already approved. How that ZEC is recycled into '
+      'future block rewards remains unresolved. In no case will the total supply '
+      'of ZEC be affected.\n\nWhich approach do you support?',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label:
+          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
+    ),
+    VotingOptionView(
+      index: 2,
+      label:
+          'Delay NU7 until every applicable feature approved in this poll is deemed',
+    ),
+    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
+    VotingOptionView(index: 4, label: 'Abstain'),
+  ],
+);
+
 Widget buildMobileVotingProposalSelectedUseCase(BuildContext context) {
   return const MobileVotingScaffold(
     title: 'Coinholder voting',
