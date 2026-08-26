@@ -300,8 +300,10 @@ pub fn share_server_selection_policy(
 ///
 /// Ready helpers must lead `ranked_server_urls` in response order. Configured
 /// helpers that missed the progressive probe deadline follow in stable order.
-/// `previously_selected_server_urls` carries one entry per prior accepted
-/// assignment for the same commitment so resumed work preserves the cap.
+/// `previously_selected_server_urls` carries one entry per prior attempt for
+/// the same commitment so resumed work preserves the cap.
+/// `previously_attempted_server_urls_by_share` keeps ambiguous attempts behind
+/// helpers untried for that share.
 /// `previously_accepted_server_urls_by_share` identifies prior acceptances for
 /// each share being planned so partial shares request only their remaining
 /// targets.
@@ -311,15 +313,17 @@ pub fn ranked_share_submission_server_candidates(
     share_count: u32,
     ranked_server_urls: Vec<String>,
     previously_selected_server_urls: Vec<String>,
+    previously_attempted_server_urls_by_share: Vec<Vec<String>>,
     previously_accepted_server_urls_by_share: Vec<Vec<String>>,
 ) -> Result<Vec<zcash_voting::share_policy::ShareServerCandidatePlan>, String> {
     catch(|| {
         let share_count = usize::try_from(share_count)
             .map_err(|_| "share_count does not fit in usize".to_string())?;
-        zcash_voting::share_policy::ranked_share_submission_server_candidates_with_usage(
+        zcash_voting::share_policy::ranked_share_submission_server_candidates_with_attempts(
             share_count,
             &ranked_server_urls,
             &previously_selected_server_urls,
+            &previously_attempted_server_urls_by_share,
             &previously_accepted_server_urls_by_share,
         )
         .map_err(|e| e.to_string())
@@ -2557,6 +2561,7 @@ mod tests {
             2,
             servers.clone(),
             Vec::new(),
+            vec![Vec::new(); 2],
             vec![Vec::new(); 2],
         )
         .unwrap();

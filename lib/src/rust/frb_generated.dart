@@ -960,6 +960,7 @@ abstract class RustLibApi extends BaseApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   });
 
@@ -6946,6 +6947,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
     return handler.executeSync(
@@ -6955,6 +6957,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(shareCount, serializer);
           sse_encode_list_String(rankedServerUrls, serializer);
           sse_encode_list_String(previouslySelectedServerUrls, serializer);
+          sse_encode_list_list_String(
+            previouslyAttemptedServerUrlsByShare,
+            serializer,
+          );
           sse_encode_list_list_String(
             previouslyAcceptedServerUrlsByShare,
             serializer,
@@ -6975,6 +6981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           shareCount,
           rankedServerUrls,
           previouslySelectedServerUrls,
+          previouslyAttemptedServerUrlsByShare,
           previouslyAcceptedServerUrlsByShare,
         ],
         apiImpl: this,
@@ -6990,6 +6997,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "shareCount",
           "rankedServerUrls",
           "previouslySelectedServerUrls",
+          "previouslyAttemptedServerUrlsByShare",
           "previouslyAcceptedServerUrlsByShare",
         ],
       );

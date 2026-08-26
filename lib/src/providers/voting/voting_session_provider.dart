@@ -1606,6 +1606,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         for (final priorShare in priorShares)
           priorShare.shareIndex: priorShare.attemptedServerUrls,
       };
+      final previouslyAttemptedServerUrlsByShare = [
+        for (final share in shares)
+          previouslyAttemptedServersByShareIndex[share.shareIndex] ??
+              const <String>[],
+      ];
       final priorSubmitAtByShareIndex = {
         for (final priorShare in priorShares)
           priorShare.shareIndex: priorShare.submitAt,
@@ -1618,6 +1623,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             for (final serverUrl in priorShare.attemptedServerUrls.toSet())
               serverUrl,
         ],
+        previouslyAttemptedServerUrlsByShare:
+            previouslyAttemptedServerUrlsByShare,
         previouslyAcceptedServerUrlsByShare:
             previouslyAcceptedServerUrlsByShare,
       );

@@ -69,11 +69,12 @@ class ShareServerCandidatePlan {
 /// expires. Pass ready helpers to
 /// [`ranked_share_submission_server_candidates`] in response order, followed by
 /// the remaining configured helpers. When resuming interrupted work, use
-/// [`ranked_share_submission_server_candidates_with_usage`] so prior accepted
-/// assignments still count toward the privacy cap. Treat a timed-out share POST
-/// as ambiguous because the helper may have accepted it before the response was
-/// lost. Continue with the next candidate instead of immediately retrying the
-/// same helper; overdue recovery can revisit it later if needed.
+/// [`ranked_share_submission_server_candidates_with_attempts`] so prior
+/// attempts still count toward the privacy cap and each share tries untried
+/// helpers first. Treat a timed-out share POST as ambiguous because the helper
+/// may have accepted it before the response was lost. Continue with the next
+/// candidate instead of immediately retrying the same helper; overdue recovery
+/// can revisit it later if needed.
 class ShareServerSelectionPolicy {
   /// Number of helpers each share should reach.
   final int targetCount;

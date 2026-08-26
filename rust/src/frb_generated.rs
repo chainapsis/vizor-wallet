@@ -5285,6 +5285,8 @@ fn wire__crate__api__voting__ranked_share_submission_server_candidates_impl(
             let api_share_count = <u32>::sse_decode(&mut deserializer);
             let api_ranked_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
             let api_previously_selected_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_previously_attempted_server_urls_by_share =
+                <Vec<Vec<String>>>::sse_decode(&mut deserializer);
             let api_previously_accepted_server_urls_by_share =
                 <Vec<Vec<String>>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -5293,6 +5295,7 @@ fn wire__crate__api__voting__ranked_share_submission_server_candidates_impl(
                     api_share_count,
                     api_ranked_server_urls,
                     api_previously_selected_server_urls,
+                    api_previously_attempted_server_urls_by_share,
                     api_previously_accepted_server_urls_by_share,
                 )?;
                 Ok(output_ok)

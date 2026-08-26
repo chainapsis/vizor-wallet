@@ -5552,6 +5552,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
     final targetCount = rankedServerUrls.length > 5

@@ -184,9 +184,9 @@ items_after_test_module = "allow"
 assertions_on_constants = "allow"
 
 [patch.crates-io]
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "fae54dcb40b472d3bb6a1a0850ec0ddbc2c23d4e" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "fae54dcb40b472d3bb6a1a0850ec0ddbc2c23d4e" }
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "fae54dcb40b472d3bb6a1a0850ec0ddbc2c23d4e" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f34bfbf5a6578879ff14853db0d1d189bbd154cb" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f34bfbf5a6578879ff14853db0d1d189bbd154cb" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f34bfbf5a6578879ff14853db0d1d189bbd154cb" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default

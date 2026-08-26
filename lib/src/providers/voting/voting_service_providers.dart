@@ -528,6 +528,7 @@ abstract interface class VotingRustApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   });
 
@@ -971,12 +972,15 @@ class FrbVotingRustApi implements VotingRustApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
     return rust_api.rankedShareSubmissionServerCandidates(
       shareCount: shareCount,
       rankedServerUrls: rankedServerUrls,
       previouslySelectedServerUrls: previouslySelectedServerUrls,
+      previouslyAttemptedServerUrlsByShare:
+          previouslyAttemptedServerUrlsByShare,
       previouslyAcceptedServerUrlsByShare: previouslyAcceptedServerUrlsByShare,
     );
   }

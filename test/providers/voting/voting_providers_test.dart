@@ -5523,6 +5523,9 @@ void main() {
     expect(rust.rankedCandidatePreviousSelections.first, [
       'https://voting.example',
     ]);
+    expect(rust.rankedCandidatePreviousAttemptsByShare.first, [
+      <String>[],
+    ]);
     expect(rust.rankedCandidatePreviousSelectionsByShare.first, [<String>[]]);
     expect(
       rust.recordedShares
@@ -6380,6 +6383,9 @@ void main() {
     expect(sharePosts, hasLength(3));
     expect(rust.rankedCandidatePreviousSelectionsByShare.single, [
       previouslyAccepted,
+    ]);
+    expect(rust.rankedCandidatePreviousAttemptsByShare.single, [
+      previouslyAttempted,
     ]);
     expect(rust.rankedCandidatePreviousSelections.single, previouslyAttempted);
     expect(
@@ -10128,6 +10134,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final planSingleShareValues = <bool>[];
   final planImmediateShareIndexes = <int?>[];
   final rankedCandidatePreviousSelections = <List<String>>[];
+  final rankedCandidatePreviousAttemptsByShare = <List<List<String>>>[];
   final rankedCandidatePreviousSelectionsByShare = <List<List<String>>>[];
   final accountUuids = <String>[];
   final confirmedShares = <String>[];
@@ -10869,11 +10876,16 @@ class FakeVotingRustApi implements VotingRustApi {
     required int shareCount,
     required List<String> rankedServerUrls,
     required List<String> previouslySelectedServerUrls,
+    required List<List<String>> previouslyAttemptedServerUrlsByShare,
     required List<List<String>> previouslyAcceptedServerUrlsByShare,
   }) {
     rankedCandidatePreviousSelections.add(
       List<String>.of(previouslySelectedServerUrls),
     );
+    rankedCandidatePreviousAttemptsByShare.add([
+      for (final serverUrls in previouslyAttemptedServerUrlsByShare)
+        List<String>.of(serverUrls, growable: false),
+    ]);
     rankedCandidatePreviousSelectionsByShare.add([
       for (final serverUrls in previouslyAcceptedServerUrlsByShare)
         List<String>.of(serverUrls, growable: false),
