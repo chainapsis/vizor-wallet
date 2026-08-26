@@ -532,7 +532,7 @@ abstract interface class VotingRustApi {
 
   Future<List<String>> shareResubmissionServerOrder({
     required List<String> configuredServerUrls,
-    required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
   });
 
   BigInt? lastMomentBufferSeconds({
@@ -592,7 +592,18 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
     required BigInt submitAt,
+  });
+
+  Future<void> addAttemptedServers({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required List<String> newUrls,
   });
 
   Future<void> markShareConfirmed({
@@ -969,11 +980,11 @@ class FrbVotingRustApi implements VotingRustApi {
   @override
   Future<List<String>> shareResubmissionServerOrder({
     required List<String> configuredServerUrls,
-    required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
   }) {
     return rust_api.shareResubmissionServerOrder(
       configuredServerUrls: configuredServerUrls,
-      sentToUrls: sentToUrls,
+      attemptedServerUrls: attemptedServerUrls,
     );
   }
 
@@ -1091,6 +1102,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
     required BigInt submitAt,
   }) {
     return rust_api.recordShareDelegation(
@@ -1101,7 +1113,29 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       sentToUrls: sentToUrls,
+      attemptedServerUrls: attemptedServerUrls,
       submitAt: submitAt,
+    );
+  }
+
+  @override
+  Future<void> addAttemptedServers({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required List<String> newUrls,
+  }) {
+    return rust_api.addAttemptedServers(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+      newUrls: newUrls,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -986,6 +987,7 @@ void main() {
               proposalId: 7,
               shareIndex: 0,
               sentToUrls: const ['https://voting.example'],
+              attemptedServerUrls: const ['https://voting.example'],
               nullifier: Uint8List.fromList(List.filled(32, 1)),
               phase: VotingWorkflowPhase.submittedShare,
               confirmed: false,
@@ -1000,6 +1002,7 @@ void main() {
               proposalId: 7,
               shareIndex: 0,
               sentToUrls: const ['https://voting.example'],
+              attemptedServerUrls: const ['https://voting.example'],
               nullifier: Uint8List.fromList(List.filled(32, 1)),
               phase: VotingWorkflowPhase.submittedShare,
               confirmed: false,
@@ -3571,6 +3574,7 @@ void main() {
         proposalId: 7,
         shareIndex: 0,
         sentToUrls: const ['https://helper-a.example'],
+        attemptedServerUrls: const ['https://helper-a.example'],
         nullifier: shareNullifier,
         phase: VotingWorkflowPhase.submittedShare,
         confirmed: false,
@@ -3632,6 +3636,7 @@ void main() {
         proposalId: 7,
         shareIndex: 0,
         sentToUrls: const ['https://helper-a.example'],
+        attemptedServerUrls: const ['https://helper-a.example'],
         nullifier: shareNullifier,
         phase: VotingWorkflowPhase.submittedShare,
         confirmed: false,
@@ -3718,6 +3723,7 @@ void main() {
         proposalId: 7,
         shareIndex: 0,
         sentToUrls: const ['https://helper-a.example'],
+        attemptedServerUrls: const ['https://helper-a.example'],
         nullifier: Uint8List.fromList(List.filled(32, 1)),
         phase: VotingWorkflowPhase.submittedShare,
         confirmed: false,
@@ -3793,6 +3799,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const [],
+      attemptedServerUrls: const [],
       nullifier: Uint8List.fromList(List.filled(32, 1)),
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -5418,6 +5425,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const ['https://voting.example'],
+      attemptedServerUrls: const ['https://voting.example'],
       nullifier: Uint8List.fromList(List.filled(32, 1)),
       phase: VotingWorkflowPhase.confirmed,
       confirmed: true,
@@ -6168,11 +6176,14 @@ void main() {
         const Duration(seconds: 1),
       );
       expect(http.startedShareIndexes, {0, 1, 2});
-      await _waitForRecordedShareCount(rust, 2);
-      expect(rust.recordedShares.map((share) => share.shareIndex).toSet(), {
-        0,
-        1,
-      });
+      await _waitForAcceptedRecordedShareCount(rust, 2);
+      expect(
+        rust.recordedShares
+            .where((share) => share.sentToUrls.isNotEmpty)
+            .map((share) => share.shareIndex)
+            .toSet(),
+        {0, 1},
+      );
 
       http.releaseSharePosts.complete();
       await cast;
@@ -6230,11 +6241,12 @@ void main() {
     expect(rust.recordedShares.single.sentToUrls, [helperB, helperA]);
   });
 
-  test('share resume sends only the shared remaining helper target', () async {
+  test('share resume excludes an ambiguously attempted helper', () async {
     final serverUrls = [
-      for (var i = 1; i <= 5; i++) 'https://helper-$i.example',
+      for (var i = 1; i <= 6; i++) 'https://helper-$i.example',
     ];
     final previouslyAccepted = serverUrls.take(2).toList(growable: false);
+    final previouslyAttempted = serverUrls.take(3).toList(growable: false);
     final http = FakeVotingHttpClient(
       responses: votingHttpResponses(
         dynamicConfig: dynamicConfigJson(
@@ -6249,7 +6261,7 @@ void main() {
       rankedCandidatePlans: [
         rust_share_policy.ShareServerCandidatePlan(
           remainingTargetCount: 3,
-          candidateServers: serverUrls.skip(2).toList(growable: false),
+          candidateServers: serverUrls.skip(3).toList(growable: false),
         ),
       ],
     );
@@ -6259,6 +6271,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: previouslyAccepted,
+      attemptedServerUrls: previouslyAttempted,
       nullifier: Uint8List.fromList(List.filled(32, 1)),
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -6325,11 +6338,16 @@ void main() {
     expect(rust.rankedCandidatePreviousSelectionsByShare.single, [
       previouslyAccepted,
     ]);
+    expect(rust.rankedCandidatePreviousSelections.single, previouslyAttempted);
     expect(
       sharePosts.map((request) => request.body!['submit_at']),
       everyElement(123),
     );
-    expect(rust.recordedShares.single.sentToUrls, serverUrls);
+    expect(rust.recordedShares.single.sentToUrls, [
+      ...previouslyAccepted,
+      ...serverUrls.skip(3),
+    ]);
+    expect(rust.recordedShares.single.attemptedServerUrls, serverUrls);
     expect(rust.recordedShares.single.submitAt, BigInt.from(123));
   });
 
@@ -6499,7 +6517,6 @@ void main() {
     expect(session.error?.message, contains('No vote server accepted share'));
     expect(rust.storedVoteTxHashes, ['0:7:vote-tx']);
     expect(rust.storedCommitmentBundles, ['0:7:2']);
-    expect(rust.recordedShares, isEmpty);
     final postTimeouts = http.requests
         .where(
           (request) =>
@@ -6514,6 +6531,15 @@ void main() {
       everyElement(const Duration(milliseconds: 30)),
     );
     expect(postTimeouts.last, lessThan(const Duration(milliseconds: 30)));
+    expect(rust.recordedShares, hasLength(1));
+    expect(rust.recordedShares.single.sentToUrls, isEmpty);
+    expect(rust.recordedShares.single.attemptedServerUrls, hasLength(6));
+    expect(
+      rust.attemptedServerAdds.expand((addition) => addition.newUrls),
+      unorderedEquals([
+        for (var i = 1; i <= 6; i++) 'https://helper-$i.example',
+      ]),
+    );
   });
 
   test('vote commitment validates all shares before submission', () async {
@@ -7171,6 +7197,7 @@ void main() {
         proposalId: 7,
         shareIndex: 0,
         sentToUrls: const ['https://helper-a.example'],
+        attemptedServerUrls: const ['https://helper-a.example'],
         nullifier: Uint8List.fromList(List.filled(32, 1)),
         phase: VotingWorkflowPhase.submittedShare,
         confirmed: false,
@@ -7224,6 +7251,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const ['https://helper-a.example'],
+      attemptedServerUrls: const ['https://helper-a.example'],
       nullifier: Uint8List.fromList(List.filled(32, 1)),
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -7275,6 +7303,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const ['https://helper-a.example'],
+      attemptedServerUrls: const ['https://helper-a.example'],
       nullifier: Uint8List.fromList(List.filled(32, 2)),
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -7390,6 +7419,11 @@ void main() {
         'https://helper-a.example',
         'https://helper-b.example',
       ],
+      attemptedServerUrls: const [
+        'https://removed-helper.example',
+        'https://helper-a.example',
+        'https://helper-b.example',
+      ],
       nullifier: shareNullifier,
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -7469,6 +7503,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const ['https://helper-a.example'],
+      attemptedServerUrls: const ['https://helper-a.example'],
       nullifier: shareNullifier,
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -7541,6 +7576,7 @@ void main() {
         proposalId: 7,
         shareIndex: 0,
         sentToUrls: const ['https://helper-a.example'],
+        attemptedServerUrls: const ['https://helper-a.example'],
         nullifier: shareNullifier,
         phase: VotingWorkflowPhase.submittedShare,
         confirmed: false,
@@ -7612,6 +7648,7 @@ void main() {
       proposalId: 7,
       shareIndex: 0,
       sentToUrls: const ['https://helper-a.example'],
+      attemptedServerUrls: const ['https://helper-a.example'],
       nullifier: shareNullifier,
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -8182,17 +8219,23 @@ class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
   }
 }
 
-Future<void> _waitForRecordedShareCount(
+Future<void> _waitForAcceptedRecordedShareCount(
   FakeVotingRustApi rust,
   int expectedCount,
 ) async {
   for (var i = 0; i < 100; i++) {
-    if (rust.recordedShares.length >= expectedCount) return;
+    final acceptedCount = rust.recordedShares
+        .where((share) => share.sentToUrls.isNotEmpty)
+        .length;
+    if (acceptedCount >= expectedCount) return;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
+  final acceptedCount = rust.recordedShares
+      .where((share) => share.sentToUrls.isNotEmpty)
+      .length;
   fail(
-    'Timed out waiting for $expectedCount recorded shares. '
-    'Saw ${rust.recordedShares.length}.',
+    'Timed out waiting for $expectedCount accepted share records. '
+    'Saw $acceptedCount.',
   );
 }
 
@@ -9877,6 +9920,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final operationLog = <String>[];
   final recordedShares = <_RecordedShare>[];
   final recordShareAttempts = <int>[];
+  final attemptedServerAdds = <_AddedSentServers>[];
   final syncedVoteTrees = <String>[];
   final syncedVoteTreeNodeUrls = <String>[];
   final precomputedDelegationPir = <int>[];
@@ -10680,7 +10724,7 @@ class FakeVotingRustApi implements VotingRustApi {
   @override
   Future<List<String>> shareResubmissionServerOrder({
     required List<String> configuredServerUrls,
-    required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
   }) async {
     shareResubmissionConfiguredServerUrls.add(
       List<String>.of(configuredServerUrls),
@@ -10690,10 +10734,10 @@ class FakeVotingRustApi implements VotingRustApi {
     }
     final error = shareResubmissionError;
     if (error != null) throw error;
-    final sent = sentToUrls.toSet();
+    final attempted = attemptedServerUrls.toSet();
     return [
-      ...configuredServerUrls.where((url) => !sent.contains(url)),
-      ...configuredServerUrls.where(sent.contains),
+      ...configuredServerUrls.where((url) => !attempted.contains(url)),
+      ...configuredServerUrls.where(attempted.contains),
     ];
   }
 
@@ -10917,21 +10961,70 @@ class FakeVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
     required BigInt submitAt,
   }) async {
-    recordShareAttempts.add(shareIndex);
+    _addUnique(recordShareAttempts, shareIndex);
     if (failingRecordShareIndexes.contains(shareIndex)) {
       throw StateError('share persistence failed $shareIndex');
     }
-    operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
-    recordedShares.add(
-      _RecordedShare(
-        bundleIndex: bundleIndex,
-        proposalId: proposalId,
-        shareIndex: shareIndex,
-        submitAt: submitAt,
-        sentToUrls: sentToUrls,
+    final recorded = _RecordedShare(
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+      submitAt: submitAt,
+      sentToUrls: List<String>.of(sentToUrls, growable: false),
+      attemptedServerUrls: List<String>.of(
+        attemptedServerUrls,
+        growable: false,
       ),
+    );
+    final existingIndex = recordedShares.indexWhere(
+      (share) =>
+          share.bundleIndex == bundleIndex &&
+          share.proposalId == proposalId &&
+          share.shareIndex == shareIndex,
+    );
+    if (existingIndex == -1) {
+      operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
+      recordedShares.add(recorded);
+    } else {
+      recordedShares[existingIndex] = recorded;
+    }
+  }
+
+  @override
+  Future<void> addAttemptedServers({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required List<String> newUrls,
+  }) async {
+    attemptedServerAdds.add(
+      _AddedSentServers(bundleIndex, proposalId, shareIndex, newUrls),
+    );
+    final existingIndex = recordedShares.indexWhere(
+      (share) =>
+          share.bundleIndex == bundleIndex &&
+          share.proposalId == proposalId &&
+          share.shareIndex == shareIndex,
+    );
+    if (existingIndex == -1) {
+      return;
+    }
+    final existing = recordedShares[existingIndex];
+    final attempted = LinkedHashSet<String>.of(existing.attemptedServerUrls)
+      ..addAll(newUrls);
+    recordedShares[existingIndex] = _RecordedShare(
+      bundleIndex: existing.bundleIndex,
+      proposalId: existing.proposalId,
+      shareIndex: existing.shareIndex,
+      submitAt: existing.submitAt,
+      sentToUrls: existing.sentToUrls,
+      attemptedServerUrls: attempted.toList(growable: false),
     );
   }
 
@@ -10977,6 +11070,7 @@ class _RecordedShare {
     required this.shareIndex,
     required this.submitAt,
     required this.sentToUrls,
+    required this.attemptedServerUrls,
   });
 
   final int bundleIndex;
@@ -10984,6 +11078,7 @@ class _RecordedShare {
   final int shareIndex;
   final BigInt submitAt;
   final List<String> sentToUrls;
+  final List<String> attemptedServerUrls;
 }
 
 List<rust_wire.DraftVote> _twoProposalDrafts() => [

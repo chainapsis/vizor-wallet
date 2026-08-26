@@ -1542,6 +1542,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       bundleIndex: commitments.bundleIndex,
       bundleCount: context.resumePlan.bundleCount,
     );
+    final shareAttemptPersistencePool = _AsyncPermitPool(1);
 
     for (final commitment in commitments.commitments) {
       final shares = shareIndexFilter == null
@@ -1584,6 +1585,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         for (var i = 0; i < shares.length; i++)
           shares[i].shareIndex: previouslyAcceptedServerUrlsByShare[i],
       };
+      final previouslyAttemptedServersByShareIndex = {
+        for (final priorShare in priorShares)
+          priorShare.shareIndex: priorShare.attemptedServerUrls,
+      };
       final priorSubmitAtByShareIndex = {
         for (final priorShare in priorShares)
           priorShare.shareIndex: priorShare.submitAt,
@@ -1593,7 +1598,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         rankedServerUrls: rankedServerUrls,
         previouslySelectedServerUrls: [
           for (final priorShare in priorShares)
-            for (final serverUrl in priorShare.sentToUrls.toSet()) serverUrl,
+            for (final serverUrl in priorShare.attemptedServerUrls.toSet())
+              serverUrl,
         ],
         previouslyAcceptedServerUrlsByShare:
             previouslyAcceptedServerUrlsByShare,
@@ -1661,6 +1667,39 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
+      // Create each durable share row before the first POST. Individual helper
+      // assignments are appended immediately before their request starts.
+      final persistedSubmissions = <_PreparedInitialShareSubmission>[];
+      Object? persistenceError;
+      StackTrace? persistenceStackTrace;
+      for (final prepared in preparedSubmissions) {
+        try {
+          await rust.recordShareDelegation(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+            bundleIndex: commitments.bundleIndex,
+            proposalId: prepared.share.proposalId,
+            shareIndex: prepared.share.shareIndex,
+            sentToUrls:
+                previouslyAcceptedServersByShareIndex[prepared
+                    .share
+                    .shareIndex] ??
+                const <String>[],
+            attemptedServerUrls:
+                previouslyAttemptedServersByShareIndex[prepared
+                    .share
+                    .shareIndex] ??
+                const <String>[],
+            submitAt: prepared.submitAt,
+          );
+          persistedSubmissions.add(prepared);
+        } catch (error, stackTrace) {
+          persistenceError ??= error;
+          persistenceStackTrace ??= stackTrace;
+        }
+      }
+
       final deliveryBudget = _InitialShareDeliveryBudget(
         Duration(
           milliseconds: helperSelectionPolicy.initialDeliveryTimeoutMilliseconds
@@ -1674,7 +1713,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
       );
       final submissions = [
-        for (final prepared in preparedSubmissions)
+        for (final prepared in persistedSubmissions)
           _submitInitialShareToHelpers(
             api: api,
             helperHealth: helperHealth,
@@ -1686,11 +1725,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperPostPool: helperPostPool,
             helperPostTimeout: helperPostTimeout,
             deliveryBudget: deliveryBudget,
+            recordAttempt: (serverUrl) => shareAttemptPersistencePool.run(
+              () => rust.addAttemptedServers(
+                dbPath: context.dbPath,
+                accountUuid: context.accountUuid,
+                roundId: context.round.roundId,
+                bundleIndex: commitments.bundleIndex,
+                proposalId: prepared.share.proposalId,
+                shareIndex: prepared.share.shareIndex,
+                newUrls: [serverUrl],
+              ),
+            ),
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
-      Object? persistenceError;
-      StackTrace? persistenceStackTrace;
       // Persist in completion order so accepted shares become durable promptly
       // while Rust DB writes remain sequential.
       await for (final result in Stream.fromFutures(submissions)) {
@@ -1706,6 +1754,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final acceptedServers = LinkedHashSet<String>.of(
           previouslyAcceptedServers,
         )..addAll(result.acceptedServers);
+        final attemptedServers = LinkedHashSet<String>.of(
+          previouslyAttemptedServersByShareIndex[result.share.shareIndex] ??
+              const <String>[],
+        )..addAll(result.attemptedServers);
         try {
           await rust.recordShareDelegation(
             dbPath: context.dbPath,
@@ -1715,6 +1767,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             proposalId: result.share.proposalId,
             shareIndex: result.share.shareIndex,
             sentToUrls: acceptedServers.toList(growable: false),
+            attemptedServerUrls: attemptedServers.toList(growable: false),
             submitAt: result.submitAt,
           );
         } catch (error, stackTrace) {
@@ -1745,8 +1798,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required _AsyncPermitPool helperPostPool,
     required Duration helperPostTimeout,
     required _InitialShareDeliveryBudget deliveryBudget,
+    required Future<void> Function(String serverUrl) recordAttempt,
   }) async {
     final acceptedServers = <String>[];
+    final attemptedServers = <String>[];
     final remainingServers = LinkedHashSet<String>.of(candidateServers);
 
     Future<({bool attempted, String? acceptedServer})> submitNext() {
@@ -1765,6 +1820,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final requestTimeout = budgetRemaining < helperPostTimeout
             ? budgetRemaining
             : helperPostTimeout;
+        await recordAttempt(serverUrl);
+        attemptedServers.add(serverUrl);
         try {
           debugPrint(
             '[zcash] Voting: submitting share '
@@ -1833,6 +1890,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       share: share,
       submitAt: submitAt,
       acceptedServers: acceptedServers,
+      attemptedServers: attemptedServers,
     );
   }
 
@@ -3087,6 +3145,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final acceptedUrls = LinkedHashSet<String>.of(
           share.sentToUrls.where(configuredServerUrlSet.contains),
         );
+        final attemptedUrls = LinkedHashSet<String>.of(
+          share.attemptedServerUrls.where(configuredServerUrlSet.contains),
+        );
         final trackingFlags = await rust.shareTrackingFlags(
           share: share,
           nowSeconds: BigInt.from(nowSeconds),
@@ -3133,7 +3194,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             plan: plan,
             share: share,
             configuredServerUrls: configuredServerUrls,
-            sentToUrls: acceptedUrls,
+            attemptedServerUrls: attemptedUrls,
             helperPostTimeout: helperPostTimeout,
           );
           if (retryServer != null && acceptedUrls.add(retryServer)) {
@@ -3197,7 +3258,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required VotingResumePlan plan,
     required rust_wire.ShareDelegationRecordView share,
     required List<String> configuredServerUrls,
-    required Set<String> sentToUrls,
+    required Set<String> attemptedServerUrls,
     required Duration helperPostTimeout,
   }) async {
     if (!ref.mounted || !_isCurrentContext(context)) return null;
@@ -3237,7 +3298,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final retryOrder = await rust.shareResubmissionServerOrder(
       configuredServerUrls: configuredServerUrls,
-      sentToUrls: sentToUrls.toList(growable: false),
+      attemptedServerUrls: attemptedServerUrls.toList(growable: false),
     );
     final shareId = bytesToHex(share.nullifier);
     final helperHealth = ref.read(votingHelperHealthTrackerProvider);
@@ -3248,6 +3309,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           !shouldTrackPendingVotingShares(context.round)) {
         return null;
       }
+      await rust.addAttemptedServers(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: share.roundId,
+        bundleIndex: share.bundleIndex,
+        proposalId: share.proposalId,
+        shareIndex: share.shareIndex,
+        newUrls: [serverUrl],
+      );
       try {
         await api.resubmitShare(
           serverUrl: Uri.parse(serverUrl),
@@ -5116,11 +5186,13 @@ class _InitialShareSubmissionResult {
     required this.share,
     required this.submitAt,
     required this.acceptedServers,
+    required this.attemptedServers,
   });
 
   final rust_wire.VoteShareWire share;
   final BigInt submitAt;
   final List<String> acceptedServers;
+  final List<String> attemptedServers;
 }
 
 class _InitialShareDeliveryBudget {

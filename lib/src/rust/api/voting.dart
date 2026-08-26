@@ -121,10 +121,10 @@ List<ShareServerCandidatePlan> rankedShareSubmissionServerCandidates({
 /// Return the crate-owned randomized helper order for one share retry.
 Future<List<String>> shareResubmissionServerOrder({
   required List<String> configuredServerUrls,
-  required List<String> sentToUrls,
+  required List<String> attemptedServerUrls,
 }) => RustLib.instance.api.crateApiVotingShareResubmissionServerOrder(
   configuredServerUrls: configuredServerUrls,
-  sentToUrls: sentToUrls,
+  attemptedServerUrls: attemptedServerUrls,
 );
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -686,6 +686,7 @@ Future<void> recordShareDelegation({
   required int proposalId,
   required int shareIndex,
   required List<String> sentToUrls,
+  required List<String> attemptedServerUrls,
   required BigInt submitAt,
 }) => RustLib.instance.api.crateApiVotingRecordShareDelegation(
   dbPath: dbPath,
@@ -695,6 +696,7 @@ Future<void> recordShareDelegation({
   proposalId: proposalId,
   shareIndex: shareIndex,
   sentToUrls: sentToUrls,
+  attemptedServerUrls: attemptedServerUrls,
   submitAt: submitAt,
 );
 
@@ -735,6 +737,33 @@ Future<void> addSentServers({
   required int shareIndex,
   required List<String> newUrls,
 }) => RustLib.instance.api.crateApiVotingAddSentServers(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+  newUrls: newUrls,
+);
+
+/// Merge helper URLs into one share's durable attempt history.
+///
+/// Call this before starting each POST so ambiguous outcomes remain accounted
+/// for after interruption.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or the share record cannot
+/// be updated.
+Future<void> addAttemptedServers({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+  required List<String> newUrls,
+}) => RustLib.instance.api.crateApiVotingAddAttemptedServers(
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,

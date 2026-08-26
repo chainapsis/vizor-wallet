@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -903,6 +904,7 @@ void main() {
       proposalId: 1,
       shareIndex: 0,
       sentToUrls: const ['https://voting.example'],
+      attemptedServerUrls: const ['https://voting.example'],
       nullifier: shareNullifier,
       phase: 'submitted_share',
       confirmed: false,
@@ -980,6 +982,7 @@ void main() {
       proposalId: 1,
       shareIndex: 0,
       sentToUrls: const ['https://voting.example'],
+      attemptedServerUrls: const ['https://voting.example'],
       nullifier: shareNullifier,
       phase: 'submitted_share',
       confirmed: false,
@@ -5711,6 +5714,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
+    required List<String> attemptedServerUrls,
     required BigInt submitAt,
   }) async {
     final current = recoveryApi.state;
@@ -5727,6 +5731,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       sentToUrls: sentToUrls,
+      attemptedServerUrls: attemptedServerUrls,
       nullifier: Uint8List.fromList(List.filled(32, shareIndex + 1)),
       phase: VotingWorkflowPhase.submittedShare,
       confirmed: false,
@@ -5756,6 +5761,38 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<void> addAttemptedServers({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required List<String> newUrls,
+  }) async {
+    final existing = recoveryApi.state.shareDelegations.firstWhere(
+      (share) =>
+          share.roundId == roundId &&
+          share.bundleIndex == bundleIndex &&
+          share.proposalId == proposalId &&
+          share.shareIndex == shareIndex,
+    );
+    final attempted = LinkedHashSet<String>.of(existing.attemptedServerUrls)
+      ..addAll(newUrls);
+    await recordShareDelegation(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+      sentToUrls: existing.sentToUrls,
+      attemptedServerUrls: attempted.toList(growable: false),
+      submitAt: existing.submitAt,
+    );
+  }
+
+  @override
   Future<void> markShareConfirmed({
     required String dbPath,
     required String accountUuid,
@@ -5781,6 +5818,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         proposalId: share.proposalId,
         shareIndex: share.shareIndex,
         sentToUrls: share.sentToUrls,
+        attemptedServerUrls: share.attemptedServerUrls,
         nullifier: share.nullifier,
         phase: 'confirmed',
         confirmed: true,

@@ -326,12 +326,12 @@ pub fn ranked_share_submission_server_candidates(
 /// Return the crate-owned randomized helper order for one share retry.
 pub fn share_resubmission_server_order(
     configured_server_urls: Vec<String>,
-    sent_to_urls: Vec<String>,
+    attempted_server_urls: Vec<String>,
 ) -> Result<Vec<String>, String> {
     catch(|| {
         let required = zcash_voting::share_policy::resubmission_server_order_random_bytes_required(
             &configured_server_urls,
-            &sent_to_urls,
+            &attempted_server_urls,
         );
         let mut random_bytes = vec![0u8; required];
         OsRng
@@ -339,7 +339,7 @@ pub fn share_resubmission_server_order(
             .map_err(|e| format!("failed to draw share-resubmission entropy: {e}"))?;
         zcash_voting::share_policy::resubmission_server_order(
             &configured_server_urls,
-            &sent_to_urls,
+            &attempted_server_urls,
             &random_bytes,
         )
         .map_err(|e| e.to_string())
@@ -395,6 +395,7 @@ fn share_record(
         proposal_id: share.proposal_id,
         share_index: share.share_index,
         sent_to_urls: share.sent_to_urls,
+        attempted_server_urls: share.attempted_server_urls,
         nullifier: share.nullifier,
         confirmed: share.confirmed,
         submit_at: share.submit_at,
@@ -1708,6 +1709,7 @@ pub fn record_share_delegation(
     proposal_id: u32,
     share_index: u32,
     sent_to_urls: Vec<String>,
+    attempted_server_urls: Vec<String>,
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
@@ -1716,7 +1718,13 @@ pub fn record_share_delegation(
             // Recover vote context first, then persist helper submission metadata.
             zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
                 .map_err(|e| format!("recover committed vote failed: {e}"))?
-                .record_share(&db, share_index, &sent_to_urls, submit_at)
+                .record_share(
+                    &db,
+                    share_index,
+                    &sent_to_urls,
+                    &attempted_server_urls,
+                    submit_at,
+                )
                 .map_err(|e| format!("record_share_delegation failed: {e}"))
         })
     })
@@ -1776,6 +1784,40 @@ pub fn add_sent_servers(
                 &new_urls,
             )
             .map_err(|e| format!("add_sent_servers failed: {e}"))
+        })
+    })
+}
+
+/// Merge helper URLs into one share's durable attempt history.
+///
+/// Call this before starting each POST so ambiguous outcomes remain accounted
+/// for after interruption.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or the share record cannot
+/// be updated.
+pub fn add_attempted_servers(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    new_urls: Vec<String>,
+) -> Result<(), String> {
+    catch(|| {
+        db::with_voting_sidecar_write_lock(&db_path, || {
+            let db = db::open_voting_db(&db_path, &account_uuid)?;
+            zcash_voting::share::add_attempted_servers(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                &new_urls,
+            )
+            .map_err(|e| format!("add_attempted_servers failed: {e}"))
         })
     })
 }
@@ -2419,6 +2461,7 @@ mod tests {
             proposal_id: 7,
             share_index: 0,
             sent_to_urls: vec!["https://helper.example".to_string()],
+            attempted_server_urls: vec!["https://helper.example".to_string()],
             nullifier: vec![1; 32],
             phase: "submitted_share".to_string(),
             confirmed: false,
@@ -2445,6 +2488,7 @@ mod tests {
             proposal_id: 7,
             share_index: 0,
             sent_to_urls: vec!["https://helper.example".to_string()],
+            attempted_server_urls: vec!["https://helper.example".to_string()],
             nullifier: vec![1; 32],
             phase: "submitted_share".to_string(),
             confirmed: false,
@@ -3047,6 +3091,10 @@ mod tests {
             2,
             0,
             vec!["https://helper.example".to_string()],
+            vec![
+                "https://helper.example".to_string(),
+                "https://timed-out.example".to_string(),
+            ],
             123,
         )
         .unwrap();
@@ -3067,7 +3115,27 @@ mod tests {
         assert_eq!(state.votes[0].tx_hash.as_deref(), Some("vote-tx-1-2"));
         assert_eq!(state.commitment_bundles[0].vc_tree_position, 99);
         assert_eq!(state.share_delegations[0].sent_to_urls.len(), 1);
+        assert_eq!(state.share_delegations[0].attempted_server_urls.len(), 2);
         assert_eq!(state.unconfirmed_share_delegations.len(), 1);
+
+        add_attempted_servers(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            ROUND_ID.to_string(),
+            1,
+            2,
+            0,
+            vec!["https://interrupted.example".to_string()],
+        )
+        .unwrap();
+        let state = get_round_recovery_state(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert_eq!(state.share_delegations[0].sent_to_urls.len(), 1);
+        assert_eq!(state.share_delegations[0].attempted_server_urls.len(), 3);
 
         mark_share_confirmed(
             db_path.to_str().unwrap().to_string(),
@@ -3179,6 +3247,7 @@ mod tests {
             0,
             7,
             0,
+            vec!["https://helper.example".to_string()],
             vec!["https://helper.example".to_string()],
             123,
         )

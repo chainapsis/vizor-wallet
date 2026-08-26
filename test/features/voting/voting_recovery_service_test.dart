@@ -650,6 +650,7 @@ rust_frb_types.ShareDelegationRecordView share({
     proposalId: proposalId,
     shareIndex: shareIndex,
     sentToUrls: sentToUrls,
+    attemptedServerUrls: sentToUrls,
     nullifier: Uint8List.fromList(List.filled(32, shareIndex)),
     phase: confirmed
         ? VotingWorkflowPhase.confirmed

@@ -506,6 +506,7 @@ class ShareDelegationRecordView {
   final int proposalId;
   final int shareIndex;
   final List<String> sentToUrls;
+  final List<String> attemptedServerUrls;
   final Uint8List nullifier;
   final String phase;
   final bool confirmed;
@@ -518,6 +519,7 @@ class ShareDelegationRecordView {
     required this.proposalId,
     required this.shareIndex,
     required this.sentToUrls,
+    required this.attemptedServerUrls,
     required this.nullifier,
     required this.phase,
     required this.confirmed,
@@ -532,6 +534,7 @@ class ShareDelegationRecordView {
       proposalId.hashCode ^
       shareIndex.hashCode ^
       sentToUrls.hashCode ^
+      attemptedServerUrls.hashCode ^
       nullifier.hashCode ^
       phase.hashCode ^
       confirmed.hashCode ^
@@ -548,6 +551,7 @@ class ShareDelegationRecordView {
           proposalId == other.proposalId &&
           shareIndex == other.shareIndex &&
           sentToUrls == other.sentToUrls &&
+          attemptedServerUrls == other.attemptedServerUrls &&
           nullifier == other.nullifier &&
           phase == other.phase &&
           confirmed == other.confirmed &&
