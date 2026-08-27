@@ -34,12 +34,17 @@ use zcash_client_sqlite::{AccountUuid, WalletDb};
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
 /// Wallet-derived keys and chain parameters needed to build a delegation PCZT.
+///
+/// Keys created from a [`RoundBoundVotingHotkeyTarget`] retain that target so
+/// database operations can enforce its validated round.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DelegationKeys {
     /// Orchard full viewing key bytes for the delegating account.
     pub(crate) fvk_bytes: Vec<u8>,
     /// Raw Orchard address bytes for the hotkey output target.
     pub(crate) hotkey_raw_address: [u8; 43],
+    /// Validated public target context retained for round checks.
+    pub(crate) round_bound_target: Option<RoundBoundVotingHotkeyTarget>,
     /// ZIP-32 seed fingerprint for the account that owns the delegated notes.
     pub(crate) seed_fingerprint: [u8; 32],
     /// ZIP-32 account index used to derive account-scoped signing keys.
@@ -75,6 +80,7 @@ impl DelegationKeys {
     fn with_voting_target(
         fvk_bytes: Vec<u8>,
         target: VotingHotkeyTarget,
+        round_bound_target: Option<RoundBoundVotingHotkeyTarget>,
         seed_fingerprint: [u8; 32],
         account_index: u32,
         round_name: String,
@@ -82,6 +88,7 @@ impl DelegationKeys {
         Self {
             fvk_bytes,
             hotkey_raw_address: *target.raw_orchard_address(),
+            round_bound_target,
             seed_fingerprint,
             account_index,
             address_index: target.address_index(),
@@ -107,6 +114,7 @@ impl DelegationKeys {
         Ok(Self::with_voting_target(
             fvk_bytes,
             hotkey.delegation_target(),
+            None,
             seed_fingerprint,
             account_index,
             round_name,
@@ -118,7 +126,8 @@ impl DelegationKeys {
     ///
     /// The target supplies only public recipient data. Account fingerprint and
     /// account index still refer to the wallet account that owns the delegated
-    /// notes.
+    /// notes. The returned keys retain the validated target context so
+    /// database delegation operations reject a different stored round.
     pub fn with_round_bound_voting_target(
         fvk_bytes: Vec<u8>,
         target: &RoundBoundVotingHotkeyTarget,
@@ -130,10 +139,24 @@ impl DelegationKeys {
         Ok(Self::with_voting_target(
             fvk_bytes,
             public_target,
+            Some(target.clone()),
             seed_fingerprint,
             account_index,
             round_name,
         ))
+    }
+
+    /// Rejects use of public target keys with a different stored round.
+    ///
+    /// Locally derived voting hotkeys are intentionally not round-bound.
+    pub(crate) fn validate_target_round(
+        &self,
+        round_params: &crate::VotingRoundParams,
+    ) -> Result<(), VotingError> {
+        if let Some(target) = &self.round_bound_target {
+            target.validate_round(round_params)?;
+        }
+        Ok(())
     }
 }
 
@@ -312,11 +335,7 @@ impl PrepareDelegationTarget<'_> {
 
     fn validate_round(&self, round_params: &crate::VotingRoundParams) -> Result<(), VotingError> {
         if let Self::RoundBound(target) = self {
-            if hex::encode(target.vote_round_id()) != round_params.vote_round_id {
-                return Err(VotingError::InvalidInput {
-                    message: "voting target round does not match delegation round".to_string(),
-                });
-            }
+            target.validate_round(round_params)?;
         }
         Ok(())
     }
@@ -1020,7 +1039,8 @@ fn parse_account_uuid(account_uuid: &str) -> Result<AccountUuid, VotingError> {
 /// Builds and persists a governance PCZT for one bundle.
 ///
 /// The bundle must already exist via [`VotingDb::ensure_bundles`]. The returned
-/// sighash is the exact message that an external signer must sign.
+/// sighash is the exact message that an external signer must sign. Keys created
+/// from a public round-bound target must match the stored round.
 pub fn setup(
     db: &VotingDb,
     round_id: &str,
@@ -1666,6 +1686,7 @@ mod tests {
             delegation_keys: DelegationKeys {
                 fvk_bytes: vec![0; 96],
                 hotkey_raw_address: [0; 43],
+                round_bound_target: None,
                 seed_fingerprint: [0; 32],
                 account_index: 0,
                 address_index: 0,
@@ -2087,6 +2108,8 @@ mod tests {
         assert_eq!(external.address_index, local.address_index);
         assert_eq!(external.network, local.network);
         assert_eq!(external.coin_type, local.coin_type);
+        assert!(local.round_bound_target.is_none());
+        assert_eq!(external.round_bound_target.as_ref(), Some(&bound));
         assert_eq!(
             bound.target().raw_orchard_address(),
             &local.hotkey_raw_address

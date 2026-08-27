@@ -12,9 +12,9 @@ use zcash_voting::prelude::{
     export_delegation_capability, gather_delegation_lwd_inputs, import_delegation_capability,
     prepare_delegation_bundle as prepare_bundle_state,
     prepare_delegation_bundle_for_target as prepare_target_bundle_state, spend_auth_signature,
-    DelegationCapabilityDigest, DelegationSigningRequest, DelegationSubmission,
-    ExportedDelegationCapability, ImportDelegationCapabilityParams, KeystoneSigningRequest,
-    Network, NoopProgressReporter, PrepareDelegationBundleForTargetParams,
+    DelegationAccountKeys, DelegationCapabilityDigest, DelegationKeys, DelegationSigningRequest,
+    DelegationSubmission, ExportedDelegationCapability, ImportDelegationCapabilityParams,
+    KeystoneSigningRequest, Network, NoopProgressReporter, PrepareDelegationBundleForTargetParams,
     PrepareDelegationBundleParams, PreparedDelegationBundle, PreparedDelegationReport,
     PreparedSigner, RoundBoundVotingHotkeyTarget, VotingDb, VotingHotkey, VotingHotkeyTargetV1,
 };
@@ -102,6 +102,30 @@ pub fn validate_public_voting_target(
         .context("parse public voting target")?
         .validate_for(expected_chain_id, expected_network, expected_round_params)
         .context("validate public voting target context")
+}
+
+/// Builds delegation keys when the host already owns wallet selection and
+/// lightwalletd orchestration.
+///
+/// The returned keys retain `voting_target` and reject use with another stored
+/// round in the lower-level delegation lifecycle.
+///
+/// # Errors
+///
+/// Returns an error if the voting library cannot construct the delegation keys.
+pub fn delegation_keys_for_public_target(
+    account_keys: &DelegationAccountKeys,
+    voting_target: &RoundBoundVotingHotkeyTarget,
+    round_name: &str,
+) -> Result<DelegationKeys> {
+    DelegationKeys::with_round_bound_voting_target(
+        account_keys.orchard_fvk_bytes.to_vec(),
+        voting_target,
+        account_keys.seed_fingerprint,
+        account_keys.account_index,
+        round_name.to_string(),
+    )
+    .context("build delegation keys for public target")
 }
 
 /// Resolves lightwalletd and wallet inputs for later delegation operations.
