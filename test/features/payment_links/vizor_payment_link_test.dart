@@ -236,7 +236,7 @@ void main() {
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
     });
 
-    test('rejects non-mainnet payment links', () {
+    test('rejects non-mainnet payment links by default', () {
       final testnetLink = VizorPaymentLink(
         network: 'test',
         address: 'utest1exampleaddress',
@@ -249,6 +249,13 @@ void main() {
       );
 
       expect(testnetLink.toUri, throwsFormatException);
+      expect(
+        () => _link(
+          network: 'regtest',
+          address: 'uregtest1exampleaddress',
+        ).toUri(),
+        throwsFormatException,
+      );
     });
   });
 }

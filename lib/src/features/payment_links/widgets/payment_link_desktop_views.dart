@@ -652,7 +652,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       waiting
                           ? 'The Gift Card takes time to be deposited.\n'
                                 'You can return later. The link will be available\n'
-                                'after 10 confirmations.'
+                                'after 6 confirmations.'
                           : 'Share this link with the intended recipient so they\n'
                                 'can claim the Card using their Vizor app.',
                       textAlign: TextAlign.center,
