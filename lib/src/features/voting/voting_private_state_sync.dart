@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../../core/private_state_sync/private_state_models.dart';
 import '../../core/private_state_sync/private_state_object_repository.dart';
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
@@ -174,7 +176,12 @@ class VotingPrivateStateSync {
         expectedRoundId: roundId,
       ),
     };
-    if (record != null) _onCompletionObserved?.call(account, record);
+    if (record == null) {
+      debugPrint('[private-state] voting completion absent round=$roundId');
+    } else {
+      debugPrint('[private-state] voting completion restored round=$roundId');
+      _onCompletionObserved?.call(account, record);
+    }
     return record;
   }
 
@@ -190,9 +197,15 @@ class VotingPrivateStateSync {
       plaintext: record.encode(),
     );
     if (result is PrivateStateCreated) {
+      debugPrint(
+        '[private-state] voting completion published round=${record.roundId}',
+      );
       _onCompletionObserved?.call(account, record);
       return record;
     }
+    debugPrint(
+      '[private-state] voting completion conflict round=${record.roundId}',
+    );
     final existing = await readCompletion(
       account: account,
       roundId: record.roundId,

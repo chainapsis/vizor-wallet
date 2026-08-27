@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../../../core/private_state_sync/private_state_models.dart';
 import '../../../core/private_state_sync/private_state_object_repository.dart';
 import '../models/swap_models.dart';
@@ -98,7 +100,10 @@ class FinalizedActivityArchiveSync
     required SwapPrivateHistoryKind kind,
   }) {
     final scope = '${account.accountUuid}\u0000${kind.wireName}';
-    return _serialize(scope, () => _synchronize(account: account, kind: kind));
+    return _serialize(scope, () async {
+      debugPrint('[private-state] activity sync start kind=${kind.wireName}');
+      return _synchronize(account: account, kind: kind);
+    });
   }
 
   Future<FinalizedActivityArchiveSyncResult> _synchronize({
@@ -181,12 +186,16 @@ class FinalizedActivityArchiveSync
           lastSlot: lastSlot,
           hidden: hidden,
         );
-        return FinalizedActivityArchiveSyncResult(
-          records: local,
-          kind: kind,
-          lastSlot: lastSlot,
-          remoteWritten: false,
-          truncated: false,
+        return _complete(
+          outcome: 'empty',
+          archiveRecords: document.records.length,
+          result: FinalizedActivityArchiveSyncResult(
+            records: local,
+            kind: kind,
+            lastSlot: lastSlot,
+            remoteWritten: false,
+            truncated: false,
+          ),
         );
       }
       if (remote != null && _bytesEqual(remote.encode(), plaintext)) {
@@ -196,12 +205,16 @@ class FinalizedActivityArchiveSync
           lastSlot: lastSlot,
           hidden: hidden,
         );
-        return FinalizedActivityArchiveSyncResult(
-          records: local,
-          kind: kind,
-          lastSlot: lastSlot,
-          remoteWritten: false,
-          truncated: document.truncated,
+        return _complete(
+          outcome: 'unchanged',
+          archiveRecords: document.records.length,
+          result: FinalizedActivityArchiveSyncResult(
+            records: local,
+            kind: kind,
+            lastSlot: lastSlot,
+            remoteWritten: false,
+            truncated: document.truncated,
+          ),
         );
       }
 
@@ -218,12 +231,16 @@ class FinalizedActivityArchiveSync
           lastSlot: nextSlot,
           hidden: hidden,
         );
-        return FinalizedActivityArchiveSyncResult(
-          records: local,
-          kind: kind,
-          lastSlot: nextSlot,
-          remoteWritten: true,
-          truncated: document.truncated,
+        return _complete(
+          outcome: 'written',
+          archiveRecords: document.records.length,
+          result: FinalizedActivityArchiveSyncResult(
+            records: local,
+            kind: kind,
+            lastSlot: nextSlot,
+            remoteWritten: true,
+            truncated: document.truncated,
+          ),
         );
       }
 
@@ -244,6 +261,19 @@ class FinalizedActivityArchiveSync
       );
     }
     throw FinalizedActivityArchiveConflictException(maxCreateAttempts);
+  }
+
+  FinalizedActivityArchiveSyncResult _complete({
+    required String outcome,
+    required int archiveRecords,
+    required FinalizedActivityArchiveSyncResult result,
+  }) {
+    debugPrint(
+      '[private-state] activity sync complete kind=${result.kind.wireName} '
+      'outcome=$outcome slot=${result.lastSlot} '
+      'records=$archiveRecords truncated=${result.truncated}',
+    );
+    return result;
   }
 
   Future<SwapPrivateHistoryDocument?> _readSlot({

@@ -69,9 +69,22 @@ class VotingPrivateCompletionSweep {
 
   Future<void> synchronizeAll() async {
     final accounts = await _accountUuidLoader();
-    if (accounts.isEmpty) return;
+    if (accounts.isEmpty) {
+      debugPrint('[private-state] voting sync complete accounts=0 rounds=0');
+      return;
+    }
     final rounds = await _roundLoader();
-    if (rounds.isEmpty) return;
+    debugPrint(
+      '[private-state] voting sync start '
+      'accounts=${accounts.length} rounds=${rounds.length}',
+    );
+    if (rounds.isEmpty) {
+      debugPrint(
+        '[private-state] voting sync complete '
+        'accounts=${accounts.length} rounds=0',
+      );
+      return;
+    }
     final dbPath = await _dbPathLoader();
     final network = _networkLoader();
     Object? firstError;
@@ -111,6 +124,10 @@ class VotingPrivateCompletionSweep {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError, firstStackTrace!);
     }
+    debugPrint(
+      '[private-state] voting sync complete '
+      'accounts=${accounts.length} rounds=${rounds.length}',
+    );
   }
 }
 
@@ -190,6 +207,10 @@ class VotingPrivateStateLifecycleCoordinator {
 
   void _scheduleRetry() {
     if (_cannotRun || (_retryTimer?.isActive ?? false)) return;
+    debugPrint(
+      '[private-state] retry scheduled feature=voting '
+      'delay=${_retryDelay.inSeconds}s',
+    );
     _retryTimer = Timer(_retryDelay, () {
       _retryTimer = null;
       unawaited(synchronize());

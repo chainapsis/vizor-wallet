@@ -236,6 +236,10 @@ class FinalizedActivityArchiveLifecycleCoordinator {
 
   void _ensureRetryTimer() {
     if (_retryTimer?.isActive ?? false) return;
+    debugPrint(
+      '[private-state] retry scheduled feature=activity '
+      'delay=${_retryDelay.inSeconds}s',
+    );
     _retryTimer = Timer(_retryDelay, () {
       _retryTimer = null;
       if (!_cannotRun) {

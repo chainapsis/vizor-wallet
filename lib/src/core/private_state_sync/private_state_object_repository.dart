@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'private_state_crypto.dart';
 import 'private_state_models.dart';
 import 'private_state_remote_store.dart';
@@ -57,6 +59,10 @@ class DefaultPrivateStateObjectRepository
       object: object,
       authorization: authorization,
     );
+    debugPrint(
+      '[private-state] read ${result is PrivateStateRemoteFound ? 'found' : 'absent'} '
+      'namespace=${key.namespace.wireName}',
+    );
     return switch (result) {
       PrivateStateRemoteAbsent() => const PrivateStateReadAbsent(),
       PrivateStateRemoteFound(:final envelope) => PrivateStateReadFound(
@@ -96,6 +102,11 @@ class DefaultPrivateStateObjectRepository
       object: object,
       envelope: envelope,
       authorization: authorization,
+    );
+    debugPrint(
+      '[private-state] create '
+      '${result is PrivateStateRemoteCreated ? 'success' : 'conflict'} '
+      'namespace=${key.namespace.wireName}',
     );
     return switch (result) {
       PrivateStateRemoteCreated() => const PrivateStateCreated(),
