@@ -48,7 +48,6 @@ pub(crate) use migration::{
     MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
     PreparationTimingPolicy,
 };
-pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,
     discard_proposal, extract_and_broadcast_pczt, prepare_pczt_for_keystone_batch,
@@ -58,6 +57,7 @@ pub use pczt::{
     store_and_broadcast_signed_pczts_for_proposal, ExtractAndBroadcastPcztResult,
     KeystoneBatchPczt, StoreAndBroadcastPcztsResult, TexPcztPair,
 };
+pub(crate) use pczt::{extract_compact_sigs_from_pczt, extract_transaction_from_pczt};
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::propose_send;
