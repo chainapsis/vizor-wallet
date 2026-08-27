@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,6 +27,22 @@ typedef FinalizedActivityArchiveAccountUuidLoader =
 typedef FinalizedActivityArchiveDbPathLoader = Future<String> Function();
 typedef FinalizedActivityArchiveLocalAccountCleaner =
     Future<void> Function(String accountUuid);
+typedef FinalizedActivityArchiveRetryDelaySampler = Duration Function();
+
+const _finalizedActivityArchiveRetryBaseDelay = Duration(seconds: 30);
+const _finalizedActivityArchiveRetryJitter = Duration(seconds: 5);
+
+@visibleForTesting
+Duration sampleFinalizedActivityArchiveRetryDelay(Random random) {
+  final minimumMilliseconds =
+      _finalizedActivityArchiveRetryBaseDelay.inMilliseconds -
+      _finalizedActivityArchiveRetryJitter.inMilliseconds;
+  final rangeMilliseconds =
+      _finalizedActivityArchiveRetryJitter.inMilliseconds * 2;
+  return Duration(
+    milliseconds: minimumMilliseconds + random.nextInt(rangeMilliseconds + 1),
+  );
+}
 
 final finalizedActivityArchiveMetadataStoreProvider =
     Provider<FinalizedActivityArchiveMetadataStore>((ref) {
@@ -61,9 +78,11 @@ final finalizedActivityArchiveAccountUuidLoaderProvider =
       };
     });
 
-final finalizedActivityArchiveRetryDelayProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 30);
-});
+final finalizedActivityArchiveRetryDelayProvider =
+    Provider<FinalizedActivityArchiveRetryDelaySampler>((ref) {
+      final random = Random.secure();
+      return () => sampleFinalizedActivityArchiveRetryDelay(random);
+    });
 
 class FinalizedActivityArchiveLifecycleCoordinator {
   FinalizedActivityArchiveLifecycleCoordinator({
@@ -74,7 +93,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     required bool Function() isLocked,
     required FinalizedActivityArchiveMetadataStore metadataStore,
     required FinalizedActivityArchiveLocalAccountCleaner localAccountCleaner,
-    required Duration retryDelay,
+    required FinalizedActivityArchiveRetryDelaySampler retryDelaySampler,
   }) : _synchronizer = synchronizer,
        _accountUuidLoader = accountUuidLoader,
        _dbPathLoader = dbPathLoader,
@@ -82,7 +101,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
        _isLocked = isLocked,
        _metadataStore = metadataStore,
        _localAccountCleaner = localAccountCleaner,
-       _retryDelay = retryDelay.isNegative ? Duration.zero : retryDelay;
+       _retryDelaySampler = retryDelaySampler;
 
   final FinalizedActivityArchiveSynchronizer _synchronizer;
   final FinalizedActivityArchiveAccountUuidLoader _accountUuidLoader;
@@ -91,7 +110,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   final bool Function() _isLocked;
   final FinalizedActivityArchiveMetadataStore _metadataStore;
   final FinalizedActivityArchiveLocalAccountCleaner _localAccountCleaner;
-  final Duration _retryDelay;
+  final FinalizedActivityArchiveRetryDelaySampler _retryDelaySampler;
   final Set<String> _queuedAccounts = {};
   final Set<String> _retryAccounts = {};
   final Set<String> _revokedAccounts = {};
@@ -271,11 +290,13 @@ class FinalizedActivityArchiveLifecycleCoordinator {
 
   void _ensureRetryTimer() {
     if (_retryTimer?.isActive ?? false) return;
+    final sampledDelay = _retryDelaySampler();
+    final retryDelay = sampledDelay.isNegative ? Duration.zero : sampledDelay;
     debugPrint(
       '[private-state] retry scheduled feature=activity '
-      'delay=${_retryDelay.inSeconds}s',
+      'delay=${retryDelay.inMilliseconds}ms',
     );
-    _retryTimer = Timer(_retryDelay, () {
+    _retryTimer = Timer(retryDelay, () {
       _retryTimer = null;
       if (!_cannotRun) {
         _queuedAccounts.addAll(
@@ -321,7 +342,7 @@ final finalizedActivityArchiveLifecycleProvider =
         localAccountCleaner: (accountUuid) => ref
             .read(swapActivityStoreProvider)
             .deleteForAccount(accountUuid: accountUuid),
-        retryDelay: ref.read(finalizedActivityArchiveRetryDelayProvider),
+        retryDelaySampler: ref.read(finalizedActivityArchiveRetryDelayProvider),
       );
 
       ref.listen<AppSecurityState>(appSecurityProvider, (previous, next) {

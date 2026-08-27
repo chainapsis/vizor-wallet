@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
@@ -10,6 +11,23 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.d
 import 'package:zcash_wallet/src/features/swap/providers/swap_private_history_sync_provider.dart';
 
 void main() {
+  test('production retry jitter spans 25 through 35 seconds', () {
+    final random = _SequenceRandom([0, 5000, 10000]);
+
+    expect(
+      sampleFinalizedActivityArchiveRetryDelay(random),
+      const Duration(seconds: 25),
+    );
+    expect(
+      sampleFinalizedActivityArchiveRetryDelay(random),
+      const Duration(seconds: 30),
+    );
+    expect(
+      sampleFinalizedActivityArchiveRetryDelay(random),
+      const Duration(seconds: 35),
+    );
+  });
+
   test(
     'startup synchronizes both namespaces for every existing account',
     () async {
@@ -257,6 +275,7 @@ void main() {
 
   test('a failed pass is retried after the configured delay', () async {
     final completed = Completer<void>();
+    var sampledDelays = 0;
     final synchronizer = _RecordingSynchronizer(
       failFirstCall: true,
       onCall: (count) {
@@ -266,7 +285,10 @@ void main() {
     final coordinator = _coordinator(
       synchronizer: synchronizer,
       accountUuids: const [],
-      retryDelay: Duration.zero,
+      retryDelaySampler: () {
+        sampledDelays++;
+        return Duration.zero;
+      },
     );
     addTearDown(coordinator.dispose);
 
@@ -278,6 +300,7 @@ void main() {
       SwapPrivateHistoryKind.swap,
       SwapPrivateHistoryKind.pay,
     ]);
+    expect(sampledDelays, 1);
   });
 }
 
@@ -288,6 +311,7 @@ FinalizedActivityArchiveLifecycleCoordinator _coordinator({
   FinalizedActivityArchiveLocalAccountCleaner? localAccountCleaner,
   bool Function()? isLocked,
   Duration retryDelay = const Duration(seconds: 30),
+  FinalizedActivityArchiveRetryDelaySampler? retryDelaySampler,
 }) {
   return FinalizedActivityArchiveLifecycleCoordinator(
     synchronizer: synchronizer,
@@ -297,7 +321,7 @@ FinalizedActivityArchiveLifecycleCoordinator _coordinator({
     isLocked: isLocked ?? () => false,
     metadataStore: metadataStore ?? _MemoryMetadataStore(),
     localAccountCleaner: localAccountCleaner ?? (_) async {},
-    retryDelay: retryDelay,
+    retryDelaySampler: retryDelaySampler ?? () => retryDelay,
   );
 }
 
@@ -331,6 +355,28 @@ class _SyncCall {
 
   final PrivateStateAccount account;
   final SwapPrivateHistoryKind kind;
+}
+
+class _SequenceRandom implements Random {
+  _SequenceRandom(this._values);
+
+  final List<int> _values;
+  var _index = 0;
+
+  @override
+  int nextInt(int max) {
+    final value = _values[_index++];
+    if (value < 0 || value >= max) {
+      throw RangeError.range(value, 0, max - 1);
+    }
+    return value;
+  }
+
+  @override
+  bool nextBool() => throw UnsupportedError('Not used by this test.');
+
+  @override
+  double nextDouble() => throw UnsupportedError('Not used by this test.');
 }
 
 class _RecordingSynchronizer implements FinalizedActivityArchiveSynchronizer {
