@@ -584,6 +584,11 @@ pub struct AccountExportMetadata {
     pub seed_fingerprint: Option<Vec<u8>>,
 }
 
+pub(crate) struct LedgerAccountSigningMetadata {
+    pub account_index: u32,
+    pub seed_fingerprint: [u8; 32],
+}
+
 pub struct SoftwareSeedAccountState {
     pub account_indices: HashSet<u32>,
     pub has_derived_account: bool,
@@ -778,6 +783,35 @@ pub fn get_account_export_metadata(
     })
 }
 
+pub(crate) fn get_ledger_account_signing_metadata(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<LedgerAccountSigningMetadata, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get Ledger account: {e}"))?
+        .ok_or_else(|| format!("Ledger account not found: {}", account_id.expose_uuid()))?;
+
+    if hardware_signer_kind(account.source()) != Some(HardwareSignerKind::Ledger) {
+        return Err(format!(
+            "Account {} is not backed by Ledger",
+            account_id.expose_uuid()
+        ));
+    }
+    let derivation = account
+        .source()
+        .key_derivation()
+        .ok_or("Ledger account derivation metadata is unavailable")?;
+
+    Ok(LedgerAccountSigningMetadata {
+        account_index: u32::from(derivation.account_index()),
+        seed_fingerprint: derivation.seed_fingerprint().to_bytes(),
+    })
+}
+
 pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
     let mut stmt = conn
@@ -815,7 +849,7 @@ pub fn delete_account(
         // while the SQL expects `:to_address`. Keep this local copy aligned
         // with upstream except for that binding until the dependency is fixed.
         drop(db);
-        delete_account_rows(db_path, account_id)?;
+        delete_account_rows(db_path, network, account_id)?;
         crate::wallet::wallet_summary_cache::evict_db(db_path);
         if let Err(error) = crate::wallet::sync::discard_keystone_migration_requests_for_account(
             account_uuid,
@@ -829,7 +863,11 @@ pub fn delete_account(
     })
 }
 
-fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), String> {
+fn delete_account_rows(
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+) -> Result<(), String> {
     let mut conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
@@ -930,6 +968,11 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
 
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
+    crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
+        &tx,
+        network,
+        &account_uuid_text,
+    )?;
 
     tx.execute(
         "DELETE FROM accounts WHERE uuid = :account_uuid",
@@ -2023,6 +2066,11 @@ mod tests {
         );
         assert_eq!(listed.birthday_height, birthday_height as u32);
         assert_eq!(listed.zip32_account_index, Some(7));
+
+        let signing =
+            get_ledger_account_signing_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(signing.account_index, 7);
+        assert_eq!(signing.seed_fingerprint, seed_fingerprint);
     }
 
     #[test]
@@ -2260,6 +2308,87 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+    }
+
+    #[test]
+    fn test_delete_ledger_account_removes_only_its_signed_operations() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let software_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &software_seed,
+            None,
+            "software",
+        )
+        .unwrap();
+
+        let ledger_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let ledger_ufvk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            ledger_seed.expose_secret(),
+            account_index,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key()
+        .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(ledger_seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+        let (ledger_uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Ledger",
+            &ledger_ufvk,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+            HardwareSignerKind::Ledger,
+        )
+        .unwrap();
+
+        let other_account_uuid = uuid::Uuid::new_v4().to_string();
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE vizor_ledger_signed_operations (
+                    network TEXT NOT NULL,
+                    account_uuid TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO vizor_ledger_signed_operations (network, account_uuid)
+                 VALUES ('main', ?1), ('main', ?2), ('test', ?1)",
+                rusqlite::params![ledger_uuid, other_account_uuid],
+            )
+            .unwrap();
+        }
+
+        delete_account(db_path_str, WalletNetwork::Main, &ledger_uuid).unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        let remaining: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT network, account_uuid FROM vizor_ledger_signed_operations
+                 ORDER BY network, account_uuid",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            remaining,
+            vec![
+                ("main".to_string(), other_account_uuid),
+                ("test".to_string(), ledger_uuid),
+            ]
+        );
     }
 
     // --- VZR-89: orphaned scan-range pruning -------------------------------
