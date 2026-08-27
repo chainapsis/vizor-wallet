@@ -91,6 +91,12 @@ pub async fn configure_network_privacy(
     }
 }
 
+/// Bootstraps the shared Tor client for a private-state request without
+/// changing the user's default network route.
+pub async fn ensure_private_state_tor(tor_directory: String) -> Result<(), String> {
+    crate::network_privacy::ensure_private_state_tor(Path::new(&tor_directory)).await
+}
+
 /// Returns the current runtime state. `Bootstrapping` and `Failed` both mean
 /// that app network requests are blocked while Tor remains the desired route.
 #[flutter_rust_bridge::frb(sync)]
@@ -176,6 +182,54 @@ pub async fn tor_http_post(
 ) -> Result<NetworkHttpResponse, String> {
     let client = crate::network_privacy::tor_client_for_route(true)?
         .ok_or_else(|| "Tor is not enabled".to_string())?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let response = client
+        .http_post(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            Full::new(Bytes::from(body)),
+            collect_body,
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response)
+}
+
+/// Makes a private-state GET on a fresh Tor circuit even when the user's
+/// default app route is direct. There is intentionally no direct fallback.
+pub async fn private_state_tor_http_get(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_required_route(true)?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let response = client
+        .http_get(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            collect_body,
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response)
+}
+
+/// Makes a private-state POST on a fresh Tor circuit even when the user's
+/// default app route is direct. There is intentionally no direct fallback.
+pub async fn private_state_tor_http_post(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+    body: Vec<u8>,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_required_route(true)?;
     let uri = url
         .parse()
         .map_err(|error| format!("Invalid HTTP URL: {error}"))?;

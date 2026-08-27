@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 import '../../rust/api/network_privacy.dart' as rust_network_privacy;
 
 class NetworkHttpResponse {
@@ -69,7 +71,7 @@ class RustTorHttpBridge implements TorHttpBridge {
   }) async {
     final response = await rust_network_privacy.torHttpGet(
       url: uri.toString(),
-      headers: _rustHeaders(headers),
+      headers: networkHttpHeadersToRust(headers),
     );
     return networkHttpResponseFromRust(response);
   }
@@ -82,7 +84,7 @@ class RustTorHttpBridge implements TorHttpBridge {
   }) async {
     final response = await rust_network_privacy.torHttpPost(
       url: uri.toString(),
-      headers: _rustHeaders(headers),
+      headers: networkHttpHeadersToRust(headers),
       body: bodyBytes,
     );
     return networkHttpResponseFromRust(response);
@@ -96,22 +98,19 @@ class RustTorHttpBridge implements TorHttpBridge {
   }) async {
     final response = await rust_network_privacy.torHttpDownload(
       url: uri.toString(),
-      headers: _rustHeaders(headers),
+      headers: networkHttpHeadersToRust(headers),
       destinationPath: destinationPath,
     );
     return networkHttpResponseFromRust(response);
   }
-
-  static List<rust_network_privacy.NetworkHttpHeader> _rustHeaders(
-    Map<String, String> headers,
-  ) => [
-    for (final entry in headers.entries)
-      rust_network_privacy.NetworkHttpHeader(
-        name: entry.key,
-        value: entry.value,
-      ),
-  ];
 }
+
+List<rust_network_privacy.NetworkHttpHeader> networkHttpHeadersToRust(
+  Map<String, String> headers,
+) => [
+  for (final entry in headers.entries)
+    rust_network_privacy.NetworkHttpHeader(name: entry.key, value: entry.value),
+];
 
 /// Converts the generated Rust response while preserving the concrete nested
 /// generic types. Leaving either collection inferred through `unmodifiable`
@@ -144,8 +143,27 @@ class NetworkHttpClient {
     TorHttpBridge? torBridge,
   }) : _directClient = directClient ?? HttpClient(),
        _torDesired = torDesired ?? rust_network_privacy.isTorEnabled,
-       _torBridge = torBridge ?? const RustTorHttpBridge() {
+       _torBridge = torBridge ?? const RustTorHttpBridge(),
+       _debugDirect = false {
     _instances.add(this);
+  }
+
+  /// A development-only direct client that is deliberately independent of
+  /// the user's process-wide Tor preference and transition gate.
+  ///
+  /// Private-state sync uses this only in Debug builds so `flutter run` can
+  /// reach a local server even when the user-facing Tor switch is on. Keeping
+  /// it out of [_instances] also prevents a concurrent global Tor activation
+  /// from closing the local development request.
+  NetworkHttpClient.debugDirect({HttpClient? directClient})
+    : _directClient = directClient ?? HttpClient(),
+      _torDesired = _neverUseTor,
+      _torBridge = const RustTorHttpBridge(),
+      _debugDirect = true {
+    if (!kDebugMode) {
+      _directClient.close(force: true);
+      throw StateError('Debug-direct HTTP is unavailable in this build.');
+    }
   }
 
   static final Set<NetworkHttpClient> _instances = {};
@@ -154,6 +172,7 @@ class NetworkHttpClient {
   HttpClient _directClient;
   final bool Function() _torDesired;
   final TorHttpBridge _torBridge;
+  final bool _debugDirect;
   var _activeDirectRequests = 0;
   var _directClientNeedsReset = false;
   var _closed = false;
@@ -186,7 +205,15 @@ class NetworkHttpClient {
     Duration? timeout,
     bool followRedirects = true,
   }) {
-    final future = _torDesired()
+    final future = _debugDirect
+        ? _requestDirect(
+            method.toUpperCase(),
+            uri,
+            headers: headers,
+            bodyBytes: bodyBytes,
+            followRedirects: followRedirects,
+          )
+        : _torDesired()
         ? _requestViaTorWithRedirects(
             method.toUpperCase(),
             uri,
@@ -236,6 +263,8 @@ class NetworkHttpClient {
     _directClient.close(force: force);
     if (_activeDirectRequests == 0) _instances.remove(this);
   }
+
+  static bool _neverUseTor() => false;
 
   Future<T> _runDirectRequest<T>(Future<T> Function() request) async {
     if (_directRequestsBlocked || _closed) {

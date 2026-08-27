@@ -182,12 +182,13 @@ final privateStateAudienceProvider = Provider<String>((ref) {
   return privateStateAudienceForBuild(ref.watch(privateStateBaseUriProvider));
 });
 
-/// Opaque remote storage deployment seam. The network client follows the
-/// process-wide direct/Tor route and fails closed during route transitions.
+/// Opaque remote storage deployment seam. Debug builds use direct HTTP for
+/// local development; Profile and Release always require Tor independently of
+/// the user-facing network privacy preference.
 final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
   ref,
 ) {
-  final transport = NetworkPrivateStateHttpTransport();
+  final transport = privateStateHttpTransportForBuild();
   ref.onDispose(() => transport.close(force: true));
   return HttpPrivateStateRemoteStore(
     baseUri: ref.watch(privateStateBaseUriProvider),

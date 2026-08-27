@@ -154,6 +154,18 @@ fvm flutter run \
   --dart-define=VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP=true
 ```
 
+Private-state transport is selected by Flutter build mode:
+
+- Plain `fvm flutter run` is a Debug build and sends private-state requests
+  directly. This is independent of the user's Tor toggle so a local server
+  remains reachable during development. Local HTTP still requires the explicit
+  `VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP=true` define above.
+- Profile and Release builds always send private-state requests through an
+  isolated embedded-Tor route, regardless of the user's Tor toggle. Tor setup
+  or request failure is fail-closed; there is no direct fallback.
+- Profile and Release builds reject an `http://` base URL or audience even if
+  the insecure-development define is present.
+
 iOS Simulator can use host loopback. Android Emulator normally uses
 `10.0.2.2`; a physical device uses the development machine's reachable LAN
 address. Mobile commands must also include the repository's required

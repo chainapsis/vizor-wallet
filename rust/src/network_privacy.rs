@@ -101,16 +101,24 @@ pub fn begin_tor_enable() {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         TOR_DESIRED.store(true, Ordering::Release);
-        TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+        let has_client = client_slot()
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some();
+        TOR_STATUS.store(
+            if has_client {
+                STATUS_READY
+            } else {
+                STATUS_BOOTSTRAPPING
+            },
+            Ordering::Release,
+        );
         DIRECT_ROUTE_EPOCH.fetch_add(1, Ordering::AcqRel);
         wakers.drain().map(|(_, waker)| waker).collect::<Vec<_>>()
     };
     for waker in wakers {
         waker.wake();
     }
-    *client_slot()
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     log::info!("network privacy: Tor requested; direct requests blocked");
 }
 
@@ -327,12 +335,30 @@ fn apply_dormant_mode_locked() {
 
 pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, String> {
     TOR_DESIRED.store(true, Ordering::Release);
-    bootstrap_tor(tor_directory, TOR_BOOTSTRAP_TIMEOUT).await
+    bootstrap_tor_for(tor_directory, TOR_BOOTSTRAP_TIMEOUT, true).await
 }
 
+#[cfg(test)]
 async fn bootstrap_tor(
     tor_directory: &Path,
     deadline: Duration,
+) -> Result<NetworkPrivacyStatus, String> {
+    bootstrap_tor_for(tor_directory, deadline, true).await
+}
+
+/// Ensures the shared Arti client exists without changing the user's default
+/// direct/Tor route. Private-state HTTP calls use this before selecting the
+/// client through [`tor_client_for_required_route`].
+pub async fn ensure_private_state_tor(tor_directory: &Path) -> Result<(), String> {
+    bootstrap_tor_for(tor_directory, TOR_BOOTSTRAP_TIMEOUT, false)
+        .await
+        .map(|_| ())
+}
+
+async fn bootstrap_tor_for(
+    tor_directory: &Path,
+    deadline: Duration,
+    default_route: bool,
 ) -> Result<NetworkPrivacyStatus, String> {
     // The deadline covers the wait for the init lock as well as the bootstrap
     // it guards, so it bounds the call the caller actually made.
@@ -354,21 +380,27 @@ async fn bootstrap_tor(
         // reason to reach the network another way.
         return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string());
     };
-    if !is_tor_desired() {
+    if default_route && !is_tor_desired() {
         return Ok(NetworkPrivacyStatus::Direct);
     }
-    if status() == NetworkPrivacyStatus::Ready
-        && client_slot()
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .is_some()
+    if client_slot()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .is_some()
     {
+        if default_route {
+            TOR_STATUS.store(STATUS_READY, Ordering::Release);
+        }
         return Ok(NetworkPrivacyStatus::Ready);
     }
-    TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+    if default_route {
+        TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+    }
 
     if let Err(error) = tokio::fs::create_dir_all(tor_directory).await {
-        set_tor_failed();
+        if default_route {
+            set_tor_failed();
+        }
         return Err(format!("Create Tor data directory: {error}"));
     }
 
@@ -388,6 +420,7 @@ async fn bootstrap_tor(
     // does not block the next enable attempt.
     install_bootstrapped_client(
         remaining,
+        default_route,
         TorClient::create_with_timeouts(
             tor_directory,
             // Arti refuses a data directory other users could reach. On desktop
@@ -421,12 +454,15 @@ async fn bootstrap_tor(
 /// keeps refusing until something bootstraps successfully.
 async fn install_bootstrapped_client<E: Display>(
     deadline: Duration,
+    default_route: bool,
     bootstrap: impl Future<Output = Result<TorClient, E>>,
 ) -> Result<NetworkPrivacyStatus, String> {
-    let client = match await_tor_bootstrap(deadline, bootstrap).await {
+    let client = match await_tor_bootstrap_for(deadline, default_route, bootstrap).await {
         Ok(client) => client,
         Err(error) => {
-            set_tor_failed();
+            if default_route {
+                set_tor_failed();
+            }
             return Err(error);
         }
     };
@@ -440,14 +476,16 @@ async fn install_bootstrapped_client<E: Display>(
         let mut slot = client_slot()
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !is_tor_desired() {
+        if default_route && !is_tor_desired() {
             return Ok(NetworkPrivacyStatus::Direct);
         }
         // Adopting the pending mode here is what keeps a sleep asked for
         // mid-bootstrap from being overtaken by the client it was waiting for.
         client.set_dormant(pending_dormant_mode());
         *slot = Some(client);
-        TOR_STATUS.store(STATUS_READY, Ordering::Release);
+        if is_tor_desired() {
+            TOR_STATUS.store(STATUS_READY, Ordering::Release);
+        }
     }
     log::info!("network privacy: Tor is ready");
     Ok(NetworkPrivacyStatus::Ready)
@@ -474,8 +512,17 @@ const BOOTSTRAP_ABANDONED_MESSAGE: &str = "Tor was turned off while it was conne
 /// between the registration and the check that a route change can fall into,
 /// and a quarter-second poll over a bootstrap measured in tens of seconds costs
 /// less than closing that window would.
+#[cfg(test)]
 async fn await_tor_bootstrap<T, E: Display>(
     deadline: Duration,
+    bootstrap: impl Future<Output = Result<T, E>>,
+) -> Result<T, String> {
+    await_tor_bootstrap_for(deadline, true, bootstrap).await
+}
+
+async fn await_tor_bootstrap_for<T, E: Display>(
+    deadline: Duration,
+    abandon_when_direct: bool,
     bootstrap: impl Future<Output = Result<T, E>>,
 ) -> Result<T, String> {
     tokio::pin!(bootstrap);
@@ -492,7 +539,7 @@ async fn await_tor_bootstrap<T, E: Display>(
                 return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string())
             }
             _ = tokio::time::sleep(BOOTSTRAP_ROUTE_POLL_INTERVAL) => {
-                if !is_tor_desired() {
+                if abandon_when_direct && !is_tor_desired() {
                     return Err(BOOTSTRAP_ABANDONED_MESSAGE.to_string());
                 }
             }
@@ -561,6 +608,19 @@ pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, 
     }
 }
 
+pub(crate) fn tor_client_for_required_route(isolated: bool) -> Result<TorClient, String> {
+    let client = client_slot()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+        .ok_or_else(|| "Required Tor route is unavailable".to_string())?;
+    Ok(if isolated {
+        client.isolated_client()
+    } else {
+        client
+    })
+}
+
 /// Serialises the tests that touch the process-wide route policy.
 ///
 /// `cargo test` shares one process across threads, so this has to be reachable
@@ -607,12 +667,12 @@ mod tests {
     };
 
     use super::{
-        await_tor_bootstrap, begin_tor_enable, bootstrap_tor, cancel_direct_connections,
-        client_slot, disable_tor, init_lock, install_bootstrapped_client, is_tor_desired,
-        pending_dormant_mode, route_decision, set_tor_dormant, set_tor_failed, status,
-        test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
-        NetworkPrivacyStatus, RouteDecision, TorClient, BOOTSTRAP_ABANDONED_MESSAGE,
-        TOR_BOOTSTRAP_TIMEOUT_MESSAGE,
+        await_tor_bootstrap, await_tor_bootstrap_for, begin_tor_enable, bootstrap_tor,
+        bootstrap_tor_for, cancel_direct_connections, client_slot, disable_tor, init_lock,
+        install_bootstrapped_client, is_tor_desired, pending_dormant_mode, route_decision,
+        set_tor_dormant, set_tor_failed, status, test_route_policy::lock_route_policy,
+        tor_client_for_route, DirectRouteIo, DormantMode, NetworkPrivacyStatus, RouteDecision,
+        TorClient, BOOTSTRAP_ABANDONED_MESSAGE, TOR_BOOTSTRAP_TIMEOUT_MESSAGE,
     };
 
     #[test]
@@ -737,6 +797,22 @@ mod tests {
         assert_eq!(result.unwrap_err(), TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
     }
 
+    #[tokio::test]
+    async fn a_required_route_bootstrap_is_not_abandoned_while_default_route_is_direct() {
+        let _policy = lock_route_policy();
+        disable_tor();
+
+        let result = await_tor_bootstrap_for(
+            Duration::from_millis(1),
+            false,
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
+        assert_eq!(status(), NetworkPrivacyStatus::Direct);
+    }
+
     /// A path that already exists as a file, so a bootstrap started against it
     /// fails at its first filesystem step. No test may reach a real bootstrap:
     /// that is network work, and on a blocked network it does not terminate.
@@ -744,6 +820,24 @@ mod tests {
         let path = temp.path().join("tor");
         std::fs::write(&path, b"").unwrap();
         path
+    }
+
+    #[tokio::test]
+    async fn a_required_route_bootstrap_failure_does_not_change_default_route_status() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        disable_tor();
+
+        let result = bootstrap_tor_for(
+            &unusable_tor_directory(&temp),
+            Duration::from_secs(1),
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(!is_tor_desired());
+        assert_eq!(status(), NetworkPrivacyStatus::Direct);
     }
 
     #[test]
@@ -778,6 +872,7 @@ mod tests {
 
         let result = install_bootstrapped_client(
             Duration::from_millis(1),
+            true,
             std::future::pending::<Result<TorClient, String>>(),
         )
         .await;

@@ -2,7 +2,13 @@ import 'dart:convert';
 import 'dart:io' show HttpHeaders;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+
+import '../config/private_state_sync_config.dart';
 import '../network/network_http_client.dart';
+import '../network/tor_runtime_support.dart';
+import '../storage/wallet_paths.dart';
+import '../../rust/api/network_privacy.dart' as rust_network_privacy;
 import 'private_state_models.dart';
 import 'private_state_remote_store.dart';
 
@@ -41,6 +47,161 @@ class NetworkPrivateStateHttpTransport implements PrivateStateHttpTransport {
   }
 
   void close({bool force = false}) => _client.close(force: force);
+}
+
+class DebugDirectPrivateStateHttpTransport
+    extends NetworkPrivateStateHttpTransport {
+  DebugDirectPrivateStateHttpTransport({NetworkHttpClient? client})
+    : super(client: _requireDebugClient(client));
+
+  static NetworkHttpClient _requireDebugClient(NetworkHttpClient? client) {
+    if (!kDebugMode) {
+      throw StateError(
+        'Debug-direct private-state HTTP is unavailable in this build.',
+      );
+    }
+    return client ?? NetworkHttpClient.debugDirect();
+  }
+}
+
+abstract interface class PrivateStateTorRuntime {
+  Future<void> ensureReady();
+}
+
+class RustPrivateStateTorRuntime implements PrivateStateTorRuntime {
+  const RustPrivateStateTorRuntime({
+    this.resolveTorDirectory = getTorDataDirectoryPath,
+    this.excludeTorDirectoryFromBackup = excludeTorDirectoryFromDeviceBackup,
+    this.ensureRuntime = rust_network_privacy.ensurePrivateStateTor,
+  });
+
+  final Future<String> Function() resolveTorDirectory;
+  final Future<void> Function(String directory) excludeTorDirectoryFromBackup;
+  final Future<void> Function({required String torDirectory}) ensureRuntime;
+
+  @override
+  Future<void> ensureReady() async {
+    final directory = await resolveTorDirectory();
+    await _markDirectory(directory);
+    try {
+      await ensureRuntime(torDirectory: directory);
+    } finally {
+      await _markDirectory(directory);
+    }
+  }
+
+  Future<void> _markDirectory(String directory) async {
+    try {
+      await excludeTorDirectoryFromBackup(directory);
+    } catch (_) {
+      // A backup exclusion failure must not weaken or replace the Tor route.
+    }
+  }
+}
+
+class _RequiredTorHttpBridge implements TorHttpBridge {
+  const _RequiredTorHttpBridge({
+    required PrivateStateTorRuntime runtime,
+    TorHttpBridge delegate = const RustPrivateStateTorHttpBridge(),
+  }) : _runtime = runtime,
+       _delegate = delegate;
+
+  final PrivateStateTorRuntime _runtime;
+  final TorHttpBridge _delegate;
+
+  @override
+  Future<NetworkHttpResponse> get(
+    Uri uri, {
+    required Map<String, String> headers,
+  }) async {
+    await _runtime.ensureReady();
+    return _delegate.get(uri, headers: headers);
+  }
+
+  @override
+  Future<NetworkHttpResponse> post(
+    Uri uri, {
+    required Map<String, String> headers,
+    required List<int> bodyBytes,
+  }) async {
+    await _runtime.ensureReady();
+    return _delegate.post(uri, headers: headers, bodyBytes: bodyBytes);
+  }
+
+  @override
+  Future<NetworkHttpResponse> download(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String destinationPath,
+  }) {
+    throw const TorUnsupportedHttpMethodException('DOWNLOAD');
+  }
+}
+
+class RustPrivateStateTorHttpBridge implements TorHttpBridge {
+  const RustPrivateStateTorHttpBridge();
+
+  @override
+  Future<NetworkHttpResponse> get(
+    Uri uri, {
+    required Map<String, String> headers,
+  }) async {
+    final response = await rust_network_privacy.privateStateTorHttpGet(
+      url: uri.toString(),
+      headers: networkHttpHeadersToRust(headers),
+    );
+    return networkHttpResponseFromRust(response);
+  }
+
+  @override
+  Future<NetworkHttpResponse> post(
+    Uri uri, {
+    required Map<String, String> headers,
+    required List<int> bodyBytes,
+  }) async {
+    final response = await rust_network_privacy.privateStateTorHttpPost(
+      url: uri.toString(),
+      headers: networkHttpHeadersToRust(headers),
+      body: bodyBytes,
+    );
+    return networkHttpResponseFromRust(response);
+  }
+
+  @override
+  Future<NetworkHttpResponse> download(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String destinationPath,
+  }) {
+    throw const TorUnsupportedHttpMethodException('DOWNLOAD');
+  }
+}
+
+class TorRequiredPrivateStateHttpTransport
+    extends NetworkPrivateStateHttpTransport {
+  TorRequiredPrivateStateHttpTransport({
+    PrivateStateTorRuntime runtime = const RustPrivateStateTorRuntime(),
+    TorHttpBridge torBridge = const RustPrivateStateTorHttpBridge(),
+  }) : super(
+         client: NetworkHttpClient(
+           torDesired: _alwaysUseTor,
+           torBridge: _RequiredTorHttpBridge(
+             runtime: runtime,
+             delegate: torBridge,
+           ),
+         ),
+       );
+
+  static bool _alwaysUseTor() => true;
+}
+
+NetworkPrivateStateHttpTransport privateStateHttpTransportForBuild() {
+  return switch (privateStateTransportModeForBuild()) {
+    PrivateStateTransportMode.debugDirect =>
+      DebugDirectPrivateStateHttpTransport(),
+    PrivateStateTransportMode.torRequired =>
+      TorRequiredPrivateStateHttpTransport(),
+  };
 }
 
 class PrivateStateHttpStatusException implements Exception {

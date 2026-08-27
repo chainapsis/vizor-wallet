@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 const kPrivateStateBaseUrlEnvKey = 'VIZOR_PRIVATE_STATE_BASE_URL';
 const kPrivateStateAllowInsecureHttpEnvKey =
     'VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP';
@@ -17,7 +19,7 @@ const kPrivateStateAudience = String.fromEnvironment(
 Uri privateStateBaseUriForBuild() {
   return parsePrivateStateBaseUri(
     kPrivateStateBaseUrl,
-    allowInsecureHttp: kPrivateStateAllowInsecureHttp,
+    allowInsecureHttp: kDebugMode && kPrivateStateAllowInsecureHttp,
   );
 }
 
@@ -26,8 +28,20 @@ String privateStateAudienceForBuild(Uri baseUri) {
   if (configured.isEmpty) return baseUri.toString();
   return parsePrivateStateAudience(
     configured,
-    allowInsecureHttp: kPrivateStateAllowInsecureHttp,
+    allowInsecureHttp: kDebugMode && kPrivateStateAllowInsecureHttp,
   );
+}
+
+enum PrivateStateTransportMode { debugDirect, torRequired }
+
+PrivateStateTransportMode privateStateTransportModeFor({
+  required bool isDebugMode,
+}) => isDebugMode
+    ? PrivateStateTransportMode.debugDirect
+    : PrivateStateTransportMode.torRequired;
+
+PrivateStateTransportMode privateStateTransportModeForBuild() {
+  return privateStateTransportModeFor(isDebugMode: kDebugMode);
 }
 
 String parsePrivateStateAudience(

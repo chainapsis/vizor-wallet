@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/private_state_sync_config.dart';
 
 void main() {
+  test('selects direct only for Debug builds', () {
+    expect(
+      privateStateTransportModeFor(isDebugMode: true),
+      PrivateStateTransportMode.debugDirect,
+    );
+    expect(
+      privateStateTransportModeFor(isDebugMode: false),
+      PrivateStateTransportMode.torRequired,
+    );
+  });
+
   test('normalizes a production HTTPS base URL', () {
     expect(
       parsePrivateStateBaseUri(

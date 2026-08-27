@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/layout/app_form_factor.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
+import '../core/network/tor_runtime_support.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../rust/network_privacy.dart' as rust_types;
@@ -97,7 +98,7 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   const RustNetworkPrivacyRuntime({
     this.configureRuntime = rust_network_privacy.configureNetworkPrivacy,
     this.resolveTorDirectory = getTorDataDirectoryPath,
-    this.excludeTorDirectoryFromBackup = _excludeFromDeviceBackup,
+    this.excludeTorDirectoryFromBackup = excludeTorDirectoryFromDeviceBackup,
   });
 
   final Future<rust_types.NetworkPrivacyStatus> Function({
@@ -156,24 +157,6 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
         'of device backups: $error\n$stackTrace',
       );
     }
-  }
-}
-
-const _deviceBackupChannel = MethodChannel('com.zcash.wallet/network_privacy');
-
-Future<void> _excludeFromDeviceBackup(String directory) async {
-  // Android has no runtime equivalent. `android:allowBackup="false"` in the
-  // manifest keeps app files out of cloud backup, but from targetSdk 31 that
-  // attribute no longer covers device-to-device transfer; excluding the
-  // directory from a phone-to-phone migration takes `<device-transfer>`
-  // data-extraction rules in the manifest, which the app does not carry.
-  if (!Platform.isIOS) return;
-  try {
-    await _deviceBackupChannel.invokeMethod<void>('excludeFromBackup', {
-      'path': directory,
-    });
-  } on MissingPluginException {
-    // Test hosts and older builds have no native side to ask.
   }
 }
 

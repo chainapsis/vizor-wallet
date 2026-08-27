@@ -33,6 +33,13 @@ Future<NetworkPrivacyStatus> configureNetworkPrivacy({
   torDirectory: torDirectory,
 );
 
+/// Bootstraps the shared Tor client for a private-state request without
+/// changing the user's default network route.
+Future<void> ensurePrivateStateTor({required String torDirectory}) => RustLib
+    .instance
+    .api
+    .crateApiNetworkPrivacyEnsurePrivateStateTor(torDirectory: torDirectory);
+
 /// Returns the current runtime state. `Bootstrapping` and `Failed` both mean
 /// that app network requests are blocked while Tor remains the desired route.
 NetworkPrivacyStatus getNetworkPrivacyStatus() =>
@@ -76,6 +83,28 @@ Future<NetworkHttpResponse> torHttpPost({
   required List<NetworkHttpHeader> headers,
   required List<int> body,
 }) => RustLib.instance.api.crateApiNetworkPrivacyTorHttpPost(
+  url: url,
+  headers: headers,
+  body: body,
+);
+
+/// Makes a private-state GET on a fresh Tor circuit even when the user's
+/// default app route is direct. There is intentionally no direct fallback.
+Future<NetworkHttpResponse> privateStateTorHttpGet({
+  required String url,
+  required List<NetworkHttpHeader> headers,
+}) => RustLib.instance.api.crateApiNetworkPrivacyPrivateStateTorHttpGet(
+  url: url,
+  headers: headers,
+);
+
+/// Makes a private-state POST on a fresh Tor circuit even when the user's
+/// default app route is direct. There is intentionally no direct fallback.
+Future<NetworkHttpResponse> privateStateTorHttpPost({
+  required String url,
+  required List<NetworkHttpHeader> headers,
+  required List<int> body,
+}) => RustLib.instance.api.crateApiNetworkPrivacyPrivateStateTorHttpPost(
   url: url,
   headers: headers,
   body: body,
