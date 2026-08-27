@@ -6874,7 +6874,9 @@ void main() {
     expect(session.error?.message, contains('No vote server accepted share'));
     expect(rust.storedVoteTxHashes, ['0:7:vote-tx']);
     expect(rust.storedCommitmentBundles, ['0:7:2']);
-    expect(rust.recordedShares, isEmpty);
+    expect(rust.recordedShares, hasLength(1));
+    expect(rust.recordedShares.single.shareIndex, 0);
+    expect(rust.recordedShares.single.sentToUrls, isEmpty);
     final postTimeouts = http.requests
         .where(
           (request) =>

@@ -1677,12 +1677,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _InitialShareSubmissionResult? failedResult;
       Object? persistenceError;
       StackTrace? persistenceStackTrace;
-      // Persist in completion order so accepted shares become durable promptly
-      // while Rust DB writes remain sequential.
+      // Persist in completion order so every share becomes durable promptly
+      // while Rust DB writes remain sequential. An empty server list records
+      // recovery work for a share that exhausted the initial delivery budget.
       await for (final result in Stream.fromFutures(submissions)) {
         if (result.acceptedServers.isEmpty) {
           failedResult ??= result;
-          continue;
         }
         try {
           await rust.recordShareDelegation(
