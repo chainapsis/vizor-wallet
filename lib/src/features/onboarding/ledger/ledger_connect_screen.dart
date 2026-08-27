@@ -308,12 +308,15 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                   variant: AppButtonVariant.primary,
                   minWidth: 230,
                   leading: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? null
                       : const AppIcon(AppIcons.ledger, semanticLabel: 'Ledger'),
+                  trailing: _busy
+                      ? const AppIcon(
+                          AppIcons.loader,
+                          key: ValueKey('ledger_connect_spinner'),
+                          semanticLabel: 'Connecting to Ledger',
+                        )
+                      : null,
                   child: Text(_connectButtonLabel(readiness)),
                 ),
                 const SizedBox(height: AppSpacing.xs),
