@@ -21,27 +21,24 @@ void main() {
     expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
   });
 
-  test(
-    'ignores unrelated links so ZIP-321 and HTTPS can share the channel',
-    () {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
+  test('ignores unrelated links so ZIP-321 can share the channel', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
 
-      final result = container
+    final result = container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive('zcash:u1recipient?amount=1');
+
+    expect(result, PaymentLinkIntakeResult.ignored);
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
+
+    expect(
+      container
           .read(paymentLinkIntakeProvider.notifier)
-          .receive('zcash:u1recipient?amount=1');
-
-      expect(result, PaymentLinkIntakeResult.ignored);
-      expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
-
-      expect(
-        container
-            .read(paymentLinkIntakeProvider.notifier)
-            .receive('https://functions.vizor.cash/health'),
-        PaymentLinkIntakeResult.ignored,
-      );
-    },
-  );
+          .receive('https://functions.vizor.cash/health'),
+      PaymentLinkIntakeResult.ignored,
+    );
+  });
 
   test('rejects malformed Vizor links without clearing an earlier secret', () {
     final container = ProviderContainer();
@@ -50,9 +47,7 @@ void main() {
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
     notifier.receive(link.toUri().toString());
 
-    final result = notifier.receive(
-      'https://functions.vizor.cash/payment-links/open#v1=not-base64',
-    );
+    final result = notifier.receive('vizor://payment-link?p=not-base64');
 
     expect(result, PaymentLinkIntakeResult.rejected);
     final state = container.read(paymentLinkIntakeProvider);
@@ -140,8 +135,11 @@ void main() {
       container
           .read(paymentLinkIntakeProvider)
           .pendingLinks
-          .map((link) => link.toUri().fragment),
-      [original, ...changedPayloads].map((link) => link.toUri().fragment),
+          .map((link) => link.toUri().queryParameters['p']),
+      [
+        original,
+        ...changedPayloads,
+      ].map((link) => link.toUri().queryParameters['p']),
     );
   });
 

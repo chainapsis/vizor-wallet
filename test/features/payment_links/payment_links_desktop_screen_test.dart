@@ -420,7 +420,7 @@ void main() {
         isSyncing: true,
         isSyncComplete: false,
         percentage: 0.7,
-        displayPercentage: 0.7,
+        displayTargetPercentage: 0.7,
         spendableBalance: BigInt.from(14223000000),
         displaySpendableBalance: BigInt.from(14223000000),
       ),
@@ -459,7 +459,7 @@ void main() {
         hasAccountScopedData: true,
         isSyncComplete: true,
         percentage: 1,
-        displayPercentage: 1,
+        displayTargetPercentage: 1,
         spendableBalance: BigInt.from(14223000000),
         displaySpendableBalance: BigInt.from(14223000000),
       ),
@@ -483,19 +483,19 @@ void main() {
     );
   });
 
-  testWidgets('keeps a created link private until ten confirmations', (
+  testWidgets('keeps a created link private until six confirmations', (
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(
       records: [_sharedRecovery],
-      fundingConfirmationCount: 9,
+      fundingConfirmationCount: 5,
     );
     await _pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Preparing...'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
 
-    operations.fundingConfirmationCount = 10;
+    operations.fundingConfirmationCount = 6;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
@@ -529,14 +529,14 @@ void main() {
     expect(find.text('Your link will be here'), findsOneWidget);
     expect(find.byType(PaymentLinkConfetti), findsNothing);
 
-    operations.fundingConfirmationCount = 7;
+    operations.fundingConfirmationCount = 3;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
     expect(find.text('Link will be available soon'), findsOneWidget);
     expect(find.text('Your link will be here'), findsNothing);
     expect(find.byType(PaymentLinkConfetti), findsNothing);
 
-    operations.fundingConfirmationCount = 10;
+    operations.fundingConfirmationCount = 6;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
     expect(find.text('Copy link'), findsOneWidget);
@@ -548,7 +548,9 @@ void main() {
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(claimable: false);
-    final clipboard = _FakePaymentLinkClipboard(text: _incomingLink.encode());
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
     await _pumpPaymentLinksScreen(
       tester,
       operations: operations,
@@ -679,7 +681,7 @@ void main() {
           hasAccountScopedData: true,
           isSyncComplete: true,
           percentage: 1,
-          displayPercentage: 1,
+          displayTargetPercentage: 1,
           spendableBalance: BigInt.from(14223000000),
           displaySpendableBalance: BigInt.from(14223000000),
         ),
@@ -733,7 +735,7 @@ void main() {
           hasAccountScopedData: true,
           isSyncComplete: true,
           percentage: 1,
-          displayPercentage: 1,
+          displayTargetPercentage: 1,
           spendableBalance: BigInt.from(14223000000),
           displaySpendableBalance: BigInt.from(14223000000),
         ),
@@ -799,7 +801,9 @@ void main() {
 
   testWidgets('enables manual redeem intake', (tester) async {
     final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard(text: _incomingLink.encode());
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
     await _pumpPaymentLinksScreen(
       tester,
       operations: operations,
@@ -848,7 +852,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(_incomingLink.encode());
+        .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
     expect(find.text('You’ve received a gift!'), findsOneWidget);
@@ -857,8 +861,8 @@ void main() {
     await tester.tap(find.text('Claim my gift'));
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(operations.claimedLinks.map((link) => link.encode()), [
-      _incomingLink.encode(),
+    expect(operations.claimedLinks.map((link) => link.toUri().toString()), [
+      _incomingLink.toUri().toString(),
     ]);
     expect(find.text('Gift claim submitted'), findsOneWidget);
     expect(find.text('Receiving...'), findsOneWidget);
@@ -882,7 +886,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(_incomingLink.encode());
+        .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
     expect(
@@ -958,7 +962,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(_incomingLink.encode());
+        .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim my gift'));
     await tester.pump(const Duration(milliseconds: 250));
@@ -995,7 +999,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(_incomingLink.encode());
+        .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim my gift'));
     await tester.pump();
@@ -1035,7 +1039,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .ingest(_incomingLink.encode());
+        .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim my gift'));
     await tester.pump();
@@ -1115,7 +1119,7 @@ Future<void> _pumpPaymentLinksScreen(
                   hasAccountScopedData: true,
                   isSyncComplete: true,
                   percentage: 1,
-                  displayPercentage: 1,
+                  displayTargetPercentage: 1,
                   spendableBalance:
                       spendableBalance ?? BigInt.from(14223000000),
                   displaySpendableBalance:
@@ -1322,7 +1326,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }
 
   @override
-  Future<VizorPaymentLink> createFundedLink({
+  Future<PaymentLinkFundingResult> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
@@ -1350,7 +1354,11 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
         fundingTxids: 'funding-txid',
       ),
     );
-    return link;
+    return PaymentLinkFundingResult(
+      link: link,
+      txids: 'funding-txid',
+      fundingMetadataSaved: true,
+    );
   }
 
   @override

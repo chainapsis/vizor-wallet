@@ -80,18 +80,16 @@ class PaymentLinkReceivedRecord {
       createdAt: createdAt,
       artworkId: artworkId,
       status: status ?? this.status,
-      claimLink:
-          identical(claimLink, _fieldNotProvided)
-              ? this.claimLink
-              : claimLink as VizorPaymentLink?,
+      claimLink: identical(claimLink, _fieldNotProvided)
+          ? this.claimLink
+          : claimLink as VizorPaymentLink?,
       destinationAccountUuid:
           identical(destinationAccountUuid, _fieldNotProvided)
-              ? this.destinationAccountUuid
-              : destinationAccountUuid as String?,
-      claimTxids:
-          identical(claimTxids, _fieldNotProvided)
-              ? this.claimTxids
-              : claimTxids as String?,
+          ? this.destinationAccountUuid
+          : destinationAccountUuid as String?,
+      claimTxids: identical(claimTxids, _fieldNotProvided)
+          ? this.claimTxids
+          : claimTxids as String?,
       updatedAt: (updatedAt ?? this.updatedAt).toUtc(),
     );
   }
@@ -371,7 +369,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'createdAt': record.createdAt.toUtc().toIso8601String(),
     'artworkId': record.artworkId,
     'status': record.status.name,
-    'claimLink': record.claimLink?.encode(),
+    'claimLink': record.claimLink?.toUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
     'claimTxids': record.claimTxids,
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
@@ -429,8 +427,9 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       'Received-card status is invalid.',
     );
   }
-  final claimLink =
-      claimLinkRaw == null ? null : VizorPaymentLink.decode(claimLinkRaw);
+  final claimLink = claimLinkRaw == null
+      ? null
+      : VizorPaymentLink.parse(claimLinkRaw);
   if (claimLink != null &&
       (claimLink.network != network ||
           claimLink.address != address ||

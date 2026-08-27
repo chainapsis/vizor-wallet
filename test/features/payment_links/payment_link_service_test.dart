@@ -65,26 +65,26 @@ void main() {
     );
   });
 
-  test('share readiness requires ten mined confirmations', () {
+  test('share readiness requires six mined confirmations', () {
     expect(
       paymentLinkConfirmationCount(
         minedHeight: BigInt.from(100),
-        chainTipHeight: BigInt.from(108),
+        chainTipHeight: BigInt.from(104),
       ),
-      9,
+      5,
     );
     expect(
-      const PaymentLinkFundingProgress(confirmationCount: 9).isReady,
+      const PaymentLinkFundingProgress(confirmationCount: 5).isReady,
       isFalse,
     );
     expect(
-      const PaymentLinkFundingProgress(confirmationCount: 10).isReady,
+      const PaymentLinkFundingProgress(confirmationCount: 6).isReady,
       isTrue,
     );
     expect(
       paymentLinkConfirmationCount(
         minedHeight: BigInt.zero,
-        chainTipHeight: BigInt.from(108),
+        chainTipHeight: BigInt.from(104),
       ),
       0,
     );

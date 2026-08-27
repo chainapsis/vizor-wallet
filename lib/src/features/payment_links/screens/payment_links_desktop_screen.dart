@@ -677,13 +677,14 @@ class _PaymentLinksDesktopScreenState
 
     setState(() => _operationInProgress = true);
     try {
-      final link = await ref
+      final funding = await ref
           .read(paymentLinkOperationsProvider)
           .createFundedLink(
             amountZatoshi: amount,
             sourceAccountUuid: sourceAccountUuid,
             presentation: presentation,
           );
+      final link = funding.link;
       await _loadRecoveries(showError: false);
       if (!mounted) return;
       setState(() {
@@ -749,7 +750,9 @@ class _PaymentLinksDesktopScreenState
     if (_operationInProgress) return;
     setState(() => _operationInProgress = true);
     try {
-      await ref.read(paymentLinkClipboardProvider).copySecret(link.encode());
+      await ref
+          .read(paymentLinkClipboardProvider)
+          .copySecret(link.toUri().toString());
       try {
         await ref
             .read(paymentLinkOperationsProvider)
@@ -783,7 +786,7 @@ class _PaymentLinksDesktopScreenState
         return;
       }
       final notifier = ref.read(paymentLinkIntakeProvider.notifier);
-      final result = notifier.ingest(rawLink);
+      final result = notifier.receive(rawLink);
       if (result != PaymentLinkIntakeResult.accepted) {
         if (mounted) {
           setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
