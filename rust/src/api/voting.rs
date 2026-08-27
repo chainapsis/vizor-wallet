@@ -272,6 +272,8 @@ pub fn vote_share_wire_json(
 /// This mirrors the zcash-swift-wallet-sdk wrapper around
 /// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
 /// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// `immediate_share_index` is the position of the round's designated immediate
+/// share in this batch, after any caller-side filtering or reordering.
 ///
 /// # Errors
 ///
@@ -2627,6 +2629,33 @@ mod tests {
     }
 
     #[test]
+    fn plan_share_submissions_marks_designated_batch_position_immediate() {
+        let server_urls = vec![
+            "https://helper-a.example".to_string(),
+            "https://helper-b.example".to_string(),
+        ];
+        let plans = plan_share_submissions(
+            3,
+            server_urls.clone(),
+            server_urls.len() as u32,
+            100,
+            600,
+            Some(120),
+            false,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(plans.len(), 3);
+        assert!(!plans[0].immediate);
+        assert!(plans[0].submit_at >= 100);
+        assert!(plans[1].immediate);
+        assert_eq!(plans[1].submit_at, 0);
+        assert!(!plans[2].immediate);
+        assert!(plans[2].submit_at >= 100);
+    }
+
+    #[test]
     fn helper_selection_wrappers_expose_crate_policy() {
         let policy = share_server_selection_policy(10);
         assert_eq!(policy.target_count, 5);
@@ -2641,7 +2670,8 @@ mod tests {
         let servers: Vec<String> = (0..10)
             .map(|index| format!("https://helper-{index}.example"))
             .collect();
-        let plans = plan_share_submissions(16, servers, 10, 100, 600, Some(120), false).unwrap();
+        let plans =
+            plan_share_submissions(16, servers, 10, 100, 600, Some(120), false, None).unwrap();
         let mut usage = std::collections::HashMap::<String, usize>::new();
         for plan in plans {
             assert_eq!(plan.target_servers.len(), 5);

@@ -1167,6 +1167,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // that recovery will derive after a restart.
         roundPlan = await _loadRoundPlan(context);
       }
+      final immediateShareKey = roundPlan?.allDecided == true
+          ? roundPlan?.immediateShareKey
+          : null;
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1285,7 +1288,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           helperPostPool: helperPostPool,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
-          immediateShareKey: roundPlan?.immediateShareKey,
+          immediateShareKey: immediateShareKey,
           shareIndexFilter: shareIndexFilter,
           completedQuestions: completedQuestions,
           totalQuestions: totalQuestions,
@@ -1339,7 +1342,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperPreflight: helperPreflight,
             helperSelectionPolicy: helperSelectionPolicy,
             helperPostPool: helperPostPool,
-            immediateShareKey: roundPlan?.immediateShareKey,
+            immediateShareKey: immediateShareKey,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
@@ -1515,7 +1518,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
     required bool singleShare,
-    rust_share_policy.ImmediateShareKey? immediateShareKey,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
     required int completedQuestions,
     required int totalQuestions,
     required double? voteSubmissionProgress,
@@ -2003,7 +2006,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Future<List<String>> helperPreflight,
     required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
     required _AsyncPermitPool helperPostPool,
-    rust_share_policy.ImmediateShareKey? immediateShareKey,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
