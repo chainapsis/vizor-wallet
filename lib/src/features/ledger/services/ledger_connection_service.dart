@@ -125,6 +125,11 @@ class LedgerConnectionService {
     if (platform == TargetPlatform.macOS) {
       await mobile.disconnect();
       await mobile.connect(device);
+    } else if (mobile.connectedDeviceId != device.id) {
+      if (mobile.connectedDeviceId != null) {
+        await mobile.disconnect();
+      }
+      await mobile.connect(device);
     } else {
       try {
         await mobile.currentApp();

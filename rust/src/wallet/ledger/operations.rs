@@ -1,4 +1,8 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    sync::{Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -10,6 +14,7 @@ use crate::wallet::{
 const TABLE: &str = "vizor_ledger_signed_operations";
 const STATE_SIGNED_PENDING_BROADCAST: &str = "signed_pending_broadcast";
 const STATE_RESULT_PENDING_ACK: &str = "result_pending_ack";
+static ACTIVE_BROADCASTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SignedOperationMetadata {
@@ -67,6 +72,36 @@ struct StoredOperation {
     signature_pczt: Vec<u8>,
 }
 
+struct BroadcastGuard {
+    key: String,
+}
+
+impl BroadcastGuard {
+    fn acquire(db_path: &str, network: WalletNetwork, operation_id: &str) -> Result<Self, String> {
+        let key = format!("{db_path}\0{}\0{operation_id}", network_name(network));
+        let mut active = ACTIVE_BROADCASTS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !active.insert(key.clone()) {
+            return Err(format!(
+                "Ledger operation {operation_id} is already being broadcast"
+            ));
+        }
+        Ok(Self { key })
+    }
+}
+
+impl Drop for BroadcastGuard {
+    fn drop(&mut self) {
+        ACTIVE_BROADCASTS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.key);
+    }
+}
+
 pub(crate) fn checkpoint(
     db_path: &str,
     network: WalletNetwork,
@@ -82,6 +117,8 @@ pub(crate) fn checkpoint(
     let operation_kind = OperationKind::parse(kind)?;
     validate_external_ref(operation_kind, external_ref)?;
     let expiry_height = validated_expiry_height(proof_pczt, signature_pczt)?;
+    crate::wallet::sync::extract_transaction_from_pczt(proof_pczt, signature_pczt, None, None)
+        .map_err(|error| format!("Validate Ledger signed checkpoint: {error}"))?;
     let now = now_ms()?;
     let network = network_name(network);
 
@@ -189,6 +226,7 @@ pub(crate) async fn broadcast(
     output_params_path: Option<&str>,
 ) -> Result<BroadcastResult, String> {
     validate_identifier("operation ID", operation_id)?;
+    let _broadcast_guard = BroadcastGuard::acquire(db_path, network, operation_id)?;
     let stored = load_for_broadcast(db_path, network, operation_id)?;
     let result = crate::wallet::sync::extract_and_broadcast_pczt(
         db_path,
@@ -221,6 +259,29 @@ pub(crate) async fn broadcast(
             }
         }
     }
+}
+
+pub(crate) fn delete_for_account_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<usize, String> {
+    let table_exists: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            [TABLE],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Check Ledger signed-operation outbox: {error}"))?;
+    if !table_exists {
+        return Ok(0);
+    }
+
+    tx.execute(
+        &format!("DELETE FROM {TABLE} WHERE network = ?1 AND account_uuid = ?2"),
+        params![network_name(network), account_uuid],
+    )
+    .map_err(|error| format!("Delete Ledger signed operations for account: {error}"))
 }
 
 pub(crate) fn acknowledge(
@@ -523,16 +584,108 @@ fn now_ms() -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pczt::roles::creator::Creator;
-    use zcash_protocol::consensus::BranchId;
+    use pczt::roles::{
+        creator::Creator, io_finalizer::IoFinalizer, signer::Signer, updater::Updater,
+    };
+    use transparent::{
+        address::TransparentAddress,
+        bundle::{OutPoint, TxOut},
+    };
+    use voting_crypto_deps::rand::rngs::OsRng;
+    use zcash_primitives::transaction::{
+        builder::{BuildConfig, Builder, BundlePadding, PcztResult},
+        fees::zip317,
+    };
+    use zcash_protocol::{
+        consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
+        value::Zatoshis,
+    };
 
-    fn pczt(expiry_height: u32) -> Vec<u8> {
-        Creator::new(BranchId::Nu6.into(), expiry_height, 133, None, None)
+    #[derive(Clone, Copy, Debug)]
+    struct TestNetwork;
+
+    impl Parameters for TestNetwork {
+        fn network_type(&self) -> NetworkType {
+            NetworkType::Test
+        }
+
+        fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+            match nu {
+                NetworkUpgrade::Nu6_3 => None,
+                _ => Some(BlockHeight::from_u32(1)),
+            }
+        }
+    }
+
+    fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
+        let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
+        let secp = secp256k1::Secp256k1::new();
+        let pubkey = sk.public_key(&secp);
+        let pubkey_bytes = pubkey.serialize();
+        let address = TransparentAddress::from_pubkey(&pubkey);
+
+        let mut builder = Builder::new(
+            TestNetwork,
+            target_height.into(),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: None,
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        builder
+            .add_transparent_p2pkh_input(
+                pubkey,
+                OutPoint::new([1; 32], 0),
+                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            )
+            .unwrap();
+        builder
+            .add_transparent_output(&address, Zatoshis::const_from_u64(990_000))
+            .unwrap();
+        let PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+            .unwrap();
+        let proof = IoFinalizer::new(Creator::build_from_parts(pczt_parts).unwrap())
+            .finalize_io()
+            .unwrap();
+        let derivation = transparent::pczt::Bip32Derivation::parse(
+            [0x22; 32],
+            vec![0x8000_002c, 0x8000_0001, 0x8000_0000, 0, 0],
+        )
+        .unwrap();
+        let proof = Updater::new(proof)
+            .update_transparent_with(|mut bundle| {
+                bundle.update_input_with(0, |mut input| {
+                    input.set_bip32_derivation(pubkey_bytes, derivation);
+                    Ok(())
+                })
+            })
             .unwrap()
-            .build()
+            .finish();
+        let expiry_height = *proof.global().expiry_height();
+        let proof_bytes = proof.serialize().unwrap();
+        let parsed = super::super::parse_pczt(&proof_bytes).unwrap();
+        let sighash = Signer::new(pczt::Pczt::parse(&proof_bytes).unwrap())
             .unwrap()
-            .serialize()
-            .unwrap()
+            .transparent_sighash(0)
+            .unwrap();
+        let signature = secp.sign_ecdsa(&secp256k1::Message::from_digest(sighash), &sk);
+        let mut ledger_der = signature.serialize_der().to_vec();
+        ledger_der[0] |= 1;
+        let signature_bytes = super::super::apply_signatures(
+            &proof_bytes,
+            &parsed,
+            &[super::super::TransparentInputSignature {
+                signature: ledger_der,
+                sighash_type: 1,
+            }],
+            &[],
+        )
+        .unwrap();
+        (proof_bytes, signature_bytes, expiry_height)
     }
 
     fn checkpoint_test_operation(
@@ -540,7 +693,7 @@ mod tests {
         operation_id: &str,
         kind: &str,
     ) -> SignedOperationMetadata {
-        let bytes = pczt(1_234_567);
+        let (proof, signature, _) = signed_pczt(1_234_500);
         let external_ref = matches!(kind, "swap_deposit" | "pay_deposit").then_some("external-1");
         checkpoint(
             db_path,
@@ -549,8 +702,8 @@ mod tests {
             "account-1",
             kind,
             external_ref,
-            &bytes,
-            &bytes,
+            &proof,
+            &signature,
         )
         .unwrap()
     }
@@ -559,7 +712,7 @@ mod tests {
     fn checkpoint_roundtrip_lists_metadata_without_pczt_bytes() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let metadata = checkpoint_test_operation(file.path().to_str().unwrap(), "op-1", "send");
-        assert_eq!(metadata.expiry_height, Some(1_234_567));
+        assert_eq!(metadata.expiry_height, Some(signed_pczt(1_234_500).2));
         assert_eq!(metadata.state, STATE_SIGNED_PENDING_BROADCAST);
 
         let listed = list(
@@ -586,6 +739,8 @@ mod tests {
     #[test]
     fn checkpoint_rejects_mismatched_pczt_expiry() {
         let file = tempfile::NamedTempFile::new().unwrap();
+        let (proof, _, _) = signed_pczt(100);
+        let (_, signature, _) = signed_pczt(101);
         let error = checkpoint(
             file.path().to_str().unwrap(),
             WalletNetwork::Main,
@@ -593,8 +748,8 @@ mod tests {
             "account-1",
             "send",
             None,
-            &pczt(100),
-            &pczt(101),
+            &proof,
+            &signature,
         )
         .unwrap_err();
         assert!(error.contains("expiry mismatch"));
@@ -608,7 +763,7 @@ mod tests {
         let second = checkpoint_test_operation(db_path, "op-1", "send");
         assert_eq!(second, first);
 
-        let different = pczt(1_234_568);
+        let (different_proof, different_signature, _) = signed_pczt(1_234_501);
         let error = checkpoint(
             db_path,
             WalletNetwork::Main,
@@ -616,8 +771,8 @@ mod tests {
             "account-1",
             "send",
             None,
-            &different,
-            &different,
+            &different_proof,
+            &different_signature,
         )
         .unwrap_err();
         assert!(error.contains("different data"));
@@ -628,7 +783,7 @@ mod tests {
     fn operation_kind_enforces_external_reference_contract() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let db_path = file.path().to_str().unwrap();
-        let bytes = pczt(100);
+        let (proof, signature, _) = signed_pczt(100);
         assert!(checkpoint(
             db_path,
             WalletNetwork::Main,
@@ -636,8 +791,8 @@ mod tests {
             "account-1",
             "swap_deposit",
             None,
-            &bytes,
-            &bytes,
+            &proof,
+            &signature,
         )
         .unwrap_err()
         .contains("require an external reference"));
@@ -648,11 +803,66 @@ mod tests {
             "account-1",
             "send",
             Some("unexpected"),
-            &bytes,
-            &bytes,
+            &proof,
+            &signature,
         )
         .unwrap_err()
         .contains("must not have"));
+    }
+
+    #[test]
+    fn checkpoint_rejects_a_signature_pczt_that_cannot_be_extracted() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (proof, _, expiry_height) = signed_pczt(100);
+        let signature = Creator::new(
+            *pczt::Pczt::parse(&proof)
+                .unwrap()
+                .global()
+                .consensus_branch_id(),
+            expiry_height,
+            133,
+            None,
+            None,
+        )
+        .unwrap()
+        .build()
+        .unwrap()
+        .serialize()
+        .unwrap();
+
+        let error = checkpoint(
+            file.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            "op-1",
+            "account-1",
+            "send",
+            None,
+            &proof,
+            &signature,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Validate Ledger signed checkpoint"));
+        assert!(
+            list(file.path().to_str().unwrap(), WalletNetwork::Main, None,)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn broadcast_guard_serializes_only_the_same_operation() {
+        let first = BroadcastGuard::acquire("wallet.db", WalletNetwork::Main, "op-1").unwrap();
+        let error = BroadcastGuard::acquire("wallet.db", WalletNetwork::Main, "op-1")
+            .err()
+            .expect("duplicate broadcast must be rejected");
+        assert!(error.contains("already being broadcast"));
+
+        let other = BroadcastGuard::acquire("wallet.db", WalletNetwork::Main, "op-2").unwrap();
+        drop(other);
+        drop(first);
+
+        BroadcastGuard::acquire("wallet.db", WalletNetwork::Main, "op-1").unwrap();
     }
 
     #[test]

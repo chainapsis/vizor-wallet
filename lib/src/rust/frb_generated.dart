@@ -803,11 +803,15 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztFullSigningApduPlan({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   });
 
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztSigningApduPlan({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   });
@@ -842,12 +846,16 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<Uint8List> crateApiLedgerLedgerFinalizeMobilePcztFullSigning({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
     required List<Uint8List> responses,
   });
 
   Future<List<LedgerActionSig>> crateApiLedgerLedgerFinalizeMobilePcztSigning({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
     required List<Uint8List> responses,
@@ -868,11 +876,15 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<List<LedgerActionSig>> crateApiLedgerLedgerSignPczt({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   });
 
   Future<Uint8List> crateApiLedgerLedgerSignPcztFull({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   });
@@ -6148,6 +6160,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztFullSigningApduPlan({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   }) {
@@ -6155,6 +6169,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           pdeCallFfi(
@@ -6169,7 +6185,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztFullSigningApduPlanConstMeta,
-        argValues: [pcztBytes, network],
+        argValues: [dbPath, accountUuid, pcztBytes, network],
         apiImpl: this,
       ),
     );
@@ -6179,11 +6195,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get kCrateApiLedgerLedgerBuildPcztFullSigningApduPlanConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_build_pczt_full_signing_apdu_plan",
-        argNames: ["pcztBytes", "network"],
+        argNames: ["dbPath", "accountUuid", "pcztBytes", "network"],
       );
 
   @override
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztSigningApduPlan({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   }) {
@@ -6191,6 +6209,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           pdeCallFfi(
@@ -6205,7 +6225,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztSigningApduPlanConstMeta,
-        argValues: [pcztBytes, network],
+        argValues: [dbPath, accountUuid, pcztBytes, network],
         apiImpl: this,
       ),
     );
@@ -6214,7 +6234,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiLedgerLedgerBuildPcztSigningApduPlanConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_build_pczt_signing_apdu_plan",
-        argNames: ["pcztBytes", "network"],
+        argNames: ["dbPath", "accountUuid", "pcztBytes", "network"],
       );
 
   @override
@@ -6441,6 +6461,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<Uint8List> crateApiLedgerLedgerFinalizeMobilePcztFullSigning({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
     required List<Uint8List> responses,
@@ -6449,6 +6471,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           sse_encode_list_list_prim_u_8_strict(responses, serializer);
@@ -6464,7 +6488,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerFinalizeMobilePcztFullSigningConstMeta,
-        argValues: [pcztBytes, network, responses],
+        argValues: [dbPath, accountUuid, pcztBytes, network, responses],
         apiImpl: this,
       ),
     );
@@ -6474,11 +6498,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get kCrateApiLedgerLedgerFinalizeMobilePcztFullSigningConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_finalize_mobile_pczt_full_signing",
-        argNames: ["pcztBytes", "network", "responses"],
+        argNames: [
+          "dbPath",
+          "accountUuid",
+          "pcztBytes",
+          "network",
+          "responses",
+        ],
       );
 
   @override
   Future<List<LedgerActionSig>> crateApiLedgerLedgerFinalizeMobilePcztSigning({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
     required List<Uint8List> responses,
@@ -6487,6 +6519,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           sse_encode_list_list_prim_u_8_strict(responses, serializer);
@@ -6502,7 +6536,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerFinalizeMobilePcztSigningConstMeta,
-        argValues: [pcztBytes, network, responses],
+        argValues: [dbPath, accountUuid, pcztBytes, network, responses],
         apiImpl: this,
       ),
     );
@@ -6511,7 +6545,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiLedgerLedgerFinalizeMobilePcztSigningConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_finalize_mobile_pczt_signing",
-        argNames: ["pcztBytes", "network", "responses"],
+        argNames: [
+          "dbPath",
+          "accountUuid",
+          "pcztBytes",
+          "network",
+          "responses",
+        ],
       );
 
   @override
@@ -6617,6 +6657,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<List<LedgerActionSig>> crateApiLedgerLedgerSignPczt({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   }) {
@@ -6624,6 +6666,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           pdeCallFfi(
@@ -6638,7 +6682,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerSignPcztConstMeta,
-        argValues: [pcztBytes, network],
+        argValues: [dbPath, accountUuid, pcztBytes, network],
         apiImpl: this,
       ),
     );
@@ -6647,11 +6691,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiLedgerLedgerSignPcztConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_sign_pczt",
-        argNames: ["pcztBytes", "network"],
+        argNames: ["dbPath", "accountUuid", "pcztBytes", "network"],
       );
 
   @override
   Future<Uint8List> crateApiLedgerLedgerSignPcztFull({
+    required String dbPath,
+    required String accountUuid,
     required List<int> pcztBytes,
     required String network,
   }) {
@@ -6659,6 +6705,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
           pdeCallFfi(
@@ -6673,7 +6721,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerSignPcztFullConstMeta,
-        argValues: [pcztBytes, network],
+        argValues: [dbPath, accountUuid, pcztBytes, network],
         apiImpl: this,
       ),
     );
@@ -6682,7 +6730,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiLedgerLedgerSignPcztFullConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_sign_pczt_full",
-        argNames: ["pcztBytes", "network"],
+        argNames: ["dbPath", "accountUuid", "pcztBytes", "network"],
       );
 
   @override

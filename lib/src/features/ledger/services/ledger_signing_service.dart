@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
@@ -14,6 +15,10 @@ typedef LedgerVotingPcztSigner =
       List<int> pcztBytes,
     );
 typedef LedgerOperationCanceller = Future<void> Function();
+
+final ledgerRustOperationCancellerProvider = Provider<LedgerOperationCanceller>(
+  (_) => rust_ledger.ledgerCancelOperation,
+);
 
 class LedgerVotingSignature {
   const LedgerVotingSignature({
@@ -51,7 +56,7 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
   ref,
 ) {
   return () async {
-    rust_ledger.ledgerCancelOperation();
+    await ref.read(ledgerRustOperationCancellerProvider)();
     try {
       await ref.read(ledgerMobileBleServiceProvider).cancelSigning();
     } catch (_) {
@@ -68,21 +73,28 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
   );
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
+    final dbPath = await getWalletDbPath();
     return ref
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
           usb: () => rust_ledger.ledgerSignPcztFull(
+            dbPath: dbPath,
+            accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
           ),
           bluetooth: (mobile) async {
             final plan = await rust_ledger.ledgerBuildPcztFullSigningApduPlan(
+              dbPath: dbPath,
+              accountUuid: accountUuid,
               pcztBytes: pcztBytes,
               network: networkName,
             );
             final responses = await mobile.exchangeApdus(plan.commands);
             return rust_ledger.ledgerFinalizeMobilePcztFullSigning(
+              dbPath: dbPath,
+              accountUuid: accountUuid,
               pcztBytes: pcztBytes,
               network: networkName,
               responses: responses,
@@ -104,16 +116,21 @@ final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
   );
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
+    final dbPath = await getWalletDbPath();
     final signatures = await ref
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
           usb: () => rust_ledger.ledgerSignPczt(
+            dbPath: dbPath,
+            accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
           ),
           bluetooth: (mobile) => _signMobileVotingPczt(
             mobile: mobile,
+            dbPath: dbPath,
+            accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             networkName: networkName,
           ),
@@ -131,15 +148,21 @@ final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
 
 Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required LedgerMobileBleService mobile,
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String networkName,
 }) async {
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
   );
   final responses = await mobile.exchangeApdus(plan.commands);
   return rust_ledger.ledgerFinalizeMobilePcztSigning(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
     responses: responses,

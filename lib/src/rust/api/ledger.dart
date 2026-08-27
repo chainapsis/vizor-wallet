@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
+// These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
 
 /// Read the application currently running on the connected Ledger device.
 Future<LedgerDeviceApp> ledgerDeviceApp() =>
@@ -63,28 +63,40 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
 Future<LedgerPcztApduPlan> ledgerBuildPcztSigningApduPlan({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztSigningApduPlan(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
 );
 
 /// Build the transport-neutral full PCZT signing exchange.
 Future<LedgerPcztApduPlan> ledgerBuildPcztFullSigningApduPlan({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztFullSigningApduPlan(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
 );
 
 /// Validate raw compact-signing responses and return shielded signatures.
 Future<List<LedgerActionSig>> ledgerFinalizeMobilePcztSigning({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
   required List<Uint8List> responses,
 }) => RustLib.instance.api.crateApiLedgerLedgerFinalizeMobilePcztSigning(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
   responses: responses,
@@ -92,10 +104,14 @@ Future<List<LedgerActionSig>> ledgerFinalizeMobilePcztSigning({
 
 /// Validate raw full-signing responses and return the signed PCZT.
 Future<Uint8List> ledgerFinalizeMobilePcztFullSigning({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
   required List<Uint8List> responses,
 }) => RustLib.instance.api.crateApiLedgerLedgerFinalizeMobilePcztFullSigning(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
   responses: responses,
@@ -104,9 +120,13 @@ Future<Uint8List> ledgerFinalizeMobilePcztFullSigning({
 /// Stream an Orchard/Ironwood PCZT into the Ledger app and return only the
 /// spend authorization signatures after on-device review and approval.
 Future<List<LedgerActionSig>> ledgerSignPczt({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPczt(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
 );
@@ -114,9 +134,13 @@ Future<List<LedgerActionSig>> ledgerSignPczt({
 /// Stream a PCZT into Ledger, validate every returned transparent and
 /// Orchard-family signature, and return the fully signed PCZT clone.
 Future<Uint8List> ledgerSignPcztFull({
+  required String dbPath,
+  required String accountUuid,
   required List<int> pcztBytes,
   required String network,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPcztFull(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
 );
