@@ -56,6 +56,15 @@ type itself never crosses the boundary. The controller passes that value to
 `prepare_delegation_bundle_for_target` and MUST use the same target for every
 bundle in that delegation job.
 
+Controllers that own wallet selection and lightwalletd access outside this
+crate may instead build `DelegationKeys` with
+`with_round_bound_voting_target` and use the lower-level delegation lifecycle.
+Those keys retain the validated public target. Setup, signing request, and proof
+operations reject them if the stored voting round differs from the target's
+bound round. The wallet example's
+[`delegation_keys_for_public_target`](../wallet-example/src/example_delegation.rs)
+shows that host-owned path.
+
 The funds controller application, not `VotingDb`, owns the durable job/outbox
 record. That record MUST retain the validated target across restarts because
 the target cannot be recovered from the VAN. It MUST also retain the exact

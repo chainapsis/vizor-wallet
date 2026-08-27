@@ -48,7 +48,7 @@ fn validate_consensus_branch_id_for_round(
     keys: &DelegationKeys,
     consensus_branch_id: u32,
 ) -> Result<(), VotingError> {
-    validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
+    validate_delegation_keys_for_round(params, stored_network, keys)?;
 
     let expected = crate::lwd::branch_id_for_height(stored_network, params.snapshot_height)?;
     if consensus_branch_id != expected {
@@ -60,6 +60,15 @@ fn validate_consensus_branch_id_for_round(
         });
     }
     Ok(())
+}
+
+fn validate_delegation_keys_for_round(
+    params: &VotingRoundParams,
+    stored_network: Network,
+    keys: &DelegationKeys,
+) -> Result<(), VotingError> {
+    validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
+    keys.validate_target_round(params)
 }
 
 fn validate_network_matches_round(
@@ -586,8 +595,9 @@ impl VotingDb {
     ) -> Result<DelegationSigningRequest, VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
-        let stored_network = queries::load_round_network(&conn, round_id, &wallet_id)?;
-        validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
+        let (params, stored_network) =
+            queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
+        validate_delegation_keys_for_round(&params, stored_network, keys)?;
         let sighash = queries::load_pczt_sighash(&conn, round_id, &wallet_id, bundle_index)?;
         let alpha = queries::load_alpha(&conn, round_id, &wallet_id, bundle_index)?;
 
@@ -1111,7 +1121,7 @@ impl VotingDb {
         let wallet_id = self.wallet_id();
         let (params, stored_network) =
             queries::load_round_params_with_network(&conn, round_id, &wallet_id)?;
-        validate_network_matches_round(stored_network, keys.network, "delegation keys")?;
+        validate_delegation_keys_for_round(&params, stored_network, keys)?;
         queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let alpha = queries::load_alpha(&conn, round_id, &wallet_id, bundle_index)?;
         let van_comm_rand = queries::load_van_comm_rand(&conn, round_id, &wallet_id, bundle_index)?;
@@ -1865,7 +1875,7 @@ fn check_text_conflict(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::VotingHotkey;
+    use crate::types::{RoundBoundVotingHotkeyTarget, VotingHotkey};
 
     // 64 hex chars = 32 bytes when decoded. Required because build_governance_pczt
     // hex-decodes vote_round_id and validates it as exactly 32 bytes (a Pallas field element).
@@ -1926,6 +1936,35 @@ mod tests {
             "test-round".to_string(),
         )
         .unwrap()
+    }
+
+    fn test_round_bound_delegation_keys(
+        network: Network,
+        vote_round_id: [u8; 32],
+    ) -> DelegationKeys {
+        let voting_hotkey = VotingHotkey::from_stored_secret(&[0x43; 64], network).unwrap();
+        let target = RoundBoundVotingHotkeyTarget::from_validated_parts(
+            voting_hotkey.delegation_target(),
+            "vote-chain-1".to_string(),
+            vote_round_id,
+        );
+        DelegationKeys::with_round_bound_voting_target(
+            vec![0; 96],
+            &target,
+            [0x42; 32],
+            0,
+            "test-round".to_string(),
+        )
+        .unwrap()
+    }
+
+    fn assert_target_round_mismatch(err: VotingError) {
+        let message = err.to_string();
+        assert!(
+            message.contains("voting target round does not match delegation round"),
+            "{message}"
+        );
+        assert!(message.contains("target 02020202"), "{message}");
     }
 
     fn test_randomized_spendauth_signature(
@@ -3956,6 +3995,29 @@ mod tests {
     }
 
     #[test]
+    fn test_build_governance_pczt_rejects_key_round_mismatch_before_padded_secrets() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+
+        let note = identity_test_note();
+        db.ensure_bundles(ROUND_ID, &[note.clone()]).unwrap();
+        let keys = test_round_bound_delegation_keys(Network::Testnet, [0x02; 32]);
+
+        let err = db
+            .build_governance_pczt(ROUND_ID, 0, &[note], &keys, TESTNET_NU6_BRANCH_ID)
+            .unwrap_err();
+
+        assert_target_round_mismatch(err);
+        let conn = db.conn();
+        assert!(
+            queries::load_padded_note_secrets_optional(&conn, ROUND_ID, W, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_get_delegation_signing_request_rejects_key_network_mismatch() {
         use orchard::keys::{FullViewingKey, SpendingKey};
 
@@ -4037,6 +4099,32 @@ mod tests {
     }
 
     #[test]
+    fn test_get_delegation_signing_request_enforces_key_round_binding() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        let alpha = pallas::Scalar::from(7).to_repr();
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+            store_minimal_delegation_setup(&conn, &alpha);
+        }
+        let matching_keys = test_round_bound_delegation_keys(Network::Testnet, [0x01; 32]);
+        let request = db
+            .get_delegation_signing_request(ROUND_ID, 0, &matching_keys)
+            .expect("matching target round should produce a signing request");
+        assert_eq!(request.network, Network::Testnet);
+
+        let keys = test_round_bound_delegation_keys(Network::Testnet, [0x02; 32]);
+
+        let err = db
+            .get_delegation_signing_request(ROUND_ID, 0, &keys)
+            .expect_err("signing request target round must match stored round");
+
+        assert_target_round_mismatch(err);
+    }
+
+    #[test]
     fn test_build_and_prove_delegation_rejects_key_network_mismatch_before_pir() {
         use orchard::keys::{FullViewingKey, SpendingKey};
 
@@ -4081,6 +4169,41 @@ mod tests {
             ),
             "{err}"
         );
+    }
+
+    #[test]
+    fn test_build_and_prove_delegation_rejects_key_round_mismatch_before_pir() {
+        let db = test_db();
+        let witnesses = vec![valid_empty_tree_witness(0)];
+        init_round_for_witnesses(&db, &witnesses);
+        let note = note_info_for_witness(&witnesses[0]);
+        let alpha = pallas::Scalar::from(7).to_repr();
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[note.position]).unwrap();
+            store_minimal_delegation_setup(&conn, &alpha);
+            queries::store_witnesses(&conn, ROUND_ID, W, 0, &witnesses).unwrap();
+        }
+        let keys = test_round_bound_delegation_keys(Network::Testnet, [0x02; 32]);
+        let pir_client = pir_client::PirClientBlocking::with_transport(
+            "https://pir.test",
+            pir_types::COMPILED_PIR_LAYOUT,
+            std::sync::Arc::new(StaticPirTransport),
+        )
+        .unwrap();
+
+        let err = db
+            .build_and_prove_delegation(
+                ROUND_ID,
+                0,
+                &[note],
+                &keys,
+                &pir_client,
+                &crate::types::NoopProgressReporter,
+            )
+            .expect_err("prove path must validate delegation key target round");
+
+        assert_target_round_mismatch(err);
     }
 
     #[test]

@@ -12,6 +12,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   depending on `WalletDb`, lightwalletd, or
   `prepare_delegation_bundle_for_target`.
 
+### Fixed
+- `DelegationKeys::with_round_bound_voting_target` now retains the validated
+  public target. Lower-level delegation setup, signing request, and proof APIs
+  reject those keys when used with a different stored voting round.
+
 ## v3.1.0-rc.10
 
 ### Added

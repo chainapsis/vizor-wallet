@@ -194,6 +194,23 @@ impl RoundBoundVotingHotkeyTarget {
     pub fn vote_round_id(&self) -> &[u8; 32] {
         &self.vote_round_id
     }
+
+    /// Rejects use of this target with a different voting round.
+    pub(crate) fn validate_round(
+        &self,
+        round_params: &VotingRoundParams,
+    ) -> Result<(), VotingError> {
+        let target_round_id = hex::encode(self.vote_round_id);
+        if target_round_id != round_params.vote_round_id {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "voting target round does not match delegation round (target {target_round_id}, round {})",
+                    round_params.vote_round_id
+                ),
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Voting hotkey material used as the delegation output target and vote signer.
