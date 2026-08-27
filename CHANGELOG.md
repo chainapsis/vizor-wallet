@@ -4,7 +4,13 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v3.1.0-rc.11
+
+### Added
+- `DelegationKeys::with_round_bound_voting_target` is now public, allowing
+  callers to bind a secret-free `RoundBoundVotingHotkeyTarget` directly without
+  depending on `WalletDb`, lightwalletd, or
+  `prepare_delegation_bundle_for_target`.
 
 ### Fixed
 - `DelegationKeys::with_round_bound_voting_target` now retains the validated
