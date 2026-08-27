@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -28774345;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -317224605;
 
 // Section: executor
 
@@ -252,7 +252,10 @@ fn wire__crate__api__private_state_sync__authorize_private_state_request_impl(
             let api_challenge_base64 = <String>::sse_decode(&mut deserializer);
             let api_audience = <String>::sse_decode(&mut deserializer);
             let api_expires_at_seconds = <u64>::sse_decode(&mut deserializer);
-            let api_content_hash_base64 = <Option<String>>::sse_decode(&mut deserializer);
+            let api_envelope =
+                <Option<crate::api::private_state_sync::ApiPrivateStateEnvelope>>::sse_decode(
+                    &mut deserializer,
+                );
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -267,7 +270,7 @@ fn wire__crate__api__private_state_sync__authorize_private_state_request_impl(
                             api_challenge_base64,
                             api_audience,
                             api_expires_at_seconds,
-                            api_content_hash_base64,
+                            api_envelope,
                         )?;
                     Ok(output_ok)
                 })())
@@ -5967,8 +5970,6 @@ fn wire__crate__api__private_state_sync__seal_private_state_object_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_namespace = <String>::sse_decode(&mut deserializer);
             let api_item_key = <String>::sse_decode(&mut deserializer);
-            let api_revision = <u64>::sse_decode(&mut deserializer);
-            let api_previous_hash_base64 = <Option<String>>::sse_decode(&mut deserializer);
             let api_plaintext = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -5979,8 +5980,6 @@ fn wire__crate__api__private_state_sync__seal_private_state_object_impl(
                         api_account_uuid,
                         api_namespace,
                         api_item_key,
-                        api_revision,
-                        api_previous_hash_base64,
                         api_plaintext,
                     )?;
                     Ok(output_ok)
@@ -7008,23 +7007,6 @@ fn wire__crate__api__wallet__validate_mnemonic_impl(
         },
     )
 }
-fn wire__crate__api__private_state_sync__verify_private_state_authorized_put_transition_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "verify_private_state_authorized_put_transition", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
-            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
-            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_envelope = <crate::api::private_state_sync::ApiPrivateStateEnvelope>::sse_decode(&mut deserializer);
-let api_authorization = <crate::api::private_state_sync::ApiPrivateStateRequestAuthorization>::sse_decode(&mut deserializer);
-let api_current = <Option<crate::api::private_state_sync::ApiPrivateStateEnvelope>>::sse_decode(&mut deserializer);deserializer.end(); move |context|  {
-                    transform_result_sse::<_, String>((move ||  {
-                         let output_ok = crate::api::private_state_sync::verify_private_state_authorized_put_transition(api_envelope, api_authorization, api_current)?;   Ok(output_ok)
-                    })())
-                } })
-}
 fn wire__crate__api__private_state_sync__verify_private_state_object_reference_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -7063,6 +7045,22 @@ fn wire__crate__api__private_state_sync__verify_private_state_object_reference_i
             }
         },
     )
+}
+fn wire__crate__api__private_state_sync__verify_private_state_put_authorization_content_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "verify_private_state_put_authorization_content", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_envelope = <crate::api::private_state_sync::ApiPrivateStateEnvelope>::sse_decode(&mut deserializer);
+let api_authorization = <crate::api::private_state_sync::ApiPrivateStateRequestAuthorization>::sse_decode(&mut deserializer);deserializer.end(); move |context|  {
+                    transform_result_sse::<_, String>((move ||  {
+                         let output_ok = crate::api::private_state_sync::verify_private_state_put_authorization_content(api_envelope, api_authorization)?;   Ok(output_ok)
+                    })())
+                } })
 }
 fn wire__crate__api__private_state_sync__verify_private_state_request_authorization_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
@@ -7846,22 +7844,16 @@ impl SseDecode for crate::api::private_state_sync::ApiPrivateStateEnvelope {
         let mut var_protocolVersion = <u32>::sse_decode(deserializer);
         let mut var_objectId = <String>::sse_decode(deserializer);
         let mut var_authPublicKeyBase64 = <String>::sse_decode(deserializer);
-        let mut var_revision = <u64>::sse_decode(deserializer);
-        let mut var_previousHashBase64 = <Option<String>>::sse_decode(deserializer);
         let mut var_nonceBase64 = <String>::sse_decode(deserializer);
         let mut var_ciphertextBase64 = <String>::sse_decode(deserializer);
         let mut var_signatureBase64 = <String>::sse_decode(deserializer);
-        let mut var_envelopeHashBase64 = <String>::sse_decode(deserializer);
         return crate::api::private_state_sync::ApiPrivateStateEnvelope {
             protocol_version: var_protocolVersion,
             object_id: var_objectId,
             auth_public_key_base64: var_authPublicKeyBase64,
-            revision: var_revision,
-            previous_hash_base64: var_previousHashBase64,
             nonce_base64: var_nonceBase64,
             ciphertext_base64: var_ciphertextBase64,
             signature_base64: var_signatureBase64,
-            envelope_hash_base64: var_envelopeHashBase64,
         };
     }
 }
@@ -10940,8 +10932,8 @@ fn pde_ffi_dispatcher_primary_impl(
 171 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
 172 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
 173 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-175 => wire__crate__api__private_state_sync__verify_private_state_authorized_put_transition_impl(port, ptr, rust_vec_len, data_len),
-176 => wire__crate__api__private_state_sync__verify_private_state_object_reference_impl(port, ptr, rust_vec_len, data_len),
+175 => wire__crate__api__private_state_sync__verify_private_state_object_reference_impl(port, ptr, rust_vec_len, data_len),
+176 => wire__crate__api__private_state_sync__verify_private_state_put_authorization_content_impl(port, ptr, rust_vec_len, data_len),
 177 => wire__crate__api__private_state_sync__verify_private_state_request_authorization_impl(port, ptr, rust_vec_len, data_len),
 178 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
 179 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
@@ -11279,12 +11271,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::private_state_sync::ApiPrivat
             self.protocol_version.into_into_dart().into_dart(),
             self.object_id.into_into_dart().into_dart(),
             self.auth_public_key_base64.into_into_dart().into_dart(),
-            self.revision.into_into_dart().into_dart(),
-            self.previous_hash_base64.into_into_dart().into_dart(),
             self.nonce_base64.into_into_dart().into_dart(),
             self.ciphertext_base64.into_into_dart().into_dart(),
             self.signature_base64.into_into_dart().into_dart(),
-            self.envelope_hash_base64.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -14040,12 +14029,9 @@ impl SseEncode for crate::api::private_state_sync::ApiPrivateStateEnvelope {
         <u32>::sse_encode(self.protocol_version, serializer);
         <String>::sse_encode(self.object_id, serializer);
         <String>::sse_encode(self.auth_public_key_base64, serializer);
-        <u64>::sse_encode(self.revision, serializer);
-        <Option<String>>::sse_encode(self.previous_hash_base64, serializer);
         <String>::sse_encode(self.nonce_base64, serializer);
         <String>::sse_encode(self.ciphertext_base64, serializer);
         <String>::sse_encode(self.signature_base64, serializer);
-        <String>::sse_encode(self.envelope_hash_base64, serializer);
     }
 }
 

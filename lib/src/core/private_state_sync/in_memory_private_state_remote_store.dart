@@ -9,8 +9,8 @@ import 'private_state_server_verifier.dart';
 /// Executable reference for the opaque server contract.
 ///
 /// This implementation is intentionally process-local and is not selected by
-/// production providers. It models the atomicity, challenge, signature, CAS,
-/// and rollback requirements that an HTTP service must preserve.
+/// production providers. It models the challenge, signature, and atomic
+/// create-once requirements that an HTTP service must preserve.
 class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
   InMemoryPrivateStateRemoteStore({
     required this.audience,
@@ -105,11 +105,10 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
   }
 
   @override
-  Future<PrivateStateRemotePutResult> put({
+  Future<PrivateStateRemoteCreateResult> create({
     required PrivateStateObjectReference object,
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateVersion? expectedVersion,
   }) {
     return _exclusive(() async {
       await _consumeAndVerify(
@@ -117,17 +116,15 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
         authorization: authorization,
         method: PrivateStateRequestMethod.put,
       );
-      final current = _objects[object.objectId];
-      if (!_matchesExpectedVersion(current, expectedVersion)) {
-        return const PrivateStateRemoteConflict();
-      }
-      await _verifier.verifyPutTransition(
+      await _verifier.verifyPutContent(
         envelope: envelope,
         authorization: authorization,
-        current: current,
       );
+      if (_objects.containsKey(object.objectId)) {
+        return const PrivateStateRemoteConflict();
+      }
       _objects[object.objectId] = envelope;
-      return const PrivateStateRemoteStored();
+      return const PrivateStateRemoteCreated();
     });
   }
 
@@ -157,17 +154,6 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
       );
     }
     await _verifier.verifyAuthorization(authorization);
-  }
-
-  bool _matchesExpectedVersion(
-    PrivateStateEnvelope? current,
-    PrivateStateVersion? expected,
-  ) {
-    if (current == null || expected == null) {
-      return current == null && expected == null;
-    }
-    return current.revision == expected.revision &&
-        current.envelopeHashBase64 == expected.envelopeHashBase64;
   }
 
   bool _sameObject(

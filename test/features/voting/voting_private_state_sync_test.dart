@@ -91,32 +91,18 @@ class _ConflictRepository implements PrivateStateObjectRepository {
   );
 
   @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) => throw UnimplementedError();
-
-  @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
-  }) async => const PrivateStateWriteConflict();
+  }) async => const PrivateStateCreateConflict();
 
   @override
   Future<PrivateStateReadResult> read({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
   }) async {
-    return PrivateStateReadFound(
-      plaintext: winner.encode(),
-      version: PrivateStateVersion(
-        revision: BigInt.one,
-        envelopeHashBase64: 'winner-hash',
-      ),
-    );
+    return PrivateStateReadFound(plaintext: winner.encode());
   }
 }
 
@@ -124,23 +110,13 @@ class _MemoryRepository implements PrivateStateObjectRepository {
   Uint8List? plaintext;
 
   @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) => throw UnimplementedError();
-
-  @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
   }) async {
     this.plaintext = Uint8List.fromList(plaintext);
-    return PrivateStateWriteStored(
-      PrivateStateVersion(revision: BigInt.one, envelopeHashBase64: 'hash'),
-    );
+    return const PrivateStateCreated();
   }
 
   @override
@@ -148,12 +124,6 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
   }) async {
-    return PrivateStateReadFound(
-      plaintext: Uint8List.fromList(plaintext!),
-      version: PrivateStateVersion(
-        revision: BigInt.one,
-        envelopeHashBase64: 'hash',
-      ),
-    );
+    return PrivateStateReadFound(plaintext: Uint8List.fromList(plaintext!));
   }
 }

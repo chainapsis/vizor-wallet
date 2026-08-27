@@ -30,8 +30,6 @@ Future<ApiPrivateStateEnvelope> sealPrivateStateObject({
   required String accountUuid,
   required String namespace,
   required String itemKey,
-  required BigInt revision,
-  String? previousHashBase64,
   required List<int> plaintext,
 }) => RustLib.instance.api.crateApiPrivateStateSyncSealPrivateStateObject(
   dbPath: dbPath,
@@ -39,8 +37,6 @@ Future<ApiPrivateStateEnvelope> sealPrivateStateObject({
   accountUuid: accountUuid,
   namespace: namespace,
   itemKey: itemKey,
-  revision: revision,
-  previousHashBase64: previousHashBase64,
   plaintext: plaintext,
 );
 
@@ -70,7 +66,7 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
   required String challengeBase64,
   required String audience,
   required BigInt expiresAtSeconds,
-  String? contentHashBase64,
+  ApiPrivateStateEnvelope? envelope,
 }) => RustLib.instance.api.crateApiPrivateStateSyncAuthorizePrivateStateRequest(
   dbPath: dbPath,
   network: network,
@@ -81,7 +77,7 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
   challengeBase64: challengeBase64,
   audience: audience,
   expiresAtSeconds: expiresAtSeconds,
-  contentHashBase64: contentHashBase64,
+  envelope: envelope,
 );
 
 /// Verifies an opaque request authorization without access to a wallet UFVK.
@@ -104,40 +100,31 @@ Future<void> verifyPrivateStateObjectReference({
       reference: reference,
     );
 
-/// Verifies a PUT signature and that its envelope directly follows the object
-/// atomically read by the server. `current = None` means create-if-absent.
-Future<void> verifyPrivateStateAuthorizedPutTransition({
+/// Verifies that a PUT authorization is bound to the supplied opaque envelope.
+Future<void> verifyPrivateStatePutAuthorizationContent({
   required ApiPrivateStateEnvelope envelope,
   required ApiPrivateStateRequestAuthorization authorization,
-  ApiPrivateStateEnvelope? current,
 }) => RustLib.instance.api
-    .crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition(
+    .crateApiPrivateStateSyncVerifyPrivateStatePutAuthorizationContent(
       envelope: envelope,
       authorization: authorization,
-      current: current,
     );
 
 class ApiPrivateStateEnvelope {
   final int protocolVersion;
   final String objectId;
   final String authPublicKeyBase64;
-  final BigInt revision;
-  final String? previousHashBase64;
   final String nonceBase64;
   final String ciphertextBase64;
   final String signatureBase64;
-  final String envelopeHashBase64;
 
   const ApiPrivateStateEnvelope({
     required this.protocolVersion,
     required this.objectId,
     required this.authPublicKeyBase64,
-    required this.revision,
-    this.previousHashBase64,
     required this.nonceBase64,
     required this.ciphertextBase64,
     required this.signatureBase64,
-    required this.envelopeHashBase64,
   });
 
   @override
@@ -145,12 +132,9 @@ class ApiPrivateStateEnvelope {
       protocolVersion.hashCode ^
       objectId.hashCode ^
       authPublicKeyBase64.hashCode ^
-      revision.hashCode ^
-      previousHashBase64.hashCode ^
       nonceBase64.hashCode ^
       ciphertextBase64.hashCode ^
-      signatureBase64.hashCode ^
-      envelopeHashBase64.hashCode;
+      signatureBase64.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -160,12 +144,9 @@ class ApiPrivateStateEnvelope {
           protocolVersion == other.protocolVersion &&
           objectId == other.objectId &&
           authPublicKeyBase64 == other.authPublicKeyBase64 &&
-          revision == other.revision &&
-          previousHashBase64 == other.previousHashBase64 &&
           nonceBase64 == other.nonceBase64 &&
           ciphertextBase64 == other.ciphertextBase64 &&
-          signatureBase64 == other.signatureBase64 &&
-          envelopeHashBase64 == other.envelopeHashBase64;
+          signatureBase64 == other.signatureBase64;
 }
 
 class ApiPrivateStateObjectReference {

@@ -12,23 +12,18 @@ class MemoryVotingCompletionRepository implements PrivateStateObjectRepository {
   int readCalls = 0;
 
   @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
   }) async {
     createCalls++;
-    if (record != null) return const PrivateStateWriteConflict();
+    if (record != null) return const PrivateStateCreateConflict();
     record = VotingCompletionRecord.decode(
       plaintext,
       expectedRoundId: key.itemKey.substring('round-v1:'.length),
     );
-    return PrivateStateWriteStored(
-      PrivateStateVersion(
-        revision: BigInt.one,
-        envelopeHashBase64: 'memory-hash',
-      ),
-    );
+    return const PrivateStateCreated();
   }
 
   @override
@@ -39,22 +34,6 @@ class MemoryVotingCompletionRepository implements PrivateStateObjectRepository {
     readCalls++;
     final value = record;
     if (value == null) return const PrivateStateReadAbsent();
-    return PrivateStateReadFound(
-      plaintext: value.encode(),
-      version: PrivateStateVersion(
-        revision: BigInt.one,
-        envelopeHashBase64: 'memory-hash',
-      ),
-    );
-  }
-
-  @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) {
-    throw UnsupportedError('Voting completion objects are immutable.');
+    return PrivateStateReadFound(plaintext: value.encode());
   }
 }

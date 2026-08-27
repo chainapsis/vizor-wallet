@@ -10,23 +10,16 @@ abstract interface class PrivateStateObjectRepository {
     required PrivateStateObjectKey key,
   });
 
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required Uint8List plaintext,
-  });
-
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
     required Uint8List plaintext,
   });
 }
 
 /// Coordinates deterministic object lookup, request authentication, remote
-/// CAS, and authenticated decryption without applying feature-specific merge
-/// policy.
+/// create-once storage, and authenticated decryption without applying
+/// feature-specific conflict policy.
 class DefaultPrivateStateObjectRepository
     implements PrivateStateObjectRepository {
   static const maxAuthorizationLifetime = Duration(minutes: 2);
@@ -72,56 +65,14 @@ class DefaultPrivateStateObjectRepository
           key: key,
           envelope: envelope,
         ),
-        version: envelope.version,
       ),
     };
   }
 
   @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required Uint8List plaintext,
-  }) {
-    return _write(
-      account: account,
-      key: key,
-      revision: BigInt.one,
-      previousHashBase64: null,
-      expectedVersion: null,
-      plaintext: plaintext,
-    );
-  }
-
-  @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) {
-    if (currentVersion.revision < BigInt.one ||
-        currentVersion.envelopeHashBase64.isEmpty) {
-      throw const PrivateStateProtocolException(
-        'CAS requires a positive revision and authenticated envelope hash.',
-      );
-    }
-    return _write(
-      account: account,
-      key: key,
-      revision: currentVersion.revision + BigInt.one,
-      previousHashBase64: currentVersion.envelopeHashBase64,
-      expectedVersion: currentVersion,
-      plaintext: plaintext,
-    );
-  }
-
-  Future<PrivateStateWriteResult> _write({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required BigInt revision,
-    required String? previousHashBase64,
-    required PrivateStateVersion? expectedVersion,
     required Uint8List plaintext,
   }) async {
     final object = await _crypto.deriveObjectReference(
@@ -131,8 +82,6 @@ class DefaultPrivateStateObjectRepository
     final envelope = await _crypto.seal(
       account: account,
       key: key,
-      revision: revision,
-      previousHashBase64: previousHashBase64,
       plaintext: plaintext,
     );
     _requireEnvelopeMatchesObject(envelope, object);
@@ -141,17 +90,16 @@ class DefaultPrivateStateObjectRepository
       key: key,
       object: object,
       method: PrivateStateRequestMethod.put,
-      contentHashBase64: envelope.envelopeHashBase64,
+      envelope: envelope,
     );
-    final result = await _remote.put(
+    final result = await _remote.create(
       object: object,
       envelope: envelope,
       authorization: authorization,
-      expectedVersion: expectedVersion,
     );
     return switch (result) {
-      PrivateStateRemoteStored() => PrivateStateWriteStored(envelope.version),
-      PrivateStateRemoteConflict() => const PrivateStateWriteConflict(),
+      PrivateStateRemoteCreated() => const PrivateStateCreated(),
+      PrivateStateRemoteConflict() => const PrivateStateCreateConflict(),
     };
   }
 
@@ -160,7 +108,7 @@ class DefaultPrivateStateObjectRepository
     required PrivateStateObjectKey key,
     required PrivateStateObjectReference object,
     required PrivateStateRequestMethod method,
-    String? contentHashBase64,
+    PrivateStateEnvelope? envelope,
   }) async {
     final serverChallenge = await _remote.createChallenge(object: object);
     final now = _now().toUtc();
@@ -197,9 +145,8 @@ class DefaultPrivateStateObjectRepository
       method: method,
       challenge: challenge,
       audience: audience,
-      contentHashBase64: contentHashBase64,
+      envelope: envelope,
     );
-    final expectedContentHash = contentHashBase64 ?? _emptyContentHashBase64;
     if (authorization.protocolVersion != object.protocolVersion ||
         authorization.objectId != object.objectId ||
         authorization.authPublicKeyBase64 != object.authPublicKeyBase64 ||
@@ -207,7 +154,8 @@ class DefaultPrivateStateObjectRepository
         authorization.challengeBase64 != challenge.valueBase64 ||
         authorization.audience != audience ||
         authorization.expiresAt.toUtc() != challenge.expiresAt ||
-        authorization.contentHashBase64 != expectedContentHash) {
+        (envelope == null &&
+            authorization.contentHashBase64 != _emptyContentHashBase64)) {
       throw const PrivateStateProtocolException(
         'Request authorization does not match the requested object.',
       );

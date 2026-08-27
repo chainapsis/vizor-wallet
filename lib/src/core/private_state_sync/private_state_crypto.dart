@@ -17,8 +17,6 @@ abstract interface class PrivateStateCrypto {
   Future<PrivateStateEnvelope> seal({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required BigInt revision,
-    required String? previousHashBase64,
     required Uint8List plaintext,
   });
 
@@ -34,7 +32,7 @@ abstract interface class PrivateStateCrypto {
     required PrivateStateRequestMethod method,
     required PrivateStateServerChallenge challenge,
     required String audience,
-    String? contentHashBase64,
+    PrivateStateEnvelope? envelope,
   });
 }
 
@@ -64,8 +62,6 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
   Future<PrivateStateEnvelope> seal({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required BigInt revision,
-    required String? previousHashBase64,
     required Uint8List plaintext,
   }) async {
     final envelope = await rust.sealPrivateStateObject(
@@ -74,8 +70,6 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
       accountUuid: account.accountUuid,
       namespace: key.namespace.wireName,
       itemKey: key.itemKey,
-      revision: revision,
-      previousHashBase64: previousHashBase64,
       plaintext: plaintext,
     );
     return _envelopeFromRust(envelope);
@@ -104,7 +98,7 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
     required PrivateStateRequestMethod method,
     required PrivateStateServerChallenge challenge,
     required String audience,
-    String? contentHashBase64,
+    PrivateStateEnvelope? envelope,
   }) async {
     final authorization = await rust.authorizePrivateStateRequest(
       dbPath: account.dbPath,
@@ -118,7 +112,7 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
       expiresAtSeconds: BigInt.from(
         challenge.expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000,
       ),
-      contentHashBase64: contentHashBase64,
+      envelope: envelope == null ? null : privateStateEnvelopeToRust(envelope),
     );
     return PrivateStateRequestAuthorization(
       protocolVersion: authorization.protocolVersion,
@@ -142,12 +136,9 @@ PrivateStateEnvelope _envelopeFromRust(rust.ApiPrivateStateEnvelope envelope) {
     protocolVersion: envelope.protocolVersion,
     objectId: envelope.objectId,
     authPublicKeyBase64: envelope.authPublicKeyBase64,
-    revision: envelope.revision,
-    previousHashBase64: envelope.previousHashBase64,
     nonceBase64: envelope.nonceBase64,
     ciphertextBase64: envelope.ciphertextBase64,
     signatureBase64: envelope.signatureBase64,
-    envelopeHashBase64: envelope.envelopeHashBase64,
   );
 }
 
@@ -158,11 +149,8 @@ rust.ApiPrivateStateEnvelope privateStateEnvelopeToRust(
     protocolVersion: envelope.protocolVersion,
     objectId: envelope.objectId,
     authPublicKeyBase64: envelope.authPublicKeyBase64,
-    revision: envelope.revision,
-    previousHashBase64: envelope.previousHashBase64,
     nonceBase64: envelope.nonceBase64,
     ciphertextBase64: envelope.ciphertextBase64,
     signatureBase64: envelope.signatureBase64,
-    envelopeHashBase64: envelope.envelopeHashBase64,
   );
 }

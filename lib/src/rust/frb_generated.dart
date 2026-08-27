@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -28774345;
+  int get rustContentHash => -317224605;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -137,7 +137,7 @@ abstract class RustLibApi extends BaseApi {
     required String challengeBase64,
     required String audience,
     required BigInt expiresAtSeconds,
-    String? contentHashBase64,
+    ApiPrivateStateEnvelope? envelope,
   });
 
   void crateApiNetworkPrivacyBeginNetworkPrivacyEnable();
@@ -1086,8 +1086,6 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String namespace,
     required String itemKey,
-    required BigInt revision,
-    String? previousHashBase64,
     required List<int> plaintext,
   });
 
@@ -1232,15 +1230,14 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateApiWalletValidateMnemonic({required String mnemonic});
 
-  Future<void>
-  crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition({
-    required ApiPrivateStateEnvelope envelope,
-    required ApiPrivateStateRequestAuthorization authorization,
-    ApiPrivateStateEnvelope? current,
-  });
-
   Future<void> crateApiPrivateStateSyncVerifyPrivateStateObjectReference({
     required ApiPrivateStateObjectReference reference,
+  });
+
+  Future<void>
+  crateApiPrivateStateSyncVerifyPrivateStatePutAuthorizationContent({
+    required ApiPrivateStateEnvelope envelope,
+    required ApiPrivateStateRequestAuthorization authorization,
   });
 
   Future<void> crateApiPrivateStateSyncVerifyPrivateStateRequestAuthorization({
@@ -1502,7 +1499,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String challengeBase64,
     required String audience,
     required BigInt expiresAtSeconds,
-    String? contentHashBase64,
+    ApiPrivateStateEnvelope? envelope,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1517,7 +1514,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(challengeBase64, serializer);
           sse_encode_String(audience, serializer);
           sse_encode_u_64(expiresAtSeconds, serializer);
-          sse_encode_opt_String(contentHashBase64, serializer);
+          sse_encode_opt_box_autoadd_api_private_state_envelope(
+            envelope,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1541,7 +1541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           challengeBase64,
           audience,
           expiresAtSeconds,
-          contentHashBase64,
+          envelope,
         ],
         apiImpl: this,
       ),
@@ -1562,7 +1562,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "challengeBase64",
           "audience",
           "expiresAtSeconds",
-          "contentHashBase64",
+          "envelope",
         ],
       );
 
@@ -7707,8 +7707,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String namespace,
     required String itemKey,
-    required BigInt revision,
-    String? previousHashBase64,
     required List<int> plaintext,
   }) {
     return handler.executeNormal(
@@ -7720,8 +7718,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(namespace, serializer);
           sse_encode_String(itemKey, serializer);
-          sse_encode_u_64(revision, serializer);
-          sse_encode_opt_String(previousHashBase64, serializer);
           sse_encode_list_prim_u_8_loose(plaintext, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -7741,8 +7737,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           namespace,
           itemKey,
-          revision,
-          previousHashBase64,
           plaintext,
         ],
         apiImpl: this,
@@ -7759,8 +7753,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "namespace",
           "itemKey",
-          "revision",
-          "previousHashBase64",
           "plaintext",
         ],
       );
@@ -8765,55 +8757,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void>
-  crateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransition({
-    required ApiPrivateStateEnvelope envelope,
-    required ApiPrivateStateRequestAuthorization authorization,
-    ApiPrivateStateEnvelope? current,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_box_autoadd_api_private_state_envelope(
-            envelope,
-            serializer,
-          );
-          sse_encode_box_autoadd_api_private_state_request_authorization(
-            authorization,
-            serializer,
-          );
-          sse_encode_opt_box_autoadd_api_private_state_envelope(
-            current,
-            serializer,
-          );
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 175,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta:
-            kCrateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransitionConstMeta,
-        argValues: [envelope, authorization, current],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta
-  get kCrateApiPrivateStateSyncVerifyPrivateStateAuthorizedPutTransitionConstMeta =>
-      const TaskConstMeta(
-        debugName: "verify_private_state_authorized_put_transition",
-        argNames: ["envelope", "authorization", "current"],
-      );
-
-  @override
   Future<void> crateApiPrivateStateSyncVerifyPrivateStateObjectReference({
     required ApiPrivateStateObjectReference reference,
   }) {
@@ -8828,7 +8771,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 176,
+            funcId: 175,
             port: port_,
           );
         },
@@ -8849,6 +8792,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "verify_private_state_object_reference",
         argNames: ["reference"],
+      );
+
+  @override
+  Future<void>
+  crateApiPrivateStateSyncVerifyPrivateStatePutAuthorizationContent({
+    required ApiPrivateStateEnvelope envelope,
+    required ApiPrivateStateRequestAuthorization authorization,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_private_state_envelope(
+            envelope,
+            serializer,
+          );
+          sse_encode_box_autoadd_api_private_state_request_authorization(
+            authorization,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 176,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiPrivateStateSyncVerifyPrivateStatePutAuthorizationContentConstMeta,
+        argValues: [envelope, authorization],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPrivateStateSyncVerifyPrivateStatePutAuthorizationContentConstMeta =>
+      const TaskConstMeta(
+        debugName: "verify_private_state_put_authorization_content",
+        argNames: ["envelope", "authorization"],
       );
 
   @override
@@ -9267,18 +9254,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiPrivateStateEnvelope dco_decode_api_private_state_envelope(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ApiPrivateStateEnvelope(
       protocolVersion: dco_decode_u_32(arr[0]),
       objectId: dco_decode_String(arr[1]),
       authPublicKeyBase64: dco_decode_String(arr[2]),
-      revision: dco_decode_u_64(arr[3]),
-      previousHashBase64: dco_decode_opt_String(arr[4]),
-      nonceBase64: dco_decode_String(arr[5]),
-      ciphertextBase64: dco_decode_String(arr[6]),
-      signatureBase64: dco_decode_String(arr[7]),
-      envelopeHashBase64: dco_decode_String(arr[8]),
+      nonceBase64: dco_decode_String(arr[3]),
+      ciphertextBase64: dco_decode_String(arr[4]),
+      signatureBase64: dco_decode_String(arr[5]),
     );
   }
 
@@ -11859,22 +11843,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_protocolVersion = sse_decode_u_32(deserializer);
     var var_objectId = sse_decode_String(deserializer);
     var var_authPublicKeyBase64 = sse_decode_String(deserializer);
-    var var_revision = sse_decode_u_64(deserializer);
-    var var_previousHashBase64 = sse_decode_opt_String(deserializer);
     var var_nonceBase64 = sse_decode_String(deserializer);
     var var_ciphertextBase64 = sse_decode_String(deserializer);
     var var_signatureBase64 = sse_decode_String(deserializer);
-    var var_envelopeHashBase64 = sse_decode_String(deserializer);
     return ApiPrivateStateEnvelope(
       protocolVersion: var_protocolVersion,
       objectId: var_objectId,
       authPublicKeyBase64: var_authPublicKeyBase64,
-      revision: var_revision,
-      previousHashBase64: var_previousHashBase64,
       nonceBase64: var_nonceBase64,
       ciphertextBase64: var_ciphertextBase64,
       signatureBase64: var_signatureBase64,
-      envelopeHashBase64: var_envelopeHashBase64,
     );
   }
 
@@ -15226,12 +15204,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.protocolVersion, serializer);
     sse_encode_String(self.objectId, serializer);
     sse_encode_String(self.authPublicKeyBase64, serializer);
-    sse_encode_u_64(self.revision, serializer);
-    sse_encode_opt_String(self.previousHashBase64, serializer);
     sse_encode_String(self.nonceBase64, serializer);
     sse_encode_String(self.ciphertextBase64, serializer);
     sse_encode_String(self.signatureBase64, serializer);
-    sse_encode_String(self.envelopeHashBase64, serializer);
   }
 
   @protected

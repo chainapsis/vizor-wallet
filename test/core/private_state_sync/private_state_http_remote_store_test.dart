@@ -102,14 +102,13 @@ void main() {
 
     expect(found, isA<PrivateStateRemoteFound>());
     final envelope = (found as PrivateStateRemoteFound).envelope;
-    expect(envelope.revision, BigInt.one);
     expect(envelope.ciphertextBase64, 'ciphertext');
     expect(transport.requests.last.headers['x-vizor-signature'], _signature);
   });
 
-  test('rejects an envelope revision outside the JSON wire range', () async {
+  test('rejects obsolete mutable-envelope fields', () async {
     transport.responses.add(
-      _jsonResponse(200, {..._envelopeJson, 'revision': 9007199254740992}),
+      _jsonResponse(200, {..._envelopeJson, 'revision': 1}),
     );
 
     await expectLater(
@@ -125,35 +124,30 @@ void main() {
         NetworkHttpResponse(statusCode: 204, bodyBytes: Uint8List(0)),
       );
 
-      final result = await store.put(
+      final result = await store.create(
         object: _object,
         envelope: _envelope,
         authorization: _putAuthorization,
-        expectedVersion: null,
       );
 
-      expect(result, isA<PrivateStateRemoteStored>());
+      expect(result, isA<PrivateStateRemoteCreated>());
       final request = transport.requests.single;
       expect(request.method, 'POST');
       expect(request.uri.path, '/api/private-state/v1/objects/$_objectId/put');
-      expect(jsonDecode(utf8.decode(request.bodyBytes)), {
-        'expected': null,
-        'envelope': _envelopeJson,
-      });
+      expect(jsonDecode(utf8.decode(request.bodyBytes)), _envelopeJson);
     },
   );
 
-  test('write maps CAS conflict and classifies retryable status', () async {
+  test('write maps create conflict and classifies retryable status', () async {
     transport.responses
       ..add(NetworkHttpResponse(statusCode: 409, bodyBytes: Uint8List(0)))
       ..add(NetworkHttpResponse(statusCode: 503, bodyBytes: Uint8List(0)));
 
     expect(
-      await store.put(
+      await store.create(
         object: _object,
         envelope: _envelope,
         authorization: _putAuthorization,
-        expectedVersion: null,
       ),
       isA<PrivateStateRemoteConflict>(),
     );
@@ -276,22 +270,16 @@ final _envelope = PrivateStateEnvelope(
   protocolVersion: 1,
   objectId: _objectId,
   authPublicKeyBase64: _publicKey,
-  revision: BigInt.one,
-  previousHashBase64: null,
   nonceBase64: 'nonce',
   ciphertextBase64: 'ciphertext',
   signatureBase64: 'envelope-signature',
-  envelopeHashBase64: 'envelope-hash',
 );
 
 const _envelopeJson = <String, Object?>{
   'protocol_version': 1,
   'object_id': _objectId,
   'auth_public_key_base64': _publicKey,
-  'revision': 1,
-  'previous_hash_base64': null,
   'nonce_base64': 'nonce',
   'ciphertext_base64': 'ciphertext',
   'signature_base64': 'envelope-signature',
-  'envelope_hash_base64': 'envelope-hash',
 };

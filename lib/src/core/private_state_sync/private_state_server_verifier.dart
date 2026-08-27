@@ -10,10 +10,9 @@ abstract interface class PrivateStateServerVerifier {
     PrivateStateRequestAuthorization authorization,
   );
 
-  Future<void> verifyPutTransition({
+  Future<void> verifyPutContent({
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateEnvelope? current,
   });
 }
 
@@ -41,15 +40,13 @@ class RustPrivateStateServerVerifier implements PrivateStateServerVerifier {
   }
 
   @override
-  Future<void> verifyPutTransition({
+  Future<void> verifyPutContent({
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateEnvelope? current,
   }) {
-    return rust.verifyPrivateStateAuthorizedPutTransition(
+    return rust.verifyPrivateStatePutAuthorizationContent(
       envelope: privateStateEnvelopeToRust(envelope),
       authorization: privateStateAuthorizationToRust(authorization),
-      current: current == null ? null : privateStateEnvelopeToRust(current),
     );
   }
 }

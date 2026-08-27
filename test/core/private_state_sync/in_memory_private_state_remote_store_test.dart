@@ -72,7 +72,7 @@ void main() {
       expect(recovered?.roundId, 'round-42');
       expect(recovered?.completedAtSeconds, 1_724_000_000);
       expect(recovered?.choicesByProposalId, {7: 1, 8: null});
-      expect(verifier.putTransitionCalls, 1);
+      expect(verifier.putCalls, 1);
     },
   );
 
@@ -182,7 +182,7 @@ void main() {
     );
   });
 
-  test('stale concurrent writer receives conflict without rollback', () async {
+  test('a second create cannot replace an existing object', () async {
     const account = PrivateStateAccount(
       dbPath: '/wallet.db',
       network: 'main',
@@ -197,36 +197,18 @@ void main() {
       key: key,
       plaintext: Uint8List.fromList([1]),
     );
-    final firstRead =
-        await desktopRepository.read(account: account, key: key)
-            as PrivateStateReadFound;
-    final secondRead =
-        await mobileRepository.read(account: account, key: key)
-            as PrivateStateReadFound;
-
     expect(
-      await desktopRepository.compareAndSet(
+      await mobileRepository.create(
         account: account,
         key: key,
-        currentVersion: firstRead.version,
-        plaintext: Uint8List.fromList([2]),
-      ),
-      isA<PrivateStateWriteStored>(),
-    );
-    expect(
-      await mobileRepository.compareAndSet(
-        account: account,
-        key: key,
-        currentVersion: secondRead.version,
         plaintext: Uint8List.fromList([3]),
       ),
-      isA<PrivateStateWriteConflict>(),
+      isA<PrivateStateCreateConflict>(),
     );
     final finalRead =
         await desktopRepository.read(account: account, key: key)
             as PrivateStateReadFound;
-    expect(finalRead.version.revision, BigInt.two);
-    expect(finalRead.plaintext, [2]);
+    expect(finalRead.plaintext, [1]);
   });
 
   test('authorization cannot be moved to another object', () async {
@@ -306,7 +288,7 @@ class _FakeCrypto implements PrivateStateCrypto {
     required PrivateStateRequestMethod method,
     required PrivateStateServerChallenge challenge,
     required String audience,
-    String? contentHashBase64,
+    PrivateStateEnvelope? envelope,
   }) async {
     final reference = _referenceForKey(key);
     return PrivateStateRequestAuthorization(
@@ -317,8 +299,9 @@ class _FakeCrypto implements PrivateStateCrypto {
       challengeBase64: challenge.valueBase64,
       audience: audience,
       expiresAt: challenge.expiresAt,
-      contentHashBase64:
-          contentHashBase64 ?? '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU',
+      contentHashBase64: envelope == null
+          ? '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU'
+          : 'signed-envelope-content-hash',
       signatureBase64: 'request-signature',
     );
   }
@@ -342,8 +325,6 @@ class _FakeCrypto implements PrivateStateCrypto {
   Future<PrivateStateEnvelope> seal({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required BigInt revision,
-    required String? previousHashBase64,
     required Uint8List plaintext,
   }) async {
     final reference = _referenceForKey(key);
@@ -352,18 +333,15 @@ class _FakeCrypto implements PrivateStateCrypto {
       protocolVersion: 1,
       objectId: reference.objectId,
       authPublicKeyBase64: reference.authPublicKeyBase64,
-      revision: revision,
-      previousHashBase64: previousHashBase64,
-      nonceBase64: 'nonce-$revision',
+      nonceBase64: 'nonce',
       ciphertextBase64: ciphertext,
       signatureBase64: 'envelope-signature',
-      envelopeHashBase64: 'hash-$revision-$ciphertext',
     );
   }
 }
 
 class _FakeServerVerifier implements PrivateStateServerVerifier {
-  int putTransitionCalls = 0;
+  int putCalls = 0;
 
   @override
   Future<void> verifyObjectReference(PrivateStateObjectReference object) async {
@@ -384,27 +362,14 @@ class _FakeServerVerifier implements PrivateStateServerVerifier {
   }
 
   @override
-  Future<void> verifyPutTransition({
+  Future<void> verifyPutContent({
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateEnvelope? current,
   }) async {
-    putTransitionCalls++;
-    await verifyAuthorization(authorization);
-    if (authorization.contentHashBase64 != envelope.envelopeHashBase64 ||
+    putCalls++;
+    if (authorization.contentHashBase64 != 'signed-envelope-content-hash' ||
         envelope.signatureBase64 != 'envelope-signature') {
       throw const PrivateStateProtocolException('Invalid signed envelope.');
-    }
-    if (current == null) {
-      if (envelope.revision != BigInt.one ||
-          envelope.previousHashBase64 != null) {
-        throw const PrivateStateProtocolException('Invalid object creation.');
-      }
-      return;
-    }
-    if (envelope.revision != current.revision + BigInt.one ||
-        envelope.previousHashBase64 != current.envelopeHashBase64) {
-      throw const PrivateStateProtocolException('Invalid object successor.');
     }
   }
 }

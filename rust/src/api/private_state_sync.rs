@@ -17,12 +17,9 @@ pub struct ApiPrivateStateEnvelope {
     pub protocol_version: u32,
     pub object_id: String,
     pub auth_public_key_base64: String,
-    pub revision: u64,
-    pub previous_hash_base64: Option<String>,
     pub nonce_base64: String,
     pub ciphertext_base64: String,
     pub signature_base64: String,
-    pub envelope_hash_base64: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,8 +79,6 @@ pub fn seal_private_state_object(
     account_uuid: String,
     namespace: String,
     item_key: String,
-    revision: u64,
-    previous_hash_base64: Option<String>,
     plaintext: Vec<u8>,
 ) -> Result<ApiPrivateStateEnvelope, String> {
     catch(|| {
@@ -93,8 +88,6 @@ pub fn seal_private_state_object(
             &network,
             &namespace,
             &item_key,
-            revision,
-            previous_hash_base64.as_deref(),
             Zeroizing::new(plaintext),
         )
         .map(Into::into)
@@ -127,10 +120,11 @@ pub fn authorize_private_state_request(
     challenge_base64: String,
     audience: String,
     expires_at_seconds: u64,
-    content_hash_base64: Option<String>,
+    envelope: Option<ApiPrivateStateEnvelope>,
 ) -> Result<ApiPrivateStateRequestAuthorization, String> {
     catch(|| {
         let ufvk = account_ufvk(&db_path, &network, &account_uuid)?;
+        let envelope = envelope.map(private_state_sync::EncryptedObject::from);
         private_state_sync::authorize_request(
             &ufvk,
             &network,
@@ -140,7 +134,7 @@ pub fn authorize_private_state_request(
             &challenge_base64,
             &audience,
             expires_at_seconds,
-            content_hash_base64.as_deref(),
+            envelope.as_ref(),
         )
         .map(Into::into)
     })
@@ -172,22 +166,15 @@ pub fn verify_private_state_object_reference(
     })
 }
 
-/// Verifies a PUT signature and that its envelope directly follows the object
-/// atomically read by the server. `current = None` means create-if-absent.
-pub fn verify_private_state_authorized_put_transition(
+/// Verifies that a PUT authorization is bound to the supplied opaque envelope.
+pub fn verify_private_state_put_authorization_content(
     envelope: ApiPrivateStateEnvelope,
     authorization: ApiPrivateStateRequestAuthorization,
-    current: Option<ApiPrivateStateEnvelope>,
 ) -> Result<(), String> {
     catch(|| {
         let envelope = private_state_sync::EncryptedObject::from(envelope);
         let authorization = private_state_sync::RequestAuthorization::from(authorization);
-        let current = current.map(private_state_sync::EncryptedObject::from);
-        private_state_sync::verify_authorized_put_transition(
-            &envelope,
-            &authorization,
-            current.as_ref(),
-        )
+        private_state_sync::verify_put_authorization_content(&envelope, &authorization)
     })
 }
 
@@ -217,12 +204,9 @@ impl From<private_state_sync::EncryptedObject> for ApiPrivateStateEnvelope {
             protocol_version: value.protocol_version,
             object_id: value.object_id,
             auth_public_key_base64: value.auth_public_key_base64,
-            revision: value.revision,
-            previous_hash_base64: value.previous_hash_base64,
             nonce_base64: value.nonce_base64,
             ciphertext_base64: value.ciphertext_base64,
             signature_base64: value.signature_base64,
-            envelope_hash_base64: value.envelope_hash_base64,
         }
     }
 }
@@ -233,12 +217,9 @@ impl From<ApiPrivateStateEnvelope> for private_state_sync::EncryptedObject {
             protocol_version: value.protocol_version,
             object_id: value.object_id,
             auth_public_key_base64: value.auth_public_key_base64,
-            revision: value.revision,
-            previous_hash_base64: value.previous_hash_base64,
             nonce_base64: value.nonce_base64,
             ciphertext_base64: value.ciphertext_base64,
             signature_base64: value.signature_base64,
-            envelope_hash_base64: value.envelope_hash_base64,
         }
     }
 }

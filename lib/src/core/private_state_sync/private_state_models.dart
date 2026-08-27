@@ -17,8 +17,7 @@ enum PrivateStateNamespace {
 
 enum PrivateStateRequestMethod {
   get('GET'),
-  put('PUT'),
-  delete('DELETE');
+  put('PUT');
 
   const PrivateStateRequestMethod(this.wireName);
 
@@ -66,38 +65,17 @@ class PrivateStateEnvelope {
     required this.protocolVersion,
     required this.objectId,
     required this.authPublicKeyBase64,
-    required this.revision,
-    required this.previousHashBase64,
     required this.nonceBase64,
     required this.ciphertextBase64,
     required this.signatureBase64,
-    required this.envelopeHashBase64,
   });
 
   final int protocolVersion;
   final String objectId;
   final String authPublicKeyBase64;
-  final BigInt revision;
-  final String? previousHashBase64;
   final String nonceBase64;
   final String ciphertextBase64;
   final String signatureBase64;
-  final String envelopeHashBase64;
-
-  PrivateStateVersion get version => PrivateStateVersion(
-    revision: revision,
-    envelopeHashBase64: envelopeHashBase64,
-  );
-}
-
-class PrivateStateVersion {
-  const PrivateStateVersion({
-    required this.revision,
-    required this.envelopeHashBase64,
-  });
-
-  final BigInt revision;
-  final String envelopeHashBase64;
 }
 
 class PrivateStateRequestAuthorization {
@@ -148,19 +126,16 @@ class PrivateStateRemoteFound extends PrivateStateRemoteReadResult {
   final PrivateStateEnvelope envelope;
 }
 
-sealed class PrivateStateRemotePutResult {
-  const PrivateStateRemotePutResult();
+sealed class PrivateStateRemoteCreateResult {
+  const PrivateStateRemoteCreateResult();
 }
 
-class PrivateStateRemoteStored extends PrivateStateRemotePutResult {
-  const PrivateStateRemoteStored();
+class PrivateStateRemoteCreated extends PrivateStateRemoteCreateResult {
+  const PrivateStateRemoteCreated();
 }
 
-/// The server's CAS precondition did not match.
-///
-/// No automatic winner or merge is selected at this layer. The feature
-/// adapter must perform an authenticated read and apply its own state rules.
-class PrivateStateRemoteConflict extends PrivateStateRemotePutResult {
+/// An immutable object already exists for this derived key.
+class PrivateStateRemoteConflict extends PrivateStateRemoteCreateResult {
   const PrivateStateRemoteConflict();
 }
 
@@ -173,24 +148,21 @@ class PrivateStateReadAbsent extends PrivateStateReadResult {
 }
 
 class PrivateStateReadFound extends PrivateStateReadResult {
-  const PrivateStateReadFound({required this.plaintext, required this.version});
+  const PrivateStateReadFound({required this.plaintext});
 
   final Uint8List plaintext;
-  final PrivateStateVersion version;
 }
 
-sealed class PrivateStateWriteResult {
-  const PrivateStateWriteResult();
+sealed class PrivateStateCreateResult {
+  const PrivateStateCreateResult();
 }
 
-class PrivateStateWriteStored extends PrivateStateWriteResult {
-  const PrivateStateWriteStored(this.version);
-
-  final PrivateStateVersion version;
+class PrivateStateCreated extends PrivateStateCreateResult {
+  const PrivateStateCreated();
 }
 
-class PrivateStateWriteConflict extends PrivateStateWriteResult {
-  const PrivateStateWriteConflict();
+class PrivateStateCreateConflict extends PrivateStateCreateResult {
+  const PrivateStateCreateConflict();
 }
 
 class PrivateStateProtocolException implements Exception {

@@ -21,42 +21,41 @@ void main() {
 
   test('authenticated read returns absence without decrypting', () async {
     final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(now: now)
-      ..nextRead = const PrivateStateRemoteAbsent();
+    final remote = _FakeRemoteStore(now: now);
     final repository = DefaultPrivateStateObjectRepository(
       crypto: crypto,
       remote: remote,
       now: () => now,
     );
 
-    final result = await repository.read(account: account, key: key);
-
-    expect(result, isA<PrivateStateReadAbsent>());
+    expect(
+      await repository.read(account: account, key: key),
+      isA<PrivateStateReadAbsent>(),
+    );
     expect(crypto.authorizations.single.method, PrivateStateRequestMethod.get);
-    expect(crypto.authorizations.single.contentHashBase64, isNull);
+    expect(crypto.authorizations.single.envelope, isNull);
     expect(crypto.openCalls, 0);
   });
 
   test('authenticated read decrypts a found envelope', () async {
     final crypto = _FakeCrypto();
     final remote = _FakeRemoteStore(now: now)
-      ..nextRead = PrivateStateRemoteFound(_envelope(revision: BigInt.one));
+      ..nextRead = const PrivateStateRemoteFound(_envelope);
     final repository = DefaultPrivateStateObjectRepository(
       crypto: crypto,
       remote: remote,
       now: () => now,
     );
 
-    final result = await repository.read(account: account, key: key);
+    final found =
+        await repository.read(account: account, key: key)
+            as PrivateStateReadFound;
 
-    final found = result as PrivateStateReadFound;
     expect(utf8.decode(found.plaintext), 'verified plaintext');
-    expect(found.version.revision, BigInt.one);
-    expect(found.version.envelopeHashBase64, 'hash-1');
     expect(crypto.openCalls, 1);
   });
 
-  test('create uses create-if-absent and signs the envelope hash', () async {
+  test('create signs and submits exactly the sealed envelope', () async {
     final crypto = _FakeCrypto();
     final remote = _FakeRemoteStore(now: now);
     final repository = DefaultPrivateStateObjectRepository(
@@ -65,68 +64,40 @@ void main() {
       now: () => now,
     );
 
-    final result = await repository.create(
-      account: account,
-      key: key,
-      plaintext: Uint8List.fromList(utf8.encode('document')),
-    );
-
-    final stored = result as PrivateStateWriteStored;
-    expect(stored.version.revision, BigInt.one);
-    expect(remote.putCalls.single.expectedVersion, isNull);
-    expect(remote.putCalls.single.envelope.previousHashBase64, isNull);
     expect(
-      crypto.authorizations.single.contentHashBase64,
-      remote.putCalls.single.envelope.envelopeHashBase64,
-    );
-  });
-
-  test('compare-and-set chains the authenticated version', () async {
-    final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(now: now);
-    final repository = DefaultPrivateStateObjectRepository(
-      crypto: crypto,
-      remote: remote,
-      now: () => now,
-    );
-
-    final result = await repository.compareAndSet(
-      account: account,
-      key: key,
-      currentVersion: PrivateStateVersion(
-        revision: BigInt.from(4),
-        envelopeHashBase64: 'authenticated-hash-4',
+      await repository.create(
+        account: account,
+        key: key,
+        plaintext: Uint8List.fromList(utf8.encode('document')),
       ),
-      plaintext: Uint8List.fromList([1, 2, 3]),
+      isA<PrivateStateCreated>(),
     );
-
-    expect(result, isA<PrivateStateWriteStored>());
-    final put = remote.putCalls.single;
-    expect(put.expectedVersion?.revision, BigInt.from(4));
-    expect(put.expectedVersion?.envelopeHashBase64, 'authenticated-hash-4');
-    expect(put.envelope.revision, BigInt.from(5));
-    expect(put.envelope.previousHashBase64, 'authenticated-hash-4');
+    expect(crypto.authorizations.single.envelope, same(_envelope));
+    expect(remote.createCalls.single, same(_envelope));
   });
 
-  test('CAS conflict is returned without generic merge', () async {
-    final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(now: now)
-      ..nextPut = const PrivateStateRemoteConflict();
-    final repository = DefaultPrivateStateObjectRepository(
-      crypto: crypto,
-      remote: remote,
-      now: () => now,
-    );
+  test(
+    'existing object conflict is returned without a read or merge',
+    () async {
+      final remote = _FakeRemoteStore(now: now)
+        ..nextCreate = const PrivateStateRemoteConflict();
+      final repository = DefaultPrivateStateObjectRepository(
+        crypto: _FakeCrypto(),
+        remote: remote,
+        now: () => now,
+      );
 
-    final result = await repository.create(
-      account: account,
-      key: key,
-      plaintext: Uint8List(0),
-    );
-
-    expect(result, isA<PrivateStateWriteConflict>());
-    expect(remote.getCalls, 0);
-  });
+      expect(
+        await repository.create(
+          account: account,
+          key: key,
+          plaintext: Uint8List(0),
+        ),
+        isA<PrivateStateCreateConflict>(),
+      );
+      expect(remote.getCalls, 0);
+    },
+  );
 
   test('expired challenge is rejected before signing', () async {
     final crypto = _FakeCrypto();
@@ -166,51 +137,6 @@ void main() {
       now.add(DefaultPrivateStateObjectRepository.maxAuthorizationLifetime),
     );
   });
-
-  test('invalid CAS version is rejected before crypto or transport', () async {
-    final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(now: now);
-    final repository = DefaultPrivateStateObjectRepository(
-      crypto: crypto,
-      remote: remote,
-      now: () => now,
-    );
-
-    expect(
-      () => repository.compareAndSet(
-        account: account,
-        key: key,
-        currentVersion: PrivateStateVersion(
-          revision: BigInt.zero,
-          envelopeHashBase64: '',
-        ),
-        plaintext: Uint8List(0),
-      ),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
-    expect(crypto.deriveCalls, 0);
-    expect(remote.challengeCalls, 0);
-  });
-
-  test(
-    'mismatched crypto authorization is rejected before transport',
-    () async {
-      final crypto = _FakeCrypto()
-        ..authorizedContentHashOverride = 'wrong-content-hash';
-      final remote = _FakeRemoteStore(now: now);
-      final repository = DefaultPrivateStateObjectRepository(
-        crypto: crypto,
-        remote: remote,
-        now: () => now,
-      );
-
-      await expectLater(
-        repository.create(account: account, key: key, plaintext: Uint8List(0)),
-        throwsA(isA<PrivateStateProtocolException>()),
-      );
-      expect(remote.putCalls, isEmpty);
-    },
-  );
 }
 
 const _reference = PrivateStateObjectReference(
@@ -219,39 +145,29 @@ const _reference = PrivateStateObjectReference(
   authPublicKeyBase64: 'public-key',
 );
 
-PrivateStateEnvelope _envelope({
-  required BigInt revision,
-  String? previousHashBase64,
-}) {
-  return PrivateStateEnvelope(
-    protocolVersion: 1,
-    objectId: _reference.objectId,
-    authPublicKeyBase64: _reference.authPublicKeyBase64,
-    revision: revision,
-    previousHashBase64: previousHashBase64,
-    nonceBase64: 'nonce',
-    ciphertextBase64: 'ciphertext',
-    signatureBase64: 'signature',
-    envelopeHashBase64: 'hash-$revision',
-  );
-}
+const _envelope = PrivateStateEnvelope(
+  protocolVersion: 1,
+  objectId: 'object-id',
+  authPublicKeyBase64: 'public-key',
+  nonceBase64: 'nonce',
+  ciphertextBase64: 'ciphertext',
+  signatureBase64: 'signature',
+);
 
 class _AuthorizationCall {
   const _AuthorizationCall({
     required this.method,
     required this.expiresAt,
-    this.contentHashBase64,
+    required this.envelope,
   });
 
   final PrivateStateRequestMethod method;
   final DateTime expiresAt;
-  final String? contentHashBase64;
+  final PrivateStateEnvelope? envelope;
 }
 
 class _FakeCrypto implements PrivateStateCrypto {
-  int deriveCalls = 0;
   int openCalls = 0;
-  String? authorizedContentHashOverride;
   final List<_AuthorizationCall> authorizations = [];
 
   @override
@@ -261,13 +177,13 @@ class _FakeCrypto implements PrivateStateCrypto {
     required PrivateStateRequestMethod method,
     required PrivateStateServerChallenge challenge,
     required String audience,
-    String? contentHashBase64,
+    PrivateStateEnvelope? envelope,
   }) async {
     authorizations.add(
       _AuthorizationCall(
         method: method,
         expiresAt: challenge.expiresAt,
-        contentHashBase64: contentHashBase64,
+        envelope: envelope,
       ),
     );
     return PrivateStateRequestAuthorization(
@@ -278,10 +194,9 @@ class _FakeCrypto implements PrivateStateCrypto {
       challengeBase64: challenge.valueBase64,
       audience: audience,
       expiresAt: challenge.expiresAt,
-      contentHashBase64:
-          authorizedContentHashOverride ??
-          contentHashBase64 ??
-          '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU',
+      contentHashBase64: envelope == null
+          ? '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU'
+          : 'signed-envelope-content-hash',
       signatureBase64: 'request-signature',
     );
   }
@@ -290,10 +205,7 @@ class _FakeCrypto implements PrivateStateCrypto {
   Future<PrivateStateObjectReference> deriveObjectReference({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-  }) async {
-    deriveCalls++;
-    return _reference;
-  }
+  }) async => _reference;
 
   @override
   Future<Uint8List> open({
@@ -309,22 +221,8 @@ class _FakeCrypto implements PrivateStateCrypto {
   Future<PrivateStateEnvelope> seal({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
-    required BigInt revision,
-    required String? previousHashBase64,
     required Uint8List plaintext,
-  }) async {
-    return _envelope(
-      revision: revision,
-      previousHashBase64: previousHashBase64,
-    );
-  }
-}
-
-class _PutCall {
-  const _PutCall({required this.envelope, required this.expectedVersion});
-
-  final PrivateStateEnvelope envelope;
-  final PrivateStateVersion? expectedVersion;
+  }) async => _envelope;
 }
 
 class _FakeRemoteStore implements PrivateStateRemoteStore {
@@ -335,10 +233,9 @@ class _FakeRemoteStore implements PrivateStateRemoteStore {
   final DateTime now;
   final DateTime challengeExpiresAt;
   PrivateStateRemoteReadResult nextRead = const PrivateStateRemoteAbsent();
-  PrivateStateRemotePutResult nextPut = const PrivateStateRemoteStored();
-  int challengeCalls = 0;
+  PrivateStateRemoteCreateResult nextCreate = const PrivateStateRemoteCreated();
   int getCalls = 0;
-  final List<_PutCall> putCalls = [];
+  final List<PrivateStateEnvelope> createCalls = [];
 
   @override
   String get audience => 'https://sync.vizor.example/v1';
@@ -346,13 +243,10 @@ class _FakeRemoteStore implements PrivateStateRemoteStore {
   @override
   Future<PrivateStateServerChallenge> createChallenge({
     required PrivateStateObjectReference object,
-  }) async {
-    challengeCalls++;
-    return PrivateStateServerChallenge(
-      valueBase64: 'challenge-with-at-least-16-bytes',
-      expiresAt: challengeExpiresAt,
-    );
-  }
+  }) async => PrivateStateServerChallenge(
+    valueBase64: 'challenge-with-at-least-16-bytes',
+    expiresAt: challengeExpiresAt,
+  );
 
   @override
   Future<PrivateStateRemoteReadResult> get({
@@ -364,15 +258,12 @@ class _FakeRemoteStore implements PrivateStateRemoteStore {
   }
 
   @override
-  Future<PrivateStateRemotePutResult> put({
+  Future<PrivateStateRemoteCreateResult> create({
     required PrivateStateObjectReference object,
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateVersion? expectedVersion,
   }) async {
-    putCalls.add(
-      _PutCall(envelope: envelope, expectedVersion: expectedVersion),
-    );
-    return nextPut;
+    createCalls.add(envelope);
+    return nextCreate;
   }
 }

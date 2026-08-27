@@ -260,17 +260,11 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     final plaintext = objects[key.itemKey];
     return plaintext == null
         ? const PrivateStateReadAbsent()
-        : PrivateStateReadFound(
-            plaintext: plaintext,
-            version: PrivateStateVersion(
-              revision: BigInt.one,
-              envelopeHashBase64: 'hash',
-            ),
-          );
+        : PrivateStateReadFound(plaintext: plaintext);
   }
 
   @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
@@ -280,24 +274,14 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     if (slot == conflictSlot) {
       objects[key.itemKey] = conflictWinner!;
       conflictSlot = null;
-      return const PrivateStateWriteConflict();
+      return const PrivateStateCreateConflict();
     }
     if (objects.containsKey(key.itemKey)) {
-      return const PrivateStateWriteConflict();
+      return const PrivateStateCreateConflict();
     }
     objects[key.itemKey] = plaintext;
-    return PrivateStateWriteStored(
-      PrivateStateVersion(revision: BigInt.one, envelopeHashBase64: 'hash'),
-    );
+    return const PrivateStateCreated();
   }
-
-  @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) => throw UnsupportedError('append-only archive');
 }
 
 class _MemoryActivityStore implements SwapActivityStore {

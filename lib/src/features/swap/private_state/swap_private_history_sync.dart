@@ -211,7 +211,7 @@ class FinalizedActivityArchiveSync
         key: _key(kind, nextSlot),
         plaintext: plaintext,
       );
-      if (write is PrivateStateWriteStored) {
+      if (write is PrivateStateCreated) {
         await _saveMetadata(
           account: account,
           kind: kind,

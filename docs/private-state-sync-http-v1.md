@@ -60,8 +60,10 @@ object):
 - `X-Vizor-Signature`
 
 The signature is the canonical Ed25519 request authorization defined by the
-Rust `private_state_sync` module. GET signs SHA-256 of empty bytes. PUT signs
-the submitted envelope hash.
+Rust `private_state_sync` module. GET signs SHA-256 of empty bytes. PUT signs a
+domain-separated SHA-256 digest computed from the canonical signed envelope.
+That digest exists only in the authorization header; it is not stored as part
+of the envelope.
 
 The server rejects requests unless the challenge exists, is unused, is bound
 to the same object, the signed expiry is after the server clock and no later
@@ -74,35 +76,33 @@ Success returns `200` and the encrypted envelope. An authenticated missing
 object returns `404`. An unauthenticated caller cannot distinguish missing from
 existing objects.
 
-## PUT and atomic CAS
+## PUT and atomic creation
 
-The body contains:
+The body is the encrypted envelope itself:
 
 ```json
 {
-  "expected": {
-    "revision": 4,
-    "envelope_hash_base64": "..."
-  },
-  "envelope": { "protocol_version": 1 }
+  "protocol_version": 1,
+  "object_id": "...",
+  "auth_public_key_base64": "...",
+  "nonce_base64": "...",
+  "ciphertext_base64": "...",
+  "signature_base64": "..."
 }
 ```
 
-`expected: null` means create-if-absent. Within one serialized database
-transaction the server:
+The server:
 
 1. consumes and verifies the request authorization;
-2. reads the current envelope;
-3. compares its revision and authenticated envelope hash with `expected`;
-4. returns `409` on mismatch without changing storage;
-5. verifies the new signed envelope and requires revision 1 for creation, or
-   exactly `current.revision + 1` with `previous_hash` equal to the current
-   envelope hash;
-6. stores the envelope and returns `204`.
+2. verifies the self-certifying object reference, envelope signature, size
+   limits, and the authorization's envelope content digest;
+3. atomically inserts the object only when `object_id` does not exist;
+4. returns `204` for the winner or `409` without changing storage when the
+   object already exists.
 
-The unsigned `expected` field is only a concurrency hint. Direct-successor
-verification is mandatory to prevent replaying an older correctly signed
-envelope while replacing its CAS precondition.
+There is no revision, update, delete, or compare-and-set operation. Once an
+object ID exists its envelope is immutable. New application state always uses
+a newly derived object key and therefore a new object ID.
 
 ## App object policies
 
@@ -113,11 +113,11 @@ the Rust recovery database and chain remain authoritative.
 Swap and Pay share one finalized activity archive implementation but use
 separate namespaces. Only `complete` and `refunded` records are eligible.
 Pending, failed, and expired activity never leaves the installation. Each
-archive generation is a cumulative snapshot written as revision 1 to a new
-UFVK-derived slot (`archive-v1:1`, `archive-v1:2`, ...); existing slot objects
-are never updated. A create conflict is resolved by reading the winning slot,
-merging it locally, and creating the following slot. Consequently each slot
-has an unrelated public key and object ID at rest.
+archive generation is a cumulative snapshot written to a new UFVK-derived slot
+(`archive-v1:1`, `archive-v1:2`, ...); existing slot objects cannot be updated.
+A create conflict is resolved by reading the winning slot, merging it locally,
+and creating the following slot. Consequently each slot has an unrelated
+public key and object ID at rest.
 
 Activity deletion is installation-local. Deleted IDs are suppressed only in
 local secure metadata, never uploaded as tombstones, and never remove a remote

@@ -134,23 +134,13 @@ class _RecordingRepository implements PrivateStateObjectRepository {
   final List<String> reads = [];
 
   @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) => throw UnimplementedError();
-
-  @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
   }) async {
     creates.add('${account.accountUuid}:${key.itemKey}');
-    return PrivateStateWriteStored(
-      PrivateStateVersion(revision: BigInt.one, envelopeHashBase64: 'hash'),
-    );
+    return const PrivateStateCreated();
   }
 
   @override

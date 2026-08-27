@@ -189,7 +189,7 @@ class VotingPrivateStateSync {
       key: _key(record.roundId),
       plaintext: record.encode(),
     );
-    if (result is PrivateStateWriteStored) {
+    if (result is PrivateStateCreated) {
       _onCompletionObserved?.call(account, record);
       return record;
     }

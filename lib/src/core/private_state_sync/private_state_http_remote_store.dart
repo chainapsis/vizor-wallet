@@ -68,7 +68,6 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
 
   static const _maximumChallengeResponseBytes = 4096;
   static const _maximumObjectResponseBytes = 384 * 1024;
-  static final _maximumWireRevision = BigInt.from(9007199254740991);
 
   final Uri _baseUri;
   final String _audience;
@@ -160,11 +159,10 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
   }
 
   @override
-  Future<PrivateStateRemotePutResult> put({
+  Future<PrivateStateRemoteCreateResult> create({
     required PrivateStateObjectReference object,
     required PrivateStateEnvelope envelope,
     required PrivateStateRequestAuthorization authorization,
-    required PrivateStateVersion? expectedVersion,
   }) async {
     _requireAuthorizationMatches(
       object,
@@ -173,8 +171,7 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
     );
     if (envelope.protocolVersion != object.protocolVersion ||
         envelope.objectId != object.objectId ||
-        envelope.authPublicKeyBase64 != object.authPublicKeyBase64 ||
-        envelope.envelopeHashBase64 != authorization.contentHashBase64) {
+        envelope.authPublicKeyBase64 != object.authPublicKeyBase64) {
       throw const PrivateStateProtocolException(
         'PUT envelope does not match its object or authorization.',
       );
@@ -185,18 +182,10 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       'POST',
       _objectUri(object.objectId, suffix: 'put'),
       headers: {..._jsonHeaders, ..._authorizationHeaders(authorization)},
-      bodyBytes: _jsonBytes({
-        'expected': expectedVersion == null
-            ? null
-            : {
-                'revision': _wireRevision(expectedVersion.revision),
-                'envelope_hash_base64': expectedVersion.envelopeHashBase64,
-              },
-        'envelope': _envelopeJson(envelope),
-      }),
+      bodyBytes: _jsonBytes(_envelopeJson(envelope)),
       timeout: timeout,
     );
-    if (response.statusCode == 204) return const PrivateStateRemoteStored();
+    if (response.statusCode == 204) return const PrivateStateRemoteCreated();
     if (response.statusCode == 409) return const PrivateStateRemoteConflict();
     throw PrivateStateHttpStatusException('put object', response.statusCode);
   }
@@ -257,22 +246,13 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       'protocol_version',
       'object_id',
       'auth_public_key_base64',
-      'revision',
-      'previous_hash_base64',
       'nonce_base64',
       'ciphertext_base64',
       'signature_base64',
-      'envelope_hash_base64',
     });
-    final revision = body['revision'];
-    final previousHash = body['previous_hash_base64'];
     if (body['protocol_version'] != expectedObject.protocolVersion ||
         body['object_id'] != expectedObject.objectId ||
-        body['auth_public_key_base64'] != expectedObject.authPublicKeyBase64 ||
-        revision is! int ||
-        revision <= 0 ||
-        BigInt.from(revision) > _maximumWireRevision ||
-        !(previousHash == null || previousHash is String)) {
+        body['auth_public_key_base64'] != expectedObject.authPublicKeyBase64) {
       throw const PrivateStateProtocolException(
         'Remote store returned an invalid object envelope.',
       );
@@ -280,17 +260,13 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
     final nonce = _requiredString(body, 'nonce_base64');
     final ciphertext = _requiredString(body, 'ciphertext_base64');
     final signature = _requiredString(body, 'signature_base64');
-    final envelopeHash = _requiredString(body, 'envelope_hash_base64');
     return PrivateStateEnvelope(
       protocolVersion: expectedObject.protocolVersion,
       objectId: expectedObject.objectId,
       authPublicKeyBase64: expectedObject.authPublicKeyBase64,
-      revision: BigInt.from(revision),
-      previousHashBase64: previousHash as String?,
       nonceBase64: nonce,
       ciphertextBase64: ciphertext,
       signatureBase64: signature,
-      envelopeHashBase64: envelopeHash,
     );
   }
 
@@ -299,22 +275,10 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       'protocol_version': envelope.protocolVersion,
       'object_id': envelope.objectId,
       'auth_public_key_base64': envelope.authPublicKeyBase64,
-      'revision': _wireRevision(envelope.revision),
-      'previous_hash_base64': envelope.previousHashBase64,
       'nonce_base64': envelope.nonceBase64,
       'ciphertext_base64': envelope.ciphertextBase64,
       'signature_base64': envelope.signatureBase64,
-      'envelope_hash_base64': envelope.envelopeHashBase64,
     };
-  }
-
-  int _wireRevision(BigInt revision) {
-    if (revision < BigInt.one || revision > _maximumWireRevision) {
-      throw const PrivateStateProtocolException(
-        'Revision is outside the HTTP protocol range.',
-      );
-    }
-    return revision.toInt();
   }
 
   Map<String, dynamic> _decodeJsonObject(

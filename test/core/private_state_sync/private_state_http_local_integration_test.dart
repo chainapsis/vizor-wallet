@@ -54,16 +54,15 @@ void main() {
         method: PrivateStateRequestMethod.put,
         challenge: putChallenge,
         audience: writer.audience,
-        contentHashBase64: envelope.envelopeHashBase64,
+        envelope: envelope,
       );
       expect(
-        await writer.put(
+        await writer.create(
           object: fixture.object,
           envelope: envelope,
           authorization: putAuthorization,
-          expectedVersion: null,
         ),
-        isA<PrivateStateRemoteStored>(),
+        isA<PrivateStateRemoteCreated>(),
       );
       writerTransport.close(force: true);
 
@@ -83,7 +82,6 @@ void main() {
         method: PrivateStateRequestMethod.get,
         challenge: getChallenge,
         audience: reader.audience,
-        contentHashBase64: _emptyContentHash,
       );
       final result = await reader.get(
         object: fixture.object,
@@ -92,7 +90,7 @@ void main() {
 
       expect(result, isA<PrivateStateRemoteFound>());
       final recovered = (result as PrivateStateRemoteFound).envelope;
-      expect(recovered.envelopeHashBase64, envelope.envelopeHashBase64);
+      expect(recovered.signatureBase64, envelope.signatureBase64);
       expect(recovered.ciphertextBase64, envelope.ciphertextBase64);
     },
     skip: _integrationUrl.isEmpty
@@ -241,8 +239,6 @@ class _WireFixture {
       utf8.encode('Vizor private state envelope v1'),
       _u32(_protocolVersion),
       _bytes(utf8.encode(object.objectId)),
-      _u64(BigInt.one),
-      [0],
       _bytes(utf8.encode(object.authPublicKeyBase64)),
       _bytes(nonce),
       _bytes(ciphertext),
@@ -251,21 +247,13 @@ class _WireFixture {
       unsigned,
       keyPair: _keyPair,
     );
-    final envelopeHash = _hash([
-      ...utf8.encode('Vizor private state envelope hash v1'),
-      ...unsigned,
-      ...signature.bytes,
-    ]);
     return PrivateStateEnvelope(
       protocolVersion: _protocolVersion,
       objectId: object.objectId,
       authPublicKeyBase64: object.authPublicKeyBase64,
-      revision: BigInt.one,
-      previousHashBase64: null,
       nonceBase64: _encodeBase64Url(nonce),
       ciphertextBase64: _encodeBase64Url(ciphertext),
       signatureBase64: _encodeBase64Url(signature.bytes),
-      envelopeHashBase64: _encodeBase64Url(envelopeHash),
     );
   }
 
@@ -278,9 +266,12 @@ class _WireFixture {
     required PrivateStateRequestMethod method,
     required PrivateStateServerChallenge challenge,
     required String audience,
-    required String contentHashBase64,
+    PrivateStateEnvelope? envelope,
   }) async {
     final expiry = challenge.expiresAt.toUtc();
+    final contentHashBase64 = envelope == null
+        ? _emptyContentHash
+        : _contentHash(envelope);
     final unsigned = _concat([
       utf8.encode('Vizor private state request v1'),
       _u32(_protocolVersion),
@@ -339,7 +330,6 @@ class _WireRepository implements PrivateStateObjectRepository {
       method: PrivateStateRequestMethod.get,
       challenge: challenge,
       audience: _remote.audience,
-      contentHashBase64: _emptyContentHash,
     );
     final result = await _remote.get(
       object: fixture.object,
@@ -349,13 +339,12 @@ class _WireRepository implements PrivateStateObjectRepository {
       PrivateStateRemoteAbsent() => const PrivateStateReadAbsent(),
       PrivateStateRemoteFound(:final envelope) => PrivateStateReadFound(
         plaintext: fixture.open(envelope),
-        version: envelope.version,
       ),
     };
   }
 
   @override
-  Future<PrivateStateWriteResult> create({
+  Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
@@ -367,28 +356,17 @@ class _WireRepository implements PrivateStateObjectRepository {
       method: PrivateStateRequestMethod.put,
       challenge: challenge,
       audience: _remote.audience,
-      contentHashBase64: envelope.envelopeHashBase64,
+      envelope: envelope,
     );
-    final result = await _remote.put(
+    final result = await _remote.create(
       object: fixture.object,
       envelope: envelope,
       authorization: authorization,
-      expectedVersion: null,
     );
     return switch (result) {
-      PrivateStateRemoteStored() => PrivateStateWriteStored(envelope.version),
-      PrivateStateRemoteConflict() => const PrivateStateWriteConflict(),
+      PrivateStateRemoteCreated() => const PrivateStateCreated(),
+      PrivateStateRemoteConflict() => const PrivateStateCreateConflict(),
     };
-  }
-
-  @override
-  Future<PrivateStateWriteResult> compareAndSet({
-    required PrivateStateAccount account,
-    required PrivateStateObjectKey key,
-    required PrivateStateVersion currentVersion,
-    required Uint8List plaintext,
-  }) {
-    throw UnsupportedError('Finalized archives are create-only.');
   }
 }
 
@@ -469,6 +447,24 @@ SwapIntentRecord _record(String id, SwapIntentStatus status) =>
     );
 
 final _emptyContentHash = _encodeBase64Url(_hash(const []));
+
+String _contentHash(PrivateStateEnvelope envelope) {
+  final unsigned = _concat([
+    utf8.encode('Vizor private state envelope v1'),
+    _u32(envelope.protocolVersion),
+    _bytes(utf8.encode(envelope.objectId)),
+    _bytes(utf8.encode(envelope.authPublicKeyBase64)),
+    _bytes(_decodeBase64Url(envelope.nonceBase64)),
+    _bytes(_decodeBase64Url(envelope.ciphertextBase64)),
+  ]);
+  return _encodeBase64Url(
+    _hash([
+      ...utf8.encode('Vizor private state envelope content hash v1'),
+      ...unsigned,
+      ..._decodeBase64Url(envelope.signatureBase64),
+    ]),
+  );
+}
 
 Uint8List _hash(List<int> value) {
   return Uint8List.fromList(sha256.convert(value).bytes);
