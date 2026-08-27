@@ -11,8 +11,9 @@ mod serializer;
 
 pub(crate) use operations::{
     acknowledge as acknowledge_signed_operation, broadcast as broadcast_signed_operation,
-    checkpoint as checkpoint_signed_operation, list as list_signed_operations,
-    SignedOperationMetadata,
+    checkpoint as checkpoint_signed_operation,
+    delete_for_account_with_tx as delete_signed_operations_for_account_with_tx,
+    list as list_signed_operations, SignedOperationMetadata,
 };
 
 #[cfg(target_os = "macos")]
@@ -48,6 +49,13 @@ const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 pub struct DeviceAppInfo {
     pub name: String,
     pub version: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExpectedAccount {
+    pub account_index: u32,
+    pub coin_type: u32,
+    pub seed_fingerprint: [u8; 32],
 }
 
 struct OperationState {
@@ -142,6 +150,114 @@ enum SignatureRequest {
         action_index: usize,
         instruction: u8,
     },
+}
+
+pub(crate) fn validate_pczt_account(
+    pczt_bytes: &[u8],
+    expected: ExpectedAccount,
+) -> Result<(), String> {
+    let parsed = parse_pczt(pczt_bytes)?;
+    if parsed.global.coin_type != expected.coin_type {
+        return Err(format!(
+            "Ledger PCZT coin type {} does not match expected coin type {}",
+            parsed.global.coin_type, expected.coin_type
+        ));
+    }
+
+    for (index, input) in parsed.transparent_inputs.iter().enumerate() {
+        validate_transparent_derivation(
+            &input.derivation,
+            expected,
+            &format!("transparent input {index}"),
+        )?;
+    }
+    for (index, output) in parsed.transparent_outputs.iter().enumerate() {
+        if let Some(derivation) = output.derivation.as_ref() {
+            validate_transparent_derivation(
+                derivation,
+                expected,
+                &format!("transparent output {index}"),
+            )?;
+        }
+    }
+    if let Some(bundle) = parsed.orchard_bundle.as_ref() {
+        for (index, action) in bundle.actions.iter().enumerate() {
+            validate_shielded_derivation(
+                &action.signing_path,
+                &action.seed_fingerprint,
+                expected,
+                &format!("Orchard action {index}"),
+            )?;
+        }
+    }
+    if let Some(bundle) = parsed.ironwood_bundle.as_ref() {
+        for (index, action) in bundle.actions.iter().enumerate() {
+            validate_shielded_derivation(
+                &action.action.signing_path,
+                &action.action.seed_fingerprint,
+                expected,
+                &format!("Ironwood action {index}"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_transparent_derivation(
+    derivation: &parse::Bip32Derivation,
+    expected: ExpectedAccount,
+    label: &str,
+) -> Result<(), String> {
+    const HARDENED: u32 = 0x8000_0000;
+    let expected_path = [
+        HARDENED | 44,
+        HARDENED | expected.coin_type,
+        HARDENED | expected.account_index,
+    ];
+    let path = &derivation.signing_path;
+    let valid_suffix = path.len() == 5 && matches!(path[3], 0 | 1) && path[4] & HARDENED == 0;
+    if path.get(..3) != Some(expected_path.as_slice()) || !valid_suffix {
+        return Err(format!(
+            "Ledger {label} derivation path does not belong to account {}",
+            expected.account_index
+        ));
+    }
+    validate_fingerprint(&derivation.seed_fingerprint, expected, label)
+}
+
+fn validate_shielded_derivation(
+    path: &[u32],
+    fingerprint: &[u8; 32],
+    expected: ExpectedAccount,
+    label: &str,
+) -> Result<(), String> {
+    const HARDENED: u32 = 0x8000_0000;
+    let expected_path = [
+        HARDENED | 32,
+        HARDENED | expected.coin_type,
+        HARDENED | expected.account_index,
+    ];
+    if path != expected_path {
+        return Err(format!(
+            "Ledger {label} derivation path does not belong to account {}",
+            expected.account_index
+        ));
+    }
+    validate_fingerprint(fingerprint, expected, label)
+}
+
+fn validate_fingerprint(
+    fingerprint: &[u8; 32],
+    expected: ExpectedAccount,
+    label: &str,
+) -> Result<(), String> {
+    if fingerprint != &expected.seed_fingerprint {
+        Err(format!(
+            "Ledger {label} seed fingerprint does not match the selected account"
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Builds the complete ordered APDU exchange for compact shielded signing.
@@ -445,7 +561,7 @@ fn is_terminal_app_transition_error(error: &str) -> bool {
 #[cfg(target_os = "macos")]
 pub fn get_ufvk(account_index: u32) -> Result<String, String> {
     let operation = lock_operation()?;
-    transport::LedgerTransport::connect(operation.context())?.ufvk(account_index)
+    transport::LedgerTransport::connect_ufvk(operation.context())?.ufvk(account_index)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -490,7 +606,7 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     }
 
     let operation = lock_operation()?;
-    let transport = transport::LedgerTransport::connect(operation.context())?;
+    let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
 
     let signatures = requests
@@ -549,7 +665,7 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let operation = lock_operation()?;
-    let transport = transport::LedgerTransport::connect(operation.context())?;
+    let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
 
     // Request transparent signatures first, matching the order in which the app
@@ -901,6 +1017,33 @@ mod tests {
             .unwrap();
         let stored_signature = stored_signature.expect("transparent signature is stored");
         assert_eq!(stored_signature.last(), Some(&1));
+    }
+
+    #[test]
+    fn pczt_signing_is_bound_to_the_selected_account() {
+        let (pczt_bytes, _, _) = transparent_pczt();
+        let expected = ExpectedAccount {
+            account_index: 0,
+            coin_type: 1,
+            seed_fingerprint: [0x22; 32],
+        };
+        validate_pczt_account(&pczt_bytes, expected).unwrap();
+
+        let wrong_account = ExpectedAccount {
+            account_index: 1,
+            ..expected
+        };
+        assert!(validate_pczt_account(&pczt_bytes, wrong_account)
+            .unwrap_err()
+            .contains("does not belong to account 1"));
+
+        let wrong_fingerprint = ExpectedAccount {
+            seed_fingerprint: [0x23; 32],
+            ..expected
+        };
+        assert!(validate_pczt_account(&pczt_bytes, wrong_fingerprint)
+            .unwrap_err()
+            .contains("fingerprint"));
     }
 
     #[test]

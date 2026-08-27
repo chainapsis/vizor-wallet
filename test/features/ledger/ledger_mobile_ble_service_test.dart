@@ -6,7 +6,11 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('com.zcash.wallet/ledger_mobile');
-  const service = MethodChannelLedgerMobileBleService();
+  late MethodChannelLedgerMobileBleService service;
+
+  setUp(() {
+    service = MethodChannelLedgerMobileBleService();
+  });
 
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -64,6 +68,10 @@ void main() {
         'deviceName': 'Rowan Ledger',
         'deviceModel': 'Nano X',
       });
+      expect(service.connectedDeviceId, 'nano-x');
+
+      await service.disconnect();
+      expect(service.connectedDeviceId, isNull);
     },
   );
 

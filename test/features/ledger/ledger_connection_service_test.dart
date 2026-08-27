@@ -100,17 +100,51 @@ void main() {
     expect(ble.connectCalls, 0);
     expect(notifier.recordedTransports, isEmpty);
   });
+
+  test(
+    'mobile switches from the retained Ledger to the selected account device',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService().._connectedDeviceId = 'previous-device';
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.iOS,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'unexpected',
+            bluetooth: (_) async => 'signed-over-selected-ledger',
+          );
+
+      expect(result, 'signed-over-selected-ledger');
+      expect(ble.disconnectCalls, 1);
+      expect(ble.connectedDeviceIds, ['device-1']);
+      expect(ble.connectedDeviceId, 'device-1');
+    },
+  );
 }
 
 ProviderContainer _container({
   required _FakeAccountNotifier notifier,
   required _FakeBleService ble,
+  TargetPlatform platform = TargetPlatform.macOS,
 }) {
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(notifier.initial)),
       accountProvider.overrideWith(() => notifier),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.usb,
@@ -206,14 +240,25 @@ class _FakeAccountNotifier extends AccountNotifier {
 
 class _FakeBleService implements LedgerMobileBleService {
   var connectCalls = 0;
+  var disconnectCalls = 0;
+  final connectedDeviceIds = <String>[];
+  String? _connectedDeviceId;
+
+  @override
+  String? get connectedDeviceId => _connectedDeviceId;
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
     connectCalls++;
+    connectedDeviceIds.add(device.id);
+    _connectedDeviceId = device.id;
   }
 
   @override
-  Future<void> disconnect() async {}
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    _connectedDeviceId = null;
+  }
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async =>

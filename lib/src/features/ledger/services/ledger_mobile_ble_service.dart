@@ -67,6 +67,8 @@ class LedgerDiscoveryFailed extends LedgerDiscoveryUpdate {
 }
 
 abstract interface class LedgerMobileBleService {
+  String? get connectedDeviceId;
+
   Stream<LedgerDiscoveryUpdate> discoverDevices();
 
   Future<bool> requestPermissions();
@@ -91,16 +93,18 @@ abstract interface class LedgerMobileBleService {
 }
 
 final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
-  return const MethodChannelLedgerMobileBleService();
+  return MethodChannelLedgerMobileBleService();
 });
 
 class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
-  const MethodChannelLedgerMobileBleService();
-
   static const _methods = MethodChannel('com.zcash.wallet/ledger_mobile');
   static const _events = EventChannel(
     'com.zcash.wallet/ledger_mobile/discovery',
   );
+  String? _connectedDeviceId;
+
+  @override
+  String? get connectedDeviceId => _connectedDeviceId;
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
@@ -136,20 +140,32 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   Future<void> stopDiscovery() => _invokeVoid('stopDiscovery');
 
   @override
-  Future<void> connect(LedgerBleDevice device) =>
-      _invokeVoid('connect', <String, Object>{
-        'deviceId': device.id,
-        'deviceName': device.name,
-        'deviceModel': device.model,
-      });
+  Future<void> connect(LedgerBleDevice device) async {
+    await _invokeVoid('connect', <String, Object>{
+      'deviceId': device.id,
+      'deviceName': device.name,
+      'deviceModel': device.model,
+    });
+    _connectedDeviceId = device.id;
+  }
 
   @override
-  Future<void> disconnect() => _invokeVoid('disconnect');
+  Future<void> disconnect() async {
+    await _invokeVoid('disconnect');
+    _connectedDeviceId = null;
+  }
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
-    final value = await _invokeMap('currentApp');
-    return _decodeApp(value);
+    try {
+      final value = await _invokeMap('currentApp');
+      return _decodeApp(value);
+    } on LedgerMobileException catch (error) {
+      if (error.failure == LedgerMobileFailure.disconnected) {
+        _connectedDeviceId = null;
+      }
+      rethrow;
+    }
   }
 
   @override
