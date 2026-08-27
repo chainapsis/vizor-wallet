@@ -441,10 +441,15 @@ Future<void> tapAppWidget(WidgetTester tester, Key key) async {
 }
 
 Future<void> enterAppText(WidgetTester tester, Key key, String text) async {
-  final editable = find.descendant(
-    of: find.byKey(key),
-    matching: find.byType(EditableText),
+  final keyedWidget = find.byKey(key);
+  await pumpUntil(
+    tester,
+    () => tester.any(keyedWidget),
+    description: '$key input widget',
   );
+  final editable = tester.widget(keyedWidget) is EditableText
+      ? keyedWidget
+      : find.descendant(of: keyedWidget, matching: find.byType(EditableText));
   await pumpUntil(
     tester,
     () => tester.any(editable),

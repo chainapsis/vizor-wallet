@@ -89,6 +89,14 @@ void main() {
         tester,
         const ValueKey('payment_link_amount_continue_button'),
       );
+      final startTyping = find.text('Start typing...');
+      await pumpUntil(
+        tester,
+        () => tester.any(startTyping),
+        description: 'payment-link message card action',
+      );
+      await tester.tap(startTyping);
+      await tester.pumpAndSettle();
       await enterAppText(
         tester,
         const ValueKey('payment_link_message_editor'),
@@ -152,7 +160,7 @@ void main() {
         () => tester.any(
           find.byKey(const ValueKey('payment_link_copy_link_button')),
         ),
-        description: 'payment-link copy action after ten confirmations',
+        description: 'payment-link copy action after six confirmations',
         timeout: const Duration(minutes: 2),
       );
       await tapAppButton(

@@ -1001,7 +1001,7 @@ void main() {
     expect(find.text('Link will be available soon'), findsOneWidget);
     expect(find.text('Your link will be here'), findsNothing);
     expect(find.byType(PaymentLinkConfetti), findsNothing);
-    expect(find.textContaining('after 10 confirmations.'), findsOneWidget);
+    expect(find.textContaining('after 6 confirmations.'), findsOneWidget);
   });
 
   testWidgets('cards list fades only where more content exists', (

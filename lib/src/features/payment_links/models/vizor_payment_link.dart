@@ -2,6 +2,12 @@ import 'dart:convert';
 
 import 'package:characters/characters.dart';
 
+const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
+const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
+  kPaymentLinkRegtestEnabledEnvKey,
+  defaultValue: false,
+);
+
 class PaymentLinkPresentation {
   const PaymentLinkPresentation({this.artworkId, this.message});
 
@@ -101,7 +107,11 @@ class VizorPaymentLink {
   final DateTime createdAt;
   final PaymentLinkPresentation? presentation;
 
-  static bool supportsNetwork(String network) => network.trim() == 'main';
+  static bool supportsNetwork(String network) {
+    final normalizedNetwork = network.trim();
+    return normalizedNetwork == 'main' ||
+        (kPaymentLinkRegtestEnabled && normalizedNetwork == 'regtest');
+  }
 
   /// Compares every field carried by the versioned payment-link payload after
   /// applying the same normalization as [toUri]. This is intentionally stricter
