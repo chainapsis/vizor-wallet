@@ -208,10 +208,15 @@ class _ErrorDevice implements LedgerAppReadinessDevice {
 class _FakeMobileBleService implements LedgerMobileBleService {
   var currentAppCalls = 0;
   var connectCalls = 0;
+  String? _connectedDeviceId;
+
+  @override
+  String? get connectedDeviceId => _connectedDeviceId;
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
     connectCalls++;
+    _connectedDeviceId = device.id;
   }
 
   @override
@@ -224,7 +229,9 @@ class _FakeMobileBleService implements LedgerMobileBleService {
   Stream<LedgerDiscoveryUpdate> discoverDevices() => const Stream.empty();
 
   @override
-  Future<void> disconnect() async {}
+  Future<void> disconnect() async {
+    _connectedDeviceId = null;
+  }
 
   @override
   Future<List<Uint8List>> exchangeUfvk(LedgerUfvkApduPlan plan) {

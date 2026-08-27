@@ -137,10 +137,13 @@ pub fn ledger_parse_mobile_ufvk_responses(
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
 pub fn ledger_build_pczt_signing_apdu_plan(
+    db_path: String,
+    account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
 ) -> Result<LedgerPcztApduPlan, String> {
-    require_mainnet(&network)?;
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
         commands: ledger::build_pczt_signing_plan(&pczt_bytes)?
             .into_iter()
@@ -151,10 +154,13 @@ pub fn ledger_build_pczt_signing_apdu_plan(
 
 /// Build the transport-neutral full PCZT signing exchange.
 pub fn ledger_build_pczt_full_signing_apdu_plan(
+    db_path: String,
+    account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
 ) -> Result<LedgerPcztApduPlan, String> {
-    require_mainnet(&network)?;
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
         commands: ledger::build_pczt_full_signing_plan(&pczt_bytes)?
             .into_iter()
@@ -165,21 +171,27 @@ pub fn ledger_build_pczt_full_signing_apdu_plan(
 
 /// Validate raw compact-signing responses and return shielded signatures.
 pub fn ledger_finalize_mobile_pczt_signing(
+    db_path: String,
+    account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
     responses: Vec<Vec<u8>>,
 ) -> Result<Vec<LedgerActionSig>, String> {
-    require_mainnet(&network)?;
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     to_action_sigs(ledger::finalize_pczt_signing(&pczt_bytes, &responses)?)
 }
 
 /// Validate raw full-signing responses and return the signed PCZT.
 pub fn ledger_finalize_mobile_pczt_full_signing(
+    db_path: String,
+    account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
     responses: Vec<Vec<u8>>,
 ) -> Result<Vec<u8>, String> {
-    require_mainnet(&network)?;
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     ledger::finalize_pczt_full_signing(&pczt_bytes, &responses)
 }
 
@@ -204,10 +216,13 @@ fn ledger_account_fingerprint(ufvk: &str, account_index: u32) -> [u8; 32] {
 /// Stream an Orchard/Ironwood PCZT into the Ledger app and return only the
 /// spend authorization signatures after on-device review and approval.
 pub fn ledger_sign_pczt(
+    db_path: String,
+    account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
 ) -> Result<Vec<LedgerActionSig>, String> {
-    require_mainnet(&network)?;
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     to_action_sigs(ledger::sign_pczt(&pczt_bytes)?)
 }
 
@@ -234,8 +249,14 @@ fn to_action_sigs(
 
 /// Stream a PCZT into Ledger, validate every returned transparent and
 /// Orchard-family signature, and return the fully signed PCZT clone.
-pub fn ledger_sign_pczt_full(pczt_bytes: Vec<u8>, network: String) -> Result<Vec<u8>, String> {
-    require_mainnet(&network)?;
+pub fn ledger_sign_pczt_full(
+    db_path: String,
+    account_uuid: String,
+    pczt_bytes: Vec<u8>,
+    network: String,
+) -> Result<Vec<u8>, String> {
+    let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+    ledger::validate_pczt_account(&pczt_bytes, expected)?;
     ledger::sign_pczt_full(&pczt_bytes).map_err(|error| {
         log::error!(
             "ledger: PCZT signing failed ({} bytes): {error}",
@@ -350,6 +371,21 @@ fn parse_ledger_db_network(
     let network = crate::wallet::keys::parse_network(network)?;
     crate::wallet::keys::ensure_db_migrated_once(db_path, network)?;
     Ok(network)
+}
+
+fn expected_ledger_account(
+    db_path: &str,
+    network: &str,
+    account_uuid: &str,
+) -> Result<ledger::ExpectedAccount, String> {
+    let network = parse_ledger_db_network(db_path, network)?;
+    let metadata =
+        crate::wallet::keys::get_ledger_account_signing_metadata(db_path, network, account_uuid)?;
+    Ok(ledger::ExpectedAccount {
+        account_index: metadata.account_index,
+        coin_type: 133,
+        seed_fingerprint: metadata.seed_fingerprint,
+    })
 }
 
 fn require_mainnet(network: &str) -> Result<(), String> {

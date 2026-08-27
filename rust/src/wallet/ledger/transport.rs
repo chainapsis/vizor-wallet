@@ -1,6 +1,18 @@
 use ledger_transport::{APDUAnswer, APDUCommand};
 use ledger_transport_hid::hidapi::{HidApi, HidDevice};
 
+#[cfg(debug_assertions)]
+use std::{
+    env,
+    io::{Read, Write},
+    net::{IpAddr, SocketAddr, TcpStream},
+};
+
+#[cfg(debug_assertions)]
+use serde_json::{json, Value};
+#[cfg(debug_assertions)]
+use url::{Host, Url};
+
 use super::{
     apdu::{decode_ufvk_chunks, map_status_word, ufvk_commands},
     serializer::{packet_p1, packet_p2, CommandPackets},
@@ -21,6 +33,15 @@ const HID_WRITE_SIZE: usize = 65;
 const HID_READ_SIZE: usize = 64;
 const HID_POLL_MILLIS: u64 = 100;
 
+#[cfg(debug_assertions)]
+const SPECULOS_UFVK_API_URL: &str = "VIZOR_LEDGER_SPECULOS_UFVK_API_URL";
+#[cfg(debug_assertions)]
+const SPECULOS_SIGNING_API_URL: &str = "VIZOR_LEDGER_SPECULOS_SIGNING_API_URL";
+#[cfg(debug_assertions)]
+const SPECULOS_IO_POLL_MILLIS: u64 = 100;
+#[cfg(debug_assertions)]
+const SPECULOS_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RunningDeviceApp {
     pub name: String,
@@ -36,14 +57,50 @@ pub(super) struct TransparentSignature {
     pub sighash_type: u8,
 }
 
+enum Backend {
+    Hid(HidDevice),
+    #[cfg(debug_assertions)]
+    Speculos(SpeculosClient),
+}
+
+#[derive(Clone, Copy)]
+enum TransportPurpose {
+    Device,
+    Ufvk,
+    Signing,
+}
+
 pub(super) struct LedgerTransport {
-    device: HidDevice,
+    backend: Backend,
     operation: OperationContext,
 }
 
 impl LedgerTransport {
     pub(super) fn connect(operation: OperationContext) -> Result<Self, String> {
+        Self::connect_for(operation, TransportPurpose::Device)
+    }
+
+    pub(super) fn connect_ufvk(operation: OperationContext) -> Result<Self, String> {
+        Self::connect_for(operation, TransportPurpose::Ufvk)
+    }
+
+    pub(super) fn connect_signing(operation: OperationContext) -> Result<Self, String> {
+        Self::connect_for(operation, TransportPurpose::Signing)
+    }
+
+    fn connect_for(operation: OperationContext, purpose: TransportPurpose) -> Result<Self, String> {
         operation.check()?;
+        #[cfg(debug_assertions)]
+        if let Some(client) = SpeculosClient::from_environment(purpose)? {
+            operation.check()?;
+            return Ok(Self {
+                backend: Backend::Speculos(client),
+                operation,
+            });
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = purpose;
+
         let hid = HidApi::new().map_err(|e| format!("Initialize Ledger HID: {e}"))?;
         let device_info = hid
             .device_list()
@@ -55,7 +112,10 @@ impl LedgerTransport {
             .open_device(&hid)
             .map_err(|e| format!("Open Ledger HID device: {e}"))?;
         operation.check()?;
-        Ok(Self { device, operation })
+        Ok(Self {
+            backend: Backend::Hid(device),
+            operation,
+        })
     }
 
     pub(super) fn current_app(&self) -> Result<RunningDeviceApp, String> {
@@ -176,14 +236,20 @@ impl LedgerTransport {
     /// running app before continuing.
     fn exchange_allowing_disconnect(&self, cla: u8, ins: u8, data: Vec<u8>) -> Result<(), String> {
         let command = build_command(cla, ins, 0, 0, data)?;
-        self.operation.check()?;
-        self.write_apdu(&command.serialize())?;
-        let answer = match self.read_apdu() {
-            Ok(answer) => answer,
-            Err(_) => return Ok(()),
+        let response = match &self.backend {
+            Backend::Hid(_) => {
+                self.operation.check()?;
+                self.write_apdu(&command.serialize())?;
+                let answer = match self.read_apdu() {
+                    Ok(answer) => answer,
+                    Err(_) => return Ok(()),
+                };
+                APDUAnswer::from_answer(answer)
+                    .map_err(|_| "Ledger HID response was too short to contain a status word")?
+            }
+            #[cfg(debug_assertions)]
+            Backend::Speculos(_) => self.exchange_hid(&command)?,
         };
-        let response = APDUAnswer::from_answer(answer)
-            .map_err(|_| "Ledger HID response was too short to contain a status word")?;
         if response.retcode() != RESPONSE_OK {
             return Err(map_status_word(response.retcode()));
         }
@@ -192,10 +258,18 @@ impl LedgerTransport {
 
     fn exchange_hid(&self, command: &APDUCommand<Vec<u8>>) -> Result<APDUAnswer<Vec<u8>>, String> {
         self.operation.check()?;
-        self.write_apdu(&command.serialize())?;
-        let answer = self.read_apdu()?;
+        let answer = match &self.backend {
+            Backend::Hid(_) => {
+                self.write_apdu(&command.serialize())?;
+                self.read_apdu()?
+            }
+            #[cfg(debug_assertions)]
+            Backend::Speculos(client) => {
+                client.exchange_apdu(&command.serialize(), self.operation)?
+            }
+        };
         APDUAnswer::from_answer(answer)
-            .map_err(|_| "Ledger HID response was too short to contain a status word".into())
+            .map_err(|_| "Ledger response was too short to contain a status word".into())
     }
 
     fn write_apdu(&self, command: &[u8]) -> Result<(), String> {
@@ -213,8 +287,14 @@ impl LedgerTransport {
             packet[4..6].copy_from_slice(&sequence.to_be_bytes());
             packet[6..6 + chunk.len()].copy_from_slice(chunk);
 
-            let written = self
-                .device
+            let device = match &self.backend {
+                Backend::Hid(device) => device,
+                #[cfg(debug_assertions)]
+                Backend::Speculos(_) => {
+                    return Err("Internal error: attempted HID write through Speculos".into())
+                }
+            };
+            let written = device
                 .write(&packet)
                 .map_err(|e| format!("Write Ledger HID packet: {e}"))?;
             if written != packet.len() {
@@ -240,8 +320,14 @@ impl LedgerTransport {
                 .as_millis()
                 .max(1) as i32;
             let mut packet = [0u8; HID_READ_SIZE];
-            let read = self
-                .device
+            let device = match &self.backend {
+                Backend::Hid(device) => device,
+                #[cfg(debug_assertions)]
+                Backend::Speculos(_) => {
+                    return Err("Internal error: attempted HID read through Speculos".into())
+                }
+            };
+            let read = device
                 .read_timeout(&mut packet, poll_millis)
                 .map_err(|e| format!("Read Ledger HID packet: {e}"))?;
             if read == 0 {
@@ -284,6 +370,295 @@ impl LedgerTransport {
                 .ok_or_else(|| "Ledger HID response requires too many packets".to_string())?;
         }
     }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Debug)]
+struct SpeculosClient {
+    address: SocketAddr,
+    host_header: String,
+}
+
+#[cfg(debug_assertions)]
+impl SpeculosClient {
+    fn from_environment(purpose: TransportPurpose) -> Result<Option<Self>, String> {
+        let ufvk_url = env::var_os(SPECULOS_UFVK_API_URL)
+            .map(|value| {
+                value
+                    .into_string()
+                    .map_err(|_| format!("{SPECULOS_UFVK_API_URL} must be valid Unicode"))
+            })
+            .transpose()?;
+        let signing_url = env::var_os(SPECULOS_SIGNING_API_URL)
+            .map(|value| {
+                value
+                    .into_string()
+                    .map_err(|_| format!("{SPECULOS_SIGNING_API_URL} must be valid Unicode"))
+            })
+            .transpose()?;
+        Self::from_config(purpose, ufvk_url.as_deref(), signing_url.as_deref())
+    }
+
+    fn from_config(
+        purpose: TransportPurpose,
+        ufvk_url: Option<&str>,
+        signing_url: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        if ufvk_url.is_none() && signing_url.is_none() {
+            return Ok(None);
+        }
+        let missing_config = || {
+            format!(
+                "Speculos E2E transport requires both {SPECULOS_UFVK_API_URL} and {SPECULOS_SIGNING_API_URL}"
+            )
+        };
+        let ufvk = Self::new(ufvk_url.ok_or_else(missing_config)?, SPECULOS_UFVK_API_URL)?;
+        let signing = Self::new(
+            signing_url.ok_or_else(missing_config)?,
+            SPECULOS_SIGNING_API_URL,
+        )?;
+        if ufvk.address == signing.address {
+            return Err(format!(
+                "Speculos UFVK and signing endpoints must be different fresh instances; configure distinct ports in {SPECULOS_UFVK_API_URL} and {SPECULOS_SIGNING_API_URL}"
+            ));
+        }
+
+        Ok(Some(match purpose {
+            TransportPurpose::Device | TransportPurpose::Ufvk => ufvk,
+            TransportPurpose::Signing => signing,
+        }))
+    }
+
+    fn new(api_url: &str, variable: &str) -> Result<Self, String> {
+        let url = Url::parse(api_url)
+            .map_err(|error| format!("Invalid {variable} Speculos API URL: {error}"))?;
+        if url.scheme() != "http" {
+            return Err(format!("{variable} must use plain http for local Speculos"));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(format!("{variable} must not contain credentials"));
+        }
+        if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+            return Err(format!(
+                "{variable} must contain only an origin, for example http://127.0.0.1:5000"
+            ));
+        }
+        let ip = match url.host() {
+            Some(Host::Ipv4(ip)) => IpAddr::V4(ip),
+            Some(Host::Ipv6(ip)) => IpAddr::V6(ip),
+            Some(Host::Domain(_)) => {
+                return Err(format!(
+                    "{variable} must use an explicit loopback IP address, not a hostname"
+                ))
+            }
+            None => return Err(format!("{variable} is missing a host")),
+        };
+        if !ip.is_loopback() {
+            return Err(format!("{variable} must use a loopback IP address"));
+        }
+        let port = url
+            .port()
+            .ok_or_else(|| format!("{variable} must include an explicit port"))?;
+        Ok(Self {
+            address: SocketAddr::new(ip, port),
+            host_header: match ip {
+                IpAddr::V4(_) => format!("{ip}:{port}"),
+                IpAddr::V6(_) => format!("[{ip}]:{port}"),
+            },
+        })
+    }
+
+    fn exchange_apdu(
+        &self,
+        command: &[u8],
+        operation: OperationContext,
+    ) -> Result<Vec<u8>, String> {
+        operation.check()?;
+        let timeout = operation
+            .remaining()
+            .min(std::time::Duration::from_millis(SPECULOS_IO_POLL_MILLIS));
+        if timeout.is_zero() {
+            operation.check()?;
+            return Err("Ledger operation timed out".into());
+        }
+        let mut stream = TcpStream::connect_timeout(&self.address, timeout)
+            .map_err(|error| format!("Connect to Speculos API: {error}"))?;
+        stream
+            .set_read_timeout(Some(timeout))
+            .map_err(|error| format!("Set Speculos read timeout: {error}"))?;
+        stream
+            .set_write_timeout(Some(timeout))
+            .map_err(|error| format!("Set Speculos write timeout: {error}"))?;
+
+        let body = json!({ "data": hex::encode(command) }).to_string();
+        let request = format!(
+            "POST /apdu HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            self.host_header,
+            body.len(),
+            body
+        );
+        stream
+            .write_all(request.as_bytes())
+            .map_err(|error| format!("Write Speculos APDU request: {error}"))?;
+
+        let mut response = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            operation.check()?;
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    if response.len().saturating_add(read) > SPECULOS_MAX_RESPONSE_BYTES {
+                        return Err("Speculos API response exceeded 1 MiB".into());
+                    }
+                    response.extend_from_slice(&buffer[..read]);
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(format!("Read Speculos APDU response: {error}")),
+            }
+        }
+        operation.check()?;
+
+        let body = decode_http_response(&response)?;
+        let json: Value = serde_json::from_slice(&body)
+            .map_err(|error| format!("Decode Speculos APDU JSON response: {error}"))?;
+        let data = json
+            .get("data")
+            .and_then(Value::as_str)
+            .ok_or("Speculos /apdu response is missing string field 'data'")?;
+        hex::decode(data).map_err(|error| format!("Decode Speculos APDU response: {error}"))
+    }
+}
+
+#[cfg(debug_assertions)]
+fn decode_http_response(response: &[u8]) -> Result<Vec<u8>, String> {
+    if response.len() > SPECULOS_MAX_RESPONSE_BYTES {
+        return Err("Speculos API response exceeded 1 MiB".into());
+    }
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .ok_or("Speculos HTTP response is missing a header terminator")?;
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| "Speculos HTTP response headers are not UTF-8")?;
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|status| status.parse::<u16>().ok())
+        .ok_or("Speculos HTTP response has an invalid status line")?;
+    let body = &response[header_end + 4..];
+    if !(200..300).contains(&status) {
+        return Err(format!(
+            "Speculos API returned HTTP {status}: {}",
+            String::from_utf8_lossy(body)
+        ));
+    }
+    let transfer_encoding = headers.lines().skip(1).find_map(|line| {
+        line.split_once(':').and_then(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                .then(|| value.trim())
+        })
+    });
+    let content_length = headers.lines().skip(1).find_map(|line| {
+        line.split_once(':').and_then(|(name, value)| {
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>())
+        })
+    });
+    if transfer_encoding.is_some() && content_length.is_some() {
+        return Err(
+            "Speculos HTTP response must not combine Transfer-Encoding and Content-Length".into(),
+        );
+    }
+    if let Some(encoding) = transfer_encoding {
+        let encodings = encoding.split(',').map(str::trim).collect::<Vec<_>>();
+        if encodings.len() != 1 || !encodings[0].eq_ignore_ascii_case("chunked") {
+            return Err("Speculos API returned an unsupported transfer encoding".into());
+        }
+        return decode_chunked_body(body);
+    }
+    if let Some(length) = content_length {
+        let length = length.map_err(|_| "Speculos HTTP Content-Length is invalid")?;
+        if body.len() != length {
+            return Err(format!(
+                "Speculos HTTP body length {} does not match Content-Length {length}",
+                body.len()
+            ));
+        }
+    }
+    Ok(body.to_vec())
+}
+
+#[cfg(debug_assertions)]
+fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
+    let mut cursor = 0usize;
+    let mut decoded = Vec::new();
+    loop {
+        let line_end = find_crlf(body, cursor)
+            .ok_or("Speculos chunked response is missing a chunk-size terminator")?;
+        let size_line = std::str::from_utf8(&body[cursor..line_end])
+            .map_err(|_| "Speculos chunk size is not UTF-8")?;
+        let size_text = size_line
+            .split_once(';')
+            .map_or(size_line, |(size, _)| size)
+            .trim();
+        if size_text.is_empty() {
+            return Err("Speculos chunked response has an empty chunk size".into());
+        }
+        let size = usize::from_str_radix(size_text, 16)
+            .map_err(|_| "Speculos chunk size is not hexadecimal")?;
+        cursor = line_end + 2;
+
+        if size == 0 {
+            loop {
+                let trailer_end = find_crlf(body, cursor)
+                    .ok_or("Speculos chunked response has incomplete trailers")?;
+                if trailer_end == cursor {
+                    cursor += 2;
+                    if cursor != body.len() {
+                        return Err("Speculos chunked response has bytes after its trailers".into());
+                    }
+                    return Ok(decoded);
+                }
+                cursor = trailer_end + 2;
+            }
+        }
+
+        let chunk_end = cursor
+            .checked_add(size)
+            .ok_or("Speculos chunk size overflowed")?;
+        let terminator_end = chunk_end
+            .checked_add(2)
+            .ok_or("Speculos chunk terminator overflowed")?;
+        let chunk = body
+            .get(cursor..chunk_end)
+            .ok_or("Speculos chunked response ended mid-chunk")?;
+        if body.get(chunk_end..terminator_end) != Some(b"\r\n") {
+            return Err("Speculos chunked response has an invalid chunk terminator".into());
+        }
+        if decoded.len().saturating_add(chunk.len()) > SPECULOS_MAX_RESPONSE_BYTES {
+            return Err("Decoded Speculos API response exceeded 1 MiB".into());
+        }
+        decoded.extend_from_slice(chunk);
+        cursor = terminator_end;
+    }
+}
+
+#[cfg(debug_assertions)]
+fn find_crlf(bytes: &[u8], start: usize) -> Option<usize> {
+    bytes
+        .get(start..)?
+        .windows(2)
+        .position(|window| window == b"\r\n")
+        .map(|offset| start + offset)
 }
 
 fn build_command(
@@ -483,5 +858,144 @@ mod tests {
         assert!(decode_transparent_signature_response(malformed)
             .unwrap_err()
             .contains("DER length"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn speculos_url_accepts_only_explicit_loopback_http_origins() {
+        let ipv4 = SpeculosClient::new("http://127.0.0.1:5004", "TEST_URL").unwrap();
+        assert_eq!(ipv4.address, "127.0.0.1:5004".parse().unwrap());
+        assert_eq!(ipv4.host_header, "127.0.0.1:5004");
+
+        let ipv6 = SpeculosClient::new("http://[::1]:5005", "TEST_URL").unwrap();
+        assert_eq!(ipv6.address, "[::1]:5005".parse().unwrap());
+        assert_eq!(ipv6.host_header, "[::1]:5005");
+
+        for url in [
+            "https://127.0.0.1:5004",
+            "http://localhost:5004",
+            "http://192.0.2.1:5004",
+            "http://127.0.0.1",
+            "http://127.0.0.1:5004/apdu",
+            "http://127.0.0.1:5004?mode=test",
+            "http://user@127.0.0.1:5004",
+        ] {
+            assert!(
+                SpeculosClient::new(url, "TEST_URL").is_err(),
+                "unexpectedly accepted {url}"
+            );
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn speculos_config_routes_readiness_and_ufvk_separately_from_signing() {
+        let ufvk_url = "http://127.0.0.1:5004";
+        let signing_url = "http://127.0.0.1:5005";
+        let device = SpeculosClient::from_config(
+            TransportPurpose::Device,
+            Some(ufvk_url),
+            Some(signing_url),
+        )
+        .unwrap()
+        .unwrap();
+        let ufvk =
+            SpeculosClient::from_config(TransportPurpose::Ufvk, Some(ufvk_url), Some(signing_url))
+                .unwrap()
+                .unwrap();
+        let signing = SpeculosClient::from_config(
+            TransportPurpose::Signing,
+            Some(ufvk_url),
+            Some(signing_url),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(device.address.port(), 5004);
+        assert_eq!(ufvk.address.port(), 5004);
+        assert_eq!(signing.address.port(), 5005);
+        assert!(
+            SpeculosClient::from_config(TransportPurpose::Ufvk, None, None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            SpeculosClient::from_config(TransportPurpose::Signing, Some(ufvk_url), None,)
+                .unwrap_err()
+                .contains("requires both")
+        );
+        assert!(SpeculosClient::from_config(
+            TransportPurpose::Signing,
+            Some(ufvk_url),
+            Some(ufvk_url),
+        )
+        .unwrap_err()
+        .contains("must be different"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn speculos_http_response_requires_success_and_consistent_framing() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"data\":\"9000\"}";
+        assert_eq!(
+            decode_http_response(response).unwrap(),
+            b"{\"data\":\"9000\"}"
+        );
+
+        let failed = b"HTTP/1.1 500 Error\r\nContent-Length: 4\r\n\r\nboom";
+        assert!(decode_http_response(failed)
+            .unwrap_err()
+            .contains("HTTP 500"));
+
+        let truncated = b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n{}";
+        assert!(decode_http_response(truncated)
+            .unwrap_err()
+            .contains("does not match"));
+
+        let chunked = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n7;source=speculos\r\n{\"data\"\r\n8\r\n:\"9000\"}\r\n0\r\nX-Test: ok\r\n\r\n";
+        assert_eq!(
+            decode_http_response(chunked).unwrap(),
+            b"{\"data\":\"9000\"}"
+        );
+
+        let conflicting = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 2\r\n\r\n2\r\n{}\r\n0\r\n\r\n";
+        assert!(decode_http_response(conflicting)
+            .unwrap_err()
+            .contains("must not combine"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn speculos_chunked_response_rejects_incomplete_and_malformed_bodies() {
+        for (body, expected) in [
+            (b"2".as_slice(), "chunk-size terminator"),
+            (b"x\r\n".as_slice(), "not hexadecimal"),
+            (b"4\r\n{}".as_slice(), "ended mid-chunk"),
+            (b"2\r\n{}xx".as_slice(), "invalid chunk terminator"),
+            (b"0\r\n".as_slice(), "incomplete trailers"),
+            (b"0\r\n\r\nextra".as_slice(), "bytes after"),
+        ] {
+            assert!(
+                decode_chunked_body(body).unwrap_err().contains(expected),
+                "unexpected error for {body:?}"
+            );
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn speculos_http_response_enforces_raw_and_decoded_limits() {
+        let raw = vec![b'x'; SPECULOS_MAX_RESPONSE_BYTES + 1];
+        assert!(decode_http_response(&raw)
+            .unwrap_err()
+            .contains("exceeded 1 MiB"));
+
+        let payload = vec![b'x'; SPECULOS_MAX_RESPONSE_BYTES + 1];
+        let mut chunked = format!("{:x}\r\n", payload.len()).into_bytes();
+        chunked.extend_from_slice(&payload);
+        chunked.extend_from_slice(b"\r\n0\r\n\r\n");
+        assert!(decode_chunked_body(&chunked)
+            .unwrap_err()
+            .contains("Decoded Speculos API response exceeded 1 MiB"));
     }
 }
