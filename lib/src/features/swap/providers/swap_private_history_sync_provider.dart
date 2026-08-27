@@ -12,9 +12,9 @@ import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../providers/voting/voting_service_providers.dart'
+import '../../../providers/private_state_sync_provider.dart'
     show privateStateRemoteStoreProvider;
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../models/swap_models.dart';
 import '../private_state/swap_private_history_document.dart';
 import '../private_state/swap_private_history_sync.dart';

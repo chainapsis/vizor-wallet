@@ -58,6 +58,7 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
+    this.privateStateSyncEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -72,6 +73,7 @@ class AppBootstrapState {
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
+  final bool privateStateSyncEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -250,6 +252,11 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
+    final privateStateSyncEnabled = await _readPlainBool(
+      storage,
+      key: kPrivateStateSyncEnabledKey,
+      label: 'private state sync enabled flag',
+    );
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -350,6 +357,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
+      privateStateSyncEnabled: privateStateSyncEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,

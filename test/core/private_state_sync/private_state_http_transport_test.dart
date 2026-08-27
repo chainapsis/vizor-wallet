@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,32 @@ import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_http_remote_store.dart';
 
 void main() {
+  test(
+    'gate lets an in-flight request finish but blocks the next one',
+    () async {
+      var allowed = true;
+      final delegate = _ControlledTransport();
+      final transport = GatedPrivateStateHttpTransport(
+        delegate: delegate,
+        canStartRequest: () => allowed,
+      );
+
+      final first = transport.request(
+        'POST',
+        Uri.parse('https://private.example/challenge'),
+      );
+      allowed = false;
+      delegate.complete();
+
+      expect((await first).statusCode, HttpStatus.ok);
+      await expectLater(
+        transport.request('GET', Uri.parse('https://private.example/object')),
+        throwsA(isA<PrivateStateSyncDisabledException>()),
+      );
+      expect(delegate.requestCount, 1);
+    },
+  );
+
   test(
     'Debug direct transport bypasses the global direct-request gate',
     () async {
@@ -73,6 +100,29 @@ void main() {
       expect(bridge.events, isEmpty);
     },
   );
+}
+
+class _ControlledTransport implements PrivateStateHttpTransport {
+  final _completer = Completer<NetworkHttpResponse>();
+  var requestCount = 0;
+
+  @override
+  Future<NetworkHttpResponse> request(
+    String method,
+    Uri uri, {
+    Map<String, String> headers = const {},
+    List<int> bodyBytes = const [],
+    Duration? timeout,
+  }) {
+    requestCount++;
+    return _completer.future;
+  }
+
+  void complete() {
+    _completer.complete(
+      NetworkHttpResponse(statusCode: HttpStatus.ok, bodyBytes: Uint8List(0)),
+    );
+  }
 }
 
 class _RecordingRuntime implements PrivateStateTorRuntime {

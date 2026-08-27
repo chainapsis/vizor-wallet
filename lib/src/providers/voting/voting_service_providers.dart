@@ -7,14 +7,12 @@ import '../../features/voting/voting_recovery_service.dart';
 import '../../features/voting/voting_private_state_sync.dart';
 import '../../core/private_state_sync/private_state_models.dart';
 import '../../core/private_state_sync/private_state_crypto.dart';
-import '../../core/private_state_sync/private_state_http_remote_store.dart';
 import '../../core/private_state_sync/private_state_object_repository.dart';
-import '../../core/private_state_sync/private_state_remote_store.dart';
-import '../../core/config/private_state_sync_config.dart';
 import '../../core/config/rpc_endpoint_config.dart';
 import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
 import '../../providers/account_provider.dart';
+import '../../providers/private_state_sync_provider.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
@@ -172,29 +170,6 @@ final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
 /// Adapter over durable Rust recovery/share-tracking state.
 final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
   return const VotingRecoveryService();
-});
-
-final privateStateBaseUriProvider = Provider<Uri>((_) {
-  return privateStateBaseUriForBuild();
-});
-
-final privateStateAudienceProvider = Provider<String>((ref) {
-  return privateStateAudienceForBuild(ref.watch(privateStateBaseUriProvider));
-});
-
-/// Opaque remote storage deployment seam. Debug builds use direct HTTP for
-/// local development; Profile and Release always require Tor independently of
-/// the user-facing network privacy preference.
-final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
-  ref,
-) {
-  final transport = privateStateHttpTransportForBuild();
-  ref.onDispose(() => transport.close(force: true));
-  return HttpPrivateStateRemoteStore(
-    baseUri: ref.watch(privateStateBaseUriProvider),
-    signingAudience: ref.watch(privateStateAudienceProvider),
-    transport: transport,
-  );
 });
 
 final votingPrivateStateSyncProvider = Provider<VotingPrivateStateSync?>((ref) {

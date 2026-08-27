@@ -22,6 +22,44 @@ abstract interface class PrivateStateHttpTransport {
   });
 }
 
+class PrivateStateSyncDisabledException implements Exception {
+  const PrivateStateSyncDisabledException();
+
+  @override
+  String toString() => 'Private state sync is disabled.';
+}
+
+class GatedPrivateStateHttpTransport implements PrivateStateHttpTransport {
+  const GatedPrivateStateHttpTransport({
+    required PrivateStateHttpTransport delegate,
+    required bool Function() canStartRequest,
+  }) : _delegate = delegate,
+       _canStartRequest = canStartRequest;
+
+  final PrivateStateHttpTransport _delegate;
+  final bool Function() _canStartRequest;
+
+  @override
+  Future<NetworkHttpResponse> request(
+    String method,
+    Uri uri, {
+    Map<String, String> headers = const {},
+    List<int> bodyBytes = const [],
+    Duration? timeout,
+  }) {
+    if (!_canStartRequest()) {
+      return Future.error(const PrivateStateSyncDisabledException());
+    }
+    return _delegate.request(
+      method,
+      uri,
+      headers: headers,
+      bodyBytes: bodyBytes,
+      timeout: timeout,
+    );
+  }
+}
+
 class NetworkPrivateStateHttpTransport implements PrivateStateHttpTransport {
   NetworkPrivateStateHttpTransport({NetworkHttpClient? client})
     : _client = client ?? NetworkHttpClient();

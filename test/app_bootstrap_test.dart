@@ -143,4 +143,8 @@ void main() {
       expect(AppBootstrapState.empty.syncKeepAwakePromptSeen, isFalse);
     },
   );
+
+  test('empty bootstrap starts with private state sync disabled', () {
+    expect(AppBootstrapState.empty.privateStateSyncEnabled, isFalse);
+  });
 }

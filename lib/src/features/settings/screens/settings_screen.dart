@@ -25,6 +25,7 @@ import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
+import '../widgets/private_state_sync_control.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -476,6 +477,7 @@ class _SettingsList extends StatelessWidget {
               key: ValueKey('settings_tor_control'),
               showSurface: false,
             ),
+            PrivateStateSyncControl(),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
