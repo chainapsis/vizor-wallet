@@ -126,6 +126,29 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     await _drain();
   }
 
+  Future<void> handleAccountSetChanged({
+    required Set<String> previousAccounts,
+    required Set<String> currentAccounts,
+  }) {
+    final addedAccounts = currentAccounts.difference(previousAccounts);
+    _revokedAccounts.removeAll(addedAccounts);
+
+    for (final accountUuid in previousAccounts.difference(currentAccounts)) {
+      _revokeAccount(accountUuid);
+    }
+
+    if (currentAccounts.isEmpty) {
+      _queuedAccounts.clear();
+      _retryAccounts.clear();
+      _retryAllRequested = false;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+    } else {
+      _cancelRetryTimerIfIdle();
+    }
+    return synchronizeAll();
+  }
+
   Future<void> handleReplicaChange(SwapActivityReplicaChange change) async {
     switch (change.source) {
       case SwapActivityReplicaChangeSource.localMutation:
@@ -140,9 +163,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
       case SwapActivityReplicaChangeSource.remoteReconcile:
         return;
       case SwapActivityReplicaChangeSource.localAccountDeletion:
-        _revokedAccounts.add(change.accountUuid);
-        _queuedAccounts.remove(change.accountUuid);
-        _retryAccounts.remove(change.accountUuid);
+        _revokeAccount(change.accountUuid);
         final inFlight = _drainInFlight;
         if (inFlight != null) await inFlight;
         try {
@@ -215,7 +236,8 @@ class FinalizedActivityArchiveLifecycleCoordinator {
         }
         _retryAccounts.remove(accountUuid);
       } catch (error, stackTrace) {
-        if (!_revokedAccounts.contains(accountUuid)) failed.add(accountUuid);
+        if (_revokedAccounts.contains(accountUuid)) continue;
+        failed.add(accountUuid);
         _logFailure('account=$accountUuid', error, stackTrace);
       }
     }
@@ -227,6 +249,19 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   void _scheduleRetry(Set<String> accounts) {
     _retryAccounts.addAll(accounts);
     _ensureRetryTimer();
+  }
+
+  void _revokeAccount(String accountUuid) {
+    _revokedAccounts.add(accountUuid);
+    _queuedAccounts.remove(accountUuid);
+    _retryAccounts.remove(accountUuid);
+    _cancelRetryTimerIfIdle();
+  }
+
+  void _cancelRetryTimerIfIdle() {
+    if (_retryAccounts.isNotEmpty || _retryAllRequested) return;
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   void _scheduleAllRetry() {
@@ -305,7 +340,12 @@ final finalizedActivityArchiveLifecycleProvider =
             .toSet();
         final nextActiveAccountUuid = next.value?.activeAccountUuid;
         if (nextIds != null && !_setEquals(previousIds, nextIds)) {
-          unawaited(coordinator.synchronizeAll());
+          unawaited(
+            coordinator.handleAccountSetChanged(
+              previousAccounts: previousIds ?? const {},
+              currentAccounts: nextIds,
+            ),
+          );
         } else if (previous?.value?.activeAccountUuid !=
                 nextActiveAccountUuid &&
             nextActiveAccountUuid != null) {

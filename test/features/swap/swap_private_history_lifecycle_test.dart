@@ -154,6 +154,82 @@ void main() {
     expect(synchronizer.calls, hasLength(1));
   });
 
+  test('wallet reset cancels retries for the removed account', () async {
+    final accountUuids = <String>['account-a'];
+    final synchronizer = _RecordingSynchronizer(failFirstCall: true);
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      accountUuids: accountUuids,
+      retryDelay: const Duration(milliseconds: 20),
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.synchronizeAccount('account-a');
+    accountUuids.clear();
+    await coordinator.handleAccountSetChanged(
+      previousAccounts: const {'account-a'},
+      currentAccounts: const {},
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(synchronizer.calls, hasLength(1));
+  });
+
+  test('removed accounts ignore stale changes and can be re-added', () async {
+    final accountUuids = <String>['account-a'];
+    final synchronizer = _RecordingSynchronizer();
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      accountUuids: accountUuids,
+    );
+    addTearDown(coordinator.dispose);
+
+    accountUuids.clear();
+    await coordinator.handleAccountSetChanged(
+      previousAccounts: const {'account-a'},
+      currentAccounts: const {},
+    );
+    await coordinator.handleReplicaChange(
+      _change(SwapActivityReplicaChangeSource.providerRefresh),
+    );
+    expect(synchronizer.calls, isEmpty);
+
+    accountUuids.add('account-a');
+    await coordinator.handleAccountSetChanged(
+      previousAccounts: const {},
+      currentAccounts: const {'account-a'},
+    );
+
+    expect(synchronizer.calls, hasLength(2));
+  });
+
+  test('wallet reset fences an in-flight account before retry', () async {
+    final firstCallStarted = Completer<void>();
+    final releaseFirstCall = Completer<void>();
+    final accountUuids = <String>['account-a'];
+    final synchronizer = _RecordingSynchronizer(
+      firstCallStarted: firstCallStarted,
+      releaseFirstCall: releaseFirstCall,
+    );
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      accountUuids: accountUuids,
+    );
+    addTearDown(coordinator.dispose);
+
+    final sync = coordinator.synchronizeAccount('account-a');
+    await firstCallStarted.future;
+    accountUuids.clear();
+    final reset = coordinator.handleAccountSetChanged(
+      previousAccounts: const {'account-a'},
+      currentAccounts: const {},
+    );
+    releaseFirstCall.complete();
+    await Future.wait([sync, reset]);
+
+    expect(synchronizer.calls, hasLength(1));
+  });
+
   test(
     'pause prevents an active drain from starting the next namespace',
     () async {
