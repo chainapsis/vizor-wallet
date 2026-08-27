@@ -1,9 +1,11 @@
 import 'dart:typed_data';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
 import 'package:zcash_wallet/src/features/voting/voting_private_state_sync.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 
 void main() {
   const account = PrivateStateAccount(
@@ -80,6 +82,38 @@ void main() {
     await sync.readCompletion(account: account, roundId: 'round-42');
 
     expect(observed, [record, isA<VotingCompletionRecord>()]);
+  });
+
+  test('completion revision changes only for new account-round content', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(
+      votingPrivateCompletionRevisionProvider.notifier,
+    );
+    const revisionAccount = PrivateStateAccount(
+      dbPath: 'wallet.db',
+      network: 'main',
+      accountUuid: 'account-1',
+    );
+    final first = VotingCompletionRecord(
+      roundId: 'round-1',
+      completedAtSeconds: 1,
+      choicesByProposalId: const {7: 0},
+    );
+
+    notifier.observe(account: revisionAccount, record: first);
+    notifier.observe(account: revisionAccount, record: first);
+    expect(container.read(votingPrivateCompletionRevisionProvider), 1);
+
+    notifier.observe(
+      account: revisionAccount,
+      record: VotingCompletionRecord(
+        roundId: 'round-1',
+        completedAtSeconds: 2,
+        choicesByProposalId: const {7: 1},
+      ),
+    );
+    expect(container.read(votingPrivateCompletionRevisionProvider), 2);
   });
 }
 

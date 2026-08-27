@@ -97,7 +97,6 @@ import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
-import 'src/providers/voting/voting_private_state_lifecycle_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
@@ -1095,7 +1094,6 @@ class ZcashWalletApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
-    ref.watch(votingPrivateStateLifecycleProvider);
     ref.watch(finalizedActivityArchiveLifecycleProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
