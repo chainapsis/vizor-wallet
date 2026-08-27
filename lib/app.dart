@@ -1275,7 +1275,7 @@ class _IncomingPaymentLinkHostState
     });
     final service = ref.read(incomingUriServiceProvider);
     _subscription = service.uriStream.listen((rawUri) {
-      ref.read(paymentLinkIntakeProvider.notifier).ingest(rawUri);
+      ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
     });
     unawaited(service.initialize());
   }

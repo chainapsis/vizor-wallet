@@ -17,11 +17,11 @@ void main() {
       final decoded = VizorPaymentLink.parse(uri.toString());
       final payload = _decodePayload(uri);
 
-      expect(uri.scheme, 'https');
-      expect(uri.host, 'functions.vizor.cash');
-      expect(uri.path, '/payment-links/open');
-      expect(uri.query, isEmpty);
-      expect(uri.fragment, startsWith('v1='));
+      expect(uri.scheme, 'vizor');
+      expect(uri.host, 'payment-link');
+      expect(uri.path, isEmpty);
+      expect(uri.queryParameters['p'], isNotEmpty);
+      expect(uri.fragment, isEmpty);
       expect(decoded.network, 'main');
       expect(decoded.address, link.address);
       expect(decoded.amountZatoshi, BigInt.from(123456789));
@@ -132,7 +132,7 @@ void main() {
 
     test('rejects URLs outside the Vizor payment-link endpoint', () {
       expect(
-        () => VizorPaymentLink.parse('vizor://payment-link?p=legacy'),
+        () => VizorPaymentLink.parse('vizor://other?p=legacy'),
         throwsFormatException,
       );
       expect(
@@ -140,9 +140,7 @@ void main() {
         throwsFormatException,
       );
       expect(
-        () => VizorPaymentLink.parse(
-          'https://functions.vizor.cash/payment-links/other#v1=payload',
-        ),
+        () => VizorPaymentLink.parse('vizor://payment-link/other?p=payload'),
         throwsFormatException,
       );
     });
@@ -150,8 +148,8 @@ void main() {
     test('accepts the scheme and host case-insensitively', () {
       final link = _link();
       final uppercaseLink = link.toUri().toString().replaceFirst(
-        'https://functions.vizor.cash',
-        'HTTPS://FUNCTIONS.VIZOR.CASH',
+        'vizor://payment-link',
+        'VIZOR://PAYMENT-LINK',
       );
 
       final decoded = VizorPaymentLink.parse(uppercaseLink);
@@ -162,9 +160,7 @@ void main() {
 
     test('rejects malformed payloads', () {
       expect(
-        () => VizorPaymentLink.parse(
-          'https://functions.vizor.cash/payment-links/open#v1=not-base64',
-        ),
+        () => VizorPaymentLink.parse('vizor://payment-link?p=not-base64'),
         throwsFormatException,
       );
     });
@@ -172,7 +168,7 @@ void main() {
     test('rejects oversized inbound links before decoding', () {
       expect(
         () => VizorPaymentLink.parse(
-          'https://functions.vizor.cash/payment-links/open#v1='
+          'vizor://payment-link?p='
           '${'a' * VizorPaymentLink.maxEncodedLength}',
         ),
         throwsFormatException,
@@ -183,32 +179,37 @@ void main() {
       final encoded = Uri(
         scheme: VizorPaymentLink.scheme,
         host: VizorPaymentLink.host,
-        path: VizorPaymentLink.path,
-        fragment: 'v1=eyJ2IjoyfQ==',
+        queryParameters: const {'p': 'eyJ2IjoyfQ=='},
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
     });
 
-    test('rejects query parameters, credentials, and explicit ports', () {
-      final payload = _link().toUri().fragment;
+    test('rejects extra URL components and duplicate payloads', () {
+      final payload = _link().toUri().queryParameters['p']!;
 
       expect(
         () => VizorPaymentLink.parse(
-          'https://functions.vizor.cash/payment-links/open?payload=hidden#$payload',
+          'vizor://payment-link?p=$payload&other=hidden',
         ),
         throwsFormatException,
       );
       expect(
-        () => VizorPaymentLink.parse(
-          'https://user@functions.vizor.cash/payment-links/open#$payload',
-        ),
+        () => VizorPaymentLink.parse('vizor://user@payment-link?p=$payload'),
+        throwsFormatException,
+      );
+      expect(
+        () => VizorPaymentLink.parse('vizor://payment-link:8443?p=$payload'),
         throwsFormatException,
       );
       expect(
         () => VizorPaymentLink.parse(
-          'https://functions.vizor.cash:8443/payment-links/open#$payload',
+          'vizor://payment-link?p=$payload&p=$payload',
         ),
+        throwsFormatException,
+      );
+      expect(
+        () => VizorPaymentLink.parse('vizor://payment-link?p=$payload#extra'),
         throwsFormatException,
       );
     });
@@ -227,8 +228,9 @@ void main() {
       final encoded = Uri(
         scheme: VizorPaymentLink.scheme,
         host: VizorPaymentLink.host,
-        path: VizorPaymentLink.path,
-        fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+        queryParameters: {
+          'p': base64UrlEncode(utf8.encode(jsonEncode(payload))),
+        },
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
@@ -252,7 +254,7 @@ void main() {
 }
 
 Map<String, Object?> _decodePayload(Uri uri) {
-  final encoded = uri.fragment.substring('v1='.length);
+  final encoded = uri.queryParameters['p']!;
   return jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(encoded))))
       as Map<String, Object?>;
 }

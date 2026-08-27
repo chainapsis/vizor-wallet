@@ -161,7 +161,7 @@ void main() {
       );
 
       final rawLink = await _readPaymentLinkFromClipboard();
-      final link = VizorPaymentLink.decode(rawLink);
+      final link = VizorPaymentLink.parse(rawLink);
       expect(link.network, _network);
       expect(link.amountZatoshi, _giftAmountZatoshi);
       expect(link.presentation?.artworkId, 'coin');
@@ -216,7 +216,10 @@ void main() {
           .singleWhere((record) => record.address == link.address);
       expect(receivingRecord.status, PaymentLinkReceivedStatus.receiving);
       expect(receivingRecord.claimTxids, isNotEmpty);
-      expect(receivingRecord.claimLink?.encode(), link.encode());
+      expect(
+        receivingRecord.claimLink?.toUri().toString(),
+        link.toUri().toString(),
+      );
 
       await _mineRegtestBlocks(1);
       final minedClaim = await _waitForHistoryTransaction(

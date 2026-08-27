@@ -25,7 +25,10 @@ void main() {
         expect(restored.single.status, PaymentLinkReceivedStatus.receiving);
         expect(restored.single.destinationAccountUuid, 'receiver-account');
         expect(restored.single.claimTxids, 'claim-txid');
-        expect(restored.single.claimLink?.encode(), link.encode());
+        expect(
+          restored.single.claimLink?.toUri().toString(),
+          link.toUri().toString(),
+        );
       },
     );
 
@@ -68,7 +71,10 @@ void main() {
       expect(restored.single.status, PaymentLinkReceivedStatus.readyToClaim);
       expect(restored.single.destinationAccountUuid, isNull);
       expect(restored.single.claimTxids, isNull);
-      expect(restored.single.claimLink?.encode(), link.encode());
+      expect(
+        restored.single.claimLink?.toUri().toString(),
+        link.toUri().toString(),
+      );
     });
 
     test('never persists Receiving without a claim transaction id', () async {
@@ -113,25 +119,24 @@ void main() {
     );
 
     test('fails loud instead of hiding corrupted received-card data', () async {
-      final storage =
-          _FakePaymentLinkReceivedStorage()
-            ..value = jsonEncode({
-              'version': 1,
-              'records': [
-                {
-                  'network': 'main',
-                  'address': 'u1paymentlinkaddress',
-                  'amountZatoshi': '100000',
-                  'createdAt': DateTime.utc(2026, 8, 5).toIso8601String(),
-                  'artworkId': 'ruby',
-                  'status': 'unknown',
-                  'claimLink': _link().encode(),
-                  'destinationAccountUuid': null,
-                  'claimTxids': null,
-                  'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
-                },
-              ],
-            });
+      final storage = _FakePaymentLinkReceivedStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'network': 'main',
+              'address': 'u1paymentlinkaddress',
+              'amountZatoshi': '100000',
+              'createdAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+              'artworkId': 'ruby',
+              'status': 'unknown',
+              'claimLink': _link().toUri().toString(),
+              'destinationAccountUuid': null,
+              'claimTxids': null,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
 
       await expectLater(
         PaymentLinkReceivedStore(storage).load(),

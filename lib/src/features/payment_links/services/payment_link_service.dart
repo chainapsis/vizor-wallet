@@ -29,7 +29,7 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 });
 
 const kPaymentLinkMaxClaimLookbackBlocks = 100000;
-const kPaymentLinkShareConfirmationTarget = 10;
+const kPaymentLinkShareConfirmationTarget = 6;
 
 /// The ZIP-317 fee for the payment link's expected one-input, one-output
 /// shielded claim transaction.
@@ -367,6 +367,7 @@ class PaymentLinkBroadcastPendingException implements Exception {
   @override
   String toString() => message;
 }
+
 class PaymentLinkService implements PaymentLinkOperations {
   PaymentLinkService(this._ref, this._recoveryStore, this._receivedStore);
 
@@ -383,7 +384,9 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw StateError('No active account.');
     }
     final fundingAmount = paymentLinkFundingAmountZatoshi(amountZatoshi);
-    return _ref.read(syncProvider.notifier).runWithAuthoritativeSpendable(
+    return _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
           accountUuid: sourceAccountUuid,
           operation: () async {
             final dbPath = await getWalletDbPath();
@@ -426,38 +429,63 @@ class PaymentLinkService implements PaymentLinkOperations {
         'Keystone payment links require the hardware signing flow.',
       );
     }
-    final link = await createFundingDraft(
+    final link = await _createFundingLink(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
-    final fundingResult = await _sendShielded(
-      fromAccountUuid: sourceAccountUuid,
-      toAddress: link.address,
-      amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-      memo: null,
-    );
-    if (!isPaymentLinkFundingSubmitted(
-      status: fundingResult.status,
-      txids: fundingResult.txids,
-    )) {
-      throw StateError(
-        fundingResult.message ??
-            'Payment link funding did not produce a trackable transaction.',
+    final funding = await PaymentLinkFundingRecovery(_recoveryStore)
+        .fund<rust_sync.ExecuteProposalResult>(
+          link: link,
+          sourceAccountUuid: sourceAccountUuid,
+          createTransaction: () {
+            return _sendShielded(
+              fromAccountUuid: sourceAccountUuid,
+              toAddress: link.address,
+              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+              memo: null,
+            );
+          },
+          fundingTxids: (result) => result.txids,
+        );
+    final fundingResult = funding.transaction;
+    if (!funding.fundingMetadataSaved) {
+      log(
+        'PaymentLinkService: funding was submitted but recovery metadata '
+        'could not be saved after retry: ${funding.recoveryError}\n'
+        '${funding.recoveryStackTrace}',
       );
     }
-    await _recoveryStore.markFunded(
-      address: link.address,
-      fundingTxids: fundingResult.txids,
-    );
 
-    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
-    return link;
+    unawaited(_refreshMainWalletAfterSend());
+    _requireFullyBroadcasted(fundingResult);
+    return PaymentLinkFundingResult(
+      link: link,
+      txids: fundingResult.txids,
+      fundingMetadataSaved: funding.fundingMetadataSaved,
+    );
   }
 
   /// Creates the bearer-secret account and persists its recovery record before
   /// any funding proposal can be signed or broadcast.
   Future<VizorPaymentLink> createFundingDraft({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
+  }) async {
+    final link = await _createFundingLink(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+      presentation: presentation,
+    );
+    await _recoveryStore.saveDraft(
+      link: link,
+      sourceAccountUuid: sourceAccountUuid,
+    );
+    return link;
+  }
+
+  Future<VizorPaymentLink> _createFundingLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
@@ -497,36 +525,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       createdAt: DateTime.now(),
       presentation: presentation,
     );
-    final funding = await PaymentLinkFundingRecovery(_recoveryStore)
-        .fund<rust_sync.ExecuteProposalResult>(
-          link: link,
-          sourceAccountUuid: sourceAccountUuid,
-          createTransaction: () {
-            return _sendShielded(
-              fromAccountUuid: sourceAccountUuid,
-              toAddress: ephemeralAddress,
-              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-              memo: null,
-            );
-          },
-          fundingTxids: (result) => result.txids,
-        );
-    final fundingResult = funding.transaction;
-    if (!funding.fundingMetadataSaved) {
-      log(
-        'PaymentLinkService: funding was submitted but recovery metadata '
-        'could not be saved after retry: ${funding.recoveryError}\n'
-        '${funding.recoveryStackTrace}',
-      );
-    }
-
-    unawaited(_refreshMainWalletAfterSend());
-    _requireFullyBroadcasted(fundingResult);
-    return PaymentLinkFundingResult(
-      link: link,
-      txids: fundingResult.txids,
-      fundingMetadataSaved: funding.fundingMetadataSaved,
-    );
+    return link;
   }
 
   @override
@@ -563,20 +562,20 @@ class PaymentLinkService implements PaymentLinkOperations {
     final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
     for (final accountUuid
         in needsHistory.map((record) => record.sourceAccountUuid).toSet()) {
-      transactionsByAccount[accountUuid] =
-          await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        limit: null,
-      );
+      transactionsByAccount[accountUuid] = await rust_sync
+          .getTransactionHistory(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            limit: null,
+          );
     }
     final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
     final chainTipHeight = cachedTip > 0
         ? BigInt.from(cachedTip)
         : await _ref
-            .read(rpcEndpointFailoverProvider.notifier)
-            .getLatestBlockHeight();
+              .read(rpcEndpointFailoverProvider.notifier)
+              .getLatestBlockHeight();
     return {
       for (final record in records)
         record.link.address: record.state == PaymentLinkRecoveryState.shared
@@ -624,16 +623,17 @@ class PaymentLinkService implements PaymentLinkOperations {
 
     final dbPath = await getWalletDbPath();
     final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
-    for (final accountUuid in currentNetworkRecords
-        .map((record) => record.destinationAccountUuid!)
-        .toSet()) {
-      transactionsByAccount[accountUuid] =
-          await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        limit: null,
-      );
+    for (final accountUuid
+        in currentNetworkRecords
+            .map((record) => record.destinationAccountUuid!)
+            .toSet()) {
+      transactionsByAccount[accountUuid] = await rust_sync
+          .getTransactionHistory(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            limit: null,
+          );
     }
 
     for (final record in currentNetworkRecords) {
@@ -684,8 +684,8 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
     }
     final allFundingTransactionsMined = minedHeights.keys.toSet().containsAll(
-          fundingTxids,
-        );
+      fundingTxids,
+    );
     final minedHeight = allFundingTransactionsMined
         ? minedHeights.values.reduce(
             (latest, height) => height > latest ? height : latest,
@@ -1062,8 +1062,8 @@ class PaymentLinkService implements PaymentLinkOperations {
 
     final mnemonicBytes = mnemonic == null
         ? await _ref
-            .read(accountProvider.notifier)
-            .getMnemonicBytesForAccount(accountUuid)
+              .read(accountProvider.notifier)
+              .getMnemonicBytesForAccount(accountUuid)
         : Uint8List.fromList(utf8.encode(mnemonic));
     if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
       throw StateError('Mnemonic not found for payment link account.');
@@ -1087,7 +1087,9 @@ class PaymentLinkService implements PaymentLinkOperations {
 
   Future<void> _runBlockingSync({required String dbPath}) async {
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    await _ref.read(syncProvider.notifier).runWithExclusiveRustSync(
+    await _ref
+        .read(syncProvider.notifier)
+        .runWithExclusiveRustSync(
           () => rust_sync.runFullSyncBlocking(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1098,7 +1100,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   Future<({Directory directory, String dbPath, bool existed})>
-      _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
+  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
     final supportDir = await getWalletSupportDirectory();
     final separator = Platform.pathSeparator;
     final directory = Directory(
@@ -1111,7 +1113,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   Future<({String address, String accountUuid})>
-      _importPaymentLinkClaimAccount({
+  _importPaymentLinkClaimAccount({
     required VizorPaymentLink link,
     required int birthdayHeight,
     required String dbPath,
@@ -1136,6 +1138,20 @@ class PaymentLinkService implements PaymentLinkOperations {
       await directory.delete(recursive: true);
     }
     await directory.create(recursive: true);
+  }
+
+  void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {
+    if (paymentLinkClaimBroadcastStatusFromWire(result.status) ==
+        PaymentLinkClaimBroadcastStatus.broadcasted) {
+      return;
+    }
+    throw PaymentLinkBroadcastPendingException(
+      txids: result.txids,
+      status: result.status,
+      message:
+          result.message ??
+          'Payment link funding transaction is waiting to be broadcast.',
+    );
   }
 
   Future<void> _deleteTemporaryWalletDb(Directory directory) async {
