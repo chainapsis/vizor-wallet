@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,6 +29,25 @@ void main() {
     expect(store.values, [true]);
     expect(tester.getSemantics(row).value, 'On');
   });
+
+  testWidgets('mobile card exposes the target state while saving', (
+    tester,
+  ) async {
+    final store = _ControlledStore();
+    await tester.pumpWidget(_harness(store));
+
+    final row = find.byKey(
+      const ValueKey('mobile_settings_private_state_sync_row'),
+    );
+    await tester.tap(row);
+    await tester.pump();
+
+    expect(find.text('Saving…'), findsNothing);
+    expect(tester.getSemantics(row).value, 'On');
+
+    store.complete();
+    await tester.pump();
+  });
 }
 
 Widget _harness(PrivateStateSyncSettingsStore store) {
@@ -51,4 +72,13 @@ class _RecordingStore implements PrivateStateSyncSettingsStore {
 
   @override
   Future<void> writeEnabled(bool enabled) async => values.add(enabled);
+}
+
+class _ControlledStore implements PrivateStateSyncSettingsStore {
+  final _completer = Completer<void>();
+
+  @override
+  Future<void> writeEnabled(bool enabled) => _completer.future;
+
+  void complete() => _completer.complete();
 }

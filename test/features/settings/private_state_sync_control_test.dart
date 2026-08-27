@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,24 @@ void main() {
 
     expect(store.values, [true]);
     expect(find.text('On'), findsOneWidget);
+  });
+
+  testWidgets('desktop control shows the target state while saving', (
+    tester,
+  ) async {
+    final store = _ControlledStore();
+    await tester.pumpWidget(_harness(store, const PrivateStateSyncControl()));
+
+    final row = find.byKey(const ValueKey('settings_private_state_sync_row'));
+    await tester.tap(row);
+    await tester.pump();
+
+    expect(find.text('Saving…'), findsNothing);
+    expect(find.text('On'), findsOneWidget);
+    expect(tester.getSemantics(row).value, 'On');
+
+    store.complete();
+    await tester.pump();
   });
 
   testWidgets('desktop control renders a save failure without an async error', (
@@ -65,6 +85,15 @@ class _RecordingStore implements PrivateStateSyncSettingsStore {
 
   @override
   Future<void> writeEnabled(bool enabled) async => values.add(enabled);
+}
+
+class _ControlledStore implements PrivateStateSyncSettingsStore {
+  final _completer = Completer<void>();
+
+  @override
+  Future<void> writeEnabled(bool enabled) => _completer.future;
+
+  void complete() => _completer.complete();
 }
 
 class _FailingStore implements PrivateStateSyncSettingsStore {

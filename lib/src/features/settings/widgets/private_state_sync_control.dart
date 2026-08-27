@@ -83,7 +83,6 @@ class _PrivateStateSyncContent extends ConsumerWidget {
         _PrivateStateSyncRow(
           key: ValueKey('${prefix}_private_state_sync_row'),
           enabled: enabled,
-          isSaving: state.isSaving,
           mobile: mobile,
           onToggle: onToggle,
         ),
@@ -126,14 +125,12 @@ Future<void> _setPrivateStateSyncEnabled(
 class _PrivateStateSyncRow extends StatefulWidget {
   const _PrivateStateSyncRow({
     required this.enabled,
-    required this.isSaving,
     required this.mobile,
     required this.onToggle,
     super.key,
   });
 
   final bool enabled;
-  final bool isSaving;
   final bool mobile;
   final VoidCallback? onToggle;
 
@@ -154,7 +151,7 @@ class _PrivateStateSyncRowState extends State<_PrivateStateSyncRow> {
       toggled: widget.enabled,
       enabled: interactive,
       label: 'Private state sync',
-      value: widget.isSaving ? 'Saving' : (widget.enabled ? 'On' : 'Off'),
+      value: widget.enabled ? 'On' : 'Off',
       onTap: widget.onToggle,
       excludeSemantics: true,
       child: FocusableActionDetector(
@@ -208,9 +205,7 @@ class _PrivateStateSyncRowState extends State<_PrivateStateSyncRow> {
                   ),
                   if (!widget.mobile) ...[
                     Text(
-                      widget.isSaving
-                          ? 'Saving…'
-                          : (widget.enabled ? 'On' : 'Off'),
+                      widget.enabled ? 'On' : 'Off',
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.secondary,
                         fontWeight: FontWeight.w400,
