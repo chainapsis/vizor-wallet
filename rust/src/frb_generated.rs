@@ -4606,12 +4606,16 @@ fn wire__crate__api__ledger__ledger_build_pczt_full_signing_apdu_plan_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::ledger::ledger_build_pczt_full_signing_apdu_plan(
+                        api_db_path,
+                        api_account_uuid,
                         api_pczt_bytes,
                         api_network,
                     )?;
@@ -4643,12 +4647,16 @@ fn wire__crate__api__ledger__ledger_build_pczt_signing_apdu_plan_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::ledger::ledger_build_pczt_signing_apdu_plan(
+                        api_db_path,
+                        api_account_uuid,
                         api_pczt_bytes,
                         api_network,
                     )?;
@@ -4899,6 +4907,8 @@ fn wire__crate__api__ledger__ledger_finalize_mobile_pczt_full_signing_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_responses = <Vec<Vec<u8>>>::sse_decode(&mut deserializer);
@@ -4906,6 +4916,8 @@ fn wire__crate__api__ledger__ledger_finalize_mobile_pczt_full_signing_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::ledger::ledger_finalize_mobile_pczt_full_signing(
+                        api_db_path,
+                        api_account_uuid,
                         api_pczt_bytes,
                         api_network,
                         api_responses,
@@ -4938,6 +4950,8 @@ fn wire__crate__api__ledger__ledger_finalize_mobile_pczt_signing_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_responses = <Vec<Vec<u8>>>::sse_decode(&mut deserializer);
@@ -4945,6 +4959,8 @@ fn wire__crate__api__ledger__ledger_finalize_mobile_pczt_signing_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::ledger::ledger_finalize_mobile_pczt_signing(
+                        api_db_path,
+                        api_account_uuid,
                         api_pczt_bytes,
                         api_network,
                         api_responses,
@@ -5087,13 +5103,19 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::ledger::ledger_sign_pczt(api_pczt_bytes, api_network)?;
+                    let output_ok = crate::api::ledger::ledger_sign_pczt(
+                        api_db_path,
+                        api_account_uuid,
+                        api_pczt_bytes,
+                        api_network,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -5122,13 +5144,19 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::ledger::ledger_sign_pczt_full(api_pczt_bytes, api_network)?;
+                    let output_ok = crate::api::ledger::ledger_sign_pczt_full(
+                        api_db_path,
+                        api_account_uuid,
+                        api_pczt_bytes,
+                        api_network,
+                    )?;
                     Ok(output_ok)
                 })())
             }
