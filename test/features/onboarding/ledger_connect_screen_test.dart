@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
@@ -195,6 +197,19 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
       await tester.pump();
+
+      final busyButton = tester.widget<AppButton>(
+        find.byKey(const ValueKey('ledger_connect_button')),
+      );
+      final spinner = find.byKey(const ValueKey('ledger_connect_spinner'));
+      expect(busyButton.leading, isNull);
+      expect(busyButton.trailing, isA<AppIcon>());
+      expect((busyButton.trailing! as AppIcon).name, AppIcons.loader);
+      expect(spinner, findsOneWidget);
+      expect(
+        tester.getCenter(spinner).dx,
+        greaterThan(tester.getCenter(find.text('Approve on Ledger')).dx),
+      );
 
       expect(
         tester.getSemantics(disclosure),
@@ -421,6 +436,7 @@ class _FakeReadinessController extends LedgerAppReadinessController {
 }
 
 class _FakeLedgerBleService implements LedgerMobileBleService {
+  @override
   String? connectedDeviceId;
   int disconnectCalls = 0;
   int openAppCalls = 0;
