@@ -15,6 +15,105 @@ const MIGRATION_TEST_ACCOUNT: &str = "account-1";
 const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
+fn resubmit_test_transaction(
+    prevout_txid: [u8; 32],
+    output_value: u64,
+) -> super::super::transactions::ResubmittableTx {
+    use transparent::{
+        address::Script,
+        bundle::{Authorized as TransparentAuthorized, Bundle, TxIn, TxOut},
+    };
+    use zcash_primitives::transaction::{Authorized, TransactionData};
+    use zcash_protocol::consensus::BranchId;
+
+    let transparent_bundle = Bundle {
+        vin: vec![TxIn::from_parts(
+            OutPoint::new(prevout_txid, 0),
+            Script::default(),
+            u32::MAX,
+        )],
+        vout: vec![TxOut::new(
+            zcash_protocol::value::Zatoshis::from_u64(output_value).unwrap(),
+            Script::default(),
+        )],
+        authorization: TransparentAuthorized,
+    };
+    let transaction = TransactionData::<Authorized>::from_parts(
+        TxVersion::V5,
+        BranchId::Nu5,
+        0,
+        BlockHeight::from_u32(1_000_000),
+        Some(transparent_bundle),
+        None,
+        None,
+        None,
+    )
+    .freeze()
+    .unwrap();
+    let mut raw_tx = Vec::new();
+    transaction.write(&mut raw_tx).unwrap();
+    super::super::transactions::ResubmittableTx {
+        txid_bytes: transaction.txid().as_ref().to_vec(),
+        raw_tx,
+        expiry_height: 1_000_000,
+    }
+}
+
+#[test]
+fn resubmit_orders_transparent_parent_before_child() {
+    let parent = resubmit_test_transaction([0x11; 32], 10_000);
+    let child = resubmit_test_transaction(parent.txid_bytes.clone().try_into().unwrap(), 9_000);
+    let parent_txid = parent.txid_bytes.clone();
+    let child_txid = child.txid_bytes.clone();
+
+    let ordered = order_resubmittable_transactions(vec![child, parent]);
+
+    assert_eq!(ordered[0].tx.txid_bytes, parent_txid);
+    assert_eq!(ordered[1].tx.txid_bytes, child_txid);
+    assert_eq!(ordered[1].parent_txids, vec![parent_txid]);
+}
+
+#[test]
+fn resubmit_defers_child_when_parent_failed_this_pass() {
+    let parent = resubmit_test_transaction([0x22; 32], 10_000);
+    let child = resubmit_test_transaction(parent.txid_bytes.clone().try_into().unwrap(), 9_000);
+    let ordered = order_resubmittable_transactions(vec![child, parent]);
+    let mut succeeded = HashSet::new();
+
+    assert!(resubmit_dependencies_succeeded(&ordered[0], &succeeded));
+    // Simulate both parent RPC attempts failing: its txid is never inserted.
+    assert!(!resubmit_dependencies_succeeded(&ordered[1], &succeeded));
+
+    succeeded.insert(ordered[0].tx.txid_bytes.clone());
+    assert!(resubmit_dependencies_succeeded(&ordered[1], &succeeded));
+}
+
+#[test]
+fn resubmit_ordering_isolates_a_malformed_candidate() {
+    let parent = resubmit_test_transaction([0x33; 32], 10_000);
+    let child = resubmit_test_transaction(parent.txid_bytes.clone().try_into().unwrap(), 9_000);
+    let parent_txid = parent.txid_bytes.clone();
+    let child_txid = child.txid_bytes.clone();
+    let malformed = super::super::transactions::ResubmittableTx {
+        txid_bytes: vec![0x44; 32],
+        raw_tx: vec![0xff],
+        expiry_height: 1_000_000,
+    };
+
+    let ordered = order_resubmittable_transactions(vec![child, malformed, parent]);
+    let parent_index = ordered
+        .iter()
+        .position(|candidate| candidate.tx.txid_bytes == parent_txid)
+        .unwrap();
+    let child_index = ordered
+        .iter()
+        .position(|candidate| candidate.tx.txid_bytes == child_txid)
+        .unwrap();
+
+    assert_eq!(ordered.len(), 3);
+    assert!(parent_index < child_index);
+}
+
 #[test]
 fn draftless_denomination_request_replays_approved_targets() {
     let approved_schedule = vec![
@@ -2614,7 +2713,9 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         .get_fee(&fee_rule)
         .unwrap();
     let builder = build_builder(output_value + u64::from(fee)).unwrap();
-    let build_result = builder.build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule).unwrap();
+    let build_result = builder
+        .build_for_pczt(voting_crypto_deps::rand::rngs::OsRng, &fee_rule)
+        .unwrap();
 
     assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
     assert_eq!(

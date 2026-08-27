@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -167,22 +167,27 @@ class _MobileVotingConfigSettingsSheetState
   Widget build(BuildContext context) {
     final source = ref.watch(votingConfigSourceProvider);
     final testRounds = ref.watch(showTestVotingRoundsProvider);
-    return MobileModalScaffold(
-      key: const ValueKey('mobile_voting_config_sheet'),
-      title: 'Voting config',
-      onClose: () => Navigator.of(context).pop(),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.68,
-        ),
-        child: source.when(
-          loading: () => const SizedBox(
-            height: 220,
-            child: Center(child: AppIcon(AppIcons.loader)),
-          ),
-          error: (error, _) => _LoadError(message: error.toString()),
-          data: (state) => SingleChildScrollView(
-            child: Column(
+    // The entire content can scroll when a keyboard, large text, or saved
+    // sources consume the available sheet height. Parent constraints include
+    // the modal's keyboard and safe-area margins.
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+      ),
+      child: SingleChildScrollView(
+        child: MobileModalScaffold(
+          key: const ValueKey('mobile_voting_config_sheet'),
+          title: 'Vote config',
+          bodyGap: AppSpacing.xxs,
+          bottomPadding: AppSpacing.base,
+          onClose: () => Navigator.of(context).pop(),
+          child: source.when(
+            loading: () => const SizedBox(
+              height: 220,
+              child: Center(child: AppIcon(AppIcons.loader)),
+            ),
+            error: (error, _) => _LoadError(message: error.toString()),
+            data: (state) => Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -192,11 +197,22 @@ class _MobileVotingConfigSettingsSheetState
                     color: context.colors.text.secondary,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.md),
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xxs),
+                  child: Text(
+                    'Sources',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: context.colors.text.secondary,
+                      letterSpacing: -0.04,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
                 _MobileSourceRow(
                   key: const ValueKey('mobile_voting_source_default'),
                   title: 'Token holder voting',
-                  subtitle: 'Default Vizor source',
+                  subtitle: 'Default',
                   selected: state.isDefault,
                   onTap: _busy
                       ? null
@@ -206,7 +222,7 @@ class _MobileVotingConfigSettingsSheetState
                         ),
                 ),
                 for (final saved in state.savedSources) ...[
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.s),
                   _MobileSourceRow(
                     key: ValueKey('mobile_voting_source_${saved.id}'),
                     title: saved.name,
@@ -227,31 +243,15 @@ class _MobileVotingConfigSettingsSheetState
                     !state.savedSources.any(
                       (saved) => saved.sourceUrl == state.sourceUrl,
                     )) ...[
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.s),
                   _MobileSourceRow(
                     title: 'Custom source',
                     subtitle: _compactUrl(state.sourceUrl),
                     selected: true,
                   ),
                 ],
-                const SizedBox(height: AppSpacing.sm),
-                _TestRoundsRow(
-                  enabled: testRounds.value ?? false,
-                  busy: _busy || testRounds.isLoading,
-                  onTap: () => _toggleTestRounds(testRounds.value ?? false),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    _error!,
-                    key: const ValueKey('mobile_voting_config_error'),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: context.colors.text.destructive,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.sm),
                 if (_showEditor) ...[
+                  const SizedBox(height: AppSpacing.s),
                   AppTextField(
                     key: const ValueKey('mobile_voting_source_name'),
                     label: 'Title',
@@ -269,6 +269,17 @@ class _MobileVotingConfigSettingsSheetState
                     onChanged: (_) => setState(() => _error = null),
                   ),
                   const SizedBox(height: AppSpacing.sm),
+                  if (_error != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      _error!,
+                      key: const ValueKey('mobile_voting_config_error'),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.destructive,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.xs),
                   AppButton(
                     key: const ValueKey('mobile_voting_source_save'),
                     expand: true,
@@ -282,14 +293,34 @@ class _MobileVotingConfigSettingsSheetState
                     onPressed: _busy ? null : _closeEditor,
                     child: const Text('Cancel'),
                   ),
-                ] else
-                  AppButton(
-                    key: const ValueKey('mobile_voting_add_source'),
-                    expand: true,
-                    variant: AppButtonVariant.secondary,
-                    onPressed: _busy ? null : _openEditor,
-                    child: const Text('Add custom source'),
+                ] else ...[
+                  const SizedBox(height: AppSpacing.s),
+                  _AddSourceCard(onTap: _busy ? null : _openEditor),
+                ],
+                const SizedBox(height: AppSpacing.base),
+                _TestRoundsRow(
+                  enabled: testRounds.value ?? false,
+                  busy: _busy || testRounds.isLoading,
+                  onTap: () => _toggleTestRounds(testRounds.value ?? false),
+                ),
+                if (_error != null && !_showEditor) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    _error!,
+                    key: const ValueKey('mobile_voting_config_error'),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: context.colors.text.destructive,
+                    ),
                   ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
+                  key: const ValueKey('mobile_voting_config_close'),
+                  expand: true,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
               ],
             ),
           ),
@@ -320,54 +351,46 @@ class _MobileSourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? colors.background.raised : colors.surface.card,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          border: Border.all(
-            color: selected ? colors.border.medium : colors.border.subtle,
+    return Semantics(
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.xs,
+            AppSpacing.s,
+            AppSpacing.xs,
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.s),
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
           child: Row(
             children: [
-              if (selected)
-                AppIcon(
-                  AppIcons.checkCircle,
-                  size: 20,
-                  color: colors.icon.success,
-                )
-              else
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: colors.border.medium, width: 2),
-                  ),
-                ),
-              const SizedBox(width: AppSpacing.s),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: AppTypography.bodyMediumStrong.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.04,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.secondary,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: -0.04,
                       ),
                     ),
                   ],
@@ -407,12 +430,101 @@ class _MobileSourceRow extends StatelessWidget {
                     ),
                   ),
                 ),
+              const SizedBox(width: AppSpacing.xs),
+              Container(
+                key: selected
+                    ? const ValueKey('mobile_voting_source_selected')
+                    : null,
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: selected ? colors.background.inverse : null,
+                  shape: BoxShape.circle,
+                  border: selected
+                      ? null
+                      : Border.all(color: colors.border.medium, width: 1.5),
+                ),
+                child: selected
+                    ? Center(
+                        child: AppIcon(
+                          AppIcons.check,
+                          size: 16,
+                          color: colors.text.inverse,
+                        ),
+                      )
+                    : null,
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _AddSourceCard extends StatelessWidget {
+  const _AddSourceCard({required this.onTap});
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    enabled: onTap != null,
+    child: InkWell(
+      key: const ValueKey('mobile_voting_add_source'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.medium),
+      child: CustomPaint(
+        painter: _SourceCardBorder(context.colors.border.medium),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          child: Text(
+            'Add custom source',
+            style: AppTypography.labelLarge.copyWith(
+              color: onTap != null
+                  ? context.colors.text.accent
+                  : context.colors.text.secondary,
+              letterSpacing: -0.04,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _SourceCardBorder extends CustomPainter {
+  const _SourceCardBorder(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          (Offset.zero & size).deflate(0.75),
+          const Radius.circular(AppRadii.medium),
+        ),
+      );
+    for (final metric in path.computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 10) {
+        canvas.drawPath(metric.extractPath(distance, distance + 6), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SourceCardBorder oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _TestRoundsRow extends StatelessWidget {
@@ -429,56 +541,70 @@ class _TestRoundsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      key: const ValueKey('mobile_voting_show_test_rounds'),
-      behavior: HitTestBehavior.opaque,
+    return Semantics(
+      label: 'Show test rounds',
+      toggled: enabled,
+      enabled: !busy,
       onTap: busy ? null : onTap,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Show test rounds',
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const ValueKey('mobile_voting_show_test_rounds'),
+        behavior: HitTestBehavior.opaque,
+        onTap: busy ? null : onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Show test rounds',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                      letterSpacing: -0.04,
+                    ),
                   ),
-                ),
-                Text(
-                  'Include authenticated rounds marked [TEST].',
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.secondary,
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Include authenticated rounds marked [TEST].',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            width: 44,
-            height: 24,
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: enabled
-                  ? colors.background.brandCrimsonStrong
-                  : colors.background.overlay,
-              borderRadius: BorderRadius.circular(AppRadii.full),
-            ),
-            child: AnimatedAlign(
-              duration: const Duration(milliseconds: 140),
-              alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color(0xFFFFFFFF),
-                  shape: BoxShape.circle,
-                ),
-                child: SizedBox.square(dimension: 18),
+                ],
               ),
             ),
-          ),
-        ],
+            AnimatedContainer(
+              key: const ValueKey('mobile_voting_test_rounds_toggle'),
+              duration: const Duration(milliseconds: 140),
+              width: 64,
+              height: 28,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: enabled
+                    ? colors.background.brandCrimsonStrong
+                    : colors.background.overlay,
+                borderRadius: BorderRadius.circular(AppRadii.full),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 140),
+                alignment: enabled
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(0xFFFFFFFF),
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(AppRadii.full),
+                    ),
+                  ),
+                  child: SizedBox(width: 40, height: 24),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -279,11 +279,21 @@ class VotingSessionState {
     this.voteSubmissionTotalCount = 0,
     this.voteSubmissionProgress,
     this.error,
-  }) : pirDiagnostics = UnmodifiableListView(pirDiagnostics),
-       delegationProgress = UnmodifiableMapView(delegationProgress),
-       voteProgress = UnmodifiableMapView(voteProgress),
-       keystoneSignatures = UnmodifiableMapView(keystoneSignatures),
-       keystoneSigningRequests = UnmodifiableListView(keystoneSigningRequests);
+  }) : pirDiagnostics = UnmodifiableListView(
+         List<PirSnapshotEndpointDiagnostic>.of(pirDiagnostics),
+       ),
+       delegationProgress = UnmodifiableMapView(
+         Map<int, VotingSessionProgress>.of(delegationProgress),
+       ),
+       voteProgress = UnmodifiableMapView(
+         Map<VotingVoteKey, VotingSessionProgress>.of(voteProgress),
+       ),
+       keystoneSignatures = UnmodifiableMapView(
+         Map<int, rust_wire.KeystoneSignatureRecord>.of(keystoneSignatures),
+       ),
+       keystoneSigningRequests = UnmodifiableListView(
+         List<rust_delegate.KeystoneSigningRequest>.of(keystoneSigningRequests),
+       );
 
   bool get hasError => phase == VotingSessionPhase.error;
 

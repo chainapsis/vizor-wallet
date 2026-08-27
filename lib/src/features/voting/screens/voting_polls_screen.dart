@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/voting/voting_config_provider.dart';
+import '../../../providers/voting/voting_poll_eligibility_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
@@ -146,13 +147,13 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
       maxWidth: 560,
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
-        AppSpacing.sm,
+        widget.showDesktopChrome ? AppSpacing.sm : AppSpacing.s,
         horizontalPadding,
         40,
       ),
       itemCount: sortedItems.length,
       separatorBuilder: (_, _) => SizedBox(
-        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.sm,
+        height: widget.showDesktopChrome ? AppSpacing.base : AppSpacing.md,
       ),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
@@ -403,21 +404,20 @@ class _MobilePollCard extends StatelessWidget {
       child: InkWell(
         key: ValueKey('voting_poll_card_tap_${round.roundId}'),
         onTap: onAction,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.pressed) ? Colors.transparent : null,
+        ),
         child: Ink(
           key: ValueKey('voting_poll_card_${round.roundId}'),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
-            vertical: AppSpacing.s,
+            vertical: AppSpacing.md,
           ),
           decoration: _mobilePollCardDecoration(context),
-          child: _PollCardContent(
-            round: round,
-            onAction: onAction,
-            titleGap: AppSpacing.s,
-            descriptionGap: AppSpacing.s,
-            actionGap: AppSpacing.sm,
-          ),
+          child: _MobilePollCardContent(round: round, onAction: onAction),
         ),
       ),
     );
@@ -455,9 +455,162 @@ class _DesktopPollCard extends StatelessWidget {
 
 BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
   color: context.colors.background.ground,
-  borderRadius: BorderRadius.circular(AppRadii.medium),
-  border: Border.all(color: context.colors.border.subtle),
+  borderRadius: BorderRadius.circular(AppRadii.large),
+  boxShadow: [
+    BoxShadow(
+      color: context.colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+  ],
 );
+
+class _MobilePollCardContent extends ConsumerWidget {
+  const _MobilePollCardContent({required this.round, required this.onAction});
+
+  final VotingRoundView round;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final title = round.title.isEmpty ? round.roundId : round.title;
+    final description = _roundDescription(round.rawJson);
+    final previewDescription = _mobileRoundDescription(description);
+    final forumUri = votingRoundForumUriFromJson(round.rawJson);
+    final state = _pollCardState(round);
+    final dateLabel = _roundDateLabel(round.rawJson, state);
+    final eligibility = state == _PollCardState.active
+        ? ref.watch(votingPollEligibilityProvider(round.roundId))
+        : null;
+    final ineligible =
+        eligibility != null &&
+        !eligibility.isLoading &&
+        !eligibility.hasError &&
+        eligibility.value == VotingPollEligibility.ineligible;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (ineligible) ...[
+          Text(
+            'Not eligible for this round',
+            key: ValueKey('voting_poll_ineligible_${round.roundId}'),
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.destructive,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.04,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Text(
+          title,
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          previewDescription.isEmpty ? round.roundId : previewDescription,
+          key: ValueKey('voting_poll_description_${round.roundId}'),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        ),
+        if (forumUri != null) ...[
+          const SizedBox(height: AppSpacing.s),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: VotingForumLinkButton(uri: forumUri, mobilePollList: true),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.s),
+        Container(
+          height: 1.5,
+          decoration: BoxDecoration(
+            color: colors.border.subtle,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Row(
+          children: [
+            Expanded(
+              child: _MobilePollStatus(state: state, dateLabel: dateLabel),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            AppButton(
+              key: ValueKey('voting_poll_action_${round.roundId}'),
+              onPressed: onAction,
+              variant: _actionButtonVariant(state),
+              size: AppButtonSize.mediumLarge,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: Text(ineligible ? 'View' : _actionLabel(state)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MobilePollStatus extends StatelessWidget {
+  const _MobilePollStatus({required this.state, required this.dateLabel});
+
+  final _PollCardState state;
+  final String? dateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final voted = state == _PollCardState.voted;
+    final displayedDate = dateLabel?.startsWith('Closed ') == true
+        ? dateLabel!.substring('Closed '.length)
+        : dateLabel;
+    final statusColor = voted
+        ? context.colors.text.positiveStrong
+        : state == _PollCardState.closed
+        ? context.colors.text.primary
+        : context.colors.text.accent;
+    final status = Text(
+      _statusLabel(state),
+      style: AppTypography.labelLarge.copyWith(
+        color: statusColor,
+        letterSpacing: -0.04,
+      ),
+    );
+    // The parent gives this footer all space left beside the action button.
+    // Use intrinsic text widths on one line, then wrap instead of hiding dates.
+    return Wrap(
+      spacing: 7,
+      runSpacing: AppSpacing.xxs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (voted)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(AppIcons.checkCircle, size: 20, color: statusColor),
+              const SizedBox(width: 7),
+              Flexible(child: status),
+            ],
+          )
+        else
+          status,
+        if (displayedDate != null)
+          Text(
+            displayedDate,
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.primary,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.04,
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 BoxDecoration _desktopPollCardDecoration(BuildContext context) => BoxDecoration(
   color: context.colors.background.ground,
@@ -659,6 +812,20 @@ String _roundDescription(Map<String, dynamic> json) {
   return '';
 }
 
+String _mobileRoundDescription(String description) {
+  final normalized = description
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .trim();
+  if (normalized.isEmpty) return '';
+
+  return normalized
+      .split(RegExp(r'\n(?:[ \t]*\n)+'))
+      .map((paragraph) => paragraph.replaceAll(RegExp(r'[ \t\n]+'), ' ').trim())
+      .where((paragraph) => paragraph.isNotEmpty)
+      .join('\n');
+}
+
 String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
   final start = votingRoundStartDate(json);
   final end = votingRoundEndDate(json);
@@ -725,7 +892,7 @@ Color _statusText(_PollCardState state) {
 String _actionLabel(_PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress => 'Resume',
-    _PollCardState.active => 'Start voting',
+    _PollCardState.active => 'Vote',
     _PollCardState.voted => 'Review',
     _PollCardState.tallying || _PollCardState.closed => 'View results',
   };

@@ -589,7 +589,7 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('recipient step blocks a hardware account from a TEX address', (
+  testWidgets('recipient step lets a hardware account continue with TEX', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -614,16 +614,10 @@ void main() {
     await tester.pumpAndSettle();
     await _enterAddress(tester, _texAddress);
 
-    // Keystone cannot sign the TEX two-step, so the address step rejects it ...
-    expect(
-      find.text('Keystone does not support TEX sends yet.'),
-      findsOneWidget,
-    );
-    // ... and Continue stays disabled.
     final continueButton = tester.widget<AppButton>(
       find.byKey(const ValueKey('mobile_send_continue')),
     );
-    expect(continueButton.onPressed, isNull);
+    expect(continueButton.onPressed, isNotNull);
   });
 
   testWidgets('prefilled recipient waits for validation before Continue', (
@@ -665,14 +659,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Keystone does not support TEX sends yet.'),
-      findsOneWidget,
-    );
-    final blockedContinue = tester.widget<AppButton>(
+    final enabledContinue = tester.widget<AppButton>(
       find.byKey(const ValueKey('mobile_send_continue')),
     );
-    expect(blockedContinue.onPressed, isNull);
+    expect(enabledContinue.onPressed, isNotNull);
   });
 
   testWidgets('recipient step lets a software account send to a TEX address', (

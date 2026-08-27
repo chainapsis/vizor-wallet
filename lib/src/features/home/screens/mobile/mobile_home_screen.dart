@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -46,9 +45,7 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
-import '../../services/pay_introduction_badge_store.dart';
 import '../../services/transparent_shielding_service.dart';
-import '../../widgets/pay_floating_badge.dart';
 import 'mobile_keystone_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -885,8 +882,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
       accountUuid: accountUuid,
     );
-    ref.read(payIntroductionBadgeClickedProvider.notifier).markClicked();
-
     final selectedAsset = await selectedAssetFuture;
     if (!mounted ||
         selectedAsset == null ||
@@ -975,8 +970,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
     final sendDisabled =
-        migrationRequired ||
-        (migrationInProgress && sync.ironwoodBalance <= BigInt.zero);
+        migrationInProgress && sync.ironwoodBalance <= BigInt.zero;
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -1002,12 +996,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
     final showPayEntry =
         payEnabled &&
-        !migrationRequired &&
         (!migrationInProgress || sync.ironwoodBalance > BigInt.zero);
-    final payIntroductionClicked = ref
-        .watch(payIntroductionBadgeClickedProvider)
-        .value;
-    final showPayIntroduction = payEnabled && payIntroductionClicked == false;
     final migrationAttention = mobileIronwoodMigrationAttention(
       widget.ironwoodMigrationCta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
@@ -1081,228 +1070,169 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         kMobileTabBarHeight + AppSpacing.lg,
       ),
       children: [
-        Stack(
-          clipBehavior: Clip.none,
+        Column(
           children: [
-            Column(
-              children: [
-                _BalanceCard(
-                  balanceText: privacyModeEnabled
-                      ? fixedPrivacyMask()
-                      : ZecAmount.fromZatoshi(
-                          shieldedBalance,
-                        ).compactBalance.amountText,
-                  fiatBalanceText: shieldedFiatBalanceText,
-                  priceChange24hPct: priceChange24hPct,
-                  transparentBalanceText: ZecAmount.fromZatoshi(
-                    transparentBalance,
-                  ).compactBalance.amountText,
-                  hasTransparentBalance: transparentBalance > BigInt.zero,
-                  canShieldBalance: sync.canShieldTransparentBalance,
-                  isShieldingBalance: _isShieldingBalance,
-                  privacyModeEnabled: privacyModeEnabled,
-                  ironwoodMigrationCta: widget.ironwoodMigrationCta,
-                  balanceDisabled: migrationRequired,
-                  onTogglePrivacyMode: widget.onTogglePrivacyMode,
-                  onIronwoodMigrationTap: () {
-                    final target = switch (widget.ironwoodMigrationCta.mode) {
-                      IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                      IronwoodHomeMigrationCtaMode.resume =>
-                        '/migration/private/status',
-                      IronwoodHomeMigrationCtaMode.hidden => null,
-                    };
-                    if (target != null) context.push(target);
-                  },
-                  onShieldBalancePressed: () =>
-                      unawaited(_shieldTransparentBalance()),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                if (hasBalance)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppButton(
-                          key: const ValueKey('mobile_home_send'),
-                          expand: true,
-                          constrainContent: true,
-                          onPressed: sendDisabled
-                              ? null
-                              : () => context.push('/send'),
-                          leading: const _ButtonIcon(AppIcons.plane),
-                          height: _mobileHomeActionButtonHeight,
-                          child: const Text(
-                            'Send',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: AppButton(
-                          key: const ValueKey('mobile_home_receive'),
-                          expand: true,
-                          constrainContent: true,
-                          variant: AppButtonVariant.secondary,
-                          onPressed: () => context.push('/receive'),
-                          leading: const _ButtonIcon(AppIcons.arrowDownCircle),
-                          height: _mobileHomeActionButtonHeight,
-                          child: const Text(
-                            'Receive',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      // The Pay entry follows the swap feature flag: pay
-                      // rides the swap engine, so a server-side swap disable
-                      // hides the button and its callout, mirroring desktop's
-                      // `onPay == null` gating.
-                      if (showPayEntry) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        DecoratedBox(
-                          key: const ValueKey('mobile_home_pay_glow'),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: showPayIntroduction
-                                ? const [
-                                    BoxShadow(
-                                      color: Color(0xFF1C7ADE),
-                                      blurRadius: 60,
-                                      spreadRadius: 20,
-                                    ),
-                                    BoxShadow(
-                                      color: Color(0xFF1C7ADE),
-                                      blurRadius: 100,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: SizedBox(
-                            width: _mobileHomeActionButtonHeight,
-                            height: _mobileHomeActionButtonHeight,
-                            child: Semantics(
-                              button: true,
-                              label: 'Pay',
-                              child: AppButton(
-                                key: const ValueKey('mobile_home_pay'),
-                                minWidth: _mobileHomeActionButtonHeight,
-                                height: _mobileHomeActionButtonHeight,
-                                contentPadding: EdgeInsets.zero,
-                                variant: AppButtonVariant.secondary,
-                                onPressed: _openPay,
-                                child: const _ButtonIcon(AppIcons.paid),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  )
-                else
-                  AppButton(
-                    // Same key as the funded-state Receive button — only one
-                    // of the two renders at a time.
-                    key: const ValueKey('mobile_home_receive'),
-                    expand: true,
-                    constrainContent: true,
-                    onPressed: () => context.push('/receive'),
-                    leading: const _ButtonIcon(AppIcons.addNew),
-                    height: _mobileHomeActionButtonHeight,
-                    child: const Text(
-                      'Receive your first ZEC',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.s),
-                _MobileVotingEntryCard(onTap: () => context.push('/voting')),
-                if (widget.ironwoodMigrationCta.visible) ...[
-                  const SizedBox(height: AppSpacing.s),
-                  MobileIronwoodMigrationBanner(
-                    inProgress: migrationInProgress,
-                    preparing: isIronwoodMigrationPreparingPhase(
-                      widget.ironwoodMigrationCta.status?.phase,
-                    ),
-                    waitingForConfirmation:
-                        sync.displayOrchardHoldingsBalance == BigInt.zero &&
-                        isIronwoodMigrationWaitingForConfirmation(
-                          widget.ironwoodMigrationCta.status,
-                        ),
-                    attentionKind: migrationAttention?.kind,
-                    actionNeededCount: migrationAttention?.count ?? 0,
-                    remainingText: _mobileIronwoodRemainingAmountText(sync),
-                    onTap: () {
-                      final target = migrationRequired
-                          ? '/migration/intro'
-                          : '/migration/private/status';
-                      context.push(target);
-                    },
-                  ),
-                ],
-              ],
+            _BalanceCard(
+              balanceText: privacyModeEnabled
+                  ? fixedPrivacyMask()
+                  : ZecAmount.fromZatoshi(
+                      shieldedBalance,
+                    ).compactBalance.amountText,
+              fiatBalanceText: shieldedFiatBalanceText,
+              priceChange24hPct: priceChange24hPct,
+              transparentBalanceText: ZecAmount.fromZatoshi(
+                transparentBalance,
+              ).compactBalance.amountText,
+              hasTransparentBalance: transparentBalance > BigInt.zero,
+              canShieldBalance: sync.canShieldTransparentBalance,
+              isShieldingBalance: _isShieldingBalance,
+              privacyModeEnabled: privacyModeEnabled,
+              ironwoodMigrationCta: widget.ironwoodMigrationCta,
+              balanceDisabled: migrationRequired,
+              onTogglePrivacyMode: widget.onTogglePrivacyMode,
+              onIronwoodMigrationTap: () {
+                final target = switch (widget.ironwoodMigrationCta.mode) {
+                  IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+                  IronwoodHomeMigrationCtaMode.resume =>
+                    '/migration/private/status',
+                  IronwoodHomeMigrationCtaMode.hidden => null,
+                };
+                if (target != null) context.push(target);
+              },
+              onShieldBalancePressed: () =>
+                  unawaited(_shieldTransparentBalance()),
             ),
-            if (hasBalance && showPayEntry && showPayIntroduction) ...[
-              Positioned(
-                right: 41,
-                top: 172,
-                width: 118,
-                height: 65,
-                child: const IgnorePointer(child: _MobilePayBadges()),
+            const SizedBox(height: AppSpacing.s),
+            if (hasBalance)
+              Row(
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      key: const ValueKey('mobile_home_send'),
+                      expand: true,
+                      constrainContent: true,
+                      onPressed: sendDisabled
+                          ? null
+                          : () => context.push('/send'),
+                      leading: const _ButtonIcon(AppIcons.plane),
+                      height: _mobileHomeActionButtonHeight,
+                      child: const Text(
+                        'Send',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: AppButton(
+                      key: const ValueKey('mobile_home_receive'),
+                      expand: true,
+                      constrainContent: true,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => context.push('/receive'),
+                      leading: const _ButtonIcon(AppIcons.arrowDownCircle),
+                      height: _mobileHomeActionButtonHeight,
+                      child: const Text(
+                        'Receive',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  // The Pay entry follows the swap feature flag: pay
+                  // rides the swap engine, so a server-side swap disable
+                  // hides the button, mirroring desktop's `onPay == null`
+                  // gating.
+                  if (showPayEntry) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    SizedBox(
+                      width: _mobileHomeActionButtonHeight,
+                      height: _mobileHomeActionButtonHeight,
+                      child: Semantics(
+                        button: true,
+                        label: 'Pay',
+                        child: AppButton(
+                          key: const ValueKey('mobile_home_pay'),
+                          minWidth: _mobileHomeActionButtonHeight,
+                          height: _mobileHomeActionButtonHeight,
+                          contentPadding: EdgeInsets.zero,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _openPay,
+                          child: const _ButtonIcon(AppIcons.paid),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              )
+            else
+              AppButton(
+                // Same key as the funded-state Receive button — only one
+                // of the two renders at a time.
+                key: const ValueKey('mobile_home_receive'),
+                expand: true,
+                constrainContent: true,
+                onPressed: () => context.push('/receive'),
+                leading: const _ButtonIcon(AppIcons.addNew),
+                height: _mobileHomeActionButtonHeight,
+                child: const Text(
+                  'Receive your first ZEC',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            const SizedBox(height: AppSpacing.s),
+            _MobileVotingEntryCard(onTap: () => context.push('/voting')),
+            if (widget.ironwoodMigrationCta.visible) ...[
+              const SizedBox(height: AppSpacing.s),
+              MobileIronwoodMigrationBanner(
+                inProgress: migrationInProgress,
+                preparing: isIronwoodMigrationPreparingPhase(
+                  widget.ironwoodMigrationCta.status?.phase,
+                ),
+                waitingForConfirmation:
+                    sync.displayOrchardHoldingsBalance == BigInt.zero &&
+                    isIronwoodMigrationWaitingForConfirmation(
+                      widget.ironwoodMigrationCta.status,
+                    ),
+                attentionKind: migrationAttention?.kind,
+                actionNeededCount: migrationAttention?.count ?? 0,
+                remainingText: _mobileIronwoodRemainingAmountText(sync),
+                onTap: () {
+                  final target = migrationRequired
+                      ? '/migration/intro'
+                      : '/migration/private/status';
+                  context.push(target);
+                },
               ),
             ],
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            if (recentRows.isEmpty)
-              const _EmptyActivity()
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs,
-                  vertical: AppSpacing.s,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _RecentActivityHeader(
-                      onSeeAll: () => context.go('/activity'),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    for (var i = 0; i < recentRows.length; i++) ...[
-                      if (i > 0) const SizedBox(height: AppSpacing.s),
-                      KeyedSubtree(
-                        key: ValueKey('mobile_home_activity_row_$i'),
-                        child: ActivityFeedRowGroup(row: recentRows[i]),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            if (hasBalance && showPayEntry && showPayIntroduction)
-              Positioned(
-                right: 43,
-                top: -35,
-                width: 80,
-                height: 80,
-                child: IgnorePointer(
-                  child: PayCoinFloatMotion(
-                    animate: ref.watch(
-                      payIntroductionBadgeMotionEnabledProvider,
-                    ),
-                    child: Image.asset(
-                      'assets/illustrations/pay_coin.png',
-                      key: const ValueKey('mobile_home_pay_coin'),
-                      fit: BoxFit.contain,
-                    ),
+        if (recentRows.isEmpty)
+          const _EmptyActivity()
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.s,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
+                const SizedBox(height: AppSpacing.md),
+                for (var i = 0; i < recentRows.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.s),
+                  KeyedSubtree(
+                    key: ValueKey('mobile_home_activity_row_$i'),
+                    child: ActivityFeedRowGroup(row: recentRows[i]),
                   ),
-                ),
-              ),
-          ],
-        ),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1324,63 +1254,70 @@ class _MobileVotingEntryCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 72),
+          constraints: const BoxConstraints(minHeight: 77),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
             vertical: AppSpacing.s,
           ),
           decoration: BoxDecoration(
             color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(color: colors.border.subtle),
+            borderRadius: BorderRadius.circular(AppRadii.large),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colors.background.inverse,
-                  borderRadius: BorderRadius.circular(AppRadii.full),
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            border: Border.all(color: const Color(0x12FFFFFF), width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppIcon(
+                  AppIcons.coinholderVoting,
+                  size: 20,
+                  color: colors.icon.accent,
                 ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.endpoint,
-                    size: 20,
-                    color: colors.icon.inverse,
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Coinholder voting',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          AppIcon(
+                            AppIcons.chevronForward,
+                            size: 20,
+                            color: colors.icon.accent,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Help to shape the network',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                          height: 17 / 16,
+                          letterSpacing: -0.04,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Coinholder voting',
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Use your ZEC to help shape the network.',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: 20,
-                color: colors.icon.regular,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1983,74 +1920,6 @@ class _ButtonIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppIcon(iconName, size: 20);
-  }
-}
-
-/// The Pay introduction callout — Figma `PAY Floating Badge`
-/// (6261:126485). Like desktop, the whole treatment remains until the first
-/// Pay activation; mobile has no hover state for bringing it back afterwards.
-class _MobilePayBadges extends StatelessWidget {
-  const _MobilePayBadges();
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: 'New: Pay in USDC',
-      container: true,
-      child: ExcludeSemantics(
-        child: SizedBox(
-          key: const ValueKey('mobile_home_pay_badges'),
-          width: 118,
-          height: 65,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 0,
-                top: 0,
-                width: 118,
-                height: 34,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C7ADE),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 14,
-                top: 8,
-                child: Text(
-                  'Pay in USDC',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: const Color(0xFFFFFFFF),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 40,
-                top: 36,
-                width: 55,
-                height: 29,
-                child: SvgPicture.asset(
-                  'assets/illustrations/pay_floating_new.svg',
-                ),
-              ),
-              Positioned(
-                left: 49,
-                top: 42,
-                child: Text(
-                  'NEW',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: const Color(0xFFFFFFFF),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

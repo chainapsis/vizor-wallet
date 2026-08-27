@@ -747,6 +747,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_software_wallet_import_with_discovery_result(dynamic raw);
 
   @protected
+  StoreAndBroadcastPcztsResult dco_decode_store_and_broadcast_pczts_result(
+    dynamic raw,
+  );
+
+  @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw);
 
   @protected
@@ -757,6 +762,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncProgress dco_decode_sync_progress(dynamic raw);
+
+  @protected
+  TexPcztPairResult dco_decode_tex_pczt_pair_result(dynamic raw);
 
   @protected
   TransactionDetail dco_decode_transaction_detail(dynamic raw);
@@ -1741,6 +1749,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  StoreAndBroadcastPcztsResult sse_decode_store_and_broadcast_pczts_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SubtreeIndices sse_decode_subtree_indices(SseDeserializer deserializer);
 
   @protected
@@ -1751,6 +1764,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncProgress sse_decode_sync_progress(SseDeserializer deserializer);
+
+  @protected
+  TexPcztPairResult sse_decode_tex_pczt_pair_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TransactionDetail sse_decode_transaction_detail(SseDeserializer deserializer);
@@ -2944,6 +2962,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_store_and_broadcast_pczts_result(
+    StoreAndBroadcastPcztsResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_subtree_indices(
     SubtreeIndices self,
     SseSerializer serializer,
@@ -2960,6 +2984,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_sync_progress(SyncProgress self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_tex_pczt_pair_result(
+    TexPcztPairResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_transaction_detail(

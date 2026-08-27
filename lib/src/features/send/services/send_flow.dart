@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,13 +55,13 @@ class SendReviewArgs {
 class KeystoneBroadcastArgs {
   const KeystoneBroadcastArgs({
     required this.reviewArgs,
-    required this.pcztWithProofsBytes,
-    required this.pcztWithSignaturesBytes,
+    required this.pcztWithProofs,
+    required this.pcztWithSignatures,
   });
 
   final SendReviewArgs reviewArgs;
-  final List<int> pcztWithProofsBytes;
-  final List<int> pcztWithSignaturesBytes;
+  final List<List<int>> pcztWithProofs;
+  final List<List<int>> pcztWithSignatures;
 }
 
 class SendStatusRoutePayloadNotifier extends Notifier<Object?> {
@@ -331,6 +332,14 @@ String? _firstTxid(String txids) {
   return null;
 }
 
+String? _lastTxid(String txids) {
+  for (final part in txids.split(',').reversed) {
+    final trimmed = part.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}
+
 String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
   if (result.status == 'partial_broadcast') {
     return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
@@ -345,21 +354,22 @@ String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
 }
 
 String _pcztBroadcastStatusMessage(
-  rust_sync.ExtractAndBroadcastPcztResult result,
+  rust_sync.StoreAndBroadcastPcztsResult result,
 ) {
   if (result.status == 'broadcast_unknown') {
     return result.message ??
-        'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+        'The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.';
+  }
+  if (result.status == 'partial_broadcast') {
+    return result.message ??
+        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
   }
   if (result.status == 'broadcasted_storage_failed') {
     return result.message ??
-        'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+        'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
   }
-  final rawMessage = result.message?.toLowerCase() ?? '';
-  if (rawMessage.contains('broadcast rejected')) {
-    return 'Transaction was rejected by the network. Please try again later.';
-  }
-  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  return result.message ??
+      'The transaction broadcast did not complete. Check Activity before sending again.';
 }
 
 /// Runs the full broadcast leg for a proposed send — Sapling params
@@ -445,6 +455,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 
     late final String txids;
     late final bool broadcastComplete;
+    late final bool broadcastExpired;
+    late final String? receiptTxid;
     late final String? pendingStatusMessage;
     String? broadcastMessageForFallback;
 
@@ -453,48 +465,44 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         throw Exception('Missing Keystone transaction signature.');
       }
       proposalConsumed = true;
-      late final rust_sync.ExtractAndBroadcastPcztResult result;
-      try {
-        result = await rust_sync.extractAndBroadcastPczt(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          pcztWithProofsBytes: keystone.pcztWithProofsBytes,
-          pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
-          spendParamsPath: args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
-      } catch (_) {
-        await discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          logContext: 'SendBroadcast(hardware-failure)',
-        );
-        proposalReleased = true;
-        rethrow;
+      if (keystone.pcztWithProofs.length !=
+              keystone.pcztWithSignatures.length ||
+          keystone.pcztWithProofs.isEmpty) {
+        throw Exception('Invalid Keystone signing round count.');
       }
-      if (result.status == 'broadcast_unknown' ||
-          result.status == 'broadcasted_storage_failed') {
-        await retainSendProposalLockUntilExpiry(
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          logContext: 'SendBroadcast(hardware-uncertain)',
-        );
-      } else {
-        await discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          logContext: 'SendBroadcast(hardware-finish)',
-        );
-      }
+      // The Rust orchestration owns proposal-lock cleanup on every outcome
+      // from this point onward, including validation and atomic-store errors.
       proposalReleased = true;
-      txids = result.txid;
+      final result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        proposalId: args.proposalId,
+        sendFlowId: args.sendFlowId,
+        pcztWithProofs: keystone.pcztWithProofs
+            .map(Uint8List.fromList)
+            .toList(),
+        pcztWithSignatures: keystone.pcztWithSignatures
+            .map(Uint8List.fromList)
+            .toList(),
+        spendParamsPath: args.needsSaplingParams
+            ? saplingParams.spendPath
+            : null,
+        outputParamsPath: args.needsSaplingParams
+            ? saplingParams.outputPath
+            : null,
+      );
+      txids = result.txids;
       broadcastComplete = result.status == 'broadcasted';
-      pendingStatusMessage = broadcastComplete
+      broadcastExpired = result.status == 'expired';
+      // A completed TEX send is represented by the dependent final
+      // transaction, not its first-step ephemeral funding transaction.
+      receiptTxid = broadcastExpired
+          ? null
+          : broadcastComplete
+          ? _lastTxid(txids)
+          : _firstTxid(txids);
+      pendingStatusMessage = broadcastComplete || broadcastExpired
           ? null
           : _pcztBroadcastStatusMessage(result);
       broadcastMessageForFallback = result.message;
@@ -553,13 +561,17 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       proposalConsumed = true;
       txids = result.txids;
       broadcastComplete = result.status == 'broadcasted';
+      broadcastExpired = false;
+      receiptTxid = _firstTxid(txids);
       pendingStatusMessage = broadcastComplete
           ? null
           : _broadcastStatusMessage(result);
       broadcastMessageForFallback = result.message;
     }
 
-    if (!broadcastComplete && broadcastMessageForFallback != null) {
+    if (!broadcastComplete &&
+        !broadcastExpired &&
+        broadcastMessageForFallback != null) {
       final switched = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .switchToFallbackFor(
@@ -582,12 +594,17 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 
     if (await abortRequested()) return aborted();
     return SendBroadcastOutcome(
-      phase: broadcastComplete
+      phase: broadcastExpired
+          ? SendBroadcastPhase.failed
+          : broadcastComplete
           ? SendBroadcastPhase.succeeded
           : SendBroadcastPhase.pendingBroadcast,
       proposalConsumed: proposalConsumed,
-      txid: _firstTxid(txids),
+      txid: receiptTxid,
       statusMessage: pendingStatusMessage,
+      error: broadcastExpired
+          ? 'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          : null,
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');

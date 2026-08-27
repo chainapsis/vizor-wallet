@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -1042,7 +1043,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(recoveryApi.ballotIntents, isEmpty);
@@ -1145,7 +1146,7 @@ void main() {
     expect(find.text('submission confirmed route'), findsOne);
     expect(find.text('Sign bundle 1 of 1'), findsNothing);
     expect(find.text('Scan signature'), findsNothing);
-    expect(rust.eligibilityCheckCalls, 2);
+    expect(rust.eligibilityCheckCalls, 1);
     expect(rust.setupDelegationBundleCalls, 0);
     expect(rust.keystoneDelegationRequestCalls, 0);
     expect(
@@ -1231,6 +1232,200 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('submission confirmed route'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'completed mobile status navigates before voting power refresh finishes',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final refreshGate = Completer<BigInt?>();
+      addTearDown(() {
+        if (!refreshGate.isCompleted) refreshGate.complete(null);
+      });
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
+      final completedState = VotingSessionState(
+        roundId: _roundId,
+        accountUuid: key.accountUuid,
+        phase: VotingSessionPhase.done,
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
+          votingSubmissionJobSessionProvider(
+            key,
+          ).overrideWithValue(AsyncValue.data(completedState)),
+          votingSubmissionSessionProvider(key).overrideWith(
+            () => _BlockedRefreshVotingSubmissionSessionNotifier(
+              key,
+              completedState,
+              refreshGate,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+          GoRoute(
+            path: '/voting',
+            builder: (_, _) => const Text('voting route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId',
+            builder: (_, _) => const Text('poll route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/review',
+            builder: (_, _) => const Text('review route'),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+
+      unawaited(router.push('/voting'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('poll route'));
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('review route'));
+      unawaited(
+        router.pushReplacement(
+          votingStatusRoute(_roundId, accountUuid: key.accountUuid),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Finalizing submission'));
+
+      jobNotifier.complete();
+      await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+      expect(find.text('submission confirmed route'), findsOneWidget);
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await _pumpUntilFound(tester, find.text('poll route'));
+      expect(refreshGate.isCompleted, isFalse);
+    },
+  );
+
+  testWidgets(
+    'completed mobile status does not replace a route pushed above it',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final jobNotifier = _CompletableVotingSubmissionJobNotifier(
+        key,
+        const VotingSubmissionJobState(
+          key: key,
+          status: VotingSubmissionJobStatus.running,
+          generation: 1,
+        ),
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(() => jobNotifier),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.submittingShares,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        initialLocation: votingStatusRoute(
+          _roundId,
+          accountUuid: key.accountUuid,
+        ),
+        routes: [
+          GoRoute(
+            path: '/voting/poll/:roundId/status',
+            builder: (_, state) => VotingStatusView(
+              roundId: state.pathParameters['roundId']!,
+              accountUuid: state.uri.queryParameters['account'],
+              requireCurrentRouteForConfirmation: true,
+            ),
+          ),
+          GoRoute(
+            path: '/voting/poll/:roundId/submitted',
+            builder: (_, _) => const Text('submission confirmed route'),
+          ),
+          GoRoute(
+            path: '/pushed-route',
+            builder: (_, _) => const Text('pushed route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      unawaited(router.push('/pushed-route'));
+      await _pumpUntilFound(tester, find.text('pushed route'));
+      expect(find.text('pushed route'), findsOneWidget);
+
+      jobNotifier.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('pushed route'), findsOneWidget);
+      expect(find.text('submission confirmed route'), findsNothing);
     },
   );
 
@@ -1461,6 +1656,253 @@ void main() {
 
     expect(find.text('View less'), findsOneWidget);
   });
+
+  testWidgets(
+    'mobile poll exit clears its draft before the same poll is reopened',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      const otherDraftKey = VotingSessionKey(
+        roundId: 'another-round',
+        accountUuid: 'account-1',
+      );
+      await persistence.save(
+        otherDraftKey,
+        const VotingDraftState(choices: {9: 1}),
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(otherDraftKey)).choices, {9: 1});
+
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsNothing,
+      );
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile poll exit clears its persisted draft while the session loads',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      await persistence.save(
+        _draftKey,
+        const VotingDraftState(choices: {1: 0}),
+      );
+      final sessionGate = Completer<VotingSessionState>();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        draftPersistence: persistence,
+        overrides: [
+          votingSessionProvider(_roundId).overrideWith(
+            () => _BlockingVotingSessionNotifier(sessionGate.future),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(
+        tester,
+        find.byType(MobileVotingProposalDetailScreen),
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile review back preserves choices until the poll itself is exited',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final persistence = _MemoryVotingDraftPersistence();
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+        draftPersistence: persistence,
+      );
+      addTearDown(container.dispose);
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingPollRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Yes'));
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review answers'));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+
+      router.pop();
+      await _pumpUntilFound(tester, find.text('Review answers'));
+      await tester.pumpAndSettle();
+      expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+      expect(
+        find.byKey(const ValueKey('voting_selected_choice_indicator')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await _pumpUntilFound(tester, find.text('voting route'));
+      expect(container.read(votingDraftProvider(_draftKey)).isEmpty, isTrue);
+      expect((await persistence.load(_draftKey)).isEmpty, isTrue);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile review fills the viewport and clears its pinned submit action',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final round = _roundStatusJson()
+        ..['proposals'] = [
+          for (var i = 1; i <= 6; i++)
+            _proposalJson(i, 'Review proposal $i', ['Yes', 'No']),
+        ];
+      final http = FakeVotingHttpClient(
+        responses: _votingHttpResponses()
+          ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+      );
+      final recoveryApi = _MutableVotingRecoveryApi();
+      final container = _statusContainer(
+        http: http,
+        accountOverride: _MnemonicAccountNotifier.new,
+        recoveryApi: recoveryApi,
+        rust: _VotingStatusRustApi(recoveryApi),
+      );
+      addTearDown(container.dispose);
+      final draftNotifier = container.read(
+        votingDraftProvider(_draftKey).notifier,
+      );
+      for (var i = 1; i <= 6; i++) {
+        draftNotifier.setChoice(i, 0);
+      }
+      final router = _mobileProposalRouter();
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _mobileProposalApp(router),
+        ),
+      );
+      unawaited(router.push(votingReviewRoute(_roundId)));
+      await _pumpUntilFound(tester, find.text('Review your answers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review your answers'), findsOneWidget);
+      expect(find.text('Review vote'), findsNothing);
+      final reviewScroll = find.byKey(
+        const ValueKey('mobile_voting_review_scroll'),
+      );
+      final submitButton = find.byKey(
+        const ValueKey('voting_confirm_submit_button'),
+      );
+      final scrollable = find.descendant(
+        of: reviewScroll,
+        matching: find.byType(Scrollable),
+      );
+      expect(reviewScroll, findsOneWidget);
+      expect(submitButton, findsOneWidget);
+      expect(scrollable, findsOneWidget);
+      final submitButtonWidget = tester.widget<AppButton>(submitButton);
+      expect(submitButtonWidget.expand, isTrue);
+      expect(submitButtonWidget.minWidth, isNull);
+      expect(tester.getTopLeft(submitButton).dx, AppSpacing.sm);
+      expect(tester.getTopRight(submitButton).dx, 393 - AppSpacing.sm);
+      expect(
+        tester.getBottomLeft(reviewScroll).dy,
+        greaterThan(tester.getBottomLeft(submitButton).dy),
+      );
+      final initialButtonRect = tester.getRect(submitButton);
+      final scrollableState = tester.state<ScrollableState>(scrollable);
+
+      await tester.dragFrom(
+        Offset(AppSpacing.xs, tester.getCenter(submitButton).dy),
+        const Offset(0, -100),
+      );
+      await tester.pumpAndSettle();
+
+      expect(scrollableState.position.pixels, greaterThan(0));
+      expect(tester.getRect(submitButton), initialButtonRect);
+
+      scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(submitButton), initialButtonRect);
+      expect(
+        tester.getBottomLeft(find.byType(VotingProposalCard).last).dy,
+        lessThanOrEqualTo(tester.getTopLeft(submitButton).dy - AppSpacing.md),
+      );
+      expect(tester.takeException(), isNull);
+    },
+    tags: ['mobile'],
+  );
 
   testWidgets('proposal detail shows completed vote with stale local draft', (
     tester,
@@ -1946,6 +2388,49 @@ void main() {
     expect(rust.eligibilityCheckCalls, 2);
     expect(find.text('Retry eligibility'), findsNothing);
     expect(find.text('Review answers'), findsOneWidget);
+  });
+
+  testWidgets('proposal detail accepts answers while voting power loads', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _PendingVotingEligibilityRustApi(recoveryApi);
+    addTearDown(rust.completeEligible);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Preparing voting power'));
+
+    await tester.tap(find.text('Yes'));
+    await tester.pump();
+
+    // The choice is local state, so it must land while the eligibility check
+    // is still outstanding.
+    expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+    expect(find.text('Preparing voting power'), findsOneWidget);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
+    rust.completeEligible();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing voting power'), findsNothing);
+    expect(container.read(votingDraftProvider(_draftKey)).choices, {1: 0});
+    expect(_reviewAnswersButton(tester).onPressed, isNotNull);
   });
 
   testWidgets(
@@ -3560,6 +4045,15 @@ Future<void> _pumpUntilCondition(
   }
 }
 
+AppButton _reviewAnswersButton(WidgetTester tester) {
+  return tester.widget<AppButton>(
+    find.descendant(
+      of: find.byKey(const ValueKey('voting_review_answers_button')),
+      matching: find.byType(AppButton),
+    ),
+  );
+}
+
 ProviderContainer _statusContainer({
   FakeVotingHttpClient? http,
   AccountNotifier Function()? accountOverride,
@@ -3569,6 +4063,7 @@ ProviderContainer _statusContainer({
   VotingRecoveryApi? recoveryApi,
   VotingRustApi? rust,
   VotingHotkeyStore? hotkeyStore,
+  VotingDraftPersistence? draftPersistence,
   List<Override> overrides = const [],
 }) {
   final effectiveHttp =
@@ -3664,7 +4159,7 @@ ProviderContainer _statusContainer({
         VotingRecoveryService(api: recoveryApi ?? _FakeVotingRecoveryApi()),
       ),
       votingDraftPersistenceProvider.overrideWithValue(
-        _MemoryVotingDraftPersistence(),
+        draftPersistence ?? _MemoryVotingDraftPersistence(),
       ),
       votingPirResolverProvider.overrideWithValue(
         const _MatchedPirSnapshotResolver(),
@@ -3682,6 +4177,33 @@ ProviderContainer _statusContainer({
       ),
       ...overrides,
     ],
+  );
+}
+
+GoRouter _mobileProposalRouter() {
+  return GoRouter(
+    initialLocation: '/voting',
+    routes: [
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, state) => MobileVotingProposalDetailScreen(
+          roundId: state.pathParameters['roundId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
+        builder: (_, state) =>
+            MobileVotingReviewScreen(roundId: state.pathParameters['roundId']!),
+      ),
+    ],
+  );
+}
+
+Widget _mobileProposalApp(GoRouter router) {
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
 }
 
@@ -4142,6 +4664,20 @@ class _StaticVotingSubmissionJobNotifier extends VotingSubmissionJobNotifier {
   VotingSubmissionJobState build() => _initial;
 }
 
+class _CompletableVotingSubmissionJobNotifier
+    extends VotingSubmissionJobNotifier {
+  _CompletableVotingSubmissionJobNotifier(super.key, this._initial);
+
+  final VotingSubmissionJobState _initial;
+
+  @override
+  VotingSubmissionJobState build() => _initial;
+
+  void complete() {
+    state = state.copyWith(status: VotingSubmissionJobStatus.complete);
+  }
+}
+
 class _StaticVotingSubmissionJobsNotifier extends VotingSubmissionJobsNotifier {
   _StaticVotingSubmissionJobsNotifier(this._initial);
 
@@ -4295,6 +4831,33 @@ class _StaticVotingSessionNotifier extends VotingSessionNotifier {
   Future<BigInt?> refreshEligibleWeight() async => _state.eligibleWeightZatoshi;
 }
 
+class _BlockingVotingSessionNotifier extends VotingSessionNotifier {
+  _BlockingVotingSessionNotifier(this._future) : super(_roundId);
+
+  final Future<VotingSessionState> _future;
+
+  @override
+  Future<VotingSessionState> build() => _future;
+}
+
+class _BlockedRefreshVotingSubmissionSessionNotifier
+    extends VotingSubmissionSessionNotifier {
+  _BlockedRefreshVotingSubmissionSessionNotifier(
+    super.key,
+    this._state,
+    this._refreshGate,
+  );
+
+  final VotingSessionState _state;
+  final Completer<BigInt?> _refreshGate;
+
+  @override
+  Future<VotingSessionState> build() async => _state;
+
+  @override
+  Future<BigInt?> refreshEligibleWeight() => _refreshGate.future;
+}
+
 class _FailingEligibilityVotingSessionNotifier
     extends _StaticVotingSessionNotifier {
   _FailingEligibilityVotingSessionNotifier(super.state);
@@ -4431,6 +4994,9 @@ class _NoopVotingRustApi implements VotingRustApi {
   Future<List<int>> generateVotingHotkey({required String network}) async {
     return [9, 9, 9];
   }
+
+  @override
+  void warmVotingProvingCaches() {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -4726,7 +5292,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required String mnemonic,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
@@ -4866,7 +5432,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
-    required String pirServerUrl,
+    required List<String> pirServerUrls,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,

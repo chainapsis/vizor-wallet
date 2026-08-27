@@ -46,10 +46,8 @@ import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
-import '../services/pay_introduction_badge_store.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
-import '../widgets/pay_floating_badge.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -565,8 +563,6 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final selectedAssetFuture = swapNotifier.resolvePaySelectedAssetForEntry(
       accountUuid: accountUuid,
     );
-    ref.read(desktopPayIntroductionVisibleProvider.notifier).dismiss();
-
     final selectedAsset = await selectedAssetFuture;
     if (!mounted ||
         selectedAsset == null ||
@@ -615,11 +611,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final migrationRequired =
-        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final payAvailable =
         swapFeatureEnabled &&
-        !migrationRequired &&
         (!migrationInProgress || widget.sync.ironwoodBalance > BigInt.zero);
     final animateMigrationCta = ref.watch(
       homeMigrationCtaPulseMotionEnabledProvider,
@@ -1708,7 +1701,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     key: const ValueKey('home_desktop_send_button'),
                     icon: AppIcons.plane,
                     label: 'Send',
-                    onTap: migrationRequired ? null : widget.onSend,
+                    onTap: widget.onSend,
                     primary: true,
                   ),
                 ),
@@ -1726,15 +1719,13 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   const SizedBox(width: AppSpacing.xs),
                   SizedBox(
                     width: 60,
-                    child: PayIntroductionBadgeTarget(
-                      child: _HomeDesktopActionButton(
-                        key: const ValueKey('home_desktop_pay_button'),
-                        icon: AppIcons.paid,
-                        label: 'Pay in USDC',
-                        compact: true,
-                        onTap: widget.onPay!,
-                        primary: false,
-                      ),
+                    child: _HomeDesktopActionButton(
+                      key: const ValueKey('home_desktop_pay_button'),
+                      icon: AppIcons.paid,
+                      label: 'Pay in USDC',
+                      compact: true,
+                      onTap: widget.onPay!,
+                      primary: false,
                     ),
                   ),
                 ],
@@ -1786,15 +1777,13 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   // Icon-only pay entry — Figma 5407:152492: fixed 60px pill.
                   SizedBox(
                     width: 60,
-                    child: PayIntroductionBadgeTarget(
-                      child: _HomeDesktopActionButton(
-                        key: const ValueKey('home_desktop_pay_button'),
-                        icon: AppIcons.paid,
-                        label: 'Pay in USDC',
-                        compact: true,
-                        onTap: widget.onPay!,
-                        primary: false,
-                      ),
+                    child: _HomeDesktopActionButton(
+                      key: const ValueKey('home_desktop_pay_button'),
+                      icon: AppIcons.paid,
+                      label: 'Pay in USDC',
+                      compact: true,
+                      onTap: widget.onPay!,
+                      primary: false,
                     ),
                   ),
                 ],

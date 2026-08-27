@@ -19,7 +19,6 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
-import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -54,23 +53,6 @@ class _FakeMarketDataSource implements ZecMarketDataSource {
 
   @override
   Future<ZecMarketData?> fetchMarketData() async => data;
-}
-
-/// In-memory clicked-state store for the shared desktop/mobile Pay intro.
-class _FakePayIntroductionBadgeStore implements PayIntroductionBadgeStore {
-  _FakePayIntroductionBadgeStore({this.clicked = false});
-
-  bool clicked;
-  int markCount = 0;
-
-  @override
-  Future<bool> hasClickedPay() async => clicked;
-
-  @override
-  Future<void> markPayClicked() async {
-    markCount += 1;
-    clicked = true;
-  }
 }
 
 class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
@@ -208,7 +190,6 @@ Widget _app(
   FakeSyncNotifier? syncNotifier,
   SyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   bool? swapEnabled,
-  PayIntroductionBadgeStore? badgeStore,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
@@ -220,6 +201,7 @@ Widget _app(
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
+  AppThemeData theme = AppThemeData.dark,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -310,15 +292,9 @@ Widget _app(
         _FakeMarketDataSource(marketData),
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
-      payIntroductionBadgeStoreProvider.overrideWithValue(
-        badgeStore ?? _FakePayIntroductionBadgeStore(),
-      ),
       paySelectedAssetStoreProvider.overrideWithValue(
         const _FakePaySelectedAssetStore(),
       ),
-      // The coin float loops forever; keep it off so pumpAndSettle-based
-      // tests can settle (mirrors the desktop suites' motion seam).
-      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       ironwoodHomeMigrationCtaProvider.overrideWith(
@@ -345,7 +321,7 @@ Widget _app(
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+      builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
   );
 }
@@ -594,10 +570,7 @@ void main() {
     final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
     expect(entry, findsOneWidget);
     expect(find.text('Coinholder voting'), findsOneWidget);
-    expect(
-      find.text('Use your ZEC to help shape the network.'),
-      findsOneWidget,
-    );
+    expect(find.text('Help to shape the network'), findsOneWidget);
     expect(
       tester.getTopLeft(entry).dy,
       greaterThan(
@@ -609,7 +582,40 @@ void main() {
     );
     final votingDecoration = votingSurface.decoration! as BoxDecoration;
     expect(votingDecoration.boxShadow, isNull);
-    expect(votingDecoration.border, isNotNull);
+    expect(votingDecoration.color, AppThemeData.dark.colors.background.ground);
+    expect(
+      votingDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.large),
+    );
+    final votingForegroundDecoration =
+        votingSurface.foregroundDecoration! as BoxDecoration;
+    expect(
+      votingForegroundDecoration.borderRadius,
+      BorderRadius.circular(AppRadii.large),
+    );
+    final votingBorder = votingForegroundDecoration.border! as Border;
+    expect(votingBorder.top.width, 1.5);
+    expect(votingBorder.top.color, const Color(0x12FFFFFF));
+    expect(tester.getSize(entry).height, 77);
+    expect(
+      find.descendant(
+        of: entry,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.coinholderVoting,
+        ),
+      ),
+      findsOneWidget,
+    );
+    final darkIcons = tester.widgetList<AppIcon>(
+      find.descendant(of: entry, matching: find.byType(AppIcon)),
+    );
+    expect(
+      darkIcons.every(
+        (icon) => icon.color == AppThemeData.dark.colors.icon.accent,
+      ),
+      isTrue,
+    );
 
     await tester.ensureVisible(entry);
     await tester.tap(entry);
@@ -666,6 +672,76 @@ void main() {
     await tester.tap(find.text('Maybe later'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+  });
+
+  testWidgets('voting entry grows instead of overflowing with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.45;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        swapEnabled: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(entry).height, greaterThan(77));
+  });
+
+  testWidgets('voting entry resolves the light theme semantic colors', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        theme: AppThemeData.light,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+    final votingSurface = tester.widget<Container>(
+      find.descendant(of: entry, matching: find.byType(Container)).first,
+    );
+    final votingDecoration = votingSurface.decoration! as BoxDecoration;
+    expect(votingDecoration.color, AppThemeData.light.colors.background.ground);
+
+    final title = tester.widget<Text>(
+      find.descendant(of: entry, matching: find.text('Coinholder voting')),
+    );
+    final description = tester.widget<Text>(
+      find.descendant(
+        of: entry,
+        matching: find.text('Help to shape the network'),
+      ),
+    );
+    expect(title.style?.color, AppThemeData.light.colors.text.accent);
+    expect(description.style?.color, AppThemeData.light.colors.text.secondary);
+    expect(title.style?.fontSize, 16);
+    expect(title.style?.height, 17 / 16);
+    expect(description.style?.fontSize, 16);
+    expect(description.style?.height, 17 / 16);
+
+    final icons = tester.widgetList<AppIcon>(
+      find.descendant(of: entry, matching: find.byType(AppIcon)),
+    );
+    expect(icons, hasLength(2));
+    expect(
+      icons.every(
+        (icon) => icon.color == AppThemeData.light.colors.icon.accent,
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('shows the importing state before account data exists', (
@@ -919,7 +995,7 @@ void main() {
       tester
           .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
     expect(find.text('Receive'), findsOneWidget);
     expect(
@@ -1042,7 +1118,7 @@ void main() {
     expect(find.text('migration complete route'), findsNothing);
   });
 
-  testWidgets('keeps the required migration lock while the raw CTA is hidden', (
+  testWidgets('keeps wallet actions available while migration is required', (
     tester,
   ) async {
     const requiredCta = IronwoodHomeMigrationCtaState.start(
@@ -1062,8 +1138,13 @@ void main() {
       tester
           .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_home_send')));
+    await tester.pumpAndSettle();
+    expect(find.text('send route'), findsOneWidget);
   });
 
   testWidgets('shows total balance and remaining amount while migrating', (
@@ -1270,11 +1351,6 @@ void main() {
         isNull,
       );
       expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('mobile_home_pay_badges')),
-        findsNothing,
-      );
-      expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
     },
   );
 
@@ -2118,11 +2194,8 @@ void main() {
     expect(payRect.size, const Size(50, 50));
     expect(receiveRect.left, greaterThan(sendRect.right));
     expect(payRect.left, greaterThan(receiveRect.right));
-    expect(
-      find.byKey(const ValueKey('mobile_home_pay_badges')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsOneWidget);
+    expect(find.text('NEW'), findsNothing);
+    expect(find.bySemanticsLabel('New: Pay in USDC'), findsNothing);
     expect(sendRect.height, AppButtonSizing.largeHeight);
     expect(sendLabelStyle.fontSize, AppTypography.labelLarge.fontSize);
     expect(sendLabelStyle.height, AppTypography.labelLarge.height);
@@ -2160,12 +2233,8 @@ void main() {
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
-    final badgeStore = _FakePayIntroductionBadgeStore();
     await tester.pumpWidget(
-      _app(
-        _syncedState(orchardBalance: BigInt.from(14312000000)),
-        badgeStore: badgeStore,
-      ),
+      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
     await tester.pump();
     await tester.pump();
@@ -2174,34 +2243,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
-    expect(badgeStore.clicked, isTrue);
-    expect(badgeStore.markCount, 1);
   });
 
-  testWidgets('hides the mobile Pay introduction after Pay was activated', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        _syncedState(orchardBalance: BigInt.from(14312000000)),
-        badgeStore: _FakePayIntroductionBadgeStore(clicked: true),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
-    final glow = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('mobile_home_pay_glow')),
-    );
-    expect((glow.decoration as BoxDecoration).boxShadow, isNull);
-  });
-
-  testWidgets('hides the pay entry and callout when swap is disabled', (
-    tester,
-  ) async {
+  testWidgets('hides the pay entry when swap is disabled', (tester) async {
     await tester.pumpWidget(
       _app(
         _syncedState(orchardBalance: BigInt.from(14312000000)),
@@ -2212,8 +2256,6 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_badges')), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
     // Send/Receive remain.
     expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);

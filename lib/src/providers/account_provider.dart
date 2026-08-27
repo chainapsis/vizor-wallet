@@ -11,7 +11,6 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
-import '../core/layout/app_form_factor.dart';
 import '../core/profile_pictures.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
@@ -533,20 +532,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
-  /// progress. Once removal is allowed, process-local voting state is cleared
-  /// before the wallet delete. Durable voting rows, hotkeys, and other
-  /// account-scoped sidecars are cleared after the wallet account is deleted.
+  /// progress. Once removal is allowed, in-flight helper-share tracking is
+  /// quiesced and drained so it cannot keep reading or writing this account's
+  /// voting records. Process-local voting state is then cleared before the
+  /// wallet delete. Durable voting rows, hotkeys, and other account-scoped
+  /// sidecars are cleared after the wallet account is deleted.
   Future<void> removeAccount(String uuid) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
     final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
     if (targetIndex < 0) {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
-    }
-
-    if (kAppFormFactor == AppFormFactor.mobile) {
-      await _removeAccountWithShareTrackingStopped(uuid);
-      return;
     }
 
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
@@ -687,8 +683,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   ///
-  /// This also clears voting state held in this process for every account
-  /// before the wallet DB and voting sidecar DB are deleted.
+  /// In-flight helper-share tracking is quiesced and drained first so it
+  /// cannot keep reading or writing voting records during the wipe. This also
+  /// clears voting state held in this process for every account before the
+  /// wallet DB and voting sidecar DB are deleted.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
@@ -698,11 +696,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-
-    if (kAppFormFactor == AppFormFactor.mobile) {
-      await _resetWalletWithShareTrackingStopped();
-      return;
-    }
 
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;

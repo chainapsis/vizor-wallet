@@ -176,6 +176,11 @@ scenario_define_args=(
   --dart-define=ZCASH_E2E_ORCHARD_FUNDING_NOTE_COUNT="$FUNDING_NOTE_COUNT"
   --dart-define=ZCASH_FAST_TESTNET_MIGRATION="${E2E_FAST_TESTNET_MIGRATION:-false}"
 )
+if [[ -n "${E2E_SEND_RECIPIENT_ADDRESS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_SEND_RECIPIENT_ADDRESS="$E2E_SEND_RECIPIENT_ADDRESS"
+  )
+fi
 if [[ -n "${E2E_ORCHARD_FUNDING_ZATOSHI:-}" ]]; then
   scenario_define_args+=(
     --dart-define=ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI="$E2E_ORCHARD_FUNDING_ZATOSHI"

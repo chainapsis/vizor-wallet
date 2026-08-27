@@ -11,10 +11,12 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
-import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
+import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -37,23 +39,18 @@ final _migrationFlowData = IronwoodMigrationFlowData(
 );
 
 void main() {
-  for (final location in [
-    '/send',
-    '/send/review',
-    '/send/keystone/scan',
-    '/send/status',
-    '/receive',
-    '/pay',
-    '/pay/review',
-    '/swap',
-    '/swap/review',
+  for (final route in [
+    (location: '/send', screenType: SendScreen),
+    (location: '/receive', screenType: ReceiveScreen),
+    (location: '/pay', screenType: PayScreen),
+    (location: '/swap', screenType: SwapScreen),
   ]) {
     testWidgets(
-      'Ironwood migration lock redirects $location to migration intro',
+      'required Ironwood migration leaves ${route.location} accessible',
       (tester) async {
         await tester.pumpWidget(
           _appHarness(
-            location,
+            route.location,
             ironwoodPostMigrationState:
                 const IronwoodPostMigrationState.required(
                   network: 'main',
@@ -69,21 +66,17 @@ void main() {
           ),
         );
 
-        await _pumpUntilPresent(
-          tester,
-          find.byType(IronwoodMigrationFlowScreen),
-        );
+        await _pumpUntilPresent(tester, find.byType(route.screenType));
 
-        expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
-        expect(find.byType(SendScreen), findsNothing);
-        expect(find.byType(SwapScreen), findsNothing);
+        expect(find.byType(route.screenType), findsOneWidget);
+        expect(find.byType(IronwoodMigrationFlowScreen), findsNothing);
         expect(find.byType(HomeScreen), findsNothing);
       },
     );
   }
 
   testWidgets(
-    'mobile migration presentation lock survives unavailable raw state',
+    'mobile required migration presentation leaves send accessible',
     (tester) async {
       await tester.pumpWidget(
         _appHarness(
@@ -101,8 +94,8 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsOneWidget);
-      expect(find.byType(SendScreen), findsNothing);
+      expect(find.byType(MobileSendScreen), findsOneWidget);
+      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsNothing);
     },
     tags: 'mobile',
   );
@@ -324,8 +317,6 @@ Widget _appHarness(
       ),
       syncProvider.overrideWith(() => FakeSyncNotifier(_syncedSyncState)),
       // The coin bob loops forever, which would break pumpAndSettle here;
-      // motion itself is covered by pay_floating_badge_test.
-      payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapFeatureOverride != null)
         swapFeatureOverride
       else if (swapEnabled != null)
