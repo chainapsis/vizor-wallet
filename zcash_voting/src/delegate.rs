@@ -119,7 +119,7 @@ impl DelegationKeys {
     /// The target supplies only public recipient data. Account fingerprint and
     /// account index still refer to the wallet account that owns the delegated
     /// notes.
-    pub(crate) fn with_round_bound_voting_target(
+    pub fn with_round_bound_voting_target(
         fvk_bytes: Vec<u8>,
         target: &RoundBoundVotingHotkeyTarget,
         seed_fingerprint: [u8; 32],
