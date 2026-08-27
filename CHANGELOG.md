@@ -17,6 +17,19 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   no more than eight initial shares to one helper when at least ten helpers are
   preferred; retries may exceed that limit for liveness.
 
+## v3.1.0-rc.11
+
+### Added
+- `DelegationKeys::with_round_bound_voting_target` is now public, allowing
+  callers to bind a secret-free `RoundBoundVotingHotkeyTarget` directly without
+  depending on `WalletDb`, lightwalletd, or
+  `prepare_delegation_bundle_for_target`.
+
+### Fixed
+- `DelegationKeys::with_round_bound_voting_target` now retains the validated
+  public target. Lower-level delegation setup, signing request, and proof APIs
+  reject those keys when used with a different stored voting round.
+
 ## v3.1.0-rc.10
 
 ### Added
