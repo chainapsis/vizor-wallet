@@ -11,12 +11,12 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_replica.d
 import 'package:zcash_wallet/src/features/swap/providers/swap_private_history_sync_provider.dart';
 
 void main() {
-  test('production retry jitter spans 25 through 35 seconds', () {
-    final random = _SequenceRandom([0, 5000, 10000]);
+  test('production retry jitter spans 15 through 45 seconds', () {
+    final random = _SequenceRandom([0, 15000, 30000]);
 
     expect(
       sampleFinalizedActivityArchiveRetryDelay(random),
-      const Duration(seconds: 25),
+      const Duration(seconds: 15),
     );
     expect(
       sampleFinalizedActivityArchiveRetryDelay(random),
@@ -24,7 +24,7 @@ void main() {
     );
     expect(
       sampleFinalizedActivityArchiveRetryDelay(random),
-      const Duration(seconds: 35),
+      const Duration(seconds: 45),
     );
   });
 

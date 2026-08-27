@@ -30,7 +30,7 @@ typedef FinalizedActivityArchiveLocalAccountCleaner =
 typedef FinalizedActivityArchiveRetryDelaySampler = Duration Function();
 
 const _finalizedActivityArchiveRetryBaseDelay = Duration(seconds: 30);
-const _finalizedActivityArchiveRetryJitter = Duration(seconds: 5);
+const _finalizedActivityArchiveRetryJitter = Duration(seconds: 15);
 
 @visibleForTesting
 Duration sampleFinalizedActivityArchiveRetryDelay(Random random) {
