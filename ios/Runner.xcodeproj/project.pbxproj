@@ -22,6 +22,9 @@
 		42257B77B623F2ABAD2A1912 /* DynamicIslandManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4D4F9C0A149C751B796E19 /* DynamicIslandManager.swift */; };
 		5736417E0A4E184E8572693A /* WalletPathResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5736417D0A4E184E8572693A /* WalletPathResolver.swift */; };
 		KEYMIG010000000000000001 /* KeychainAccessibilityMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */; };
+		LEDGERIOS010000000000001 /* LedgerMobileHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */; };
+		LEDGERIOS010000000000002 /* BleTransport in Frameworks */ = {isa = PBXBuildFile; productRef = LEDGERIOS030000000000001 /* BleTransport */; };
+		LEDGERIOS010000000000003 /* LedgerMobileHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		8108A5A50BC98B3D741F1711 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8FED55156EBDEE425125AD2C /* Pods_Runner.framework */; };
@@ -100,6 +103,8 @@
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		5736417D0A4E184E8572693A /* WalletPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletPathResolver.swift; sourceTree = "<group>"; };
 		KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainAccessibilityMigrator.swift; sourceTree = "<group>"; };
+		LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMobileHandler.swift; sourceTree = "<group>"; };
+		LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMobileHandlerTests.swift; sourceTree = "<group>"; };
 		603F096B051231C6A1C6A5B1 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		64501DB95B6D078121FE7DE1 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		6A4D4F9C0A149C751B796E19 /* DynamicIslandManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DynamicIslandManager.swift; sourceTree = "<group>"; };
@@ -168,6 +173,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				LEDGERIOS010000000000002 /* BleTransport in Frameworks */,
 				8108A5A50BC98B3D741F1711 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -198,6 +204,7 @@
 			isa = PBXGroup;
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
+				LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */,
 				OUTBOX000000000000000003 /* BackgroundMigrationOutboxTests.swift */,
 			);
 			path = RunnerTests;
@@ -276,6 +283,7 @@
 				DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */,
 				5736417D0A4E184E8572693A /* WalletPathResolver.swift */,
 				KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */,
+				LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */,
 				ZSYNC000ED2DC5600515810 /* zcash_sync.h */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -347,6 +355,9 @@
 				265BA9B92F7BDB1E00287691 /* PBXTargetDependency */,
 			);
 			name = Runner;
+			packageProductDependencies = (
+				LEDGERIOS030000000000001 /* BleTransport */,
+			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
@@ -384,6 +395,9 @@
 				Base,
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
+			packageReferences = (
+				LEDGERIOS020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */,
+			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -532,6 +546,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
+				LEDGERIOS010000000000003 /* LedgerMobileHandlerTests.swift in Sources */,
 				OUTBOX010000000000000003 /* BackgroundMigrationOutboxTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -541,6 +556,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
+				LEDGERIOS010000000000001 /* LedgerMobileHandler.swift in Sources */,
 				OUTBOX010000000000000001 /* BackgroundMigrationOutbox.swift in Sources */,
 				OUTBOX010000000000000002 /* BackgroundMigrationOutboxStore.swift in Sources */,
 				OUTBOX010000000000000004 /* BackgroundMigrationOutboxRunner.swift in Sources */,
@@ -593,6 +609,25 @@
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		LEDGERIOS020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/LedgerHQ/hw-transport-ios-ble.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		LEDGERIOS030000000000001 /* BleTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = LEDGERIOS020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */;
+			productName = BleTransport;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		249021D3217E4FDB00AE95B9 /* Profile */ = {

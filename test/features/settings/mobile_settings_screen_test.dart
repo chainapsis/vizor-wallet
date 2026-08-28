@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -44,7 +45,7 @@ const _accountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-const _hardwareAccountState = AccountState(
+const _keystoneAccountState = AccountState(
   accounts: [
     AccountInfo(
       uuid: 'account-1',
@@ -52,6 +53,21 @@ const _hardwareAccountState = AccountState(
       order: 0,
       profilePictureId: kDefaultProfilePictureId,
       isHardware: true,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1settingsaddress',
+);
+
+const _ledgerAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Ledger',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
     ),
   ],
   activeAccountUuid: 'account-1',
@@ -134,7 +150,41 @@ Widget _app({
   AppThemeData? themeData,
   bool withTabBar = false,
   double textScale = 1,
+  GoRouter? router,
 }) {
+  Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
+    data: themeData ?? AppThemeData.dark,
+    child: MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
+  );
+  final app = router == null
+      ? MaterialApp(
+          builder: themedBuilder,
+          home: withTabBar
+              ? AppMobileShell(
+                  body: const MobileSettingsScreen(),
+                  tabBar: AppMobileTabBar(
+                    items: const [
+                      AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
+                      AppMobileTabItem(
+                        iconName: AppIcons.cog,
+                        label: 'Settings',
+                      ),
+                    ],
+                    currentIndex: 1,
+                    onSelect: (_) {},
+                  ),
+                )
+              : const MobileSettingsScreen(),
+        )
+      : MaterialApp.router(
+          routerConfig: router,
+          builder: themedBuilder,
+        );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
@@ -157,30 +207,7 @@ Widget _app({
           () => _FakeBiometricNotifier(biometric),
         ),
     ],
-    child: MaterialApp(
-      builder: (context, child) => AppTheme(
-        data: themeData ?? AppThemeData.dark,
-        child: MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(textScale)),
-          child: child!,
-        ),
-      ),
-      home: withTabBar
-          ? AppMobileShell(
-              body: const MobileSettingsScreen(),
-              tabBar: AppMobileTabBar(
-                items: const [
-                  AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
-                  AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
-                ],
-                currentIndex: 1,
-                onSelect: (_) {},
-              ),
-            )
-          : const MobileSettingsScreen(),
-    ),
+    child: app,
   );
 }
 
@@ -947,32 +974,78 @@ void main() {
     }
   });
 
-  testWidgets('hardware accounts disable the secret passphrase row', (
+  testWidgets('mnemonic account keeps the enabled secret passphrase route', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    final router = GoRouter(
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const MobileSettingsScreen()),
+        GoRoute(
+          path: '/settings/seed-phrase',
+          builder: (_, _) => const Text('seed phrase route'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_app(router: router));
     await tester.pump();
 
-    final rowFinder = find.byKey(const ValueKey('mobile_settings_seed_row'));
-    final row = tester.widget<MobileListRow>(rowFinder);
-    final label = tester.widget<Text>(find.text('Secret Passphrase'));
-    final chevron = _chevronIn(
-      tester,
-      const ValueKey('mobile_settings_seed_row'),
+    final row = tester.widget<MobileListRow>(
+      find.byKey(const ValueKey('mobile_settings_seed_row')),
     );
+    expect(find.text('Secret Passphrase'), findsOneWidget);
+    expect(find.text('Account Details'), findsNothing);
+    expect(row.enabled, isTrue);
+    expect(row.onTap, isNotNull);
 
-    expect(row.enabled, isFalse);
-    expect(row.onTap, isNull);
-    expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
-    expect(chevron.color, AppThemeData.dark.colors.icon.disabled);
+    await tester.tap(find.byKey(const ValueKey('mobile_settings_seed_row')));
+    await tester.pumpAndSettle();
+    expect(find.text('seed phrase route'), findsOneWidget);
   });
+
+  for (final (signerName, accountState) in const [
+    ('Keystone', _keystoneAccountState),
+    ('Ledger', _ledgerAccountState),
+  ]) {
+    testWidgets('$signerName account opens enabled Account Details', (
+      tester,
+    ) async {
+      final router = GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const MobileSettingsScreen()),
+          GoRoute(
+            path: '/settings/hardware-account',
+            builder: (_, state) =>
+                Text('hardware details ${state.extra as String?}'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(accountState: accountState, router: router));
+      await tester.pump();
+
+      final row = tester.widget<MobileListRow>(
+        find.byKey(const ValueKey('mobile_settings_hardware_account_row')),
+      );
+      expect(find.text('Account Details'), findsOneWidget);
+      expect(find.text('Secret Passphrase'), findsNothing);
+      expect(row.enabled, isTrue);
+      expect(row.onTap, isNotNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_settings_hardware_account_row')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('hardware details account-1'), findsOneWidget);
+    });
+  }
 
   testWidgets('hardware accounts still allow the viewing key row', (
     tester,
   ) async {
     // Unlike the secret passphrase, a UFVK export never grants spend
     // authority, so hardware accounts keep this row enabled.
-    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    await tester.pumpWidget(_app(accountState: _keystoneAccountState));
     await tester.pump();
 
     final rowFinder = find.byKey(

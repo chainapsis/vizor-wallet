@@ -72,6 +72,54 @@ void main() {
     expect(_hasFocusRing(tester), isTrue);
   });
 
+  testWidgets(
+    'hardware account replaces secret passphrase with account details',
+    (tester) async {
+      const hardwareAccount = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'ledger-account',
+            name: 'Ledger account',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+        ],
+        activeAccountUuid: 'ledger-account',
+        activeAddress: 'u1ledgeraddress',
+      );
+
+      await tester.pumpWidget(_settingsHarness(accountState: hardwareAccount));
+      await tester.pump();
+
+      expect(find.text('Secret passphrase'), findsNothing);
+      expect(find.text('Account details'), findsOneWidget);
+
+      await tester.tap(find.text('Account details'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('hardware account route ledger-account'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('software account preserves secret passphrase navigation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    expect(find.text('Secret passphrase'), findsOneWidget);
+    expect(find.text('Account details'), findsNothing);
+
+    await tester.tap(find.text('Secret passphrase'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('secret passphrase route'), findsOneWidget);
+  });
+
   testWidgets('uninstall setting is hidden on Windows', (tester) async {
     _overridePlatform(TargetPlatform.windows);
 
@@ -524,11 +572,20 @@ Widget _settingsHarness({
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   List<bool>? networkPrivacyCalls,
   List<Override> extraOverrides = const [],
+  AccountState? accountState,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
     routes: [
       GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+      GoRoute(
+        path: '/settings/secret-passphrase',
+        builder: (_, _) => const Text('secret passphrase route'),
+      ),
+      GoRoute(
+        path: '/settings/hardware-account',
+        builder: (_, state) => Text('hardware account route ${state.extra}'),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
@@ -541,7 +598,9 @@ Widget _settingsHarness({
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _settingsBootstrap(accountState ?? _bootstrap.initialAccountState),
+      ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(
@@ -631,6 +690,20 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+AppBootstrapState _settingsBootstrap(AccountState accountState) =>
+    AppBootstrapState(
+      initialLocation: _bootstrap.initialLocation,
+      initialAccountState: accountState,
+      initialSyncSnapshot: _bootstrap.initialSyncSnapshot,
+      network: _bootstrap.network,
+      rpcEndpointConfig: _bootstrap.rpcEndpointConfig,
+      themeMode: _bootstrap.themeMode,
+      privacyModeEnabled: _bootstrap.privacyModeEnabled,
+      isPasswordConfigured: _bootstrap.isPasswordConfigured,
+      isUnlocked: _bootstrap.isUnlocked,
+      passwordRotationRecoveryFailed: _bootstrap.passwordRotationRecoveryFailed,
+    );
 
 double _toggleTrackOpacity(WidgetTester tester) {
   final opacity = tester.widget<Opacity>(
