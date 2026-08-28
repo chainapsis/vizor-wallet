@@ -3,6 +3,7 @@
 
 import 'package:flutter/widgets.dart';
 
+import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
@@ -136,6 +137,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-gift-cards',
+    description: 'Desktop Activity with Gift Card creation and redemption',
+    builder: buildActivityPageUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-empty',

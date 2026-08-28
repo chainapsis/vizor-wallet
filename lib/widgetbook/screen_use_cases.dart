@@ -28,6 +28,7 @@ import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
@@ -1015,6 +1016,16 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
 
 Widget buildMobileActivityDefaultUseCase(BuildContext context) {
   final accountUuid = _accountsDesignState.activeAccountUuid;
+  final redeemedGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-redeemed',
+    kind: 'received',
+    seconds: 1800000011,
+  );
+  final createdGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-created',
+    kind: 'sent',
+    seconds: 1800000010,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -1028,18 +1039,28 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
           accountUuid,
           initialState: _homeSyncedState(
             orchardBalance: BigInt.from(14312000000),
-            recentTransactions: [_homeTx(1), _homeTx(2)],
+            recentTransactions: [redeemedGiftCard, createdGiftCard],
           ),
         ),
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      giftCardActivityIndexProvider.overrideWith((ref, accountUuid) async {
+        return const GiftCardActivityIndex(
+          createdTxids: {'preview-gift-card-created'},
+          redeemedTxids: {'preview-gift-card-redeemed'},
+        );
+      }),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
     ],
     child: _MobilePreviewFrame(
       child: MobileActivityScreen(
-        historyLoader: (_) async => [_homeTx(1), _homeTx(2), _homeTx(3)],
+        historyLoader: (_) async => [
+          redeemedGiftCard,
+          createdGiftCard,
+          _homeTx(3),
+        ],
       ),
     ),
   );
@@ -3665,6 +3686,27 @@ rust_sync.TransactionInfo _homeTx(int index) {
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: seconds,
+  );
+}
+
+rust_sync.TransactionInfo _giftCardActivityTx({
+  required String txidHex,
+  required String kind,
+  required int seconds,
+}) {
+  final timestamp = BigInt.from(seconds);
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: timestamp,
+    isTransparent: false,
+    txKind: kind,
+    displayAmount: BigInt.from(3_110_000_000),
+    displayPool: 'shielded',
+    createdTime: timestamp,
   );
 }
 

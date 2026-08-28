@@ -85,6 +85,25 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
     ActivityFeedSectionData(
       title: 'This week',
       rows: [
+        _activityRow(
+          context,
+          title: 'Redeemed a Gift Card',
+          iconName: AppIcons.giftCard,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '+31.10 ZEC',
+          amountColor: context.colors.text.positiveStrong,
+          onTap: _noop,
+        ),
+        _activityRow(
+          context,
+          title: 'Created a Gift Card',
+          iconName: AppIcons.giftCard,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '-31.10 ZEC',
+          onTap: _noop,
+        ),
         // Unconfirmed receive: loader glyph + progressive title, per the
         // Content Line pending variant.
         _activityRow(

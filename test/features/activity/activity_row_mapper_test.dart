@@ -4,14 +4,16 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   Future<ActivityRowData> mapRow(
     WidgetTester tester,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityKind? giftCardKind,
+  }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
       AppTheme(
@@ -21,6 +23,7 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              giftCardKind: giftCardKind,
             );
             return const SizedBox.shrink();
           },
@@ -82,6 +85,29 @@ void main() {
     final received = await mapRow(tester, _transaction(txKind: 'received'));
     expect(received.title, 'Received');
     expect(received.leadingIconName, AppIcons.arrowDownCircle);
+  });
+
+  testWidgets('Gift Card transactions use their Figma titles and icon', (
+    tester,
+  ) async {
+    final created = await mapRow(
+      tester,
+      _transaction(txKind: 'sent'),
+      giftCardKind: GiftCardActivityKind.created,
+    );
+    final redeemed = await mapRow(
+      tester,
+      _transaction(txKind: 'received'),
+      giftCardKind: GiftCardActivityKind.redeemed,
+    );
+
+    expect(created.title, 'Created a Gift Card');
+    expect(created.leadingIconName, AppIcons.giftCard);
+    expect(created.subtitle, 'Shielded');
+    expect(created.amountText, '-120 ZEC');
+    expect(redeemed.title, 'Redeemed a Gift Card');
+    expect(redeemed.leadingIconName, AppIcons.giftCard);
+    expect(redeemed.amountText, '+120 ZEC');
   });
 
   testWidgets('confirmed migration renders as an Ironwood activity row', (
