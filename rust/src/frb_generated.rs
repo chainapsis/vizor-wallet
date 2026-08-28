@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -339890453;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -578304843;
 
 // Section: executor
 
@@ -4744,6 +4744,7 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_share_count = <u32>::sse_decode(&mut deserializer);
             let api_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_preferred_server_count = <u32>::sse_decode(&mut deserializer);
             let api_now_seconds = <u64>::sse_decode(&mut deserializer);
             let api_vote_end_time_seconds = <u64>::sse_decode(&mut deserializer);
             let api_last_moment_buffer_seconds = <Option<u64>>::sse_decode(&mut deserializer);
@@ -4755,6 +4756,7 @@ fn wire__crate__api__voting__plan_share_submissions_impl(
                     let output_ok = crate::api::voting::plan_share_submissions(
                         api_share_count,
                         api_server_urls,
+                        api_preferred_server_count,
                         api_now_seconds,
                         api_vote_end_time_seconds,
                         api_last_moment_buffer_seconds,
@@ -6140,6 +6142,38 @@ fn wire__crate__api__voting__share_resubmission_server_order_impl(
         },
     )
 }
+fn wire__crate__api__voting__share_server_selection_policy_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "share_server_selection_policy",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_server_count = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::voting::share_server_selection_policy(api_server_count),
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__voting__share_tracking_flags_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6682,6 +6716,68 @@ fn wire__crate__api__voting__sync_vote_tree_impl(
         },
     )
 }
+fn wire__crate__api__network_privacy__tor_http_begin_request_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tor_http_begin_request",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::network_privacy::tor_http_begin_request())?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tor_http_cancel_request",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::network_privacy::tor_http_cancel_request(api_request_id);
+                })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__network_privacy__tor_http_download_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6753,12 +6849,19 @@ fn wire__crate__api__network_privacy__tor_http_get_impl(
             let api_headers = <Vec<crate::api::network_privacy::NetworkHttpHeader>>::sse_decode(
                 &mut deserializer,
             );
+            let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_request_id = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::network_privacy::tor_http_get(api_url, api_headers).await?;
+                        let output_ok = crate::api::network_privacy::tor_http_get(
+                            api_url,
+                            api_headers,
+                            api_timeout_milliseconds,
+                            api_request_id,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -6794,6 +6897,8 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
                 &mut deserializer,
             );
             let api_body = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_timeout_milliseconds = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_request_id = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -6802,6 +6907,8 @@ fn wire__crate__api__network_privacy__tor_http_post_impl(
                             api_url,
                             api_headers,
                             api_body,
+                            api_timeout_milliseconds,
+                            api_request_id,
                         )
                         .await?;
                         Ok(output_ok)
@@ -7421,6 +7528,18 @@ const _: fn() = || {
         let _: bool = ShareDelegationRecordView.confirmed;
         let _: u64 = ShareDelegationRecordView.submit_at;
         let _: u64 = ShareDelegationRecordView.created_at;
+    }
+    {
+        let ShareServerSelectionPolicy =
+            None::<zcash_voting::share_policy::ShareServerSelectionPolicy>.unwrap();
+        let _: u32 = ShareServerSelectionPolicy.target_count;
+        let _: u32 = ShareServerSelectionPolicy.max_shares_per_server;
+        let _: u32 = ShareServerSelectionPolicy.min_server_count;
+        let _: u64 = ShareServerSelectionPolicy.preflight_soft_timeout_milliseconds;
+        let _: u64 = ShareServerSelectionPolicy.preflight_hard_timeout_milliseconds;
+        let _: u64 = ShareServerSelectionPolicy.post_timeout_milliseconds;
+        let _: u64 = ShareServerSelectionPolicy.initial_delivery_timeout_milliseconds;
+        let _: u32 = ShareServerSelectionPolicy.max_concurrent_posts;
     }
     {
         let ShareSubmissionPlan = None::<zcash_voting::share_policy::ShareSubmissionPlan>.unwrap();
@@ -10043,6 +10162,30 @@ impl SseDecode for zcash_voting::wire::ShareDelegationRecordView {
     }
 }
 
+impl SseDecode for zcash_voting::share_policy::ShareServerSelectionPolicy {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_targetCount = <u32>::sse_decode(deserializer);
+        let mut var_maxSharesPerServer = <u32>::sse_decode(deserializer);
+        let mut var_minServerCount = <u32>::sse_decode(deserializer);
+        let mut var_preflightSoftTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_preflightHardTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_postTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_initialDeliveryTimeoutMilliseconds = <u64>::sse_decode(deserializer);
+        let mut var_maxConcurrentPosts = <u32>::sse_decode(deserializer);
+        return zcash_voting::share_policy::ShareServerSelectionPolicy {
+            target_count: var_targetCount,
+            max_shares_per_server: var_maxSharesPerServer,
+            min_server_count: var_minServerCount,
+            preflight_soft_timeout_milliseconds: var_preflightSoftTimeoutMilliseconds,
+            preflight_hard_timeout_milliseconds: var_preflightHardTimeoutMilliseconds,
+            post_timeout_milliseconds: var_postTimeoutMilliseconds,
+            initial_delivery_timeout_milliseconds: var_initialDeliveryTimeoutMilliseconds,
+            max_concurrent_posts: var_maxConcurrentPosts,
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::share_policy::ShareSubmissionPlan {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10915,29 +11058,29 @@ fn pde_ffi_dispatcher_primary_impl(
 151 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
 152 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
 153 => wire__crate__api__voting__share_resubmission_server_order_impl(port, ptr, rust_vec_len, data_len),
-154 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
-155 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-156 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-157 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-158 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
-159 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-161 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-162 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
-163 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
-164 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
-165 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-166 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-167 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
-168 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
-169 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
-170 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-171 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-172 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-174 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
-175 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
-177 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
-179 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-180 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+155 => wire__crate__api__voting__share_tracking_flags_impl(port, ptr, rust_vec_len, data_len),
+156 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+157 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+158 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+159 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
+160 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+162 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+163 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
+164 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
+165 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
+166 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+167 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+170 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
+171 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
+172 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
+173 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+174 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+175 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+177 => wire__crate__api__voting__vote_commitment_wire_json_impl(port, ptr, rust_vec_len, data_len),
+178 => wire__crate__api__voting__vote_share_wire_json_impl(port, ptr, rust_vec_len, data_len),
+180 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
+182 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+183 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -10984,10 +11127,25 @@ fn pde_ffi_dispatcher_sync_impl(
             data_len,
         ),
         150 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        160 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        173 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        176 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
-        178 => {
+        154 => wire__crate__api__voting__share_server_selection_policy_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        161 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        168 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        169 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        176 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        179 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        181 => {
             wire__crate__api__voting__warm_voting_proving_caches_impl(ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -12981,6 +13139,49 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::ShareDeleg
     for zcash_voting::wire::ShareDelegationRecordView
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::ShareDelegationRecordView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart
+    for FrbWrapper<zcash_voting::share_policy::ShareServerSelectionPolicy>
+{
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.target_count.into_into_dart().into_dart(),
+            self.0.max_shares_per_server.into_into_dart().into_dart(),
+            self.0.min_server_count.into_into_dart().into_dart(),
+            self.0
+                .preflight_soft_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .preflight_hard_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .post_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .initial_delivery_timeout_milliseconds
+                .into_into_dart()
+                .into_dart(),
+            self.0.max_concurrent_posts.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::share_policy::ShareServerSelectionPolicy>
+{
+}
+impl
+    flutter_rust_bridge::IntoIntoDart<
+        FrbWrapper<zcash_voting::share_policy::ShareServerSelectionPolicy>,
+    > for zcash_voting::share_policy::ShareServerSelectionPolicy
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::share_policy::ShareServerSelectionPolicy> {
         self.into()
     }
 }
@@ -15698,6 +15899,20 @@ impl SseEncode for zcash_voting::wire::ShareDelegationRecordView {
         <bool>::sse_encode(self.confirmed, serializer);
         <u64>::sse_encode(self.submit_at, serializer);
         <u64>::sse_encode(self.created_at, serializer);
+    }
+}
+
+impl SseEncode for zcash_voting::share_policy::ShareServerSelectionPolicy {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.target_count, serializer);
+        <u32>::sse_encode(self.max_shares_per_server, serializer);
+        <u32>::sse_encode(self.min_server_count, serializer);
+        <u64>::sse_encode(self.preflight_soft_timeout_milliseconds, serializer);
+        <u64>::sse_encode(self.preflight_hard_timeout_milliseconds, serializer);
+        <u64>::sse_encode(self.post_timeout_milliseconds, serializer);
+        <u64>::sse_encode(self.initial_delivery_timeout_milliseconds, serializer);
+        <u32>::sse_encode(self.max_concurrent_posts, serializer);
     }
 }
 

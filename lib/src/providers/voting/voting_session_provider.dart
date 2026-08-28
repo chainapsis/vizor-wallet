@@ -1167,9 +1167,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // that recovery will derive after a restart.
         roundPlan = await _loadRoundPlan(context);
       }
-      final immediateShareKey = roundPlan?.allDecided == true
-          ? roundPlan?.immediateShareKey
-          : null;
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1288,7 +1285,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           helperPostPool: helperPostPool,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
-          immediateShareKey: immediateShareKey,
+          immediateShareKey: roundPlan?.immediateShareKey,
           shareIndexFilter: shareIndexFilter,
           completedQuestions: completedQuestions,
           totalQuestions: totalQuestions,
@@ -1342,7 +1339,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperPreflight: helperPreflight,
             helperSelectionPolicy: helperSelectionPolicy,
             helperPostPool: helperPostPool,
-            immediateShareKey: immediateShareKey,
+            immediateShareKey: roundPlan?.immediateShareKey,
           );
         } catch (_) {
           plan = await _loadResumePlan(context);
