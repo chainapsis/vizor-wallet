@@ -75,9 +75,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           });
         },
         child: _Content(
-          allowLedgerConnect:
-              widget.showBackButton &&
-              ref.watch(ledgerStaticCapabilityProvider).supported,
+          allowLedgerConnect: ref
+              .watch(ledgerStaticCapabilityProvider)
+              .supported,
         ),
       ),
     );
