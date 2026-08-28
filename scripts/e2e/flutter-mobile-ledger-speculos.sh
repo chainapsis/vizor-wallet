@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+UFVK_API_URL="${VIZOR_LEDGER_SPECULOS_UFVK_API_URL:-}"
+SIGNING_API_URL="${VIZOR_LEDGER_SPECULOS_SIGNING_API_URL:-}"
+FLUTTER_DEVICE="${FLUTTER_DEVICE:-}"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+require_cmd cargo
+require_cmd base64
+require_cmd curl
+require_cmd fvm
+require_cmd gzip
+require_cmd jq
+
+if [[ -z "$FLUTTER_DEVICE" ]]; then
+  echo "set FLUTTER_DEVICE to an iOS or Android simulator device id" >&2
+  exit 1
+fi
+if [[ -z "$UFVK_API_URL" || -z "$SIGNING_API_URL" ]]; then
+  echo "set distinct VIZOR_LEDGER_SPECULOS_UFVK_API_URL and VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" >&2
+  exit 1
+fi
+if [[ "$UFVK_API_URL" == "$SIGNING_API_URL" ]]; then
+  echo "Ledger UFVK and signing E2E endpoints must be different fresh Speculos instances" >&2
+  exit 1
+fi
+
+curl -fsS "$UFVK_API_URL/events?currentscreenonly=true" >/dev/null
+curl -fsS "$SIGNING_API_URL/events?currentscreenonly=true" >/dev/null
+
+FIXTURE_DIR="$(mktemp -d /tmp/vizor-ledger-mobile-e2e.XXXXXX)"
+FIXTURE_DB="$FIXTURE_DIR/wallet.db"
+FIXTURE_PCZT="$FIXTURE_DIR/unsigned.pczt"
+FIXTURE_JSON="$FIXTURE_DIR/fixture.json"
+
+cd "$ROOT_DIR"
+
+echo "preparing isolated Ledger fixture in $FIXTURE_DIR"
+cargo run --manifest-path rust/Cargo.toml --quiet \
+  --example ledger_zcash_speculos_poc -- \
+  prepare-fixture \
+  --api-url "$UFVK_API_URL" \
+  --db-path "$FIXTURE_DB" \
+  --pczt "$FIXTURE_PCZT" \
+  --metadata "$FIXTURE_JSON"
+
+FIXTURE_UFVK="$(jq -r '.ufvk' "$FIXTURE_JSON")"
+FIXTURE_SEED_FINGERPRINT="$(jq -r '.seedFingerprint' "$FIXTURE_JSON")"
+FIXTURE_ACCOUNT_UUID="$(jq -r '.accountUuid' "$FIXTURE_JSON")"
+FIXTURE_TRANSPARENT_ADDRESS="$(jq -r '.transparentAddress' "$FIXTURE_JSON")"
+FIXTURE_PCZT_BASE64="$(base64 -i "$FIXTURE_PCZT" | tr -d '\n')"
+FIXTURE_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_DB" | base64 | tr -d '\n')"
+
+run_flutter_scenario() {
+  local test_name="$1"
+  echo "running Flutter mobile Ledger Speculos scenario on $FLUTTER_DEVICE: $test_name"
+  fvm flutter test \
+    integration_test/ledger_speculos_mobile_test.dart \
+    -d "$FLUTTER_DEVICE" \
+    --tags mobile \
+    --run-skipped \
+    --plain-name "$test_name" \
+    --dart-define=VIZOR_FORM_FACTOR=mobile \
+    --dart-define=VIZOR_LEDGER_E2E_UFVK_API_URL="$UFVK_API_URL" \
+    --dart-define=VIZOR_LEDGER_E2E_SIGNING_API_URL="$SIGNING_API_URL" \
+    --dart-define=VIZOR_LEDGER_E2E_UFVK="$FIXTURE_UFVK" \
+    --dart-define=VIZOR_LEDGER_E2E_SEED_FINGERPRINT="$FIXTURE_SEED_FINGERPRINT" \
+    --dart-define=VIZOR_LEDGER_E2E_ACCOUNT_UUID="$FIXTURE_ACCOUNT_UUID" \
+    --dart-define=VIZOR_LEDGER_E2E_TRANSPARENT_ADDRESS="$FIXTURE_TRANSPARENT_ADDRESS" \
+    --dart-define=VIZOR_LEDGER_E2E_PCZT_BASE64="$FIXTURE_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64"
+}
+
+run_flutter_scenario "imports with Ledger through Speculos"
+run_flutter_scenario "sends with Ledger through Speculos"
+run_flutter_scenario "pays with Ledger through Speculos"
+run_flutter_scenario "swaps with Ledger through Speculos"
+
+echo "Ledger Speculos fixture retained at $FIXTURE_DIR"
