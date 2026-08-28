@@ -17,13 +17,14 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/sapling_params.dart';
@@ -45,11 +46,15 @@ import 'package:zcash_wallet/src/generated/service.pb.dart' as service;
 import 'package:zcash_wallet/src/generated/service.pbgrpc.dart' as service_grpc;
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -69,6 +74,12 @@ void main() {
   );
 
   testWidgets(
+    'sends to TEX with two Ledger approvals through Speculos',
+    _runMobileTexSendScenario,
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  testWidgets(
     'pays with Ledger through Speculos',
     (tester) => _runMobileSwapScenario(tester, _LedgerSwapScenario.pay),
     timeout: const Timeout(Duration(minutes: 5)),
@@ -84,27 +95,23 @@ void main() {
 Future<void> _runMobileImportScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
   final importService = _SpeculosLedgerMobileBleService(fixture.ufvkApiUrl);
-  LedgerBirthdayArgs? birthdayArgs;
+  final sandboxDirectory = await Directory.systemTemp.createTemp(
+    'vizor-ledger-mobile-first-account-e2e.',
+  );
+  addTearDown(() => sandboxDirectory.delete(recursive: true));
+  final firstAccountDbPath = '${sandboxDirectory.path}/wallet.db';
+  final security = _LedgerFirstAccountSecurityNotifier();
+  final firstAccountImport = _RecordingLedgerFirstAccountImport(
+    firstAccountDbPath,
+  );
   final router = GoRouter(
-    initialLocation: '/onboarding/ledger',
+    initialLocation: '/welcome',
     routes: [
+      ...mobileOnboardingRoutes(),
       GoRoute(
-        path: '/onboarding/ledger',
-        builder: (_, _) => const MobileLedgerConnectScreen(),
-      ),
-      GoRoute(
-        path: '/onboarding/ledger/birthday',
-        builder: (_, state) {
-          birthdayArgs = state.extra! as LedgerBirthdayArgs;
-          return const Scaffold(
-            body: Center(
-              child: Text(
-                'Ledger account approved',
-                key: ValueKey('mobile_ledger_speculos_account_approved'),
-              ),
-            ),
-          );
-        },
+        path: '/home',
+        builder: (_, _) =>
+            const SizedBox(key: ValueKey('mobile_ledger_first_account_home')),
       ),
     ],
   );
@@ -114,11 +121,19 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
     ProviderScope(
       key: const ValueKey('mobile_ledger_speculos_import_scope'),
       overrides: [
-        appBootstrapProvider.overrideWithValue(_softwareBootstrap()),
-        syncProvider.overrideWith(() => _FakeSyncNotifier('software')),
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        appSecurityProvider.overrideWith(() => security),
+        biometricUnlockProvider.overrideWith(_AvailableBiometricNotifier.new),
+        syncProvider.overrideWith(_EmptySyncNotifier.new),
         ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
         ledgerMobileBleServiceProvider.overrideWithValue(importService),
         ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+        ledgerAccountImporterProvider.overrideWithValue(
+          firstAccountImport.call,
+        ),
+        rpcEndpointFailoverProvider.overrideWith(
+          _LedgerOnboardingRpcFailoverNotifier.new,
+        ),
       ],
       child: MaterialApp.router(
         routerConfig: router,
@@ -127,6 +142,18 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
       ),
     ),
   );
+  await tester.pumpAndSettle();
+
+  expect(
+    find.byKey(const ValueKey('mobile_welcome_get_started')),
+    findsOneWidget,
+  );
+  await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+  await tester.pumpAndSettle();
+  final ledgerEntry = find.byKey(const ValueKey('mobile_welcome_ledger'));
+  expect(ledgerEntry, findsOneWidget);
+  await tester.ensureVisible(ledgerEntry);
+  await tester.tap(ledgerEntry);
   await tester.pumpAndSettle();
 
   await tester.tap(
@@ -165,14 +192,53 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   await _pumpUntil(
     tester,
     () => tester.any(
-      find.byKey(const ValueKey('mobile_ledger_speculos_account_approved')),
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
     ),
-    description: 'mobile Ledger account approval route',
+    description: 'mobile Ledger birthday route',
     timeout: const Duration(minutes: 2),
   );
   expect(await importApproval, isTrue);
 
-  final exported = birthdayArgs?.account;
+  await tester.tap(
+    find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
+  );
+  await tester.pump();
+  await tester.enterText(
+    find.byKey(const ValueKey('mobile_import_birthday_height')),
+    '2500000',
+  );
+  await tester.pump();
+  await tester.tap(
+    find.byKey(const ValueKey('mobile_import_birthday_continue')),
+  );
+  await tester.pumpAndSettle();
+
+  expect(find.text('Create Passcode'), findsOneWidget);
+  await _enterMobilePasscode(tester, '123456');
+  await _enterMobilePasscode(tester, '123456');
+  await tester.pumpAndSettle();
+
+  await tester.enterText(
+    find.byKey(const ValueKey('mobile_customise_account_name_field')),
+    'Speculos Ledger',
+  );
+  await tester.tap(
+    find.byKey(const ValueKey('mobile_customise_account_continue')),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('mobile_biometrics_not_now'))),
+    description: 'mobile biometrics choice after Ledger import',
+    timeout: const Duration(minutes: 2),
+  );
+  await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
+  await tester.pumpAndSettle();
+
+  expect(
+    find.byKey(const ValueKey('mobile_ledger_first_account_home')),
+    findsOneWidget,
+  );
+  final exported = firstAccountImport.account;
   expect(exported, isNotNull);
   expect(exported!.ufvk, fixture.ufvk);
   expect(exported.seedFingerprint, fixture.seedFingerprint);
@@ -180,6 +246,29 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(exported.appVersion, '3.9.2');
   expect(exported.transport, LedgerConnectionTransport.bluetooth);
   expect(exported.device?.id, 'speculos');
+  expect(firstAccountImport.name, 'Speculos Ledger');
+  expect(firstAccountImport.birthdayHeight, 2500000);
+  expect(security.preparedPassword, '123456');
+  expect(security.commitCount, 1);
+  expect(security.rollbackCount, 0);
+
+  final storedAccounts = await rust_wallet.listAccounts(
+    dbPath: firstAccountDbPath,
+    network: 'main',
+  );
+  expect(storedAccounts, hasLength(1));
+  expect(storedAccounts.single.name, 'Speculos Ledger');
+  expect(storedAccounts.single.isHardware, isTrue);
+  expect(storedAccounts.single.hardwareSignerKind, 'ledger');
+  expect(storedAccounts.single.zip32AccountIndex, fixture.accountIndex);
+  expect(storedAccounts.single.birthdayHeight, 2500000);
+}
+
+Future<void> _enterMobilePasscode(WidgetTester tester, String passcode) async {
+  for (final digit in passcode.split('')) {
+    await tester.tap(find.bySemanticsLabel('Digit $digit'));
+    await tester.pump();
+  }
 }
 
 Future<void> _runMobileSendScenario(WidgetTester tester) async {
@@ -293,6 +382,155 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
   expect(operationService.checkpointCount, 1);
   expect(operationService.broadcastCount, 1);
   expect(lightwalletd.sendTransactionCount, 1);
+  expect(lightwalletd.lastRawTransaction, isNotEmpty);
+  expect(await operationService.list(), isEmpty);
+}
+
+Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
+  final fixture = _Fixture.load();
+  final dbPath = await _copyFixtureDb(fixture);
+  final lightwalletd = _AcceptingLightwalletd();
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final operationService = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: lightwalletd.url,
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  final args = SendReviewArgs(
+    proposalId: BigInt.two,
+    sendFlowId: 'ledger-mobile-speculos-tex-send',
+    proposalAccountUuid: fixture.accountUuid,
+    address: fixture.texAddress,
+    addressType: 'tex',
+    amountZatoshi: BigInt.from(1980000),
+    feeZatoshi: BigInt.from(20000),
+    needsSaplingParams: false,
+  );
+  String? requestedLightwalletdUrl;
+  String? requestedNetwork;
+  BigInt? requestedProposalId;
+  String? requestedSendFlowId;
+  final router = GoRouter(
+    initialLocation: '/send',
+    routes: [
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => _MobileSendLauncher(args: args),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (_, state) => MobileLedgerSendSignScreen(
+          args: state.extra! as SendReviewArgs,
+          loadWalletDbPath: () async => dbPath,
+          loadSaplingParams: () async => _completeSaplingParams,
+          createTexPczts:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required network,
+                required proposalId,
+                required sendFlowId,
+              }) async {
+                requestedLightwalletdUrl = lightwalletdUrl;
+                requestedNetwork = network;
+                requestedProposalId = proposalId;
+                requestedSendFlowId = sendFlowId;
+                return rust_sync.TexPcztPairResult(
+                  pczts: [
+                    Uint8List.fromList(fixture.texStep1PcztBytes),
+                    Uint8List.fromList(fixture.texStep2PcztBytes),
+                  ],
+                  signerPczts: const [],
+                );
+              },
+          redactPczt: rust_sync.redactPcztForSigner,
+          addProofs: rust_sync.addProofsToPczt,
+          discardProposal: () async {},
+        ),
+      ),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, state) {
+          final ledger = state.extra! as LedgerBroadcastArgs;
+          return MobileSendStatusScreen(
+            args: ledger.reviewArgs,
+            ledger: ledger,
+          );
+        },
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+    ],
+  );
+  addTearDown(router.dispose);
+
+  await tester.pumpWidget(
+    _mobileLedgerHarness(
+      fixture: fixture,
+      lightwalletdUrl: lightwalletd.url,
+      router: router,
+      ble: ble,
+      operationService: operationService,
+      walletDbPath: dbPath,
+    ),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval · 1 of 2')),
+    description: 'mobile Ledger TEX first approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(requestedLightwalletdUrl, lightwalletd.url);
+  expect(requestedNetwork, 'main');
+  expect(requestedProposalId, args.proposalId);
+  expect(requestedSendFlowId, args.sendFlowId);
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval · 2 of 2')),
+    description: 'mobile Ledger TEX second approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(
+          find.byKey(const ValueKey('mobile_send_status_succeeded')),
+        ) ||
+        operationService.lastBroadcastResult != null,
+    description: 'mobile Ledger TEX broadcast result',
+    timeout: const Duration(minutes: 2),
+  );
+  final broadcastResult = operationService.lastBroadcastResult;
+  expect(broadcastResult, isNotNull);
+  expect(
+    broadcastResult!.status,
+    'broadcasted',
+    reason: broadcastResult.message,
+  );
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(find.byKey(const ValueKey('mobile_send_status_succeeded'))),
+    description: 'mobile Ledger TEX success screen',
+    timeout: const Duration(seconds: 10),
+  );
+
+  expect(operationService.checkpointCount, 1);
+  expect(operationService.batchCheckpointCount, 1);
+  expect(operationService.broadcastCount, 1);
+  expect(lightwalletd.sendTransactionCount, 2);
   expect(lightwalletd.lastRawTransaction, isNotEmpty);
   expect(await operationService.list(), isEmpty);
 }
@@ -485,21 +723,6 @@ const _completeSaplingParams = SaplingParamsStatus(
   outputExists: true,
 );
 
-AppBootstrapState _softwareBootstrap() => AppBootstrapState(
-  initialLocation: '/onboarding/ledger',
-  initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'software', name: 'Main', order: 0)],
-  ),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
 Widget _mobileLedgerHarness({
   required _Fixture fixture,
   required String lightwalletdUrl,
@@ -641,6 +864,109 @@ class _DirectNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   NetworkPrivacyState build() => const NetworkPrivacyState.off();
 }
 
+class _LedgerFirstAccountSecurityNotifier extends AppSecurityNotifier {
+  String? preparedPassword;
+  var commitCount = 0;
+  var rollbackCount = 0;
+
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: false, isUnlocked: false);
+
+  @override
+  Future<void> preparePasswordSetup(String password) async {
+    preparedPassword = password;
+  }
+
+  @override
+  void commitPasswordSetup() {
+    commitCount++;
+    state = const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: true,
+    );
+  }
+
+  @override
+  Future<void> rollbackPasswordSetup() async {
+    rollbackCount++;
+  }
+}
+
+class _RecordingLedgerFirstAccountImport {
+  _RecordingLedgerFirstAccountImport(this.dbPath);
+
+  final String dbPath;
+  LedgerDeviceAccount? account;
+  String? name;
+  int? birthdayHeight;
+
+  Future<void> call({
+    required String name,
+    required LedgerDeviceAccount account,
+    required int birthdayHeight,
+    required String profilePictureId,
+  }) async {
+    await rust_wallet.importHardwareAccount(
+      dbPath: dbPath,
+      network: 'main',
+      name: name,
+      ufvkString: account.ufvk,
+      seedFingerprint: account.seedFingerprint,
+      zip32Index: account.accountIndex,
+      birthdayHeight: BigInt.from(birthdayHeight),
+      hardwareSignerKind: HardwareSignerKind.ledger.name,
+    );
+    this.account = account;
+    this.name = name;
+    this.birthdayHeight = birthdayHeight;
+  }
+}
+
+class _AvailableBiometricNotifier extends BiometricUnlockNotifier {
+  @override
+  Future<BiometricUnlockState> build() async => const BiometricUnlockState(
+    availability: BiometricAvailability(
+      supported: true,
+      enrolled: false,
+      kind: BiometricKind.face,
+    ),
+    enabled: false,
+  );
+}
+
+class _LedgerOnboardingRpcFailoverNotifier extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() {
+    final endpoint = defaultRpcEndpointConfig('main');
+    return RpcEndpointFailoverState(
+      primary: endpoint,
+      current: endpoint,
+      fallbackCandidates: const [],
+    );
+  }
+
+  @override
+  Future<T> runWithEndpointFallback<T>({
+    required String operation,
+    required Future<T> Function(RpcEndpointConfig endpoint) action,
+    bool allowFallback = true,
+    bool Function(Object error) shouldFallback =
+        shouldFallbackFromLightwalletdError,
+  }) async {
+    if (operation == 'import birthday metadata') {
+      return ImportBirthdayMetadata(
+            saplingActivationHeight: 419200,
+            saplingActivationDate: DateTime(2016, 10, 28),
+            tipHeight: 3336000,
+            tipDate: DateTime(2026, 5, 11),
+          )
+          as T;
+    }
+    return action(state.current);
+  }
+}
+
 class _Fixture {
   const _Fixture({
     required this.ufvkApiUrl,
@@ -650,7 +976,10 @@ class _Fixture {
     required this.accountUuid,
     required this.accountIndex,
     required this.transparentAddress,
+    required this.texAddress,
     required this.pcztBytes,
+    required this.texStep1PcztBytes,
+    required this.texStep2PcztBytes,
     required this.dbGzipBytes,
   });
 
@@ -661,7 +990,10 @@ class _Fixture {
   final String accountUuid;
   final int accountIndex;
   final String transparentAddress;
+  final String texAddress;
   final List<int> pcztBytes;
+  final List<int> texStep1PcztBytes;
+  final List<int> texStep2PcztBytes;
   final List<int> dbGzipBytes;
 
   static _Fixture load() {
@@ -677,7 +1009,14 @@ class _Fixture {
     const transparentAddress = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_TRANSPARENT_ADDRESS',
     );
+    const texAddress = String.fromEnvironment('VIZOR_LEDGER_E2E_TEX_ADDRESS');
     const pcztBase64 = String.fromEnvironment('VIZOR_LEDGER_E2E_PCZT_BASE64');
+    const texStep1PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_TEX_STEP_1_PCZT_BASE64',
+    );
+    const texStep2PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64',
+    );
     const dbGzipBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_DB_GZIP_BASE64',
     );
@@ -687,7 +1026,10 @@ class _Fixture {
         seedFingerprint.isEmpty ||
         accountUuid.isEmpty ||
         transparentAddress.isEmpty ||
+        texAddress.isEmpty ||
         pcztBase64.isEmpty ||
+        texStep1PcztBase64.isEmpty ||
+        texStep2PcztBase64.isEmpty ||
         dbGzipBase64.isEmpty) {
       throw StateError(
         'Ledger mobile fixture dart-defines are missing. Run the Speculos E2E script.',
@@ -701,7 +1043,10 @@ class _Fixture {
       accountUuid: accountUuid,
       accountIndex: 0,
       transparentAddress: transparentAddress,
+      texAddress: texAddress,
       pcztBytes: base64Decode(pcztBase64),
+      texStep1PcztBytes: base64Decode(texStep1PcztBase64),
+      texStep2PcztBytes: base64Decode(texStep2PcztBase64),
       dbGzipBytes: base64Decode(dbGzipBase64),
     );
   }
@@ -994,11 +1339,14 @@ class _MemorySwapPersistenceStore
 }
 
 class _TrackingLedgerSignedOperationService
-    implements LedgerSignedOperationService {
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
   _TrackingLedgerSignedOperationService(this.delegate);
 
   final LedgerSignedOperationService delegate;
   int checkpointCount = 0;
+  int batchCheckpointCount = 0;
   int broadcastCount = 0;
   int acknowledgeCount = 0;
   String? lastOperationId;
@@ -1023,6 +1371,29 @@ class _TrackingLedgerSignedOperationService
       pcztWithSignaturesBytes: pcztWithSignaturesBytes,
       externalRef: externalRef,
     );
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    checkpointCount++;
+    batchCheckpointCount++;
+    lastOperationId = operationId;
+    await (delegate as LedgerSignedOperationBatchCheckpointService)
+        .checkpointBatch(
+          operationId: operationId,
+          accountUuid: accountUuid,
+          kind: kind,
+          pcztsWithProofs: pcztsWithProofs,
+          pcztsWithSignatures: pcztsWithSignatures,
+          externalRef: externalRef,
+        );
   }
 
   @override
@@ -1324,6 +1695,34 @@ Future<bool> _approveNextReview(String apiUrl) async {
   }
 }
 
+Future<bool> _approveNextReviewWhilePumping(
+  WidgetTester tester,
+  String apiUrl,
+) async {
+  bool? approved;
+  Object? failure;
+  StackTrace? failureStackTrace;
+  unawaited(
+    _approveNextReview(apiUrl).then<void>(
+      (value) => approved = value,
+      onError: (Object error, StackTrace stackTrace) {
+        failure = error;
+        failureStackTrace = stackTrace;
+      },
+    ),
+  );
+  await _pumpUntil(
+    tester,
+    () => approved != null || failure != null,
+    description: 'Speculos Ledger approval',
+    timeout: const Duration(minutes: 2),
+  );
+  if (failure case final error?) {
+    Error.throwWithStackTrace(error, failureStackTrace!);
+  }
+  return approved!;
+}
+
 Future<String> _currentScreenText(HttpClient client, String apiUrl) async {
   final request = await client.getUrl(
     Uri.parse('$apiUrl/events?currentscreenonly=true'),
@@ -1389,4 +1788,9 @@ class _FakeSyncNotifier extends SyncNotifier {
     displaySpendableBalance: BigInt.from(100000000),
     totalBalance: BigInt.from(100000000),
   );
+}
+
+class _EmptySyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(chainTipHeight: 4000000);
 }
