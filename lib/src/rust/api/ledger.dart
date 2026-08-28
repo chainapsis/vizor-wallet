@@ -166,6 +166,28 @@ Future<LedgerSignedOperation> ledgerCheckpointSignedOperation({
   pcztWithSignaturesBytes: pcztWithSignaturesBytes,
 );
 
+/// Durably checkpoint every proof/signature PCZT pair for one Ledger operation.
+/// The complete batch is validated and committed as a single recoverable row.
+Future<LedgerSignedOperation> ledgerCheckpointSignedOperationBatch({
+  required String dbPath,
+  required String network,
+  required String operationId,
+  required String accountUuid,
+  required String kind,
+  String? externalRef,
+  required List<Uint8List> pcztWithProofs,
+  required List<Uint8List> pcztWithSignatures,
+}) => RustLib.instance.api.crateApiLedgerLedgerCheckpointSignedOperationBatch(
+  dbPath: dbPath,
+  network: network,
+  operationId: operationId,
+  accountUuid: accountUuid,
+  kind: kind,
+  externalRef: externalRef,
+  pcztWithProofs: pcztWithProofs,
+  pcztWithSignatures: pcztWithSignatures,
+);
+
 /// List checkpointed Ledger operations without exposing either PCZT blob.
 Future<List<LedgerSignedOperation>> ledgerListSignedOperations({
   required String dbPath,

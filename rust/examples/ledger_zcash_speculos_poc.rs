@@ -28,10 +28,12 @@ use transparent::{
     keys::{NonHardenedChildIndex, TransparentKeyScope},
 };
 use url::Url;
+use zcash_address::{ToAddress, ZcashAddress};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
+    txid::{to_txid, TxIdDigester},
 };
 use zcash_protocol::{
     consensus::{BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
@@ -172,14 +174,24 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
     fs::write(&pczt_path, &pczt.bytes)
         .map_err(|error| format!("Write {}: {error}", pczt_path.display()))?;
+    let tex_pczts = tex_smoke_pczts(&export.ufvk, &export.seed_fingerprint)?;
+    let tex_step_1_path = pczt_path.with_extension("tex-step-1.pczt");
+    let tex_step_2_path = pczt_path.with_extension("tex-step-2.pczt");
+    fs::write(&tex_step_1_path, &tex_pczts.step_1)
+        .map_err(|error| format!("Write {}: {error}", tex_step_1_path.display()))?;
+    fs::write(&tex_step_2_path, &tex_pczts.step_2)
+        .map_err(|error| format!("Write {}: {error}", tex_step_2_path.display()))?;
     let metadata = json!({
         "accountUuid": account.account_uuid,
         "ufvk": export.ufvk,
         "seedFingerprint": hex::encode(export.seed_fingerprint),
         "accountIndex": export.account_index,
         "transparentAddress": pczt.transparent_address,
+        "texAddress": tex_pczts.tex_address,
         "dbPath": db_path,
         "pcztPath": pczt_path,
+        "texStep1PcztPath": tex_step_1_path,
+        "texStep2PcztPath": tex_step_2_path,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -420,6 +432,12 @@ struct TransparentSmokePczt {
     transparent_address: String,
 }
 
+struct TexSmokePczts {
+    step_1: Vec<u8>,
+    step_2: Vec<u8>,
+    tex_address: String,
+}
+
 fn transparent_smoke_pczt(
     ufvk: &str,
     seed_fingerprint: &[u8],
@@ -494,6 +512,151 @@ fn transparent_smoke_pczt(
     Ok(TransparentSmokePczt {
         bytes,
         transparent_address,
+    })
+}
+
+fn tex_smoke_pczts(ufvk: &str, seed_fingerprint: &[u8]) -> Result<TexSmokePczts, String> {
+    let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, ufvk)
+        .map_err(|error| format!("Decode Speculos UFVK for TEX fixture: {error}"))?;
+    let account_pubkey = ufvk
+        .transparent()
+        .ok_or("Speculos UFVK has no transparent account public key")?;
+    let source_index = NonHardenedChildIndex::ZERO;
+    let source_pubkey = account_pubkey
+        .derive_address_pubkey(TransparentKeyScope::EXTERNAL, source_index)
+        .map_err(|error| format!("Derive TEX source public key: {error}"))?;
+    let source_address = TransparentAddress::from_pubkey(&source_pubkey);
+    let ephemeral_index = NonHardenedChildIndex::ZERO;
+    let ephemeral_address = account_pubkey
+        .derive_ephemeral_ivk()
+        .map_err(|error| format!("Derive TEX ephemeral IVK: {error}"))?
+        .derive_ephemeral_address(ephemeral_index)
+        .map_err(|error| format!("Derive TEX ephemeral address: {error}"))?;
+    let ephemeral_pubkey = account_pubkey
+        .derive_address_pubkey(TransparentKeyScope::EPHEMERAL, ephemeral_index)
+        .map_err(|error| format!("Derive TEX ephemeral public key: {error}"))?;
+
+    let fingerprint: [u8; 32] = seed_fingerprint
+        .try_into()
+        .map_err(|_| "Speculos Ledger fingerprint must be 32 bytes")?;
+    let source_derivation = transparent::pczt::Bip32Derivation::parse(
+        fingerprint,
+        vec![0x8000_002c, 0x8000_0085, 0x8000_0000, 0, 0],
+    )
+    .map_err(|error| format!("Build TEX source derivation: {error:?}"))?;
+
+    let ephemeral_value = Zatoshis::const_from_u64(1_990_000);
+    let mut first_builder = Builder::new(
+        PreIronwoodMainNetwork,
+        100.into(),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: None,
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        },
+    );
+    first_builder
+        .add_transparent_p2pkh_input(
+            source_pubkey,
+            OutPoint::new([2; 32], 0),
+            TxOut::new(
+                Zatoshis::const_from_u64(2_000_000),
+                source_address.script().into(),
+            ),
+        )
+        .map_err(|error| format!("Add TEX step 1 source input: {error}"))?;
+    first_builder
+        .add_transparent_output(&ephemeral_address, ephemeral_value)
+        .map_err(|error| format!("Add TEX step 1 ephemeral output: {error}"))?;
+    let PcztResult { pczt_parts, .. } = first_builder
+        .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+        .map_err(|error| format!("Build TEX step 1 PCZT: {error}"))?;
+    let step_1 = IoFinalizer::new(
+        Creator::build_from_parts(pczt_parts).ok_or("Create TEX step 1 PCZT from builder parts")?,
+    )
+    .finalize_io()
+    .map_err(|error| format!("Finalize TEX step 1 IO: {error:?}"))?;
+    let step_1 = Updater::new(step_1)
+        .update_transparent_with(|mut bundle| {
+            bundle.update_input_with(0, |mut input| {
+                input.set_bip32_derivation(source_pubkey.serialize(), source_derivation);
+                Ok(())
+            })
+        })
+        .map_err(|error| format!("Attach TEX step 1 source derivation: {error:?}"))?
+        .finish();
+    let effects = step_1
+        .clone()
+        .into_effects()
+        .map_err(|error| format!("Extract TEX step 1 effects: {error:?}"))?;
+    let txid_parts = effects.digest(TxIdDigester);
+    let step_1_txid = to_txid(
+        effects.version(),
+        effects.consensus_branch_id(),
+        &txid_parts,
+    );
+
+    let recipient_hash = [0x42; 20];
+    let recipient = TransparentAddress::PublicKeyHash(recipient_hash);
+    let tex_address = ZcashAddress::from_tex(NetworkType::Main, recipient_hash).encode();
+    let mut second_builder = Builder::new(
+        PreIronwoodMainNetwork,
+        100.into(),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: None,
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        },
+    );
+    second_builder
+        .add_transparent_p2pkh_input(
+            ephemeral_pubkey,
+            OutPoint::new(*step_1_txid.as_ref(), 0),
+            TxOut::new(ephemeral_value, ephemeral_address.script().into()),
+        )
+        .map_err(|error| format!("Add TEX step 2 ephemeral input: {error}"))?;
+    second_builder
+        .add_transparent_output(&recipient, Zatoshis::const_from_u64(1_980_000))
+        .map_err(|error| format!("Add TEX step 2 recipient: {error}"))?;
+    let PcztResult { pczt_parts, .. } = second_builder
+        .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+        .map_err(|error| format!("Build TEX step 2 PCZT: {error}"))?;
+    let step_2 = IoFinalizer::new(
+        Creator::build_from_parts(pczt_parts).ok_or("Create TEX step 2 PCZT from builder parts")?,
+    )
+    .finalize_io()
+    .map_err(|error| format!("Finalize TEX step 2 IO: {error:?}"))?;
+    let ephemeral_derivation = transparent::pczt::Bip32Derivation::parse(
+        fingerprint,
+        vec![0x8000_002c, 0x8000_0085, 0x8000_0000, 2, 0],
+    )
+    .map_err(|error| format!("Build TEX ephemeral derivation: {error:?}"))?;
+    let step_2 = Updater::new(step_2)
+        .update_transparent_with(|mut bundle| {
+            bundle.update_input_with(0, |mut input| {
+                input.set_bip32_derivation(ephemeral_pubkey.serialize(), ephemeral_derivation);
+                Ok(())
+            })?;
+            bundle.update_output_with(0, |mut output| {
+                output.set_user_address(tex_address.clone());
+                Ok(())
+            })
+        })
+        .map_err(|error| format!("Attach TEX step 2 metadata: {error:?}"))?
+        .finish();
+
+    Ok(TexSmokePczts {
+        step_1: step_1
+            .serialize()
+            .map_err(|error| format!("Serialize TEX step 1 PCZT: {error:?}"))?,
+        step_2: step_2
+            .serialize()
+            .map_err(|error| format!("Serialize TEX step 2 PCZT: {error:?}"))?,
+        tex_address,
     })
 }
 
