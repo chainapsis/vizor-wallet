@@ -8,6 +8,107 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test(
+    'mobile signing gate waits between sequential signing streams',
+    () async {
+      var now = DateTime.utc(2026, 8, 28);
+      final delays = <Duration>[];
+      final events = <String>[];
+      final gate = LedgerMobileSigningStatusGate(
+        now: () => now,
+        delay: (duration) async {
+          delays.add(duration);
+          now = now.add(duration);
+        },
+      );
+
+      expect(
+        await gate.run(() async {
+          events.add('first');
+          return true;
+        }),
+        isTrue,
+      );
+      expect(
+        await gate.run(() async {
+          events.add('second');
+          return true;
+        }),
+        isTrue,
+      );
+
+      expect(events, ['first', 'second']);
+      expect(delays, [kLedgerMobileSigningStatusCooldown]);
+    },
+  );
+
+  test('mobile signing gate keeps cooldown after a failed stream', () async {
+    var now = DateTime.utc(2026, 8, 28);
+    final delays = <Duration>[];
+    final gate = LedgerMobileSigningStatusGate(
+      now: () => now,
+      delay: (duration) async {
+        delays.add(duration);
+        now = now.add(duration);
+      },
+    );
+
+    await expectLater(
+      gate.run<void>(() async => throw StateError('device disconnected')),
+      throwsStateError,
+    );
+    await gate.run<void>(() async {});
+
+    expect(delays, [kLedgerMobileSigningStatusCooldown]);
+  });
+
+  test('mobile signing gate serializes concurrent signing streams', () async {
+    final first = Completer<void>();
+    final events = <String>[];
+    final gate = LedgerMobileSigningStatusGate(cooldown: Duration.zero);
+
+    final firstRun = gate.run(() async {
+      events.add('first-start');
+      await first.future;
+      events.add('first-end');
+    });
+    final secondRun = gate.run(() async => events.add('second'));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(events, ['first-start']);
+    first.complete();
+    await Future.wait([firstRun, secondRun]);
+    expect(events, ['first-start', 'first-end', 'second']);
+  });
+
+  test(
+    'mobile signing cancellation prevents a queued stream from starting',
+    () async {
+      final first = Completer<void>();
+      var secondStarted = false;
+      final gate = LedgerMobileSigningStatusGate(cooldown: Duration.zero);
+
+      final firstRun = gate.run(() => first.future);
+      final secondRun = gate.run(() async => secondStarted = true);
+      await Future<void>.delayed(Duration.zero);
+      gate.cancelPending();
+      first.complete();
+
+      await firstRun;
+      await expectLater(
+        secondRun,
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (error) => error.failure,
+            'failure',
+            LedgerMobileFailure.cancelled,
+          ),
+        ),
+      );
+      expect(secondStarted, isFalse);
+    },
+  );
+
   test('accepts exactly one matching 64-byte Ironwood signature', () {
     final signature = LedgerVotingSignature(
       pool: 1,
