@@ -803,6 +803,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'mobile result options sort by raw tally and preserve source order for ties',
+    (tester) async {
+      await _pumpMobileFixture(
+        tester,
+        (_) => const MobileVotingScaffold(
+          title: 'Voting results',
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: VotingResultCard(
+              proposal: VotingProposalView(
+                id: 99,
+                title: 'Question',
+                description: '',
+                options: [
+                  VotingOptionView(index: 1, label: 'Low'),
+                  VotingOptionView(index: 3, label: 'Tied first'),
+                  VotingOptionView(index: 2, label: 'High'),
+                  VotingOptionView(index: 4, label: 'Tied second'),
+                ],
+              ),
+              tally: {1: 1, 2: 10, 3: 5, 4: 5},
+              selectedChoice: 1,
+            ),
+          ),
+        ),
+      );
+
+      Offset topLeft(int optionIndex) => tester.getTopLeft(
+        find.byKey(ValueKey('voting-result-99-option-$optionIndex')),
+      );
+
+      expect(topLeft(2).dy, lessThan(topLeft(3).dy));
+      expect(topLeft(3).dy, lessThan(topLeft(4).dy));
+      expect(topLeft(4).dy, lessThan(topLeft(1).dy));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('voting-result-99-option-2')),
+          matching: find.text('Winner'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('voting-result-99-option-1')),
+          matching: find.text('Your vote'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final amounts in [
     <int, num>{1: 0, 2: 0},
     <int, num>{1: 4, 2: 4},

@@ -325,17 +325,17 @@ const _previewResultsDesignProposal = VotingProposalView(
   zipNumber: 'ZIP-2033 ZIP-2033',
   options: [
     VotingOptionView(
-      index: 1,
-      label:
-          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
-    ),
-    VotingOptionView(index: 2, label: 'Abstain'),
-    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
-    VotingOptionView(
       index: 4,
       label:
           'Delay NU7 until every applicable feature approved in this poll is deemed complete.',
     ),
+    VotingOptionView(index: 2, label: 'Abstain'),
+    VotingOptionView(
+      index: 1,
+      label:
+          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
+    ),
+    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
   ],
 );
 

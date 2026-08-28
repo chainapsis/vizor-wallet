@@ -587,6 +587,18 @@ class _MobileResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final sortedOptions =
+        [
+          for (var position = 0; position < proposal.options.length; position++)
+            (position: position, option: proposal.options[position]),
+        ]..sort((left, right) {
+          final tallyComparison = (tally[right.option.index] ?? 0).compareTo(
+            tally[left.option.index] ?? 0,
+          );
+          return tallyComparison != 0
+              ? tallyComparison
+              : left.position.compareTo(right.position);
+        });
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
@@ -631,19 +643,19 @@ class _MobileResultCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          for (var index = 0; index < proposal.options.length; index++) ...[
+          for (var index = 0; index < sortedOptions.length; index++) ...[
             _MobileTallyRow(
               key: ValueKey(
-                'voting-result-${proposal.id}-option-${proposal.options[index].index}',
+                'voting-result-${proposal.id}-option-${sortedOptions[index].option.index}',
               ),
-              option: proposal.options[index],
-              winner: winningOption == proposal.options[index].index,
-              amount: tally[proposal.options[index].index] ?? 0,
+              option: sortedOptions[index].option,
+              winner: winningOption == sortedOptions[index].option.index,
+              amount: tally[sortedOptions[index].option.index] ?? 0,
               total: total,
-              selected: selectedChoice == proposal.options[index].index,
+              selected: selectedChoice == sortedOptions[index].option.index,
               profilePictureId: profilePictureId,
             ),
-            if (index != proposal.options.length - 1)
+            if (index != sortedOptions.length - 1)
               const SizedBox(height: AppSpacing.s),
           ],
           if (total > 0) ...[
