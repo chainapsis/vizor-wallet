@@ -1,17 +1,68 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Restore tracked source mtimes
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"]
+          ).split(b"\0")
+          for raw_path in tracked:
+              if not raw_path:
+                  continue
+              path = os.fsdecode(raw_path)
+              timestamp = int(
+                  subprocess.check_output(
+                      ["git", "log", "-1", "--format=%ct", "--", path], text=True
+                  ).strip()
+              )
+              os.utime(path, (timestamp, timestamp))
+          PY
       - uses: Swatinem/rust-cache@v2
-      - name: cargo test --workspace
-        run: cargo test --workspace --locked
-      - name: cargo test --features test-fixtures
-        run: cargo test -p zcash_voting --features test-fixtures --locked
+        with:
+          cache-targets: false
+      - name: Cache test build artifacts
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: test-target-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain*', '.cargo/config.toml') }}-${{ hashFiles('**/*.rs', '**/*.sql', '**/*.json') }}
+          restore-keys: |
+            test-target-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain*', '.cargo/config.toml') }}-
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.138
+      - name: Test workspace with fixtures
+        run: |
+          cargo nextest run --workspace \
+            --features zcash_voting/test-fixtures \
+            --partition count:${{ matrix.partition }}/2 \
+            --locked
+      - name: Test documentation
+        if: matrix.partition == 1
+        run: |
+          cargo test --workspace --doc \
+            --features zcash_voting/test-fixtures \
+            --locked
 
   proofs:
     name: Halo2 proof tests
@@ -20,10 +71,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.138
       # The end-to-end delegation proof runs keygen plus proving, so it is
       # marked #[ignore] for the default suite and run here under --release.
-      - name: cargo test --release -- --ignored
-        run: cargo test --release -p zcash_voting --locked -- --ignored
+      - name: Run ignored proof tests
+        run: |
+          cargo nextest run --release -p zcash_voting \
+            --locked --run-ignored ignored-only
 
   zakura-vct:
     name: Zakura VCT backend
@@ -32,9 +88,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.138
       - name: Test Zakura VCT crates
         run: |
-          cargo test -p vote-commitment-tree -p vote-commitment-tree-client \
+          cargo nextest run -p vote-commitment-tree -p vote-commitment-tree-client \
             --all-targets --no-default-features \
             --features vote-commitment-tree/zakura,vote-commitment-tree-client/zakura,vote-commitment-tree-client/cli \
             --locked
@@ -73,9 +132,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.138
       - name: Test Zakura wallet stack
         run: |
-          cargo test -p zcash_voting -p zcash-voting-wallet-example \
+          cargo nextest run -p zcash_voting -p zcash-voting-wallet-example \
             --all-targets --no-default-features --features zakura --locked
       - name: Check wallet backend contracts
         run: |
