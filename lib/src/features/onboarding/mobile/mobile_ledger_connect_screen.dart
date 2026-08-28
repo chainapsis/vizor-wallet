@@ -161,12 +161,15 @@ class _MobileLedgerConnectScreenState
               ? null
               : () => unawaited(_continue()),
           leading: _busy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? null
               : const AppIcon(AppIcons.ledger, semanticLabel: 'Ledger'),
+          trailing: _busy
+              ? const AppIcon(
+                  AppIcons.loader,
+                  key: ValueKey('mobile_ledger_import_spinner'),
+                  semanticLabel: 'Connecting to Ledger',
+                )
+              : null,
           child: Text(_buttonLabel(readiness)),
         ),
       ),
