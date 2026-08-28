@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -85,6 +86,19 @@ abstract interface class LedgerSignedOperationService {
   Future<void> acknowledge(String operationId);
 }
 
+/// Optional capability for operations that contain dependent PCZT rounds.
+/// Existing one-round callers and test doubles keep the singular interface.
+abstract interface class LedgerSignedOperationBatchCheckpointService {
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  });
+}
+
 final ledgerSignedOperationServiceProvider =
     Provider<LedgerSignedOperationService>((ref) {
       final endpoint = ref.watch(rpcEndpointProvider);
@@ -95,7 +109,10 @@ final ledgerSignedOperationServiceProvider =
       );
     });
 
-class RustLedgerSignedOperationService implements LedgerSignedOperationService {
+class RustLedgerSignedOperationService
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
   const RustLedgerSignedOperationService({
     required this.network,
     required this.lightwalletdUrl,
@@ -125,6 +142,28 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
       externalRef: externalRef,
       pcztWithProofsBytes: pcztWithProofsBytes,
       pcztWithSignaturesBytes: pcztWithSignaturesBytes,
+    );
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    final dbPath = await loadWalletDbPath();
+    await rust_ledger.ledgerCheckpointSignedOperationBatch(
+      dbPath: dbPath,
+      network: network,
+      operationId: operationId,
+      accountUuid: accountUuid,
+      kind: kind.wireName,
+      externalRef: externalRef,
+      pcztWithProofs: pcztsWithProofs.map(Uint8List.fromList).toList(),
+      pcztWithSignatures: pcztsWithSignatures.map(Uint8List.fromList).toList(),
     );
   }
 

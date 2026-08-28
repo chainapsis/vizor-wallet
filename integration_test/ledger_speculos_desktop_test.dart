@@ -339,6 +339,12 @@ void main() {
   );
 
   testWidgets(
+    'sends to TEX with two Ledger approvals through Speculos',
+    _runLedgerTexSendScenario,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
     'pays with Ledger through Speculos',
     (tester) => _runLedgerSwapScenario(tester, _LedgerSwapScenario.pay),
     timeout: const Timeout(Duration(minutes: 4)),
@@ -542,6 +548,148 @@ extension on _LedgerSwapScenario {
   LedgerSignedOperationKind get operationKind => isPay
       ? LedgerSignedOperationKind.payDeposit
       : LedgerSignedOperationKind.swapDeposit;
+}
+
+Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(1280, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+
+  final fixture = _Fixture.load();
+  final sandboxDirectory = await Directory.systemTemp.createTemp(
+    'vizor-ledger-tex-speculos-e2e.',
+  );
+  final dbPath = '${sandboxDirectory.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+  final lightwalletd = _AcceptingLightwalletd();
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+
+  final reviewArgs = SendReviewArgs(
+    proposalId: BigInt.two,
+    sendFlowId: 'ledger-speculos-tex-send',
+    proposalAccountUuid: fixture.accountUuid,
+    address: fixture.texAddress,
+    addressType: 'tex',
+    amountZatoshi: BigInt.from(1980000),
+    feeZatoshi: BigInt.from(20000),
+    needsSaplingParams: false,
+  );
+  final operationService = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: lightwalletd.url,
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final router = GoRouter(
+    initialLocation: '/send/review?flow=${reviewArgs.sendFlowId}',
+    initialExtra: reviewArgs,
+    routes: [
+      GoRoute(path: '/send', builder: (_, _) => const SizedBox()),
+      GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) =>
+            SendReviewScreen(args: state.extra! as SendReviewArgs),
+      ),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, state) {
+          final payload = state.extra! as LedgerBroadcastArgs;
+          return SendStatusScreen(args: payload.reviewArgs, ledger: payload);
+        },
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      key: const ValueKey('ledger_speculos_tex_send_scope'),
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _ledgerBootstrap(
+            fixture,
+            lightwalletd.url,
+            initialLocation: '/send/review',
+          ),
+        ),
+        syncProvider.overrideWith(() => _FakeSyncNotifier(fixture.accountUuid)),
+        addressBookRepositoryProvider.overrideWithValue(
+          _EmptyAddressBookRepository(),
+        ),
+        zecMarketDataSourceProvider.overrideWithValue(
+          const _EmptyMarketDataSource(),
+        ),
+        zecMarketDataCacheProvider.overrideWithValue(_MemoryMarketDataCache()),
+        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+        ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+        ledgerSendTexPcztsCreatorProvider.overrideWithValue(({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required proposalId,
+          required sendFlowId,
+        }) async {
+          expect(lightwalletdUrl, lightwalletd.url);
+          expect(network, 'main');
+          expect(proposalId, reviewArgs.proposalId);
+          expect(sendFlowId, reviewArgs.sendFlowId);
+          return rust_sync.TexPcztPairResult(
+            pczts: [
+              Uint8List.fromList(fixture.texStep1PcztBytes),
+              Uint8List.fromList(fixture.texStep2PcztBytes),
+            ],
+            signerPczts: const [],
+          );
+        }),
+        ledgerSignedOperationServiceProvider.overrideWithValue(
+          operationService,
+        ),
+      ],
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (_, child) =>
+            AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  expect(find.text('Review send'), findsOneWidget);
+  expect(find.text('TEX'), findsOneWidget);
+
+  final firstApproval = _approveNextReview(fixture.signingApiUrl);
+  await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval · 1 of 2')),
+    description: 'Ledger TEX first approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(await firstApproval, isTrue);
+
+  final secondApproval = _approveNextReview(fixture.signingApiUrl);
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval · 2 of 2')),
+    description: 'Ledger TEX second approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
+    description: 'Ledger TEX Send status completion',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(await secondApproval, isTrue);
+  expect(find.text('Sent successfully'), findsOneWidget);
+  expect(operationService.checkpointCount, 1);
+  expect(operationService.batchCheckpointCount, 1);
+  expect(operationService.broadcastCount, 1);
+  expect(lightwalletd.sendTransactionCount, 2);
+  expect(await operationService.list(), isEmpty);
 }
 
 Future<void> _runLedgerSwapScenario(
@@ -840,7 +988,10 @@ class _Fixture {
     required this.accountUuid,
     required this.accountIndex,
     required this.transparentAddress,
+    required this.texAddress,
     required this.pcztBytes,
+    required this.texStep1PcztBytes,
+    required this.texStep2PcztBytes,
     required this.dbGzipBytes,
   });
 
@@ -851,7 +1002,10 @@ class _Fixture {
   final String accountUuid;
   final int accountIndex;
   final String transparentAddress;
+  final String texAddress;
   final List<int> pcztBytes;
+  final List<int> texStep1PcztBytes;
+  final List<int> texStep2PcztBytes;
   final List<int> dbGzipBytes;
 
   static _Fixture load() {
@@ -863,7 +1017,14 @@ class _Fixture {
     const transparentAddress = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_TRANSPARENT_ADDRESS',
     );
+    const texAddress = String.fromEnvironment('VIZOR_LEDGER_E2E_TEX_ADDRESS');
     const pcztBase64 = String.fromEnvironment('VIZOR_LEDGER_E2E_PCZT_BASE64');
+    const texStep1PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_TEX_STEP_1_PCZT_BASE64',
+    );
+    const texStep2PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64',
+    );
     const dbGzipBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_DB_GZIP_BASE64',
     );
@@ -871,7 +1032,10 @@ class _Fixture {
         seedFingerprint.isEmpty ||
         accountUuid.isEmpty ||
         transparentAddress.isEmpty ||
+        texAddress.isEmpty ||
         pcztBase64.isEmpty ||
+        texStep1PcztBase64.isEmpty ||
+        texStep2PcztBase64.isEmpty ||
         dbGzipBase64.isEmpty) {
       throw StateError(
         'Ledger fixture dart-defines are missing. Run the Speculos E2E script.',
@@ -887,7 +1051,10 @@ class _Fixture {
       accountUuid: accountUuid,
       accountIndex: 0,
       transparentAddress: transparentAddress,
+      texAddress: texAddress,
       pcztBytes: base64Decode(pcztBase64),
+      texStep1PcztBytes: base64Decode(texStep1PcztBase64),
+      texStep2PcztBytes: base64Decode(texStep2PcztBase64),
       dbGzipBytes: base64Decode(dbGzipBase64),
     );
   }
@@ -1235,11 +1402,14 @@ AppBootstrapState _ledgerBootstrap(
 }
 
 class _TrackingLedgerSignedOperationService
-    implements LedgerSignedOperationService {
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
   _TrackingLedgerSignedOperationService(this.delegate);
 
   final LedgerSignedOperationService delegate;
   int checkpointCount = 0;
+  int batchCheckpointCount = 0;
   int broadcastCount = 0;
   int acknowledgeCount = 0;
   String? lastOperationId;
@@ -1263,6 +1433,29 @@ class _TrackingLedgerSignedOperationService
       pcztWithSignaturesBytes: pcztWithSignaturesBytes,
       externalRef: externalRef,
     );
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    checkpointCount++;
+    batchCheckpointCount++;
+    lastOperationId = operationId;
+    await (delegate as LedgerSignedOperationBatchCheckpointService)
+        .checkpointBatch(
+          operationId: operationId,
+          accountUuid: accountUuid,
+          kind: kind,
+          pcztsWithProofs: pcztsWithProofs,
+          pcztsWithSignatures: pcztsWithSignatures,
+          externalRef: externalRef,
+        );
   }
 
   @override

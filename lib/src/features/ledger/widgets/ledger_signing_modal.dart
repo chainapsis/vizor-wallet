@@ -45,8 +45,12 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
     this.accountUuid,
+    this.roundNumber = 1,
+    this.roundCount = 1,
     super.key,
-  }) : assert(
+  }) : assert(roundNumber > 0 && roundNumber <= roundCount),
+       assert(roundCount > 0),
+       assert(
          phase == LedgerSigningModalPhase.failed || failure == null,
          'Failure presentation is only valid for the failed phase.',
        ),
@@ -61,6 +65,8 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onFailureAction;
   final String cancelLabel;
   final String? accountUuid;
+  final int roundNumber;
+  final int roundCount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,6 +105,20 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => 'Broadcasting to the network',
       LedgerSigningModalPhase.failed => failure!.statusLabel,
     };
+    if (roundCount > 1) {
+      final progress = 'Transaction $roundNumber of $roundCount';
+      if (phase == LedgerSigningModalPhase.preparing) {
+        title = 'Preparing $progress';
+        statusLabel = progress;
+      } else if (phase == LedgerSigningModalPhase.awaitingDevice) {
+        title = 'Review $progress on your Ledger';
+        statusLabel = 'Waiting for approval · $roundNumber of $roundCount';
+        message =
+            'Approve this transaction on the device. Vizor will request the next transaction separately.';
+      } else if (phase == LedgerSigningModalPhase.saving) {
+        statusLabel = 'Securing both signed transactions';
+      }
+    }
     if (phase == LedgerSigningModalPhase.failed &&
         readiness.phase == LedgerAppReadinessPhase.failed) {
       title = 'Ledger needs attention';

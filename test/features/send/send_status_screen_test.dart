@@ -415,6 +415,63 @@ void main() {
     expect(rustApi.storeCalls, isEmpty);
   });
 
+  testWidgets('Ledger TEX success shows the dependent transaction txid', (
+    tester,
+  ) async {
+    final args = _reviewArgs(address: _texAddress, addressType: 'tex');
+    final operationService = _FakeLedgerSignedOperationService()
+      ..broadcastTxid = '$_txid,$_secondTxid';
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text(truncatedTxid(_secondTxid)), findsOneWidget);
+    expect(find.text(truncatedTxid(_txid)), findsNothing);
+  });
+
+  testWidgets('Ledger TEX partial status keeps the first transaction visible', (
+    tester,
+  ) async {
+    final args = _reviewArgs(address: _texAddress, addressType: 'tex');
+    final operationService = _FakeLedgerSignedOperationService()
+      ..broadcastTxid = '$_txid,$_secondTxid'
+      ..broadcastStatus = 'partial_broadcast'
+      ..broadcastMessage =
+          'Transaction 2 of 2 was rejected after transaction 1 was accepted';
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text(truncatedTxid(_txid)), findsOneWidget);
+    expect(find.text(truncatedTxid(_secondTxid)), findsNothing);
+    expect(find.textContaining('Transaction 2 of 2'), findsOneWidget);
+  });
+
   for (final status in ['broadcast_unknown', 'broadcasted_storage_failed']) {
     testWidgets('Ledger $status retains the input lock without re-signing', (
       tester,
@@ -650,7 +707,7 @@ void main() {
     expect(find.text('Send failed'), findsOneWidget);
     expect(
       find.text(
-        'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.',
+        'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.',
       ),
       findsOneWidget,
     );
@@ -774,6 +831,7 @@ class _FakeLedgerSignedOperationService
   final broadcasts = <String>[];
   String broadcastStatus = 'broadcasted';
   String? broadcastMessage;
+  String broadcastTxid = _txid;
 
   @override
   Future<void> checkpoint({
@@ -797,7 +855,7 @@ class _FakeLedgerSignedOperationService
     broadcasts.add(operationId);
     return LedgerSignedOperationBroadcastResult(
       operationId: operationId,
-      txid: _txid,
+      txid: broadcastTxid,
       status: broadcastStatus,
       message: broadcastMessage,
       requiresAck: false,
