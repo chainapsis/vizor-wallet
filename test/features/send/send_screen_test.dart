@@ -230,6 +230,41 @@ void main() {
     );
   });
 
+  testWidgets('refreshes autocomplete when contacts finish loading', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repository = _DelayedAddressBookRepository();
+
+    await tester.pumpWidget(_sendHarness(addressBookRepository: repository));
+    await tester.pump();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'ali');
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsNothing,
+    );
+
+    repository.complete([
+      _contact(
+        id: 'alice',
+        label: 'Alice',
+        network: AddressBookNetwork.zcash,
+        address: _shieldedAddress,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_address_field'), 'ali');
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsOneWidget,
+    );
+    expect(find.text('Alice'), findsOneWidget);
+  });
+
   testWidgets('contact autocomplete follows the mnemonic popover styling', (
     tester,
   ) async {
@@ -1198,6 +1233,20 @@ class _FakeAddressBookRepository implements AddressBookRepository {
       ..clear()
       ..addAll(contacts);
   }
+}
+
+class _DelayedAddressBookRepository implements AddressBookRepository {
+  final _contacts = Completer<List<AddressBookContact>>();
+
+  void complete(List<AddressBookContact> contacts) {
+    _contacts.complete([...contacts]);
+  }
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() => _contacts.future;
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {

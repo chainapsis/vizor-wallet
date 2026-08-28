@@ -277,6 +277,22 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (mounted) setState(() {});
   }
 
+  void _refreshAddressAutocompleteOptions() {
+    final value = _addressController.value;
+    final text = value.text;
+    if (text.trim().isEmpty) return;
+
+    // RawAutocomplete only recomputes options when the text value changes.
+    // Preserve the user's selection and composing range while refreshing the
+    // options after the asynchronously loaded contact list changes.
+    _addressController.value = value.copyWith(
+      text: '$text ',
+      selection: TextSelection.collapsed(offset: text.length + 1),
+      composing: TextRange.empty,
+    );
+    _addressController.value = value;
+  }
+
   void _openContactPicker() {
     setState(() => _contactPickerOpen = true);
   }
@@ -932,6 +948,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);
     });
+    ref.listen<List<AddressBookContact>?>(
+      addressBookProvider.select((value) => value.value?.contacts),
+      (previous, next) {
+        if (identical(previous, next)) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _refreshAddressAutocompleteOptions();
+        });
+      },
+    );
 
     final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
