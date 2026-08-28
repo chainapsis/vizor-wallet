@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +13,41 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 
 void main() {
+  test('standalone recovery matches the persisted transaction prefix', () {
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'partial_broadcast',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-1'],
+      ),
+      isTrue,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'broadcasted_storage_failed',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-1'],
+      ),
+      isFalse,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'broadcasted_storage_failed',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-2', 'txid-1'],
+      ),
+      isTrue,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'expired',
+        resultTxids: '',
+        walletTxids: const [],
+      ),
+      isTrue,
+    );
+  });
+
   test(
     'recovery broadcasts a pending send without device interaction',
     () async {
@@ -93,6 +130,106 @@ void main() {
 
     expect(operationService.acknowledged, isEmpty);
   });
+
+  test(
+    'recovery acknowledges an uncertain send after wallet sync owns its tx',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.send,
+          state: 'result_pending_ack',
+          txid: 'txid-1',
+          status: 'broadcast_unknown',
+        ),
+      ]);
+      final reconciled = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        standaloneRecovery: ({required operation, required result}) async {
+          reconciled.add('${operation.operationId}:${result.txid}');
+          return true;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(reconciled, ['operation-1:txid-1']);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
+  test(
+    'recovery retains an uncertain shield until sync finds its tx',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.shield,
+          state: 'result_pending_ack',
+          txid: 'txid-1',
+          status: 'broadcasted_storage_failed',
+        ),
+      ]);
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        standaloneRecovery: ({required operation, required result}) async {
+          return false;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.acknowledged, isEmpty);
+    },
+  );
+
+  test('recovery queues a trailing pass when sync changes in flight', () async {
+    final operationService = _FakeLedgerSignedOperationService([
+      _operation(
+        kind: LedgerSignedOperationKind.send,
+        state: 'result_pending_ack',
+        txid: 'txid-1',
+        status: 'broadcast_unknown',
+      ),
+    ]);
+    final firstProbe = Completer<void>();
+    var probeCount = 0;
+    final container = _container(
+      operationService: operationService,
+      sync: _RecoverySyncNotifier(),
+      standaloneRecovery: ({required operation, required result}) async {
+        probeCount++;
+        if (probeCount == 1) {
+          await firstProbe.future;
+          return false;
+        }
+        return true;
+      },
+    );
+    addTearDown(container.dispose);
+    await container.read(walletProvider.future);
+    final coordinator = container.read(
+      ledgerOperationRecoveryCoordinatorProvider,
+    );
+
+    final firstRecovery = coordinator.recover();
+    await Future<void>.delayed(Duration.zero);
+    final syncTriggeredRecovery = coordinator.recover();
+    firstProbe.complete();
+    await Future.wait([firstRecovery, syncTriggeredRecovery]);
+
+    expect(probeCount, 2);
+    expect(operationService.acknowledged, ['operation-1']);
+  });
 }
 
 ProviderContainer _container({
@@ -100,6 +237,7 @@ ProviderContainer _container({
   required _RecoverySyncNotifier sync,
   List<String>? recoveredDeposits,
   LedgerDepositRecovery? depositRecovery,
+  LedgerStandaloneResultRecovery? standaloneRecovery,
 }) {
   return ProviderContainer(
     overrides: [
@@ -113,6 +251,10 @@ ProviderContainer _container({
               recoveredDeposits?.add('${operation.externalRef}:${result.txid}');
             },
       ),
+      if (standaloneRecovery != null)
+        ledgerStandaloneResultRecoveryProvider.overrideWithValue(
+          standaloneRecovery,
+        ),
     ],
   );
 }
