@@ -15,6 +15,11 @@ typedef LedgerVotingPcztSigner =
       List<int> pcztBytes,
     );
 typedef LedgerOperationCanceller = Future<void> Function();
+typedef LedgerWalletDbPathLoader = Future<String> Function();
+
+final ledgerWalletDbPathProvider = Provider<LedgerWalletDbPathLoader>((_) {
+  return getWalletDbPath;
+});
 
 final ledgerRustOperationCancellerProvider = Provider<LedgerOperationCanceller>(
   (_) => rust_ledger.ledgerCancelOperation,
@@ -68,12 +73,13 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
 
 final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
+  final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     return ref
         .read(ledgerConnectionServiceProvider)
         .run(
@@ -111,12 +117,13 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
 /// clear-sign metadata displayed by the current Ledger Zcash app.
 final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
+  final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     final signatures = await ref
         .read(ledgerConnectionServiceProvider)
         .run(

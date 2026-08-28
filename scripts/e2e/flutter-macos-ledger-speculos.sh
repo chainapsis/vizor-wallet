@@ -51,18 +51,32 @@ cargo run --manifest-path rust/Cargo.toml --quiet \
 FIXTURE_UFVK="$(jq -r '.ufvk' "$FIXTURE_JSON")"
 FIXTURE_SEED_FINGERPRINT="$(jq -r '.seedFingerprint' "$FIXTURE_JSON")"
 FIXTURE_ACCOUNT_UUID="$(jq -r '.accountUuid' "$FIXTURE_JSON")"
+FIXTURE_TRANSPARENT_ADDRESS="$(jq -r '.transparentAddress' "$FIXTURE_JSON")"
 FIXTURE_PCZT_BASE64="$(base64 -i "$FIXTURE_PCZT" | tr -d '\n')"
 FIXTURE_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_DB" | base64 | tr -d '\n')"
 
-echo "running Flutter macOS Ledger Speculos integration test"
-fvm flutter test \
-  integration_test/ledger_speculos_desktop_test.dart \
-  -d "$FLUTTER_DEVICE" \
-  --dart-define=VIZOR_LEDGER_E2E_UFVK="$FIXTURE_UFVK" \
-  --dart-define=VIZOR_LEDGER_E2E_SEED_FINGERPRINT="$FIXTURE_SEED_FINGERPRINT" \
-  --dart-define=VIZOR_LEDGER_E2E_ACCOUNT_UUID="$FIXTURE_ACCOUNT_UUID" \
-  --dart-define=VIZOR_LEDGER_E2E_PCZT_BASE64="$FIXTURE_PCZT_BASE64" \
-  --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64" \
-  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+run_flutter_scenario() {
+  local test_name="$1"
+  echo "running Flutter macOS Ledger Speculos scenario: $test_name"
+  fvm flutter test \
+    integration_test/ledger_speculos_desktop_test.dart \
+    -d "$FLUTTER_DEVICE" \
+    --plain-name "$test_name" \
+    --dart-define=VIZOR_LEDGER_E2E_UFVK="$FIXTURE_UFVK" \
+    --dart-define=VIZOR_LEDGER_E2E_SEED_FINGERPRINT="$FIXTURE_SEED_FINGERPRINT" \
+    --dart-define=VIZOR_LEDGER_E2E_ACCOUNT_UUID="$FIXTURE_ACCOUNT_UUID" \
+    --dart-define=VIZOR_LEDGER_E2E_TRANSPARENT_ADDRESS="$FIXTURE_TRANSPARENT_ADDRESS" \
+    --dart-define=VIZOR_LEDGER_E2E_PCZT_BASE64="$FIXTURE_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64" \
+    --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+}
+
+# Keep each wallet journey isolated so a failure identifies the exact product
+# flow. The final scenario separately proves that two signatures can run in one
+# native app lifecycle after the Ledger status-screen cooldown.
+run_flutter_scenario "imports and sends with Ledger through Speculos"
+run_flutter_scenario "pays with Ledger through Speculos"
+run_flutter_scenario "swaps with Ledger through Speculos"
+run_flutter_scenario "signs sequential Ledger operations in one app lifecycle"
 
 echo "Ledger Speculos fixture retained at $FIXTURE_DIR"

@@ -2,9 +2,9 @@ import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
+import 'ledger_signing_service.dart' show ledgerWalletDbPathProvider;
 
 enum LedgerSignedOperationKind {
   send('send'),
@@ -91,6 +91,7 @@ final ledgerSignedOperationServiceProvider =
       return RustLedgerSignedOperationService(
         network: endpoint.networkName,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        loadWalletDbPath: ref.watch(ledgerWalletDbPathProvider),
       );
     });
 
@@ -98,10 +99,12 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
   const RustLedgerSignedOperationService({
     required this.network,
     required this.lightwalletdUrl,
+    required this.loadWalletDbPath,
   });
 
   final String network;
   final String lightwalletdUrl;
+  final Future<String> Function() loadWalletDbPath;
 
   @override
   Future<void> checkpoint({
@@ -112,7 +115,7 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
     required List<int> pcztWithSignaturesBytes,
     String? externalRef,
   }) async {
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerCheckpointSignedOperation(
       dbPath: dbPath,
       network: network,
@@ -127,7 +130,7 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
 
   @override
   Future<List<LedgerSignedOperationMetadata>> list() async {
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     final operations = await rust_ledger.ledgerListSignedOperations(
       dbPath: dbPath,
       network: network,
@@ -141,7 +144,7 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     final result = await rust_ledger.ledgerBroadcastSignedOperation(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
@@ -161,7 +164,7 @@ class RustLedgerSignedOperationService implements LedgerSignedOperationService {
 
   @override
   Future<void> acknowledge(String operationId) async {
-    final dbPath = await getWalletDbPath();
+    final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerAckSignedOperation(
       dbPath: dbPath,
       network: network,
