@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
@@ -227,6 +228,137 @@ void main() {
       find.byKey(const ValueKey('send_contact_autocomplete_options')),
       findsNothing,
     );
+  });
+
+  testWidgets('contact autocomplete follows the mnemonic popover styling', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          for (var index = 0; index < 5; index++)
+            _contact(
+              id: 'alice-$index',
+              label: 'Alice $index',
+              network: AddressBookNetwork.zcash,
+              address: '$_shieldedAddress$index',
+            ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'ali');
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(const ValueKey('send_address_field'));
+    final options = find.byKey(
+      const ValueKey('send_contact_autocomplete_options'),
+    );
+    expect(tester.getTopLeft(options).dy - tester.getBottomLeft(field).dy, 8);
+    expect(tester.getSize(options), const Size(396, 212));
+
+    final surface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('send_contact_autocomplete_surface')),
+    );
+    final decoration = surface.decoration as BoxDecoration;
+    expect(decoration.color, AppThemeData.light.colors.background.ground);
+    expect(decoration.borderRadius, BorderRadius.circular(AppRadii.medium));
+    expect(
+      decoration.border,
+      Border.all(
+        color: AppThemeData.light.colors.border.subtle,
+        strokeAlign: BorderSide.strokeAlignInside,
+      ),
+    );
+    expect(decoration.boxShadow, _mnemonicPopoverShadows);
+
+    final scrollbar = tester.widget<Scrollbar>(
+      find.byKey(const ValueKey('send_contact_autocomplete_scrollbar')),
+    );
+    expect(scrollbar.thumbVisibility, isTrue);
+  });
+
+  testWidgets('keyboard highlight keeps autocomplete options visible', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          for (var index = 0; index < 6; index++)
+            _contact(
+              id: 'alice-$index',
+              label: 'Alice $index',
+              network: AddressBookNetwork.zcash,
+              address: '$_shieldedAddress$index',
+            ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'ali');
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 4; index++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+
+    final scrollbar = tester.widget<Scrollbar>(
+      find.byKey(const ValueKey('send_contact_autocomplete_scrollbar')),
+    );
+    expect(scrollbar.controller!.offset, greaterThan(0));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_fieldText(tester, 'send_address_field'), '${_shieldedAddress}4');
+  });
+
+  testWidgets('equal-sized result changes reset stale autocomplete scroll', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          for (final prefix in ['Alpha', 'Beta'])
+            for (var index = 0; index < 6; index++)
+              _contact(
+                id: '${prefix.toLowerCase()}-$index',
+                label: '$prefix $index',
+                network: AddressBookNetwork.zcash,
+                address: '$_shieldedAddress$prefix$index',
+              ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'alpha');
+    await tester.pumpAndSettle();
+
+    final scrollbarFinder = find.byKey(
+      const ValueKey('send_contact_autocomplete_scrollbar'),
+    );
+    var scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    scrollbar.controller!.jumpTo(
+      scrollbar.controller!.position.maxScrollExtent,
+    );
+    await tester.pump();
+    expect(scrollbar.controller!.offset, greaterThan(0));
+
+    await tester.enterText(_editableIn('send_address_field'), 'beta');
+    await tester.pumpAndSettle();
+
+    scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    expect(scrollbar.controller!.offset, lessThanOrEqualTo(AppSpacing.xxs));
+    expect(find.text('Beta 0'), findsOneWidget);
   });
 
   testWidgets('keeps contacts label for prefilled and cleared addresses', (
@@ -855,9 +987,7 @@ void main() {
     expect(rustApi.lastProposeAmountZatoshi, BigInt.from(125000000));
   });
 
-  testWidgets('hardware TEX sends can proceed to proposal', (
-    tester,
-  ) async {
+  testWidgets('hardware TEX sends can proceed to proposal', (tester) async {
     await _setDesktopViewport(tester);
 
     await tester.pumpWidget(
@@ -1029,6 +1159,12 @@ Widget _sendHarness({
     ),
   );
 }
+
+const _mnemonicPopoverShadows = [
+  BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 2)),
+  BoxShadow(color: Color(0x08000000), blurRadius: 12, offset: Offset(0, -6)),
+  BoxShadow(color: Color(0x14000000), blurRadius: 28, offset: Offset(0, 14)),
+];
 
 AddressBookContact _contact({
   required String id,

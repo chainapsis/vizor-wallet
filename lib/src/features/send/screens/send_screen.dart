@@ -1101,6 +1101,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             textEditingController: _addressController,
                             focusNode: _addressFocusNode,
                             displayStringForOption: (contact) => contact.label,
+                            optionsViewOpenDirection:
+                                OptionsViewOpenDirection.down,
                             optionsBuilder: (value) {
                               if (value.text.trim().isEmpty) {
                                 return const <AddressBookContact>[];
@@ -1113,63 +1115,87 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             },
                             onSelected: _selectContact,
                             optionsViewBuilder:
-                                (context, onSelected, options) =>
-                                    _SendContactAutocompleteOptions(
-                                      contacts: options.toList(growable: false),
-                                      onSelected: onSelected,
-                                    ),
+                                (context, onSelected, options) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: AppSpacing.xs,
+                                  ),
+                                  child: _SendContactAutocompleteOptions(
+                                    contacts: options.toList(growable: false),
+                                    highlightedIndex:
+                                        AutocompleteHighlightedOption.of(
+                                          context,
+                                        ),
+                                    onSelected: onSelected,
+                                  ),
+                                ),
                             fieldViewBuilder:
                                 (
                                   context,
                                   controller,
                                   focusNode,
                                   onFieldSubmitted,
-                                ) => AppTextField(
-                                  key: const ValueKey('send_address_field'),
-                                  label: 'Send to',
-                                  labelStyle: sendFieldLabelStyle,
-                                  rightSlot: _SendContactsLabelButton(
-                                    label: 'Contacts',
-                                    onTap: _openContactPicker,
-                                  ),
-                                  tone: addressTone,
-                                  borderColor:
-                                      addressTone ==
-                                          AppTextFieldTone.destructive
-                                      ? colors.border.utilityDestructive
-                                      : null,
-                                  focusNode: focusNode,
-                                  controller: controller,
-                                  hintText: 'Zcash address',
-                                  leading: AppIcon(
-                                    addressLeadingIcon,
-                                    size: 20,
-                                    color: addressLeadingColor,
-                                  ),
-                                  messageText: addressMessage,
-                                  messageIcon: addressMessageIcon,
-                                  onChanged: (_) => _handleAddressChanged(),
-                                  onSubmitted: (_) => onFieldSubmitted(),
-                                  keyboardType: TextInputType.text,
-                                  showClearButton: true,
-                                  onClear: () {
-                                    _addressSeq++;
-                                    _maxDebounceTimer?.cancel();
-                                    setState(() {
-                                      _addressType = '';
-                                      _error = null;
-                                      if (_isMaxMode) {
-                                        _validateSeq++;
-                                        _maxSeq++;
-                                        _maxQuote = null;
-                                        _isResolvingMax = false;
-                                        _amountError = '';
-                                      }
-                                    });
-                                    if (!_isMaxMode) {
-                                      _validateAmount();
+                                ) => Focus(
+                                  canRequestFocus: false,
+                                  skipTraversal: true,
+                                  onKeyEvent: (node, event) {
+                                    if (event is KeyDownEvent &&
+                                        (event.logicalKey ==
+                                                LogicalKeyboardKey.enter ||
+                                            event.logicalKey ==
+                                                LogicalKeyboardKey
+                                                    .numpadEnter)) {
+                                      onFieldSubmitted();
+                                      return KeyEventResult.handled;
                                     }
+                                    return KeyEventResult.ignored;
                                   },
+                                  child: AppTextField(
+                                    key: const ValueKey('send_address_field'),
+                                    label: 'Send to',
+                                    labelStyle: sendFieldLabelStyle,
+                                    rightSlot: _SendContactsLabelButton(
+                                      label: 'Contacts',
+                                      onTap: _openContactPicker,
+                                    ),
+                                    tone: addressTone,
+                                    borderColor:
+                                        addressTone ==
+                                            AppTextFieldTone.destructive
+                                        ? colors.border.utilityDestructive
+                                        : null,
+                                    focusNode: focusNode,
+                                    controller: controller,
+                                    hintText: 'Zcash address',
+                                    leading: AppIcon(
+                                      addressLeadingIcon,
+                                      size: 20,
+                                      color: addressLeadingColor,
+                                    ),
+                                    messageText: addressMessage,
+                                    messageIcon: addressMessageIcon,
+                                    onChanged: (_) => _handleAddressChanged(),
+                                    onSubmitted: (_) => onFieldSubmitted(),
+                                    keyboardType: TextInputType.text,
+                                    showClearButton: true,
+                                    onClear: () {
+                                      _addressSeq++;
+                                      _maxDebounceTimer?.cancel();
+                                      setState(() {
+                                        _addressType = '';
+                                        _error = null;
+                                        if (_isMaxMode) {
+                                          _validateSeq++;
+                                          _maxSeq++;
+                                          _maxQuote = null;
+                                          _isResolvingMax = false;
+                                          _amountError = '';
+                                        }
+                                      });
+                                      if (!_isMaxMode) {
+                                        _validateAmount();
+                                      }
+                                    },
+                                  ),
                                 ),
                           ),
                           const SizedBox(
@@ -1435,97 +1461,287 @@ class _SendTitle extends StatelessWidget {
   }
 }
 
-class _SendContactAutocompleteOptions extends StatelessWidget {
+class _SendContactAutocompleteOptions extends StatefulWidget {
   const _SendContactAutocompleteOptions({
     required this.contacts,
+    required this.highlightedIndex,
     required this.onSelected,
   });
 
   final List<AddressBookContact> contacts;
+  final int highlightedIndex;
   final ValueChanged<AddressBookContact> onSelected;
+
+  @override
+  State<_SendContactAutocompleteOptions> createState() =>
+      _SendContactAutocompleteOptionsState();
+}
+
+class _SendContactAutocompleteOptionsState
+    extends State<_SendContactAutocompleteOptions> {
+  static const _rowHeight = 44.0;
+  static const _rowGap = AppSpacing.xxs;
+  static const _visibleRows = 4;
+  static const _listPadding = AppSpacing.xxs;
+  static const _scrollbarTrackWidth = 12.0;
+  static const _outerVerticalPadding = AppSpacing.xs;
+
+  final ScrollController _scrollController = ScrollController();
+  bool _canScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleCanScrollUpdate();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SendContactAutocompleteOptions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final contactsChanged = !_sameContactSequence(
+      oldWidget.contacts,
+      widget.contacts,
+    );
+    if (oldWidget.highlightedIndex != widget.highlightedIndex ||
+        contactsChanged) {
+      _scheduleCanScrollUpdate();
+      _scheduleHighlightedOptionScroll();
+    }
+  }
+
+  bool _sameContactSequence(
+    List<AddressBookContact> previous,
+    List<AddressBookContact> next,
+  ) {
+    if (previous.length != next.length) return false;
+    for (var index = 0; index < previous.length; index++) {
+      if (previous[index].id != next[index].id) return false;
+    }
+    return true;
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleCanScrollUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final nextCanScroll = _scrollController.position.maxScrollExtent > 0;
+      if (_canScroll == nextCanScroll) return;
+      setState(() => _canScroll = nextCanScroll);
+    });
+  }
+
+  void _scheduleHighlightedOptionScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          widget.contacts.isEmpty) {
+        return;
+      }
+      final index = widget.highlightedIndex
+          .clamp(0, widget.contacts.length - 1)
+          .toInt();
+      final rowTop = _listPadding + index * (_rowHeight + _rowGap);
+      final rowBottom = rowTop + _rowHeight;
+      final viewportTop = _scrollController.offset;
+      final viewportBottom =
+          viewportTop + _scrollController.position.viewportDimension;
+
+      double? nextOffset;
+      if (rowTop < viewportTop) {
+        nextOffset = rowTop;
+      } else if (rowBottom > viewportBottom) {
+        nextOffset = rowBottom - _scrollController.position.viewportDimension;
+      }
+      if (nextOffset == null) return;
+      _scrollController.jumpTo(
+        nextOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Align(
-      alignment: Alignment.topLeft,
-      child: Material(
-        color: Colors.transparent,
+    final optionCount = widget.contacts.length;
+    if (optionCount == 0) return const SizedBox.shrink();
+    final visibleCount = optionCount < _visibleRows
+        ? optionCount
+        : _visibleRows;
+    final gapCount = visibleCount - 1;
+    final listHeight =
+        _listPadding * 2 + visibleCount * _rowHeight + gapCount * _rowGap;
+    final popoverHeight = listHeight + _outerVerticalPadding * 2;
+
+    return SizedBox(
+      key: const ValueKey('send_contact_autocomplete_options'),
+      width: _SendComposeLayout.fieldsWidth,
+      height: popoverHeight,
+      child: DecoratedBox(
+        key: const ValueKey('send_contact_autocomplete_surface'),
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+          border: Border.all(
+            color: colors.border.subtle,
+            strokeAlign: BorderSide.strokeAlignInside,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0F000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+            BoxShadow(
+              color: Color(0x08000000),
+              blurRadius: 12,
+              offset: Offset(0, -6),
+            ),
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 28,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: _outerVerticalPadding,
+          ),
+          child: ScrollbarTheme(
+            data: ScrollbarThemeData(
+              thumbColor: WidgetStatePropertyAll(
+                colors.text.muted.withValues(alpha: 0.55),
+              ),
+              radius: const Radius.circular(AppRadii.full),
+              thickness: const WidgetStatePropertyAll(6),
+              mainAxisMargin: 3,
+              crossAxisMargin: 3,
+            ),
+            child: Scrollbar(
+              key: const ValueKey('send_contact_autocomplete_scrollbar'),
+              controller: _scrollController,
+              thumbVisibility: _canScroll,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      child: ListView.builder(
+                        key: const ValueKey('send_contact_autocomplete_list'),
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(_listPadding),
+                        itemCount: optionCount,
+                        itemBuilder: (context, index) {
+                          final contact = widget.contacts[index];
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: index == optionCount - 1 ? 0 : _rowGap,
+                            ),
+                            child: _SendContactAutocompleteRow(
+                              key: ValueKey(
+                                'send_contact_autocomplete_${contact.id}',
+                              ),
+                              contact: contact,
+                              highlighted: index == widget.highlightedIndex,
+                              onTap: () => widget.onSelected(contact),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  if (_canScroll) const SizedBox(width: _scrollbarTrackWidth),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendContactAutocompleteRow extends StatefulWidget {
+  const _SendContactAutocompleteRow({
+    required this.contact,
+    required this.highlighted,
+    required this.onTap,
+    super.key,
+  });
+
+  final AddressBookContact contact;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  @override
+  State<_SendContactAutocompleteRow> createState() =>
+      _SendContactAutocompleteRowState();
+}
+
+class _SendContactAutocompleteRowState
+    extends State<_SendContactAutocompleteRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final selected = widget.highlighted || _hovered;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
         child: Container(
-          key: const ValueKey('send_contact_autocomplete_options'),
-          width: _SendComposeLayout.fieldsWidth,
-          constraints: const BoxConstraints(maxHeight: 240),
-          padding: const EdgeInsets.all(AppSpacing.xs),
+          height: _SendContactAutocompleteOptionsState._rowHeight,
           decoration: BoxDecoration(
-            color: colors.background.base,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            boxShadow: [
-              BoxShadow(
-                color: colors.shadows.subtle,
-                offset: const Offset(0, 4),
-                blurRadius: 12,
+            color: selected ? colors.background.base : null,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          child: Row(
+            children: [
+              AppProfilePicture(
+                profilePictureId: widget.contact.profilePictureId,
+                size: AppProfilePictureSize.large,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.contact.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      widget.contact.addressPreview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.text.secondary,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
-          child: ListView.builder(
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            itemCount: contacts.length,
-            itemBuilder: (context, index) {
-              final contact = contacts[index];
-              final highlighted =
-                  AutocompleteHighlightedOption.of(context) == index;
-              return InkWell(
-                key: ValueKey('send_contact_autocomplete_${contact.id}'),
-                borderRadius: BorderRadius.circular(AppRadii.small),
-                onTap: () => onSelected(contact),
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: highlighted ? colors.background.ground : null,
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                  ),
-                  child: Row(
-                    children: [
-                      AppProfilePicture(
-                        profilePictureId: contact.profilePictureId,
-                        size: AppProfilePictureSize.large,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              contact.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelMedium.copyWith(
-                                color: colors.text.accent,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            Text(
-                              contact.addressPreview,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelMedium.copyWith(
-                                color: colors.text.secondary,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
           ),
         ),
       ),
