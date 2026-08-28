@@ -1388,7 +1388,7 @@ checksum = "dd5f2b7218a51c827a11d22d1439b598121fac94bf9b99452e4afffe512d78c9"
 dependencies = [
  "heck 0.5.0",
  "indexmap 2.14.0",
- "itertools 0.15.0",
+ "itertools 0.14.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2841,15 +2841,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3245,12 +3236,6 @@ name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
-
-[[package]]
-name = "multimap"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "nanorand"
@@ -4123,7 +4108,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "log",
- "multimap 0.8.3",
+ "multimap",
  "petgraph 0.6.5",
  "prettyplease 0.1.25",
  "prost 0.11.9",
@@ -4143,7 +4128,7 @@ dependencies = [
  "heck 0.5.0",
  "itertools 0.14.0",
  "log",
- "multimap 0.10.1",
+ "multimap",
  "petgraph 0.8.3",
  "prettyplease 0.2.37",
  "prost 0.14.4",
@@ -8511,9 +8496,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "3.1.0-rc.7"
+version = "3.1.0-rc.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26f676b1c1577ddd33286b2732dfbd8a391638b8c88a80b16582b62ad87aaf1e"
+checksum = "cf51901f953c8a86059e71979a65dc8da8bf91e615bbb34b80fe60fc76434a49"
 dependencies = [
  "anyhow",
  "base64",

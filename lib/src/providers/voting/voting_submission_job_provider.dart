@@ -284,6 +284,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   ProviderSubscription<AsyncValue<VotingSessionState>>? _sessionSubscription;
   VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
+  Future<void>? _expiryConfirmationCheck;
   _VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
 
@@ -974,6 +975,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       done = completedEligibilitySession;
     }
     if (!_canCompleteSubmission(done)) {
+      if (_hasExpiredUnconfirmedImmediateShare(done)) {
+        _startExpiryConfirmationCheck(key: key, generation: generation);
+        return;
+      }
       _scheduleCompletionPoll(key: key, generation: generation);
       return;
     }
@@ -1166,8 +1171,56 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (_canCompleteSubmission(session)) {
         _completeJob(key: key, generation: generation);
+        return;
+      }
+      if (_hasExpiredUnconfirmedImmediateShare(session)) {
+        _startExpiryConfirmationCheck(key: key, generation: generation);
       }
     });
+  }
+
+  void _startExpiryConfirmationCheck({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    if (_expiryConfirmationCheck != null) return;
+    _cancelCompletionPoll();
+    late final Future<void> check;
+    check =
+        _refreshImmediateShareBeforeExpiryFailure(
+          key: key,
+          generation: generation,
+        ).whenComplete(() {
+          if (identical(_expiryConfirmationCheck, check)) {
+            _expiryConfirmationCheck = null;
+          }
+        });
+    _expiryConfirmationCheck = check;
+    unawaited(check);
+  }
+
+  Future<void> _refreshImmediateShareBeforeExpiryFailure({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    var confirmed = false;
+    try {
+      confirmed = await ref
+          .read(votingSubmissionSessionProvider(key).notifier)
+          .refreshImmediateShareConfirmation();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: final immediate-share confirmation failed: '
+        '$error\n$stackTrace',
+      );
+    }
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final session = _sessionForJob(key);
+    if (confirmed || _canCompleteSubmission(session)) {
+      _completeJob(key: key, generation: generation);
+      return;
+    }
+    _failForExpiredImmediateShare(key: key, generation: generation);
   }
 
   void _cancelCompletionPoll() {
@@ -1178,7 +1231,33 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _canCompleteSubmission(VotingSessionState? session) {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
-        _hasCompletedSubmissionArtifacts(session);
+        _hasCompletedSubmissionArtifacts(session) &&
+        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
+  }
+
+  bool _hasExpiredUnconfirmedImmediateShare(
+    VotingSessionState? session, {
+    DateTime? now,
+  }) {
+    if (session == null ||
+        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan)) {
+      return false;
+    }
+    final voteEnd = session.round?.voteEndTime;
+    return voteEnd != null && !(now ?? DateTime.now()).isBefore(voteEnd);
+  }
+
+  void _failForExpiredImmediateShare({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    _failJob(
+      key: key,
+      generation: generation,
+      message:
+          'The voting round ended before a helper confirmed the immediate '
+          'share. Check the voting status before retrying.',
+    );
   }
 
   Future<VotingSessionState?> _ensureEligibilityForCompletedSession({

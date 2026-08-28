@@ -422,6 +422,96 @@ void main() {
     );
   });
 
+  testWidgets('submitted route waits for the designated immediate share', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final pendingShare = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.one,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        shareDelegations: [pendingShare],
+        unconfirmedShareDelegations: [pendingShare],
+      );
+    final resumePlan = await VotingRecoveryService(api: recoveryApi)
+        .loadResumePlan(
+          dbPath: 'wallet.db',
+          accountUuid: 'account-1',
+          roundId: _roundId,
+        );
+    final completedRoundPlan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      blockingRecovery: false,
+      nextSteps: const [
+        rust_wire.NextStepView(
+          kind: 'confirm_share',
+          bundleIndex: 0,
+          proposalId: 1,
+          choice: 0,
+          shareIndex: 0,
+        ),
+      ],
+      openProposals: Uint32List(0),
+      immediateShareKey: const rust_share_policy.ImmediateShareKey(
+        bundleIndex: 0,
+        proposalId: 1,
+        shareIndex: 0,
+      ),
+      allDecided: true,
+      completedVoteArtifact: true,
+      completedForDisplay: true,
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSessionProvider(_roundId).overrideWith(
+          () => _StaticVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: completedRoundPlan,
+              resumePlan: resumePlan,
+              eligibleWeightZatoshi: BigInt.from(100),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Submission not complete'));
+
+    expect(find.text('Submission confirmed!'), findsNothing);
+    expect(
+      find.text(
+        'This account has not completed submission for this voting round.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('submitted route does not confirm without eligibility', (
     tester,
   ) async {
@@ -4871,6 +4961,26 @@ class _NoopVotingRustApi implements VotingRustApi {
   void warmVotingProvingCaches() {}
 
   @override
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) async {
+    return rust_api.ApiPirCacheWarmupResult(
+      noteCount: 0,
+      cachedCount: 0,
+      fetchedCount: 0,
+      servedRoot: Uint8List(32),
+      prunedCount: 0,
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -5086,6 +5196,8 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
   }) async {}
 }
 
+int _fakeShareTargetCount(int serverCount) => (serverCount + 1) ~/ 2;
+
 class _VotingStatusRustApi extends _NoopVotingRustApi {
   _VotingStatusRustApi(
     this.recoveryApi, {
@@ -5146,17 +5258,24 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) async {
-    return rust_wire.DelegationPirPrecomputeResultView(
-      cachedCount: 0,
-      fetchedCount: 1,
+    return rust_api.ApiSnapshotBundlePrecomputeResult(
       bundleCount: bundleCount,
-      bundleIndex: bundleIndex,
+      eligibleWeight: eligibilityWeightZatoshi ?? BigInt.from(100),
+      droppedCount: 0,
+      privacyTrimDroppedBundles: 0,
+      privacyTrimDroppedNotes: 0,
+      privacyTrimDroppedValueZatoshi: privacyTrimDroppedValueZatoshi,
+      bundles: List.generate(
+        bundleCount,
+        (_) => const rust_api.ApiSnapshotBundlePirResult(
+          cachedCount: 0,
+          fetchedCount: 1,
+        ),
+      ),
     );
   }
 
@@ -5508,20 +5627,47 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
+    required int preferredServerCount,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) async {
-    final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
+    final targetCount = _fakeShareTargetCount(serverUrls.length);
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
+          immediate: immediateShareIndex == i,
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),
     ];
+  }
+
+  @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    final targetCount = _fakeShareTargetCount(serverCount);
+    final assignmentCount = 16 * targetCount;
+    final maxSharesPerServer = serverCount == 0
+        ? 0
+        : (assignmentCount + serverCount - 1) ~/ serverCount;
+    final minServerCount = maxSharesPerServer == 0
+        ? 0
+        : (assignmentCount + maxSharesPerServer - 1) ~/ maxSharesPerServer;
+    return rust_share_policy.ShareServerSelectionPolicy(
+      targetCount: targetCount,
+      maxSharesPerServer: maxSharesPerServer,
+      minServerCount: minServerCount,
+      preflightSoftTimeoutMilliseconds: BigInt.zero,
+      preflightHardTimeoutMilliseconds: BigInt.one,
+      postTimeoutMilliseconds: BigInt.from(30000),
+      initialDeliveryTimeoutMilliseconds: BigInt.from(60000),
+      maxConcurrentPosts: 16,
+    );
   }
 
   @override

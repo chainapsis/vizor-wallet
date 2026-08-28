@@ -149,6 +149,49 @@ pub struct ApiBundleLayout {
     pub privacy_trim_dropped_value_zatoshi: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// PIR cache result for one snapshot-precomputed delegation bundle.
+pub struct ApiSnapshotBundlePirResult {
+    pub cached_count: u32,
+    pub fetched_count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Snapshot bundle plan and PIR warm-up result exposed to Dart.
+pub struct ApiSnapshotBundlePrecomputeResult {
+    pub bundle_count: u32,
+    pub eligible_weight: u64,
+    pub dropped_count: u32,
+    pub privacy_trim_dropped_bundles: u32,
+    pub privacy_trim_dropped_notes: u32,
+    pub privacy_trim_dropped_value_zatoshi: u64,
+    pub bundles: Vec<ApiSnapshotBundlePirResult>,
+}
+
+impl From<zcash_voting::precompute::SnapshotBundlePrecomputeReport>
+    for ApiSnapshotBundlePrecomputeResult
+{
+    fn from(report: zcash_voting::precompute::SnapshotBundlePrecomputeReport) -> Self {
+        let layout = report.layout;
+        Self {
+            bundle_count: layout.bundle_count,
+            eligible_weight: layout.eligible_weight,
+            dropped_count: layout.dropped_count,
+            privacy_trim_dropped_bundles: layout.privacy_trim_dropped_bundles,
+            privacy_trim_dropped_notes: layout.privacy_trim_dropped_notes,
+            privacy_trim_dropped_value_zatoshi: layout.privacy_trim_dropped_value_zatoshi,
+            bundles: report
+                .bundles
+                .into_iter()
+                .map(|bundle| ApiSnapshotBundlePirResult {
+                    cached_count: bundle.cached,
+                    fetched_count: bundle.fetched,
+                })
+                .collect(),
+        }
+    }
+}
+
 impl From<zcash_voting::wire::BundleLayout> for ApiBundleLayout {
     fn from(layout: zcash_voting::wire::BundleLayout) -> Self {
         Self {
@@ -229,6 +272,8 @@ pub fn vote_share_wire_json(
 /// This mirrors the zcash-swift-wallet-sdk wrapper around
 /// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
 /// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// `immediate_share_index` is the position of the round's designated immediate
+/// share in this batch, after any caller-side filtering or reordering.
 ///
 /// # Errors
 ///
@@ -237,10 +282,12 @@ pub fn vote_share_wire_json(
 pub fn plan_share_submissions(
     share_count: u32,
     server_urls: Vec<String>,
+    preferred_server_count: u32,
     now_seconds: u64,
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
+    immediate_share_index: Option<u32>,
 ) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlan>, String> {
     catch(|| {
         // Convert to usize once for policy sizing and planner inputs.
@@ -268,13 +315,17 @@ pub fn plan_share_submissions(
             .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
 
         // Build FRB-safe plans with fully materialized random inputs.
-        let plans = zcash_voting::share_policy::plan_share_submissions(
+        let preferred_server_count = usize::try_from(preferred_server_count)
+            .map_err(|_| "preferred_server_count does not fit in usize".to_string())?;
+        let plans = zcash_voting::share_policy::plan_share_submissions_with_preferred_servers(
             share_count,
             &server_urls,
+            preferred_server_count,
             now_seconds,
             vote_end_time_seconds,
             last_moment_buffer_seconds,
             single_share,
+            immediate_share_index,
             &submit_at_random_bytes,
             &server_random_bytes,
         )
@@ -282,6 +333,14 @@ pub fn plan_share_submissions(
 
         Ok(plans)
     })
+}
+
+/// Return the crate-owned progressive helper probe and privacy policy.
+#[flutter_rust_bridge::frb(sync)]
+pub fn share_server_selection_policy(
+    server_count: u32,
+) -> zcash_voting::share_policy::ShareServerSelectionPolicy {
+    zcash_voting::share_policy::share_server_selection_policy(server_count as usize)
 }
 
 /// Return the crate-owned randomized helper order for one share retry.
@@ -742,6 +801,36 @@ pub async fn check_voting_eligibility(
     })
 }
 
+/// Persist the snapshot-stable bundle plan and warm all bundle PIR inputs.
+///
+/// This is the vote-screen warm-up path. It requires an initialized round and
+/// snapshot-selected notes, but no voting hotkey or wallet seed. The normal
+/// prove path remains the correctness fallback for missing witnesses or PIR
+/// cache rows.
+pub async fn precompute_snapshot_bundles(
+    ctx: ApiVotingRoundContext,
+    pir_server_url: String,
+) -> Result<ApiSnapshotBundlePrecomputeResult, String> {
+    let (voting_network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    delegation::precompute_snapshot_bundles(
+        &ctx.db_path,
+        &ctx.account_uuid,
+        &pir_server_url,
+        ctx.pir_layout,
+        zcash_voting::delegate::ResolveDelegationLwdParams {
+            lightwalletd_url: &ctx.lightwalletd_url,
+            network: voting_network,
+            round_params: ctx.round_params,
+            round_name: &ctx.round_name,
+        },
+        ctx.session_json.as_deref(),
+        bundle_policy,
+    )
+    .await
+    .map(Into::into)
+}
+
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
 ///
 /// This is a background warm-up path. The normal proof path still fetches any
@@ -803,6 +892,80 @@ pub fn warm_voting_proving_caches() {
     delegation::start_proving_cache_warmup();
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// FRB-facing outcome of the bundle-independent PIR proof cache warm-up.
+pub struct ApiPirCacheWarmupResult {
+    /// Eligible notes selected at the snapshot height.
+    pub note_count: u32,
+    /// Nullifiers that already had a cached proof under the served root.
+    pub cached_count: u32,
+    /// Proofs fetched from the PIR server during this warm-up.
+    pub fetched_count: u32,
+    /// IMT root the PIR server served, as 32 little-endian bytes. Compare with
+    /// the round's `nullifier_imt_root` to detect a stale snapshot.
+    pub served_root: Vec<u8>,
+    /// Cache rows evicted by automatic recency prune. Always `0` on this
+    /// crate pin: `precompute_pir_proofs` prunes internally and does not
+    /// report a count.
+    pub pruned_count: u32,
+}
+
+impl From<delegation::PirCacheWarmupOutcome> for ApiPirCacheWarmupResult {
+    fn from(outcome: delegation::PirCacheWarmupOutcome) -> Self {
+        Self {
+            note_count: outcome.note_count,
+            cached_count: outcome.cached_count,
+            fetched_count: outcome.fetched_count,
+            served_root: outcome.served_root,
+            pruned_count: outcome.pruned_count,
+        }
+    }
+}
+
+/// Warm the bundle-independent PIR proof cache for one account.
+///
+/// Fetches and caches IMT non-membership proofs for the account's eligible
+/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
+/// currently serves. Notes are planned with the same whale-protected default
+/// bundle policy round setup uses. The library prunes cache rows older than
+/// four weeks; `keep_roots` is accepted for FRB compatibility.
+///
+/// This is a background warm-up path: it needs no hotkey, no round rows, and
+/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
+/// height. The delegation prove path reads the same cache and still fetches
+/// anything missing, so skipping or failing this call only costs latency.
+///
+/// # Errors
+///
+/// Returns an error if the network string is invalid, the sidecar cannot be
+/// opened, the wallet is not scanned to the snapshot height, note selection
+/// fails, the PIR handshake fails, or a fetched proof does not verify.
+pub async fn warm_pir_proof_cache(
+    db_path: String,
+    account_uuid: String,
+    network: String,
+    lightwalletd_url: String,
+    snapshot_height: u64,
+    pir_server_url: String,
+    pir_layout: PirLayout,
+    keep_roots: Vec<Vec<u8>>,
+) -> Result<ApiPirCacheWarmupResult, String> {
+    let wallet_network = keys::parse_network(&network)?;
+    let network = voting_network(wallet_network);
+    delegation::warm_pir_proof_cache(
+        &db_path,
+        &account_uuid,
+        &lightwalletd_url,
+        network,
+        snapshot_height,
+        &pir_server_url,
+        pir_layout,
+        keep_roots,
+    )
+    .await
+    .map(ApiPirCacheWarmupResult::from)
+}
+
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
 ///
 /// Emits local preparation phase events while work progresses, then emits a
@@ -832,7 +995,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
-    let lwd_started = Instant::now();
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -840,10 +1002,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         voting_network,
     )
     .await?;
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} lwd-inputs elapsed={:.3}s",
-        lwd_started.elapsed().as_secs_f64()
-    );
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -856,7 +1014,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
-    let wallet_flow_started = Instant::now();
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
         &ctx.db_path,
         &pir_server_urls,
@@ -873,10 +1030,6 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     .and_then(|bundle| {
         zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
-    log::info!(
-        "[VOTING_PROVE] bundle={bundle_index} wallet-prove-sign elapsed={:.3}s",
-        wallet_flow_started.elapsed().as_secs_f64()
-    );
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
@@ -1373,8 +1526,10 @@ pub fn reset_voting_session_state(
 ///
 /// This removes every persisted round scoped to `account_uuid`, relying on the
 /// `zcash_voting` round deletion cascade for bundles, recovery rows, share
-/// history, ballot intent, and cached tree state. Use this only at account
-/// deletion boundaries, not for ordinary voting-session retries.
+/// history, ballot intent, and cached tree state. It also deletes
+/// round-independent `pir_proof_cache` rows for the same wallet id — browse-
+/// only warm-up can persist those without ever creating a round. Use this only
+/// at account deletion boundaries, not for ordinary voting-session retries.
 pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Result<u32, String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
@@ -1386,6 +1541,17 @@ pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Res
         for round in rounds {
             db.clear_round(&round.round_id)
                 .map_err(|e| format!("clear voting round {} failed: {e}", round.round_id))?;
+        }
+
+        // `pir_proof_cache` is keyed by wallet_id only (no round FK), so round
+        // cascade never reaches browse-only warm-up rows.
+        {
+            let conn = db.conn();
+            conn.execute(
+                "DELETE FROM pir_proof_cache WHERE wallet_id = :wallet_id",
+                rusqlite::named_params! { ":wallet_id": &account_uuid },
+            )
+            .map_err(|e| format!("clear voting PIR proof cache failed: {e}"))?;
         }
 
         log::info!(
@@ -1532,8 +1698,7 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-        .map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2434,12 +2599,26 @@ mod tests {
             "https://helper-a.example".to_string(),
             "https://helper-b.example".to_string(),
         ];
-        let plans =
-            plan_share_submissions(3, server_urls.clone(), 100, 600, Some(120), false).unwrap();
+        let plans = plan_share_submissions(
+            3,
+            server_urls.clone(),
+            server_urls.len() as u32,
+            100,
+            600,
+            Some(120),
+            false,
+            Some(1),
+        )
+        .unwrap();
 
         assert_eq!(plans.len(), 3);
-        for plan in plans {
-            assert!(plan.submit_at >= 100);
+        for (index, plan) in plans.into_iter().enumerate() {
+            assert_eq!(plan.immediate, index == 1);
+            if plan.immediate {
+                assert_eq!(plan.submit_at, 0);
+            } else {
+                assert!(plan.submit_at >= 100);
+            }
             assert!(!plan.target_servers.is_empty());
             assert!(plan.target_servers.len() <= plan.target_count as usize);
             assert!(plan
@@ -2447,6 +2626,60 @@ mod tests {
                 .iter()
                 .all(|url| server_urls.contains(url)));
         }
+    }
+
+    #[test]
+    fn plan_share_submissions_marks_designated_batch_position_immediate() {
+        let server_urls = vec![
+            "https://helper-a.example".to_string(),
+            "https://helper-b.example".to_string(),
+        ];
+        let plans = plan_share_submissions(
+            3,
+            server_urls.clone(),
+            server_urls.len() as u32,
+            100,
+            600,
+            Some(120),
+            false,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(plans.len(), 3);
+        assert!(!plans[0].immediate);
+        assert!(plans[0].submit_at >= 100);
+        assert!(plans[1].immediate);
+        assert_eq!(plans[1].submit_at, 0);
+        assert!(!plans[2].immediate);
+        assert!(plans[2].submit_at >= 100);
+    }
+
+    #[test]
+    fn helper_selection_wrappers_expose_crate_policy() {
+        let policy = share_server_selection_policy(6);
+        assert_eq!(policy.target_count, 3);
+        assert_eq!(policy.max_shares_per_server, 8);
+        assert_eq!(policy.min_server_count, 6);
+        assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
+        assert_eq!(policy.preflight_hard_timeout_milliseconds, 30_000);
+        assert_eq!(policy.post_timeout_milliseconds, 30_000);
+        assert_eq!(policy.initial_delivery_timeout_milliseconds, 60_000);
+        assert_eq!(policy.max_concurrent_posts, 16);
+
+        let servers: Vec<String> = (0..6)
+            .map(|index| format!("https://helper-{index}.example"))
+            .collect();
+        let plans =
+            plan_share_submissions(16, servers, 6, 100, 600, Some(120), false, None).unwrap();
+        let mut usage = std::collections::HashMap::<String, usize>::new();
+        for plan in plans {
+            assert_eq!(plan.target_servers.len(), 3);
+            for server in plan.target_servers {
+                *usage.entry(server).or_default() += 1;
+            }
+        }
+        assert!(usage.values().all(|count| *count <= 8));
     }
 
     #[test]
@@ -3087,6 +3320,37 @@ mod tests {
     }
 
     #[test]
+    fn delete_voting_account_state_clears_roundless_pir_cache() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let target_account_uuid = "wallet-delete-pir-target";
+        let other_account_uuid = "wallet-delete-pir-other";
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        seed_pir_cache_row(&target_db, target_account_uuid, 0x11);
+        assert!(target_db.list_rounds().unwrap().is_empty());
+        assert_eq!(pir_cache_row_count(&target_db, target_account_uuid), 1);
+        drop(target_db);
+
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        seed_pir_cache_row(&other_db, other_account_uuid, 0x22);
+        assert_eq!(pir_cache_row_count(&other_db, other_account_uuid), 1);
+        drop(other_db);
+
+        let deleted = delete_voting_account_state(
+            db_path.to_str().unwrap().to_string(),
+            target_account_uuid.to_string(),
+        )
+        .unwrap();
+        assert_eq!(deleted, 0);
+
+        let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
+        let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
+        assert_eq!(pir_cache_row_count(&target_db, target_account_uuid), 0);
+        assert_eq!(pir_cache_row_count(&other_db, other_account_uuid), 1);
+    }
+
+    #[test]
     fn list_pending_share_rounds_preserves_session_context() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -3462,6 +3726,36 @@ mod tests {
     }
 
     #[test]
+    fn precompute_snapshot_bundles_rejects_invalid_network_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_snapshot_bundles(
+                test_round_context(&db_path, "bogus", "wallet-1"),
+                "http://127.0.0.1:2".to_string(),
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("Unknown network"));
+    }
+
+    #[test]
+    fn precompute_snapshot_bundles_rejects_empty_pir_url_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_snapshot_bundles(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                "  ".to_string(),
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("PIR server URL must not be empty"));
+    }
+
+    #[test]
     fn precompute_delegation_pir_rejects_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -3666,6 +3960,31 @@ mod tests {
                 },
             )
             .unwrap();
+    }
+
+    fn seed_pir_cache_row(db: &zcash_voting::storage::VotingDb, wallet_id: &str, marker: u8) {
+        db.conn()
+            .execute(
+                "INSERT INTO pir_proof_cache
+                    (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+                 VALUES (:wallet_id, 'regtest', :nullifier, :root, X'00', 0, X'00', 1, 1)",
+                rusqlite::named_params! {
+                    ":wallet_id": wallet_id,
+                    ":nullifier": [marker; 32],
+                    ":root": [marker.wrapping_add(1); 32],
+                },
+            )
+            .unwrap();
+    }
+
+    fn pir_cache_row_count(db: &zcash_voting::storage::VotingDb, wallet_id: &str) -> i64 {
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM pir_proof_cache WHERE wallet_id = :wallet_id",
+                rusqlite::named_params! { ":wallet_id": wallet_id },
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     fn test_tree_state(height: u64) -> TreeState {

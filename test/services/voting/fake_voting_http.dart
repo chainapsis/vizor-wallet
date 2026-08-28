@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 class FakeVotingHttpClient implements VotingHttpClient {
   final Map<String, Object> responses;
   final requests = <FakeVotingHttpRequest>[];
+  final cancelledRequests = <Uri>[];
 
   FakeVotingHttpClient({this.responses = const {}});
 
@@ -15,11 +16,27 @@ class FakeVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     requests.add(
       FakeVotingHttpRequest('GET', uri, headers: headers, timeout: timeout),
     );
-    return _responseFor(uri);
+    var completed = false;
+    final response = _responseFor(uri);
+    unawaited(
+      response.then<void>(
+        (_) => completed = true,
+        onError: (_, _) => completed = true,
+      ),
+    );
+    if (cancelSignal != null) {
+      unawaited(
+        cancelSignal.then((_) {
+          if (!completed) cancelledRequests.add(uri);
+        }, onError: (_, _) {}),
+      );
+    }
+    return response;
   }
 
   @override

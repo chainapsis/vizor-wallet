@@ -90,8 +90,14 @@ class MappedVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
-    return _inner.get(_mapper.map(uri), headers: headers, timeout: timeout);
+    return _inner.get(
+      _mapper.map(uri),
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 
   @override

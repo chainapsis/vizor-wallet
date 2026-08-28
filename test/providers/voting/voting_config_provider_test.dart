@@ -323,6 +323,7 @@ class _NoopVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     throw UnimplementedError('HTTP should not be used in this test.');
   }

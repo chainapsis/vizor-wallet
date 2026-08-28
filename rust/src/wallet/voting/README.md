@@ -26,6 +26,7 @@ This document focuses on what Vizor's integration is responsible for.
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
+| `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) and refuses to proceed when Tor is selected but unusable, so PIR cache warm-up does not dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. PIR HTTP still uses the crate's `HyperTransport`. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
 
@@ -106,6 +107,7 @@ directly. The mapping from FRB functions to crate APIs:
 
 | Stage | FRB entry (`api/voting.rs`) | Crate API |
 | --- | --- | --- |
+| Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
 | Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
 | Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |

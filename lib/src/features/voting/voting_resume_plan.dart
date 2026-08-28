@@ -23,6 +23,27 @@ bool hasCompletedVoteForDisplay(rust_wire.RoundPlanView? roundPlan) {
   return roundPlan?.completedForDisplay ?? false;
 }
 
+/// Whether the round's designated immediate share has durable confirmation.
+///
+/// Delayed shares intentionally remain background work, but the submission
+/// confirmation screen must not advance until this one round-level share has
+/// been observed by at least one helper that accepted it.
+bool hasConfirmedImmediateShare(
+  rust_wire.RoundPlanView? roundPlan,
+  VotingResumePlan? resumePlan,
+) {
+  final key = roundPlan?.immediateShareKey;
+  if (key == null) return true;
+  if (resumePlan == null) return false;
+  return resumePlan.shareDelegations.any(
+    (record) =>
+        record.bundleIndex == key.bundleIndex &&
+        record.proposalId == key.proposalId &&
+        record.shareIndex == key.shareIndex &&
+        record.confirmed,
+  );
+}
+
 bool roundPlanNeedsDraftSetup(rust_wire.RoundPlanView? roundPlan) {
   return roundPlan?.needsDraftSetup ?? false;
 }

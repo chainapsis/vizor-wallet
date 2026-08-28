@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -61,14 +62,9 @@ final votingApiRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
 });
 
-/// Timeout for one helper share request.
+/// Timeout for one helper share-status request.
 final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 5);
-});
-
-/// Timeout for one helper readiness probe.
-final votingHelperPreflightTimeoutProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 2);
 });
 
 /// Delay before retrying a failed automatic helper-share tracking pass.
@@ -137,7 +133,6 @@ final votingApiClientProvider =
         httpClient: ref.watch(votingHttpClientProvider),
         timeout: ref.watch(votingApiRequestTimeoutProvider),
         helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
-        helperPreflightTimeout: ref.watch(votingHelperPreflightTimeoutProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
         helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
         broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
@@ -369,12 +364,26 @@ abstract interface class VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   });
 
-  Future<rust_voting.DelegationPirPrecomputeResultView>
-  precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
+  });
+
+  /// Bundle-independent background PIR proof cache warm-up.
+  ///
+  /// Needs no hotkey, round rows, or bundles — only a wallet scanned to the
+  /// snapshot height and a PIR endpoint serving it. `keepRoots` should hold
+  /// every active round's `nullifier_imt_root`; the served root is kept
+  /// automatically.
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
   });
 
   /// Fire-and-forget Halo2 proving-key warm-up for voting proofs.
@@ -518,10 +527,16 @@ abstract interface class VotingRustApi {
   Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
+    required int preferredServerCount,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
+  });
+
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
   });
 
   Future<List<String>> shareResubmissionServerOrder({
@@ -635,18 +650,36 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.DelegationPirPrecomputeResultView>
-  precomputeDelegationPir({
+  Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
   }) {
-    return rust_api.precomputeDelegationPir(
+    return rust_api.precomputeSnapshotBundles(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String lightwalletdUrl,
+    required BigInt snapshotHeight,
+    required String pirServerUrl,
+    required rust_config.PirLayout pirLayout,
+    required List<Uint8List> keepRoots,
+  }) {
+    return rust_api.warmPirProofCache(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      network: network,
+      lightwalletdUrl: lightwalletdUrl,
+      snapshotHeight: snapshotHeight,
+      pirServerUrl: pirServerUrl,
+      pirLayout: pirLayout,
+      keepRoots: keepRoots,
     );
   }
 
@@ -922,19 +955,30 @@ class FrbVotingRustApi implements VotingRustApi {
   Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
+    required int preferredServerCount,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
+    int? immediateShareIndex,
   }) {
     return rust_api.planShareSubmissions(
       shareCount: shareCount,
       serverUrls: serverUrls,
+      preferredServerCount: preferredServerCount,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+      immediateShareIndex: immediateShareIndex,
     );
+  }
+
+  @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    return rust_api.shareServerSelectionPolicy(serverCount: serverCount);
   }
 
   @override

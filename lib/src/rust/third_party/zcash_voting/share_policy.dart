@@ -6,8 +6,102 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Identifies the round's single designated immediate helper share.
+class ImmediateShareKey {
+  final int bundleIndex;
+  final int proposalId;
+
+  /// Domain share index, always [`IMMEDIATE_SHARE_INDEX`].
+  final int shareIndex;
+
+  const ImmediateShareKey({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImmediateShareKey &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
+}
+
+/// Shared helper probing and initial-delivery values.
+///
+/// Clients own transport and recovery. They should start all readiness probes
+/// together, inspect responses after the soft timeout, and continue until at
+/// least `target_count` helpers are ready or the hard timeout expires. For a
+/// complete commitment, `max_shares_per_server` is the balanced maximum when
+/// at least `min_server_count` helpers are in the preferred planning pool.
+/// These limits are derived from the configured fleet size. Retries may exceed
+/// them when needed for liveness. The limit is per helper and does not make a
+/// claim about the combined view of colluding helpers.
+class ShareServerSelectionPolicy {
+  final int targetCount;
+  final int maxSharesPerServer;
+  final int minServerCount;
+  final BigInt preflightSoftTimeoutMilliseconds;
+  final BigInt preflightHardTimeoutMilliseconds;
+  final BigInt postTimeoutMilliseconds;
+  final BigInt initialDeliveryTimeoutMilliseconds;
+  final int maxConcurrentPosts;
+
+  const ShareServerSelectionPolicy({
+    required this.targetCount,
+    required this.maxSharesPerServer,
+    required this.minServerCount,
+    required this.preflightSoftTimeoutMilliseconds,
+    required this.preflightHardTimeoutMilliseconds,
+    required this.postTimeoutMilliseconds,
+    required this.initialDeliveryTimeoutMilliseconds,
+    required this.maxConcurrentPosts,
+  });
+
+  @override
+  int get hashCode =>
+      targetCount.hashCode ^
+      maxSharesPerServer.hashCode ^
+      minServerCount.hashCode ^
+      preflightSoftTimeoutMilliseconds.hashCode ^
+      preflightHardTimeoutMilliseconds.hashCode ^
+      postTimeoutMilliseconds.hashCode ^
+      initialDeliveryTimeoutMilliseconds.hashCode ^
+      maxConcurrentPosts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareServerSelectionPolicy &&
+          runtimeType == other.runtimeType &&
+          targetCount == other.targetCount &&
+          maxSharesPerServer == other.maxSharesPerServer &&
+          minServerCount == other.minServerCount &&
+          preflightSoftTimeoutMilliseconds ==
+              other.preflightSoftTimeoutMilliseconds &&
+          preflightHardTimeoutMilliseconds ==
+              other.preflightHardTimeoutMilliseconds &&
+          postTimeoutMilliseconds == other.postTimeoutMilliseconds &&
+          initialDeliveryTimeoutMilliseconds ==
+              other.initialDeliveryTimeoutMilliseconds &&
+          maxConcurrentPosts == other.maxConcurrentPosts;
+}
+
 /// Planned helper-share submission values that SDKs can apply to payloads.
 class ShareSubmissionPlan {
+  /// True only for the round's designated immediate share.
+  ///
+  /// This is distinct from `submit_at == 0`: last-moment and single-share
+  /// planning can schedule other, undesignated shares immediately.
+  final bool immediate;
+
   /// Unix seconds when helpers should submit the share, or 0 for immediate.
   final BigInt submitAt;
 
@@ -18,6 +112,7 @@ class ShareSubmissionPlan {
   final List<String> targetServers;
 
   const ShareSubmissionPlan({
+    required this.immediate,
     required this.submitAt,
     required this.targetCount,
     required this.targetServers,
@@ -25,13 +120,17 @@ class ShareSubmissionPlan {
 
   @override
   int get hashCode =>
-      submitAt.hashCode ^ targetCount.hashCode ^ targetServers.hashCode;
+      immediate.hashCode ^
+      submitAt.hashCode ^
+      targetCount.hashCode ^
+      targetServers.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ShareSubmissionPlan &&
           runtimeType == other.runtimeType &&
+          immediate == other.immediate &&
           submitAt == other.submitAt &&
           targetCount == other.targetCount &&
           targetServers == other.targetServers;

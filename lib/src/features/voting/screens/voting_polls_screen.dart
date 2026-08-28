@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/voting/voting_config_provider.dart';
+import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_poll_eligibility_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -68,6 +69,9 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Background nullifier-proof warm-up for active rounds; needs no hotkey
+      // or bundles, dedupes its own in-flight work, and never surfaces errors.
+      unawaited(ref.read(votingPirWarmupProvider).maybeWarmActiveRounds());
       if (_wasPollListRecentlyRefreshed()) {
         setState(() {
           _entryRefreshInFlight = false;
