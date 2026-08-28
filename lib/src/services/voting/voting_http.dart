@@ -13,6 +13,7 @@ abstract interface class VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   });
 
   Future<VotingHttpResponse> postJson(
@@ -63,8 +64,15 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) {
-    return _send('GET', uri, headers: headers, timeout: timeout);
+    return _send(
+      'GET',
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 
   @override
@@ -93,6 +101,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     ContentType? contentType,
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     final requestHeaders = <String, String>{
       if (contentType != null)
@@ -105,6 +114,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
       headers: requestHeaders,
       bodyBytes: bodyBytes ?? const [],
       timeout: timeout,
+      cancelSignal: cancelSignal,
     );
     return VotingHttpResponse(
       statusCode: response.statusCode,

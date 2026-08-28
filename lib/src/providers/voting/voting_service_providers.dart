@@ -62,14 +62,9 @@ final votingApiRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
 });
 
-/// Timeout for one helper share request.
+/// Timeout for one helper share-status request.
 final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 5);
-});
-
-/// Timeout for one helper readiness probe.
-final votingHelperPreflightTimeoutProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 2);
 });
 
 /// Delay before retrying a failed automatic helper-share tracking pass.
@@ -138,7 +133,6 @@ final votingApiClientProvider =
         httpClient: ref.watch(votingHttpClientProvider),
         timeout: ref.watch(votingApiRequestTimeoutProvider),
         helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
-        helperPreflightTimeout: ref.watch(votingHelperPreflightTimeoutProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
         helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
         broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
@@ -533,11 +527,16 @@ abstract interface class VotingRustApi {
   Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
+    required int preferredServerCount,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
     int? immediateShareIndex,
+  });
+
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
   });
 
   Future<List<String>> shareResubmissionServerOrder({
@@ -956,6 +955,7 @@ class FrbVotingRustApi implements VotingRustApi {
   Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
+    required int preferredServerCount,
     required BigInt nowSeconds,
     required BigInt voteEndTimeSeconds,
     BigInt? lastMomentBufferSeconds,
@@ -965,12 +965,20 @@ class FrbVotingRustApi implements VotingRustApi {
     return rust_api.planShareSubmissions(
       shareCount: shareCount,
       serverUrls: serverUrls,
+      preferredServerCount: preferredServerCount,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
       immediateShareIndex: immediateShareIndex,
     );
+  }
+
+  @override
+  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
+    required int serverCount,
+  }) {
+    return rust_api.shareServerSelectionPolicy(serverCount: serverCount);
   }
 
   @override

@@ -937,7 +937,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
   }) {
-    return _enqueue(() async {
+    final helperPreflightCancellation = Completer<void>();
+    Future<List<String>>? activeHelperPreflight;
+    final operation = _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
@@ -1172,11 +1174,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             0,
             (total, work) => total + work.bundleIndexes.length,
           );
-      final helperAvailability = totalBundleTasks == 0
-          ? Future.value(const <String, bool>{})
+      final helperSelectionPolicy = rust.shareServerSelectionPolicy(
+        serverCount: context.config.apiServers.all.length,
+      );
+      final helperPostPool = _AsyncPermitPool(
+        helperSelectionPolicy.maxConcurrentPosts,
+      );
+      final helperPreflight = totalBundleTasks == 0
+          ? Future.value(const <String>[])
           : ref
                 .read(votingApiClientProvider(context.config.apiServers))
-                .preflightHelpers(context.config.apiServers.all);
+                .preflightHelpers(
+                  context.config.apiServers.all,
+                  readyTargetCount: helperSelectionPolicy.targetCount,
+                  softTimeout: Duration(
+                    milliseconds: helperSelectionPolicy
+                        .preflightSoftTimeoutMilliseconds
+                        .toInt(),
+                  ),
+                  hardTimeout: Duration(
+                    milliseconds: helperSelectionPolicy
+                        .preflightHardTimeoutMilliseconds
+                        .toInt(),
+                  ),
+                  cancelSignal: helperPreflightCancellation.future,
+                );
+      activeHelperPreflight = helperPreflight;
       var completedBundleTasks = 0;
       var completedQuestions = 0;
       final startTiming = _roundShareTiming(context, _nowSeconds());
@@ -1257,7 +1280,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await _submitCommitmentShares(
           context,
           commitments,
-          helperAvailability: helperAvailability,
+          helperPreflight: helperPreflight,
+          helperSelectionPolicy: helperSelectionPolicy,
+          helperPostPool: helperPostPool,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           immediateShareKey: roundPlan?.immediateShareKey,
@@ -1311,7 +1336,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             totalBundleTasks: totalBundleTasks,
             completedQuestions: completedQuestions,
             totalQuestions: totalQuestions,
-            helperAvailability: helperAvailability,
+            helperPreflight: helperPreflight,
+            helperSelectionPolicy: helperSelectionPolicy,
+            helperPostPool: helperPostPool,
             immediateShareKey: roundPlan?.immediateShareKey,
           );
         } catch (_) {
@@ -1387,6 +1414,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       await _scheduleShareTracking(context, refreshedPlan);
     }, cleanupProcessStateOnError: false);
+    return operation.whenComplete(() async {
+      if (!helperPreflightCancellation.isCompleted) {
+        helperPreflightCancellation.complete();
+      }
+      final preflight = activeHelperPreflight;
+      if (preflight != null) await preflight;
+    });
   }
 
   Future<List<int>?> _hotkeyForVoteCasting(
@@ -1474,12 +1508,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _submitCommitmentShares(
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments, {
-    required Future<Map<String, bool>> helperAvailability,
+    required Future<List<String>> helperPreflight,
+    required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
     required bool singleShare,
-    rust_share_policy.ImmediateShareKey? immediateShareKey,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
     required int completedQuestions,
     required int totalQuestions,
     required double? voteSubmissionProgress,
@@ -1493,8 +1529,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (serverUrls.isEmpty) {
       throw StateError('No vote servers configured for share submission.');
     }
-    final availableHelpers = await helperAvailability;
+    final readyServerUrls = await helperPreflight;
     _throwIfContextStale(context, 'helper-preflight-finished');
+    final readyServerSet = readyServerUrls.toSet();
+    final rankedServerUrls = <String>[
+      ...readyServerUrls,
+      for (final serverUrl in serverUrls)
+        if (!readyServerSet.contains(serverUrl)) serverUrl,
+    ];
+    final preferredPlanningCount = readyServerUrls.length;
+    final targetCount = helperSelectionPolicy.targetCount.clamp(
+      0,
+      rankedServerUrls.length,
+    );
+    final planningPoolCount = preferredPlanningCount < targetCount
+        ? targetCount
+        : preferredPlanningCount;
+    if (planningPoolCount < helperSelectionPolicy.minServerCount) {
+      debugPrint(
+        '[zcash] Voting: initial helper distribution is degraded '
+        'ready=${readyServerUrls.length} configured=${serverUrls.length} '
+        'planningPool=$planningPoolCount '
+        'minimum=${helperSelectionPolicy.minServerCount} '
+        'target=${helperSelectionPolicy.targetCount} '
+        'maxSharesPerServer=${helperSelectionPolicy.maxSharesPerServer}',
+      );
+    }
 
     final timing = _roundShareTiming(context, _nowSeconds());
     final bundleProgressMessage = _bundleProgressMessage(
@@ -1518,7 +1578,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final plans = await rust.planShareSubmissions(
         shareCount: shares.length,
-        serverUrls: serverUrls,
+        serverUrls: rankedServerUrls,
+        preferredServerCount: preferredPlanningCount,
         nowSeconds: BigInt.from(timing.nowSeconds),
         voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
         lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
@@ -1544,11 +1605,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final targetCount = plan.targetCount
             .clamp(1, serverUrls.length)
             .toInt();
-        final candidateServers = _plannedShareServers(
-          plannedServers: plan.targetServers,
-          fallbackServers: helperHealth.candidateServers(serverUrls),
-          helperAvailability: availableHelpers,
-        );
+        final candidateServers = <String>{
+          ...plan.targetServers,
+          ...rankedServerUrls,
+        }.toList(growable: false);
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
             share: share,
@@ -1587,6 +1647,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
+      final deliveryBudget = _InitialShareDeliveryBudget(
+        Duration(
+          milliseconds: helperSelectionPolicy.initialDeliveryTimeoutMilliseconds
+              .toInt(),
+        ),
+        preferredFallbackServers: readyServerUrls.take(
+          helperSelectionPolicy.targetCount,
+        ),
+      );
+      final helperPostTimeout = Duration(
+        milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
+      );
       final submissions = [
         for (final prepared in preparedSubmissions)
           _submitInitialShareToHelpers(
@@ -1597,17 +1669,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             candidateServers: prepared.candidateServers,
             targetCount: prepared.targetCount,
             submitAt: prepared.submitAt,
+            helperPostPool: helperPostPool,
+            helperPostTimeout: helperPostTimeout,
+            deliveryBudget: deliveryBudget,
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
       Object? persistenceError;
       StackTrace? persistenceStackTrace;
-      // Persist in completion order so accepted shares become durable promptly
-      // while Rust DB writes remain sequential.
+      // Persist in completion order so every share becomes durable promptly
+      // while Rust DB writes remain sequential. An empty server list records
+      // recovery work for a share that exhausted the initial delivery budget.
       await for (final result in Stream.fromFutures(submissions)) {
         if (result.acceptedServers.isEmpty) {
           failedResult ??= result;
-          continue;
         }
         try {
           await rust.recordShareDelegation(
@@ -1688,42 +1763,86 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<String> candidateServers,
     required int targetCount,
     required BigInt submitAt,
+    required _AsyncPermitPool helperPostPool,
+    required Duration helperPostTimeout,
+    required _InitialShareDeliveryBudget deliveryBudget,
   }) async {
     final acceptedServers = <String>[];
     final remainingServers = LinkedHashSet<String>.of(candidateServers);
-    while (remainingServers.isNotEmpty &&
-        acceptedServers.length < targetCount) {
-      // Re-evaluate health before every attempt so failures observed by
-      // concurrent submissions can move a degraded helper behind healthy
-      // alternatives. The tracker still returns every helper when all are
-      // degraded, preserving the liveness fallback.
-      final serverUrl = helperHealth.candidateServers(remainingServers).first;
-      remainingServers.remove(serverUrl);
-      try {
-        debugPrint(
-          '[zcash] Voting: submitting share '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl treePosition=${body['tree_position']} '
-          'submitAt=$submitAt target=$targetCount',
-        );
-        await api.submitShare(serverUrl: Uri.parse(serverUrl), share: body);
-        helperHealth.recordSuccess(serverUrl);
-        acceptedServers.add(serverUrl);
-        debugPrint(
-          '[zcash] Voting: share accepted '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
-        );
-      } catch (e) {
-        debugPrint(
-          '[zcash] Voting: share rejected '
-          'proposal=${share.proposalId} share=${share.shareIndex} '
-          'server=$serverUrl error=$e',
-        );
-        helperHealth.recordFailure(serverUrl);
-        // Recovery retries helpers that did not accept this share.
+
+    Future<({bool attempted, String? acceptedServer})> submitNext() {
+      return helperPostPool.run(() async {
+        final budgetRemaining = deliveryBudget.remaining;
+        if (budgetRemaining == Duration.zero || remainingServers.isEmpty) {
+          return (attempted: false, acceptedServer: null);
+        }
+        // Choose only after receiving a permit. A queued request must see
+        // failures reported by earlier attempts instead of remaining bound to
+        // a helper that became degraded while it waited.
+        final serverUrl = helperHealth
+            .candidateServers(deliveryBudget.rankCandidates(remainingServers))
+            .first;
+        remainingServers.remove(serverUrl);
+        final requestTimeout = budgetRemaining < helperPostTimeout
+            ? budgetRemaining
+            : helperPostTimeout;
+        try {
+          debugPrint(
+            '[zcash] Voting: submitting share '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl treePosition=${body['tree_position']} '
+            'submitAt=$submitAt target=$targetCount '
+            'timeoutMs=${requestTimeout.inMilliseconds} '
+            'budgetRemainingMs=${budgetRemaining.inMilliseconds}',
+          );
+          await api.submitShare(
+            serverUrl: Uri.parse(serverUrl),
+            share: body,
+            timeout: requestTimeout,
+            overallTimeout: budgetRemaining,
+          );
+          helperHealth.recordSuccess(serverUrl);
+          deliveryBudget.recordSuccess(serverUrl);
+          debugPrint(
+            '[zcash] Voting: share accepted '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl',
+          );
+          return (attempted: true, acceptedServer: serverUrl);
+        } catch (e) {
+          debugPrint(
+            '[zcash] Voting: share rejected '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'server=$serverUrl error=$e',
+          );
+          helperHealth.recordFailure(serverUrl);
+          if (e is TimeoutException) {
+            deliveryBudget.recordTimeout(serverUrl);
+          }
+          // Recovery retries helpers that did not accept this share.
+          return (attempted: true, acceptedServer: null);
+        }
+      });
+    }
+
+    Future<void> submitUntilAccepted() async {
+      while (!deliveryBudget.expired && remainingServers.isNotEmpty) {
+        final result = await submitNext();
+        if (!result.attempted) return;
+        final serverUrl = result.acceptedServer;
+        if (serverUrl != null) {
+          acceptedServers.add(serverUrl);
+          debugPrint(
+            '[zcash] Voting: share acceptance progress '
+            'proposal=${share.proposalId} share=${share.shareIndex} '
+            'accepted=${acceptedServers.length}/$targetCount',
+          );
+          return;
+        }
       }
     }
+
+    await Future.wait(List.generate(targetCount, (_) => submitUntilAccepted()));
     if (acceptedServers.length < targetCount && acceptedServers.isNotEmpty) {
       debugPrint(
         '[zcash] Voting: share accepted by fewer helpers than planned '
@@ -1809,25 +1928,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     debugPrint('[zcash] Voting: $message');
   }
 
-  List<String> _plannedShareServers({
-    required List<String> plannedServers,
-    required Iterable<String> fallbackServers,
-    Map<String, bool> helperAvailability = const {},
-  }) {
-    final ordered = <String>{};
-    for (final server in plannedServers) {
-      if (server.trim().isNotEmpty) ordered.add(server);
-    }
-    for (final server in fallbackServers) {
-      if (server.trim().isNotEmpty) ordered.add(server);
-    }
-    return [
-      for (final readiness in const <bool?>[true, null, false])
-        for (final server in ordered)
-          if (helperAvailability[server] == readiness) server,
-    ];
-  }
-
   void _setShareSubmissionProgress({
     required _VotingSessionContext context,
     required int bundleIndex,
@@ -1900,8 +2000,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalBundleTasks,
     required int completedQuestions,
     required int totalQuestions,
-    required Future<Map<String, bool>> helperAvailability,
-    rust_share_policy.ImmediateShareKey? immediateShareKey,
+    required Future<List<String>> helperPreflight,
+    required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
+    required rust_share_policy.ImmediateShareKey? immediateShareKey,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
     // within a bundle follows the draft order so a restart resumes the same
@@ -2238,7 +2340,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               await _submitCommitmentShares(
                 context,
                 commitments,
-                helperAvailability: helperAvailability,
+                helperPreflight: helperPreflight,
+                helperSelectionPolicy: helperSelectionPolicy,
+                helperPostPool: helperPostPool,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,
@@ -2990,6 +3094,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final configuredServerUrls = context.config.apiServers.all
           .map((endpoint) => endpoint.toString())
           .toList(growable: false);
+      final helperSelectionPolicy = rust.shareServerSelectionPolicy(
+        serverCount: configuredServerUrls.length,
+      );
+      final helperPostTimeout = Duration(
+        milliseconds: helperSelectionPolicy.postTimeoutMilliseconds.toInt(),
+      );
       final configuredServerUrlSet = configuredServerUrls.toSet();
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final voteEnd = context.round.voteEndTime;
@@ -3047,6 +3157,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             share: share,
             configuredServerUrls: configuredServerUrls,
             sentToUrls: acceptedUrls,
+            helperPostTimeout: helperPostTimeout,
           );
           if (retryServer != null && acceptedUrls.add(retryServer)) {
             await ref
@@ -3110,6 +3221,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_wire.ShareDelegationRecordView share,
     required List<String> configuredServerUrls,
     required Set<String> sentToUrls,
+    required Duration helperPostTimeout,
   }) async {
     if (!ref.mounted || !_isCurrentContext(context)) return null;
     final rust = ref.read(votingRustApiProvider);
@@ -3164,6 +3276,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
           share: body,
+          timeout: helperPostTimeout,
         );
         // Preserve a known acceptance even if a stop arrived during the POST;
         // forgetting it could resend the same share after unlock.
@@ -5029,6 +5142,54 @@ class _InitialShareSubmissionResult {
   final rust_wire.VoteShareWire share;
   final BigInt submitAt;
   final List<String> acceptedServers;
+}
+
+class _InitialShareDeliveryBudget {
+  _InitialShareDeliveryBudget(
+    this.timeout, {
+    required Iterable<String> preferredFallbackServers,
+  }) : assert(timeout > Duration.zero),
+       _preferredFallbackServers = preferredFallbackServers.toSet();
+
+  final Duration timeout;
+  final Set<String> _preferredFallbackServers;
+  final Set<String> _timedOutServers = {};
+  final Stopwatch _stopwatch = Stopwatch()..start();
+
+  Duration get remaining {
+    final remaining = timeout - _stopwatch.elapsed;
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool get expired => remaining == Duration.zero;
+
+  Iterable<String> rankCandidates(Iterable<String> candidates) {
+    if (_timedOutServers.isEmpty) return candidates;
+    // A full POST timeout has consumed half of the normal delivery budget.
+    // Use helpers from the readiness-winning prefix before spending the
+    // remainder on unproven or already timed-out candidates.
+    final candidateList = candidates.toList(growable: false);
+    return [
+      for (final candidate in candidateList)
+        if (_preferredFallbackServers.contains(candidate) &&
+            !_timedOutServers.contains(candidate))
+          candidate,
+      for (final candidate in candidateList)
+        if (!_preferredFallbackServers.contains(candidate) &&
+            !_timedOutServers.contains(candidate))
+          candidate,
+      for (final candidate in candidateList)
+        if (_timedOutServers.contains(candidate)) candidate,
+    ];
+  }
+
+  void recordTimeout(String serverUrl) {
+    _timedOutServers.add(serverUrl);
+  }
+
+  void recordSuccess(String serverUrl) {
+    _timedOutServers.remove(serverUrl);
+  }
 }
 
 final votingSessionProvider =

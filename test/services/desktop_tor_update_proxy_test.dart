@@ -181,6 +181,8 @@ class _UpdateTorBridge implements TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
     required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     final body = bodies[uri.toString()];
     if (body == null) throw StateError('Unexpected GET: $uri');
@@ -195,5 +197,7 @@ class _UpdateTorBridge implements TorHttpBridge {
     Uri uri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
   }) => throw UnimplementedError();
 }

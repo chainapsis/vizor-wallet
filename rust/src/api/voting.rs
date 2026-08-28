@@ -272,6 +272,8 @@ pub fn vote_share_wire_json(
 /// This mirrors the zcash-swift-wallet-sdk wrapper around
 /// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
 /// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+/// `immediate_share_index` is the position of the round's designated immediate
+/// share in this batch, after any caller-side filtering or reordering.
 ///
 /// # Errors
 ///
@@ -280,6 +282,7 @@ pub fn vote_share_wire_json(
 pub fn plan_share_submissions(
     share_count: u32,
     server_urls: Vec<String>,
+    preferred_server_count: u32,
     now_seconds: u64,
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
@@ -312,9 +315,12 @@ pub fn plan_share_submissions(
             .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
 
         // Build FRB-safe plans with fully materialized random inputs.
-        let plans = zcash_voting::share_policy::plan_share_submissions(
+        let preferred_server_count = usize::try_from(preferred_server_count)
+            .map_err(|_| "preferred_server_count does not fit in usize".to_string())?;
+        let plans = zcash_voting::share_policy::plan_share_submissions_with_preferred_servers(
             share_count,
             &server_urls,
+            preferred_server_count,
             now_seconds,
             vote_end_time_seconds,
             last_moment_buffer_seconds,
@@ -327,6 +333,14 @@ pub fn plan_share_submissions(
 
         Ok(plans)
     })
+}
+
+/// Return the crate-owned progressive helper probe and privacy policy.
+#[flutter_rust_bridge::frb(sync)]
+pub fn share_server_selection_policy(
+    server_count: u32,
+) -> zcash_voting::share_policy::ShareServerSelectionPolicy {
+    zcash_voting::share_policy::share_server_selection_policy(server_count as usize)
 }
 
 /// Return the crate-owned randomized helper order for one share retry.
@@ -2585,9 +2599,17 @@ mod tests {
             "https://helper-a.example".to_string(),
             "https://helper-b.example".to_string(),
         ];
-        let plans =
-            plan_share_submissions(3, server_urls.clone(), 100, 600, Some(120), false, Some(1))
-                .unwrap();
+        let plans = plan_share_submissions(
+            3,
+            server_urls.clone(),
+            server_urls.len() as u32,
+            100,
+            600,
+            Some(120),
+            false,
+            Some(1),
+        )
+        .unwrap();
 
         assert_eq!(plans.len(), 3);
         for (index, plan) in plans.into_iter().enumerate() {
@@ -2604,6 +2626,60 @@ mod tests {
                 .iter()
                 .all(|url| server_urls.contains(url)));
         }
+    }
+
+    #[test]
+    fn plan_share_submissions_marks_designated_batch_position_immediate() {
+        let server_urls = vec![
+            "https://helper-a.example".to_string(),
+            "https://helper-b.example".to_string(),
+        ];
+        let plans = plan_share_submissions(
+            3,
+            server_urls.clone(),
+            server_urls.len() as u32,
+            100,
+            600,
+            Some(120),
+            false,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(plans.len(), 3);
+        assert!(!plans[0].immediate);
+        assert!(plans[0].submit_at >= 100);
+        assert!(plans[1].immediate);
+        assert_eq!(plans[1].submit_at, 0);
+        assert!(!plans[2].immediate);
+        assert!(plans[2].submit_at >= 100);
+    }
+
+    #[test]
+    fn helper_selection_wrappers_expose_crate_policy() {
+        let policy = share_server_selection_policy(6);
+        assert_eq!(policy.target_count, 3);
+        assert_eq!(policy.max_shares_per_server, 8);
+        assert_eq!(policy.min_server_count, 6);
+        assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
+        assert_eq!(policy.preflight_hard_timeout_milliseconds, 30_000);
+        assert_eq!(policy.post_timeout_milliseconds, 30_000);
+        assert_eq!(policy.initial_delivery_timeout_milliseconds, 60_000);
+        assert_eq!(policy.max_concurrent_posts, 16);
+
+        let servers: Vec<String> = (0..6)
+            .map(|index| format!("https://helper-{index}.example"))
+            .collect();
+        let plans =
+            plan_share_submissions(16, servers, 6, 100, 600, Some(120), false, None).unwrap();
+        let mut usage = std::collections::HashMap::<String, usize>::new();
+        for plan in plans {
+            assert_eq!(plan.target_servers.len(), 3);
+            for server in plan.target_servers {
+                *usage.entry(server).or_default() += 1;
+            }
+        }
+        assert!(usage.values().all(|count| *count <= 8));
     }
 
     #[test]

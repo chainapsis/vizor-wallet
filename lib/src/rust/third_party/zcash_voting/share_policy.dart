@@ -34,6 +34,66 @@ class ImmediateShareKey {
           shareIndex == other.shareIndex;
 }
 
+/// Shared helper probing and initial-delivery values.
+///
+/// Clients own transport and recovery. They should start all readiness probes
+/// together, inspect responses after the soft timeout, and continue until at
+/// least `target_count` helpers are ready or the hard timeout expires. For a
+/// complete commitment, `max_shares_per_server` is the balanced maximum when
+/// at least `min_server_count` helpers are in the preferred planning pool.
+/// These limits are derived from the configured fleet size. Retries may exceed
+/// them when needed for liveness. The limit is per helper and does not make a
+/// claim about the combined view of colluding helpers.
+class ShareServerSelectionPolicy {
+  final int targetCount;
+  final int maxSharesPerServer;
+  final int minServerCount;
+  final BigInt preflightSoftTimeoutMilliseconds;
+  final BigInt preflightHardTimeoutMilliseconds;
+  final BigInt postTimeoutMilliseconds;
+  final BigInt initialDeliveryTimeoutMilliseconds;
+  final int maxConcurrentPosts;
+
+  const ShareServerSelectionPolicy({
+    required this.targetCount,
+    required this.maxSharesPerServer,
+    required this.minServerCount,
+    required this.preflightSoftTimeoutMilliseconds,
+    required this.preflightHardTimeoutMilliseconds,
+    required this.postTimeoutMilliseconds,
+    required this.initialDeliveryTimeoutMilliseconds,
+    required this.maxConcurrentPosts,
+  });
+
+  @override
+  int get hashCode =>
+      targetCount.hashCode ^
+      maxSharesPerServer.hashCode ^
+      minServerCount.hashCode ^
+      preflightSoftTimeoutMilliseconds.hashCode ^
+      preflightHardTimeoutMilliseconds.hashCode ^
+      postTimeoutMilliseconds.hashCode ^
+      initialDeliveryTimeoutMilliseconds.hashCode ^
+      maxConcurrentPosts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareServerSelectionPolicy &&
+          runtimeType == other.runtimeType &&
+          targetCount == other.targetCount &&
+          maxSharesPerServer == other.maxSharesPerServer &&
+          minServerCount == other.minServerCount &&
+          preflightSoftTimeoutMilliseconds ==
+              other.preflightSoftTimeoutMilliseconds &&
+          preflightHardTimeoutMilliseconds ==
+              other.preflightHardTimeoutMilliseconds &&
+          postTimeoutMilliseconds == other.postTimeoutMilliseconds &&
+          initialDeliveryTimeoutMilliseconds ==
+              other.initialDeliveryTimeoutMilliseconds &&
+          maxConcurrentPosts == other.maxConcurrentPosts;
+}
+
 /// Planned helper-share submission values that SDKs can apply to payloads.
 class ShareSubmissionPlan {
   /// True only for the round's designated immediate share.

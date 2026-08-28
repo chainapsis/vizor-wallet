@@ -8496,9 +8496,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "3.1.0-rc.10"
+version = "3.1.0-rc.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fa6cd28e32560f128d8492b782efddb1addd4db3c09103d454625d696ea02a5"
+checksum = "cf51901f953c8a86059e71979a65dc8da8bf91e615bbb34b80fe60fc76434a49"
 dependencies = [
  "anyhow",
  "base64",

@@ -96,6 +96,7 @@ class _RecordingVotingHttpClient implements VotingHttpClient {
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) async {
     getUris.add(uri);
     return VotingHttpResponse(statusCode: 200, bodyBytes: Uint8List(0));
