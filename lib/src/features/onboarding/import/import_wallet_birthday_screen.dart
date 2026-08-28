@@ -40,10 +40,15 @@ enum _ImportWalletSubmitPhase {
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
   const ImportWalletBirthdayScreen({required this.args, super.key})
     : presentation = ImportWalletBirthdayPresentation.importWallet,
-      onBirthdaySelected = null;
+      onBirthdaySelected = null,
+      ledgerBackTarget = null;
 
   const ImportWalletBirthdayScreen.ledger({
     required this.onBirthdaySelected,
+    this.ledgerBackTarget = const OnboardingBackTarget.route(
+      label: 'Connect Ledger',
+      routePath: '/onboarding/ledger',
+    ),
     super.key,
   }) : args = null,
        presentation = ImportWalletBirthdayPresentation.ledger;
@@ -51,6 +56,7 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
   final ImportBirthdayArgs? args;
   final ImportWalletBirthdayPresentation presentation;
   final ImportBirthdaySelectedCallback? onBirthdaySelected;
+  final OnboardingBackTarget? ledgerBackTarget;
 
   @override
   ConsumerState<ImportWalletBirthdayScreen> createState() =>
@@ -474,10 +480,7 @@ class _ImportWalletBirthdayScreenState
     if (widget.presentation == ImportWalletBirthdayPresentation.ledger) {
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.birthday,
-        backTarget: const OnboardingBackTarget.route(
-          label: 'Connect Ledger',
-          routePath: '/onboarding/ledger',
-        ),
+        backTarget: widget.ledgerBackTarget,
         overlay: overlay,
         child: child,
       );

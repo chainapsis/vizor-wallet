@@ -56,6 +56,7 @@ class AccountInfo {
   final String? ledgerDeviceId;
   final String? ledgerDeviceName;
   final String? ledgerDeviceModel;
+  final String? ledgerWalletFingerprint;
   final bool isSeedAnchor;
   final String profilePictureId;
   final String? walletLinkSourceAccountUuid;
@@ -73,6 +74,7 @@ class AccountInfo {
     this.ledgerDeviceId,
     this.ledgerDeviceName,
     this.ledgerDeviceModel,
+    this.ledgerWalletFingerprint,
     this.isSeedAnchor = false,
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
@@ -98,6 +100,7 @@ class AccountInfo {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
+    String? ledgerWalletFingerprint,
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
   }) => AccountInfo(
@@ -114,6 +117,8 @@ class AccountInfo {
     ledgerDeviceId: ledgerDeviceId ?? this.ledgerDeviceId,
     ledgerDeviceName: ledgerDeviceName ?? this.ledgerDeviceName,
     ledgerDeviceModel: ledgerDeviceModel ?? this.ledgerDeviceModel,
+    ledgerWalletFingerprint:
+        ledgerWalletFingerprint ?? this.ledgerWalletFingerprint,
     isSeedAnchor: isSeedAnchor ?? this.isSeedAnchor,
     profilePictureId: profilePictureId ?? this.profilePictureId,
     walletLinkSourceAccountUuid:
@@ -135,6 +140,7 @@ class AccountInfo {
     'ledgerDeviceId': isLedger ? ledgerDeviceId : null,
     'ledgerDeviceName': isLedger ? ledgerDeviceName : null,
     'ledgerDeviceModel': isLedger ? ledgerDeviceModel : null,
+    'ledgerWalletFingerprint': isLedger ? ledgerWalletFingerprint : null,
     'isSeedAnchor': isSeedAnchor,
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
@@ -162,6 +168,9 @@ class AccountInfo {
       ledgerDeviceId: _normalizedOptionalString(json['ledgerDeviceId']),
       ledgerDeviceName: _normalizedOptionalString(json['ledgerDeviceName']),
       ledgerDeviceModel: _normalizedOptionalString(json['ledgerDeviceModel']),
+      ledgerWalletFingerprint: _normalizedOptionalString(
+        json['ledgerWalletFingerprint'],
+      ),
       // Legacy stored account JSON did not include this field. Runtime account
       // state is reconciled from Rust during bootstrap; this fallback only keeps
       // pre-field snapshots conservative until Rust metadata is available.

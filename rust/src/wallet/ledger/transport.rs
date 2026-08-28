@@ -14,7 +14,10 @@ use serde_json::{json, Value};
 use url::{Host, Url};
 
 use super::{
-    apdu::{decode_ufvk_chunks, map_status_word, ufvk_commands},
+    apdu::{
+        decode_ufvk_chunks, decode_wallet_public_key, map_status_word, ufvk_commands,
+        wallet_identity_commands, WalletPublicKey,
+    },
     serializer::{packet_p1, packet_p2, CommandPackets},
     OperationContext,
 };
@@ -152,6 +155,30 @@ impl LedgerTransport {
             )?);
         }
         decode_ufvk_chunks(&chunks)
+    }
+
+    pub(super) fn wallet_identity(
+        &self,
+        verification_account_index: Option<u32>,
+    ) -> Result<(WalletPublicKey, Option<WalletPublicKey>), String> {
+        let mut commands = wallet_identity_commands(verification_account_index)?.into_iter();
+        let identity_command = commands
+            .next()
+            .ok_or("Ledger wallet identity plan is empty")?;
+        let identity = decode_wallet_public_key(&self.exchange(
+            identity_command.ins,
+            identity_command.p1,
+            identity_command.p2,
+            identity_command.data,
+        )?)?;
+        let verification = commands
+            .next()
+            .map(|command| {
+                self.exchange(command.ins, command.p1, command.p2, command.data)
+                    .and_then(|response| decode_wallet_public_key(&response))
+            })
+            .transpose()?;
+        Ok((identity, verification))
     }
 
     pub(super) fn send_pczt(&self, commands: &[CommandPackets]) -> Result<(), String> {

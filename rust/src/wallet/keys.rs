@@ -1192,6 +1192,36 @@ pub fn get_account_ufvk(
     Ok(ufvk.encode(&network))
 }
 
+/// Return the account's first standard external transparent receiver at
+/// `m/44'/coin_type'/account'/0/0` from its stored UFVK.
+pub(crate) fn get_account_first_external_transparent_address(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<String, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
+    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+    let transparent_key = ufvk
+        .transparent()
+        .ok_or("Account does not have a transparent viewing key")?;
+    let external_ivk = transparent_key
+        .derive_external_ivk()
+        .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
+    let address = external_ivk
+        .derive_address(NonHardenedChildIndex::ZERO)
+        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))?;
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        &address,
+    ))
+}
+
 fn current_receive_address(
     db: &WalletDatabase,
     network: WalletNetwork,
@@ -1630,6 +1660,16 @@ mod tests {
 
         let exported = get_account_ufvk(db_path_str, WalletNetwork::Main, &uuid).unwrap();
         assert_eq!(exported, ufvk_string);
+        assert_eq!(
+            get_account_first_external_transparent_address(db_path_str, WalletNetwork::Main, &uuid)
+                .unwrap(),
+            software_account_first_external_transparent_address(
+                WalletNetwork::Main,
+                &seed,
+                u32::from(account_index)
+            )
+            .unwrap()
+        );
     }
 
     #[test]
