@@ -33,23 +33,29 @@ pub mod policy {
         is_last_moment, is_share_ready_for_status_check, last_moment_buffer_seconds,
         last_moment_deadline_seconds, next_tracking_delay_seconds, overdue_threshold_seconds,
         plan_share_submission, plan_share_submission_from_order, plan_share_submissions,
-        resubmission_server_order, resubmission_server_order_from_configured_order,
-        resubmission_server_order_from_groups, resubmission_server_order_random_bytes_required,
-        scheduled_share_submit_at_from_entropy, scheduled_share_submit_at_from_random_unit,
-        select_share_submission_targets, select_share_submission_targets_from_order,
-        share_recovery_base_time, share_server_order_random_bytes_required,
+        plan_share_submissions_with_preferred_servers, resubmission_server_order,
+        resubmission_server_order_from_configured_order, resubmission_server_order_from_groups,
+        resubmission_server_order_random_bytes_required, scheduled_share_submit_at_from_entropy,
+        scheduled_share_submit_at_from_random_unit, select_share_submission_targets,
+        select_share_submission_targets_from_order, share_recovery_base_time,
+        share_server_order_random_bytes_required, share_server_selection_policy,
         share_submission_random_bytes_required, share_submission_target_count,
         share_submit_at_random_bytes_required, should_resubmit_share, shuffled_share_server_order,
-        summarize_share_tracking, ImmediateShareKey, ShareSubmissionPlan,
-        ShareSubmissionRandomBytesRequired, ShareTimingPolicy, ShareTrackingSummary,
-        IMMEDIATE_SHARE_INDEX, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
+        summarize_share_tracking, ImmediateShareKey, ShareServerSelectionPolicy,
+        ShareSubmissionPlan, ShareSubmissionRandomBytesRequired, ShareTimingPolicy,
+        ShareTrackingSummary, IMMEDIATE_SHARE_INDEX, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
         LAST_MOMENT_BUFFER_FRACTION_NUMERATOR, LAST_MOMENT_BUFFER_MAX_SECONDS,
-        SHARE_SUBMIT_AT_MAX_DELAY_SECONDS,
+        SHARE_HELPER_MAX_CONCURRENT_POSTS, SHARE_HELPER_POST_TIMEOUT_MILLISECONDS,
+        SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
+        SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
+        SHARE_INITIAL_DELIVERY_TIMEOUT_MILLISECONDS, SHARE_SUBMIT_AT_MAX_DELAY_SECONDS,
+        VOTE_COMMITMENT_SHARE_COUNT,
     };
 }
 
 pub use policy::{
-    ImmediateShareKey, ShareSubmissionPlan as SharePlan, ShareTimingPolicy, ShareTrackingSummary,
+    ImmediateShareKey, ShareServerSelectionPolicy, ShareSubmissionPlan as SharePlan,
+    ShareTimingPolicy, ShareTrackingSummary,
 };
 
 /// Computes the 32-byte share reveal nullifier.

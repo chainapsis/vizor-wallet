@@ -4,6 +4,18 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Added shared progressive helper timing and initial-delivery limits, plus
+  readiness-ranked batch planning that balances a commitment's initial shares
+  across the preferred helper pool.
+
+### Changed
+- Initial share delivery continues to target half the configured fleet, rounded
+  up, while balancing a complete commitment across the ready helper pool.
+  Retries may exceed the initial distribution for liveness.
+
 ## v3.1.0-rc.11
 
 ### Added
