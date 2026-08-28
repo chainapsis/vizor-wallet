@@ -37,6 +37,11 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'ledger-additional-account',
+    description: 'Desktop Ledger import with known same-wallet accounts',
+    builder: buildLedgerAdditionalAccountUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'settings-secret-passphrase-reveal',
     description: 'Desktop secret passphrase recovery with BIP39 passphrase',
     builder: buildSettingsSecretPassphraseRevealUseCase,

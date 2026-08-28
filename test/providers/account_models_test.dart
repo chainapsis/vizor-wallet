@@ -95,6 +95,8 @@ void main() {
       ledgerDeviceId: 'device-id',
       ledgerDeviceName: 'Rowan Ledger',
       ledgerDeviceModel: 'Nano X',
+      ledgerWalletFingerprint:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );
 
     final restored = AccountInfo.fromJson(account.toJson());
@@ -107,6 +109,10 @@ void main() {
     expect(restored.ledgerDeviceId, 'device-id');
     expect(restored.ledgerDeviceName, 'Rowan Ledger');
     expect(restored.ledgerDeviceModel, 'Nano X');
+    expect(
+      restored.ledgerWalletFingerprint,
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
   });
 
   test('legacy Ledger accounts default to automatic connection selection', () {

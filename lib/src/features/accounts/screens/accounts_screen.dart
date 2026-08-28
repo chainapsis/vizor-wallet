@@ -28,6 +28,7 @@ import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../swap/providers/swap_activity_store.dart';
+import '../../onboarding/ledger/ledger_setup_args.dart';
 import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
@@ -984,6 +985,14 @@ class _AccountRowState extends State<_AccountRow> {
                       extra: widget.account.uuid,
                     )
                   : null,
+              onAddLedgerAccount: widget.account.isLedger
+                  ? () => context.push(
+                      '/onboarding/ledger',
+                      extra: LedgerConnectArgs(
+                        sourceAccountUuid: widget.account.uuid,
+                      ),
+                    )
+                  : null,
               onViewSecretPassphrase: widget.account.isHardware
                   ? null
                   : () => context.push(
@@ -1087,6 +1096,7 @@ class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
     required this.showSendZec,
     required this.onViewAccountDetails,
+    required this.onAddLedgerAccount,
     required this.onViewSecretPassphrase,
     required this.onViewViewingKey,
     required this.onCopyAddress,
@@ -1100,6 +1110,7 @@ class _AccountRowMenuButton extends StatefulWidget {
 
   final bool showSendZec;
   final VoidCallback? onViewAccountDetails;
+  final VoidCallback? onAddLedgerAccount;
   final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
@@ -1171,6 +1182,9 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
                   onViewAccountDetails: widget.onViewAccountDetails == null
                       ? null
                       : _handleViewAccountDetails,
+                  onAddLedgerAccount: widget.onAddLedgerAccount == null
+                      ? null
+                      : _handleAddLedgerAccount,
                   onViewSecretPassphrase: widget.onViewSecretPassphrase == null
                       ? null
                       : _handleViewSecretPassphrase,
@@ -1213,6 +1227,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleViewAccountDetails() {
     _hideMenu();
     widget.onViewAccountDetails?.call();
+  }
+
+  void _handleAddLedgerAccount() {
+    _hideMenu();
+    widget.onAddLedgerAccount?.call();
   }
 
   void _handleViewViewingKey() {
@@ -1290,6 +1309,7 @@ class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.showSendZec,
     required this.onViewAccountDetails,
+    required this.onAddLedgerAccount,
     required this.onViewSecretPassphrase,
     required this.onViewViewingKey,
     required this.onCopyAddress,
@@ -1304,6 +1324,7 @@ class _AccountContextMenu extends StatelessWidget {
 
   final bool showSendZec;
   final VoidCallback? onViewAccountDetails;
+  final VoidCallback? onAddLedgerAccount;
   final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onViewViewingKey;
   final VoidCallback onCopyAddress;
@@ -1330,6 +1351,14 @@ class _AccountContextMenu extends StatelessWidget {
             iconName: AppIcons.wallet,
             label: 'Account details',
             onTap: onViewAccountDetails!,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+        ],
+        if (onAddLedgerAccount != null) ...[
+          AppContextMenuItem(
+            iconName: AppIcons.addNew,
+            label: 'Add Ledger account',
+            onTap: onAddLedgerAccount!,
           ),
           const SizedBox(height: AppSpacing.xxs),
         ],

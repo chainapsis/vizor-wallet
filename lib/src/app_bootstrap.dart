@@ -457,6 +457,14 @@ AccountInfo mergeBootstrappedAccountInfo({
     hardwareSignerKind: rustAccount.hardwareSignerKind,
     birthdayHeight: rustAccount.birthdayHeight,
     zip32AccountIndex: rustAccount.zip32AccountIndex,
+    ledgerConnectionPreference:
+        storedAccount?.ledgerConnectionPreference ??
+        LedgerConnectionPreference.automatic,
+    ledgerLastTransport: storedAccount?.ledgerLastTransport,
+    ledgerDeviceId: storedAccount?.ledgerDeviceId,
+    ledgerDeviceName: storedAccount?.ledgerDeviceName,
+    ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
+    ledgerWalletFingerprint: storedAccount?.ledgerWalletFingerprint,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,

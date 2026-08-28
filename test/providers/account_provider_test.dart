@@ -201,6 +201,69 @@ void main() {
   );
 
   test(
+    'records a Ledger wallet fingerprint once and rejects reassignment',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const ledger = AccountInfo(
+        uuid: 'ledger-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        zip32AccountIndex: 0,
+      );
+      final bootstrap = AppBootstrapState(
+        initialLocation: '/home',
+        initialAccountState: const AccountState(
+          accounts: [ledger],
+          activeAccountUuid: 'ledger-1',
+        ),
+        initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('ledger-1'),
+        network: kZcashDefaultNetworkName,
+        rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+        themeMode: ThemeMode.system,
+        privacyModeEnabled: false,
+        isPasswordConfigured: true,
+        isUnlocked: true,
+        passwordRotationRecoveryFailed: false,
+      );
+      final container = ProviderContainer(
+        overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container
+          .read(accountProvider.notifier)
+          .recordLedgerWalletFingerprint(
+            uuid: 'ledger-1',
+            fingerprint:
+                'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          );
+
+      expect(
+        container
+            .read(accountProvider)
+            .value!
+            .accounts
+            .single
+            .ledgerWalletFingerprint,
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .recordLedgerWalletFingerprint(
+              uuid: 'ledger-1',
+              fingerprint:
+                  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            ),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+
+  test(
     'next active account stays unchanged when removing a non-active account',
     () {
       const accounts = [

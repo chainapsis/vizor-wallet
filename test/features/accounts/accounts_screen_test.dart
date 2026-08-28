@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -530,6 +531,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
     );
     await tester.pumpAndSettle();
+    expect(find.text('Add Ledger account'), findsOneWidget);
     await tester.tap(find.text('Account details'));
     await tester.pumpAndSettle();
 
@@ -544,6 +546,52 @@ void main() {
       find.byKey(const ValueKey('ledger_change_connection_button')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('ledger_add_another_account_button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_add_another_account_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ledger add ledger-account'), findsOneWidget);
+  });
+
+  testWidgets('Ledger context menu starts add-account from that wallet', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'ledger-account',
+          name: 'Ledger Vault',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          zip32AccountIndex: 0,
+        ),
+      ],
+      activeAccountUuid: 'ledger-account',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Ledger account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ledger add ledger-account'), findsOneWidget);
   });
 
   testWidgets('Ledger USB-only model disables Bluetooth preference', (
@@ -1475,6 +1523,13 @@ Widget _accountsHarness({
         path: '/settings/hardware-account',
         builder: (_, state) =>
             HardwareAccountDetailsScreen(accountUuid: state.extra as String?),
+      ),
+      GoRoute(
+        path: '/onboarding/ledger',
+        builder: (_, state) {
+          final args = state.extra as LedgerConnectArgs?;
+          return Text('ledger add ${args?.sourceAccountUuid}');
+        },
       ),
       GoRoute(
         path: '/settings/secret-passphrase',
