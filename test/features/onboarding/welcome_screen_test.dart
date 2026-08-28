@@ -23,6 +23,16 @@ void main() {
     expect(find.text('Back'), findsNothing);
   });
 
+  testWidgets('shows Ledger on first wallet creation entry', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(
+      find.byKey(const ValueKey('welcome_connect_ledger_button')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('shows endpoint settings on first wallet creation entry', (
     tester,
   ) async {
