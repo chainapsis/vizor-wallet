@@ -23,3 +23,12 @@ zcash_client_sqlite = { version = "0.22.0-rc.7", default-features = false, featu
 zcash_keys = { version = "0.16.1", features = ["orchard"] }
 zcash_primitives = { version = "0.30.0" }
 zcash_protocol = { version = "0.10.4" }
+
+[profile.test.package.imt-tree]
+opt-level = 3
+
+[profile.test.package.valar-ypir]
+opt-level = 3
+
+[profile.test.package.valar-spiral-rs]
+opt-level = 3
