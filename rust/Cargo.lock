@@ -6847,7 +6847,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.5.2"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=8e29b65c9ff5e53987683bf740f3cc629b3d6f0e#8e29b65c9ff5e53987683bf740f3cc629b3d6f0e"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823#dd69a88393c1fe584827432a909d2a2fa77a0823"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -6861,14 +6861,14 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.7.2"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=8e29b65c9ff5e53987683bf740f3cc629b3d6f0e#8e29b65c9ff5e53987683bf740f3cc629b3d6f0e"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823#dd69a88393c1fe584827432a909d2a2fa77a0823"
 dependencies = [
  "base64",
  "hex",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
- "vote-commitment-tree 0.5.2 (git+https://github.com/valargroup/zcash_voting.git?rev=8e29b65c9ff5e53987683bf740f3cc629b3d6f0e)",
+ "vote-commitment-tree 0.5.2 (git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823)",
  "voting-crypto-deps",
 ]
 
@@ -7945,6 +7945,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash-voting-impl"
+version = "3.1.0-rc.12"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823#dd69a88393c1fe584827432a909d2a2fa77a0823"
+dependencies = [
+ "anyhow",
+ "base64",
+ "blake2b_simd",
+ "bytes",
+ "ed25519-dalek",
+ "hex",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "imt-tree",
+ "incrementalmerkletree",
+ "nonempty",
+ "pir-client",
+ "pir-types",
+ "prost 0.14.4",
+ "rand 0.8.7",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.20",
+ "tokio",
+ "tonic",
+ "uuid",
+ "valar-spiral-rs",
+ "valar-ypir",
+ "vote-commitment-tree 0.5.2 (git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823)",
+ "vote-commitment-tree-client",
+ "voting-circuits",
+ "voting-crypto-deps",
+ "zakura-client-backend",
+ "zakura-client-sqlite",
+ "zakura-keys",
+ "zakura-orchard",
+ "zakura-pczt",
+ "zakura-primitives",
+ "zcash_protocol",
+ "zeroize",
+ "zip32",
+]
+
+[[package]]
 name = "zcash_address"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8049,51 +8099,9 @@ dependencies = [
 [[package]]
 name = "zcash_voting-zakura"
 version = "3.1.0-rc.12"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=8e29b65c9ff5e53987683bf740f3cc629b3d6f0e#8e29b65c9ff5e53987683bf740f3cc629b3d6f0e"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=dd69a88393c1fe584827432a909d2a2fa77a0823#dd69a88393c1fe584827432a909d2a2fa77a0823"
 dependencies = [
- "anyhow",
- "base64",
- "blake2b_simd",
- "bytes",
- "ed25519-dalek",
- "hex",
- "http",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-util",
- "imt-tree",
- "incrementalmerkletree",
- "nonempty",
- "pir-client",
- "pir-types",
- "prost 0.14.4",
- "rand 0.8.7",
- "rusqlite",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.20",
- "tokio",
- "tonic",
- "uuid",
- "valar-spiral-rs",
- "valar-ypir",
- "vote-commitment-tree 0.5.2 (git+https://github.com/valargroup/zcash_voting.git?rev=8e29b65c9ff5e53987683bf740f3cc629b3d6f0e)",
- "vote-commitment-tree-client",
- "voting-circuits",
- "voting-crypto-deps",
- "zakura-client-backend",
- "zakura-client-sqlite",
- "zakura-keys",
- "zakura-orchard",
- "zakura-pczt",
- "zakura-primitives",
- "zcash_protocol",
- "zeroize",
- "zip32",
+ "zcash-voting-impl",
 ]
 
 [[package]]
