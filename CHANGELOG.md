@@ -14,6 +14,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   chain's `cast-vote-batch` endpoint, while
   `confirmation::confirm_vote_batch_submission` atomically records the shared
   transaction hash, ordered vote-commitment positions, and final VAN position.
+  Restart planning groups committed or submitted batch members into one
+  `SubmitVoteBatch` or `PollVoteBatch` step, whose recovery anchor reconstructs
+  the complete canonical request and shared digest without duplicate submits.
   Batches keep choices, note membership, and voting keys hidden as before, but
   intentionally reveal that their included proposal actions came from one
   transaction.

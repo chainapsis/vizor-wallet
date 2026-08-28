@@ -76,14 +76,14 @@ stage-oriented API:
   count for proposals the user intentionally leaves blank, and use `resume_plan`
   after restart to decide whether to delegate, poll delegation/vote
   transactions, cast remaining votes, or confirm helper shares.
-  `CastVote` steps include the recorded choice. `SubmitVote` steps mean a vote
-  was already committed locally and should be reconstructed with
-  `vote::submission` rather than rebuilt from a draft. Submit those recovered
-  cast-vote fields. For a recovered batch, submit its canonical `batch_json`
-  once, persist the shared tx hash with `vote::record_batch_submission`, and
-  record its ordered event with `confirmation::confirm_vote_batch_submission`.
-  Singleton submissions continue to use `vote::record_submission` and
-  `confirmation::confirm_vote_submission`. After confirmation, call
+  `CastVote` steps include the recorded choice. `SubmitVote` resumes one
+  singleton through `vote::submission`, `vote::record_submission`, and
+  `confirmation::confirm_vote_submission`. `SubmitVoteBatch` and
+  `PollVoteBatch` identify the first ordered action as a recovery anchor. Pass
+  that key to `vote::recover_signed_commitments`, submit its canonical
+  `batch_json` once, persist the shared tx hash with
+  `vote::record_batch_submission`, and record its ordered event with
+  `confirmation::confirm_vote_batch_submission`. After confirmation, call
   `vote::recover_commit` again and use its helper-share payloads so they carry
   the confirmed VC position. Persist each accepted helper share with
   `share::record`, and re-run the planner because later work may depend on

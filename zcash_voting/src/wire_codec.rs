@@ -544,7 +544,15 @@ impl TryFrom<session::NextStep> for NextStepView {
                 bundle_index,
                 proposal_id,
             }
+            | session::NextStep::SubmitVoteBatch {
+                bundle_index,
+                proposal_id,
+            }
             | session::NextStep::PollVote {
+                bundle_index,
+                proposal_id,
+            }
+            | session::NextStep::PollVoteBatch {
                 bundle_index,
                 proposal_id,
             } => Ok(Self {
@@ -1448,17 +1456,25 @@ mod tests {
                     bundle_index: 4,
                     proposal_id: 12,
                 },
-                session::NextStep::PollVote {
+                session::NextStep::SubmitVoteBatch {
                     bundle_index: 5,
                     proposal_id: 13,
                 },
-                session::NextStep::SubmitShares {
+                session::NextStep::PollVote {
                     bundle_index: 6,
+                    proposal_id: 14,
+                },
+                session::NextStep::PollVoteBatch {
+                    bundle_index: 7,
+                    proposal_id: 15,
+                },
+                session::NextStep::SubmitShares {
+                    bundle_index: 8,
                     proposal_id: 14,
                     share_index: 0,
                 },
                 session::NextStep::ConfirmShare {
-                    bundle_index: 7,
+                    bundle_index: 9,
                     proposal_id: 15,
                     share_index: 1,
                 },
@@ -1474,14 +1490,32 @@ mod tests {
                 phase: crate::phases::DelegationPhase::Submitted,
                 tx_hash: Some("delegation-tx".to_string()),
             }],
-            recovered_vote_work: vec![session::VoteRecoveryWork {
-                kind: session::VoteRecoveryWorkKind::SubmitShares,
-                bundle_index: 6,
-                proposal_id: 14,
-                tx_hash: None,
-                vc_tree_position: Some(99),
-                share_indexes: vec![0, 1],
-            }],
+            recovered_vote_work: vec![
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::SubmitVoteBatch,
+                    bundle_index: 4,
+                    proposal_id: 12,
+                    tx_hash: None,
+                    vc_tree_position: None,
+                    share_indexes: Vec::new(),
+                },
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::PollVoteBatch,
+                    bundle_index: 5,
+                    proposal_id: 13,
+                    tx_hash: Some("batch-tx".to_string()),
+                    vc_tree_position: None,
+                    share_indexes: Vec::new(),
+                },
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::SubmitShares,
+                    bundle_index: 6,
+                    proposal_id: 14,
+                    tx_hash: None,
+                    vc_tree_position: Some(99),
+                    share_indexes: vec![0, 1],
+                },
+            ],
             open_proposals: vec![11, 12],
             immediate_share_key: Some(crate::share_policy::ImmediateShareKey {
                 bundle_index: 7,
@@ -1538,7 +1572,9 @@ mod tests {
                 "poll_delegation",
                 "cast_vote",
                 "submit_vote",
+                "submit_vote_batch",
                 "poll_vote",
+                "poll_vote_batch",
                 "submit_shares",
                 "confirm_share"
             ]
@@ -1546,11 +1582,17 @@ mod tests {
         assert_eq!(view.next_steps[0].bundle_index, 1);
         assert_eq!(view.next_steps[2].proposal_id, 11);
         assert_eq!(view.next_steps[2].choice, 1);
-        assert_eq!(view.next_steps[6].share_index, 1);
+        assert_eq!(view.next_steps[8].share_index, 1);
         assert_eq!(view.delegation_statuses[0].phase, "submitted_delegation");
         assert_eq!(view.recovered_delegation_work[0].kind, "poll_delegation");
-        assert_eq!(view.recovered_vote_work[0].kind, "submit_shares");
-        assert_eq!(view.recovered_vote_work[0].vc_tree_position, Some(99));
-        assert_eq!(view.recovered_vote_work[0].share_indexes, vec![0, 1]);
+        assert_eq!(view.recovered_vote_work[0].kind, "submit_vote_batch");
+        assert_eq!(view.recovered_vote_work[1].kind, "poll_vote_batch");
+        assert_eq!(
+            view.recovered_vote_work[1].tx_hash.as_deref(),
+            Some("batch-tx")
+        );
+        assert_eq!(view.recovered_vote_work[2].kind, "submit_shares");
+        assert_eq!(view.recovered_vote_work[2].vc_tree_position, Some(99));
+        assert_eq!(view.recovered_vote_work[2].share_indexes, vec![0, 1]);
     }
 }

@@ -36,10 +36,14 @@ precompute → delegate → vote → share lifecycle:
 7. After restart, call `resume_plan` with the round's full proposal id list and
    execute one returned `NextStep`, persist its result, then call `resume_plan`
    again. `CastVote` includes the recorded choice, and `SubmitVote` resumes an
-   already committed vote through `vote::submission`. For `SubmitVote`, submit
-   those recovered cast-vote fields, persist the cast-vote tx hash with
-   `vote::record_submission` while polling, then record confirmed cast-vote
-   events with `confirm_vote_submission`. After confirmation, call
+   already committed singleton through `vote::submission`. For `SubmitVote`,
+   persist the cast-vote tx hash with `vote::record_submission` while polling,
+   then record confirmed cast-vote events with `confirm_vote_submission`.
+   `SubmitVoteBatch` and `PollVoteBatch` carry the first ordered proposal as a
+   recovery anchor. Use it with `vote::recover_signed_commitments`, submit the
+   canonical `batch_json` once, persist the shared hash with
+   `vote::record_batch_submission`, and confirm with
+   `confirm_vote_batch_submission`. After confirmation, call
    `vote::recover_commit` again and use its helper-share payloads so they carry
    the confirmed VC position, then record each accepted helper share with
    `share::record`. `Decision::Skipped` is terminal, so `open_proposals`

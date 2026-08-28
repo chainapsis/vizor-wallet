@@ -189,7 +189,8 @@ pub enum NextStep {
         proposal_id: u32,
         choice: u32,
     },
-    /// Submit a previously committed vote using persisted recovery material.
+    /// Submit a previously committed singleton vote using persisted recovery
+    /// material.
     ///
     /// Wallets should reconstruct the cast-vote fields with `vote::submission`
     /// instead of rebuilding them from a caller-supplied draft. Submit those
@@ -203,7 +204,28 @@ pub enum NextStep {
         bundle_index: u32,
         proposal_id: u32,
     },
+    /// Submit one previously committed atomic vote batch.
+    ///
+    /// `proposal_id` identifies the batch's first ordered action and is only a
+    /// recovery anchor. Pass it to `vote::recover_signed_commitments`, submit
+    /// the returned canonical `batch_json` once, and atomically persist the
+    /// shared transaction hash with `vote::record_batch_submission`.
+    SubmitVoteBatch {
+        bundle_index: u32,
+        proposal_id: u32,
+    },
+    /// Poll one previously submitted singleton vote.
     PollVote {
+        bundle_index: u32,
+        proposal_id: u32,
+    },
+    /// Poll one submitted atomic vote batch.
+    ///
+    /// `proposal_id` is the same recovery anchor returned by
+    /// `SubmitVoteBatch`. Recover the batch digest with
+    /// `vote::recover_signed_commitments`, then pass it to
+    /// `confirmation::confirm_vote_batch_submission` after confirmation.
+    PollVoteBatch {
         bundle_index: u32,
         proposal_id: u32,
     },
@@ -235,7 +257,9 @@ impl NextStep {
             Self::PollDelegation { .. } => "poll_delegation",
             Self::CastVote { .. } => "cast_vote",
             Self::SubmitVote { .. } => "submit_vote",
+            Self::SubmitVoteBatch { .. } => "submit_vote_batch",
             Self::PollVote { .. } => "poll_vote",
+            Self::PollVoteBatch { .. } => "poll_vote_batch",
             Self::SubmitShares { .. } => "submit_shares",
             Self::ConfirmShare { .. } => "confirm_share",
         }
@@ -313,10 +337,14 @@ pub struct DelegationStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VoteRecoveryWorkKind {
-    /// Submit a committed vote using persisted recovery material.
+    /// Submit a committed singleton vote using persisted recovery material.
     SubmitVote,
-    /// Poll an already-submitted vote transaction.
+    /// Submit a committed atomic vote batch using persisted recovery material.
+    SubmitVoteBatch,
+    /// Poll an already-submitted singleton vote transaction.
     PollVote,
+    /// Poll an already-submitted atomic vote batch transaction.
+    PollVoteBatch,
     /// Submit one or more missing helper shares for a confirmed vote.
     SubmitShares,
 }
@@ -326,19 +354,23 @@ impl VoteRecoveryWorkKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SubmitVote => "submit_vote",
+            Self::SubmitVoteBatch => "submit_vote_batch",
             Self::PollVote => "poll_vote",
+            Self::PollVoteBatch => "poll_vote_batch",
             Self::SubmitShares => "submit_shares",
         }
     }
 }
 
-/// Grouped vote recovery work for one `(bundle_index, proposal_id)` key.
+/// Grouped vote recovery work keyed by one singleton action or batch anchor.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VoteRecoveryWork {
     pub kind: VoteRecoveryWorkKind,
     pub bundle_index: u32,
+    /// Proposal key for singleton work, or the first ordered action used as the
+    /// recovery anchor for batch work.
     pub proposal_id: u32,
-    /// Present only when `kind == VoteRecoveryWorkKind::PollVote`.
+    /// Present only for poll work.
     pub tx_hash: Option<String>,
     /// Present only when `kind == VoteRecoveryWorkKind::SubmitShares`.
     pub vc_tree_position: Option<u64>,
@@ -422,8 +454,16 @@ fn step_rank(step: &NextStep) -> (u32, u32, u32, u32) {
         NextStep::SubmitVote {
             bundle_index,
             proposal_id,
+        }
+        | NextStep::SubmitVoteBatch {
+            bundle_index,
+            proposal_id,
         } => (1, *proposal_id, *bundle_index, 0),
         NextStep::PollVote {
+            bundle_index,
+            proposal_id,
+        }
+        | NextStep::PollVoteBatch {
             bundle_index,
             proposal_id,
         } => (1, *proposal_id, *bundle_index, 0),
@@ -522,6 +562,10 @@ fn recovered_vote_work_from_steps(
             NextStep::PollVote {
                 bundle_index,
                 proposal_id,
+            }
+            | NextStep::PollVoteBatch {
+                bundle_index,
+                proposal_id,
             } => Some((*bundle_index, *proposal_id)),
             _ => None,
         })
@@ -533,6 +577,17 @@ fn recovered_vote_work_from_steps(
                 proposal_id,
             } => work.push(VoteRecoveryWork {
                 kind: VoteRecoveryWorkKind::SubmitVote,
+                bundle_index,
+                proposal_id,
+                tx_hash: None,
+                vc_tree_position: None,
+                share_indexes: Vec::new(),
+            }),
+            NextStep::SubmitVoteBatch {
+                bundle_index,
+                proposal_id,
+            } => work.push(VoteRecoveryWork {
+                kind: VoteRecoveryWorkKind::SubmitVoteBatch,
                 bundle_index,
                 proposal_id,
                 tx_hash: None,
@@ -552,6 +607,26 @@ fn recovered_vote_work_from_steps(
                     })?;
                 work.push(VoteRecoveryWork {
                     kind: VoteRecoveryWorkKind::PollVote,
+                    bundle_index,
+                    proposal_id,
+                    tx_hash: Some(tx_hash),
+                    vc_tree_position: None,
+                    share_indexes: Vec::new(),
+                });
+            }
+            NextStep::PollVoteBatch {
+                bundle_index,
+                proposal_id,
+            } => {
+                let tx_hash = db
+                    .get_vote_tx_hash(round_id, bundle_index, proposal_id)?
+                    .ok_or_else(|| {
+                        missing_recovery_field(format!(
+                            "poll vote batch step missing tx_hash for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+                        ))
+                    })?;
+                work.push(VoteRecoveryWork {
+                    kind: VoteRecoveryWorkKind::PollVoteBatch,
                     bundle_index,
                     proposal_id,
                     tx_hash: Some(tx_hash),
@@ -659,7 +734,9 @@ fn select_primary_action(
             step,
             NextStep::CastVote { .. }
                 | NextStep::SubmitVote { .. }
+                | NextStep::SubmitVoteBatch { .. }
                 | NextStep::PollVote { .. }
+                | NextStep::PollVoteBatch { .. }
                 | NextStep::SubmitShares { .. }
         )
     }) {
@@ -705,6 +782,131 @@ fn completed_vote_display(
         .collect();
 
     CompletedVoteDisplay { choices, voted_at }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ActiveVoteBatch {
+    digest: [u8; 32],
+    anchor_proposal_id: u32,
+}
+
+fn active_vote_batches_by_vote(
+    db: &VotingDb,
+    round_id: &str,
+    votes: &BTreeMap<(u32, u32), VotePhase>,
+    vote_choices: &BTreeMap<(u32, u32), u32>,
+    intents: &BTreeMap<u32, Decision>,
+) -> Result<BTreeMap<(u32, u32), ActiveVoteBatch>, VotingError> {
+    let mut batches_by_vote = BTreeMap::new();
+    let wallet_id = db.wallet_id();
+
+    for (&(bundle_index, proposal_id), &phase) in votes {
+        if !matches!(phase, VotePhase::Committed | VotePhase::Submitted) {
+            continue;
+        }
+        if batches_by_vote.contains_key(&(bundle_index, proposal_id)) {
+            continue;
+        }
+        let Some(recovery) = crate::vote::recovery_bundle(db, round_id, bundle_index, proposal_id)?
+        else {
+            continue;
+        };
+        let Some(batch) = recovery.batch else {
+            continue;
+        };
+
+        let recoveries = {
+            let conn = db.conn();
+            crate::vote::load_vote_batch_recoveries_with_conn(
+                &conn,
+                &wallet_id,
+                round_id,
+                bundle_index,
+                batch.digest,
+            )?
+        };
+        let anchor_proposal_id = recoveries
+            .first()
+            .map(|recovery| recovery.proposal_id)
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: format!(
+                    "persisted atomic vote batch is empty for round={round_id}, bundle={bundle_index}"
+                ),
+            })?;
+        let mut shared_tx_hash: Option<String> = None;
+
+        for recovery in &recoveries {
+            let vote_key = (bundle_index, recovery.proposal_id);
+            let member_phase = votes.get(&vote_key).copied().ok_or_else(|| {
+                VotingError::InvalidInput {
+                    message: format!(
+                        "persisted atomic vote batch is missing proposal {} for round={round_id}, bundle={bundle_index}",
+                        recovery.proposal_id
+                    ),
+                }
+            })?;
+            if member_phase != phase {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "persisted atomic vote batch has mixed phases for round={round_id}, bundle={bundle_index}: proposal {} is {}, expected {}",
+                        recovery.proposal_id,
+                        member_phase.as_str(),
+                        phase.as_str()
+                    ),
+                });
+            }
+            if vote_choices.get(&vote_key) != Some(&recovery.vote_decision)
+                || intents.get(&recovery.proposal_id)
+                    != Some(&Decision::Choice(recovery.vote_decision))
+            {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "persisted atomic vote batch conflicts with ballot intent for round={round_id}, bundle={bundle_index}, proposal={}",
+                        recovery.proposal_id
+                    ),
+                });
+            }
+            if phase == VotePhase::Submitted {
+                let tx_hash = db
+                    .get_vote_tx_hash(round_id, bundle_index, recovery.proposal_id)?
+                    .ok_or_else(|| VotingError::InvalidInput {
+                        message: format!(
+                            "submitted atomic vote batch is missing a transaction hash for round={round_id}, bundle={bundle_index}, proposal={}",
+                            recovery.proposal_id
+                        ),
+                    })?;
+                if shared_tx_hash
+                    .as_ref()
+                    .is_some_and(|expected| expected != &tx_hash)
+                {
+                    return Err(VotingError::InvalidInput {
+                        message: format!(
+                            "submitted atomic vote batch has conflicting transaction hashes for round={round_id}, bundle={bundle_index}"
+                        ),
+                    });
+                }
+                shared_tx_hash = Some(tx_hash);
+            }
+        }
+
+        let batch = ActiveVoteBatch {
+            digest: batch.digest,
+            anchor_proposal_id,
+        };
+        for recovery in recoveries {
+            let vote_key = (bundle_index, recovery.proposal_id);
+            if batches_by_vote.insert(vote_key, batch).is_some() {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "vote belongs to more than one atomic batch for round={round_id}, bundle={bundle_index}, proposal={}",
+                        recovery.proposal_id
+                    ),
+                });
+            }
+        }
+    }
+
+    Ok(batches_by_vote)
 }
 
 /// Build the resume plan for `round_id`.
@@ -785,6 +987,9 @@ pub fn resume_plan(
             }
         })
         .collect();
+    let active_vote_batches =
+        active_vote_batches_by_vote(db, round_id, &votes, &vote_choices, &intents)?;
+    let mut planned_vote_batches = BTreeSet::new();
 
     for &(bundle_index, proposal_id) in &stale_vote_keys {
         if matches!(
@@ -838,10 +1043,19 @@ pub fn resume_plan(
                     }
                 }
                 Some(VotePhase::Committed) => {
-                    steps.push(NextStep::SubmitVote {
-                        bundle_index: b,
-                        proposal_id: pid,
-                    });
+                    if let Some(batch) = active_vote_batches.get(&vote_key) {
+                        if planned_vote_batches.insert((b, batch.digest)) {
+                            steps.push(NextStep::SubmitVoteBatch {
+                                bundle_index: b,
+                                proposal_id: batch.anchor_proposal_id,
+                            });
+                        }
+                    } else {
+                        steps.push(NextStep::SubmitVote {
+                            bundle_index: b,
+                            proposal_id: pid,
+                        });
+                    }
                 }
                 Some(VotePhase::Submitted) => {
                     if !vote_has_recovery_bundle(db, round_id, b, pid)? {
@@ -851,10 +1065,19 @@ pub fn resume_plan(
                             ),
                         });
                     }
-                    steps.push(NextStep::PollVote {
-                        bundle_index: b,
-                        proposal_id: pid,
-                    });
+                    if let Some(batch) = active_vote_batches.get(&vote_key) {
+                        if planned_vote_batches.insert((b, batch.digest)) {
+                            steps.push(NextStep::PollVoteBatch {
+                                bundle_index: b,
+                                proposal_id: batch.anchor_proposal_id,
+                            });
+                        }
+                    } else {
+                        steps.push(NextStep::PollVote {
+                            bundle_index: b,
+                            proposal_id: pid,
+                        });
+                    }
                 }
                 // Prepared or no row yet -> still needs casting.
                 _ => {
@@ -1075,7 +1298,7 @@ mod tests {
     use super::*;
     use crate::round::RoundParams;
     use crate::types::{EncryptedShare, NoteInfo};
-    use crate::vote::{DraftVote, VoteRecoveryBundle};
+    use crate::vote::{DraftVote, VoteBatchRecovery, VoteRecoveryBundle};
 
     const ROUND: &str = "0101010101010101010101010101010101010101010101010101010101010101";
     const W: &str = "wallet";
@@ -1214,6 +1437,60 @@ mod tests {
             share_comms: vec![[0x51; 32], [0x52; 32]],
             batch: None,
         }
+    }
+
+    fn store_two_action_batch_recovery_fixture(db: &VotingDb) -> [u8; 32] {
+        let mut first = recovery_bundle_fixture(0, 1, 0, 0);
+        first.vote_commitment = [0x61; 32];
+        let mut second = recovery_bundle_fixture(0, 2, 1, 0);
+        second.van_nullifier = [0x20; 32];
+        second.vote_authority_note_new = [0x21; 32];
+        second.vote_commitment = [0x62; 32];
+        second.r_vpk = [0x25; 32];
+        let actions = [&first, &second]
+            .into_iter()
+            .map(
+                |recovery| crate::vote_commitment::CastVoteBatchSighashAction {
+                    r_vpk: &recovery.r_vpk,
+                    van_nullifier: &recovery.van_nullifier,
+                    vote_authority_note_new: &recovery.vote_authority_note_new,
+                    vote_commitment: &recovery.vote_commitment,
+                    proposal_id: recovery.proposal_id,
+                },
+            )
+            .collect::<Vec<_>>();
+        let digest = crate::vote_commitment::cast_vote_batch_sighash(
+            ROUND,
+            first.anchor_height as u64,
+            &actions,
+        )
+        .unwrap();
+        first.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 0,
+            size: 2,
+        });
+        second.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 1,
+            size: 2,
+        });
+
+        for recovery in [&first, &second] {
+            crate::storage::queries::store_vote(
+                &db.conn(),
+                ROUND,
+                W,
+                recovery.bundle_index,
+                recovery.proposal_id,
+                recovery.vote_decision,
+                &recovery.vote_commitment,
+            )
+            .unwrap();
+            store_recovery_bundle_fixture(db, recovery, None);
+        }
+
+        digest
     }
 
     fn record_confirmed_share_fixture(
@@ -1531,6 +1808,77 @@ mod tests {
                 bundle_index: 0,
                 proposal_id: 2,
                 tx_hash: None,
+                vc_tree_position: None,
+                share_indexes: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn committed_batch_yields_one_batch_submit_step() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        let digest = store_two_action_batch_recovery_fixture(&db);
+
+        let plan = resume_plan(&db, ROUND, &[1, 2, 3]).unwrap();
+
+        assert_eq!(
+            plan.next_steps,
+            vec![NextStep::SubmitVoteBatch {
+                bundle_index: 0,
+                proposal_id: 1,
+            }]
+        );
+        assert_eq!(
+            plan.recovered_vote_work,
+            vec![VoteRecoveryWork {
+                kind: VoteRecoveryWorkKind::SubmitVoteBatch,
+                bundle_index: 0,
+                proposal_id: 1,
+                tx_hash: None,
+                vc_tree_position: None,
+                share_indexes: Vec::new(),
+            }]
+        );
+        let recovered = crate::vote::recover_signed_commitments(&db, ROUND, 0, 1).unwrap();
+        assert_eq!(recovered.batch_digest, Some(digest));
+        assert_eq!(recovered.commitments.len(), 2);
+        assert!(recovered.batch_json.is_some());
+    }
+
+    #[test]
+    fn submitted_batch_yields_one_batch_poll_step() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        let digest = store_two_action_batch_recovery_fixture(&db);
+        crate::vote::record_batch_submission(&db, ROUND, 0, &digest, "batch-tx").unwrap();
+
+        let plan = resume_plan(&db, ROUND, &[1, 2, 3]).unwrap();
+
+        assert_eq!(
+            plan.next_steps,
+            vec![NextStep::PollVoteBatch {
+                bundle_index: 0,
+                proposal_id: 1,
+            }]
+        );
+        assert_eq!(
+            plan.recovered_vote_work,
+            vec![VoteRecoveryWork {
+                kind: VoteRecoveryWorkKind::PollVoteBatch,
+                bundle_index: 0,
+                proposal_id: 1,
+                tx_hash: Some("batch-tx".to_string()),
                 vc_tree_position: None,
                 share_indexes: Vec::new(),
             }]
