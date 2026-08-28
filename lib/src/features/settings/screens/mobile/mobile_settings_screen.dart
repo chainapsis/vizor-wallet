@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/config/app_version_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -25,6 +27,8 @@ import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
+import '../../../onboarding/shared/onboarding_welcome_art.dart'
+    show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
@@ -64,11 +68,16 @@ class MobileSettingsScreen extends ConsumerWidget {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(
+              padding: EdgeInsets.fromLTRB(
                 AppSpacing.sm,
                 AppSpacing.s,
                 AppSpacing.sm,
-                kMobileTabBarHeight + AppSpacing.lg,
+                // The shell exposes the floating tab bar's full occupied
+                // height, including Android's navigation-bar inset.
+                math.max(
+                  kMobileTabBarHeight + AppSpacing.lg,
+                  MediaQuery.paddingOf(context).bottom + AppSpacing.md,
+                ),
               ),
               children: [
                 _SettingsGroup(
@@ -246,6 +255,10 @@ class MobileSettingsScreen extends ConsumerWidget {
                 // The About row stays hidden until the legal documents
                 // are ready — the /about screen exists but must not be
                 // user-reachable (product decision, 2026-06).
+                const SizedBox(height: AppSpacing.base),
+                const _SettingsVersionFooter(
+                  key: ValueKey('mobile_settings_version'),
+                ),
               ],
             ),
           ),
@@ -465,6 +478,47 @@ class _DisableBiometricSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A quiet app signature, separate from the actionable settings cards.
+/// Keep the full release identifier, including rc/internal suffixes.
+class _SettingsVersionFooter extends StatelessWidget {
+  const _SettingsVersionFooter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Vizor, version $kVizorReleaseVersion',
+      excludeSemantics: true,
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            VizorWordmark(
+              width: 64,
+              height: 24,
+              color: context.colors.text.secondary,
+            ),
+            const SizedBox(width: AppSpacing.s),
+            SizedBox(
+              width: 1,
+              height: AppSpacing.sm,
+              child: ColoredBox(color: context.colors.border.regular),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            Flexible(
+              child: Text(
+                'v$kVizorReleaseVersion',
+                style: AppTypography.codeSmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

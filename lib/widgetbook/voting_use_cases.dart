@@ -1,10 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
@@ -17,6 +18,7 @@ import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
+import '../src/providers/voting/voting_poll_eligibility_provider.dart';
 import '../src/providers/voting/voting_round_visibility_provider.dart';
 import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
@@ -28,6 +30,9 @@ import '../src/services/voting/voting_config_loader.dart';
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [
+      votingPollEligibilityProvider.overrideWith(
+        (ref, roundId) async => VotingPollEligibility.eligible,
+      ),
       votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
       votingRoundsProvider.overrideWith(_PreviewVotingRoundsNotifier.new),
       votingConfigSourceProvider.overrideWith(
@@ -41,16 +46,68 @@ Widget buildMobileVotingPollsUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileVotingConfigUseCase(BuildContext context) {
+/// Matches the four list states in Figma 8045:24064 without wallet I/O.
+Widget buildMobileVotingPollsEligibilityUseCase(
+  BuildContext context, {
+  Future<VotingPollEligibility> Function(String)? loadEligibility,
+}) {
+  return _mobileVotingFullPagePreview(
+    context,
+    ProviderScope(
+      overrides: [
+        votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
+        votingRoundsProvider.overrideWith(
+          _EligibilityPreviewRoundsNotifier.new,
+        ),
+        votingConfigSourceProvider.overrideWith(
+          _PreviewVotingConfigSourceNotifier.new,
+        ),
+        showTestVotingRoundsProvider.overrideWith(
+          _PreviewShowTestVotingRoundsNotifier.new,
+        ),
+        votingPollEligibilityProvider.overrideWith(
+          (ref, roundId) async => loadEligibility != null
+              ? loadEligibility(roundId)
+              : roundId == 'nu7-ineligible'
+              ? VotingPollEligibility.ineligible
+              : VotingPollEligibility.eligible,
+        ),
+      ],
+      child: const MobileVotingPollsScreen(),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
+Widget buildMobileVotingConfigUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(context);
+
+Widget buildMobileVotingConfigDefaultUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(context, defaultOnly: true);
+
+Widget _buildMobileVotingConfigPreview(
+  BuildContext context, {
+  bool defaultOnly = false,
+}) {
   return ProviderScope(
     overrides: [
+      votingPollEligibilityProvider.overrideWith(
+        (ref, roundId) async => VotingPollEligibility.eligible,
+      ),
       votingConfigProvider.overrideWith(_PreviewVotingConfigNotifier.new),
       votingRoundsProvider.overrideWith(_PreviewVotingRoundsNotifier.new),
       votingConfigSourceProvider.overrideWith(
-        _PreviewVotingConfigSourceNotifier.new,
+        () => _PreviewVotingConfigSourceNotifier(
+          initialState: defaultOnly
+              ? const VotingConfigSourceState(
+                  sourceUrl: kDefaultStaticVotingConfigSource,
+                  isDefault: true,
+                )
+              : _previewSourceState,
+        ),
       ),
       showTestVotingRoundsProvider.overrideWith(
-        _PreviewShowTestVotingRoundsNotifier.new,
+        () => _PreviewShowTestVotingRoundsNotifier(initialValue: defaultOnly),
       ),
     ],
     child: const MobileModalOverlay(
@@ -90,6 +147,113 @@ Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingEligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: true);
+
+Widget buildMobileVotingIneligibleUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(context, eligible: false);
+
+Widget buildMobileVotingPrivacyTrimUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: true,
+      votingEligibilityMessage:
+          '0.125 ZEC is left out of this vote '
+          'to keep your submission less identifiable.',
+    );
+
+Widget buildMobileVotingEligibilityErrorUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: false,
+      eligibilityUnknown: true,
+      votingEligibilityMessage: 'Unable to check voting eligibility.',
+    );
+
+Widget _buildMobileVotingActiveUseCase(
+  BuildContext context, {
+  required bool eligible,
+  bool eligibilityUnknown = false,
+  String? votingEligibilityMessage,
+}) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingScaffold(
+      title: 'Coinholder voting',
+      child: VotingActivePollContent(
+        showDesktopToolbar: false,
+        roundId: 'preview-nsm',
+        title: '[TEST] Very Serious Snack Governance 3',
+        snapshotHeight: 3543600,
+        description:
+            'A silly sample round for testing the shielded vote builder '
+            'without using real governance content.',
+        forumUri: Uri.parse('https://forum.zcashcommunity.com/t/nsm'),
+        endDate: DateTime(2026, 8, 24),
+        votingPowerZatoshi: eligibilityUnknown
+            ? null
+            : eligible
+            ? BigInt.from(37500000)
+            : BigInt.zero,
+        votingPowerPreparing: false,
+        votingEligibilityConfirmed: eligible,
+        answersEditable: eligible,
+        votingEligibilityMessage: votingEligibilityMessage,
+        votingEligibilityErrorMessage: eligible || eligibilityUnknown
+            ? null
+            : 'This account did not have enough eligible '
+                  'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+        onVotingEligibilityRetry: _previewNoop,
+        proposals: const [_previewNsmProposal],
+        draft: const VotingDraftState(),
+        onChoice: (_, _) {},
+      ),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
+Widget buildMobileVotingIneligibleModalUseCase(BuildContext context) {
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      buildMobileVotingIneligibleUseCase(context),
+      ColoredBox(color: context.colors.background.neutralScrim),
+      const VotingIneligibleDialog(
+        message:
+            'Voting requires at least one eligible shielded note bundle '
+            'with 0.125 ZEC at snapshot block 3,459,350. '
+            'Switch to an eligible account to vote.',
+      ),
+    ],
+  );
+}
+
+const _previewNsmProposal = VotingProposalView(
+  id: 1,
+  title: 'NSM Issuance Smoothing',
+  zipNumber: 'ZIP-233 ZIP-234',
+  description:
+      'The component of the Network Sustainability Mechanism that removes '
+      'ZEC from circulation is already approved. How that ZEC is recycled into '
+      'future block rewards remains unresolved. In no case will the total supply '
+      'of ZEC be affected.\n\nWhich approach do you support?',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label:
+          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
+    ),
+    VotingOptionView(
+      index: 2,
+      label:
+          'Delay NU7 until every applicable feature approved in this poll is deemed',
+    ),
+    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
+    VotingOptionView(index: 4, label: 'Abstain'),
+  ],
+);
+
 Widget buildMobileVotingProposalSelectedUseCase(BuildContext context) {
   return const MobileVotingScaffold(
     title: 'Coinholder voting',
@@ -118,6 +282,63 @@ Widget buildMobileVotingResultsUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingResultsFullUseCase(BuildContext context) =>
+    _buildMobileVotingResultsPreview(context, selectedChoice: 2);
+
+Widget buildMobileVotingResultsWinnerUseCase(BuildContext context) =>
+    _buildMobileVotingResultsPreview(context, selectedChoice: 1);
+
+Widget _buildMobileVotingResultsPreview(
+  BuildContext context, {
+  required int selectedChoice,
+}) {
+  return _mobileVotingFullPagePreview(
+    context,
+    MobileVotingScaffold(
+      title: 'Voting results',
+      child: VotingResultsContent(
+        title: '[TEST] Very Serious Snack Governance 3',
+        snapshotHeight: 3543600,
+        description:
+            'A silly sample round for testing the shielded vote builder without using real governance content.',
+        forumUri: Uri.parse(
+          'https://forum.zcashcommunity.com/t/snack-governance',
+        ),
+        proposals: const [_previewResultsDesignProposal],
+        // Consistent real tally units: 985 + 10 + 5 = 1,000 ZEC.
+        tallies: const {
+          1: {1: 7880, 2: 80, 3: 40, 4: 0},
+        },
+        selectedChoices: {1: selectedChoice},
+        profilePictureId: kDefaultProfilePictureId,
+      ),
+    ),
+    size: MediaQuery.sizeOf(context),
+  );
+}
+
+const _previewResultsDesignProposal = VotingProposalView(
+  id: 1,
+  title: 'Official Snack of the Next Team Sync',
+  description:
+      'NU7 will be consistent with the results of this poll, assuming each applicable feature is implemented by September 30th.\n\nHow should features that are not ready by the deadline be handled?',
+  zipNumber: 'ZIP-2033 ZIP-2033',
+  options: [
+    VotingOptionView(
+      index: 1,
+      label:
+          'Ship NU7 as soon as possible, removing any feature that is not implemented by the September',
+    ),
+    VotingOptionView(index: 2, label: 'Abstain'),
+    VotingOptionView(index: 3, label: 'I do not support this NU7 plan.'),
+    VotingOptionView(
+      index: 4,
+      label:
+          'Delay NU7 until every applicable feature approved in this poll is deemed complete.',
+    ),
+  ],
+);
+
 Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,
@@ -138,6 +359,18 @@ Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileVotingSubmissionCastingCompactUseCase(BuildContext context) {
+  return _mobileVotingFullPagePreview(
+    context,
+    const MobileVotingSubmissionProgressScreen(
+      activeStep: VotingSubmissionProgressStep.castingVotes,
+      activeStepProgress: 0.6,
+    ),
+    size: const Size(375, 667),
+    safeArea: const EdgeInsets.only(top: 47, bottom: 34),
+  );
+}
+
 Widget buildMobileVotingSubmissionFinalizingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,
@@ -154,15 +387,19 @@ Widget buildMobileVotingSubmittedUseCase(BuildContext context) {
   );
 }
 
-Widget _mobileVotingFullPagePreview(BuildContext context, Widget child) {
+Widget _mobileVotingFullPagePreview(
+  BuildContext context,
+  Widget child, {
+  Size size = const Size(393, 852),
+  EdgeInsets safeArea = const EdgeInsets.only(top: 55),
+}) {
   final mediaQuery = MediaQuery.of(context);
-  const safeArea = EdgeInsets.only(top: 55);
   return SizedBox(
-    width: 393,
-    height: 852,
+    width: size.width,
+    height: size.height,
     child: MediaQuery(
       data: mediaQuery.copyWith(
-        size: const Size(393, 852),
+        size: size,
         padding: safeArea,
         viewPadding: safeArea,
       ),
@@ -247,9 +484,47 @@ class _PreviewVotingRoundsNotifier extends VotingRoundsNotifier {
   }
 }
 
-class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
+class _EligibilityPreviewRoundsNotifier extends VotingRoundsNotifier {
   @override
-  Future<VotingConfigSourceState> build() async => _previewSourceState;
+  Future<List<VotingRoundView>> build() async => _eligibilityPreviewRounds;
+
+  @override
+  Future<void> reload() async {
+    state = AsyncData(_eligibilityPreviewRounds);
+  }
+}
+
+final _eligibilityPreviewRounds = [
+  for (final id in ['nu7-ineligible', 'nu7-active'])
+    VotingRoundView(
+      roundId: id,
+      title: 'NU7 Scope',
+      status: 'active',
+      rawJson: {
+        'description':
+            'This vote concerns the scope of NU7. It is one component of '
+            "governance, but it represents the coinholders' view about NSM, supply...",
+        'vote_end_time': '2026-08-24T12:00:00Z',
+        if (id == 'nu7-ineligible')
+          'forum_url': 'https://forum.zcashcommunity.com/t/nu7-scope',
+      },
+    ),
+  for (final round in _previewVotingRounds.skip(1))
+    VotingRoundView(
+      roundId: round.roundId,
+      title: round.title,
+      status: round.status,
+      voted: round.voted,
+      rawJson: {...round.rawJson}..remove('forum_url'),
+    ),
+];
+
+class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
+  _PreviewVotingConfigSourceNotifier({this.initialState = _previewSourceState});
+  final VotingConfigSourceState initialState;
+
+  @override
+  Future<VotingConfigSourceState> build() async => initialState;
 
   @override
   Future<void> resetDefault() async {
@@ -272,8 +547,11 @@ class _PreviewVotingConfigSourceNotifier extends VotingConfigSourceNotifier {
 
 class _PreviewShowTestVotingRoundsNotifier
     extends ShowTestVotingRoundsNotifier {
+  _PreviewShowTestVotingRoundsNotifier({this.initialValue = false});
+  final bool initialValue;
+
   @override
-  Future<bool> build() async => false;
+  Future<bool> build() async => initialValue;
 
   @override
   Future<void> setShowTestRounds(bool show) async {

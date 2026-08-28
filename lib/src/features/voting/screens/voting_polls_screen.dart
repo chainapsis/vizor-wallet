@@ -14,6 +14,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_pir_warmup_provider.dart';
+import '../../../providers/voting/voting_poll_eligibility_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
@@ -150,7 +151,7 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
       maxWidth: 560,
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
-        AppSpacing.sm,
+        widget.showDesktopChrome ? AppSpacing.sm : AppSpacing.s,
         horizontalPadding,
         40,
       ),
@@ -468,14 +469,14 @@ BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
   ],
 );
 
-class _MobilePollCardContent extends StatelessWidget {
+class _MobilePollCardContent extends ConsumerWidget {
   const _MobilePollCardContent({required this.round, required this.onAction});
 
   final VotingRoundView round;
   final VoidCallback onAction;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
@@ -483,10 +484,30 @@ class _MobilePollCardContent extends StatelessWidget {
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(round.rawJson, state);
+    final eligibility = state == _PollCardState.active
+        ? ref.watch(votingPollEligibilityProvider(round.roundId))
+        : null;
+    final ineligible =
+        eligibility != null &&
+        !eligibility.isLoading &&
+        !eligibility.hasError &&
+        eligibility.value == VotingPollEligibility.ineligible;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (ineligible) ...[
+          Text(
+            'Not eligible for this round',
+            key: ValueKey('voting_poll_ineligible_${round.roundId}'),
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.destructive,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.04,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         Text(
           title,
           style: AppTypography.bodyLarge.copyWith(
@@ -503,14 +524,20 @@ class _MobilePollCardContent extends StatelessWidget {
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
         ),
         if (forumUri != null) ...[
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           Align(
-            alignment: Alignment.centerRight,
-            child: VotingForumLinkButton(uri: forumUri),
+            alignment: Alignment.centerLeft,
+            child: VotingForumLinkButton(uri: forumUri, mobilePollList: true),
           ),
         ],
         const SizedBox(height: AppSpacing.s),
-        Container(height: 1.5, color: colors.border.subtle),
+        Container(
+          height: 1.5,
+          decoration: BoxDecoration(
+            color: colors.border.subtle,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
+        ),
         const SizedBox(height: AppSpacing.s),
         Row(
           children: [
@@ -524,7 +551,7 @@ class _MobilePollCardContent extends StatelessWidget {
               variant: _actionButtonVariant(state),
               size: AppButtonSize.mediumLarge,
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(_actionLabel(state)),
+              child: Text(ineligible ? 'View' : _actionLabel(state)),
             ),
           ],
         ),
@@ -547,43 +574,44 @@ class _MobilePollStatus extends StatelessWidget {
         : dateLabel;
     final statusColor = voted
         ? context.colors.text.positiveStrong
+        : state == _PollCardState.closed
+        ? context.colors.text.primary
         : context.colors.text.accent;
-    return LayoutBuilder(
-      builder: (context, constraints) => Row(
-        children: [
-          if (voted) ...[
-            AppIcon(AppIcons.checkCircle, size: 20, color: statusColor),
-            const SizedBox(width: AppSpacing.xxs),
-          ],
-          Flexible(
-            child: Text(
-              _statusLabel(state),
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: statusColor,
-                fontWeight: FontWeight.w500,
-                height: 16 / 14,
-                letterSpacing: -0.06,
-              ),
+    final status = Text(
+      _statusLabel(state),
+      style: AppTypography.labelLarge.copyWith(
+        color: statusColor,
+        letterSpacing: -0.04,
+      ),
+    );
+    // The parent gives this footer all space left beside the action button.
+    // Use intrinsic text widths on one line, then wrap instead of hiding dates.
+    return Wrap(
+      spacing: 7,
+      runSpacing: AppSpacing.xxs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (voted)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(AppIcons.checkCircle, size: 20, color: statusColor),
+              const SizedBox(width: 7),
+              Flexible(child: status),
+            ],
+          )
+        else
+          status,
+        if (displayedDate != null)
+          Text(
+            displayedDate,
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.primary,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.04,
             ),
           ),
-          if (displayedDate != null && constraints.maxWidth >= 120) ...[
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                displayedDate,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodySmall.copyWith(
-                  color: context.colors.text.primary,
-                  fontWeight: FontWeight.w400,
-                  height: 16 / 14,
-                  letterSpacing: -0.06,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+      ],
     );
   }
 }

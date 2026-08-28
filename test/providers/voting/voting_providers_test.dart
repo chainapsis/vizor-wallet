@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -18,6 +19,7 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_pir_warmup_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
@@ -56,6 +58,222 @@ import '../../services/voting/fake_voting_http.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('poll eligibility', () {
+    test('lock discards pending results and unlock rechecks', () async {
+      final security = _MutableVotingSecurityNotifier(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+      );
+      final rust = _GatedPollEligibilityRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        securityNotifier: security,
+        extraOverrides: [
+          votingRoundsProvider.overrideWith(_PollEligibilityRoundsNotifier.new),
+          syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(syncProvider.future);
+      final provider = votingPollEligibilityProvider(kRoundId);
+      final subscription = container.listen(provider, (_, _) {});
+      addTearDown(subscription.close);
+      await rust.started.future;
+      security.setUnlocked(false);
+      expect(
+        await container.read(provider.future),
+        VotingPollEligibility.unknown,
+      );
+      rust.release.complete();
+      await container.pump();
+      expect(container.read(provider).value, VotingPollEligibility.unknown);
+      security.setUnlocked(true);
+      expect(
+        await container.read(provider.future),
+        VotingPollEligibility.ineligible,
+      );
+      expect(rust.eligibilityCheckCalls, 2);
+    });
+
+    test(
+      'sync completion rechecks unknown eligibility without progress-tick queries',
+      () async {
+        final rust = FakeVotingRustApi();
+        final container = _sessionContainer(
+          rust: rust,
+          walletSyncReadinessChecker: FakeVotingWalletSyncReadinessChecker(
+            responses: [
+              const VotingWalletSyncReadiness(
+                scannedHeight: 1,
+                snapshotHeight: 2,
+                chainTipHeight: 2,
+              ),
+              const VotingWalletSyncReadiness(
+                scannedHeight: 2,
+                snapshotHeight: 2,
+                chainTipHeight: 2,
+              ),
+            ],
+          ),
+          extraOverrides: [
+            votingRoundsProvider.overrideWith(
+              _PollEligibilityRoundsNotifier.new,
+            ),
+            syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(syncProvider.future);
+        final provider = votingPollEligibilityProvider(kRoundId);
+        final subscription = container.listen(provider, (_, _) {});
+        addTearDown(subscription.close);
+        expect(
+          await container.read(provider.future),
+          VotingPollEligibility.unknown,
+        );
+        final sync =
+            container.read(syncProvider.notifier)
+                as _PollEligibilitySyncNotifier;
+        sync.progress();
+        await container.pump();
+        expect(rust.eligibilityCheckCalls, 0);
+        sync.complete();
+        expect(
+          await container.read(provider.future),
+          VotingPollEligibility.eligible,
+        );
+        expect(rust.eligibilityCheckCalls, 1);
+      },
+    );
+
+    for (final eligible in [true, false]) {
+      test(
+        'reads snapshot eligibility ($eligible) without preparing votes',
+        () async {
+          final rust = FakeVotingRustApi(eligibilityEligible: eligible);
+          final container = _sessionContainer(
+            rust: rust,
+            extraOverrides: _pollEligibilityOverrides,
+          );
+          addTearDown(container.dispose);
+          final provider = votingPollEligibilityProvider(kRoundId);
+          final subscription = container.listen(provider, (_, _) {});
+          addTearDown(subscription.close);
+          expect(
+            await container.read(provider.future),
+            eligible
+                ? VotingPollEligibility.eligible
+                : VotingPollEligibility.ineligible,
+          );
+          expect(rust.eligibilityAccountUuids, ['account-1']);
+          expect(rust.trustedRoundParamsCalls, 1);
+          expect(rust.setupCalls, 0);
+          expect(rust.generateVotingHotkeyCalls, 0);
+          expect(rust.delegationBundleCalls, isEmpty);
+          expect(container.exists(votingSessionProvider(kRoundId)), isFalse);
+          await container.read(provider.future);
+          expect(rust.eligibilityCheckCalls, 1);
+        },
+      );
+    }
+
+    test(
+      'unsynced snapshots stay unknown and recheck after list refresh',
+      () async {
+        final rust = FakeVotingRustApi(eligibilityEligible: false);
+        final readiness = FakeVotingWalletSyncReadinessChecker(
+          responses: [
+            const VotingWalletSyncReadiness(
+              scannedHeight: 1,
+              snapshotHeight: 2,
+              chainTipHeight: 3,
+            ),
+            const VotingWalletSyncReadiness(
+              scannedHeight: 2,
+              snapshotHeight: 2,
+              chainTipHeight: 3,
+            ),
+          ],
+        );
+        final container = _sessionContainer(
+          rust: rust,
+          walletSyncReadinessChecker: readiness,
+          extraOverrides: _pollEligibilityOverrides,
+        );
+        addTearDown(container.dispose);
+        await container.read(votingRoundsProvider.future);
+        final provider = votingPollEligibilityProvider(kRoundId);
+        final subscription = container.listen(provider, (_, _) {});
+        addTearDown(subscription.close);
+        expect(
+          await container.read(provider.future),
+          VotingPollEligibility.unknown,
+        );
+        expect(rust.eligibilityCheckCalls, 0);
+        await container.read(votingRoundsProvider.notifier).reload();
+        expect(
+          await container.read(provider.future),
+          VotingPollEligibility.ineligible,
+        );
+        expect(rust.eligibilityCheckCalls, 1);
+      },
+    );
+
+    test(
+      'rejects unauthenticated rounds before querying their snapshot',
+      () async {
+        final http = FakeVotingHttpClient(responses: votingHttpResponses());
+        final rust = FakeVotingRustApi();
+        final container = _sessionContainer(
+          http: http,
+          rust: rust,
+          authenticatedRoundIds: const [kOtherRoundId],
+          extraOverrides: _pollEligibilityOverrides,
+        );
+        addTearDown(container.dispose);
+        await expectLater(
+          container.read(votingPollEligibilityProvider(kRoundId).future),
+          throwsA(isA<StateError>()),
+        );
+        expect(rust.eligibilityCheckCalls, 0);
+        expect(
+          http.requests.where(
+            (request) => request.uri.path.endsWith('/round/$kRoundId'),
+          ),
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'account changes discard late eligibility and check the new account',
+      () async {
+        final account = NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+        final rust = _GatedPollEligibilityRustApi();
+        final container = _sessionContainer(
+          rust: rust,
+          activeAccountUuidListenable: account,
+          extraOverrides: _pollEligibilityOverrides,
+        );
+        addTearDown(container.dispose);
+        final provider = votingPollEligibilityProvider(kRoundId);
+        final subscription = container.listen(provider, (_, _) {});
+        addTearDown(subscription.close);
+        await rust.started.future;
+        container.read(account.notifier).set('account-2');
+        expect(container.read(provider).isLoading, isTrue);
+        rust.release.complete();
+        expect(
+          await container.read(provider.future),
+          VotingPollEligibility.eligible,
+        );
+        expect(rust.eligibilityAccountUuids, ['account-1', 'account-2']);
+        expect(rust.setupCalls, 0);
+      },
+    );
+  });
 
   test('config provider loads and refreshes dynamic voting config', () async {
     final http = FakeVotingHttpClient(
@@ -8499,36 +8717,33 @@ void main() {
     expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
 
-  test(
-    'background PIR cache warmup skips hidden [TEST] rounds',
-    () async {
-      final rust = FakeVotingRustApi();
-      final testRound = roundStatusJson(roundId: kRoundId)
-        ..['title'] = '[TEST] Hidden poll';
-      final http = FakeVotingHttpClient(
-        responses: votingHttpResponses(roundStatus: testRound)
-          ..['/shielded-vote/v1/rounds'] = {
-            'rounds': [testRound],
-          },
-      );
-      final container = _sessionContainer(
-        rust: rust,
-        http: http,
-        visibilityStore: FakeVotingRoundVisibilityStore(),
-      );
-      addTearDown(container.dispose);
+  test('background PIR cache warmup skips hidden [TEST] rounds', () async {
+    final rust = FakeVotingRustApi();
+    final testRound = roundStatusJson(roundId: kRoundId)
+      ..['title'] = '[TEST] Hidden poll';
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(roundStatus: testRound)
+        ..['/shielded-vote/v1/rounds'] = {
+          'rounds': [testRound],
+        },
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      http: http,
+      visibilityStore: FakeVotingRoundVisibilityStore(),
+    );
+    addTearDown(container.dispose);
 
-      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+    await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
 
-      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
-      expect(
-        http.requests.any(
-          (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
-        ),
-        isFalse,
-      );
-    },
-  );
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+    expect(
+      http.requests.any(
+        (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+      ),
+      isFalse,
+    );
+  });
 
   test(
     'background PIR cache warmup includes [TEST] rounds when shown',
@@ -8714,6 +8929,7 @@ PirSnapshotResolution _pirResolution(Uri selected, List<Uri> matches) {
 }
 
 ProviderContainer _sessionContainer({
+  List<Override> extraOverrides = const [],
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
   FakeVotingRecoveryApi? recoveryApi,
@@ -8740,7 +8956,6 @@ ProviderContainer _sessionContainer({
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind Function(rust_config.ResolvedVotingConfig?)?
   configSwitchKind,
-  List<Override> extraOverrides = const [],
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -8857,6 +9072,56 @@ ProviderContainer _sessionContainer({
       ...extraOverrides,
     ],
   );
+}
+
+final _pollEligibilityOverrides = <Override>[
+  votingPollEligibilityWalletRevisionProvider.overrideWithValue((
+    locked: false,
+    sync: (false, null),
+  )),
+  votingRoundsProvider.overrideWith(_PollEligibilityRoundsNotifier.new),
+];
+
+class _PollEligibilityRoundsNotifier extends VotingRoundsNotifier {
+  @override
+  Future<List<VotingRoundView>> build() async => [];
+
+  @override
+  Future<void> reload() async => state = AsyncData([]);
+}
+
+class _PollEligibilitySyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  void progress() =>
+      state = AsyncData(state.requireValue.copyWith(percentage: 50));
+
+  void complete() => state = AsyncData(
+    state.requireValue.copyWith(lastSyncCompletedAt: DateTime(2026, 8, 26)),
+  );
+}
+
+class _GatedPollEligibilityRustApi extends FakeVotingRustApi {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) async {
+    if (!started.isCompleted) {
+      started.complete();
+      await release.future;
+    }
+    final result = await super.checkVotingEligibility(ctx: ctx);
+    return rust_api.ApiVotingEligibility(
+      isEligible: ctx.accountUuid != 'account-1',
+      distinctNoteCount: result.distinctNoteCount,
+      eligibleWeightZatoshi: result.eligibleWeightZatoshi,
+      privacyTrimDroppedValueZatoshi: result.privacyTrimDroppedValueZatoshi,
+    );
+  }
 }
 
 FakeVotingRecoveryApi _submittedDelegationOnlyRecoveryApi() {
