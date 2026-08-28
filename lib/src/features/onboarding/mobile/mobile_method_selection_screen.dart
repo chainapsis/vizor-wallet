@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app_bootstrap.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../ledger/ledger_capability.dart';
 
 const double _methodCardHeight = 90;
 const double _methodSelectionProgress = 60 / 196;
@@ -19,12 +22,17 @@ const double _methodSelectionProgress = 60 / 196;
 /// 24px below the steps nav, then lays out the title block, a 32px gap, and
 /// four method cards. The legal line in the Figma frame is intentionally not
 /// rendered until the legal documents are ready.
-class MobileMethodSelectionScreen extends StatelessWidget {
+class MobileMethodSelectionScreen extends ConsumerWidget {
   const MobileMethodSelectionScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final bootstrap = ref.watch(appBootstrapProvider);
+    final showLedger =
+        ref.watch(ledgerStaticCapabilityProvider).supported &&
+        bootstrap.hasWallet &&
+        bootstrap.isPasswordConfigured;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(
@@ -100,6 +108,17 @@ class MobileMethodSelectionScreen extends StatelessWidget {
                           'assets/illustrations/method_keystone_card_bg.png',
                       onTap: () => context.push('/onboarding/keystone'),
                     ),
+                    if (showLedger) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _MethodCard(
+                        buttonKey: const ValueKey('mobile_welcome_ledger'),
+                        iconName: AppIcons.ledger,
+                        label: 'Connect Ledger',
+                        illustration:
+                            'assets/illustrations/method_import_card_bg.png',
+                        onTap: () => context.push('/onboarding/ledger'),
+                      ),
+                    ],
                   ],
                 ),
               ),

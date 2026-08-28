@@ -282,6 +282,7 @@ Widget _app({
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
+  ValueChanged<Object?>? onLedgerRoute,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -294,6 +295,13 @@ Widget _app({
           initialRecipient: initialRecipient,
           validateAddress: validateAddress,
         ),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (_, state) {
+          onLedgerRoute?.call(state.extra);
+          return const SizedBox(key: ValueKey('mobile_send_ledger_sign_route'));
+        },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
     ],
@@ -2224,6 +2232,52 @@ void main() {
     final leading = confirmButton.leading;
     expect(leading, isA<AppIcon>());
     expect((leading! as AppIcon).name, AppIcons.qr);
+  });
+
+  testWidgets('Ledger send uses its own enabled confirmation action', (
+    tester,
+  ) async {
+    Object? ledgerRouteArgs;
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        onLedgerRoute: (args) => ledgerRouteArgs = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+
+    final confirmButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_confirm')),
+    );
+    expect(confirmButton.onPressed, isNotNull);
+    expect((confirmButton.leading! as AppIcon).name, AppIcons.ledger);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.text('Confirm with Ledger'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(ledgerRouteArgs, isNotNull);
+    expect(find.text('Confirm with Keystone'), findsNothing);
   });
 
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
