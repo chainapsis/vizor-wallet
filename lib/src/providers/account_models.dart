@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import '../core/profile_pictures.dart';
 
 enum HardwareSignerKind {
@@ -57,6 +61,7 @@ class AccountInfo {
   final String? ledgerDeviceName;
   final String? ledgerDeviceModel;
   final String? ledgerWalletFingerprint;
+  final String? ledgerWalletName;
   final bool isSeedAnchor;
   final String profilePictureId;
   final String? walletLinkSourceAccountUuid;
@@ -75,6 +80,7 @@ class AccountInfo {
     this.ledgerDeviceName,
     this.ledgerDeviceModel,
     this.ledgerWalletFingerprint,
+    this.ledgerWalletName,
     this.isSeedAnchor = false,
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
@@ -87,6 +93,13 @@ class AccountInfo {
 
   bool get isLedger =>
       isHardware && hardwareSignerKind == HardwareSignerKind.ledger;
+
+  bool get hasLedgerWalletIdentity {
+    final fingerprint = ledgerWalletFingerprint?.trim();
+    return isLedger &&
+        fingerprint != null &&
+        RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint);
+  }
 
   AccountInfo copyWith({
     String? name,
@@ -101,6 +114,7 @@ class AccountInfo {
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
     String? ledgerWalletFingerprint,
+    String? ledgerWalletName,
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
   }) => AccountInfo(
@@ -119,6 +133,7 @@ class AccountInfo {
     ledgerDeviceModel: ledgerDeviceModel ?? this.ledgerDeviceModel,
     ledgerWalletFingerprint:
         ledgerWalletFingerprint ?? this.ledgerWalletFingerprint,
+    ledgerWalletName: ledgerWalletName ?? this.ledgerWalletName,
     isSeedAnchor: isSeedAnchor ?? this.isSeedAnchor,
     profilePictureId: profilePictureId ?? this.profilePictureId,
     walletLinkSourceAccountUuid:
@@ -141,6 +156,7 @@ class AccountInfo {
     'ledgerDeviceName': isLedger ? ledgerDeviceName : null,
     'ledgerDeviceModel': isLedger ? ledgerDeviceModel : null,
     'ledgerWalletFingerprint': isLedger ? ledgerWalletFingerprint : null,
+    'ledgerWalletName': isLedger ? ledgerWalletName : null,
     'isSeedAnchor': isSeedAnchor,
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
@@ -171,6 +187,7 @@ class AccountInfo {
       ledgerWalletFingerprint: _normalizedOptionalString(
         json['ledgerWalletFingerprint'],
       ),
+      ledgerWalletName: _normalizedOptionalString(json['ledgerWalletName']),
       // Legacy stored account JSON did not include this field. Runtime account
       // state is reconciled from Rust during bootstrap; this fallback only keeps
       // pre-field snapshots conservative until Rust metadata is available.
@@ -185,6 +202,93 @@ class AccountInfo {
       ),
     );
   }
+}
+
+enum AccountFamilyKind { ledger, standalone }
+
+/// A presentation-only grouping of accounts that share a verified signer
+/// identity. Family membership is derived from existing account metadata and
+/// is not persisted independently.
+class AccountFamily {
+  final String stableKey;
+  final AccountFamilyKind kind;
+  final List<AccountInfo> accounts;
+  final String name;
+
+  AccountFamily({
+    required this.stableKey,
+    required this.kind,
+    required this.name,
+    required List<AccountInfo> accounts,
+  }) : accounts = List.unmodifiable(accounts);
+
+  bool get isLedger => kind == AccountFamilyKind.ledger;
+}
+
+/// Groups accounts by authenticated signer identity while preserving the
+/// input order of both families and their members.
+///
+/// Ledger accounts with a 32-byte hex fingerprint are grouped by that
+/// identity. Ledger accounts without one remain isolated, as do all other
+/// accounts.
+List<AccountFamily> resolveAccountFamilies(Iterable<AccountInfo> accounts) {
+  final builders = <String, _AccountFamilyBuilder>{};
+
+  for (final account in accounts) {
+    final fingerprint = _verifiedLedgerWalletFingerprint(account);
+    if (fingerprint == null) {
+      final key = 'account:${account.uuid}';
+      builders[key] = _AccountFamilyBuilder(
+        stableKey: key,
+        kind: AccountFamilyKind.standalone,
+        name: account.name,
+        accounts: [account],
+      );
+      continue;
+    }
+
+    final stableKey = 'ledger:${sha256.convert(utf8.encode(fingerprint))}';
+    final builder = builders.putIfAbsent(
+      stableKey,
+      () => _AccountFamilyBuilder(
+        stableKey: stableKey,
+        kind: AccountFamilyKind.ledger,
+        name: account.ledgerWalletName ?? 'Ledger wallet',
+      ),
+    );
+    builder.accounts.add(account);
+  }
+
+  return builders.values
+      .map((builder) => builder.build())
+      .toList(growable: false);
+}
+
+String? _verifiedLedgerWalletFingerprint(AccountInfo account) {
+  if (!account.hasLedgerWalletIdentity) return null;
+  final fingerprint = account.ledgerWalletFingerprint?.trim().toLowerCase();
+  return fingerprint;
+}
+
+class _AccountFamilyBuilder {
+  final String stableKey;
+  final AccountFamilyKind kind;
+  final List<AccountInfo> accounts;
+  final String name;
+
+  _AccountFamilyBuilder({
+    required this.stableKey,
+    required this.kind,
+    required this.name,
+    List<AccountInfo>? accounts,
+  }) : accounts = accounts ?? [];
+
+  AccountFamily build() => AccountFamily(
+    stableKey: stableKey,
+    kind: kind,
+    name: name,
+    accounts: accounts,
+  );
 }
 
 String? _normalizedOptionalString(Object? value) {

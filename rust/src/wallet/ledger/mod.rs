@@ -62,7 +62,6 @@ pub struct DeviceAppInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalletIdentity {
     pub fingerprint: String,
-    pub verification_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -602,22 +601,17 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn get_wallet_identity(
-    verification_account_index: Option<u32>,
-) -> Result<WalletIdentity, String> {
+pub fn get_wallet_identity() -> Result<WalletIdentity, String> {
     let operation = lock_operation()?;
-    let (identity, verification) = transport::LedgerTransport::connect_ufvk(operation.context())?
-        .wallet_identity(verification_account_index)?;
+    let identity =
+        transport::LedgerTransport::connect_ufvk(operation.context())?.wallet_identity()?;
     Ok(WalletIdentity {
         fingerprint: wallet_fingerprint(&identity),
-        verification_address: verification.map(|key| key.address),
     })
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn get_wallet_identity(
-    _verification_account_index: Option<u32>,
-) -> Result<WalletIdentity, String> {
+pub fn get_wallet_identity() -> Result<WalletIdentity, String> {
     Err(unsupported_platform())
 }
 

@@ -29,7 +29,6 @@ pub struct LedgerUfvkApduPlan {
 /// accounts that come from the same seed.
 pub struct LedgerWalletIdentity {
     pub fingerprint: String,
-    pub verification_address: Option<String>,
 }
 
 pub struct LedgerWalletIdentityApduPlan {
@@ -118,23 +117,16 @@ pub fn ledger_export_account(
     })
 }
 
-/// Read a stable wallet fingerprint without displaying an address or asking
-/// for approval. When an account index is supplied, the response also carries
-/// its first external transparent address for legacy-account verification.
-pub fn ledger_wallet_identity(
-    verification_account_index: Option<u32>,
-    network: String,
-) -> Result<LedgerWalletIdentity, String> {
+/// Read a stable wallet fingerprint without displaying an address.
+pub fn ledger_wallet_identity(network: String) -> Result<LedgerWalletIdentity, String> {
     require_mainnet(&network)?;
-    ledger::get_wallet_identity(verification_account_index).map(to_wallet_identity)
+    ledger::get_wallet_identity().map(to_wallet_identity)
 }
 
 /// Build the transport-neutral no-display public-key exchange used by BLE.
-pub fn ledger_build_wallet_identity_apdu_plan(
-    verification_account_index: Option<u32>,
-) -> Result<LedgerWalletIdentityApduPlan, String> {
+pub fn ledger_build_wallet_identity_apdu_plan() -> Result<LedgerWalletIdentityApduPlan, String> {
     Ok(LedgerWalletIdentityApduPlan {
-        commands: ledger::apdu::wallet_identity_commands(verification_account_index)?
+        commands: ledger::apdu::wallet_identity_commands()?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -143,16 +135,11 @@ pub fn ledger_build_wallet_identity_apdu_plan(
 
 /// Parse status-bearing BLE responses from the wallet-identity plan.
 pub fn ledger_parse_mobile_wallet_identity_responses(
-    verification_account_index: Option<u32>,
     network: String,
     responses: Vec<Vec<u8>>,
 ) -> Result<LedgerWalletIdentity, String> {
     require_mainnet(&network)?;
-    let expected = if verification_account_index.is_some() {
-        2
-    } else {
-        1
-    };
+    let expected = 1;
     if responses.len() != expected {
         return Err(format!(
             "Ledger wallet identity returned {} responses; expected {expected}",
@@ -160,32 +147,9 @@ pub fn ledger_parse_mobile_wallet_identity_responses(
         ));
     }
     let identity = ledger::apdu::decode_raw_wallet_public_key(&responses[0])?;
-    let verification_address = responses
-        .get(1)
-        .map(|response| ledger::apdu::decode_raw_wallet_public_key(response))
-        .transpose()?
-        .map(|key| key.address);
     Ok(LedgerWalletIdentity {
         fingerprint: ledger::wallet_fingerprint(&identity),
-        verification_address,
     })
-}
-
-/// Derive the expected first external transparent address from an imported
-/// account's stored UFVK. This is read-only and is used to enroll legacy
-/// Ledger accounts into the wallet-identity grouping contract.
-pub fn ledger_account_first_transparent_address(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-) -> Result<String, String> {
-    require_mainnet(&network)?;
-    let network = crate::wallet::keys::parse_network(&network)?;
-    crate::wallet::keys::get_account_first_external_transparent_address(
-        &db_path,
-        network,
-        &account_uuid,
-    )
 }
 
 /// Build the Zcash app's UFVK request without opening a desktop transport.
@@ -289,7 +253,6 @@ fn to_apdu_command(command: ledger::apdu::ApduCommand) -> LedgerApduCommand {
 fn to_wallet_identity(identity: ledger::WalletIdentity) -> LedgerWalletIdentity {
     LedgerWalletIdentity {
         fingerprint: identity.fingerprint,
-        verification_address: identity.verification_address,
     }
 }
 
@@ -547,19 +510,16 @@ mod tests {
     #[test]
     fn mobile_wallet_identity_parser_requires_the_exact_plan_responses() {
         let identity = raw_public_key_response(7, "unused");
-        let verification = raw_public_key_response(8, "t1source");
-        let parsed = ledger_parse_mobile_wallet_identity_responses(
-            Some(3),
-            "main".into(),
-            vec![identity.clone(), verification],
-        )
-        .unwrap();
+        let parsed =
+            ledger_parse_mobile_wallet_identity_responses("main".into(), vec![identity.clone()])
+                .unwrap();
         assert_eq!(parsed.fingerprint.len(), 64);
-        assert_eq!(parsed.verification_address.as_deref(), Some("t1source"));
-        let error =
-            ledger_parse_mobile_wallet_identity_responses(Some(3), "main".into(), vec![identity])
-                .err()
-                .expect("missing verification response must fail");
-        assert!(error.contains("expected 2"));
+        let error = ledger_parse_mobile_wallet_identity_responses(
+            "main".into(),
+            vec![identity.clone(), identity],
+        )
+        .err()
+        .expect("extra response must fail");
+        assert!(error.contains("expected 1"));
     }
 }

@@ -672,6 +672,10 @@ Widget buildAccountsManyUseCase(BuildContext context) {
   return _buildAccountsUseCase(_accountsManyState);
 }
 
+Widget buildAccountsLedgerFamilyUseCase(BuildContext context) {
+  return _buildAccountsUseCase(_accountsLedgerFamilyState);
+}
+
 Widget buildAccountsOtherMenuUseCase(BuildContext context) {
   return _buildAccountsUseCase(
     _accountsDesignState,
@@ -1055,6 +1059,10 @@ Widget buildMobileAccountsActiveMigrationRemoveAccountUseCase(
 
 Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
+}
+
+Widget buildMobileAccountsLedgerFamilyUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsLedgerFamilyState);
 }
 
 Widget buildMobileHomeDefaultUseCase(BuildContext context) {
@@ -3677,6 +3685,42 @@ final _accountsManyState = AccountState(
       ),
   ],
   activeAccountUuid: 'preview-account-1',
+  activeAddress: 'u1widgetbookaccountsaddress',
+);
+
+const _previewLedgerWalletFingerprint =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+final _accountsLedgerFamilyState = AccountState(
+  accounts: const [
+    AccountInfo(
+      uuid: 'preview-ledger-0',
+      name: 'Primary',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      zip32AccountIndex: 0,
+      ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+      profilePictureId: 'pfp-01',
+    ),
+    AccountInfo(
+      uuid: 'preview-ledger-1',
+      name: 'Savings',
+      order: 1,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      zip32AccountIndex: 1,
+      ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+      profilePictureId: 'pfp-02',
+    ),
+    AccountInfo(
+      uuid: 'preview-software',
+      name: 'Daily wallet',
+      order: 2,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'preview-ledger-0',
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 

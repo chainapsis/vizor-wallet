@@ -1,7 +1,7 @@
 # Ledger multi-account import
 
-Status: implemented on desktop and mobile. Account-family presentation remains
-a follow-up.
+Status: implemented on desktop and mobile, including account-family
+presentation and editable Ledger wallet names.
 
 ## Decision
 
@@ -42,11 +42,10 @@ material:
 The fingerprint never leaves the local wallet metadata and does not grant
 viewing or spending authority.
 
-When an existing Ledger account predates this field, Vizor verifies the
-connected wallet without an extra approval. It compares the Ledger address at
-`m/44'/133'/account'/0/0` with the first external transparent address derived
-from the account's stored UFVK. A match enrolls the wallet fingerprint on that
-account. A mismatch stops before Vizor requests the new account's UFVK.
+There is no legacy enrollment or fingerprint backfill. A Ledger account must
+be imported through this contract from the start. An older local Ledger
+account without a fingerprint must be removed and imported again before it can
+join a Ledger wallet group or serve as the source for adding another index.
 
 Protocol references:
 
@@ -56,10 +55,13 @@ Protocol references:
 ## Data and validation rules
 
 Each Ledger `AccountInfo` stores `ledgerWalletFingerprint` in addition to its
-existing ZIP-32 account index and connection metadata.
+existing ZIP-32 account index and connection metadata. It also stores the
+optional `ledgerWalletName`; renaming a group writes the same name to every
+local account with that fingerprint.
 
 - Accounts are grouped only when their non-null wallet fingerprints match.
-- An account without a fingerprint is shown by itself until it is verified.
+- An account without a fingerprint is shown by itself and is never enrolled by
+  a recovery path.
 - The selected index must be in `0..2147483647`.
 - An index already used by the same wallet fingerprint is blocked inline.
 - The same index is valid for a different Ledger wallet.
@@ -77,7 +79,8 @@ existing ZIP-32 account index and connection metadata.
 3. Vizor preselects the lowest unused index. A different index can be entered
    after expanding the disclosure.
 4. Vizor checks that the Zcash app is open, reads the no-display wallet
-   identity, and verifies the source account when present.
+   identity, and requires an exact fingerprint match when a source account is
+   present.
 5. Vizor requests the target index's UFVK. The Ledger approval screen remains
    the source of truth for what is shared.
 6. The existing birthday-height and account-name steps continue unchanged.
@@ -88,8 +91,8 @@ continues to own only discovery, connection, and byte exchange.
 
 ## Mobile flow
 
-Mobile reuses the same wallet identity, source verification, index suggestion,
-and duplicate rules over the selected BLE session. The Account details action
+Mobile reuses the same wallet identity, source fingerprint check, index
+suggestion, and duplicate rules over the selected BLE session. The Account details action
 opens the source-account flow; the general Ledger import remains index 0 with
 manual selection behind **Advanced options**. The source account context is
 preserved through birthday height, passcode setup when required, and account
@@ -113,23 +116,17 @@ Included in the current implementation:
 
 - wallet identity APDU and strict response parsing;
 - USB and macOS BLE identity exchange;
-- persisted wallet fingerprint and legacy-account enrollment;
+- required fingerprint persistence on every new Ledger import;
 - same-wallet account list, index suggestion, and duplicate validation;
+- same-wallet account grouping and editable group names on desktop and mobile;
 - Accounts context-menu and Account details entry points;
 - mobile Account details entry point and single-column account-index flow;
 - focused Rust, provider, model, and widget tests.
 
 Follow-up:
 
-- generalize the account-family presentation introduced by
-  [PR #474](https://github.com/chainapsis/vizor-wallet/pull/474) so Ledger
-  accounts with the same non-null `ledgerWalletFingerprint` appear under one
-  editable wallet group; accounts without a verified fingerprint remain
-  isolated;
 - run the final BLE identity and UFVK sequence on physical iOS and Android
-  devices;
-- consider batch discovery of every legacy Ledger account after the user has
-  connected the device.
+  devices.
 
 Out of scope:
 
@@ -148,15 +145,17 @@ Out of scope:
 - The same index on a different wallet fingerprint is allowed.
 - A wrong Ledger connected from a source-account flow is rejected before the
   target UFVK approval.
-- A legacy source account is enrolled only after its first transparent address
-  matches the connected Ledger.
-- A successful import stores the fingerprint on both the verified legacy
-  source and the new account.
+- A source account without a fingerprint cannot pass the same-wallet identity
+  gate; its add-account entry points are hidden until it is removed and
+  imported again.
+- A successful import always stores the connected wallet fingerprint on the
+  new account.
+- Accounts with the same fingerprint render as one group, and a renamed group
+  name persists across every member account.
 - General Ledger import still defaults to index 0 and keeps index selection
   under Advanced options.
 - USB and macOS BLE produce the same fingerprint for the same seed.
-- Mobile source-account import follows the same identity and duplicate gates;
-  general mobile Ledger import remains backward-compatible.
+- Mobile source-account import follows the same identity and duplicate gates.
 
 ## Estimate
 
@@ -166,7 +165,7 @@ one device/simulator QA pass. They do not include Ledger app firmware changes.
 | Work | Estimate |
 | --- | ---: |
 | Rust identity APDU, parser, fingerprint, USB/BLE bridge | 0.5-0.75 day |
-| Account metadata persistence and legacy verification | 0.5 day |
+| Account metadata persistence and strict identity contract | 0.5 day |
 | Desktop import UI, routing, and duplicate handling | 0.75-1.25 days |
 | Context menu and Account details entry points | 0.25 day |
 | Focused tests and Ledger/Speculos desktop QA | 0.5-0.75 day |
@@ -174,15 +173,15 @@ one device/simulator QA pass. They do not include Ledger app firmware changes.
 | Mobile follow-up and mobile QA | 1.0-1.5 days |
 | **Desktop + mobile total** | **3.5-5.0 engineer-days** |
 
-The main schedule risk is legacy-account verification across Zcash app
-versions and real Ledger models. If an app version changes the public-key
-encoding, canonical compression keeps the stored fingerprint stable, but that
-version still needs protocol regression coverage.
+The main schedule risk is wallet-identity stability across Zcash app versions
+and real Ledger models. Canonical public-key compression keeps equivalent key
+encodings stable, but each app version still needs protocol regression
+coverage.
 
 ## Validation plan
 
 - Rust unit tests for APDU bytes, strict response lengths/status, public-key
-  validation, canonical fingerprint stability, and account-address parsing.
+  validation, and canonical fingerprint stability.
 - Dart unit tests for grouping, lowest-unused suggestion, and JSON persistence.
 - Widget tests for the source-account list, disclosure, duplicate error,
   wrong-device stop, USB continuation, and Bluetooth continuation.

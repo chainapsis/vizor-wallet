@@ -48,6 +48,18 @@ Future<String?> showProfilePictureSheet(
   );
 }
 
+Future<void> showLedgerWalletRenameSheet(
+  BuildContext context, {
+  required String initialName,
+  required Future<void> Function(String name) onRename,
+}) async {
+  await showAppMobileSheet<void>(
+    context: context,
+    builder: (_) =>
+        _LedgerWalletRenameSheet(initialName: initialName, onRename: onRename),
+  );
+}
+
 /// Persists [edits] for [account]; returns false when a write failed
 /// (callers surface their own toast).
 Future<bool> applyAccountEdits(
@@ -257,6 +269,151 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
           top: AppSpacing.sm,
           right: AppSpacing.sm,
           child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
+        ),
+      ],
+    );
+  }
+}
+
+class _LedgerWalletRenameSheet extends StatefulWidget {
+  const _LedgerWalletRenameSheet({
+    required this.initialName,
+    required this.onRename,
+  });
+
+  final String initialName;
+  final Future<void> Function(String name) onRename;
+
+  @override
+  State<_LedgerWalletRenameSheet> createState() =>
+      _LedgerWalletRenameSheetState();
+}
+
+class _LedgerWalletRenameSheetState extends State<_LedgerWalletRenameSheet> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+  final _focusNode = FocusNode();
+  bool _isSubmitting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    final name = normalizeAccountName(_controller.text);
+    try {
+      validateAccountName(name);
+    } catch (error) {
+      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      return;
+    }
+    if (name == widget.initialName) return;
+    setState(() {
+      _isSubmitting = true;
+      _error = null;
+    });
+    try {
+      await widget.onRename(name);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = "Couldn't rename group.");
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.base,
+            AppSpacing.sm,
+            AppSpacing.base,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Rename group name',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: context.colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Group name',
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w400,
+                  color: context.colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              MobileTextField(
+                fieldKey: const ValueKey('mobile_ledger_wallet_name'),
+                controller: _controller,
+                focusNode: _focusNode,
+                enabled: !_isSubmitting,
+                textInputAction: TextInputAction.done,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+                onSubmitted: (_) => _submit(),
+              ),
+              if (_error case final message?) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  message,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: context.colors.text.destructive,
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                key: const ValueKey('mobile_ledger_wallet_rename'),
+                expand: true,
+                onPressed: _isSubmitting ? null : _submit,
+                child: Text(_isSubmitting ? 'Renaming...' : 'Rename'),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              MobileSheetCancel(
+                onTap: () {
+                  if (!_isSubmitting) Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: AppSpacing.sm,
+          right: AppSpacing.sm,
+          child: MobileSheetClose(
+            onTap: () {
+              if (!_isSubmitting) Navigator.of(context).pop();
+            },
+          ),
         ),
       ],
     );

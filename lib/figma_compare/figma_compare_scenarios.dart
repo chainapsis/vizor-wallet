@@ -37,6 +37,18 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'accounts-ledger-family',
+    description: 'Desktop accounts grouped by verified Ledger wallet',
+    builder: buildAccountsLedgerFamilyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-accounts-ledger-family',
+    description: 'Mobile accounts grouped by verified Ledger wallet',
+    builder: buildMobileAccountsLedgerFamilyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-additional-account',
     description: 'Desktop Ledger import with known same-wallet accounts',
     builder: buildLedgerAdditionalAccountUseCase,

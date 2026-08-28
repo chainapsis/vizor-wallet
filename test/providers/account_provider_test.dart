@@ -200,68 +200,64 @@ void main() {
     },
   );
 
-  test(
-    'records a Ledger wallet fingerprint once and rejects reassignment',
-    () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      const ledger = AccountInfo(
+  test('renames every account in the same Ledger wallet', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    const fingerprint =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const ledgers = [
+      AccountInfo(
         uuid: 'ledger-1',
-        name: 'Ledger',
+        name: 'Ledger 1',
         order: 0,
         isHardware: true,
         hardwareSignerKind: HardwareSignerKind.ledger,
         zip32AccountIndex: 0,
-      );
-      final bootstrap = AppBootstrapState(
-        initialLocation: '/home',
-        initialAccountState: const AccountState(
-          accounts: [ledger],
-          activeAccountUuid: 'ledger-1',
-        ),
-        initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('ledger-1'),
-        network: kZcashDefaultNetworkName,
-        rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
-        themeMode: ThemeMode.system,
-        privacyModeEnabled: false,
-        isPasswordConfigured: true,
-        isUnlocked: true,
-        passwordRotationRecoveryFailed: false,
-      );
-      final container = ProviderContainer(
-        overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
-      );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
+        ledgerWalletFingerprint: fingerprint,
+      ),
+      AccountInfo(
+        uuid: 'ledger-2',
+        name: 'Ledger 2',
+        order: 1,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        zip32AccountIndex: 1,
+        ledgerWalletFingerprint: fingerprint,
+      ),
+    ];
+    final bootstrap = AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: const AccountState(
+        accounts: ledgers,
+        activeAccountUuid: 'ledger-1',
+      ),
+      initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('ledger-1'),
+      network: kZcashDefaultNetworkName,
+      rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+      themeMode: ThemeMode.system,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
+    final container = ProviderContainer(
+      overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
 
-      await container
-          .read(accountProvider.notifier)
-          .recordLedgerWalletFingerprint(
-            uuid: 'ledger-1',
-            fingerprint:
-                'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-          );
+    await container
+        .read(accountProvider.notifier)
+        .renameLedgerWallet('ledger-1', 'Cold storage');
 
-      expect(
-        container
-            .read(accountProvider)
-            .value!
-            .accounts
-            .single
-            .ledgerWalletFingerprint,
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      );
-      await expectLater(
-        container
-            .read(accountProvider.notifier)
-            .recordLedgerWalletFingerprint(
-              uuid: 'ledger-1',
-              fingerprint:
-                  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            ),
-        throwsA(isA<StateError>()),
-      );
-    },
-  );
+    expect(
+      container
+          .read(accountProvider)
+          .value!
+          .accounts
+          .map((account) => account.ledgerWalletName),
+      everyElement('Cold storage'),
+    );
+  });
 
   test(
     'next active account stays unchanged when removing a non-active account',

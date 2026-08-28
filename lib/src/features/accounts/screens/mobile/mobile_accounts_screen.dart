@@ -27,6 +27,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
+import '../../../onboarding/ledger/ledger_setup_args.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
@@ -514,16 +515,130 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
+  Future<void> _renameLedgerFamily(AccountFamily family) async {
+    if (_busy) return;
+    await showLedgerWalletRenameSheet(
+      context,
+      initialName: family.name,
+      onRename: (name) => ref
+          .read(accountProvider.notifier)
+          .renameLedgerWallet(family.accounts.first.uuid, name),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final state = ref.watch(accountProvider).value;
-    final accounts = state?.accounts ?? const <AccountInfo>[];
-    final active = state?.activeAccount;
+    final accounts = [...?state?.accounts]
+      ..sort((left, right) => left.order.compareTo(right.order));
+    AccountInfo? active;
+    final activeUuid = state?.activeAccountUuid;
+    if (activeUuid != null) {
+      for (final account in accounts) {
+        if (account.uuid == activeUuid) {
+          active = account;
+          break;
+        }
+      }
+    }
     final others = [
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
     ];
+    final ledgerFamilies = [
+      for (final family in resolveAccountFamilies(accounts))
+        if (family.isLedger && family.accounts.length > 1) family,
+    ];
+    final groupedAccountUuids = {
+      for (final family in ledgerFamilies)
+        for (final account in family.accounts) account.uuid,
+    };
+    AccountFamily? activeLedgerFamily;
+    if (activeUuid != null) {
+      for (final family in ledgerFamilies) {
+        if (family.accounts.any((account) => account.uuid == activeUuid)) {
+          activeLedgerFamily = family;
+          break;
+        }
+      }
+    }
+    final standaloneOthers = [
+      for (final account in others)
+        if (!groupedAccountUuids.contains(account.uuid)) account,
+    ];
+    final accountCards = <Widget>[];
+    void addAccountCard(Widget card) {
+      if (accountCards.isNotEmpty) {
+        accountCards.add(const SizedBox(height: AppSpacing.sm));
+      }
+      accountCards.add(card);
+    }
+
+    void addLedgerFamilyCard(AccountFamily family) {
+      final containsActive = family.accounts.any(
+        (account) => account.uuid == activeUuid,
+      );
+      final sourceAccount = containsActive
+          ? family.accounts.firstWhere((account) => account.uuid == activeUuid)
+          : family.accounts.first;
+      addAccountCard(
+        _AccountsGroupCard(
+          key: ValueKey('mobile_accounts_ledger_family_${family.stableKey}'),
+          title: family.name,
+          ledgerFamilyAnchorUuid: family.accounts.first.uuid,
+          onRenameLedgerWallet: _busy
+              ? null
+              : () => _renameLedgerFamily(family),
+          onAddLedgerAccount: _busy
+              ? null
+              : () => context.push(
+                  '/onboarding/ledger',
+                  extra: LedgerConnectArgs(
+                    sourceAccountUuid: sourceAccount.uuid,
+                  ),
+                ),
+          titleGap: AppSpacing.xs,
+          children: [
+            for (final account in family.accounts)
+              _accountRow(
+                account,
+                enabled: !_busy,
+                showLedgerAccountIndex: true,
+                isCurrent: account.uuid == activeUuid,
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (activeLedgerFamily case final family?) {
+      addLedgerFamilyCard(family);
+    } else if (active != null) {
+      addAccountCard(
+        _AccountsGroupCard(
+          title: 'Current',
+          titleGap: AppSpacing.s,
+          children: [_accountRow(active, enabled: !_busy)],
+        ),
+      );
+    }
+    for (final family in ledgerFamilies) {
+      if (identical(family, activeLedgerFamily)) continue;
+      addLedgerFamilyCard(family);
+    }
+    if (standaloneOthers.isNotEmpty) {
+      addAccountCard(
+        _AccountsGroupCard(
+          title: 'Other',
+          titleGap: AppSpacing.xs,
+          children: [
+            for (final account in standaloneOthers)
+              _accountRow(account, enabled: !_busy),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -546,23 +661,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                     kMobileTabBarHeight + AppSpacing.lg,
                   ),
                   children: [
-                    if (active != null)
-                      _AccountsGroupCard(
-                        title: 'Current',
-                        titleGap: AppSpacing.s,
-                        children: [_accountRow(active, enabled: !_busy)],
-                      ),
-                    if (others.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      _AccountsGroupCard(
-                        title: 'Other',
-                        titleGap: AppSpacing.xs,
-                        children: [
-                          for (final account in others)
-                            _accountRow(account, enabled: !_busy),
-                        ],
-                      ),
-                    ],
+                    ...accountCards,
                     const SizedBox(height: AppSpacing.sm),
                     AppButton(
                       key: const ValueKey('mobile_accounts_add_account'),
@@ -584,7 +683,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     );
   }
 
-  Widget _accountRow(AccountInfo account, {required bool enabled}) {
+  Widget _accountRow(
+    AccountInfo account, {
+    required bool enabled,
+    bool showLedgerAccountIndex = false,
+    bool isCurrent = false,
+  }) {
     final colors = context.colors;
     final menuOpen = _openRowMenuAccountUuid == account.uuid;
     return MobileListRow(
@@ -601,53 +705,71 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       label: account.name,
       minRowHeight: 44,
       textStyle: AppTypography.labelLarge,
-      trailing: Builder(
-        builder: (anchorContext) {
-          _openInitialRowMenuIfNeeded(account, anchorContext);
-          return Semantics(
-            button: true,
-            label: 'Account options for ${account.name}',
-            excludeSemantics: true,
-            child: GestureDetector(
-              key: ValueKey('mobile_accounts_menu_${account.uuid}'),
-              behavior: HitTestBehavior.opaque,
-              onTap: enabled
-                  ? () => _showRowMenu(account, anchorContext)
-                  : null,
-              child: SizedBox(
-                width: 44,
-                height: 44,
-                child: Center(
-                  child: DecoratedBox(
-                    key: ValueKey(
-                      'mobile_accounts_menu_button_${account.uuid}',
-                    ),
-                    decoration: BoxDecoration(
-                      color: menuOpen
-                          ? colors.state.hover
-                          : const Color(0x00000000),
-                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                    ),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Center(
-                        child: Transform.rotate(
-                          angle: -math.pi / 2,
-                          child: AppIcon(
-                            AppIcons.options,
-                            size: AppIconSize.medium,
-                            color: colors.icon.accent,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showLedgerAccountIndex) ...[
+            Text(
+              [
+                '#${account.zip32AccountIndex ?? '—'}',
+                if (isCurrent) 'Current',
+              ].join(' · '),
+              maxLines: 1,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+          ],
+          Builder(
+            builder: (anchorContext) {
+              _openInitialRowMenuIfNeeded(account, anchorContext);
+              return Semantics(
+                button: true,
+                label: 'Account options for ${account.name}',
+                excludeSemantics: true,
+                child: GestureDetector(
+                  key: ValueKey('mobile_accounts_menu_${account.uuid}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: enabled
+                      ? () => _showRowMenu(account, anchorContext)
+                      : null,
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(
+                      child: DecoratedBox(
+                        key: ValueKey(
+                          'mobile_accounts_menu_button_${account.uuid}',
+                        ),
+                        decoration: BoxDecoration(
+                          color: menuOpen
+                              ? colors.state.hover
+                              : const Color(0x00000000),
+                          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                        ),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Center(
+                            child: Transform.rotate(
+                              angle: -math.pi / 2,
+                              child: AppIcon(
+                                AppIcons.options,
+                                size: AppIconSize.medium,
+                                color: colors.icon.accent,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -668,11 +790,18 @@ class _AccountsGroupCard extends StatelessWidget {
     required this.title,
     required this.titleGap,
     required this.children,
+    this.ledgerFamilyAnchorUuid,
+    this.onRenameLedgerWallet,
+    this.onAddLedgerAccount,
+    super.key,
   });
 
   final String title;
   final double titleGap;
   final List<Widget> children;
+  final String? ledgerFamilyAnchorUuid;
+  final VoidCallback? onRenameLedgerWallet;
+  final VoidCallback? onAddLedgerAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -687,12 +816,55 @@ class _AccountsGroupCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              title,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
+            child: ledgerFamilyAnchorUuid == null
+                ? Text(
+                    title,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  )
+                : Row(
+                    children: [
+                      AppIcon(
+                        AppIcons.ledgerBrand,
+                        size: AppIconSize.medium,
+                        color: context.colors.icon.muted,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: context.colors.text.secondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      AppButton(
+                        key: ValueKey(
+                          'mobile_accounts_rename_ledger_family_'
+                          '$ledgerFamilyAnchorUuid',
+                        ),
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.small,
+                        onPressed: onRenameLedgerWallet,
+                        child: const AppIcon(AppIcons.edit),
+                      ),
+                      AppButton(
+                        key: ValueKey(
+                          'mobile_accounts_add_ledger_family_'
+                          '$ledgerFamilyAnchorUuid',
+                        ),
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.small,
+                        onPressed: onAddLedgerAccount,
+                        leading: const AppIcon(AppIcons.addNew),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
           ),
           SizedBox(height: titleGap),
           for (var i = 0; i < children.length; i++) ...[

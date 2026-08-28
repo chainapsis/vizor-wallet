@@ -30,27 +30,12 @@ pub(crate) struct ApduCommand {
     pub data: Vec<u8>,
 }
 
-pub(crate) fn wallet_identity_commands(
-    verification_account_index: Option<u32>,
-) -> Result<Vec<ApduCommand>, String> {
-    let mut commands = vec![public_key_command(&[
+pub(crate) fn wallet_identity_commands() -> Result<Vec<ApduCommand>, String> {
+    Ok(vec![public_key_command(&[
         BIP44_PURPOSE,
         ZCASH_COIN_TYPE,
         0x8000_0000,
-    ])?];
-    if let Some(account_index) = verification_account_index {
-        if account_index >= 0x8000_0000 {
-            return Err("Ledger account index must be below 2^31".into());
-        }
-        commands.push(public_key_command(&[
-            BIP44_PURPOSE,
-            ZCASH_COIN_TYPE,
-            0x8000_0000 | account_index,
-            0,
-            0,
-        ])?);
-    }
-    Ok(commands)
+    ])?])
 }
 
 fn public_key_command(path: &[u32]) -> Result<ApduCommand, String> {
@@ -244,8 +229,8 @@ mod tests {
 
     #[test]
     fn wallet_identity_plan_uses_no_display_and_standard_paths() {
-        let commands = wallet_identity_commands(Some(7)).unwrap();
-        assert_eq!(commands.len(), 2);
+        let commands = wallet_identity_commands().unwrap();
+        assert_eq!(commands.len(), 1);
         assert_eq!(
             (
                 commands[0].cla,
@@ -258,10 +243,6 @@ mod tests {
         assert_eq!(
             commands[0].data,
             hex::decode("038000002c8000008580000000").unwrap()
-        );
-        assert_eq!(
-            commands[1].data,
-            hex::decode("058000002c80000085800000070000000000000000").unwrap()
         );
     }
 

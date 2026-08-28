@@ -149,9 +149,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
 
     try {
       final accountContext = _resolveAccountContext();
-      final identity = await ref.read(ledgerWalletIdentityConnectorProvider)(
-        accountContext?.sourceAccount.zip32AccountIndex,
-      );
+      final identity = await ref.read(ledgerWalletIdentityConnectorProvider)();
       await _verifyWalletIdentity(identity, accountContext);
       _throwIfConnectedWalletUsesIndex(identity, accountIndex);
       final account = (await ref.read(ledgerAccountConnectorProvider)(
@@ -195,7 +193,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       connector: (targetIndex, device) async {
         final identity = await ref.read(
           ledgerBluetoothWalletIdentityConnectorProvider,
-        )(accountContext?.sourceAccount.zip32AccountIndex, device);
+        )(device);
         await _verifyWalletIdentity(identity, accountContext);
         _throwIfConnectedWalletUsesIndex(identity, targetIndex);
         return (await ref.read(ledgerBluetoothAccountConnectorProvider)(
@@ -268,27 +266,10 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     if (accountContext == null) return;
     final source = accountContext.sourceAccount;
     final storedFingerprint = source.ledgerWalletFingerprint;
-    if (storedFingerprint != null) {
-      if (storedFingerprint != identity.fingerprint) {
-        throw const _LedgerWalletMismatchException();
-      }
-      return;
-    }
-    final deviceAddress = identity.verificationAddress;
-    if (source.zip32AccountIndex == null || deviceAddress == null) {
+    if (storedFingerprint == null ||
+        storedFingerprint != identity.fingerprint) {
       throw const _LedgerWalletMismatchException();
     }
-    final matches = await ref.read(ledgerAccountIdentityVerifierProvider)(
-      accountUuid: source.uuid,
-      deviceAddress: deviceAddress,
-    );
-    if (!matches) throw const _LedgerWalletMismatchException();
-    await ref
-        .read(accountProvider.notifier)
-        .recordLedgerWalletFingerprint(
-          uuid: source.uuid,
-          fingerprint: identity.fingerprint,
-        );
   }
 
   void _throwIfConnectedWalletUsesIndex(

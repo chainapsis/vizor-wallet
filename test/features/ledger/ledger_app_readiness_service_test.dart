@@ -167,6 +167,34 @@ void main() {
       );
     },
   );
+
+  test('missing Ledger is classified as a disconnected device', () async {
+    final states = <LedgerAppReadinessState>[];
+    final service = LedgerAppReadinessService(
+      device: _ErrorDevice(
+        StateError('No Ledger device found. Connect and unlock the Nano S+.'),
+      ),
+      onState: states.add,
+    );
+
+    await expectLater(
+      service.ensureReady(),
+      throwsA(
+        isA<LedgerAppReadinessException>()
+            .having(
+              (error) => error.failure,
+              'failure',
+              LedgerAppReadinessFailure.disconnected,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              'Reconnect and unlock your Ledger, then try again.',
+            ),
+      ),
+    );
+    expect(states.last.failure, LedgerAppReadinessFailure.disconnected);
+  });
 }
 
 class _FakeDevice implements LedgerAppReadinessDevice {
