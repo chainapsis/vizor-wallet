@@ -39,9 +39,15 @@ use self::{parse::parse_pczt, serializer::serialize_pczt};
 
 static LEDGER_OPERATION: Mutex<()> = Mutex::new(());
 static LEDGER_OPERATION_STATE: OperationState = OperationState::new();
+#[cfg(target_os = "macos")]
+static LEDGER_SIGNING_READY_AT: Mutex<Option<Instant>> = Mutex::new(None);
 const LEDGER_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const APP_TRANSITION_TIMEOUT: Duration = Duration::from_secs(10);
 const APP_TRANSITION_POLL_INTERVAL: Duration = Duration::from_millis(200);
+#[cfg(target_os = "macos")]
+const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(4);
+#[cfg(target_os = "macos")]
+const SIGNING_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 
@@ -120,6 +126,18 @@ impl OperationContext {
 struct OperationGuard {
     _lock: std::sync::MutexGuard<'static, ()>,
     context: OperationContext,
+}
+
+#[cfg(target_os = "macos")]
+struct SigningStatusCooldownGuard;
+
+#[cfg(target_os = "macos")]
+impl Drop for SigningStatusCooldownGuard {
+    fn drop(&mut self) {
+        if let Ok(mut ready_at) = LEDGER_SIGNING_READY_AT.lock() {
+            *ready_at = Some(Instant::now() + SIGNING_STATUS_COOLDOWN);
+        }
+    }
 }
 
 impl OperationGuard {
@@ -606,6 +624,8 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     }
 
     let operation = lock_operation()?;
+    wait_for_signing_status(operation.context())?;
+    let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
 
@@ -665,6 +685,8 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let operation = lock_operation()?;
+    wait_for_signing_status(operation.context())?;
+    let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
 
@@ -810,6 +832,30 @@ fn lock_operation() -> Result<OperationGuard, String> {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn wait_for_signing_status(operation: OperationContext) -> Result<(), String> {
+    loop {
+        operation.check()?;
+        let remaining = {
+            let ready_at = LEDGER_SIGNING_READY_AT
+                .lock()
+                .map_err(|_| "Ledger signing cooldown lock was poisoned".to_string())?;
+            signing_status_cooldown_remaining(*ready_at, Instant::now())
+        };
+        if remaining.is_zero() {
+            return Ok(());
+        }
+        thread::sleep(remaining.min(SIGNING_STATUS_POLL_INTERVAL));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn signing_status_cooldown_remaining(ready_at: Option<Instant>, now: Instant) -> Duration {
+    ready_at
+        .map(|ready_at| ready_at.saturating_duration_since(now))
+        .unwrap_or_default()
+}
+
 fn classify_operation_state(cancelled: bool, timed_out: bool) -> Result<(), String> {
     if cancelled {
         Err("Ledger operation was cancelled. Retry when ready.".into())
@@ -885,6 +931,21 @@ mod tests {
         assert!(classify_operation_state(true, true)
             .unwrap_err()
             .contains("cancelled"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn signing_status_cooldown_only_waits_until_the_device_can_receive_apdus() {
+        let now = Instant::now();
+        assert_eq!(signing_status_cooldown_remaining(None, now), Duration::ZERO);
+        assert_eq!(
+            signing_status_cooldown_remaining(Some(now + Duration::from_secs(4)), now),
+            Duration::from_secs(4)
+        );
+        assert_eq!(
+            signing_status_cooldown_remaining(Some(now), now + Duration::from_millis(1)),
+            Duration::ZERO
+        );
     }
 
     #[test]

@@ -51,6 +51,19 @@ enum _LedgerSendRecoveryAction {
   retryCheckpoint,
 }
 
+typedef LedgerSendBasePcztCreator =
+    Future<List<int>> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required BigInt proposalId,
+      required String sendFlowId,
+    });
+
+final ledgerSendBasePcztCreatorProvider = Provider<LedgerSendBasePcztCreator>(
+  (_) => rust_sync.createPcztFromProposal,
+);
+
 class SendReviewScreen extends ConsumerStatefulWidget {
   const SendReviewScreen({super.key, required this.args});
 
@@ -229,7 +242,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   Future<void> _prepareAndSignWithLedger(int generation) async {
     try {
-      final dbPath = await getWalletDbPath();
+      final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       if (!_isCurrentLedgerAttempt(generation)) return;
       final endpoint = ref.read(rpcEndpointProvider);
       var saplingParams = await loadSaplingParamsStatus();
@@ -323,8 +336,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final existingFuture = _ledgerBasePcztFuture;
     if (existingFuture != null) return existingFuture;
 
-    final creationFuture = rust_sync
-        .createPcztFromProposal(
+    final creationFuture = ref
+        .read(ledgerSendBasePcztCreatorProvider)(
           dbPath: dbPath,
           lightwalletdUrl: lightwalletdUrl,
           network: network,
