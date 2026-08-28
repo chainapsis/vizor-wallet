@@ -37,6 +37,7 @@ import '../../providers/ironwood_migration_coordinator_provider.dart';
 import '../../services/ironwood_migration_service.dart';
 import '../../widgets/ironwood_migration_analyzing_progress_bar.dart';
 import '../../widgets/ironwood_migration_shimmer_text.dart';
+import '../../widgets/ledger_immediate_migration_signing_overlay.dart';
 import '../../widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../ironwood_migration_flow_screen.dart';
 
