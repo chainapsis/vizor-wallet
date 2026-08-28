@@ -36,6 +36,7 @@ import '../../migration/providers/ironwood_migration_announcement_provider.dart'
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
+import '../services/send_proving_key_warmup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 
@@ -53,6 +54,16 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  @override
+  void initState() {
+    super.initState();
+    try {
+      ref.read(sendProvingKeyWarmupProvider).call();
+    } catch (error) {
+      log('Send: Orchard proving-key warmup failed to start: $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);

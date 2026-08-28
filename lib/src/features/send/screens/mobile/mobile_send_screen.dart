@@ -34,8 +34,9 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
-import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
+import '../../services/send_flow.dart';
+import '../../services/send_proving_key_warmup.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
@@ -401,6 +402,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void initState() {
     super.initState();
+    try {
+      ref.read(sendProvingKeyWarmupProvider).call();
+    } catch (error) {
+      log('Send: Orchard proving-key warmup failed to start: $error');
+    }
     _addressFocus.addListener(_handleAddressFocusChanged);
     _amountFocus.addListener(_handleAmountFocusChanged);
     final initial = widget.initialRecipient;
@@ -1982,9 +1988,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
             : null,
-        onPressed: _hasValidAddress
-            ? _continueToAmount
-            : null,
+        onPressed: _hasValidAddress ? _continueToAmount : null,
         child: Text(
           _addressController.text.trim().isEmpty
               ? 'Enter address to continue'
