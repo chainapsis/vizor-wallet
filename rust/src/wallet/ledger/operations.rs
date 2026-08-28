@@ -12,6 +12,7 @@ use crate::wallet::{
 };
 
 const TABLE: &str = "vizor_ledger_signed_operations";
+const PCZT_BATCH_MAGIC: &[u8; 4] = b"VLB1";
 const STATE_SIGNED_PENDING_BROADCAST: &str = "signed_pending_broadcast";
 const STATE_RESULT_PENDING_ACK: &str = "result_pending_ack";
 static ACTIVE_BROADCASTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -68,8 +69,8 @@ impl OperationKind {
 
 struct StoredOperation {
     kind: OperationKind,
-    proof_pczt: Vec<u8>,
-    signature_pczt: Vec<u8>,
+    proof_pczts: Vec<Vec<u8>>,
+    signature_pczts: Vec<Vec<u8>>,
 }
 
 struct BroadcastGuard {
@@ -112,13 +113,37 @@ pub(crate) fn checkpoint(
     proof_pczt: &[u8],
     signature_pczt: &[u8],
 ) -> Result<SignedOperationMetadata, String> {
+    checkpoint_batch(
+        db_path,
+        network,
+        operation_id,
+        account_uuid,
+        kind,
+        external_ref,
+        &[proof_pczt.to_vec()],
+        &[signature_pczt.to_vec()],
+    )
+}
+
+pub(crate) fn checkpoint_batch(
+    db_path: &str,
+    network: WalletNetwork,
+    operation_id: &str,
+    account_uuid: &str,
+    kind: &str,
+    external_ref: Option<&str>,
+    proof_pczts: &[Vec<u8>],
+    signature_pczts: &[Vec<u8>],
+) -> Result<SignedOperationMetadata, String> {
     validate_identifier("operation ID", operation_id)?;
     validate_identifier("account UUID", account_uuid)?;
     let operation_kind = OperationKind::parse(kind)?;
     validate_external_ref(operation_kind, external_ref)?;
-    let expiry_height = validated_expiry_height(proof_pczt, signature_pczt)?;
-    crate::wallet::sync::extract_transaction_from_pczt(proof_pczt, signature_pczt, None, None)
+    let expiry_height = validated_expiry_height(proof_pczts, signature_pczts)?;
+    crate::wallet::sync::validate_signed_pczts(proof_pczts, signature_pczts, None, None)
         .map_err(|error| format!("Validate Ledger signed checkpoint: {error}"))?;
+    let proof_pczt = encode_pczt_batch(proof_pczts)?;
+    let signature_pczt = encode_pczt_batch(signature_pczts)?;
     let now = now_ms()?;
     let network = network_name(network);
 
@@ -141,8 +166,8 @@ pub(crate) fn checkpoint(
                     account_uuid,
                     kind,
                     external_ref,
-                    proof_pczt,
-                    signature_pczt,
+                    &proof_pczt,
+                    &signature_pczt,
                     expiry_height.map(i64::from),
                     STATE_SIGNED_PENDING_BROADCAST,
                     now,
@@ -168,8 +193,8 @@ pub(crate) fn checkpoint(
                         account_uuid,
                         kind,
                         external_ref,
-                        proof_pczt,
-                        signature_pczt,
+                        &proof_pczt,
+                        &signature_pczt,
                         expiry_height.map(i64::from),
                     ],
                     |row| row.get(0),
@@ -228,12 +253,12 @@ pub(crate) async fn broadcast(
     validate_identifier("operation ID", operation_id)?;
     let _broadcast_guard = BroadcastGuard::acquire(db_path, network, operation_id)?;
     let stored = load_for_broadcast(db_path, network, operation_id)?;
-    let result = crate::wallet::sync::extract_and_broadcast_pczt(
+    let result = crate::wallet::sync::store_and_broadcast_signed_pczts(
         db_path,
         lightwalletd_url,
         network,
-        &stored.proof_pczt,
-        &stored.signature_pczt,
+        &stored.proof_pczts,
+        &stored.signature_pczts,
         spend_params_path,
         output_params_path,
     )
@@ -245,7 +270,7 @@ pub(crate) async fn broadcast(
             network,
             operation_id,
             stored.kind,
-            &result.txid,
+            &result.txids,
             &result.status,
             result.message.as_deref(),
         ),
@@ -331,7 +356,9 @@ fn load_for_broadcast(
             params![network, operation_id, STATE_SIGNED_PENDING_BROADCAST],
             |row| {
                 let kind: String = row.get(0)?;
-                Ok((kind, row.get(1)?, row.get(2)?))
+                let proof_pczt: Vec<u8> = row.get(1)?;
+                let signature_pczt: Vec<u8> = row.get(2)?;
+                Ok((kind, proof_pczt, signature_pczt))
             },
         )
         .optional()
@@ -342,8 +369,8 @@ fn load_for_broadcast(
         .and_then(|(kind, proof_pczt, signature_pczt)| {
             Ok(StoredOperation {
                 kind: OperationKind::parse(&kind)?,
-                proof_pczt,
-                signature_pczt,
+                proof_pczts: decode_pczt_batch(&proof_pczt)?,
+                signature_pczts: decode_pczt_batch(&signature_pczt)?,
             })
         })
     })
@@ -452,21 +479,98 @@ fn is_terminal_broadcast_failure(message: &str) -> bool {
 }
 
 fn validated_expiry_height(
-    proof_pczt: &[u8],
-    signature_pczt: &[u8],
+    proof_pczts: &[Vec<u8>],
+    signature_pczts: &[Vec<u8>],
 ) -> Result<Option<u32>, String> {
-    let proof = pczt::Pczt::parse(proof_pczt)
-        .map_err(|e| format!("Parse proof PCZT for Ledger checkpoint: {e:?}"))?;
-    let signature = pczt::Pczt::parse(signature_pczt)
-        .map_err(|e| format!("Parse signature PCZT for Ledger checkpoint: {e:?}"))?;
-    let proof_expiry = *proof.global().expiry_height();
-    let signature_expiry = *signature.global().expiry_height();
-    if proof_expiry != signature_expiry {
-        return Err(format!(
-            "Ledger PCZT expiry mismatch: proof height {proof_expiry}, signature height {signature_expiry}"
-        ));
+    if proof_pczts.is_empty() || proof_pczts.len() != signature_pczts.len() {
+        return Err("Invalid Ledger signed PCZT round count".to_string());
     }
-    Ok((proof_expiry != 0).then_some(proof_expiry))
+    let mut expiry_height = None;
+    for (index, (proof_pczt, signature_pczt)) in proof_pczts.iter().zip(signature_pczts).enumerate()
+    {
+        let proof = pczt::Pczt::parse(proof_pczt).map_err(|e| {
+            format!(
+                "Parse proof PCZT round {} for Ledger checkpoint: {e:?}",
+                index + 1
+            )
+        })?;
+        let signature = pczt::Pczt::parse(signature_pczt).map_err(|e| {
+            format!(
+                "Parse signature PCZT round {} for Ledger checkpoint: {e:?}",
+                index + 1
+            )
+        })?;
+        let proof_expiry = *proof.global().expiry_height();
+        let signature_expiry = *signature.global().expiry_height();
+        if proof_expiry != signature_expiry {
+            return Err(format!(
+                "Ledger PCZT expiry mismatch in round {}: proof height {proof_expiry}, signature height {signature_expiry}",
+                index + 1
+            ));
+        }
+        if let Some(expected) = expiry_height {
+            if proof_expiry != expected {
+                return Err(format!(
+                    "Ledger PCZT batch expiry mismatch: round 1 height {expected}, round {} height {proof_expiry}",
+                    index + 1
+                ));
+            }
+        } else {
+            expiry_height = Some(proof_expiry);
+        }
+    }
+    Ok(expiry_height.filter(|height| *height != 0))
+}
+
+fn encode_pczt_batch(pczts: &[Vec<u8>]) -> Result<Vec<u8>, String> {
+    let count = u32::try_from(pczts.len()).map_err(|_| "Ledger PCZT batch is too large")?;
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(PCZT_BATCH_MAGIC);
+    encoded.extend_from_slice(&count.to_le_bytes());
+    for pczt in pczts {
+        let len = u32::try_from(pczt.len()).map_err(|_| "Ledger PCZT is too large")?;
+        encoded.extend_from_slice(&len.to_le_bytes());
+        encoded.extend_from_slice(pczt);
+    }
+    Ok(encoded)
+}
+
+fn decode_pczt_batch(encoded: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    if encoded.get(..4) != Some(PCZT_BATCH_MAGIC.as_slice()) {
+        return Err("Ledger signed-operation batch has an invalid format".to_string());
+    }
+    let mut offset = 4;
+    let count = read_batch_u32(encoded, &mut offset)? as usize;
+    if count == 0 {
+        return Err("Ledger signed-operation batch is empty".to_string());
+    }
+    if count > encoded.len().saturating_sub(offset) / 4 {
+        return Err("Ledger signed-operation batch has an invalid round count".to_string());
+    }
+    let mut pczts = Vec::with_capacity(count);
+    for _ in 0..count {
+        let len = read_batch_u32(encoded, &mut offset)? as usize;
+        let end = offset
+            .checked_add(len)
+            .filter(|end| *end <= encoded.len())
+            .ok_or("Ledger signed-operation batch is truncated")?;
+        pczts.push(encoded[offset..end].to_vec());
+        offset = end;
+    }
+    if offset != encoded.len() {
+        return Err("Ledger signed-operation batch has trailing data".to_string());
+    }
+    Ok(pczts)
+}
+
+fn read_batch_u32(encoded: &[u8], offset: &mut usize) -> Result<u32, String> {
+    let end = offset
+        .checked_add(4)
+        .filter(|end| *end <= encoded.len())
+        .ok_or("Ledger signed-operation batch is truncated")?;
+    let value = u32::from_le_bytes(encoded[*offset..end].try_into().expect("four bytes"));
+    *offset = end;
+    Ok(value)
 }
 
 fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -734,6 +838,31 @@ mod tests {
             )
             .unwrap();
         assert!(stored_lengths.0 > 0 && stored_lengths.1 > 0);
+    }
+
+    #[test]
+    fn pczt_batch_encoding_preserves_round_boundaries_and_rejects_corruption() {
+        let batch = vec![vec![1, 2, 3], vec![4, 5], vec![6]];
+        let encoded = encode_pczt_batch(&batch).unwrap();
+        assert_eq!(decode_pczt_batch(&encoded).unwrap(), batch);
+
+        let mut truncated = encoded.clone();
+        truncated.pop();
+        assert!(decode_pczt_batch(&truncated)
+            .unwrap_err()
+            .contains("truncated"));
+
+        let mut trailing = encoded;
+        trailing.push(0);
+        assert!(decode_pczt_batch(&trailing)
+            .unwrap_err()
+            .contains("trailing data"));
+
+        let mut oversized_count = PCZT_BATCH_MAGIC.to_vec();
+        oversized_count.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decode_pczt_batch(&oversized_count)
+            .unwrap_err()
+            .contains("invalid round count"));
     }
 
     #[test]
