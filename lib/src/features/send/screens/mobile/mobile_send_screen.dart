@@ -1665,12 +1665,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     required bool hasFocusedRecipient,
   }) {
     final colors = context.colors;
-    final contacts = [
-      for (final contact
-          in ref.watch(addressBookProvider).value?.contacts ??
-              const <AddressBookContact>[])
-        if (contact.network == AddressBookNetwork.zcash) contact,
-    ];
+    final contacts = filterAddressBookContacts(
+      ref.watch(addressBookProvider).value?.contacts ??
+          const <AddressBookContact>[],
+      query: _addressController.text,
+      networks: const {AddressBookNetwork.zcash},
+    );
 
     return Column(
       children: [

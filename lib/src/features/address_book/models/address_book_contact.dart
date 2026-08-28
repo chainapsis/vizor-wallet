@@ -160,6 +160,22 @@ class AddressBookContact {
   }
 }
 
+List<AddressBookContact> filterAddressBookContacts(
+  Iterable<AddressBookContact> contacts, {
+  required String query,
+  Set<AddressBookNetwork>? networks,
+}) {
+  final normalizedQuery = query.trim().toLowerCase();
+  return [
+    for (final contact in contacts)
+      if ((networks == null || networks.contains(contact.network)) &&
+          (normalizedQuery.isEmpty ||
+              contact.label.toLowerCase().contains(normalizedQuery) ||
+              contact.address.toLowerCase().contains(normalizedQuery)))
+        contact,
+  ];
+}
+
 String previewAddress(String address) {
   final trimmed = address.trim();
   if (trimmed.length <= 15) return trimmed;
