@@ -48,6 +48,7 @@ import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_screens.dart';
+import '../src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -201,39 +202,56 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
 }
 
 Widget buildLedgerAdditionalAccountUseCase(BuildContext context) {
-  const accountState = AccountState(
-    accounts: [
-      AccountInfo(
-        uuid: 'ledger-primary',
-        name: 'Primary Ledger account',
-        order: 0,
-        isHardware: true,
-        hardwareSignerKind: HardwareSignerKind.ledger,
-        zip32AccountIndex: 0,
-        ledgerWalletFingerprint:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      ),
-      AccountInfo(
-        uuid: 'ledger-savings',
-        name: 'Long-term shielded savings',
-        order: 1,
-        isHardware: true,
-        hardwareSignerKind: HardwareSignerKind.ledger,
-        zip32AccountIndex: 2,
-        ledgerWalletFingerprint:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      ),
-    ],
-    activeAccountUuid: 'ledger-primary',
-  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_ledgerAdditionalAccountState),
+      ),
     ],
     child: const _LedgerAdditionalAccountHarness(),
   );
 }
+
+Widget buildMobileLedgerAdditionalAccountUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_ledgerAdditionalAccountState),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      child: _MobileLedgerAdditionalAccountHarness(),
+    ),
+  );
+}
+
+const _ledgerAdditionalAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'ledger-primary',
+      name: 'Primary Ledger account',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      zip32AccountIndex: 0,
+      ledgerWalletFingerprint:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ),
+    AccountInfo(
+      uuid: 'ledger-savings',
+      name: 'Long-term shielded savings',
+      order: 1,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      zip32AccountIndex: 2,
+      ledgerWalletFingerprint:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ),
+  ],
+  activeAccountUuid: 'ledger-primary',
+);
 
 Widget buildImportCustomiseAccountUseCase(BuildContext context) {
   return ColoredBox(
@@ -3135,6 +3153,56 @@ class _LedgerAdditionalAccountHarnessState
       color: context.colors.macosUtility.window,
       child: Router.withConfig(config: _router),
     );
+  }
+}
+
+class _MobileLedgerAdditionalAccountHarness extends StatefulWidget {
+  const _MobileLedgerAdditionalAccountHarness();
+
+  @override
+  State<_MobileLedgerAdditionalAccountHarness> createState() =>
+      _MobileLedgerAdditionalAccountHarnessState();
+}
+
+class _MobileLedgerAdditionalAccountHarnessState
+    extends State<_MobileLedgerAdditionalAccountHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/onboarding/ledger',
+      routes: [
+        GoRoute(
+          path: '/onboarding/ledger',
+          builder: (_, _) => const MobileLedgerConnectScreen(
+            sourceAccountUuid: 'ledger-primary',
+          ),
+        ),
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
+        ),
+        GoRoute(
+          path: '/onboarding/ledger/birthday',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/onboarding/ledger/birthday',
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
   }
 }
 

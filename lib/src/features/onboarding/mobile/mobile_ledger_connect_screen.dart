@@ -9,12 +9,14 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../ledger/ledger_account_import_context.dart';
 import '../ledger/ledger_setup_args.dart';
 import 'mobile_ledger_device_sheet.dart';
 import 'mobile_onboarding_scaffold.dart';
@@ -22,7 +24,9 @@ import 'mobile_onboarding_scaffold.dart';
 enum _MobileLedgerConnectPhase { idle, awaitingApproval }
 
 class MobileLedgerConnectScreen extends ConsumerStatefulWidget {
-  const MobileLedgerConnectScreen({super.key});
+  const MobileLedgerConnectScreen({this.sourceAccountUuid, super.key});
+
+  final String? sourceAccountUuid;
 
   @override
   ConsumerState<MobileLedgerConnectScreen> createState() =>
@@ -37,7 +41,9 @@ class _MobileLedgerConnectScreenState
   LedgerBleDevice? _selectedDevice;
   _MobileLedgerConnectPhase _phase = _MobileLedgerConnectPhase.idle;
   String? _error;
+  String? _accountIndexError;
   bool _showAdvancedOptions = false;
+  bool _accountIndexInitialized = false;
 
   bool get _busy => _phase != _MobileLedgerConnectPhase.idle;
 
@@ -45,7 +51,12 @@ class _MobileLedgerConnectScreenState
   void initState() {
     super.initState();
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
-    _accountIndexController = TextEditingController(text: '0');
+    final accountContext = _resolveAccountContext();
+    _accountIndexInitialized =
+        widget.sourceAccountUuid == null || accountContext != null;
+    _accountIndexController = TextEditingController(
+      text: '${accountContext?.suggestedIndex ?? 0}',
+    );
   }
 
   @override
@@ -75,39 +86,138 @@ class _MobileLedgerConnectScreenState
 
   Future<void> _continue() async {
     if (_busy || _selectedDevice == null) return;
-    final accountIndex = int.tryParse(_accountIndexController.text);
-    if (accountIndex == null ||
-        accountIndex < 0 ||
-        accountIndex >= 0x80000000) {
-      setState(
-        () => _error = 'Account index must be between 0 and 2147483647.',
-      );
-      return;
-    }
+    final accountIndex = _validatedAccountIndex();
+    if (accountIndex == null) return;
     setState(() {
       _phase = _MobileLedgerConnectPhase.awaitingApproval;
       _error = null;
     });
     try {
-      final account = await ref.read(ledgerBluetoothAccountConnectorProvider)(
+      final accountContext = _resolveAccountContext();
+      final identity = await ref.read(
+        ledgerBluetoothWalletIdentityConnectorProvider,
+      )(accountContext?.sourceAccount.zip32AccountIndex, _selectedDevice!);
+      await _verifyWalletIdentity(identity, accountContext);
+      _throwIfConnectedWalletUsesIndex(identity, accountIndex);
+      final account = (await ref.read(ledgerBluetoothAccountConnectorProvider)(
         accountIndex,
         _selectedDevice!,
-      );
+      )).withWalletIdentity(identity);
       if (!mounted) return;
       setState(() => _phase = _MobileLedgerConnectPhase.idle);
       context.push(
         '/onboarding/ledger/birthday',
-        extra: LedgerBirthdayArgs(account: account),
+        extra: LedgerBirthdayArgs(
+          account: account,
+          sourceAccountUuid: widget.sourceAccountUuid,
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _phase = _MobileLedgerConnectPhase.idle;
-        _error = error is LedgerAppReadinessException
-            ? error.message
-            : _friendlyError(error);
+        if (error case _LedgerDuplicateIndexException(:final accountIndex)) {
+          _accountIndexError =
+              'Index $accountIndex is already used by this Ledger wallet.';
+          _showAdvancedOptions = true;
+          _error = null;
+        } else {
+          _error = error is LedgerAppReadinessException
+              ? error.message
+              : _friendlyError(error);
+        }
       });
     }
+  }
+
+  int? _validatedAccountIndex() {
+    final accountIndex = int.tryParse(_accountIndexController.text);
+    if (accountIndex != null &&
+        accountIndex >= 0 &&
+        accountIndex < 0x80000000) {
+      final duplicateError = _duplicateIndexError(accountIndex);
+      if (duplicateError == null) return accountIndex;
+      setState(() {
+        _accountIndexError = duplicateError;
+        _error = null;
+      });
+      return null;
+    }
+    setState(() {
+      _accountIndexError = 'Account index must be between 0 and 2147483647.';
+      _error = null;
+    });
+    return null;
+  }
+
+  LedgerAccountImportContext? _resolveAccountContext() {
+    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    return resolveLedgerAccountImportContext(
+      accounts: accounts,
+      sourceAccountUuid: widget.sourceAccountUuid,
+    );
+  }
+
+  String? _duplicateIndexError(int accountIndex) {
+    final accountContext = _resolveAccountContext();
+    if (accountContext == null || !accountContext.usesIndex(accountIndex)) {
+      return null;
+    }
+    return 'Index $accountIndex is already used by this Ledger wallet.';
+  }
+
+  void _handleAccountIndexChanged(String value) {
+    final accountIndex = int.tryParse(value);
+    setState(() {
+      _accountIndexError = accountIndex == null
+          ? null
+          : _duplicateIndexError(accountIndex);
+      _error = null;
+    });
+  }
+
+  Future<void> _verifyWalletIdentity(
+    LedgerWalletIdentity identity,
+    LedgerAccountImportContext? accountContext,
+  ) async {
+    if (accountContext == null) return;
+    final source = accountContext.sourceAccount;
+    final storedFingerprint = source.ledgerWalletFingerprint;
+    if (storedFingerprint != null) {
+      if (storedFingerprint != identity.fingerprint) {
+        throw const _LedgerWalletMismatchException();
+      }
+      return;
+    }
+    final deviceAddress = identity.verificationAddress;
+    if (source.zip32AccountIndex == null || deviceAddress == null) {
+      throw const _LedgerWalletMismatchException();
+    }
+    final matches = await ref.read(ledgerAccountIdentityVerifierProvider)(
+      accountUuid: source.uuid,
+      deviceAddress: deviceAddress,
+    );
+    if (!matches) throw const _LedgerWalletMismatchException();
+    await ref
+        .read(accountProvider.notifier)
+        .recordLedgerWalletFingerprint(
+          uuid: source.uuid,
+          fingerprint: identity.fingerprint,
+        );
+  }
+
+  void _throwIfConnectedWalletUsesIndex(
+    LedgerWalletIdentity identity,
+    int accountIndex,
+  ) {
+    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final duplicate = accounts.any(
+      (account) =>
+          account.isLedger &&
+          account.ledgerWalletFingerprint == identity.fingerprint &&
+          account.zip32AccountIndex == accountIndex,
+    );
+    if (duplicate) throw _LedgerDuplicateIndexException(accountIndex);
   }
 
   String _friendlyError(Object error) {
@@ -125,6 +235,9 @@ class _MobileLedgerConnectScreenState
     final lower = '$error'.toLowerCase();
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The viewing-key request was rejected on your Ledger.';
+    }
+    if ('$error'.contains(_LedgerWalletMismatchException.message)) {
+      return _LedgerWalletMismatchException.message;
     }
     return 'Vizor could not read this Ledger account. Check the connection and try again.';
   }
@@ -147,6 +260,22 @@ class _MobileLedgerConnectScreenState
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),
     );
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
+    final accounts = ref.watch(accountProvider).value?.accounts ?? const [];
+    final accountContext = resolveLedgerAccountImportContext(
+      accounts: accounts,
+      sourceAccountUuid: widget.sourceAccountUuid,
+    );
+    if (accountContext != null && !_accountIndexInitialized) {
+      _accountIndexInitialized = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _busy) return;
+        _accountIndexController.text = '${accountContext.suggestedIndex}';
+        setState(() {});
+      });
+    }
+    final disclosureLabel = accountContext == null
+        ? 'Advanced options'
+        : 'Choose a different index';
     return MobileOnboardingStepScaffold(
       progress: 0.25,
       title: 'Connect Ledger',
@@ -177,6 +306,10 @@ class _MobileLedgerConnectScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           LedgerDeviceAppPrompt(networkName: networkName),
+          if (accountContext != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _KnownLedgerAccountsCard(accountContext: accountContext),
+          ],
           const SizedBox(height: AppSpacing.sm),
           _DeviceSelectionCard(
             device: _selectedDevice,
@@ -200,7 +333,7 @@ class _MobileLedgerConnectScreenState
                   button: true,
                   enabled: !_busy,
                   expanded: _showAdvancedOptions,
-                  label: 'Advanced options',
+                  label: disclosureLabel,
                   onTap: _busy ? null : _toggleAdvancedOptions,
                   child: ExcludeSemantics(
                     child: AppButton(
@@ -211,7 +344,7 @@ class _MobileLedgerConnectScreenState
                         quarterTurns: _showAdvancedOptions ? 2 : 0,
                         child: const AppIcon(AppIcons.arrowDown),
                       ),
-                      child: const Text('Advanced options'),
+                      child: Text(disclosureLabel),
                     ),
                   ),
                 ),
@@ -224,6 +357,11 @@ class _MobileLedgerConnectScreenState
                     enabled: !_busy,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: _handleAccountIndexChanged,
+                    messageText: _accountIndexError,
+                    tone: _accountIndexError == null
+                        ? AppTextFieldTone.neutral
+                        : AppTextFieldTone.destructive,
                   ),
                 ],
               ],
@@ -244,6 +382,88 @@ class _MobileLedgerConnectScreenState
       ),
     );
   }
+}
+
+class _KnownLedgerAccountsCard extends StatelessWidget {
+  const _KnownLedgerAccountsCard({required this.accountContext});
+
+  final LedgerAccountImportContext accountContext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('mobile_ledger_known_accounts_card'),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: context.colors.surface.card,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        border: Border.all(color: context.colors.border.subtleOpacity),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Accounts on this Ledger',
+            style: AppTypography.labelLarge.copyWith(
+              color: context.colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          for (final account in accountContext.knownAccounts) ...[
+            Row(
+              key: ValueKey('mobile_ledger_known_account_${account.uuid}'),
+              children: [
+                Expanded(
+                  child: Text(
+                    account.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: context.colors.text.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  account.zip32AccountIndex == null
+                      ? 'Index unavailable'
+                      : 'Index ${account.zip32AccountIndex}',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+          ],
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Next available index: ${accountContext.suggestedIndex}',
+            key: const ValueKey('mobile_ledger_suggested_account_index'),
+            style: AppTypography.bodySmall.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerWalletMismatchException implements Exception {
+  const _LedgerWalletMismatchException();
+
+  static const message =
+      'This Ledger does not match the account you started from.';
+
+  @override
+  String toString() => message;
+}
+
+class _LedgerDuplicateIndexException implements Exception {
+  const _LedgerDuplicateIndexException(this.accountIndex);
+
+  final int accountIndex;
 }
 
 class _DeviceSelectionCard extends StatelessWidget {

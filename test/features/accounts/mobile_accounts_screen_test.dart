@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -96,6 +97,13 @@ Widget _app(
         path: '/settings/viewing-key',
         builder: (_, state) =>
             Text('viewing key route ${state.extra as String?}'),
+      ),
+      GoRoute(
+        path: '/onboarding/ledger',
+        builder: (_, state) {
+          final args = state.extra as LedgerConnectArgs?;
+          return Text('ledger add ${args?.sourceAccountUuid}');
+        },
       ),
       GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
     ],
@@ -492,6 +500,14 @@ void main() {
           find.byKey(const ValueKey('ledger_change_connection_button')),
           findsNothing,
         );
+        final addButton = find.byKey(
+          const ValueKey('ledger_add_another_account_button'),
+        );
+        expect(addButton, findsOneWidget);
+        await tester.ensureVisible(addButton);
+        await tester.tap(addButton);
+        await tester.pumpAndSettle();
+        expect(find.text('ledger add b'), findsOneWidget);
       }
     });
   }
