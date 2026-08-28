@@ -12,10 +12,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   across the preferred helper pool.
 
 ### Changed
-- **Breaking:** Initial share delivery now targets at most five helpers instead
-  of half the configured fleet. A complete 16-share commitment normally assigns
-  no more than eight initial shares to one helper when at least ten helpers are
-  preferred; retries may exceed that limit for liveness.
+- Initial share delivery continues to target half the configured fleet, rounded
+  up, while balancing a complete commitment across the ready helper pool.
+  Retries may exceed the initial distribution for liveness.
 
 ## v3.1.0-rc.11
 

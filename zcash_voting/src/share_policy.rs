@@ -27,15 +27,6 @@ pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
 pub const SHARE_SUBMIT_AT_MAX_DELAY_SECONDS: u64 = 100 * 60 * 60;
 /// Number of encrypted shares in one complete vote commitment.
 pub const VOTE_COMMITMENT_SHARE_COUNT: usize = 16;
-/// Desired number of distinct helpers that should accept each encrypted share.
-pub const SHARE_HELPER_TARGET_COUNT: usize = 5;
-/// Normal maximum number of one commitment's initial shares sent to one helper.
-pub const SHARE_HELPER_MAX_SHARES_PER_SERVER: usize = VOTE_COMMITMENT_SHARE_COUNT / 2;
-/// Minimum ready-helper count that can satisfy the target and normal privacy cap.
-pub const SHARE_HELPER_MIN_SERVER_COUNT: usize =
-    (VOTE_COMMITMENT_SHARE_COUNT * SHARE_HELPER_TARGET_COUNT + SHARE_HELPER_MAX_SHARES_PER_SERVER
-        - 1)
-        / SHARE_HELPER_MAX_SHARES_PER_SERVER;
 /// Initial helper readiness window before slower transports keep racing.
 pub const SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS: u64 = 2_000;
 /// Absolute deadline for the helper readiness race.
@@ -100,11 +91,12 @@ pub struct ShareSubmissionPlan {
 ///
 /// Clients own transport and recovery. They should start all readiness probes
 /// together, inspect responses after the soft timeout, and continue until at
-/// least `target_count` helpers are ready or the hard timeout expires. The
-/// eight-share limit applies to a complete commitment's initial assignment
-/// when at least `min_server_count` helpers are in the preferred planning pool.
-/// Retries may exceed it when needed for liveness. The limit is per helper and
-/// does not make a claim about the combined view of colluding helpers.
+/// least `target_count` helpers are ready or the hard timeout expires. For a
+/// complete commitment, `max_shares_per_server` is the balanced maximum when
+/// at least `min_server_count` helpers are in the preferred planning pool.
+/// These limits are derived from the configured fleet size. Retries may exceed
+/// them when needed for liveness. The limit is per helper and does not make a
+/// claim about the combined view of colluding helpers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareServerSelectionPolicy {
     pub target_count: u32,
@@ -484,18 +476,31 @@ fn delayed_share_window_seconds(
 
 /// Return how many helpers should receive each initial share.
 ///
-/// This is five when at least five helpers are configured, otherwise every
-/// available helper. It is 0 when there are no helpers.
+/// This is half of the configured helpers, rounded up, and 0 when there are no
+/// helpers.
 pub fn share_submission_target_count(server_count: usize) -> usize {
-    server_count.min(SHARE_HELPER_TARGET_COUNT)
+    server_count / 2 + server_count % 2
 }
 
 /// Return the shared helper probe and initial-delivery policy.
 pub fn share_server_selection_policy(server_count: usize) -> ShareServerSelectionPolicy {
+    let target_count = share_submission_target_count(server_count);
+    let assignment_count = VOTE_COMMITMENT_SHARE_COUNT.saturating_mul(target_count);
+    let max_shares_per_server = if server_count == 0 {
+        0
+    } else {
+        assignment_count.div_ceil(server_count)
+    };
+    let min_server_count = if max_shares_per_server == 0 {
+        0
+    } else {
+        assignment_count.div_ceil(max_shares_per_server)
+    };
+
     ShareServerSelectionPolicy {
-        target_count: share_submission_target_count(server_count) as u32,
-        max_shares_per_server: SHARE_HELPER_MAX_SHARES_PER_SERVER as u32,
-        min_server_count: SHARE_HELPER_MIN_SERVER_COUNT as u32,
+        target_count: target_count as u32,
+        max_shares_per_server: max_shares_per_server as u32,
+        min_server_count: min_server_count as u32,
         preflight_soft_timeout_milliseconds: SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
         preflight_hard_timeout_milliseconds: SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
         post_timeout_milliseconds: SHARE_HELPER_POST_TIMEOUT_MILLISECONDS,
@@ -677,9 +682,9 @@ pub fn plan_share_submission(
 /// share. Use `share_submission_random_bytes_required` to size the two entropy
 /// inputs.
 ///
-/// For a complete normal 16-share commitment, initial targets are balanced so
-/// no helper receives more than eight shares when at least ten helpers are
-/// available. Each returned plan contains its final initial target list. This
+/// For a complete normal 16-share commitment, each share targets half of the
+/// configured helpers, rounded up, and the assignments are balanced across the
+/// fleet. Each returned plan contains its final initial target list. This
 /// guarantee applies only to initial submission. Fallback and recovery may send
 /// an initially omitted share to any configured helper, including one that
 /// ultimately receives all 16 shares, when needed to preserve liveness.
@@ -727,8 +732,9 @@ pub fn plan_share_submissions(
 /// are ready, the planner includes enough fallback helpers to return a complete
 /// plan. For a complete 16-share commitment, targets are balanced across the
 /// planning pool and use independent caller-provided entropy for tie-breaking.
-/// The normal eight-share maximum is therefore guaranteed when the pool has at
-/// least ten helpers and is best effort for smaller pools. Recovery is outside
+/// The fleet-derived balanced maximum from [`share_server_selection_policy`] is
+/// guaranteed when the planning pool has at least that policy's
+/// `min_server_count` and is best effort for smaller pools. Recovery is outside
 /// this initial-only contract and may use any configured helper.
 pub fn plan_share_submissions_with_preferred_servers(
     share_count: usize,
@@ -1466,13 +1472,16 @@ mod tests {
     }
 
     #[test]
-    fn helper_target_count_is_capped_at_five() {
+    fn helper_target_count_is_half_rounded_up() {
         assert_eq!(share_submission_target_count(0), 0);
         assert_eq!(share_submission_target_count(1), 1);
-        assert_eq!(share_submission_target_count(2), 2);
-        assert_eq!(share_submission_target_count(3), 3);
-        assert_eq!(share_submission_target_count(5), 5);
-        assert_eq!(share_submission_target_count(33), 5);
+        assert_eq!(share_submission_target_count(2), 1);
+        assert_eq!(share_submission_target_count(3), 2);
+        assert_eq!(share_submission_target_count(5), 3);
+        assert_eq!(share_submission_target_count(8), 4);
+        assert_eq!(share_submission_target_count(10), 5);
+        assert_eq!(share_submission_target_count(12), 6);
+        assert_eq!(share_submission_target_count(33), 17);
     }
 
     #[test]
@@ -1490,7 +1499,30 @@ mod tests {
                 max_concurrent_posts: 16,
             }
         );
-        assert_eq!(share_server_selection_policy(3).target_count, 3);
+        assert_eq!(
+            (
+                share_server_selection_policy(3).target_count,
+                share_server_selection_policy(3).max_shares_per_server,
+                share_server_selection_policy(3).min_server_count,
+            ),
+            (2, 11, 3)
+        );
+        assert_eq!(
+            (
+                share_server_selection_policy(5).target_count,
+                share_server_selection_policy(5).max_shares_per_server,
+                share_server_selection_policy(5).min_server_count,
+            ),
+            (3, 10, 5)
+        );
+        assert_eq!(
+            (
+                share_server_selection_policy(33).target_count,
+                share_server_selection_policy(33).max_shares_per_server,
+                share_server_selection_policy(33).min_server_count,
+            ),
+            (17, 9, 31)
+        );
     }
 
     #[test]
@@ -1585,13 +1617,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.submit_at, 1_450);
-        assert_eq!(plan.target_count, 3);
+        assert_eq!(plan.target_count, 2);
         assert_eq!(
             plan.target_servers,
             vec![
                 "https://three.example.com".to_string(),
                 "https://one.example.com".to_string(),
-                "https://two.example.com".to_string(),
             ]
         );
     }
@@ -1687,22 +1718,20 @@ mod tests {
             vec![
                 "https://three.example.com".to_string(),
                 "https://one.example.com".to_string(),
-                "https://two.example.com".to_string(),
             ]
         );
         assert_eq!(plans[1].submit_at, 1_450);
         assert_eq!(
             plans[1].target_servers,
             vec![
-                "https://three.example.com".to_string(),
                 "https://two.example.com".to_string(),
-                "https://one.example.com".to_string(),
+                "https://three.example.com".to_string(),
             ]
         );
     }
 
     #[test]
-    fn complete_batch_with_three_helpers_is_degraded_but_complete() {
+    fn complete_batch_with_three_helpers_balances_two_targets() {
         let servers = vec![
             "https://one.example.com".to_string(),
             "https://two.example.com".to_string(),
@@ -1723,14 +1752,16 @@ mod tests {
         )
         .unwrap();
 
-        assert!(plans
-            .iter()
-            .all(|plan| plan.target_servers.len() == servers.len()));
-        assert!(plans.iter().all(|plan| {
-            servers
-                .iter()
-                .all(|server| plan.target_servers.contains(server))
-        }));
+        let mut usage = HashMap::<String, usize>::new();
+        for plan in &plans {
+            assert_eq!(plan.target_servers.len(), 2);
+            assert_eq!(plan.target_servers.iter().collect::<HashSet<_>>().len(), 2);
+            for server in &plan.target_servers {
+                *usage.entry(server.clone()).or_default() += 1;
+            }
+        }
+        assert_eq!(usage.values().sum::<usize>(), 32);
+        assert!(usage.values().all(|count| (10..=11).contains(count)));
     }
 
     #[test]
@@ -1758,19 +1789,20 @@ mod tests {
         .unwrap();
 
         let mut usage = HashMap::<String, usize>::new();
+        let target_count = share_submission_target_count(servers.len());
         for plan in &plans {
-            assert_eq!(plan.target_servers.len(), SHARE_HELPER_TARGET_COUNT);
+            assert_eq!(plan.target_servers.len(), target_count);
             assert_eq!(
                 plan.target_servers.iter().collect::<HashSet<_>>().len(),
-                SHARE_HELPER_TARGET_COUNT
+                target_count
             );
             for server in &plan.target_servers {
                 *usage.entry(server.clone()).or_default() += 1;
             }
         }
-        assert!(servers.iter().all(|server| {
-            usage.get(server).copied() == Some(SHARE_HELPER_MAX_SHARES_PER_SERVER)
-        }));
+        assert!(servers
+            .iter()
+            .all(|server| usage.get(server).copied() == Some(8)));
     }
 
     #[test]
@@ -1831,17 +1863,19 @@ mod tests {
         .unwrap();
 
         let mut usage = HashMap::<String, usize>::new();
+        let target_count = share_submission_target_count(servers.len());
         for plan in &plans {
-            assert_eq!(plan.target_servers.len(), SHARE_HELPER_TARGET_COUNT);
+            assert_eq!(plan.target_servers.len(), target_count);
             for server in &plan.target_servers {
                 *usage.entry(server.clone()).or_default() += 1;
             }
         }
         assert_eq!(
             usage.values().sum::<usize>(),
-            16 * SHARE_HELPER_TARGET_COUNT
+            VOTE_COMMITMENT_SHARE_COUNT * target_count
         );
-        assert!(usage.values().all(|count| *count <= 3));
+        assert_eq!(usage.len(), servers.len());
+        assert!(usage.values().all(|count| (8..=9).contains(count)));
     }
 
     #[test]
@@ -2083,13 +2117,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.submit_at, 1_000);
-        assert_eq!(plan.target_count, 3);
+        assert_eq!(plan.target_count, 2);
         assert_eq!(
             plan.target_servers,
             vec![
                 "https://one.example.com".to_string(),
                 "https://two.example.com".to_string(),
-                "https://three.example.com".to_string(),
             ]
         );
     }

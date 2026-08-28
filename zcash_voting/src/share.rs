@@ -45,10 +45,9 @@ pub mod policy {
         ShareSubmissionPlan, ShareSubmissionRandomBytesRequired, ShareTimingPolicy,
         ShareTrackingSummary, IMMEDIATE_SHARE_INDEX, LAST_MOMENT_BUFFER_FRACTION_DENOMINATOR,
         LAST_MOMENT_BUFFER_FRACTION_NUMERATOR, LAST_MOMENT_BUFFER_MAX_SECONDS,
-        SHARE_HELPER_MAX_CONCURRENT_POSTS, SHARE_HELPER_MAX_SHARES_PER_SERVER,
-        SHARE_HELPER_MIN_SERVER_COUNT, SHARE_HELPER_POST_TIMEOUT_MILLISECONDS,
+        SHARE_HELPER_MAX_CONCURRENT_POSTS, SHARE_HELPER_POST_TIMEOUT_MILLISECONDS,
         SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
-        SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS, SHARE_HELPER_TARGET_COUNT,
+        SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
         SHARE_INITIAL_DELIVERY_TIMEOUT_MILLISECONDS, SHARE_SUBMIT_AT_MAX_DELAY_SECONDS,
         VOTE_COMMITMENT_SHARE_COUNT,
     };
@@ -494,7 +493,7 @@ mod tests {
 
     #[test]
     fn share_policy_re_exports_are_callable() {
-        assert_eq!(policy::share_submission_target_count(3), 3);
+        assert_eq!(policy::share_submission_target_count(3), 2);
         assert_eq!(policy::SHARE_SUBMIT_AT_MAX_DELAY_SECONDS, 100 * 60 * 60);
         assert_eq!(
             policy::scheduled_share_submit_at_from_random_unit(10, 100, Some(10), false, 0.0)

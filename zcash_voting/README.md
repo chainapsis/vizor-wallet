@@ -307,11 +307,11 @@ that should stay consistent across SDKs:
 - delayed helper-share `submit_at` scheduling, capped at 100 hours while still
   ending before the round's last-moment window
 - progressive helper timing: inspect ready responses after two seconds, keep
-  waiting for five helpers, and stop at 30 seconds
+  waiting for half of the configured helpers rounded up, and stop at 30 seconds
 - 30-second helper POST attempts with bounded initial-delivery concurrency
-- five-target batch planning with independent entropy per share and a normal
-  eight-share per-helper initial-assignment limit when at least ten helpers are
-  ready; retries remain liveness-first and may exceed that limit
+- half-fleet batch planning with independent entropy per share and balanced
+  initial assignments across the ready helper pool; with ten ready helpers,
+  each receives eight shares, while retries remain liveness-first
 - resubmission ordering with untried helpers before already-sent helpers
 - share tracking summaries, readiness checks, retry thresholds, and polling delay
 
