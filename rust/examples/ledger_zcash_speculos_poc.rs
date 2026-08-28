@@ -34,12 +34,14 @@ use zcash_primitives::transaction::{
     fees::zip317,
 };
 use zcash_protocol::{
-    consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
     value::Zatoshis,
 };
 
 use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, updater::Updater};
 use voting_crypto_deps::rand::rngs::OsRng;
+use zcash_client_backend::data_api::WalletWrite;
+use zcash_client_sqlite::{util::SystemClock, WalletDb};
 
 const DEFAULT_API_URL: &str = "http://127.0.0.1:5000";
 const APDU_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -112,14 +114,18 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
     let approval = config
         .auto_approve
         .then(|| ApprovalWorker::start(signing_client));
-    let signed_result =
-        ledger_sign_pczt_full(db_path, account.account_uuid, pczt.clone(), config.network);
+    let signed_result = ledger_sign_pczt_full(
+        db_path,
+        account.account_uuid,
+        pczt.bytes.clone(),
+        config.network,
+    );
     let automated_signing_review = approval
         .map(ApprovalWorker::finish)
         .transpose()?
         .unwrap_or(false);
     let signed = signed_result.map_err(|error| format!("Desktop signing failed: {error}"))?;
-    if signed == pczt {
+    if signed == pczt.bytes {
         return Err("Desktop Ledger transport returned the unsigned PCZT unchanged".into());
     }
     if let Some(output_path) = config.output_path {
@@ -153,14 +159,25 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         None,
         "ledger".into(),
     )?;
+    let mut db = WalletDb::for_path(&db_path, WalletNetwork::Main, SystemClock, OsRng)
+        .map_err(|error| format!("Open fixture wallet DB: {error}"))?;
+    db.update_chain_tip(BlockHeight::from_u32(3_000_000))
+        .map_err(|error| format!("Set fixture chain tip: {error}"))?;
+    drop(db);
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| format!("Reopen fixture wallet DB: {error}"))?;
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .map_err(|error| format!("Checkpoint fixture wallet DB: {error}"))?;
+    drop(conn);
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
-    fs::write(&pczt_path, &pczt)
+    fs::write(&pczt_path, &pczt.bytes)
         .map_err(|error| format!("Write {}: {error}", pczt_path.display()))?;
     let metadata = json!({
         "accountUuid": account.account_uuid,
         "ufvk": export.ufvk,
         "seedFingerprint": hex::encode(export.seed_fingerprint),
         "accountIndex": export.account_index,
+        "transparentAddress": pczt.transparent_address,
         "dbPath": db_path,
         "pcztPath": pczt_path,
     });
@@ -243,7 +260,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
     let plan = ledger_build_pczt_full_signing_apdu_plan(
         db_path.clone(),
         account.account_uuid.clone(),
-        pczt.clone(),
+        pczt.bytes.clone(),
         config.network.clone(),
     )?;
     let (responses, automated_signing_review) =
@@ -251,11 +268,11 @@ fn run_smoke(config: Config) -> Result<(), String> {
     let signed = ledger_finalize_mobile_pczt_full_signing(
         db_path,
         account.account_uuid,
-        pczt.clone(),
+        pczt.bytes.clone(),
         config.network,
         responses,
     )?;
-    if signed == pczt {
+    if signed == pczt.bytes {
         return Err("Vizor finalizer returned the smoke PCZT unchanged".into());
     }
     if let Some(output_path) = config.output_path {
@@ -398,7 +415,15 @@ impl Parameters for PreIronwoodMainNetwork {
     }
 }
 
-fn transparent_smoke_pczt(ufvk: &str, seed_fingerprint: &[u8]) -> Result<Vec<u8>, String> {
+struct TransparentSmokePczt {
+    bytes: Vec<u8>,
+    transparent_address: String,
+}
+
+fn transparent_smoke_pczt(
+    ufvk: &str,
+    seed_fingerprint: &[u8],
+) -> Result<TransparentSmokePczt, String> {
     let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, ufvk)
         .map_err(|error| format!("Decode Speculos UFVK for smoke fixture: {error}"))?;
     let account_pubkey = ufvk
@@ -458,8 +483,18 @@ fn transparent_smoke_pczt(ufvk: &str, seed_fingerprint: &[u8]) -> Result<Vec<u8>
         })
         .map_err(|error| format!("Attach smoke Ledger derivation: {error:?}"))?
         .finish();
-    pczt.serialize()
-        .map_err(|error| format!("Serialize smoke PCZT: {error:?}"))
+    let bytes = pczt
+        .serialize()
+        .map_err(|error| format!("Serialize smoke PCZT: {error:?}"))?;
+    let transparent_address = zcash_keys::encoding::encode_transparent_address(
+        &WalletNetwork::Main.b58_pubkey_address_prefix(),
+        &WalletNetwork::Main.b58_script_address_prefix(),
+        &address,
+    );
+    Ok(TransparentSmokePczt {
+        bytes,
+        transparent_address,
+    })
 }
 
 #[derive(Debug)]
