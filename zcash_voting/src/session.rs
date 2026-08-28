@@ -79,6 +79,13 @@ impl VotingDb {
             skipped_bool,
             choice_u32,
         )?;
+        crate::vote::invalidate_unsubmitted_vote_batches_for_intent(
+            &tx,
+            &wallet_id,
+            round_id,
+            proposal_id,
+            choice_u32,
+        )?;
         tx.execute(
             "INSERT INTO ballot_intent
                 (round_id, wallet_id, proposal_id, skipped, choice, created_at, updated_at)
@@ -1849,6 +1856,116 @@ mod tests {
         assert_eq!(recovered.batch_digest, Some(digest));
         assert_eq!(recovered.commitments.len(), 2);
         assert!(recovered.batch_json.is_some());
+    }
+
+    #[test]
+    fn changing_choice_invalidates_the_whole_unsubmitted_batch() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        store_two_action_batch_recovery_fixture(&db);
+
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(2), 3)
+            .unwrap();
+
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 1)
+            .unwrap()
+            .is_none());
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 2)
+            .unwrap()
+            .is_none());
+        assert_eq!(db.vote_phase(ROUND, 0, 1).unwrap(), VotePhase::Prepared);
+        assert_eq!(db.vote_phase(ROUND, 0, 2).unwrap(), VotePhase::Prepared);
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2, 3]).unwrap().next_steps,
+            vec![
+                NextStep::CastVote {
+                    bundle_index: 0,
+                    proposal_id: 1,
+                    choice: 0,
+                },
+                NextStep::CastVote {
+                    bundle_index: 0,
+                    proposal_id: 2,
+                    choice: 2,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn skipping_choice_invalidates_the_whole_unsubmitted_batch() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        store_two_action_batch_recovery_fixture(&db);
+
+        db.set_ballot_intent(ROUND, 2, Decision::Skipped, 3)
+            .unwrap();
+
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 1)
+            .unwrap()
+            .is_none());
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 2)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2, 3]).unwrap().next_steps,
+            vec![NextStep::CastVote {
+                bundle_index: 0,
+                proposal_id: 1,
+                choice: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn changing_one_member_rejects_a_partially_submitted_batch_atomically() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        store_two_action_batch_recovery_fixture(&db);
+        db.conn()
+            .execute(
+                "UPDATE votes SET tx_hash = 'batch-tx'
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0
+                   AND proposal_id = 1",
+                named_params! {
+                    ":round_id": ROUND,
+                    ":wallet_id": W,
+                },
+            )
+            .unwrap();
+
+        let error = db
+            .set_ballot_intent(ROUND, 2, Decision::Choice(2), 3)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("submitted atomic vote batch"));
+        assert_eq!(
+            db.ballot_intents(ROUND).unwrap(),
+            vec![(1, Decision::Choice(0)), (2, Decision::Choice(1))]
+        );
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 1)
+            .unwrap()
+            .is_some());
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 2)
+            .unwrap()
+            .is_some());
     }
 
     #[test]

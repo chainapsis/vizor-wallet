@@ -727,6 +727,8 @@ mod tests {
     use super::*;
     use crate::round::{RoundParams, VotingDb};
     use crate::storage::queries;
+    use crate::types::EncryptedShare;
+    use crate::vote::{VoteBatchRecovery, VoteRecoveryBundle};
 
     const ROUND_ID: &str = "1111111111111111111111111111111111111111111111111111111111111111";
     const OTHER_ROUND_ID: &str = "2222222222222222222222222222222222222222222222222222222222222222";
@@ -877,6 +879,123 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    fn batch_recovery(proposal_id: u32, vote_decision: u32, marker: u8) -> VoteRecoveryBundle {
+        VoteRecoveryBundle {
+            vote_round_id: ROUND_ID.to_string(),
+            bundle_index: 0,
+            proposal_id,
+            vote_decision,
+            anchor_height: 100,
+            vc_tree_position: 0,
+            single_share: true,
+            num_options: 3,
+            van_nullifier: [marker; 32],
+            vote_authority_note_new: [marker.wrapping_add(1); 32],
+            vote_commitment: [marker.wrapping_add(2); 32],
+            proof: vec![marker.wrapping_add(3); 8],
+            shares_hash: [marker.wrapping_add(4); 32],
+            r_vpk: [marker.wrapping_add(5); 32],
+            alpha_v: [marker.wrapping_add(6); 32],
+            vote_auth_sig: [marker.wrapping_add(7); 64],
+            encrypted_shares: vec![EncryptedShare {
+                c1: vec![marker.wrapping_add(8); 32],
+                c2: vec![marker.wrapping_add(9); 32],
+                share_index: 0,
+                plaintext_value: 1,
+                randomness: vec![marker.wrapping_add(10); 32],
+            }],
+            share_blinds: vec![[marker.wrapping_add(11); 32]],
+            share_comms: vec![[marker.wrapping_add(12); 32]],
+            batch: None,
+        }
+    }
+
+    fn recovery_commitment_bytes_for(recovery: &VoteRecoveryBundle) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "van_nullifier": hex::encode(recovery.van_nullifier),
+            "vote_authority_note_new": hex::encode(recovery.vote_authority_note_new),
+            "vote_commitment": hex::encode(recovery.vote_commitment),
+            "proof": hex::encode(&recovery.proof),
+        }))
+        .unwrap()
+    }
+
+    fn store_two_action_batch(db: &VotingDb) -> ([u8; 32], [VoteRecoveryBundle; 2]) {
+        let mut first = batch_recovery(1, 0, 0x21);
+        let mut second = batch_recovery(2, 1, 0x41);
+        let actions = [&first, &second]
+            .into_iter()
+            .map(
+                |recovery| crate::vote_commitment::CastVoteBatchSighashAction {
+                    r_vpk: &recovery.r_vpk,
+                    van_nullifier: &recovery.van_nullifier,
+                    vote_authority_note_new: &recovery.vote_authority_note_new,
+                    vote_commitment: &recovery.vote_commitment,
+                    proposal_id: recovery.proposal_id,
+                },
+            )
+            .collect::<Vec<_>>();
+        let digest =
+            crate::vote_commitment::cast_vote_batch_sighash(ROUND_ID, 100, &actions).unwrap();
+        first.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 0,
+            size: 2,
+        });
+        second.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 1,
+            size: 2,
+        });
+
+        for recovery in [&first, &second] {
+            db.conn()
+                .execute(
+                    "INSERT INTO votes (
+                        round_id, wallet_id, bundle_index, proposal_id, choice,
+                        commitment, commitment_bundle_json, created_at
+                    ) VALUES (
+                        :round_id, :wallet_id, :bundle_index, :proposal_id, :choice,
+                        :commitment, :recovery, :created_at
+                    )",
+                    named_params! {
+                        ":round_id": ROUND_ID,
+                        ":wallet_id": WALLET_ID,
+                        ":bundle_index": recovery.bundle_index as i64,
+                        ":proposal_id": recovery.proposal_id as i64,
+                        ":choice": recovery.vote_decision as i64,
+                        ":commitment": recovery_commitment_bytes_for(recovery),
+                        ":recovery": crate::vote::serialize_recovery(recovery).unwrap(),
+                        ":created_at": 1_i64,
+                    },
+                )
+                .unwrap();
+        }
+
+        (digest, [first, second])
+    }
+
+    fn vote_batch_events(digest: [u8; 32], recoveries: &[VoteRecoveryBundle]) -> Vec<TxEvent> {
+        let digest = hex::encode(digest);
+        let nullifiers = recoveries
+            .iter()
+            .map(|recovery| hex::encode(recovery.van_nullifier))
+            .collect::<Vec<_>>()
+            .join(",");
+        vec![event_with_attrs(
+            CAST_VOTE_BATCH_EVENT,
+            &[
+                ("round_id", ROUND_ID),
+                (BATCH_DIGEST_ATTRIBUTE, &digest),
+                (BATCH_SIZE_ATTRIBUTE, "2"),
+                (FINAL_VAN_LEAF_INDEX_ATTRIBUTE, "10"),
+                (VC_LEAF_INDICES_ATTRIBUTE, "11,12"),
+                (PROPOSAL_IDS_ATTRIBUTE, "1,2"),
+                (VAN_NULLIFIERS_ATTRIBUTE, &nullifiers),
+            ],
+        )]
     }
 
     #[test]
@@ -1291,6 +1410,115 @@ mod tests {
                 .vc_tree_position,
             789
         );
+    }
+
+    #[test]
+    fn records_vote_batch_confirmation_replay_and_helper_positions() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        let (digest, recoveries) = store_two_action_batch(&db);
+        let events = vote_batch_events(digest, &recoveries);
+
+        let first =
+            confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events).unwrap();
+        let replay =
+            confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events).unwrap();
+
+        assert_eq!(replay, first);
+        assert_eq!(
+            queries::load_van_position(&db.conn(), ROUND_ID, WALLET_ID, 0).unwrap(),
+            10
+        );
+        for (proposal_id, vc_tree_position) in [(1, 11), (2, 12)] {
+            assert_eq!(
+                queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, proposal_id)
+                    .unwrap()
+                    .as_deref(),
+                Some("batch-tx")
+            );
+            assert_eq!(
+                db.vote_phase(ROUND_ID, 0, proposal_id).unwrap(),
+                crate::phases::VotePhase::Confirmed
+            );
+            let recovery = crate::vote::recovery_bundle(&db, ROUND_ID, 0, proposal_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(recovery.vc_tree_position, vc_tree_position);
+            assert!(crate::share::recover_payloads(&recovery)
+                .unwrap()
+                .iter()
+                .all(|payload| payload.tree_position == vc_tree_position));
+        }
+    }
+
+    #[test]
+    fn vote_batch_confirmation_rolls_back_when_a_later_member_conflicts() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        let (digest, recoveries) = store_two_action_batch(&db);
+        let events = vote_batch_events(digest, &recoveries);
+        db.conn()
+            .execute(
+                "UPDATE votes SET vc_tree_position = 999
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0
+                   AND proposal_id = 2",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+            )
+            .unwrap();
+
+        let error = confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events)
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("vote commitment tree position already recorded"));
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 1).unwrap(),
+            None
+        );
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 2).unwrap(),
+            None
+        );
+        assert_eq!(
+            crate::vote::recovery_bundle(&db, ROUND_ID, 0, 1)
+                .unwrap()
+                .unwrap()
+                .vc_tree_position,
+            0
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 1)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            None
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 2)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            Some(999)
+        );
+        let van_position: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT van_leaf_position FROM bundles
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(van_position, None);
     }
 
     #[test]

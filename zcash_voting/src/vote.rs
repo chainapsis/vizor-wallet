@@ -9,7 +9,7 @@ pub(crate) use crate::backend::{orchard, pasta_curves};
 use serde::{Deserialize, Serialize};
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
@@ -1829,6 +1829,156 @@ pub(crate) fn load_vote_batch_recoveries_with_conn(
         });
     }
     Ok(recoveries)
+}
+
+/// Clears a complete unsubmitted batch when one member no longer matches the
+/// ballot intent. A batch is one signed envelope, so none of its old recovery
+/// data can be reused after any action changes.
+pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
+    conn: &rusqlite::Connection,
+    wallet_id: &str,
+    round_id: &str,
+    proposal_id: u32,
+    choice: Option<u32>,
+) -> Result<(), VotingError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT bundle_index, choice, commitment_bundle_json
+             FROM votes
+             WHERE round_id = :round_id
+               AND wallet_id = :wallet_id
+               AND proposal_id = :proposal_id
+               AND commitment_bundle_json IS NOT NULL
+             ORDER BY bundle_index",
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("prepare conflicting vote batch query failed: {e}"),
+        })?;
+    let rows = stmt
+        .query_map(
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":proposal_id": proposal_id as i64,
+            },
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("query conflicting vote batch rows failed: {e}"),
+        })?;
+
+    let mut batch_keys = BTreeSet::new();
+    for row in rows {
+        let (bundle_index, stored_choice, recovery_json) =
+            row.map_err(|e| VotingError::Internal {
+                message: format!("read conflicting vote batch row failed: {e}"),
+            })?;
+        let bundle_index = u32::try_from(bundle_index).map_err(|_| VotingError::Internal {
+            message: format!("stored bundle_index must be non-negative, got {bundle_index}"),
+        })?;
+        let recovery = parse_recovery(&recovery_json)?;
+        let Some(batch) = recovery.batch.as_ref() else {
+            continue;
+        };
+        validate_recovery_matches_stored_vote(
+            &recovery,
+            round_id,
+            bundle_index,
+            proposal_id,
+            stored_choice,
+            None,
+        )?;
+        if choice == Some(recovery.vote_decision) {
+            continue;
+        }
+        batch_keys.insert((bundle_index, batch.digest));
+    }
+    drop(stmt);
+
+    let mut batches = Vec::with_capacity(batch_keys.len());
+    for (bundle_index, digest) in batch_keys {
+        let recoveries =
+            load_vote_batch_recoveries_with_conn(conn, wallet_id, round_id, bundle_index, digest)?;
+        for recovery in &recoveries {
+            let state = crate::storage::queries::load_vote_row_state(
+                conn,
+                round_id,
+                wallet_id,
+                bundle_index,
+                recovery.proposal_id,
+            )?
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: format!(
+                    "persisted atomic vote batch is missing proposal {} for round={round_id}, bundle={bundle_index}",
+                    recovery.proposal_id
+                ),
+            })?;
+            if state.tx_hash.is_some() || state.vc_tree_position.is_some() {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "round {round_id} bundle {bundle_index} has a submitted atomic vote batch that conflicts with ballot intent for proposal {proposal_id}"
+                    ),
+                });
+            }
+        }
+        batches.push((bundle_index, recoveries));
+    }
+
+    for (bundle_index, recoveries) in batches {
+        for recovery in recoveries {
+            let updated = conn
+                .execute(
+                    "UPDATE votes SET commitment_bundle_json = NULL
+                     WHERE round_id = :round_id
+                       AND wallet_id = :wallet_id
+                       AND bundle_index = :bundle_index
+                       AND proposal_id = :proposal_id
+                       AND tx_hash IS NULL
+                       AND vc_tree_position IS NULL",
+                    named_params! {
+                        ":round_id": round_id,
+                        ":wallet_id": wallet_id,
+                        ":bundle_index": bundle_index as i64,
+                        ":proposal_id": recovery.proposal_id as i64,
+                    },
+                )
+                .map_err(|e| VotingError::Internal {
+                    message: format!("clear stale vote batch recovery failed: {e}"),
+                })?;
+            if updated != 1 {
+                return Err(VotingError::InvalidInput {
+                    message: format!(
+                        "atomic vote batch changed while updating ballot intent for round={round_id}, bundle={bundle_index}, proposal={}",
+                        recovery.proposal_id
+                    ),
+                });
+            }
+            conn.execute(
+                "DELETE FROM share_delegations
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = :bundle_index
+                   AND proposal_id = :proposal_id",
+                named_params! {
+                    ":round_id": round_id,
+                    ":wallet_id": wallet_id,
+                    ":bundle_index": bundle_index as i64,
+                    ":proposal_id": recovery.proposal_id as i64,
+                },
+            )
+            .map_err(|e| VotingError::Internal {
+                message: format!("clear stale vote batch shares failed: {e}"),
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Records the on-chain vote commitment tree position after confirmation.
