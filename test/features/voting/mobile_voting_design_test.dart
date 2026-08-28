@@ -46,9 +46,17 @@ void main() {
     expect(tester.widget<AppButton>(action).variant, AppButtonVariant.primary);
     expect(tester.widget<AppButton>(action).onPressed, isNotNull);
     final forum = find.byType(VotingForumLinkButton);
-    expect(tester.getTopLeft(forum).dx, 32);
+    expect(tester.getRect(forum).right, tester.getRect(ineligible).right - 16);
     expect(tester.getSize(forum).height, 24);
     expect(tester.widget<VotingForumLinkButton>(forum).mobilePollList, isTrue);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.descendant(of: forum, matching: find.byType(AppButton)),
+          )
+          .contentPadding,
+      const EdgeInsets.only(left: 8),
+    );
     await tester.drag(find.byType(VotingPaneListView), const Offset(0, -600));
     await tester.pumpAndSettle();
     expect(find.text('Voted'), findsOneWidget);

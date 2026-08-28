@@ -46,6 +46,7 @@ class VotingForumLinkButton extends StatelessWidget {
     this.label = 'Forum discussion',
     this.size = AppButtonSize.small,
     this.mobilePollList = false,
+    this.contentPadding,
     super.key,
   });
 
@@ -53,6 +54,7 @@ class VotingForumLinkButton extends StatelessWidget {
   final String label;
   final AppButtonSize size;
   final bool mobilePollList;
+  final EdgeInsets? contentPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -62,9 +64,11 @@ class VotingForumLinkButton extends StatelessWidget {
       },
       variant: AppButtonVariant.ghost,
       size: size,
-      contentPadding: mobilePollList
-          ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
-          : null,
+      contentPadding:
+          contentPadding ??
+          (mobilePollList
+              ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
+              : null),
       leading: mobilePollList ? null : const AppIcon(AppIcons.link),
       trailing: mobilePollList ? const AppIcon(AppIcons.link) : null,
       child: Text(

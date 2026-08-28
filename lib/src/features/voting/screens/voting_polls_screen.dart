@@ -522,8 +522,12 @@ class _MobilePollCardContent extends ConsumerWidget {
         if (forumUri != null) ...[
           const SizedBox(height: AppSpacing.s),
           Align(
-            alignment: Alignment.centerLeft,
-            child: VotingForumLinkButton(uri: forumUri, mobilePollList: true),
+            alignment: Alignment.centerRight,
+            child: VotingForumLinkButton(
+              uri: forumUri,
+              mobilePollList: true,
+              contentPadding: const EdgeInsets.only(left: AppSpacing.xs),
+            ),
           ),
         ],
         const SizedBox(height: AppSpacing.s),
