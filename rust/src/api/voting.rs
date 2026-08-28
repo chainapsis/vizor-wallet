@@ -1627,6 +1627,18 @@ pub fn recover_vote_commitment(
     })
 }
 
+fn singleton_vote_draft(
+    draft_votes: &[zcash_voting::wire::DraftVote],
+) -> Result<&zcash_voting::wire::DraftVote, String> {
+    if draft_votes.len() != 1 {
+        return Err(format!(
+            "singleton cast-vote requires exactly one draft, got {}",
+            draft_votes.len()
+        ));
+    }
+    Ok(&draft_votes[0])
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn build_vote_commitments_result<F>(
     db_path: String,
@@ -1642,6 +1654,8 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
+    singleton_vote_draft(&draft_votes)?;
+
     // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
     let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
@@ -1662,31 +1676,37 @@ where
             voting_network(network),
         )
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
+        let draft = singleton_vote_draft(&draft_votes)?;
 
         let prepare_started = Instant::now();
-        let prepared = zcash_voting::vote::prepare_commit_batch(
+        let prepared = zcash_voting::vote::prepare_commit(
             &voting_db,
+            &round_id,
+            bundle_index,
+            draft,
+            &van_witness,
             zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            zcash_voting::vote::VoteCommitBatch {
-                round_id: &round_id,
-                bundle_index,
-                drafts: &draft_votes,
-                witness: &van_witness,
-                stages: &reporter,
-            },
+            &reporter,
         )
-        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
+        .map_err(|e| format!("singleton vote commitment preparation failed: {e}"))?;
         log::info!(
-            "{VOTING_VOTE_LOG} bundle={bundle_index} prepare-batch elapsed={:.3}s",
+            "{VOTING_VOTE_LOG} bundle={bundle_index} prepare-singleton elapsed={:.3}s",
             prepare_started.elapsed().as_secs_f64()
         );
         let persist_started = Instant::now();
         let persisted = db::with_voting_sidecar_write_lock(&db_path, || {
-            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
-                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
+            let committed = zcash_voting::vote::persist_prepared_commit(&voting_db, prepared)
+                .map_err(|e| format!("singleton vote commitment persistence failed: {e}"))?;
+            zcash_voting::vote::recover_signed_commitments(
+                &voting_db,
+                &round_id,
+                bundle_index,
+                committed.proposal_id(),
+            )
+            .map_err(|e| format!("singleton vote commitment recovery failed: {e}"))
         })?;
         log::info!(
-            "{VOTING_VOTE_LOG} bundle={bundle_index} persist-batch elapsed={:.3}s worker_total={:.3}s",
+            "{VOTING_VOTE_LOG} bundle={bundle_index} persist-singleton elapsed={:.3}s worker_total={:.3}s",
             persist_started.elapsed().as_secs_f64(),
             total_started.elapsed().as_secs_f64()
         );
@@ -1705,7 +1725,8 @@ where
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// `SignedVoteCommitmentsView`. The current singleton transport requires exactly
+/// one draft; atomic batch preparation is enabled together with batch broadcast.
 pub async fn build_vote_commitments_with_progress(
     db_path: String,
     account_uuid: String,
@@ -2799,6 +2820,29 @@ mod tests {
         };
         assert_eq!(result.phase, "result");
         assert_eq!(result.commitments.as_ref().unwrap().bundle_index, 2);
+    }
+
+    #[test]
+    fn singleton_vote_bridge_requires_exactly_one_draft() {
+        let draft = zcash_voting::wire::DraftVote {
+            proposal_id: 1,
+            choice: 0,
+            num_options: 2,
+            vc_tree_position: 0,
+            single_share: false,
+        };
+
+        assert_eq!(
+            singleton_vote_draft(std::slice::from_ref(&draft))
+                .unwrap()
+                .proposal_id,
+            1
+        );
+        for drafts in [Vec::new(), vec![draft.clone(), draft]] {
+            assert!(singleton_vote_draft(&drafts)
+                .unwrap_err()
+                .contains("requires exactly one draft"));
+        }
     }
 
     #[test]

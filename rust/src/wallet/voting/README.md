@@ -111,10 +111,14 @@ directly. The mapping from FRB functions to crate APIs:
 | Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
 | Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
-| Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
+| Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit`, `vote::persist_prepared_commit`, `vote::recover_signed_commitments` |
 | Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
 | Share submit/confirm | `record_share_delegation`, `mark_share_confirmed`, `add_sent_servers` | `vote::CommittedVote::{record_share, confirm_share}`, `share::add_sent_servers` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
+
+The vote-commit bridge accepts exactly one draft while Vizor broadcasts through
+the singleton `cast-vote` endpoint. Atomic batch preparation must be enabled in
+the same change as batch broadcast, submission recording, and confirmation.
 
 The `confirmation::*` APIs parse chain `tx` events and atomically record tx
 hashes, VAN positions, and VC positions. Restart recovery is driven by
