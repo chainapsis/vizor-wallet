@@ -53,8 +53,21 @@ typedef LedgerSendBasePcztCreator =
       required String sendFlowId,
     });
 
+typedef LedgerSendTexPcztsCreator =
+    Future<rust_sync.TexPcztPairResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required BigInt proposalId,
+      required String sendFlowId,
+    });
+
 final ledgerSendBasePcztCreatorProvider = Provider<LedgerSendBasePcztCreator>(
   (_) => rust_sync.createPcztFromProposal,
+);
+
+final ledgerSendTexPcztsCreatorProvider = Provider<LedgerSendTexPcztsCreator>(
+  (_) => rust_sync.createTexPcztsFromProposal,
 );
 
 class SendReviewScreen extends ConsumerStatefulWidget {
@@ -86,11 +99,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   LedgerSigningFailurePresentation? _ledgerFailure;
   _LedgerSendRecoveryAction? _ledgerRecoveryAction;
   int _ledgerAttemptGeneration = 0;
-  List<int>? _ledgerBasePczt;
-  Future<List<int>>? _ledgerBasePcztFuture;
-  List<int>? _ledgerRedactedPczt;
-  List<int>? _ledgerPcztWithProofs;
-  List<int>? _ledgerSignedPczt;
+  List<List<int>>? _ledgerBasePczts;
+  Future<List<List<int>>>? _ledgerBasePcztsFuture;
+  List<List<int>>? _ledgerSignerPczts;
+  List<List<int>>? _ledgerPcztsWithProofs;
+  final List<List<int>> _ledgerSignedPczts = [];
+  int _ledgerRound = 0;
   late final String _ledgerOperationId;
   late final LedgerOperationCanceller _cancelLedgerOperation;
 
@@ -114,7 +128,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       promptCompleter.complete(false);
     }
     final hasUncheckpointedLedgerSignature =
-        _ledgerSignedPczt != null && !_handoffToHardware;
+        _ledgerSigningComplete && !_handoffToHardware;
     _ledgerAttemptGeneration++;
     if (_ledgerPhase != null &&
         !_handoffToHardware &&
@@ -188,6 +202,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     return mounted && generation == _ledgerAttemptGeneration;
   }
 
+  bool get _ledgerSigningComplete {
+    final pczts = _ledgerBasePczts;
+    return pczts != null &&
+        pczts.isNotEmpty &&
+        _ledgerSignedPczts.length == pczts.length;
+  }
+
   Future<void> _prepareAndSignWithLedger(int generation) async {
     try {
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
@@ -216,48 +237,67 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         if (!_isCurrentLedgerAttempt(generation)) return;
       }
 
-      final pcztBytes = await _getOrCreateLedgerBasePczt(
+      final pczts = await _getOrCreateLedgerBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
       );
       if (!_isCurrentLedgerAttempt(generation)) return;
 
-      var redactedPczt = _ledgerRedactedPczt;
-      if (redactedPczt == null) {
-        final redacted = await rust_sync.redactPcztForSigner(
-          pcztBytes: pcztBytes,
-        );
-        if (!_isCurrentLedgerAttempt(generation)) return;
-        redactedPczt = List<int>.unmodifiable(redacted);
-        _ledgerRedactedPczt = redactedPczt;
+      var signerPczts = _ledgerSignerPczts;
+      if (signerPczts == null) {
+        final redacted = <List<int>>[];
+        for (final pczt in pczts) {
+          redacted.add(
+            List<int>.unmodifiable(
+              await rust_sync.redactPcztForSigner(pcztBytes: pczt),
+            ),
+          );
+          if (!_isCurrentLedgerAttempt(generation)) return;
+        }
+        signerPczts = List<List<int>>.unmodifiable(redacted);
+        _ledgerSignerPczts = signerPczts;
       }
 
-      var pcztWithProofs = _ledgerPcztWithProofs;
-      if (pcztWithProofs == null) {
-        final provedPczt = await rust_sync.addProofsToPczt(
-          pcztBytes: pcztBytes,
-          spendParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
-        if (!_isCurrentLedgerAttempt(generation)) return;
-        pcztWithProofs = List<int>.unmodifiable(provedPczt);
-        _ledgerPcztWithProofs = pcztWithProofs;
+      var pcztsWithProofs = _ledgerPcztsWithProofs;
+      if (pcztsWithProofs == null) {
+        final proved = <List<int>>[];
+        for (final pczt in pczts) {
+          proved.add(
+            List<int>.unmodifiable(
+              await rust_sync.addProofsToPczt(
+                pcztBytes: pczt,
+                spendParamsPath: widget.args.needsSaplingParams
+                    ? saplingParams.spendPath
+                    : null,
+                outputParamsPath: widget.args.needsSaplingParams
+                    ? saplingParams.outputPath
+                    : null,
+              ),
+            ),
+          );
+          if (!_isCurrentLedgerAttempt(generation)) return;
+        }
+        pcztsWithProofs = List<List<int>>.unmodifiable(proved);
+        _ledgerPcztsWithProofs = pcztsWithProofs;
       }
 
-      setState(() {
-        _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
-      });
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        widget.args.proposalAccountUuid,
-        redactedPczt,
-      );
-      if (!_isCurrentLedgerAttempt(generation)) return;
-      _ledgerSignedPczt = List<int>.unmodifiable(signedPczt);
+      for (
+        var index = _ledgerSignedPczts.length;
+        index < pczts.length;
+        index++
+      ) {
+        setState(() {
+          _ledgerRound = index;
+          _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
+        });
+        final signedPczt = await ref.read(ledgerPcztSignerProvider)(
+          widget.args.proposalAccountUuid,
+          signerPczts[index],
+        );
+        if (!_isCurrentLedgerAttempt(generation)) return;
+        _ledgerSignedPczts.add(List<int>.unmodifiable(signedPczt));
+      }
       setState(() {
         _ledgerPhase = LedgerSigningModalPhase.saving;
         _ledgerFailure = null;
@@ -273,36 +313,50 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     await _checkpointSignedLedgerOperation(generation);
   }
 
-  Future<List<int>> _getOrCreateLedgerBasePczt({
+  Future<List<List<int>>> _getOrCreateLedgerBasePczts({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
   }) async {
-    final cachedPczt = _ledgerBasePczt;
-    if (cachedPczt != null) return cachedPczt;
+    final cachedPczts = _ledgerBasePczts;
+    if (cachedPczts != null) return cachedPczts;
 
-    final existingFuture = _ledgerBasePcztFuture;
+    final existingFuture = _ledgerBasePcztsFuture;
     if (existingFuture != null) return existingFuture;
 
-    final creationFuture = ref
-        .read(ledgerSendBasePcztCreatorProvider)(
-          dbPath: dbPath,
-          lightwalletdUrl: lightwalletdUrl,
-          network: network,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-        )
-        .then<List<int>>((createdPczt) {
-          final cached = List<int>.unmodifiable(createdPczt);
-          _ledgerBasePczt ??= cached;
-          return _ledgerBasePczt!;
-        });
-    _ledgerBasePcztFuture = creationFuture;
+    final creationFuture =
+        (widget.args.addressType == 'tex'
+                ? ref
+                      .read(ledgerSendTexPcztsCreatorProvider)(
+                        dbPath: dbPath,
+                        lightwalletdUrl: lightwalletdUrl,
+                        network: network,
+                        proposalId: widget.args.proposalId,
+                        sendFlowId: widget.args.sendFlowId,
+                      )
+                      .then((result) => result.pczts)
+                : ref
+                      .read(ledgerSendBasePcztCreatorProvider)(
+                        dbPath: dbPath,
+                        lightwalletdUrl: lightwalletdUrl,
+                        network: network,
+                        proposalId: widget.args.proposalId,
+                        sendFlowId: widget.args.sendFlowId,
+                      )
+                      .then((pczt) => <List<int>>[pczt]))
+            .then<List<List<int>>>((createdPczts) {
+              final cached = List<List<int>>.unmodifiable(
+                createdPczts.map(List<int>.unmodifiable),
+              );
+              _ledgerBasePczts ??= cached;
+              return _ledgerBasePczts!;
+            });
+    _ledgerBasePcztsFuture = creationFuture;
     try {
       return await creationFuture;
     } finally {
-      if (identical(_ledgerBasePcztFuture, creationFuture)) {
-        _ledgerBasePcztFuture = null;
+      if (identical(_ledgerBasePcztsFuture, creationFuture)) {
+        _ledgerBasePcztsFuture = null;
       }
     }
   }
@@ -365,20 +419,33 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _checkpointSignedLedgerOperation(int generation) async {
-    final pcztWithProofs = _ledgerPcztWithProofs;
-    final signedPczt = _ledgerSignedPczt;
-    if (pcztWithProofs == null || signedPczt == null) return;
+    final pcztsWithProofs = _ledgerPcztsWithProofs;
+    if (pcztsWithProofs == null || !_ledgerSigningComplete) return;
 
     try {
-      await ref
-          .read(ledgerSignedOperationServiceProvider)
-          .checkpoint(
-            operationId: _ledgerOperationId,
-            accountUuid: widget.args.proposalAccountUuid,
-            kind: LedgerSignedOperationKind.send,
-            pcztWithProofsBytes: pcztWithProofs,
-            pcztWithSignaturesBytes: signedPczt,
-          );
+      final operationService = ref.read(ledgerSignedOperationServiceProvider);
+      if (pcztsWithProofs.length == 1) {
+        await operationService.checkpoint(
+          operationId: _ledgerOperationId,
+          accountUuid: widget.args.proposalAccountUuid,
+          kind: LedgerSignedOperationKind.send,
+          pcztWithProofsBytes: pcztsWithProofs.single,
+          pcztWithSignaturesBytes: _ledgerSignedPczts.single,
+        );
+      } else if (operationService
+          case final LedgerSignedOperationBatchCheckpointService batchService) {
+        await batchService.checkpointBatch(
+          operationId: _ledgerOperationId,
+          accountUuid: widget.args.proposalAccountUuid,
+          kind: LedgerSignedOperationKind.send,
+          pcztsWithProofs: pcztsWithProofs,
+          pcztsWithSignatures: _ledgerSignedPczts,
+        );
+      } else {
+        throw StateError(
+          'Ledger operation service does not support PCZT batches',
+        );
+      }
     } catch (e, st) {
       log('SendReview._checkpointSignedLedgerOperation: ERROR: $e\n$st');
       if (!_isCurrentLedgerAttempt(generation)) return;
@@ -423,7 +490,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _dismissLedgerSigningModal() async {
-    if (_ledgerPhase == null || _ledgerSignedPczt != null) return;
+    if (_ledgerPhase == null || _ledgerSigningComplete) return;
     _ledgerAttemptGeneration++;
     if (_showSaplingParamsPrompt) {
       _resolveSaplingParamsDialog(false);
@@ -444,7 +511,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _retryLedgerSigning() {
     if (_ledgerPhase != LedgerSigningModalPhase.failed ||
         _ledgerRecoveryAction != _LedgerSendRecoveryAction.retrySigning ||
-        _ledgerSignedPczt != null) {
+        _ledgerSigningComplete) {
       return;
     }
     final generation = ++_ledgerAttemptGeneration;
@@ -459,7 +526,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _retryLedgerCheckpoint() {
     if (_ledgerPhase != LedgerSigningModalPhase.failed ||
         _ledgerRecoveryAction != _LedgerSendRecoveryAction.retryCheckpoint ||
-        _ledgerSignedPczt == null) {
+        !_ledgerSigningComplete) {
       return;
     }
     final generation = ++_ledgerAttemptGeneration;
@@ -839,14 +906,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               ),
             if (_ledgerPhase case final ledgerPhase?)
               AppPaneModalOverlay(
-                onDismiss: _ledgerSignedPczt == null
+                onDismiss: !_ledgerSigningComplete
                     ? () => unawaited(_dismissLedgerSigningModal())
                     : () {},
                 child: LedgerSigningModal(
                   accountUuid: widget.args.proposalAccountUuid,
                   phase: ledgerPhase,
                   failure: _ledgerFailure,
-                  onCancel: _ledgerSignedPczt == null
+                  onCancel: !_ledgerSigningComplete
                       ? () => unawaited(_dismissLedgerSigningModal())
                       : null,
                   onFailureAction:
@@ -854,6 +921,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                           _ledgerRecoveryAction != null
                       ? _handleLedgerRecoveryAction
                       : null,
+                  roundNumber: _ledgerRound + 1,
+                  roundCount: _ledgerBasePczts?.length ?? 1,
                 ),
               ),
             if (_showSaplingParamsPrompt)

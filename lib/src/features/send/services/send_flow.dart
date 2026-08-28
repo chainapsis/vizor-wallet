@@ -417,7 +417,11 @@ String _ledgerBroadcastStatusMessage({
 }) {
   if (status == 'broadcast_unknown') {
     return message ??
-        'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+        'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.';
+  }
+  if (status == 'partial_broadcast') {
+    return message ??
+        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
   }
   if (status == 'broadcasted_storage_failed') {
     return message ??
@@ -589,8 +593,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         proposalReleased = true;
         txids = result.txid;
         broadcastComplete = result.status == 'broadcasted';
-        broadcastExpired = false;
-        receiptTxid = _firstTxid(txids);
+        broadcastExpired = result.status == 'expired';
+        receiptTxid = broadcastExpired
+            ? null
+            : broadcastComplete
+            ? _lastTxid(txids)
+            : _firstTxid(txids);
         pendingStatusMessage = broadcastComplete
             ? null
             : _ledgerBroadcastStatusMessage(
@@ -797,7 +805,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? 'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          ? 'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
           : null,
     );
   } catch (e) {
