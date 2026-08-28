@@ -1364,13 +1364,8 @@ pub fn prepare_commit(
         })?;
         let recovered =
             recovery_bundle_with_conn(&tx, &wallet_id, round_id, bundle_index, draft.proposal_id)?;
-        if recovered
-            .as_ref()
-            .is_some_and(|recovered| recovered.batch.is_some())
-        {
-            return Err(VotingError::InvalidInput {
-                message: "vote belongs to an atomic batch; recover the complete batch instead of rebuilding a singleton".to_string(),
-            });
+        if let Some(recovered) = recovered.as_ref() {
+            ensure_singleton_vote_recovery(recovered)?;
         }
         let recovered = recovered
             .filter(|recovered| recovery_matches_draft(recovered, draft))
@@ -1669,12 +1664,7 @@ pub fn submission(
             ),
         })
         .and_then(|bundle| {
-            if bundle.batch.is_some() {
-                return Err(VotingError::InvalidInput {
-                    message: "vote belongs to an atomic batch; recover and submit the complete batch"
-                        .to_string(),
-                });
-            }
+            ensure_singleton_vote_recovery(&bundle)?;
             Ok(VoteSubmission {
                 vote_round_id: bundle.vote_round_id,
                 proposal_id: bundle.proposal_id,
@@ -1689,7 +1679,9 @@ pub fn submission(
         })
 }
 
-/// Records the cast-vote transaction hash and marks the vote submitted.
+/// Records the cast-vote transaction hash and marks a singleton vote submitted.
+///
+/// Atomic batch members must use [`record_batch_submission`].
 pub fn record_submission(
     db: &VotingDb,
     round_id: &str,
@@ -1843,7 +1835,8 @@ pub(crate) fn load_vote_batch_recoveries_with_conn(
 ///
 /// This does not advance the bundle's current VAN position. Prefer
 /// `confirmation::confirm_vote_submission` when recording chain events so all
-/// confirmation fields are stored atomically.
+/// confirmation fields are stored atomically. Atomic batch members must use
+/// `confirmation::confirm_vote_batch_submission`.
 pub fn record_vc_position(
     db: &VotingDb,
     round_id: &str,
@@ -1853,6 +1846,7 @@ pub fn record_vc_position(
 ) -> Result<(), VotingError> {
     let conn = db.conn();
     let wallet_id = db.wallet_id();
+    ensure_singleton_vote_update_with_conn(&conn, &wallet_id, round_id, bundle_index, proposal_id)?;
     record_vc_position_with_conn(
         &conn,
         &wallet_id,
@@ -1968,6 +1962,19 @@ fn recovery_bundle_with_conn(
     bundle_index: u32,
     proposal_id: u32,
 ) -> Result<Option<VoteRecoveryBundle>, VotingError> {
+    recovery_json_with_conn(conn, wallet_id, round_id, bundle_index, proposal_id)?
+        .as_deref()
+        .map(parse_recovery)
+        .transpose()
+}
+
+fn recovery_json_with_conn(
+    conn: &rusqlite::Connection,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<Option<String>, VotingError> {
     let json: Option<Option<String>> = conn
         .query_row(
             "SELECT commitment_bundle_json FROM votes
@@ -1985,7 +1992,49 @@ fn recovery_bundle_with_conn(
         .map_err(|e| VotingError::Internal {
             message: format!("failed to load vote recovery bundle: {e}"),
         })?;
-    json.flatten().as_deref().map(parse_recovery).transpose()
+    Ok(json.flatten())
+}
+
+fn ensure_singleton_vote_recovery(recovery: &VoteRecoveryBundle) -> Result<(), VotingError> {
+    if recovery.batch.is_some() {
+        return Err(VotingError::InvalidInput {
+            message: "vote belongs to an atomic batch; use the complete batch lifecycle instead of a per-vote API"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Rejects a persisted batch member before a public singleton state mutation.
+///
+/// Only the batch markers are inspected here. Full recovery validation belongs
+/// to APIs that consume the recovery payload, while transaction recording must
+/// continue to support legacy singleton rows with partial recovery JSON.
+pub(crate) fn ensure_singleton_vote_update_with_conn(
+    conn: &rusqlite::Connection,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<(), VotingError> {
+    let Some(json) = recovery_json_with_conn(conn, wallet_id, round_id, bundle_index, proposal_id)?
+    else {
+        return Ok(());
+    };
+    let recovery: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| VotingError::InvalidInput {
+            message: format!("invalid vote recovery JSON: {e}"),
+        })?;
+    if ["batch_digest", "batch_index", "batch_size"]
+        .iter()
+        .any(|field| recovery.get(field).is_some_and(|value| !value.is_null()))
+    {
+        return Err(VotingError::InvalidInput {
+            message: "vote belongs to an atomic batch; use the complete batch lifecycle instead of a per-vote API"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Serializes a recovery bundle using the library-owned JSON format.
@@ -3037,6 +3086,27 @@ mod tests {
         (digest, vec![first, second])
     }
 
+    fn db_with_two_action_recovery_batch() -> (VotingDb, [u8; 32]) {
+        let db = db_with_vote();
+        queries::store_vote(&db.conn(), ROUND_ID, WALLET_ID, 0, 2, 1, &[0xCB; 32]).unwrap();
+        let (digest, recoveries) = two_action_recovery_batch();
+        for (recovery, stored_commitment) in
+            recoveries.iter().zip([&[0xCA; 32][..], &[0xCB; 32][..]])
+        {
+            store_recovery_json_for_vote(
+                &db,
+                ROUND_ID,
+                0,
+                recovery.proposal_id,
+                recovery.vote_decision,
+                Some(stored_commitment),
+                &serialize_recovery(recovery).unwrap(),
+            )
+            .unwrap();
+        }
+        (db, digest)
+    }
+
     #[test]
     fn draft_batch_rejects_duplicate_proposals() {
         let draft = draft_vote_fixture();
@@ -3062,23 +3132,7 @@ mod tests {
 
     #[test]
     fn records_one_batch_tx_hash_for_all_actions_atomically() {
-        let db = db_with_vote();
-        queries::store_vote(&db.conn(), ROUND_ID, WALLET_ID, 0, 2, 1, &[0xCB; 32]).unwrap();
-        let (digest, recoveries) = two_action_recovery_batch();
-        for (recovery, stored_commitment) in
-            recoveries.iter().zip([&[0xCA; 32][..], &[0xCB; 32][..]])
-        {
-            store_recovery_json_for_vote(
-                &db,
-                ROUND_ID,
-                0,
-                recovery.proposal_id,
-                recovery.vote_decision,
-                Some(stored_commitment),
-                &serialize_recovery(recovery).unwrap(),
-            )
-            .unwrap();
-        }
+        let (db, digest) = db_with_two_action_recovery_batch();
 
         record_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx").unwrap();
         assert_eq!(
@@ -3089,6 +3143,35 @@ mod tests {
             db.get_vote_tx_hash(ROUND_ID, 0, 2).unwrap().as_deref(),
             Some("batch-tx")
         );
+    }
+
+    #[test]
+    fn singleton_state_mutations_reject_batch_members() {
+        let (db, _) = db_with_two_action_recovery_batch();
+
+        let submission_error = record_submission(&db, ROUND_ID, 0, 1, "single-tx")
+            .expect_err("a batch member must not be submitted independently");
+        let recovery_error = db
+            .mark_vote_submitted(ROUND_ID, 0, 2, "single-tx")
+            .expect_err("a batch member must not use the singleton recovery API");
+        let position_error = record_vc_position(&db, ROUND_ID, 0, 1, 789)
+            .expect_err("a batch member must not record one VC position");
+
+        for error in [submission_error, recovery_error, position_error] {
+            assert!(
+                error.to_string().contains("complete batch lifecycle"),
+                "{error}"
+            );
+        }
+        for proposal_id in [1, 2] {
+            assert_eq!(db.get_vote_tx_hash(ROUND_ID, 0, proposal_id).unwrap(), None);
+            assert_eq!(
+                db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, proposal_id)
+                    .unwrap()
+                    .and_then(|(_, position)| position),
+                None
+            );
+        }
     }
 
     fn prepared_vote_fixture(db: &VotingDb) -> PreparedVoteCommit {

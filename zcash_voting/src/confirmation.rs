@@ -122,8 +122,8 @@ fn record_delegation_confirmation(
 ///
 /// Returns an error when confirmation parsing fails, the vote or bundle row is
 /// missing, the event round id does not match `round_id`, stored confirmation
-/// fields conflict, multiple same-round cast-vote events are present, or the DB
-/// transaction cannot commit.
+/// fields conflict, the vote belongs to an atomic batch, multiple same-round
+/// cast-vote events are present, or the DB transaction cannot commit.
 pub fn confirm_vote_submission(
     db: &VotingDb,
     round_id: &str,
@@ -286,6 +286,14 @@ fn record_vote_confirmation(
     let tx = conn.transaction().map_err(|e| VotingError::Internal {
         message: format!("vote confirmation transaction failed: {e}"),
     })?;
+
+    crate::vote::ensure_singleton_vote_update_with_conn(
+        &tx,
+        &wallet_id,
+        round_id,
+        bundle_index,
+        proposal_id,
+    )?;
 
     queries::record_vote_submission(
         &tx,
@@ -1238,6 +1246,47 @@ mod tests {
                 .unwrap()
                 .vc_tree_position,
             789
+        );
+    }
+
+    #[test]
+    fn singleton_confirmation_rejects_batch_member_without_mutation() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        insert_vote(&db, 0, 1);
+        let mut recovery: serde_json::Value =
+            serde_json::from_str(&valid_recovery_json(456)).unwrap();
+        recovery["batch_digest"] = serde_json::json!(vec![0xAB_u8; 32]);
+        recovery["batch_index"] = serde_json::json!(0);
+        recovery["batch_size"] = serde_json::json!(2);
+        store_recovery_json(&db, 0, 1, &serde_json::to_string(&recovery).unwrap());
+
+        let error = record_vote_confirmation(
+            &db,
+            ROUND_ID,
+            0,
+            1,
+            &VoteConfirmation {
+                tx_hash: "single-tx".to_string(),
+                van_leaf_position: 7,
+                vc_tree_position: 789,
+            },
+        )
+        .expect_err("a batch member must not use singleton confirmation");
+
+        assert!(
+            error.to_string().contains("complete batch lifecycle"),
+            "{error}"
+        );
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 1).unwrap(),
+            None
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 1)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            None
         );
     }
 
