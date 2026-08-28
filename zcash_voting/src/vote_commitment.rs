@@ -115,11 +115,8 @@ pub(crate) fn sign_cast_vote(
     sign_cast_vote_digest(hotkey_seed, network, &sighash, alpha_v)
 }
 
-/// Signs a precomputed singleton or batch cast-vote digest.
-///
-/// Derives `ask_v` from the fixed voting hotkey account, decodes `alpha_v` as a
-/// Pallas scalar, and signs with `rsk_v = ask_v.randomize(alpha_v)`. The
-/// corresponding randomized verification key must match the action's `r_vpk`.
+/// Signs a precomputed singleton or batch cast-vote digest with the randomized
+/// voting key selected by `alpha_v`.
 pub(crate) fn sign_cast_vote_digest(
     hotkey_seed: &[u8],
     network: Network,
@@ -128,12 +125,15 @@ pub(crate) fn sign_cast_vote_digest(
 ) -> Result<CastVoteSignature, VotingError> {
     use pasta_curves::group::ff::PrimeField;
 
+    // Derive the voting hotkey SpendingKey from seed.
     let sk = crate::hotkey::spending_key_from_hotkey_seed(
         hotkey_seed,
         network,
         crate::hotkey::VOTING_HOTKEY_ACCOUNT_INDEX,
     )?;
     let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
+
+    // Deserialize alpha_v
     let alpha_v_arr: [u8; 32] = alpha_v.try_into().map_err(|_| VotingError::Internal {
         message: format!("alpha_v must be 32 bytes, got {}", alpha_v.len()),
     })?;
@@ -143,7 +143,11 @@ pub(crate) fn sign_cast_vote_digest(
                 message: "alpha_v is not a valid Pallas scalar".to_string(),
             }
         })?;
+
+    // Compute rsk_v = ask_v.randomize(alpha_v)
     let rsk_v = ask.randomize(&alpha_v_scalar);
+
+    // Sign
     let sig = rsk_v.sign(voting_crypto_deps::rand::rngs::OsRng, digest);
     let sig_bytes: [u8; 64] = (&sig).into();
 
