@@ -4,6 +4,20 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Cast-vote batches now build an ordered vote-authority chain, prove up to three
+  ZKP #2 actions concurrently by default, sign every action over one
+  domain-separated batch digest, and persist the whole recovery set atomically.
+  The returned `SignedVoteCommitments` includes canonical `batch_json` for the
+  chain's `cast-vote-batch` endpoint, while
+  `confirmation::confirm_vote_batch_submission` atomically records the shared
+  transaction hash, ordered vote-commitment positions, and final VAN position.
+  Batches keep choices, note membership, and voting keys hidden as before, but
+  intentionally reveal that their included proposal actions came from one
+  transaction.
+
 ## v3.1.0-rc.12
 
 ### Added
@@ -41,16 +55,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## v3.1.0-rc.9
 
 ### Added
-- Cast-vote batches now build an ordered vote-authority chain, prove up to three
-  ZKP #2 actions concurrently by default, sign every action over one
-  domain-separated batch digest, and persist the whole recovery set atomically.
-  The returned `SignedVoteCommitments` includes canonical `batch_json` for the
-  chain's `cast-vote-batch` endpoint, while
-  `confirmation::confirm_vote_batch_submission` atomically records the shared
-  transaction hash, ordered vote-commitment positions, and final VAN position.
-  Batches keep choices, note membership, and voting keys hidden as before, but
-  intentionally reveal that their included proposal actions came from one
-  transaction.
 - `lwd::anchor_tree_state_with_retry_on` fetches the snapshot note-commitment
   tree on a caller-owned lightwalletd client, so a wallet that already holds a
   channel (Tor, a proxy, a pool) keeps that route instead of the crate dialing
