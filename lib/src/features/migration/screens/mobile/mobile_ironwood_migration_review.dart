@@ -65,6 +65,8 @@ class _MobileMigrationFastReviewState
   String? _broadcastError;
   rust_sync.OrchardMigrationImmediatePlan? _submittedPlan;
   String? _submittedMessage;
+  String? _ledgerAccountUuid;
+  rust_sync.OrchardMigrationImmediatePlan? _ledgerPlan;
 
   Future<void> _startImmediateMigration(
     rust_sync.OrchardMigrationImmediatePlan plan,
@@ -84,9 +86,12 @@ class _MobileMigrationFastReviewState
 
       final activeAccount = accountState.activeAccount;
       if (activeAccount?.isLedger ?? false) {
-        throw StateError(
-          'Ledger migration signing is available on desktop only.',
-        );
+        if (!mounted) return;
+        setState(() {
+          _ledgerAccountUuid = accountUuid;
+          _ledgerPlan = plan;
+        });
+        return;
       }
       if (activeAccount?.isKeystone ?? false) {
         if (!mounted) return;
@@ -100,26 +105,7 @@ class _MobileMigrationFastReviewState
             accountUuid: accountUuid,
             approvedPlan: plan,
           );
-      if (!mounted) return;
-
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (_) {
-        // The broadcast is already durable. Home will continue normal sync
-        // even when this best-effort immediate refresh cannot complete.
-      }
-      if (!mounted) return;
-
-      // Home reads the migration CTA and the post-migration state, so both
-      // have to be reconciled before this flow hands the user back to it.
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
-
-      final message = result.message?.trim();
-      setState(() {
-        _submittedPlan = plan;
-        _submittedMessage = message == null || message.isEmpty ? null : message;
-      });
+      await _finishImmediateMigration(plan, result);
     } catch (error) {
       if (!mounted) return;
       if (error.toString().toLowerCase().contains('plan changed')) {
@@ -137,6 +123,41 @@ class _MobileMigrationFastReviewState
     }
   }
 
+  Future<void> _finishImmediateMigration(
+    rust_sync.OrchardMigrationImmediatePlan plan,
+    rust_sync.IronwoodMigrationResult result,
+  ) async {
+    if (!mounted) return;
+    try {
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (_) {
+      // The broadcast is already durable. Home will continue normal sync
+      // even when this best-effort immediate refresh cannot complete.
+    }
+    if (!mounted) return;
+
+    // Home reads the migration CTA and the post-migration state, so both have
+    // to be reconciled before this flow hands the user back to it.
+    await _refreshPrivateMigrationDraftPresentation(ref);
+    if (!mounted) return;
+
+    final message = result.message?.trim();
+    setState(() {
+      _ledgerAccountUuid = null;
+      _ledgerPlan = null;
+      _submittedPlan = plan;
+      _submittedMessage = message == null || message.isEmpty ? null : message;
+    });
+  }
+
+  void _cancelLedgerMigration() {
+    if (!mounted) return;
+    setState(() {
+      _ledgerAccountUuid = null;
+      _ledgerPlan = null;
+    });
+  }
+
   void _retryPlanCalculation() {
     setState(() {
       _broadcastError = null;
@@ -148,7 +169,21 @@ class _MobileMigrationFastReviewState
 
   @override
   Widget build(BuildContext context) {
+    final ledgerAccountUuid = _ledgerAccountUuid;
+    final ledgerPlan = _ledgerPlan;
+    if (ledgerAccountUuid != null && ledgerPlan != null) {
+      return LedgerImmediateMigrationSigningOverlay(
+        accountUuid: ledgerAccountUuid,
+        plan: ledgerPlan,
+        mobile: true,
+        onCancel: _cancelLedgerMigration,
+        onComplete: (result) => _finishImmediateMigration(ledgerPlan, result),
+      );
+    }
+
     final colors = context.colors;
+    final isLedgerAccount =
+        ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
     final submittedPlan = _submittedPlan;
     if (submittedPlan != null) {
       return _MobileIronwoodMigrationBackScope(
@@ -248,7 +283,7 @@ class _MobileMigrationFastReviewState
               height: 50,
               onPressed: leaveReview,
               leading: const AppIcon(AppIcons.chevronBackward, size: 20),
-              child: const Text('Consider another option'),
+              child: Text(isLedgerAccount ? 'Back' : 'Consider another option'),
             ),
             const SizedBox(height: AppSpacing.s),
             if (_broadcastError != null) ...[
@@ -390,11 +425,13 @@ class _MobileMigrationFastReviewState
                                     style: TextStyle(color: Color(0xFFC06ECE)),
                                   ),
                                   const TextSpan(text: '. '),
-                                  const TextSpan(
-                                    text:
-                                        'Consider choosing a Private Migration '
-                                        'option.',
-                                    style: TextStyle(
+                                  TextSpan(
+                                    text: isLedgerAccount
+                                        ? 'Private migration is not available '
+                                              'for Ledger accounts.'
+                                        : 'Consider choosing a Private '
+                                              'Migration option.',
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),

@@ -55,7 +55,9 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
-  Widget build(BuildContext context, WidgetRef _) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ledgerAccount =
+        ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
@@ -71,6 +73,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
         const _IronwoodMigrationWhatToExpectContent(),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
+        privateEnabled: !ledgerAccount,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -1019,9 +1022,13 @@ class _MigrationExpectationIllustration extends StatelessWidget {
 }
 
 class _IronwoodMigrationOptionsContent extends StatefulWidget {
-  const _IronwoodMigrationOptionsContent({required this.data});
+  const _IronwoodMigrationOptionsContent({
+    required this.data,
+    required this.privateEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privateEnabled;
 
   @override
   State<_IronwoodMigrationOptionsContent> createState() =>
@@ -1030,7 +1037,23 @@ class _IronwoodMigrationOptionsContent extends StatefulWidget {
 
 class _IronwoodMigrationOptionsContentState
     extends State<_IronwoodMigrationOptionsContent> {
-  var _selected = _MigrationMode.private;
+  late _MigrationMode _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.privateEnabled
+        ? _MigrationMode.private
+        : _MigrationMode.fast;
+  }
+
+  @override
+  void didUpdateWidget(covariant _IronwoodMigrationOptionsContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.privateEnabled && _selected == _MigrationMode.private) {
+      _selected = _MigrationMode.fast;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1081,12 +1104,14 @@ class _IronwoodMigrationOptionsContentState
                   mode: _MigrationMode.private,
                   selected: selected == _MigrationMode.private,
                   title: 'Private',
-                  badge: 'Recommended',
-                  body:
-                      'Splits transactions into multiple parts to minimize '
-                      'traceability, but will take longer.',
-                  onTap: () =>
-                      setState(() => _selected = _MigrationMode.private),
+                  badge: widget.privateEnabled ? 'Recommended' : null,
+                  body: widget.privateEnabled
+                      ? 'Splits transactions into multiple parts to minimize '
+                            'traceability, but will take longer.'
+                      : 'Not available for Ledger accounts.',
+                  onTap: widget.privateEnabled
+                      ? () => setState(() => _selected = _MigrationMode.private)
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 _MigrationOptionCard(

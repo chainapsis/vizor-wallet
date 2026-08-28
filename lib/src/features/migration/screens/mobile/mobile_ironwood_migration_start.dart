@@ -93,7 +93,7 @@ _continuePrivateMigrationAfterNotificationGate(
 
   final activeAccount = accountState.activeAccount;
   if (activeAccount?.isLedger ?? false) {
-    throw StateError('Ledger migration signing is available on desktop only.');
+    throw StateError('Private migration is not available for Ledger accounts.');
   }
 
   if (activeAccount?.isKeystone ?? false) {
@@ -295,7 +295,7 @@ class _MobileIronwoodMigrationStartScreenState
       final activeAccount = accountState.activeAccount;
       if (activeAccount?.isLedger ?? false) {
         throw StateError(
-          'Ledger migration signing is available on desktop only.',
+          'Private migration is not available for Ledger accounts.',
         );
       }
       final isKeystone = activeAccount?.isKeystone ?? false;

@@ -141,9 +141,13 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 enum _MobileMigrationOption { private, immediate }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
-  const _MobileMigrationOptions({required this.privateEnabled});
+  const _MobileMigrationOptions({
+    required this.privateEnabled,
+    this.privateUnavailableForLedger = false,
+  });
 
   final bool privateEnabled;
+  final bool privateUnavailableForLedger;
 
   @override
   ConsumerState<_MobileMigrationOptions> createState() =>
@@ -240,6 +244,9 @@ class _MobileMigrationOptionsState
         subtitle: widget.privateEnabled
             ? 'Choose between more privacy over time or a faster migration. '
                   'You can review the details before anything moves.'
+            : widget.privateUnavailableForLedger
+            ? 'Private migration is not available for Ledger accounts. '
+                  'Choose Immediate to continue.'
             : 'Private migration is temporarily unavailable on Android. '
                   'Choose immediate to continue.',
         bottom: Column(
@@ -271,6 +278,8 @@ class _MobileMigrationOptionsState
               body: widget.privateEnabled
                   ? 'Splits transactions into multiple parts to minimize '
                         'traceability but will take several hours to days.'
+                  : widget.privateUnavailableForLedger
+                  ? 'Not available for Ledger accounts.'
                   : 'Not available on Android.',
               selected: privateSelected,
               icon: _MigrationChoiceIcon.private,
