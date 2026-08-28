@@ -56,9 +56,15 @@ FIXTURE_TRANSPARENT_ADDRESS="$(jq -r '.transparentAddress' "$FIXTURE_JSON")"
 FIXTURE_TEX_ADDRESS="$(jq -r '.texAddress' "$FIXTURE_JSON")"
 FIXTURE_TEX_STEP_1_PCZT="$(jq -r '.texStep1PcztPath' "$FIXTURE_JSON")"
 FIXTURE_TEX_STEP_2_PCZT="$(jq -r '.texStep2PcztPath' "$FIXTURE_JSON")"
+FIXTURE_VOTING_BUNDLE_1_PCZT="$(jq -r '.votingBundle1PcztPath' "$FIXTURE_JSON")"
+FIXTURE_VOTING_BUNDLE_2_PCZT="$(jq -r '.votingBundle2PcztPath' "$FIXTURE_JSON")"
+FIXTURE_VOTING_BUNDLE_1_ACTION_INDEX="$(jq -r '.votingBundle1ActionIndex' "$FIXTURE_JSON")"
+FIXTURE_VOTING_BUNDLE_2_ACTION_INDEX="$(jq -r '.votingBundle2ActionIndex' "$FIXTURE_JSON")"
 FIXTURE_PCZT_BASE64="$(base64 -i "$FIXTURE_PCZT" | tr -d '\n')"
 FIXTURE_TEX_STEP_1_PCZT_BASE64="$(base64 -i "$FIXTURE_TEX_STEP_1_PCZT" | tr -d '\n')"
 FIXTURE_TEX_STEP_2_PCZT_BASE64="$(base64 -i "$FIXTURE_TEX_STEP_2_PCZT" | tr -d '\n')"
+FIXTURE_VOTING_BUNDLE_1_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_1_PCZT" | tr -d '\n')"
+FIXTURE_VOTING_BUNDLE_2_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_2_PCZT" | tr -d '\n')"
 FIXTURE_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_DB" | base64 | tr -d '\n')"
 
 run_flutter_scenario() {
@@ -79,6 +85,10 @@ run_flutter_scenario() {
     --dart-define=VIZOR_LEDGER_E2E_PCZT_BASE64="$FIXTURE_PCZT_BASE64" \
     --dart-define=VIZOR_LEDGER_E2E_TEX_STEP_1_PCZT_BASE64="$FIXTURE_TEX_STEP_1_PCZT_BASE64" \
     --dart-define=VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64="$FIXTURE_TEX_STEP_2_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_PCZT_BASE64="$FIXTURE_VOTING_BUNDLE_1_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_PCZT_BASE64="$FIXTURE_VOTING_BUNDLE_2_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_1_ACTION_INDEX" \
+    --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_2_ACTION_INDEX" \
     --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64" \
     --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 }
@@ -88,8 +98,10 @@ run_flutter_scenario() {
 # native app lifecycle after the Ledger status-screen cooldown.
 run_flutter_scenario "imports and sends with Ledger through Speculos"
 run_flutter_scenario "sends to TEX with two Ledger approvals through Speculos"
+run_flutter_scenario "shields transparent balance with Ledger through Speculos"
 run_flutter_scenario "pays with Ledger through Speculos"
 run_flutter_scenario "swaps with Ledger through Speculos"
+run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
 run_flutter_scenario "signs sequential Ledger operations in one app lifecycle"
 
 echo "Ledger Speculos fixture retained at $FIXTURE_DIR"

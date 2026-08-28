@@ -37,13 +37,18 @@ use zcash_primitives::transaction::{
 };
 use zcash_protocol::{
     consensus::{BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
+    memo::MemoBytes,
     value::Zatoshis,
 };
 
 use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, updater::Updater};
+use shardtree::error::ShardTreeError;
 use voting_crypto_deps::rand::rngs::OsRng;
-use zcash_client_backend::data_api::WalletWrite;
-use zcash_client_sqlite::{util::SystemClock, WalletDb};
+use zcash_client_backend::{
+    data_api::{WalletCommitmentTrees, WalletWrite},
+    wallet::WalletTransparentOutput,
+};
+use zcash_client_sqlite::{util::SystemClock, wallet::commitment_tree, WalletDb};
 
 const DEFAULT_API_URL: &str = "http://127.0.0.1:5000";
 const APDU_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -161,17 +166,41 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         None,
         "ledger".into(),
     )?;
+    let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
     let mut db = WalletDb::for_path(&db_path, WalletNetwork::Main, SystemClock, OsRng)
         .map_err(|error| format!("Open fixture wallet DB: {error}"))?;
-    db.update_chain_tip(BlockHeight::from_u32(3_000_000))
+    let chain_tip = BlockHeight::from_u32(3_000_000);
+    db.update_chain_tip(chain_tip)
         .map_err(|error| format!("Set fixture chain tip: {error}"))?;
+    let sapling_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+        db.with_sapling_tree_mut(|tree| tree.checkpoint(chain_tip));
+    sapling_checkpoint.map_err(|error| format!("Checkpoint fixture Sapling tree: {error}"))?;
+    let orchard_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+        db.with_orchard_tree_mut(|tree| tree.checkpoint(chain_tip));
+    orchard_checkpoint.map_err(|error| format!("Checkpoint fixture Orchard tree: {error}"))?;
+    let ironwood_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+        db.with_ironwood_tree_mut(|tree| tree.checkpoint(chain_tip));
+    ironwood_checkpoint.map_err(|error| format!("Checkpoint fixture Ironwood tree: {error}"))?;
+    let transparent_utxo = WalletTransparentOutput::from_parts(
+        OutPoint::new([1; 32], 0),
+        TxOut::new(
+            Zatoshis::const_from_u64(1_000_000),
+            pczt.transparent_receiver.script().into(),
+        ),
+        Some(chain_tip),
+        None,
+        None,
+        None,
+    )
+    .ok_or("Build fixture transparent UTXO")?;
+    db.put_received_transparent_utxo(&transparent_utxo)
+        .map_err(|error| format!("Store fixture transparent UTXO: {error}"))?;
     drop(db);
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|error| format!("Reopen fixture wallet DB: {error}"))?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
         .map_err(|error| format!("Checkpoint fixture wallet DB: {error}"))?;
     drop(conn);
-    let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
     fs::write(&pczt_path, &pczt.bytes)
         .map_err(|error| format!("Write {}: {error}", pczt_path.display()))?;
     let tex_pczts = tex_smoke_pczts(&export.ufvk, &export.seed_fingerprint)?;
@@ -181,6 +210,14 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .map_err(|error| format!("Write {}: {error}", tex_step_1_path.display()))?;
     fs::write(&tex_step_2_path, &tex_pczts.step_2)
         .map_err(|error| format!("Write {}: {error}", tex_step_2_path.display()))?;
+    let voting_bundle_1 = ironwood_voting_smoke_pczt(&export.ufvk, &export.seed_fingerprint, 1)?;
+    let voting_bundle_2 = ironwood_voting_smoke_pczt(&export.ufvk, &export.seed_fingerprint, 2)?;
+    let voting_bundle_1_path = pczt_path.with_extension("voting-bundle-1.pczt");
+    let voting_bundle_2_path = pczt_path.with_extension("voting-bundle-2.pczt");
+    fs::write(&voting_bundle_1_path, &voting_bundle_1.bytes)
+        .map_err(|error| format!("Write {}: {error}", voting_bundle_1_path.display()))?;
+    fs::write(&voting_bundle_2_path, &voting_bundle_2.bytes)
+        .map_err(|error| format!("Write {}: {error}", voting_bundle_2_path.display()))?;
     let metadata = json!({
         "accountUuid": account.account_uuid,
         "ufvk": export.ufvk,
@@ -192,6 +229,10 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         "pcztPath": pczt_path,
         "texStep1PcztPath": tex_step_1_path,
         "texStep2PcztPath": tex_step_2_path,
+        "votingBundle1PcztPath": voting_bundle_1_path,
+        "votingBundle2PcztPath": voting_bundle_2_path,
+        "votingBundle1ActionIndex": voting_bundle_1.action_index,
+        "votingBundle2ActionIndex": voting_bundle_2.action_index,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -430,12 +471,121 @@ impl Parameters for PreIronwoodMainNetwork {
 struct TransparentSmokePczt {
     bytes: Vec<u8>,
     transparent_address: String,
+    transparent_receiver: TransparentAddress,
 }
 
 struct TexSmokePczts {
     step_1: Vec<u8>,
     step_2: Vec<u8>,
     tex_address: String,
+}
+
+struct VotingSmokePczt {
+    bytes: Vec<u8>,
+    action_index: usize,
+}
+
+fn ironwood_voting_smoke_pczt(
+    ufvk: &str,
+    seed_fingerprint: &[u8],
+    bundle_tag: u8,
+) -> Result<VotingSmokePczt, String> {
+    use orchard::{
+        keys::Scope,
+        note::{NoteVersion, RandomSeed, Rho},
+        tree::{MerkleHashOrchard, MerklePath},
+        value::NoteValue,
+        Note,
+    };
+
+    let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, ufvk)
+        .map_err(|error| format!("Decode Speculos UFVK for voting fixture: {error}"))?;
+    let fvk = ufvk
+        .orchard()
+        .cloned()
+        .ok_or("Speculos UFVK has no Orchard full viewing key")?;
+    let recipient = fvk.address_at(0u32, Scope::Internal);
+    let rho = Rho::from_bytes(&[bundle_tag; 32])
+        .into_option()
+        .ok_or("Build voting fixture rho")?;
+    let rseed = (0u8..=255)
+        .find_map(|byte| RandomSeed::from_bytes([byte; 32], &rho).into_option())
+        .ok_or("Build voting fixture random seed")?;
+    let note = Note::from_parts(
+        recipient,
+        NoteValue::from_raw(1_000_000),
+        rho,
+        rseed,
+        NoteVersion::V3,
+    )
+    .into_option()
+    .ok_or("Build voting fixture Ironwood note")?;
+    let zero = MerkleHashOrchard::from_bytes(&[0; 32])
+        .into_option()
+        .ok_or("Build voting fixture empty Merkle node")?;
+    let merkle_path = MerklePath::from_parts(0, [zero; 32]);
+    let anchor = merkle_path.root(note.commitment().into());
+
+    let mut builder = Builder::new(
+        WalletNetwork::Main,
+        BlockHeight::from_u32(4_000_000),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: Some(anchor.into()),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        },
+    );
+    builder
+        .add_ironwood_spend::<zip317::FeeRule>(fvk, note, merkle_path)
+        .map_err(|error| format!("Add voting fixture Ironwood spend: {error:?}"))?;
+    builder
+        .add_ironwood_output::<zip317::FeeRule>(
+            None,
+            recipient,
+            Zatoshis::const_from_u64(990_000),
+            MemoBytes::empty(),
+        )
+        .map_err(|error| format!("Add voting fixture Ironwood output: {error:?}"))?;
+    let PcztResult {
+        pczt_parts,
+        ironwood_meta,
+        ..
+    } = builder
+        .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+        .map_err(|error| format!("Build voting fixture PCZT: {error}"))?;
+    let spend_index = ironwood_meta
+        .spend_action_index(0)
+        .ok_or("Voting fixture has no Ironwood spend action")?;
+    let fingerprint: [u8; 32] = seed_fingerprint
+        .try_into()
+        .map_err(|_| "Speculos Ledger fingerprint must be 32 bytes")?;
+    let derivation = orchard::pczt::Zip32Derivation::parse(
+        fingerprint,
+        vec![0x8000_0020, 0x8000_0085, 0x8000_0000],
+    )
+    .map_err(|error| format!("Build voting fixture ZIP-32 derivation: {error:?}"))?;
+    let pczt = IoFinalizer::new(
+        Creator::build_from_parts(pczt_parts).ok_or("Create voting fixture PCZT")?,
+    )
+    .finalize_io()
+    .map_err(|error| format!("Finalize voting fixture PCZT IO: {error:?}"))?;
+    let bytes = Updater::new(pczt)
+        .update_ironwood_with(|mut bundle| {
+            bundle.update_action_with(spend_index, |mut action| {
+                action.set_spend_zip32_derivation(derivation);
+                Ok(())
+            })
+        })
+        .map_err(|error| format!("Attach voting fixture derivation: {error:?}"))?
+        .finish()
+        .serialize()
+        .map_err(|error| format!("Serialize voting fixture PCZT: {error:?}"))?;
+    Ok(VotingSmokePczt {
+        bytes,
+        action_index: spend_index,
+    })
 }
 
 fn transparent_smoke_pczt(
@@ -512,6 +662,7 @@ fn transparent_smoke_pczt(
     Ok(TransparentSmokePczt {
         bytes,
         transparent_address,
+        transparent_receiver: address,
     })
 }
 

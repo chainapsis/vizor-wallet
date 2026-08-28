@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -44,7 +45,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_addres
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import 'package:zcash_wallet/src/generated/service.pb.dart' as service;
 import 'package:zcash_wallet/src/generated/service.pbgrpc.dart' as service_grpc;
-import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -80,6 +80,12 @@ void main() {
   );
 
   testWidgets(
+    'shields transparent balance with Ledger through Speculos',
+    _runMobileShieldScenario,
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  testWidgets(
     'pays with Ledger through Speculos',
     (tester) => _runMobileSwapScenario(tester, _LedgerSwapScenario.pay),
     timeout: const Timeout(Duration(minutes: 5)),
@@ -89,6 +95,57 @@ void main() {
     'swaps with Ledger through Speculos',
     (tester) => _runMobileSwapScenario(tester, _LedgerSwapScenario.swap),
     timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  testWidgets(
+    'signs sequential voting bundles with Ledger through Speculos',
+    _runMobileVotingSigningScenario,
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+}
+
+Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
+  final fixture = _Fixture.load();
+  final dbPath = await _copyFixtureDb(fixture);
+  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(fixture, 'http://127.0.0.1:1'),
+      ),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+      ledgerMobileBleServiceProvider.overrideWithValue(ble),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final signaturesByBundle = <int, LedgerVotingSignature>{};
+  for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
+    final pczt = await rust_sync.redactPcztForSigner(
+      pcztBytes: fixture.votingBundlePczts[bundleIndex],
+    );
+    final signatures = container.read(ledgerVotingPcztSignerProvider)(
+      fixture.accountUuid,
+      pczt,
+    );
+    expect(
+      await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+      isTrue,
+    );
+    signaturesByBundle[bundleIndex] = requireMatchingLedgerVotingSignature(
+      signatures: await signatures,
+      actionIndex: fixture.votingActionIndexes[bundleIndex],
+    );
+  }
+
+  expect(signaturesByBundle.keys, [0, 1]);
+  expect(signaturesByBundle[0]!.pool, 1);
+  expect(signaturesByBundle[1]!.pool, 1);
+  expect(
+    signaturesByBundle[0]!.signature,
+    isNot(equals(signaturesByBundle[1]!.signature)),
   );
 }
 
@@ -269,6 +326,79 @@ Future<void> _enterMobilePasscode(WidgetTester tester, String passcode) async {
     await tester.tap(find.bySemanticsLabel('Digit $digit'));
     await tester.pump();
   }
+}
+
+Future<void> _runMobileShieldScenario(WidgetTester tester) async {
+  final fixture = _Fixture.load();
+  final dbPath = await _copyFixtureDb(fixture);
+  final lightwalletd = _AcceptingLightwalletd();
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final operationService = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: lightwalletd.url,
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  final router = GoRouter(
+    initialLocation: '/home/ledger-shield',
+    routes: [
+      GoRoute(
+        path: '/home/ledger-shield',
+        builder: (_, _) => const MobileLedgerShieldScreen(),
+      ),
+      GoRoute(
+        path: '/home',
+        builder: (_, _) =>
+            const SizedBox(key: ValueKey('mobile_ledger_shield_complete')),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  final approval = _approveNextReview(fixture.signingApiUrl);
+
+  await tester.pumpWidget(
+    _mobileLedgerHarness(
+      fixture: fixture,
+      lightwalletdUrl: lightwalletd.url,
+      router: router,
+      ble: ble,
+      operationService: operationService,
+      walletDbPath: dbPath,
+    ),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval')),
+    description: 'mobile Ledger shield approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    find.byKey(const ValueKey('mobile_ledger_shield_signing_surface')),
+    findsOneWidget,
+  );
+  expect(await approval, isTrue);
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(find.byKey(const ValueKey('mobile_ledger_shield_complete'))),
+    description: 'mobile Ledger shield completion',
+    timeout: const Duration(minutes: 2),
+  );
+
+  expect(operationService.callOrder, ['checkpoint', 'broadcast']);
+  expect(operationService.checkpointCount, 1);
+  expect(operationService.broadcastCount, 1);
+  expect(
+    operationService.lastOperationId,
+    startsWith('shield:${fixture.accountUuid}:'),
+  );
+  expect(operationService.lastBroadcastResult?.status, 'broadcasted');
+  expect(lightwalletd.sendTransactionCount, 1);
+  expect(lightwalletd.lastRawTransaction, isNotEmpty);
+  expect(await operationService.list(), isEmpty);
 }
 
 Future<void> _runMobileSendScenario(WidgetTester tester) async {
@@ -980,6 +1110,8 @@ class _Fixture {
     required this.pcztBytes,
     required this.texStep1PcztBytes,
     required this.texStep2PcztBytes,
+    required this.votingBundlePczts,
+    required this.votingActionIndexes,
     required this.dbGzipBytes,
   });
 
@@ -994,6 +1126,8 @@ class _Fixture {
   final List<int> pcztBytes;
   final List<int> texStep1PcztBytes;
   final List<int> texStep2PcztBytes;
+  final List<List<int>> votingBundlePczts;
+  final List<int> votingActionIndexes;
   final List<int> dbGzipBytes;
 
   static _Fixture load() {
@@ -1017,6 +1151,20 @@ class _Fixture {
     const texStep2PcztBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64',
     );
+    const votingBundle1PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_PCZT_BASE64',
+    );
+    const votingBundle2PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_PCZT_BASE64',
+    );
+    const votingBundle1ActionIndex = int.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX',
+      defaultValue: -1,
+    );
+    const votingBundle2ActionIndex = int.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_ACTION_INDEX',
+      defaultValue: -1,
+    );
     const dbGzipBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_DB_GZIP_BASE64',
     );
@@ -1030,6 +1178,10 @@ class _Fixture {
         pcztBase64.isEmpty ||
         texStep1PcztBase64.isEmpty ||
         texStep2PcztBase64.isEmpty ||
+        votingBundle1PcztBase64.isEmpty ||
+        votingBundle2PcztBase64.isEmpty ||
+        votingBundle1ActionIndex < 0 ||
+        votingBundle2ActionIndex < 0 ||
         dbGzipBase64.isEmpty) {
       throw StateError(
         'Ledger mobile fixture dart-defines are missing. Run the Speculos E2E script.',
@@ -1047,6 +1199,11 @@ class _Fixture {
       pcztBytes: base64Decode(pcztBase64),
       texStep1PcztBytes: base64Decode(texStep1PcztBase64),
       texStep2PcztBytes: base64Decode(texStep2PcztBase64),
+      votingBundlePczts: [
+        base64Decode(votingBundle1PcztBase64),
+        base64Decode(votingBundle2PcztBase64),
+      ],
+      votingActionIndexes: [votingBundle1ActionIndex, votingBundle2ActionIndex],
       dbGzipBytes: base64Decode(dbGzipBase64),
     );
   }
@@ -1351,6 +1508,7 @@ class _TrackingLedgerSignedOperationService
   int acknowledgeCount = 0;
   String? lastOperationId;
   LedgerSignedOperationBroadcastResult? lastBroadcastResult;
+  final callOrder = <String>[];
 
   @override
   Future<void> checkpoint({
@@ -1361,6 +1519,7 @@ class _TrackingLedgerSignedOperationService
     required List<int> pcztWithSignaturesBytes,
     String? externalRef,
   }) async {
+    callOrder.add('checkpoint');
     checkpointCount++;
     lastOperationId = operationId;
     await delegate.checkpoint(
@@ -1382,6 +1541,7 @@ class _TrackingLedgerSignedOperationService
     required List<List<int>> pcztsWithSignatures,
     String? externalRef,
   }) async {
+    callOrder.add('checkpointBatch');
     checkpointCount++;
     batchCheckpointCount++;
     lastOperationId = operationId;
@@ -1402,6 +1562,7 @@ class _TrackingLedgerSignedOperationService
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
+    callOrder.add('broadcast');
     broadcastCount++;
     lastOperationId = operationId;
     final result = await delegate.broadcast(
