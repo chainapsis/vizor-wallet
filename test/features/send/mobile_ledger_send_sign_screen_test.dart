@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send
 import 'package:zcash_wallet/src/features/send/services/sapling_params.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 final _args = SendReviewArgs(
   proposalId: BigInt.one,
@@ -23,6 +25,17 @@ final _args = SendReviewArgs(
   proposalAccountUuid: 'account-1',
   address: 'u1recipient',
   addressType: 'unified',
+  amountZatoshi: BigInt.from(100000),
+  feeZatoshi: BigInt.from(10000),
+  needsSaplingParams: false,
+);
+
+final _texArgs = SendReviewArgs(
+  proposalId: BigInt.one,
+  sendFlowId: 'flow-tex',
+  proposalAccountUuid: 'account-1',
+  address: 'tex1recipient',
+  addressType: 'tex',
   amountZatoshi: BigInt.from(100000),
   feeZatoshi: BigInt.from(10000),
   needsSaplingParams: false,
@@ -140,14 +153,189 @@ void main() {
     expect(operationService.checkpointCalls, 2);
     expect(result, isNotNull);
   });
+
+  testWidgets('Ledger TEX signs two rounds and checkpoints one batch', (
+    tester,
+  ) async {
+    final events = <String>[];
+    final operationService = _FakeOperationService(events: events);
+    var signCalls = 0;
+
+    await tester.pumpWidget(
+      _app(
+        args: _texArgs,
+        operationService: operationService,
+        signer: (pczt) async {
+          events.add('sign:$pczt');
+          return [++signCalls + 3];
+        },
+        events: events,
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
+
+    expect(events, [
+      'create-tex',
+      'redact:[1]',
+      'redact:[5]',
+      'proofs:[1]',
+      'proofs:[5]',
+      'sign:[2]',
+      'sign:[6]',
+      'checkpoint-batch:[[3], [7]]:[[4], [5]]',
+    ]);
+    expect(operationService.checkpointCalls, 0);
+    expect(operationService.batchCheckpointCalls, 1);
+  });
+
+  testWidgets('Ledger TEX round two rejection retries only round two', (
+    tester,
+  ) async {
+    final signedInputs = <List<int>>[];
+    final operationService = _FakeOperationService();
+    var signCalls = 0;
+
+    await tester.pumpWidget(
+      _app(
+        args: _texArgs,
+        operationService: operationService,
+        signer: (pczt) async {
+          signedInputs.add(List<int>.of(pczt));
+          signCalls++;
+          if (signCalls == 2) throw StateError('rejected on Ledger');
+          return [signCalls + 10];
+        },
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('The transaction was rejected on your Ledger.'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+
+    expect(signedInputs, [
+      const [2],
+      const [6],
+      const [6],
+    ]);
+    expect(operationService.batchSignatures, [
+      const [11],
+      const [13],
+    ]);
+    expect(operationService.batchCheckpointCalls, 1);
+  });
+
+  testWidgets('Ledger TEX round two rejection can cancel the proposal', (
+    tester,
+  ) async {
+    var signCalls = 0;
+    var cancelCalls = 0;
+    var discardCalls = 0;
+
+    await tester.pumpWidget(
+      _app(
+        args: _texArgs,
+        operationService: _FakeOperationService(),
+        signer: (_) async {
+          signCalls++;
+          if (signCalls == 2) throw StateError('6985 rejected');
+          return const [4];
+        },
+        canceller: () async => cancelCalls++,
+        onDiscard: () async => discardCalls++,
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open signing'), findsOneWidget);
+    expect(cancelCalls, 1);
+    expect(discardCalls, 1);
+  });
+
+  testWidgets('Ledger TEX checkpoint retry preserves both signatures', (
+    tester,
+  ) async {
+    final operationService = _FakeOperationService(failCheckpointOnce: true);
+    var signCalls = 0;
+
+    await tester.pumpWidget(
+      _app(
+        args: _texArgs,
+        operationService: operationService,
+        signer: (_) async => [++signCalls + 3],
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Signature preserved'), findsOneWidget);
+    await tester.tap(find.text('Retry saving'));
+    await tester.pumpAndSettle();
+
+    expect(signCalls, 2);
+    expect(operationService.batchCheckpointCalls, 2);
+    expect(operationService.batchSignatures, [
+      const [4],
+      const [5],
+    ]);
+  });
+
+  testWidgets('Ledger TEX modal reports each approval round', (tester) async {
+    final first = Completer<List<int>>();
+    final second = Completer<List<int>>();
+    var signCalls = 0;
+
+    await tester.pumpWidget(
+      _app(
+        args: _texArgs,
+        operationService: _FakeOperationService(),
+        signer: (_) {
+          signCalls++;
+          return signCalls == 1 ? first.future : second.future;
+        },
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('Review Transaction 1 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(find.text('Waiting for approval · 1 of 2'), findsOneWidget);
+
+    first.complete(const [4]);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.text('Review Transaction 2 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(find.text('Waiting for approval · 2 of 2'), findsOneWidget);
+
+    second.complete(const [8]);
+    await tester.pumpAndSettle();
+  });
 }
 
 Widget _app({
+  SendReviewArgs? args,
   required _FakeOperationService operationService,
   required Future<List<int>> Function(List<int> pcztBytes) signer,
   LedgerOperationCanceller? canceller,
   List<String>? events,
   ValueChanged<LedgerBroadcastArgs>? onResult,
+  Future<void> Function()? onDiscard,
 }) {
   final router = GoRouter(
     routes: [
@@ -164,7 +352,7 @@ Widget _app({
       GoRoute(
         path: '/sign',
         builder: (_, _) => MobileLedgerSendSignScreen(
-          args: _args,
+          args: args ?? _args,
           loadWalletDbPath: () async => '/tmp/wallet.db',
           loadSaplingParams: () async => _params,
           createPczt:
@@ -178,16 +366,36 @@ Widget _app({
                 events?.add('create');
                 return const [1];
               },
+          createTexPczts:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required network,
+                required proposalId,
+                required sendFlowId,
+              }) async {
+                events?.add('create-tex');
+                return rust_sync.TexPcztPairResult(
+                  pczts: [
+                    Uint8List.fromList([1]),
+                    Uint8List.fromList([5]),
+                  ],
+                  signerPczts: [
+                    Uint8List.fromList([8]),
+                    Uint8List.fromList([9]),
+                  ],
+                );
+              },
           redactPczt: ({required pcztBytes}) async {
             events?.add('redact:$pcztBytes');
-            return const [2];
+            return [pcztBytes.single + 1];
           },
           addProofs:
               ({required pcztBytes, spendParamsPath, outputParamsPath}) async {
                 events?.add('proofs:$pcztBytes');
-                return const [3];
+                return [pcztBytes.single + 2];
               },
-          discardProposal: () async {},
+          discardProposal: onDiscard ?? () async {},
         ),
       ),
       GoRoute(path: '/send', builder: (_, _) => const Text('new send')),
@@ -236,12 +444,18 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-class _FakeOperationService implements LedgerSignedOperationService {
+class _FakeOperationService
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
   _FakeOperationService({this.events, this.failCheckpointOnce = false});
 
   final List<String>? events;
   final bool failCheckpointOnce;
   var checkpointCalls = 0;
+  var batchCheckpointCalls = 0;
+  List<List<int>>? batchProofs;
+  List<List<int>>? batchSignatures;
 
   @override
   Future<void> checkpoint({
@@ -255,6 +469,24 @@ class _FakeOperationService implements LedgerSignedOperationService {
     checkpointCalls++;
     events?.add('checkpoint:$pcztWithProofsBytes:$pcztWithSignaturesBytes');
     if (failCheckpointOnce && checkpointCalls == 1) {
+      throw StateError('temporary storage failure');
+    }
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    batchCheckpointCalls++;
+    batchProofs = pcztsWithProofs.map(List<int>.of).toList();
+    batchSignatures = pcztsWithSignatures.map(List<int>.of).toList();
+    events?.add('checkpoint-batch:$batchProofs:$batchSignatures');
+    if (failCheckpointOnce && batchCheckpointCalls == 1) {
       throw StateError('temporary storage failure');
     }
   }
