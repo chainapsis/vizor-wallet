@@ -21,6 +21,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../onboarding/ledger/ledger_desktop_ble_probe_dialog.dart';
+import '../../onboarding/ledger/ledger_setup_args.dart';
 
 const _contentWidth = 420.0;
 
@@ -56,7 +57,10 @@ class HardwareAccountDetailsScreen extends ConsumerWidget {
                 ),
                 child: account == null || !account.isHardware
                     ? const _UnavailableAccountDetails()
-                    : _HardwareAccountDetails(account: account),
+                    : _HardwareAccountDetails(
+                        account: account,
+                        allowAddLedgerAccount: true,
+                      ),
               ),
             ),
           ),
@@ -132,10 +136,12 @@ class _HardwareAccountDetails extends ConsumerWidget {
   const _HardwareAccountDetails({
     required this.account,
     this.showHeading = true,
+    this.allowAddLedgerAccount = false,
   });
 
   final AccountInfo account;
   final bool showHeading;
+  final bool allowAddLedgerAccount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -217,6 +223,19 @@ class _HardwareAccountDetails extends ConsumerWidget {
             platform: ref.watch(ledgerTargetPlatformProvider),
             onChange: () => _changeConnection(context, ref),
           ),
+          if (allowAddLedgerAccount) ...[
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(
+              key: const ValueKey('ledger_add_another_account_button'),
+              onPressed: () => context.push(
+                '/onboarding/ledger',
+                extra: LedgerConnectArgs(sourceAccountUuid: account.uuid),
+              ),
+              variant: AppButtonVariant.secondary,
+              expand: true,
+              child: const Text('Add another Ledger account'),
+            ),
+          ],
         ],
       ],
     );

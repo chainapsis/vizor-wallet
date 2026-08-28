@@ -416,6 +416,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LedgerUfvkApduPlan dco_decode_ledger_ufvk_apdu_plan(dynamic raw);
 
   @protected
+  LedgerWalletIdentity dco_decode_ledger_wallet_identity(dynamic raw);
+
+  @protected
+  LedgerWalletIdentityApduPlan dco_decode_ledger_wallet_identity_apdu_plan(
+    dynamic raw,
+  );
+
+  @protected
   LegacyHardwareAccount dco_decode_legacy_hardware_account(dynamic raw);
 
   @protected
@@ -1451,6 +1459,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LedgerUfvkApduPlan sse_decode_ledger_ufvk_apdu_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerWalletIdentity sse_decode_ledger_wallet_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerWalletIdentityApduPlan sse_decode_ledger_wallet_identity_apdu_plan(
     SseDeserializer deserializer,
   );
 
@@ -2723,6 +2741,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ledger_ufvk_apdu_plan(
     LedgerUfvkApduPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_wallet_identity(
+    LedgerWalletIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_wallet_identity_apdu_plan(
+    LedgerWalletIdentityApduPlan self,
     SseSerializer serializer,
   );
 

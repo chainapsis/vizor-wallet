@@ -31,6 +31,7 @@ use std::{
 
 use orchard::ValuePool;
 use pczt::roles::signer::{Signer, SpendAuthSignature};
+use sha2::{Digest, Sha256};
 
 use self::{
     apdu::{ApduCommand, ZCASH_CLA},
@@ -56,6 +57,12 @@ const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 pub struct DeviceAppInfo {
     pub name: String,
     pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalletIdentity {
+    pub fingerprint: String,
+    pub verification_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -592,6 +599,34 @@ pub fn get_ufvk(account_index: u32) -> Result<String, String> {
 #[cfg(not(target_os = "macos"))]
 pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
     Err(unsupported_platform())
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_wallet_identity(
+    verification_account_index: Option<u32>,
+) -> Result<WalletIdentity, String> {
+    let operation = lock_operation()?;
+    let (identity, verification) = transport::LedgerTransport::connect_ufvk(operation.context())?
+        .wallet_identity(verification_account_index)?;
+    Ok(WalletIdentity {
+        fingerprint: wallet_fingerprint(&identity),
+        verification_address: verification.map(|key| key.address),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn get_wallet_identity(
+    _verification_account_index: Option<u32>,
+) -> Result<WalletIdentity, String> {
+    Err(unsupported_platform())
+}
+
+pub(crate) fn wallet_fingerprint(key: &apdu::WalletPublicKey) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"vizor-ledger-wallet-fingerprint-v1\0");
+    hasher.update(key.public_key);
+    hasher.update(key.chain_code);
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(target_os = "macos")]
