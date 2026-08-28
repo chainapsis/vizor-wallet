@@ -2586,7 +2586,8 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 }
 
 /// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
-/// input types that the signatures-only response cannot represent.
+/// input types that the signatures-only response cannot represent and signing
+/// sets above the device's 96-signature per-transaction limit.
 pub fn prepare_pczt_for_keystone_batch(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
     let prepared = wallet_sync::prepare_pczt_for_keystone_batch(&pczt_bytes)?;
     Ok(KeystoneBatchPczt {

@@ -294,9 +294,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be signed.';
     }
-    if (lower.contains('batch signing does not support')) {
-      return 'This transaction uses inputs that Keystone batch signing cannot sign.';
-    }
+    final batchError = keystoneBatchSigningFriendlyError(raw);
+    if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }

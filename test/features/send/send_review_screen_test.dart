@@ -411,6 +411,37 @@ void main() {
     expect(rustApi.encodeFullPcztCalls, 0);
   });
 
+  testWidgets('Keystone signature limit fails before showing a QR', (
+    tester,
+  ) async {
+    rustApi.prepareBatchError = StateError(
+      'Keystone batch signing supports at most 96 spend signatures per '
+      'transaction; this transaction requires 97',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+
+    expect(
+      find.text(
+        'This transaction uses too many inputs for Keystone batch signing. '
+        'Try a smaller amount.',
+      ),
+      findsWidgets,
+    );
+    expect(rustApi.prepareBatchCalls, 1);
+    expect(rustApi.encodeBatchCalls, 0);
+  });
+
   testWidgets('Keystone handoff carries proofs and signatures to status', (
     tester,
   ) async {
@@ -942,6 +973,7 @@ class _RustApiFake implements RustLibApi {
   int encodeFullPcztCalls = 0;
   int decodeBatchCalls = 0;
   int previousTransactionCount = 0;
+  Object? prepareBatchError;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
@@ -953,6 +985,7 @@ class _RustApiFake implements RustLibApi {
     encodeFullPcztCalls = 0;
     decodeBatchCalls = 0;
     previousTransactionCount = 0;
+    prepareBatchError = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -1048,6 +1081,8 @@ class _RustApiFake implements RustLibApi {
     required List<int> pcztBytes,
   }) async {
     prepareBatchCalls++;
+    final error = prepareBatchError;
+    if (error != null) throw error;
     return KeystoneBatchPczt(
       redactedPczt: Uint8List.fromList([4, 5, 6]),
       expectedSignatureCount: 1,

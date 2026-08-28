@@ -6,6 +6,22 @@ import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 
 const _keystoneQrFragmentLength = 140;
 
+/// Maps shared Keystone batch preparation failures to actionable UI copy.
+String? keystoneBatchSigningFriendlyError(
+  Object error, {
+  String subject = 'transaction',
+}) {
+  final lower = error.toString().toLowerCase();
+  if (lower.contains('keystone batch signing supports at most')) {
+    return 'This $subject uses too many inputs for Keystone batch signing. '
+        'Try a smaller amount.';
+  }
+  if (lower.contains('batch signing does not support')) {
+    return 'This $subject uses inputs that Keystone batch signing cannot sign.';
+  }
+  return null;
+}
+
 class KeystoneBatchPcztSource {
   const KeystoneBatchPcztSource({required this.id, required this.pcztBytes});
 

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/screens/keystone_send_scan_screen.dart';
@@ -341,9 +342,11 @@ class _SwapKeystoneSigningOverlayState
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
     }
-    if (lower.contains('batch signing does not support')) {
-      return 'This deposit uses inputs that Keystone batch signing cannot sign.';
-    }
+    final batchError = keystoneBatchSigningFriendlyError(
+      error,
+      subject: 'deposit',
+    );
+    if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }

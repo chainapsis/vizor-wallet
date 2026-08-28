@@ -842,12 +842,27 @@ pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String
     redact_pczt_for_signer_inner(pczt_bytes, true)
 }
 
+/// Enforce Keystone's per-round signature cap before displaying the request QR.
+fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
+    if count == 0 {
+        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".to_string());
+    }
+    if count > crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES {
+        return Err(format!(
+            "Keystone batch signing supports at most {} spend signatures per transaction; \
+             this transaction requires {count}",
+            crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+        ));
+    }
+    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".to_string())
+}
+
 /// Prepare one PCZT for Keystone's signatures-only batch protocol.
 ///
 /// The compact response can carry only Orchard and Ironwood spend
-/// authorization signatures. Reject transparent and Sapling inputs before the
-/// QR is displayed so callers cannot start a signing round that the response
-/// format is unable to complete.
+/// authorization signatures and at most 96 signatures for one transaction.
+/// Reject unsupported inputs and oversized signing sets before the QR is
+/// displayed so callers cannot start a round the device cannot complete.
 pub fn prepare_pczt_for_keystone_batch(pczt_bytes: &[u8]) -> Result<KeystoneBatchPczt, String> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Keystone batch signing: {e:?}"))?;
@@ -862,15 +877,12 @@ pub fn prepare_pczt_for_keystone_batch(pczt_bytes: &[u8]) -> Result<KeystoneBatc
         );
     }
 
-    let expected_signature_count = unsigned_orchard_action_locations(&pczt).len();
-    if expected_signature_count == 0 {
-        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".to_string());
-    }
+    let expected_signature_count =
+        checked_keystone_batch_signature_count(unsigned_orchard_action_locations(&pczt).len())?;
 
     Ok(KeystoneBatchPczt {
         redacted_pczt: serialize_signer_view(apply_signer_redaction(pczt, true))?,
-        expected_signature_count: u32::try_from(expected_signature_count)
-            .map_err(|_| "Keystone signature count exceeds u32".to_string())?,
+        expected_signature_count,
     })
 }
 
@@ -2509,6 +2521,18 @@ mod tests {
         assert!(err.contains("expired before broadcast"));
         assert!(err.contains("expiry height 500"));
         assert!(err.contains("current chain height 500"));
+    }
+
+    #[test]
+    fn keystone_batch_signature_limit_accepts_96_and_rejects_97() {
+        let limit = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
+
+        assert_eq!(checked_keystone_batch_signature_count(limit), Ok(96));
+        assert_eq!(
+            checked_keystone_batch_signature_count(limit + 1).unwrap_err(),
+            "Keystone batch signing supports at most 96 spend signatures per transaction; \
+             this transaction requires 97"
+        );
     }
 
     // The headline correctness gate for the "signatures-only" round-trip: for a

@@ -61,6 +61,33 @@ void main() {
     );
     expect(rustApi.encodedSignatureCounts, isEmpty);
   });
+
+  test('maps the transaction signature limit to actionable copy', () {
+    expect(
+      keystoneBatchSigningFriendlyError(
+        StateError(
+          'Keystone batch signing supports at most 96 spend signatures per '
+          'transaction; this transaction requires 97',
+        ),
+      ),
+      'This transaction uses too many inputs for Keystone batch signing. '
+      'Try a smaller amount.',
+    );
+  });
+
+  test('uses the caller subject for batch preparation errors', () {
+    expect(
+      keystoneBatchSigningFriendlyError(
+        StateError(
+          'Keystone batch signing does not support transparent transaction '
+          'inputs',
+        ),
+        subject: 'deposit',
+      ),
+      'This deposit uses inputs that Keystone batch signing cannot sign.',
+    );
+    expect(keystoneBatchSigningFriendlyError(StateError('unrelated')), isNull);
+  });
 }
 
 class _BatchRustApiFake implements RustLibApi {

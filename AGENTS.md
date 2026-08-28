@@ -661,6 +661,12 @@ shielding still use the full-PCZT signer response until the Keystone batch
 protocol gains transparent signatures. Normal sends and ZEC swap deposits must
 not fall back to the full-PCZT response.
 
+One batch round can return at most 96 spend signatures, and one PCZT cannot be
+split across rounds. `prepare_pczt_for_keystone_batch` therefore rejects a
+transaction requiring more than 96 signatures before the request QR is shown.
+Callers surface an actionable smaller-amount message and must not fall back to
+the full-PCZT response.
+
 **Critical invariants** (each of these was a real bug at some point in
 development; breaking them is a correctness or data-loss regression):
 
