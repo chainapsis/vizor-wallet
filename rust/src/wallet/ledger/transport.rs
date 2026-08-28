@@ -157,11 +157,8 @@ impl LedgerTransport {
         decode_ufvk_chunks(&chunks)
     }
 
-    pub(super) fn wallet_identity(
-        &self,
-        verification_account_index: Option<u32>,
-    ) -> Result<(WalletPublicKey, Option<WalletPublicKey>), String> {
-        let mut commands = wallet_identity_commands(verification_account_index)?.into_iter();
+    pub(super) fn wallet_identity(&self) -> Result<WalletPublicKey, String> {
+        let mut commands = wallet_identity_commands()?.into_iter();
         let identity_command = commands
             .next()
             .ok_or("Ledger wallet identity plan is empty")?;
@@ -171,14 +168,7 @@ impl LedgerTransport {
             identity_command.p2,
             identity_command.data,
         )?)?;
-        let verification = commands
-            .next()
-            .map(|command| {
-                self.exchange(command.ins, command.p1, command.p2, command.data)
-                    .and_then(|response| decode_wallet_public_key(&response))
-            })
-            .transpose()?;
-        Ok((identity, verification))
+        Ok(identity)
     }
 
     pub(super) fn send_pczt(&self, commands: &[CommandPackets]) -> Result<(), String> {

@@ -97,6 +97,7 @@ void main() {
       ledgerDeviceModel: 'Nano X',
       ledgerWalletFingerprint:
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ledgerWalletName: 'Cold storage',
     );
 
     final restored = AccountInfo.fromJson(account.toJson());
@@ -113,6 +114,7 @@ void main() {
       restored.ledgerWalletFingerprint,
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );
+    expect(restored.ledgerWalletName, 'Cold storage');
   });
 
   test('legacy Ledger accounts default to automatic connection selection', () {
@@ -138,5 +140,143 @@ void main() {
     expect(account.isHardware, isFalse);
     expect(account.isKeystone, isFalse);
     expect(account.isLedger, isFalse);
+  });
+
+  group('resolveAccountFamilies', () {
+    const fingerprintA =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const fingerprintB =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    AccountInfo ledgerAccount({
+      required String uuid,
+      required int order,
+      String? fingerprint,
+    }) => AccountInfo(
+      uuid: uuid,
+      name: 'Ledger $uuid',
+      order: order,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+      ledgerWalletFingerprint: fingerprint,
+    );
+
+    test('groups Ledger accounts with the same fingerprint', () {
+      final first = ledgerAccount(
+        uuid: 'ledger-1',
+        order: 0,
+        fingerprint: fingerprintA,
+      );
+      final second = ledgerAccount(
+        uuid: 'ledger-2',
+        order: 1,
+        fingerprint: fingerprintA,
+      );
+
+      final families = resolveAccountFamilies([first, second]);
+
+      expect(families, hasLength(1));
+      expect(families.single.kind, AccountFamilyKind.ledger);
+      expect(families.single.accounts, [same(first), same(second)]);
+      expect(families.single.name, 'Ledger wallet');
+      expect(families.single.stableKey, isNot(contains(fingerprintA)));
+    });
+
+    test('keeps different verified Ledger fingerprints separate', () {
+      final families = resolveAccountFamilies([
+        ledgerAccount(uuid: 'ledger-a', order: 0, fingerprint: fingerprintA),
+        ledgerAccount(uuid: 'ledger-b', order: 1, fingerprint: fingerprintB),
+      ]);
+
+      expect(families, hasLength(2));
+      expect(families.map((family) => family.kind), [
+        AccountFamilyKind.ledger,
+        AccountFamilyKind.ledger,
+      ]);
+      expect(families.map((family) => family.accounts.single.uuid), [
+        'ledger-a',
+        'ledger-b',
+      ]);
+      expect(families[0].stableKey, isNot(families[1].stableKey));
+    });
+
+    test('keeps Ledger accounts without a fingerprint standalone', () {
+      final families = resolveAccountFamilies([
+        ledgerAccount(uuid: 'missing', order: 0),
+        ledgerAccount(uuid: 'empty', order: 1, fingerprint: '   '),
+        ledgerAccount(uuid: 'invalid', order: 2, fingerprint: 'not-verified'),
+      ]);
+
+      expect(families, hasLength(3));
+      expect(
+        families.map((family) => family.kind),
+        everyElement(AccountFamilyKind.standalone),
+      );
+      expect(families.map((family) => family.accounts.single.uuid), [
+        'missing',
+        'empty',
+        'invalid',
+      ]);
+    });
+
+    test('keeps software and Keystone accounts standalone', () {
+      const software = AccountInfo(
+        uuid: 'software',
+        name: 'Software',
+        order: 0,
+        ledgerWalletFingerprint: fingerprintA,
+      );
+      const keystone = AccountInfo(
+        uuid: 'keystone',
+        name: 'Keystone',
+        order: 1,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+        ledgerWalletFingerprint: fingerprintA,
+      );
+
+      final families = resolveAccountFamilies([software, keystone]);
+
+      expect(families, hasLength(2));
+      expect(
+        families.map((family) => family.kind),
+        everyElement(AccountFamilyKind.standalone),
+      );
+      expect(families.map((family) => family.accounts.single.uuid), [
+        'software',
+        'keystone',
+      ]);
+    });
+
+    test('preserves family and member input order', () {
+      final firstLedger = ledgerAccount(
+        uuid: 'ledger-2',
+        order: 20,
+        fingerprint: fingerprintA,
+      );
+      const software = AccountInfo(
+        uuid: 'software',
+        name: 'Software',
+        order: 0,
+      );
+      final secondLedger = ledgerAccount(
+        uuid: 'ledger-1',
+        order: 10,
+        fingerprint: fingerprintA,
+      );
+
+      final families = resolveAccountFamilies([
+        firstLedger,
+        software,
+        secondLedger,
+      ]);
+
+      expect(families, hasLength(2));
+      expect(families.first.accounts.map((account) => account.uuid), [
+        'ledger-2',
+        'ledger-1',
+      ]);
+      expect(families.last.accounts.single.uuid, 'software');
+    });
   });
 }

@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
@@ -40,13 +39,9 @@ class LedgerDeviceAccount {
 }
 
 class LedgerWalletIdentity {
-  const LedgerWalletIdentity({
-    required this.fingerprint,
-    this.verificationAddress,
-  });
+  const LedgerWalletIdentity({required this.fingerprint});
 
   final String fingerprint;
-  final String? verificationAddress;
 }
 
 typedef LedgerAccountConnector =
@@ -56,19 +51,9 @@ typedef LedgerBluetoothAccountConnector =
       int accountIndex,
       LedgerBleDevice device,
     );
-typedef LedgerWalletIdentityConnector =
-    Future<LedgerWalletIdentity> Function(int? verificationAccountIndex);
+typedef LedgerWalletIdentityConnector = Future<LedgerWalletIdentity> Function();
 typedef LedgerBluetoothWalletIdentityConnector =
-    Future<LedgerWalletIdentity> Function(
-      int? verificationAccountIndex,
-      LedgerBleDevice device,
-    );
-typedef LedgerAccountIdentityVerifier =
-    Future<bool> Function({
-      required String accountUuid,
-      required String deviceAddress,
-    });
-
+    Future<LedgerWalletIdentity> Function(LedgerBleDevice device);
 typedef LedgerAccountImporter =
     Future<void> Function({
       required String name,
@@ -97,38 +82,22 @@ final ledgerBluetoothAccountConnectorProvider =
 
 final ledgerWalletIdentityConnectorProvider =
     Provider<LedgerWalletIdentityConnector>((ref) {
-      return (verificationAccountIndex) => _readLedgerWalletIdentity(
+      return () => _readLedgerWalletIdentity(
         ref,
-        verificationAccountIndex: verificationAccountIndex,
         transport: LedgerConnectionTransport.usb,
       );
     });
 
 final ledgerBluetoothWalletIdentityConnectorProvider =
     Provider<LedgerBluetoothWalletIdentityConnector>((ref) {
-      return (verificationAccountIndex, device) => _readLedgerWalletIdentity(
+      return (device) => _readLedgerWalletIdentity(
         ref,
-        verificationAccountIndex: verificationAccountIndex,
         transport: LedgerConnectionTransport.bluetooth,
       );
     });
 
-final ledgerAccountIdentityVerifierProvider =
-    Provider<LedgerAccountIdentityVerifier>((ref) {
-      return ({required accountUuid, required deviceAddress}) async {
-        final endpoint = ref.read(rpcEndpointProvider);
-        final expected = await rust_ledger.ledgerAccountFirstTransparentAddress(
-          dbPath: await getWalletDbPath(),
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-        );
-        return expected == deviceAddress;
-      };
-    });
-
 Future<LedgerWalletIdentity> _readLedgerWalletIdentity(
   Ref ref, {
-  required int? verificationAccountIndex,
   required LedgerConnectionTransport transport,
 }) async {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
@@ -142,30 +111,19 @@ Future<LedgerWalletIdentity> _readLedgerWalletIdentity(
   final identity = transport == LedgerConnectionTransport.bluetooth
       ? await _readMobileWalletIdentity(
           mobile: ref.read(ledgerMobileBleServiceProvider),
-          verificationAccountIndex: verificationAccountIndex,
           networkName: networkName,
         )
-      : await rust_ledger.ledgerWalletIdentity(
-          verificationAccountIndex: verificationAccountIndex,
-          network: networkName,
-        );
-  return LedgerWalletIdentity(
-    fingerprint: identity.fingerprint,
-    verificationAddress: identity.verificationAddress,
-  );
+      : await rust_ledger.ledgerWalletIdentity(network: networkName);
+  return LedgerWalletIdentity(fingerprint: identity.fingerprint);
 }
 
 Future<rust_ledger.LedgerWalletIdentity> _readMobileWalletIdentity({
   required LedgerMobileBleService mobile,
-  required int? verificationAccountIndex,
   required String networkName,
 }) async {
-  final plan = await rust_ledger.ledgerBuildWalletIdentityApduPlan(
-    verificationAccountIndex: verificationAccountIndex,
-  );
+  final plan = await rust_ledger.ledgerBuildWalletIdentityApduPlan();
   final responses = await mobile.exchangeApdus(plan.commands);
   return rust_ledger.ledgerParseMobileWalletIdentityResponses(
-    verificationAccountIndex: verificationAccountIndex,
     network: networkName,
     responses: responses,
   );
@@ -228,6 +186,10 @@ final ledgerAccountImporterProvider = Provider<LedgerAccountImporter>((ref) {
     required birthdayHeight,
     required profilePictureId,
   }) {
+    final walletFingerprint = account.walletFingerprint;
+    if (walletFingerprint == null) {
+      throw StateError('Ledger wallet identity is required before import.');
+    }
     return ref
         .read(accountProvider.notifier)
         .importLedgerAccount(
@@ -241,7 +203,7 @@ final ledgerAccountImporterProvider = Provider<LedgerAccountImporter>((ref) {
           ledgerDeviceId: account.device?.id,
           ledgerDeviceName: account.device?.name,
           ledgerDeviceModel: account.device?.model,
-          ledgerWalletFingerprint: account.walletFingerprint,
+          ledgerWalletFingerprint: walletFingerprint,
         );
   };
 });

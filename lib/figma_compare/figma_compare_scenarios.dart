@@ -56,6 +56,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'accounts-ledger-family',
+    description: 'Desktop accounts grouped by verified Ledger wallet',
+    builder: buildAccountsLedgerFamilyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-accounts-ledger-family',
+    description: 'Mobile accounts grouped by verified Ledger wallet',
+    builder: buildMobileAccountsLedgerFamilyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-share-complete',
     description: 'Mobile encrypted vote shares after submission completes',
     builder: buildVotingShareStatusCompleteUseCase,

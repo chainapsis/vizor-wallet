@@ -17,6 +17,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_context_menu.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -32,6 +33,7 @@ import '../../onboarding/ledger/ledger_setup_args.dart';
 import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
+import '../widgets/ledger_wallet_rename_modal.dart';
 
 const _accountRowHeight = 44.0;
 const _accountsContentWidth = 420.0;
@@ -63,7 +65,12 @@ class AccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-enum _AccountModalType { editAccount, profilePicture, removeAccount }
+enum _AccountModalType {
+  editAccount,
+  profilePicture,
+  removeAccount,
+  renameLedgerWallet,
+}
 
 _AccountModalType? _modalTypeFromInitial(AccountsScreenInitialModal? modal) {
   return switch (modal) {
@@ -105,6 +112,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   void _showRemoveAccountModal(AccountInfo account) {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     _showModal(_AccountModalType.removeAccount, account);
+  }
+
+  void _showRenameLedgerWalletModal(AccountFamily family) {
+    _showModal(_AccountModalType.renameLedgerWallet, family.accounts.first);
   }
 
   void _showModal(_AccountModalType modal, AccountInfo account) {
@@ -150,6 +161,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     if (draftPicture != null && draftPicture != account.profilePictureId) {
       await notifier.updateProfilePicture(account.uuid, draftPicture);
     }
+    if (!mounted) return;
+    _closeModal();
+  }
+
+  Future<void> _commitLedgerWalletName(AccountInfo account, String name) async {
+    await ref
+        .read(accountProvider.notifier)
+        .renameLedgerWallet(account.uuid, name);
     if (!mounted) return;
     _closeModal();
   }
@@ -263,6 +282,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       for (final account in accounts)
         if (account.uuid != activeAccount?.uuid) account,
     ];
+    final accountFamilies = resolveAccountFamilies(accounts);
     final modalAccount = _accountForUuid(accounts, _modalAccountUuid);
     final isLastModalAccount =
         modalAccount != null &&
@@ -297,6 +317,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 child: _AccountsPane(
                   activeAccount: activeAccount,
                   otherAccounts: otherAccounts,
+                  accountFamilies: accountFamilies,
+                  onRenameLedgerWallet: _showRenameLedgerWalletModal,
                   onSelectAccount: _handleAccountSelected,
                   onCopyAddress: _copyAddress,
                   onSendZec: _sendZec,
@@ -366,6 +388,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                       onProgress: onProgress,
                     ),
                   ),
+                  _AccountModalType.renameLedgerWallet =>
+                    LedgerWalletRenameModal(
+                      initialName:
+                          modalAccount.ledgerWalletName ?? 'Ledger wallet',
+                      onCancel: _closeModal,
+                      onRename: (name) =>
+                          _commitLedgerWalletName(modalAccount, name),
+                    ),
                 },
               ),
           ],
@@ -519,6 +549,8 @@ class _AccountsPane extends StatelessWidget {
   const _AccountsPane({
     required this.activeAccount,
     required this.otherAccounts,
+    required this.accountFamilies,
+    required this.onRenameLedgerWallet,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -529,6 +561,8 @@ class _AccountsPane extends StatelessWidget {
 
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
+  final List<AccountFamily> accountFamilies;
+  final ValueChanged<AccountFamily> onRenameLedgerWallet;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -562,6 +596,8 @@ class _AccountsPane extends StatelessWidget {
               _AccountsList(
                 activeAccount: activeAccount,
                 otherAccounts: otherAccounts,
+                accountFamilies: accountFamilies,
+                onRenameLedgerWallet: onRenameLedgerWallet,
                 onSelectAccount: onSelectAccount,
                 onCopyAddress: onCopyAddress,
                 onSendZec: onSendZec,
@@ -690,6 +726,8 @@ class _AccountsList extends StatelessWidget {
   const _AccountsList({
     required this.activeAccount,
     required this.otherAccounts,
+    required this.accountFamilies,
+    required this.onRenameLedgerWallet,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -702,6 +740,8 @@ class _AccountsList extends StatelessWidget {
 
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
+  final List<AccountFamily> accountFamilies;
+  final ValueChanged<AccountFamily> onRenameLedgerWallet;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -712,66 +752,135 @@ class _AccountsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
+    final ledgerFamilies = [
+      for (final family in accountFamilies)
+        if (family.isLedger && family.accounts.length > 1) family,
+    ];
+    final groupedAccountUuids = {
+      for (final family in ledgerFamilies)
+        for (final account in family.accounts) account.uuid,
+    };
+    AccountFamily? activeLedgerFamily;
+    final activeUuid = activeAccount?.uuid;
+    if (activeUuid != null) {
+      for (final family in ledgerFamilies) {
+        if (family.accounts.any((account) => account.uuid == activeUuid)) {
+          activeLedgerFamily = family;
+          break;
+        }
+      }
+    }
+    final standaloneOtherAccounts = [
+      for (final account in otherAccounts)
+        if (!groupedAccountUuids.contains(account.uuid)) account,
+    ];
+
+    final surfaces = <Widget>[];
+    void addSurface(Widget surface) {
+      if (surfaces.isNotEmpty) {
+        surfaces.add(const SizedBox(height: AppSpacing.sm));
+      }
+      surfaces.add(surface);
+    }
+
+    if (activeLedgerFamily case final family?) {
+      addSurface(
+        _LedgerAccountFamilySurface(
+          family: family,
+          activeAccountUuid: activeUuid,
+          accountCount: accountCount,
+          onRename: onRenameLedgerWallet,
+          onSelectAccount: onSelectAccount,
+          onCopyAddress: onCopyAddress,
+          onSendZec: onSendZec,
+          onEditAccount: onEditAccount,
+          onRemoveAccount: onRemoveAccount,
+          initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+        ),
+      );
+    } else if (activeAccount != null) {
+      addSurface(
+        _AccountsSurface(
+          key: const ValueKey('accounts_current_surface'),
+          height: _accountsCurrentSurfaceHeight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _AccountsSectionLabel(label: 'Current'),
+              const SizedBox(height: _accountsRowGap),
+              _AccountRow(
+                key: ValueKey('accounts_active_row_${activeAccount!.uuid}'),
+                account: activeAccount!,
+                onTap: null,
+                showSendZec: false,
+                showLedgerAccountIndex: false,
+                onCopyAddress: onCopyAddress,
+                onSendZec: onSendZec,
+                onEditAccount: onEditAccount,
+                onRemove: onRemoveAccount,
+                showRemove: _AccountsList._canRemoveAccount(accountCount),
+                initiallyOpenMenu:
+                    initialOpenMenuAccountUuid == activeAccount!.uuid,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    for (final family in ledgerFamilies) {
+      if (identical(family, activeLedgerFamily)) continue;
+      addSurface(
+        _LedgerAccountFamilySurface(
+          family: family,
+          activeAccountUuid: activeUuid,
+          accountCount: accountCount,
+          onRename: onRenameLedgerWallet,
+          onSelectAccount: onSelectAccount,
+          onCopyAddress: onCopyAddress,
+          onSendZec: onSendZec,
+          onEditAccount: onEditAccount,
+          onRemoveAccount: onRemoveAccount,
+          initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+        ),
+      );
+    }
+
+    if (standaloneOtherAccounts.isNotEmpty) {
+      addSurface(
+        _AccountsSurface(
+          key: const ValueKey('accounts_other_surface'),
+          height: _accountsSurfaceHeight(standaloneOtherAccounts.length),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _AccountsSectionLabel(label: 'Other'),
+              const SizedBox(height: _accountsRowGap),
+              _AccountsRows(
+                accounts: standaloneOtherAccounts,
+                activeAccountUuid: activeUuid,
+                accountCount: accountCount,
+                showLedgerAccountIndex: false,
+                onSelectAccount: onSelectAccount,
+                onCopyAddress: onCopyAddress,
+                onSendZec: onSendZec,
+                onEditAccount: onEditAccount,
+                onRemoveAccount: onRemoveAccount,
+                initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
         width: _width,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (activeAccount != null) ...[
-              _AccountsSurface(
-                key: const ValueKey('accounts_current_surface'),
-                height: _accountsCurrentSurfaceHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _AccountsSectionLabel(label: 'Current'),
-                    const SizedBox(height: _accountsRowGap),
-                    _AccountRow(
-                      key: ValueKey(
-                        'accounts_active_row_${activeAccount!.uuid}',
-                      ),
-                      account: activeAccount!,
-                      onTap: null,
-                      showSendZec: false,
-                      onCopyAddress: onCopyAddress,
-                      onSendZec: onSendZec,
-                      onEditAccount: onEditAccount,
-                      onRemove: onRemoveAccount,
-                      showRemove: _AccountsList._canRemoveAccount(accountCount),
-                      initiallyOpenMenu:
-                          initialOpenMenuAccountUuid == activeAccount!.uuid,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (otherAccounts.isNotEmpty) ...[
-              if (activeAccount != null) const SizedBox(height: AppSpacing.sm),
-              _AccountsSurface(
-                key: const ValueKey('accounts_other_surface'),
-                height: _otherAccountsSurfaceHeight(otherAccounts.length),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _AccountsSectionLabel(label: 'Other'),
-                    const SizedBox(height: _accountsRowGap),
-                    _OtherAccountsRows(
-                      accounts: otherAccounts,
-                      accountCount: accountCount,
-                      onSelectAccount: onSelectAccount,
-                      onCopyAddress: onCopyAddress,
-                      onSendZec: onSendZec,
-                      onEditAccount: onEditAccount,
-                      onRemoveAccount: onRemoveAccount,
-                      initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
+          children: surfaces,
         ),
       ),
     );
@@ -786,7 +895,7 @@ class _AccountsList extends StatelessWidget {
     return count * _accountRowHeight + (count - 1) * _accountsRowGap;
   }
 
-  static double _otherAccountsSurfaceHeight(int count) {
+  static double _accountsSurfaceHeight(int count) {
     return _accountsSurfaceVerticalPadding * 2 +
         _accountsSectionLabelHeight +
         _accountsRowGap +
@@ -822,10 +931,81 @@ class _AccountsSurface extends StatelessWidget {
   }
 }
 
-class _OtherAccountsRows extends StatelessWidget {
-  const _OtherAccountsRows({
-    required this.accounts,
+class _LedgerAccountFamilySurface extends StatelessWidget {
+  const _LedgerAccountFamilySurface({
+    required this.family,
+    required this.activeAccountUuid,
     required this.accountCount,
+    required this.onRename,
+    required this.onSelectAccount,
+    required this.onCopyAddress,
+    required this.onSendZec,
+    required this.onEditAccount,
+    required this.onRemoveAccount,
+    required this.initialOpenMenuAccountUuid,
+  });
+
+  final AccountFamily family;
+  final String? activeAccountUuid;
+  final int accountCount;
+  final ValueChanged<AccountFamily> onRename;
+  final Future<void> Function(String uuid) onSelectAccount;
+  final ValueChanged<AccountInfo> onCopyAddress;
+  final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountInfo> onEditAccount;
+  final ValueChanged<AccountInfo> onRemoveAccount;
+  final String? initialOpenMenuAccountUuid;
+
+  @override
+  Widget build(BuildContext context) {
+    final containsActive = family.accounts.any(
+      (account) => account.uuid == activeAccountUuid,
+    );
+    final sourceAccount = containsActive
+        ? family.accounts.firstWhere(
+            (account) => account.uuid == activeAccountUuid,
+          )
+        : family.accounts.first;
+
+    return _AccountsSurface(
+      key: ValueKey('accounts_ledger_family_surface_${family.stableKey}'),
+      height: _AccountsList._accountsSurfaceHeight(family.accounts.length),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _LedgerFamilySectionLabel(
+            family: family,
+            onRename: () => onRename(family),
+            onAddAccount: () => context.push(
+              '/onboarding/ledger',
+              extra: LedgerConnectArgs(sourceAccountUuid: sourceAccount.uuid),
+            ),
+          ),
+          const SizedBox(height: _accountsRowGap),
+          _AccountsRows(
+            accounts: family.accounts,
+            activeAccountUuid: activeAccountUuid,
+            accountCount: accountCount,
+            showLedgerAccountIndex: true,
+            onSelectAccount: onSelectAccount,
+            onCopyAddress: onCopyAddress,
+            onSendZec: onSendZec,
+            onEditAccount: onEditAccount,
+            onRemoveAccount: onRemoveAccount,
+            initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountsRows extends StatelessWidget {
+  const _AccountsRows({
+    required this.accounts,
+    required this.activeAccountUuid,
+    required this.accountCount,
+    required this.showLedgerAccountIndex,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -835,7 +1015,9 @@ class _OtherAccountsRows extends StatelessWidget {
   });
 
   final List<AccountInfo> accounts;
+  final String? activeAccountUuid;
   final int accountCount;
+  final bool showLedgerAccountIndex;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -858,14 +1040,16 @@ class _OtherAccountsRows extends StatelessWidget {
         rows.add(const SizedBox(height: _accountsRowGap));
       }
       final account = accounts[index];
+      final isActive = account.uuid == activeAccountUuid;
       rows.add(
         _AccountRow(
-          key: ValueKey('accounts_other_row_${account.uuid}'),
+          key: ValueKey(
+            'accounts_${isActive ? 'active' : 'other'}_row_${account.uuid}',
+          ),
           account: account,
-          onTap: () {
-            onSelectAccount(account.uuid);
-          },
-          showSendZec: true,
+          onTap: isActive ? null : () => onSelectAccount(account.uuid),
+          showSendZec: !isActive,
+          showLedgerAccountIndex: showLedgerAccountIndex,
           onCopyAddress: onCopyAddress,
           onSendZec: onSendZec,
           onEditAccount: onEditAccount,
@@ -904,11 +1088,85 @@ class _AccountsSectionLabel extends StatelessWidget {
   }
 }
 
+class _LedgerFamilySectionLabel extends StatelessWidget {
+  const _LedgerFamilySectionLabel({
+    required this.family,
+    required this.onRename,
+    required this.onAddAccount,
+  });
+
+  final AccountFamily family;
+  final VoidCallback onRename;
+  final VoidCallback onAddAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _accountsSectionLabelHeight,
+      child: Row(
+        children: [
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(
+            AppIcons.ledgerBrand,
+            size: AppIconSize.medium,
+            color: context.colors.icon.muted,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    family.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIconHoverButton(
+                  key: ValueKey(
+                    'accounts_rename_ledger_family_'
+                    '${family.accounts.first.uuid}',
+                  ),
+                  icon: AppIcons.edit,
+                  semanticLabel: 'Rename group name',
+                  tooltip: 'Rename group name',
+                  size: 24,
+                  iconSize: AppIconSize.medium,
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  onTap: onRename,
+                ),
+              ],
+            ),
+          ),
+          AppIconHoverButton(
+            key: ValueKey(
+              'accounts_add_ledger_family_${family.accounts.first.uuid}',
+            ),
+            icon: AppIcons.addNew,
+            semanticLabel: 'Add another account to this Ledger wallet',
+            tooltip: 'Add Ledger account',
+            size: 24,
+            iconSize: AppIconSize.medium,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            onTap: onAddAccount,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AccountRow extends StatefulWidget {
   const _AccountRow({
     required this.account,
     required this.onTap,
     required this.showSendZec,
+    required this.showLedgerAccountIndex,
     required this.onCopyAddress,
     required this.onSendZec,
     required this.onEditAccount,
@@ -921,6 +1179,7 @@ class _AccountRow extends StatefulWidget {
   final AccountInfo account;
   final VoidCallback? onTap;
   final bool showSendZec;
+  final bool showLedgerAccountIndex;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditAccount;
@@ -945,7 +1204,13 @@ class _AccountRowState extends State<_AccountRow> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
+    final isCurrent = !enabled;
     final isHighlighted = enabled && _isHovered;
+    final backgroundColor = isCurrent && widget.showLedgerAccountIndex
+        ? context.colors.state.selectedOpacity
+        : isHighlighted
+        ? _accountsHoverColor(context)
+        : null;
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
@@ -958,7 +1223,7 @@ class _AccountRowState extends State<_AccountRow> {
         height: _accountRowHeight,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         decoration: BoxDecoration(
-          color: isHighlighted ? _accountsHoverColor(context) : null,
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(AppRadii.small),
         ),
         child: Row(
@@ -974,7 +1239,11 @@ class _AccountRowState extends State<_AccountRow> {
                       _AccountRowAvatar(account: widget.account),
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(
-                        child: _AccountRowContent(account: widget.account),
+                        child: _AccountRowContent(
+                          account: widget.account,
+                          showLedgerAccountIndex: widget.showLedgerAccountIndex,
+                          isCurrent: isCurrent,
+                        ),
                       ),
                     ],
                   ),
@@ -990,7 +1259,7 @@ class _AccountRowState extends State<_AccountRow> {
                       extra: widget.account.uuid,
                     )
                   : null,
-              onAddLedgerAccount: widget.account.isLedger
+              onAddLedgerAccount: widget.account.hasLedgerWalletIdentity
                   ? () => context.push(
                       '/onboarding/ledger',
                       extra: LedgerConnectArgs(
@@ -1023,19 +1292,75 @@ class _AccountRowState extends State<_AccountRow> {
 }
 
 class _AccountRowContent extends StatelessWidget {
-  const _AccountRowContent({required this.account});
+  const _AccountRowContent({
+    required this.account,
+    required this.showLedgerAccountIndex,
+    required this.isCurrent,
+  });
 
   final AccountInfo account;
+  final bool showLedgerAccountIndex;
+  final bool isCurrent;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Text(
-      account.name,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            account.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ),
+        if (showLedgerAccountIndex) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            'Account ${account.zip32AccountIndex ?? '—'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          if (isCurrent) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _CurrentAccountIndicator(accountUuid: account.uuid),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _CurrentAccountIndicator extends StatelessWidget {
+  const _CurrentAccountIndicator({required this.accountUuid});
+
+  final String accountUuid;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Current account',
+      child: Container(
+        key: ValueKey('accounts_current_badge_$accountUuid'),
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: context.colors.background.inverse,
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: AppIcon(
+            AppIcons.check,
+            size: 12,
+            color: context.colors.icon.inverse,
+          ),
+        ),
+      ),
     );
   }
 }

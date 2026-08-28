@@ -30,7 +30,9 @@ LedgerAccountImportContext? resolveLedgerAccountImportContext({
   }
   if (source == null || !source.isLedger) return null;
 
-  final fingerprint = source.ledgerWalletFingerprint;
+  final fingerprint = source.hasLedgerWalletIdentity
+      ? source.ledgerWalletFingerprint
+      : null;
   final knownAccounts = fingerprint == null
       ? <AccountInfo>[source]
       : accounts

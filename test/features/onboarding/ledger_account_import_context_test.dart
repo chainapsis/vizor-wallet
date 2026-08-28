@@ -36,7 +36,7 @@ void main() {
     },
   );
 
-  test('keeps a legacy Ledger account isolated until device verification', () {
+  test('keeps a Ledger account without an identity isolated', () {
     final result = resolveLedgerAccountImportContext(
       accounts: [
         _ledger('legacy', 4, 0, null),

@@ -224,7 +224,7 @@ class _HardwareAccountDetails extends ConsumerWidget {
             platform: ref.watch(ledgerTargetPlatformProvider),
             onChange: () => _changeConnection(context, ref),
           ),
-          if (allowAddLedgerAccount) ...[
+          if (allowAddLedgerAccount && account.hasLedgerWalletIdentity) ...[
             const SizedBox(height: AppSpacing.sm),
             AppButton(
               key: const ValueKey('ledger_add_another_account_button'),

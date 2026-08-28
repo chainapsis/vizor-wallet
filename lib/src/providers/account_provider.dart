@@ -491,8 +491,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Rename an account.
   Future<void> renameAccount(String uuid, String newName) async {
-    validateAccountName(newName);
     final normalizedName = normalizeAccountName(newName);
+    validateAccountName(normalizedName);
     final prev = state.value ?? const AccountState();
     final updated = prev.accounts
         .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
@@ -500,6 +500,39 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
+  }
+
+  /// Renames every account that belongs to the same authenticated Ledger.
+  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
+    final normalizedName = normalizeAccountName(newName);
+    validateAccountName(normalizedName);
+    final prev = state.value ?? const AccountState();
+    final matches = prev.accounts.where(
+      (account) => account.uuid == accountUuid && account.isLedger,
+    );
+    if (matches.length != 1) {
+      throw ArgumentError.value(
+        accountUuid,
+        'accountUuid',
+        'Unknown Ledger account UUID',
+      );
+    }
+    final fingerprint = matches.single.ledgerWalletFingerprint;
+    if (fingerprint == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint)) {
+      throw StateError('Ledger wallet identity is required to rename a group.');
+    }
+    final updated = prev.accounts
+        .map(
+          (account) =>
+              account.isLedger && account.ledgerWalletFingerprint == fingerprint
+              ? account.copyWith(ledgerWalletName: normalizedName)
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('renameLedgerWallet: $accountUuid → $normalizedName');
   }
 
   /// Update an account profile picture.
@@ -579,40 +612,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('recordLedgerConnection: $uuid → ${transport.name}');
-  }
-
-  Future<void> recordLedgerWalletFingerprint({
-    required String uuid,
-    required String fingerprint,
-  }) async {
-    final normalized = fingerprint.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
-      throw ArgumentError.value(
-        fingerprint,
-        'fingerprint',
-        'Ledger wallet fingerprint must be a 32-byte hex digest',
-      );
-    }
-    final prev = state.value ?? const AccountState();
-    final target = prev.accounts.where((account) => account.uuid == uuid);
-    if (target.isEmpty || !target.single.isLedger) {
-      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
-    }
-    final existing = target.single.ledgerWalletFingerprint;
-    if (existing != null && existing != normalized) {
-      throw StateError('Ledger wallet identity does not match this account.');
-    }
-    if (existing == normalized) return;
-    final updated = prev.accounts
-        .map(
-          (account) => account.uuid == uuid
-              ? account.copyWith(ledgerWalletFingerprint: normalized)
-              : account,
-        )
-        .toList(growable: false);
-    await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
-    log('recordLedgerWalletFingerprint: $uuid');
   }
 
   /// Remove an account from the wallet.
@@ -1138,7 +1137,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
-    String? ledgerWalletFingerprint,
+    required String ledgerWalletFingerprint,
   }) async {
     try {
       final accountName = normalizeAccountName(name);
@@ -1154,12 +1153,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         profilePictureId,
       );
       final normalizedLedgerWalletFingerprint = ledgerWalletFingerprint
-          ?.trim()
+          .trim()
           .toLowerCase();
-      if (normalizedLedgerWalletFingerprint != null &&
-          !RegExp(
-            r'^[0-9a-f]{64}$',
-          ).hasMatch(normalizedLedgerWalletFingerprint)) {
+      if (!RegExp(
+        r'^[0-9a-f]{64}$',
+      ).hasMatch(normalizedLedgerWalletFingerprint)) {
         throw ArgumentError.value(
           ledgerWalletFingerprint,
           'ledgerWalletFingerprint',
@@ -1167,6 +1165,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
       }
       final prev = state.value ?? const AccountState();
+      final ledgerWalletName = prev.accounts
+          .where(
+            (account) =>
+                account.isLedger &&
+                account.ledgerWalletFingerprint ==
+                    normalizedLedgerWalletFingerprint,
+          )
+          .map((account) => account.ledgerWalletName)
+          .whereType<String>()
+          .firstOrNull;
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
 
@@ -1196,6 +1204,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ledgerDeviceName: ledgerDeviceName,
         ledgerDeviceModel: ledgerDeviceModel,
         ledgerWalletFingerprint: normalizedLedgerWalletFingerprint,
+        ledgerWalletName: ledgerWalletName,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];

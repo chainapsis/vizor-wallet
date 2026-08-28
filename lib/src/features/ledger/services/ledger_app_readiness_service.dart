@@ -253,6 +253,7 @@ class LedgerAppReadinessService {
       );
     }
     if (raw.contains('disconnect') ||
+        raw.contains('no ledger') ||
         raw.contains('not found') ||
         raw.contains('no device') ||
         raw.contains('hid')) {

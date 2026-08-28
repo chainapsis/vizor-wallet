@@ -42,48 +42,23 @@ Future<LedgerAccountExport> ledgerExportAccount({
   network: network,
 );
 
-/// Read a stable wallet fingerprint without displaying an address or asking
-/// for approval. When an account index is supplied, the response also carries
-/// its first external transparent address for legacy-account verification.
-Future<LedgerWalletIdentity> ledgerWalletIdentity({
-  int? verificationAccountIndex,
-  required String network,
-}) => RustLib.instance.api.crateApiLedgerLedgerWalletIdentity(
-  verificationAccountIndex: verificationAccountIndex,
-  network: network,
-);
+/// Read a stable wallet fingerprint without displaying an address.
+Future<LedgerWalletIdentity> ledgerWalletIdentity({required String network}) =>
+    RustLib.instance.api.crateApiLedgerLedgerWalletIdentity(network: network);
 
 /// Build the transport-neutral no-display public-key exchange used by BLE.
-Future<LedgerWalletIdentityApduPlan> ledgerBuildWalletIdentityApduPlan({
-  int? verificationAccountIndex,
-}) => RustLib.instance.api.crateApiLedgerLedgerBuildWalletIdentityApduPlan(
-  verificationAccountIndex: verificationAccountIndex,
-);
+Future<LedgerWalletIdentityApduPlan> ledgerBuildWalletIdentityApduPlan() =>
+    RustLib.instance.api.crateApiLedgerLedgerBuildWalletIdentityApduPlan();
 
 /// Parse status-bearing BLE responses from the wallet-identity plan.
 Future<LedgerWalletIdentity> ledgerParseMobileWalletIdentityResponses({
-  int? verificationAccountIndex,
   required String network,
   required List<Uint8List> responses,
 }) =>
     RustLib.instance.api.crateApiLedgerLedgerParseMobileWalletIdentityResponses(
-      verificationAccountIndex: verificationAccountIndex,
       network: network,
       responses: responses,
     );
-
-/// Derive the expected first external transparent address from an imported
-/// account's stored UFVK. This is read-only and is used to enroll legacy
-/// Ledger accounts into the wallet-identity grouping contract.
-Future<String> ledgerAccountFirstTransparentAddress({
-  required String dbPath,
-  required String network,
-  required String accountUuid,
-}) => RustLib.instance.api.crateApiLedgerLedgerAccountFirstTransparentAddress(
-  dbPath: dbPath,
-  network: network,
-  accountUuid: accountUuid,
-);
 
 /// Build the Zcash app's UFVK request without opening a desktop transport.
 Future<LedgerUfvkApduPlan> ledgerBuildUfvkApduPlan({
@@ -509,23 +484,18 @@ class LedgerUfvkApduPlan {
 /// accounts that come from the same seed.
 class LedgerWalletIdentity {
   final String fingerprint;
-  final String? verificationAddress;
 
-  const LedgerWalletIdentity({
-    required this.fingerprint,
-    this.verificationAddress,
-  });
+  const LedgerWalletIdentity({required this.fingerprint});
 
   @override
-  int get hashCode => fingerprint.hashCode ^ verificationAddress.hashCode;
+  int get hashCode => fingerprint.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LedgerWalletIdentity &&
           runtimeType == other.runtimeType &&
-          fingerprint == other.fingerprint &&
-          verificationAddress == other.verificationAddress;
+          fingerprint == other.fingerprint;
 }
 
 class LedgerWalletIdentityApduPlan {
