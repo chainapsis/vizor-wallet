@@ -305,7 +305,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(_refreshEligibleWeightUnlocked).then((_) {
       final current = state.value;
       final error = current?.error;
-      if (error != null && !isVotingEligibilityErrorText(error.message)) {
+      if (error != null && !isVotingEligibilityError(error)) {
         throw error.cause ?? StateError(error.message);
       }
       return current?.eligibleWeightZatoshi;
@@ -315,6 +315,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> ensureWalletReadyForVoting() {
     return _enqueue(() async {
       final context = await _loadContext(_roundId);
+      // Stall handling follows the notifier's ownership: the submission
+      // session fails (its recovery poll retries once sync catches up), a
+      // UI-owned session keeps waiting.
       await _waitUntilWalletReadyForVoting(context);
     });
   }
@@ -339,19 +342,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     try {
+      // Session-level wait: never fails on stall, so a slow catch-up keeps
+      // this precompute pending instead of silently abandoning it.
       await _waitUntilWalletReadyForVoting(context);
     } on _StaleVotingSessionAction {
-      return;
-    } on _VotingWalletSyncTimeout catch (e) {
-      _setWalletSyncReadinessState(
-        context: context,
-        readiness: e.readiness,
-        waiting: false,
-      );
-      debugPrint(
-        '[zcash] Voting: delegation PIR precompute skipped '
-        'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
-      );
       return;
     }
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
@@ -3831,7 +3825,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
-      final eligibilityError = isVotingEligibilityErrorText(message);
+      final eligibilityError =
+          isVotingWalletBirthdayAfterSnapshot(error) ||
+          isVotingEligibilityErrorText(message);
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
@@ -3976,62 +3972,172 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
   }
 
+  /// Whether a wallet-sync stall must fail this notifier's waits.
+  ///
+  /// False for UI-owned sessions: a stall is a display state there, and the
+  /// wait continues automatically. The submission session overrides it to
+  /// true because it owns the recovery poll that turns the resulting error
+  /// back into a retry — see [VotingSubmissionSessionNotifier].
+  ///
+  /// This getter is the only switch: the wait helper takes no override, so a
+  /// caller cannot opt one submission-owned wait back out and reintroduce
+  /// the silently-parked job this replaced.
+  bool get _failsOnWalletSyncStall => false;
+
+  /// Waits until wallet scan reaches the round snapshot.
+  ///
+  /// A stall (no observable sync progress within the configured budget) is a
+  /// UI state, not a failure: the loop keeps polling, marks the session
+  /// stalled, and clears the mark as soon as progress resumes — so the
+  /// "voting continues automatically" copy holds for every session-level
+  /// caller. Waits owned by the submission job instead throw, because it
+  /// owns an automatic recovery loop for the resulting error (see
+  /// [_failsOnWalletSyncStall]); that applies to *every* wait it initiates,
+  /// not just the initial readiness gate, so
+  /// readiness regressing mid-job (a rewind or reorg while eligibility or
+  /// delegation is being prepared) still surfaces instead of parking the job
+  /// in waitingForWalletSync forever. Wallet-birthday-after-snapshot always
+  /// throws because the shared scanner cannot cover that snapshot.
   Future<void> _waitUntilWalletReadyForVoting(
     _VotingSessionContext context,
   ) async {
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    final registrationOwner = Object();
+    final stopRequested = Completer<void>();
+    final waitCompleted = Completer<void>();
+    final registered = registry.registerWalletReadinessWait(
+      owner: registrationOwner,
+      stopAndDrain: () async {
+        if (!stopRequested.isCompleted) stopRequested.complete();
+        await waitCompleted.future;
+      },
+    );
+    if (!registered) throw const _StaleVotingSessionAction();
+
+    void throwIfStopRequested() {
+      if (stopRequested.isCompleted) {
+        throw const _StaleVotingSessionAction();
+      }
+    }
+
+    final failsOnStall = _failsOnWalletSyncStall;
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
-    final waitTimer = Stopwatch()..start();
+    final noProgressTimer = Stopwatch()..start();
+    int? lastScannedHeight;
+    // Scoped to this wait: high-water marks must not outlive it (see
+    // VotingWalletSyncProgressTracker).
+    final progressTracker = VotingWalletSyncProgressTracker();
     final sessionInvalidated = _sessionInvalidated.future;
-    while (true) {
-      _throwIfContextStale(context, 'wallet-sync-wait');
-      final readiness = await ref
-          .read(votingWalletSyncReadinessCheckerProvider)
-          .check(
-            dbPath: context.dbPath,
-            network: context.network,
-            snapshotHeight: context.round.snapshotHeight,
+    try {
+      while (true) {
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-wait');
+        final readiness = await ref
+            .read(votingWalletSyncReadinessCheckerProvider)
+            .check(
+              dbPath: context.dbPath,
+              network: context.network,
+              snapshotHeight: context.round.snapshotHeight,
+            );
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-readiness');
+        if (readiness.walletBirthdayAfterSnapshot) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+            retainReadiness: true,
           );
-      _throwIfContextStale(context, 'wallet-sync-readiness');
-      if (readiness.isReady) {
+          throw _VotingWalletBirthdayAfterSnapshot(readiness);
+        }
+        if (readiness.isReady) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+          );
+          _throwIfContextStale(context, 'wallet-sync-ready');
+          return;
+        }
+
+        // Progress is any movement of the contiguous scan frontier OR real
+        // forward movement of the engine's own progress; the frontier alone
+        // stays pinned while tip-priority ranges scan first, which is a
+        // healthy catch-up, not a stall.
+        final engineProgressed = progressTracker.observe(
+          ref.read(votingWalletSyncProgressSampleProvider).call(),
+        );
+        if (lastScannedHeight == null ||
+            readiness.scannedHeight != lastScannedHeight ||
+            engineProgressed) {
+          noProgressTimer.reset();
+        }
+        lastScannedHeight = readiness.scannedHeight;
+
+        if (!loggedWait) {
+          loggedWait = true;
+          debugPrint(
+            '[zcash] Voting: waiting for wallet scan before voting '
+            'round=${context.round.roundId} '
+            'scanned=${readiness.scannedHeight} '
+            'snapshot=${readiness.snapshotHeight}',
+          );
+        }
+        final stalled = noProgressTimer.elapsed >= maxWait;
+        if (stalled && failsOnStall) {
+          _setWalletSyncReadinessState(
+            context: context,
+            readiness: readiness,
+            waiting: false,
+            stalled: true,
+          );
+          throw _VotingWalletSyncStalled(
+            readiness: readiness,
+            maxWait: maxWait,
+          );
+        }
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
-          waiting: false,
+          waiting: true,
+          stalled: stalled,
         );
-        _throwIfContextStale(context, 'wallet-sync-ready');
-        return;
+        throwIfStopRequested();
+        _throwIfContextStale(context, 'wallet-sync-start');
+        try {
+          ref.read(votingWalletSyncStarterProvider).call();
+        } catch (e) {
+          debugPrint('[zcash] Voting: wallet sync start skipped: $e');
+        }
+        final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
+        final remainingWait = maxWait - noProgressTimer.elapsed;
+        final delay =
+            remainingWait > Duration.zero && remainingWait < pollInterval
+            ? remainingWait
+            : pollInterval;
+        await Future.any<void>([
+          Future<void>.delayed(delay),
+          sessionInvalidated,
+          stopRequested.future,
+        ]);
       }
-
-      if (!loggedWait) {
-        loggedWait = true;
-        debugPrint(
-          '[zcash] Voting: waiting for wallet scan before voting '
-          'round=${context.round.roundId} '
-          'scanned=${readiness.scannedHeight} '
-          'snapshot=${readiness.snapshotHeight}',
-        );
+    } finally {
+      registry.unregisterWalletReadinessWait(owner: registrationOwner);
+      if (stopRequested.isCompleted) {
+        final current = state.value;
+        if (current?.phase == VotingSessionPhase.waitingForWalletSync) {
+          _setStateForContext(
+            context,
+            current!.copyWith(
+              phase: VotingSessionPhase.idle,
+              clearWalletSyncReadiness: true,
+              clearError: true,
+            ),
+          );
+        }
       }
-      _setWalletSyncReadinessState(
-        context: context,
-        readiness: readiness,
-        waiting: true,
-      );
-      _throwIfContextStale(context, 'wallet-sync-start');
-      try {
-        ref.read(votingWalletSyncStarterProvider).call();
-      } catch (e) {
-        debugPrint('[zcash] Voting: wallet sync start skipped: $e');
-      }
-      final remainingWait = maxWait - waitTimer.elapsed;
-      if (remainingWait.compareTo(Duration.zero) <= 0) {
-        throw _VotingWalletSyncTimeout(readiness: readiness, maxWait: maxWait);
-      }
-      final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
-      final delay = remainingWait.compareTo(pollInterval) < 0
-          ? remainingWait
-          : pollInterval;
-      await Future.any<void>([Future<void>.delayed(delay), sessionInvalidated]);
+      if (!waitCompleted.isCompleted) waitCompleted.complete();
     }
   }
 
@@ -4039,6 +4145,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required _VotingSessionContext context,
     required VotingWalletSyncReadiness readiness,
     required bool waiting,
+    bool stalled = false,
+    bool retainReadiness = false,
   }) {
     final current = state.value ?? VotingSessionState(roundId: _roundId);
     final phase = waiting
@@ -4059,7 +4167,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
         walletChainTipHeight: readiness.chainTipHeight,
-        clearWalletSyncReadiness: !waiting,
+        walletBirthdayHeight: readiness.walletBirthdayHeight,
+        walletSyncStalled: stalled,
+        clearWalletSyncReadiness: !waiting && !stalled && !retainReadiness,
         clearError: true,
       ),
     );
@@ -4077,6 +4187,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     state = AsyncData(
       current.copyWith(
         phase: VotingSessionPhase.error,
+        // The stalled panel accompanies only a stall error; any other failure
+        // must drop a leftover stalled mark or the panel would keep showing
+        // frozen heights next to an unrelated error message.
+        walletSyncStalled: isVotingWalletSyncStalled(cause),
         error: VotingSessionError(
           message: message,
           cause: cause,
@@ -4837,8 +4951,36 @@ class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
 }
 
-class _VotingWalletSyncTimeout implements Exception {
-  const _VotingWalletSyncTimeout({
+bool isVotingWalletSyncStalled(Object? error) =>
+    error is _VotingWalletSyncStalled;
+
+bool isVotingWalletBirthdayAfterSnapshot(Object? error) =>
+    error is _VotingWalletBirthdayAfterSnapshot;
+
+/// Whether a session error means this account is not eligible for the round.
+///
+/// Classification is typed-first: conditions raised by our own Dart code
+/// (wallet birthday past the snapshot) are recognized by their cause type,
+/// so editing their user-facing copy cannot silently break the read-only
+/// not-eligible treatment. The text matcher remains the fallback for opaque
+/// Rust-side eligibility messages, which reach Dart as strings only.
+bool isVotingEligibilityError(VotingSessionError? error) =>
+    error != null &&
+    (isVotingWalletBirthdayAfterSnapshot(error.cause) ||
+        isVotingEligibilityErrorText(error.message));
+
+String votingWalletBirthdayAfterSnapshotMessage(
+  VotingWalletSyncReadiness readiness,
+) {
+  return 'This wallet starts at birthday block '
+      '${formatBlockHeight(readiness.walletBirthdayHeight)}, after this '
+      'voting round snapshot at block '
+      '${formatBlockHeight(readiness.snapshotHeight)}. Restore an account '
+      'with a birthday at or before the snapshot to vote.';
+}
+
+class _VotingWalletSyncStalled implements Exception {
+  const _VotingWalletSyncStalled({
     required this.readiness,
     required this.maxWait,
   });
@@ -4848,12 +4990,21 @@ class _VotingWalletSyncTimeout implements Exception {
 
   @override
   String toString() {
-    return 'Wallet sync did not reach this voting round snapshot within '
-        '${formatElapsedSeconds(maxWait)}. Scanned block '
+    return 'Wallet sync has not advanced toward this voting round snapshot '
+        'for ${formatElapsedSeconds(maxWait)}. Scanned block '
         '${formatBlockHeight(readiness.scannedHeight)} of '
-        '${formatBlockHeight(readiness.snapshotHeight)}. Let wallet sync '
-        'catch up and retry.';
+        '${formatBlockHeight(readiness.snapshotHeight)}. Vizor will retry '
+        'automatically when wallet sync reaches the snapshot.';
   }
+}
+
+class _VotingWalletBirthdayAfterSnapshot implements Exception {
+  const _VotingWalletBirthdayAfterSnapshot(this.readiness);
+
+  final VotingWalletSyncReadiness readiness;
+
+  @override
+  String toString() => votingWalletBirthdayAfterSnapshotMessage(readiness);
 }
 
 class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
@@ -4865,6 +5016,41 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
 
   @override
   bool get _ownsAutomaticShareTracking => true;
+
+  /// Every wait this session initiates fails on stall, not just the initial
+  /// readiness gate: the submission job turns the error into its recovery
+  /// poll and a retry, so a stall must never park the job silently.
+  @override
+  bool get _failsOnWalletSyncStall => true;
+
+  void markWalletBirthdayAfterSnapshot(VotingWalletSyncReadiness readiness) {
+    final error = _VotingWalletBirthdayAfterSnapshot(readiness);
+    final current = state.value ?? VotingSessionState(roundId: _roundId);
+    state = AsyncData(
+      current.copyWith(
+        phase: VotingSessionPhase.error,
+        eligibleWeightZatoshi: BigInt.zero,
+        privacyTrimDroppedValueZatoshi: BigInt.zero,
+        walletScannedHeight: readiness.scannedHeight,
+        walletSnapshotHeight: readiness.snapshotHeight,
+        walletChainTipHeight: readiness.chainTipHeight,
+        walletBirthdayHeight: readiness.walletBirthdayHeight,
+        walletSyncStalled: false,
+        error: VotingSessionError(message: error.toString(), cause: error),
+      ),
+    );
+  }
+
+  void markWalletSyncRecoveryStopped(String message) {
+    final current = state.value ?? VotingSessionState(roundId: _roundId);
+    state = AsyncData(
+      current.copyWith(
+        phase: VotingSessionPhase.error,
+        walletSyncStalled: false,
+        error: VotingSessionError(message: message),
+      ),
+    );
+  }
 
   @override
   bool _retainAutomaticShareTracking() {

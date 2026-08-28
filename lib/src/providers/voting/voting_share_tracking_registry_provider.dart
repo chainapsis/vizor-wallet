@@ -6,9 +6,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/voting/voting_flow_models.dart';
 
 typedef VotingShareTrackingStopper = Future<void> Function();
+typedef VotingSyncRecoveryStopper = Future<void> Function();
+typedef VotingWalletReadinessWaitStopper = Future<void> Function();
 
+/// Coordinates background voting work with destructive account mutations.
+///
+/// Share tracking and stalled-sync recovery both retain account-scoped DB
+/// access after the foreground submission guard is released. Account removal
+/// and reset quiesce this registry before deleting durable wallet state.
 class VotingShareTrackingRegistry {
   final Map<VotingSessionKey, _VotingShareTrackingRegistration> _sessions = {};
+  final Map<VotingSessionKey, _VotingSyncRecoveryRegistration> _recoveries = {};
+  final Map<Object, _VotingWalletReadinessWaitRegistration> _readinessWaits =
+      {};
   final Set<Completer<void>> _discoveries = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
   final Set<String> _quiescedAccounts = {};
@@ -60,10 +70,53 @@ class VotingShareTrackingRegistry {
     if (identical(_sessions[key]?.owner, owner)) _sessions.remove(key);
   }
 
+  bool registerSyncRecovery({
+    required VotingSessionKey key,
+    required Object owner,
+    required VotingSyncRecoveryStopper stopAndDrain,
+  }) {
+    // Readiness is wallet-wide: every recovery reads the same DB scan height
+    // and minimum account birthday. An account mutation therefore blocks new
+    // recovery work for every account, not only the account being changed.
+    if (_isSyncRecoveryQuiesced) return false;
+    _recoveries[key] = _VotingSyncRecoveryRegistration(
+      owner: owner,
+      stopAndDrain: stopAndDrain,
+    );
+    return true;
+  }
+
+  void unregisterSyncRecovery({
+    required VotingSessionKey key,
+    required Object owner,
+  }) {
+    if (identical(_recoveries[key]?.owner, owner)) _recoveries.remove(key);
+  }
+
+  bool registerWalletReadinessWait({
+    required Object owner,
+    required VotingWalletReadinessWaitStopper stopAndDrain,
+  }) {
+    // Snapshot readiness is wallet-wide. Deleting any account can change the
+    // minimum birthday or scan coverage seen by every active voting session.
+    if (_isSyncRecoveryQuiesced) return false;
+    _readinessWaits[owner] = _VotingWalletReadinessWaitRegistration(
+      stopAndDrain: stopAndDrain,
+    );
+    return true;
+  }
+
+  void unregisterWalletReadinessWait({required Object owner}) {
+    _readinessWaits.remove(owner);
+  }
+
   bool isQuiesced(String accountUuid) {
     return _globalQuiescenceDepth > 0 ||
         _quiescedAccounts.contains(accountUuid);
   }
+
+  bool get _isSyncRecoveryQuiesced =>
+      _globalQuiescenceDepth > 0 || _quiescedAccounts.isNotEmpty;
 
   /// Blocks matching discovery until paired with [resume].
   ///
@@ -79,6 +132,11 @@ class VotingShareTrackingRegistry {
       for (final entry in _sessions.entries)
         if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
     ];
+    // Unlike helper-share tracking, wallet-sync readiness is not
+    // account-scoped. Deleting any account can change the wallet's minimum
+    // birthday, so all recovery polls must stop before the shared DB mutates.
+    final recoveries = _recoveries.entries.toList(growable: false);
+    final readinessWaits = _readinessWaits.entries.toList(growable: false);
     final discoveries = [
       for (final completion in _discoveries) completion.future,
     ];
@@ -86,10 +144,18 @@ class VotingShareTrackingRegistry {
       await Future.wait([
         ...discoveries,
         ...sessions.map((entry) => entry.value.stopAndDrain()),
+        ...recoveries.map((entry) => entry.value.stopAndDrain()),
+        ...readinessWaits.map((entry) => entry.value.stopAndDrain()),
       ]);
     } finally {
       for (final entry in sessions) {
         unregister(key: entry.key, owner: entry.value.owner);
+      }
+      for (final entry in recoveries) {
+        unregisterSyncRecovery(key: entry.key, owner: entry.value.owner);
+      }
+      for (final entry in readinessWaits) {
+        unregisterWalletReadinessWait(owner: entry.key);
       }
     }
   }
@@ -104,6 +170,13 @@ class VotingShareTrackingRegistry {
 
   @visibleForTesting
   Set<VotingSessionKey> get registeredKeys => Set.unmodifiable(_sessions.keys);
+
+  @visibleForTesting
+  Set<VotingSessionKey> get registeredSyncRecoveryKeys =>
+      Set.unmodifiable(_recoveries.keys);
+
+  @visibleForTesting
+  int get registeredWalletReadinessWaitCount => _readinessWaits.length;
 }
 
 class _VotingShareTrackingRegistration {
@@ -114,6 +187,22 @@ class _VotingShareTrackingRegistration {
 
   final Object owner;
   final VotingShareTrackingStopper stopAndDrain;
+}
+
+class _VotingSyncRecoveryRegistration {
+  const _VotingSyncRecoveryRegistration({
+    required this.owner,
+    required this.stopAndDrain,
+  });
+
+  final Object owner;
+  final VotingSyncRecoveryStopper stopAndDrain;
+}
+
+class _VotingWalletReadinessWaitRegistration {
+  const _VotingWalletReadinessWaitRegistration({required this.stopAndDrain});
+
+  final VotingWalletReadinessWaitStopper stopAndDrain;
 }
 
 final votingShareTrackingRegistryProvider = Provider((ref) {

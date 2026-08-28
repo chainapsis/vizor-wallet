@@ -863,6 +863,19 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
+/// Returns the earliest recovery birthday across every account in the wallet.
+///
+/// Voting readiness is wallet-wide: the scan engine applies every registered
+/// account UFVK to each scanned block. The minimum wallet birthday therefore
+/// matches the scope of the scan frontier used by the readiness check.
+Future<BigInt> getWalletBirthdayHeight({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncGetWalletBirthdayHeight(
+  dbPath: dbPath,
+  network: network,
+);
+
 Future<BigInt> getBlockTime({
   required String lightwalletdUrl,
   required BigInt height,

@@ -2343,6 +2343,127 @@ void main() {
     expect(_reviewAnswersButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('proposal detail shows snapshot progress before eligibility', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final readiness = _WaitingVotingWalletSyncReadinessChecker();
+    final container = _statusContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    const syncCopy =
+        'Wallet sync: 50%. '
+        'Voting power will be calculated once the snapshot height is reached.';
+    await _pumpUntilFound(tester, find.text(syncCopy));
+
+    expect(find.text(syncCopy), findsOneWidget);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
+    // A freshly mounted screen during an ongoing sync wait (driven by
+    // another owner, so no local preparation is in flight) must not offer a
+    // retry: the wait continues automatically. An enabled no-op
+    // 'Retry eligibility' button used to render in exactly this state.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: KeyedSubtree(key: UniqueKey(), child: _proposalHarness()),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text(syncCopy));
+    expect(find.text('Retry eligibility'), findsNothing);
+    expect(_reviewAnswersButton(tester).onPressed, isNull);
+
+    readiness.ready = true;
+    await _pumpUntilCondition(
+      tester,
+      () => find.text(syncCopy).evaluate().isEmpty,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(syncCopy), findsNothing);
+  });
+
+  testWidgets('proposal detail keeps showing sync copy after a stall', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    // Never-ready readiness with a zero stall budget: the session-level
+    // wallet-sync wait marks itself stalled on its first check but keeps
+    // polling, so the regular summary copy reports the stall while the loop
+    // stays live.
+    final readiness = _WaitingVotingWalletSyncReadinessChecker();
+    final container = _statusContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 10),
+      walletSyncMaxWait: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.textContaining('stopped advancing'));
+
+    expect(find.textContaining('50%'), findsOneWidget);
+    expect(find.textContaining('blocks remaining'), findsNothing);
+    expect(find.textContaining('block 73 of 123'), findsNothing);
+
+    // The stalled wait continues automatically once sync reaches the
+    // snapshot — the promise in the summary copy.
+    readiness.ready = true;
+    await _pumpUntilCondition(
+      tester,
+      () => find.textContaining('stopped advancing').evaluate().isEmpty,
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('stopped advancing'), findsNothing);
+    expect(find.textContaining('Wallet sync:'), findsNothing);
+  });
+
+  testWidgets('proposal detail shows birthday guidance instead of zero power', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final container = _statusContainer(
+      walletSyncReadinessChecker:
+          _BirthdayAfterSnapshotVotingWalletSyncReadinessChecker(),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.textContaining('Restore an account'));
+
+    expect(find.textContaining('after this voting round snapshot'), findsOne);
+    expect(find.textContaining('birthday at or before the snapshot'), findsOne);
+    expect(find.text('Voting power 0 ZEC'), findsNothing);
+    expect(find.text('Voting power unavailable'), findsNothing);
+  });
+
   testWidgets(
     'proposal detail shows read-only options when eligibility fails',
     (tester) async {
@@ -3892,6 +4013,69 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Scan signature'), findsNothing);
   });
+
+  testWidgets(
+    'wallet-sync wait keeps the established submission progress presentation',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: key.accountUuid,
+                phase: VotingSessionPhase.waitingForWalletSync,
+                walletScannedHeight: 73,
+                walletSnapshotHeight: 123,
+                walletChainTipHeight: 163,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      VotingSubmissionProgressPresentation? presentation;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: VotingStatusView(
+              roundId: _roundId,
+              accountUuid: key.accountUuid,
+              submissionProgressBuilder: (context, value) {
+                presentation = value;
+                return const Text('established submission progress');
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('established submission progress'), findsOneWidget);
+      expect(find.text('Waiting for wallet sync'), findsNothing);
+      expect(presentation?.activeStep, VotingSubmissionProgressStep.delegating);
+      expect(presentation?.activeStepProgress, isNull);
+    },
+  );
 }
 
 Future<void> _pumpUntilFound(
@@ -3935,6 +4119,9 @@ ProviderContainer _statusContainer({
   VotingRecoveryApi? recoveryApi,
   VotingRustApi? rust,
   VotingHotkeyStore? hotkeyStore,
+  VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
+  Duration walletSyncPollInterval = Duration.zero,
+  Duration? walletSyncMaxWait,
   VotingDraftPersistence? draftPersistence,
   List<Override> overrides = const [],
 }) {
@@ -4038,10 +4225,15 @@ ProviderContainer _statusContainer({
       ),
       votingRustApiProvider.overrideWithValue(rust ?? _NoopVotingRustApi()),
       votingWalletSyncReadinessCheckerProvider.overrideWithValue(
-        _FakeVotingWalletSyncReadinessChecker(),
+        walletSyncReadinessChecker ?? _FakeVotingWalletSyncReadinessChecker(),
       ),
       votingWalletSyncStarterProvider.overrideWithValue(() {}),
-      votingWalletSyncPollIntervalProvider.overrideWithValue(Duration.zero),
+      votingWalletSyncProgressSampleProvider.overrideWithValue(() => null),
+      votingWalletSyncPollIntervalProvider.overrideWithValue(
+        walletSyncPollInterval,
+      ),
+      if (walletSyncMaxWait != null)
+        votingWalletSyncMaxWaitProvider.overrideWithValue(walletSyncMaxWait),
       if (hotkeyStore != null)
         votingHotkeyStoreProvider.overrideWithValue(hotkeyStore),
       votingTxConfirmationPollingProvider.overrideWithValue(
@@ -5055,6 +5247,43 @@ class _FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: snapshotHeight,
+    );
+  }
+}
+
+class _WaitingVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  bool ready = false;
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: ready ? snapshotHeight : snapshotHeight - 50,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 40,
+      walletBirthdayHeight: snapshotHeight - 100,
+    );
+  }
+}
+
+class _BirthdayAfterSnapshotVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: snapshotHeight + 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 100,
+      walletBirthdayHeight: snapshotHeight + 1,
     );
   }
 }

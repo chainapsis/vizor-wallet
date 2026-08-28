@@ -13,8 +13,10 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../account_provider.dart';
+import '../app_security_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
@@ -235,6 +237,10 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     state = state.removeJobKey(key);
   }
 
+  void forgetCancelledRecovery(VotingSessionKey key) {
+    state = state.removeJobKey(key);
+  }
+
   Future<void> handleKeystoneBatchSignResponse(
     VotingSessionKey key,
     List<int> responseCbor,
@@ -276,6 +282,20 @@ class _VotingKeystoneSigningRound {
   ];
 }
 
+class _ConfirmedVoteIntent {
+  _ConfirmedVoteIntent({
+    required List<rust_wire.DraftVote> draftVotes,
+    required List<int> proposalIds,
+    required Map<int, int> proposalOptionCounts,
+  }) : draftVotes = List.unmodifiable(draftVotes),
+       proposalIds = List.unmodifiable(proposalIds),
+       proposalOptionCounts = Map.unmodifiable(proposalOptionCounts);
+
+  final List<rust_wire.DraftVote> draftVotes;
+  final List<int> proposalIds;
+  final Map<int, int> proposalOptionCounts;
+}
+
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   VotingSubmissionJobNotifier(this._key);
 
@@ -285,13 +305,39 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
   _VotingKeystoneSigningRound? _keystoneSigningRound;
+  int? _walletSyncRecoveryGeneration;
+  int? _walletSyncRecoverySnapshotHeight;
+  Timer? _walletSyncRecoveryTimer;
+  bool _walletSyncRecoveryInFlight = false;
+  Completer<void>? _walletSyncRecoveryPollCompletion;
+  bool _walletSyncRecoveryRegistered = false;
+  bool _walletSyncRecoveryPausedForMutation = false;
+  int _walletSyncRecoveryFailureStreak = 0;
+  bool _walletSyncRecoveryRetryOnUnlock = false;
+  VoidCallback? _walletSyncRecoveryRestoreListener;
+  late VotingShareTrackingRegistry _shareTrackingRegistry;
   int _nextGeneration = 0;
 
   @override
   VotingSubmissionJobState build() {
+    _shareTrackingRegistry = ref.read(votingShareTrackingRegistryProvider);
+    _walletSyncRecoveryRestoreListener ??= () {
+      unawaited(_restoreWalletSyncRecoveryAfterMutation());
+    };
+    ref.listen<AppSecurityState>(appSecurityProvider, (previous, next) {
+      if (_walletSyncRecoveryRetryOnUnlock &&
+          previous?.requiresUnlock == true &&
+          !next.requiresUnlock) {
+        unawaited(_retryWalletSyncRecoveryAfterUnlock());
+      }
+    });
     ref.onDispose(() {
+      _shareTrackingRegistry.removeRestoreRequestListener(
+        _walletSyncRecoveryRestoreListener!,
+      );
       _completionPollTimer?.cancel();
       _completionPollTimer = null;
+      _cancelWalletSyncRecovery();
       _releaseSessionSubscription();
     });
     return VotingSubmissionJobState(key: _key);
@@ -304,14 +350,20 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   Future<void> retry() async {
+    await _restartJob();
+  }
+
+  Future<void> _restartJob({_ConfirmedVoteIntent? confirmedIntent}) async {
+    _cancelWalletSyncRecovery();
     _releaseGuard();
     _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key);
-    _startJob(_key);
+    _startJob(_key, confirmedIntent: confirmedIntent);
   }
 
   void dismiss() {
     if (state.isInFlight) return;
+    _cancelWalletSyncRecovery();
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
@@ -319,7 +371,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
   }
 
-  void _startJob(VotingSessionKey key) {
+  void _startJob(
+    VotingSessionKey key, {
+    _ConfirmedVoteIntent? confirmedIntent,
+  }) {
+    _cancelWalletSyncRecovery();
     _cancelCompletionPoll();
     _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
     _retainSession(key);
@@ -333,8 +389,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       key: key,
       status: VotingSubmissionJobStatus.running,
       generation: generation,
+      pendingDraftVotes: confirmedIntent?.draftVotes,
+      pendingProposalIds: confirmedIntent?.proposalIds ?? const [],
+      pendingProposalOptionCounts:
+          confirmedIntent?.proposalOptionCounts ?? const {},
     );
-    unawaited(_run(key: key, generation: generation));
+    unawaited(
+      _run(key: key, generation: generation, confirmedIntent: confirmedIntent),
+    );
   }
 
   Future<void> handleKeystoneBatchSignResponse(List<int> responseCbor) async {
@@ -466,6 +528,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> _run({
     required VotingSessionKey key,
     required int generation,
+    _ConfirmedVoteIntent? confirmedIntent,
   }) async {
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
@@ -484,34 +547,62 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       final proposals = proposalsFromRound(round);
-      final proposalOptionCounts = {
+      final currentProposalOptionCounts = {
         for (final proposal in proposals) proposal.id: proposal.options.length,
       };
-      final VotingDraftState draft;
-      try {
-        draft = await ref
-            .read(votingDraftProvider(key).notifier)
-            .ensureLoaded();
-      } catch (_) {
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        final activeSession = await _ensureEligibilityForCompletedSession(
-          key: key,
-          generation: generation,
-          sessionNotifier: sessionNotifier,
-          session: loadedSession,
+      late List<rust_wire.DraftVote> draftVotes;
+      late List<int> intentProposalIds;
+      late Map<int, int> proposalOptionCounts;
+      if (confirmedIntent != null) {
+        // Keep the reviewed choices immutable, but drop work that a fresh
+        // recovery plan now reports as complete while sync was catching up.
+        draftVotes = _draftVotesForSession(
+          confirmedIntent.draftVotes,
+          loadedSession,
         );
-        if (activeSession == null) return;
-        if (_canCompleteSessionAfterDraftLoadFailure(activeSession)) {
-          _completeJob(key: key, generation: generation);
-          return;
+        intentProposalIds = _proposalIdsForSession(
+          confirmedIntent.proposalIds,
+          loadedSession,
+        );
+        proposalOptionCounts = confirmedIntent.proposalOptionCounts;
+      } else {
+        final VotingDraftState draft;
+        try {
+          draft = await ref
+              .read(votingDraftProvider(key).notifier)
+              .ensureLoaded();
+        } catch (_) {
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+          final activeSession = await _ensureEligibilityForCompletedSession(
+            key: key,
+            generation: generation,
+            sessionNotifier: sessionNotifier,
+            session: loadedSession,
+          );
+          if (activeSession == null) return;
+          if (_canCompleteSessionAfterDraftLoadFailure(activeSession)) {
+            _completeJob(key: key, generation: generation);
+            return;
+          }
+          rethrow;
         }
-        rethrow;
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final confirmedDraft = _draftForSession(draft, loadedSession);
+        draftVotes = confirmedDraft.toDraftVotes(proposals);
+        intentProposalIds = draftVotes.isNotEmpty
+            ? _proposalIdsForDraftIntents(loadedSession, proposals)
+            : const [];
+        proposalOptionCounts = currentProposalOptionCounts;
       }
-      if (!_isCurrentJob(key: key, generation: generation)) return;
-      if (_canCompleteSessionWithoutDraft(loadedSession, draft)) {
+      if (_canCompleteSessionWithoutDraftVotes(loadedSession, draftVotes)) {
         _completeJob(key: key, generation: generation);
         return;
       }
+      state = state.copyWith(
+        pendingDraftVotes: draftVotes,
+        pendingProposalIds: intentProposalIds,
+        pendingProposalOptionCounts: proposalOptionCounts,
+      );
       if (round.voteEndTime == null) {
         _failJob(
           key: key,
@@ -546,7 +637,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
       if (completedEligibilitySession == null) return;
       activeSession = completedEligibilitySession;
-      if (!draft.isEmpty && !activeSession.hasConfirmedVotingEligibility) {
+      if (draftVotes.isNotEmpty &&
+          !activeSession.hasConfirmedVotingEligibility) {
         await sessionNotifier.ensureVotingEligibility();
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterEligibilityCheck = _sessionForJob(key);
@@ -560,24 +652,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         }
         activeSession = afterEligibilityCheck ?? activeSession;
       }
-      if (_canCompleteSessionWithoutDraft(activeSession, draft)) {
+      if (_canCompleteSessionWithoutDraftVotes(activeSession, draftVotes)) {
         _completeJob(key: key, generation: generation);
         return;
       }
-      final userDraftVotes = _draftForSession(
-        draft,
-        activeSession,
-      ).toDraftVotes(proposals);
       final recoveredDraftVotes =
-          userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
+          draftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
           ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
           : const <rust_wire.DraftVote>[];
-      final draftVotes = userDraftVotes.isNotEmpty
-          ? userDraftVotes
-          : recoveredDraftVotes;
-      final intentProposalIds = userDraftVotes.isNotEmpty
-          ? _proposalIdsForDraftIntents(activeSession, proposals)
-          : const <int>[];
+      if (draftVotes.isEmpty) draftVotes = recoveredDraftVotes;
       final canRecoverWithoutDraft = _canRecoverWithoutDraft(activeSession);
       final canPollDelegationWithoutDraft = _canPollDelegationWithoutDraft(
         activeSession,
@@ -1043,11 +1126,21 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required VotingSessionState session,
   }) {
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final shouldAutoRecover = isVotingWalletSyncStalled(session.error?.cause);
+    final snapshotHeight = session.walletSnapshotHeight;
+    final preserveConfirmedIntent = shouldAutoRecover && snapshotHeight != null;
     _failJob(
       key: key,
       generation: generation,
       message: _statusErrorMessage(session) ?? _genericVotingStatusErrorMessage,
+      preservePendingSubmission: preserveConfirmedIntent,
     );
+    if (shouldAutoRecover && snapshotHeight != null) {
+      _walletSyncRecoveryGeneration = generation;
+      _walletSyncRecoverySnapshotHeight = snapshotHeight;
+      _startWalletSyncRecoveryPolling();
+    }
   }
 
   void _failJob({
@@ -1055,8 +1148,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required String message,
     bool softwareAccountRequired = false,
+    bool preservePendingSubmission = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    _cancelWalletSyncRecovery();
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
@@ -1070,11 +1165,268 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
-      clearPendingDraftVotes: true,
-      pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
-      pendingRecoveryWithoutDraft: false,
+      clearPendingDraftVotes: !preservePendingSubmission,
+      pendingProposalIds: preservePendingSubmission
+          ? state.pendingProposalIds
+          : const [],
+      pendingProposalOptionCounts: preservePendingSubmission
+          ? state.pendingProposalOptionCounts
+          : const {},
+      pendingRecoveryWithoutDraft: preservePendingSubmission
+          ? state.pendingRecoveryWithoutDraft
+          : false,
     );
+  }
+
+  Future<void> _pollWalletSyncRecovery() async {
+    final generation = _walletSyncRecoveryGeneration;
+    final snapshotHeight = _walletSyncRecoverySnapshotHeight;
+    if (generation == null ||
+        snapshotHeight == null ||
+        state.status != VotingSubmissionJobStatus.error ||
+        state.generation != generation ||
+        _walletSyncRecoveryPausedForMutation ||
+        _walletSyncRecoveryInFlight) {
+      return;
+    }
+    if (ref.read(appSecurityProvider).requiresUnlock) {
+      // Sync cannot advance while locked, so polling readiness would spin
+      // for the whole lock. Wait for unlock instead — the retry itself also
+      // needs the unlocked spending secret.
+      _armWalletSyncRecoveryRetryOnUnlock();
+      return;
+    }
+    _walletSyncRecoveryInFlight = true;
+    final pollCompletion = Completer<void>();
+    _walletSyncRecoveryPollCompletion = pollCompletion;
+    try {
+      // votingWalletDbPathProvider memoizes the resolve, so the 2s poll
+      // does not repeat a support-directory lookup plus keychain read.
+      final dbPath = await ref.read(votingWalletDbPathProvider).call();
+      final endpoint = ref.read(votingRpcEndpointConfigProvider);
+      final readiness = await ref
+          .read(votingWalletSyncReadinessCheckerProvider)
+          .check(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            snapshotHeight: snapshotHeight,
+          );
+      if (_walletSyncRecoveryGeneration != generation ||
+          _walletSyncRecoveryPausedForMutation ||
+          state.status != VotingSubmissionJobStatus.error) {
+        return;
+      }
+      _walletSyncRecoveryFailureStreak = 0;
+      if (readiness.walletBirthdayAfterSnapshot) {
+        // The shared scanner cannot reach a snapshot before the wallet's
+        // earliest birthday. Replace the now-false automatic-retry promise
+        // in both owners before stopping recovery; a manual retry after
+        // restoring an earlier account re-runs this gate.
+        ref
+            .read(votingSubmissionSessionProvider(_key).notifier)
+            .markWalletBirthdayAfterSnapshot(readiness);
+        state = state.copyWith(
+          errorMessage: votingWalletBirthdayAfterSnapshotMessage(readiness),
+        );
+        _cancelWalletSyncRecovery();
+        return;
+      }
+      if (readiness.isReady) {
+        // The wallet can lock while the readiness check is in flight; the
+        // retry needs the unlocked spending secret.
+        if (ref.read(appSecurityProvider).requiresUnlock) {
+          _armWalletSyncRecoveryRetryOnUnlock();
+          return;
+        }
+        final confirmedIntent = _confirmedVoteIntentFromState();
+        if (confirmedIntent == null) {
+          ref
+              .read(votingSubmissionSessionProvider(_key).notifier)
+              .markWalletSyncRecoveryStopped(_walletSyncRecoveryStoppedMessage);
+          state = state.copyWith(
+            errorMessage: _walletSyncRecoveryStoppedMessage,
+          );
+          _cancelWalletSyncRecovery();
+          return;
+        }
+        _walletSyncRecoveryGeneration = null;
+        _walletSyncRecoverySnapshotHeight = null;
+        _walletSyncRecoveryTimer?.cancel();
+        _walletSyncRecoveryTimer = null;
+        await _restartJob(confirmedIntent: confirmedIntent);
+      } else {
+        ref.read(votingWalletSyncStarterProvider).call();
+      }
+    } catch (e) {
+      // A poll can also throw after the notifier is disposed (the timer is
+      // cancelled on dispose, but an in-flight poll keeps running); treating
+      // that as one more failed attempt is fine because the cancelled timer
+      // never polls again. Transient readiness failures keep the timer alive;
+      // a persistent failure (e.g. the wallet DB was reset) stops recovery so
+      // it does not log unhandled errors forever. The job stays in its error
+      // state and manual retry remains available.
+      if (_walletSyncRecoveryGeneration != generation ||
+          _walletSyncRecoveryPausedForMutation ||
+          state.status != VotingSubmissionJobStatus.error) {
+        return;
+      }
+      _walletSyncRecoveryFailureStreak++;
+      debugPrint(
+        '[zcash] Voting: wallet sync recovery poll failed '
+        '($_walletSyncRecoveryFailureStreak/'
+        '$_kWalletSyncRecoveryMaxFailureStreak): $e',
+      );
+      if (_walletSyncRecoveryFailureStreak >=
+          _kWalletSyncRecoveryMaxFailureStreak) {
+        ref
+            .read(votingSubmissionSessionProvider(_key).notifier)
+            .markWalletSyncRecoveryStopped(_walletSyncRecoveryStoppedMessage);
+        state = state.copyWith(errorMessage: _walletSyncRecoveryStoppedMessage);
+        _cancelWalletSyncRecovery();
+      }
+    } finally {
+      _walletSyncRecoveryInFlight = false;
+      if (identical(_walletSyncRecoveryPollCompletion, pollCompletion)) {
+        _walletSyncRecoveryPollCompletion = null;
+      }
+      if (!pollCompletion.isCompleted) pollCompletion.complete();
+    }
+  }
+
+  void _startWalletSyncRecoveryPolling() {
+    _walletSyncRecoveryPausedForMutation = false;
+    if (!_registerWalletSyncRecovery()) {
+      state = state.copyWith(errorMessage: _walletSyncRecoveryStoppedMessage);
+      _cancelWalletSyncRecovery();
+      return;
+    }
+    final configuredInterval = ref.read(votingWalletSyncPollIntervalProvider);
+    final interval = configuredInterval > Duration.zero
+        ? configuredInterval
+        : const Duration(milliseconds: 10);
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = Timer.periodic(interval, (_) {
+      unawaited(_pollWalletSyncRecovery());
+    });
+    unawaited(_pollWalletSyncRecovery());
+  }
+
+  /// Parks recovery on the unlock signal. Sync cannot advance and the retry
+  /// needs the unlocked spending secret, so polling stops entirely until
+  /// [_retryWalletSyncRecoveryAfterUnlock] resumes it.
+  void _armWalletSyncRecoveryRetryOnUnlock() {
+    _walletSyncRecoveryRetryOnUnlock = true;
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = null;
+    _walletSyncRecoveryFailureStreak = 0;
+  }
+
+  Future<void> _retryWalletSyncRecoveryAfterUnlock() async {
+    if (!ref.mounted || !_walletSyncRecoveryRetryOnUnlock) return;
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
+    final generation = _walletSyncRecoveryGeneration;
+    if (generation == null ||
+        state.status != VotingSubmissionJobStatus.error ||
+        state.generation != generation) {
+      _cancelWalletSyncRecovery();
+      return;
+    }
+    _walletSyncRecoveryRetryOnUnlock = false;
+    // Resume polling rather than retrying outright: the wallet may have been
+    // locked while still short of the snapshot, and the poll is what decides
+    // readiness. When sync is already past it, the immediate first tick
+    // retries straight away.
+    _startWalletSyncRecoveryPolling();
+  }
+
+  void _cancelWalletSyncRecovery() {
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = null;
+    _walletSyncRecoveryGeneration = null;
+    _walletSyncRecoverySnapshotHeight = null;
+    _walletSyncRecoveryFailureStreak = 0;
+    _walletSyncRecoveryRetryOnUnlock = false;
+    _walletSyncRecoveryPausedForMutation = false;
+    final restoreListener = _walletSyncRecoveryRestoreListener;
+    if (restoreListener != null) {
+      _shareTrackingRegistry.removeRestoreRequestListener(restoreListener);
+    }
+    if (_walletSyncRecoveryRegistered) {
+      _shareTrackingRegistry.unregisterSyncRecovery(key: _key, owner: this);
+      _walletSyncRecoveryRegistered = false;
+    }
+  }
+
+  bool _registerWalletSyncRecovery() {
+    if (_walletSyncRecoveryRegistered) return true;
+    final registered = _shareTrackingRegistry.registerSyncRecovery(
+      key: _key,
+      owner: this,
+      stopAndDrain: _stopAndDrainWalletSyncRecovery,
+    );
+    _walletSyncRecoveryRegistered = registered;
+    return registered;
+  }
+
+  Future<void> _stopAndDrainWalletSyncRecovery() async {
+    final pollCompletion = _walletSyncRecoveryPollCompletion?.future;
+    _walletSyncRecoveryPausedForMutation = true;
+    _walletSyncRecoveryTimer?.cancel();
+    _walletSyncRecoveryTimer = null;
+    _walletSyncRecoveryRetryOnUnlock = false;
+    _shareTrackingRegistry.addRestoreRequestListener(
+      _walletSyncRecoveryRestoreListener!,
+    );
+    if (_walletSyncRecoveryRegistered) {
+      _shareTrackingRegistry.unregisterSyncRecovery(key: _key, owner: this);
+      _walletSyncRecoveryRegistered = false;
+    }
+    if (pollCompletion != null) await pollCompletion;
+  }
+
+  Future<void> _restoreWalletSyncRecoveryAfterMutation() async {
+    if (!ref.mounted || !_walletSyncRecoveryPausedForMutation) return;
+
+    final AccountState accountState;
+    try {
+      accountState =
+          ref.read(accountProvider).value ??
+          await ref.read(accountProvider.future);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: could not restore wallet sync recovery after '
+        'account mutation: $error',
+      );
+      return;
+    }
+    if (!ref.mounted || !_walletSyncRecoveryPausedForMutation) return;
+
+    _shareTrackingRegistry.removeRestoreRequestListener(
+      _walletSyncRecoveryRestoreListener!,
+    );
+
+    final accountStillExists = accountState.accounts.any(
+      (account) => account.uuid == _key.accountUuid,
+    );
+    if (!accountStillExists) {
+      dismiss();
+      ref
+          .read(votingSubmissionJobsProvider.notifier)
+          .forgetCancelledRecovery(_key);
+      return;
+    }
+
+    final generation = _walletSyncRecoveryGeneration;
+    final snapshotHeight = _walletSyncRecoverySnapshotHeight;
+    if (generation == null ||
+        snapshotHeight == null ||
+        state.status != VotingSubmissionJobStatus.error ||
+        state.generation != generation) {
+      _cancelWalletSyncRecovery();
+      return;
+    }
+    _walletSyncRecoveryPausedForMutation = false;
+    _startWalletSyncRecoveryPolling();
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {
@@ -1227,17 +1579,27 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return true;
   }
 
-  bool _canCompleteSessionWithoutDraft(
+  bool _canCompleteSessionWithoutDraftVotes(
     VotingSessionState session,
-    VotingDraftState draft,
+    List<rust_wire.DraftVote> draftVotes,
   ) {
     if (!_canCompleteSubmission(session)) return false;
-    if (draft.isEmpty) return true;
+    if (draftVotes.isEmpty) return true;
     final roundPlan = session.roundPlan;
     if (roundPlan == null) return false;
     final openProposalIds = roundPlan.openProposals.toSet();
-    return draft.choices.keys.every(
-      (proposalId) => !openProposalIds.contains(proposalId),
+    return draftVotes.every(
+      (draftVote) => !openProposalIds.contains(draftVote.proposalId),
+    );
+  }
+
+  _ConfirmedVoteIntent? _confirmedVoteIntentFromState() {
+    final draftVotes = state.pendingDraftVotes;
+    if (draftVotes == null) return null;
+    return _ConfirmedVoteIntent(
+      draftVotes: draftVotes,
+      proposalIds: state.pendingProposalIds,
+      proposalOptionCounts: state.pendingProposalOptionCounts,
     );
   }
 
@@ -1259,6 +1621,32 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           if (openProposalIds.contains(entry.key)) entry.key: entry.value,
       },
     );
+  }
+
+  List<rust_wire.DraftVote> _draftVotesForSession(
+    List<rust_wire.DraftVote> draftVotes,
+    VotingSessionState session,
+  ) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan == null) return draftVotes;
+    final openProposalIds = roundPlan.openProposals.toSet();
+    return [
+      for (final draftVote in draftVotes)
+        if (openProposalIds.contains(draftVote.proposalId)) draftVote,
+    ];
+  }
+
+  List<int> _proposalIdsForSession(
+    List<int> proposalIds,
+    VotingSessionState session,
+  ) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan == null) return proposalIds;
+    final openProposalIds = roundPlan.openProposals.toSet();
+    return [
+      for (final proposalId in proposalIds)
+        if (openProposalIds.contains(proposalId)) proposalId,
+    ];
   }
 
   List<int> _proposalIdsForDraftIntents(
@@ -1287,6 +1675,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   static const _genericVotingStatusErrorMessage =
       'Voting could not continue for this account. Retry, or switch to an '
       'eligible account if this account cannot vote in this voting round.';
+
+  static const _walletSyncRecoveryStoppedMessage =
+      'Automatic recovery could not continue. Retry to check wallet sync '
+      'again.';
+
+  /// Consecutive readiness-check failures tolerated before auto-recovery
+  /// stops polling. At the default 2s interval this rides out ~1 minute of
+  /// transient errors while still halting on persistent ones.
+  static const _kWalletSyncRecoveryMaxFailureStreak = 30;
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;

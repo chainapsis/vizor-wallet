@@ -1683,11 +1683,13 @@ void main() {
             scannedHeight: 122,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 100,
           ),
           VotingWalletSyncReadiness(
             scannedHeight: 123,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 100,
           ),
         ],
       );
@@ -1725,6 +1727,650 @@ void main() {
     },
   );
 
+  test('wallet sync progress resets the 180 second stall budget', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _ProgressiveVotingWalletSyncReadinessChecker(
+      readyAfterChecks: 10,
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      walletSyncMaxWait: const Duration(milliseconds: 12),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(readiness.calls, 10);
+    expect(rust.setupCalls, 1);
+    expect(state.phase, VotingSessionPhase.readyToDelegate);
+    expect(state.error, isNull);
+  });
+
+  test(
+    'engine progress signal defers stall while scan frontier is pinned',
+    () async {
+      final rust = FakeVotingRustApi();
+      // The frontier (scannedHeight) never moves until ready, which alone would
+      // blow the 12ms stall budget across 10 checks; real engine progress must
+      // keep resetting the budget instead.
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      var enginePercentage = 0.0;
+      final observedStalls = <bool>[];
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncProgressSample: () {
+          enginePercentage += 0.01;
+          return VotingWalletSyncProgressSample(
+            percentage: enginePercentage,
+            scannedHeight: 100,
+            isSyncing: true,
+          );
+        },
+        walletSyncPollInterval: const Duration(milliseconds: 5),
+        walletSyncMaxWait: const Duration(milliseconds: 12),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(votingSessionProvider(kRoundId), (
+        _,
+        next,
+      ) {
+        final value = next.value;
+        if (value != null) observedStalls.add(value.walletSyncStalled);
+      });
+      addTearDown(subscription.close);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final prepared = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      readiness.ready = true;
+      await prepared;
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(observedStalls, isNot(contains(true)));
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.error, isNull);
+    },
+  );
+
+  test(
+    'session-level stall keeps waiting and recovers automatically',
+    () async {
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 5),
+        walletSyncMaxWait: Duration.zero,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final prepared = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+
+      VotingSessionState? stalledState;
+      for (var attempt = 0; attempt < 200; attempt++) {
+        final value = container.read(votingSessionProvider(kRoundId)).value;
+        if (value != null && value.walletSyncStalled) {
+          stalledState = value;
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(stalledState, isNotNull);
+      expect(stalledState!.phase, VotingSessionPhase.waitingForWalletSync);
+      expect(stalledState.error, isNull);
+
+      readiness.ready = true;
+      await prepared;
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.walletSyncStalled, isFalse);
+      expect(state.error, isNull);
+    },
+  );
+
+  test('destructive mutation drains a session wallet readiness wait', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false)
+      ..blockFromCall = 2;
+    var syncStartCalls = 0;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncStarter: () => syncStartCalls++,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+      walletSyncMaxWait: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final prepared = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    for (var attempt = 0; attempt < 100; attempt++) {
+      if (container.read(votingSessionProvider(kRoundId)).value?.phase ==
+          VotingSessionPhase.waitingForWalletSync) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.waitingForWalletSync,
+    );
+    await readiness.blockedCheckStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    expect(registry.registeredWalletReadinessWaitCount, 1);
+    var drained = false;
+    final drain = registry.quiesceAndDrain().then((_) => drained = true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(drained, isFalse);
+    readiness.releaseBlockedChecks.complete();
+    await drain;
+    await prepared;
+
+    expect(drained, isTrue);
+    expect(readiness.calls, 2);
+    expect(syncStartCalls, 1);
+    expect(rust.setupCalls, 0);
+    expect(registry.registeredWalletReadinessWaitCount, 0);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      VotingSessionPhase.idle,
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(readiness.calls, 2);
+    registry.resume();
+  });
+
+  test(
+    'wallet-wide coverage is ready when its earliest birthday is before snapshot',
+    () {
+      const readiness = VotingWalletSyncReadiness(
+        scannedHeight: 500,
+        snapshotHeight: 123,
+        chainTipHeight: 500,
+        walletBirthdayHeight: 100,
+      );
+
+      expect(readiness.walletBirthdayAfterSnapshot, isFalse);
+      expect(readiness.isReady, isTrue);
+    },
+  );
+
+  test('wallet birthday after snapshot fails without starting sync', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: const [
+        VotingWalletSyncReadiness(
+          scannedHeight: 500,
+          snapshotHeight: 123,
+          chainTipHeight: 500,
+          walletBirthdayHeight: 200,
+        ),
+      ],
+    );
+    var syncStartCalls = 0;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncStarter: () => syncStartCalls++,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('birthday block 200'));
+    expect(state.error?.message, contains('snapshot at block 123'));
+    // Permanent wallet-wide ineligibility must classify as an eligibility
+    // error so screens show the read-only treatment instead of a retry
+    // affordance that can never succeed. Classification is typed (by cause),
+    // so it survives copy edits to the message.
+    expect(isVotingWalletBirthdayAfterSnapshot(state.error?.cause), isTrue);
+    expect(isVotingEligibilityError(state.error), isTrue);
+    // Birthday after snapshot also means there is no snapshot progress to
+    // report from the retained heights.
+    expect(state.walletSnapshotSyncProgress, isNull);
+    expect(syncStartCalls, 0);
+    expect(rust.setupCalls, 0);
+  });
+
+  test(
+    'stalled submission retries automatically when snapshot is ready',
+    () async {
+      final harness = await _draftBearingStallHarness();
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
+        contains('has not advanced'),
+      );
+      expect(harness.rust.voteCommitmentKeys, isEmpty);
+      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
+
+      // Editing the still-mutable draft after leaving the stalled status
+      // screen must not alter the choices already confirmed for this job.
+      harness.container
+          .read(votingDraftProvider(harness.key).notifier)
+          .setChoice(7, 0);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        harness.container.read(votingDraftProvider(harness.key)).choices[7],
+        0,
+      );
+
+      harness.readiness.ready = true;
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+
+      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
+      expect(harness.rust.voteCommitmentDraftChoices, ['0:7:1']);
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
+        isNot('Choose at least one vote before submitting.'),
+      );
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
+        greaterThan(1),
+      );
+    },
+  );
+
+  test(
+    'readiness regressing after the wallet gate stalls the submission job',
+    () async {
+      // Ready for the initial ensureWalletReadyForVoting gate, then unready
+      // for every later wait the job initiates (eligibility, delegation) —
+      // a rewind or reorg mid-job. Those waits must fail on stall too, or
+      // the job parks in waitingForWalletSync with no error, no recovery
+      // poll, and no retry.
+      final harness = await _draftBearingStallHarness(
+        initiallyReady: true,
+        readyCallBudget: 1,
+      );
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .errorMessage,
+        contains('has not advanced'),
+      );
+      expect(
+        harness.readiness.calls,
+        greaterThan(1),
+        reason: 'the stall came from a wait after the initial gate',
+      );
+
+      // Recovery is armed for the regressed wait, so the job resumes on its
+      // own once sync catches back up.
+      harness.readiness.readyCallBudget = null;
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
+        greaterThan(1),
+      );
+    },
+  );
+
+  test(
+    'stalled-recovery polling stops for a birthday-ineligible account',
+    () async {
+      var syncStartCalls = 0;
+      final harness = await _draftBearingStallHarness(
+        walletSyncStarter: () => syncStartCalls++,
+      );
+      addTearDown(harness.container.dispose);
+      final sessionSubscription = harness.container.listen(
+        votingSubmissionSessionProvider(harness.key),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(sessionSubscription.close);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+
+      // Auto-recovery is armed: each poll tick kicks the sync starter.
+      final before = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(syncStartCalls, greaterThan(before));
+
+      // The account becomes permanently ineligible for the round snapshot;
+      // recovery must cancel itself instead of polling until dispose.
+      harness.readiness.birthdayAfterSnapshot = true;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      final after = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(syncStartCalls, after, reason: 'recovery stopped polling');
+      final job = harness.container.read(
+        votingSubmissionJobProvider(harness.key),
+      );
+      expect(job.status, VotingSubmissionJobStatus.error);
+      expect(job.errorMessage, contains('Restore an account'));
+      expect(job.errorMessage, isNot(contains('retry automatically')));
+
+      final session = harness.container
+          .read(votingSubmissionSessionProvider(harness.key))
+          .value!;
+      expect(session.phase, VotingSessionPhase.error);
+      expect(session.walletBirthdayAfterSnapshot, isTrue);
+      expect(session.walletSyncStalled, isFalse);
+      expect(isVotingWalletBirthdayAfterSnapshot(session.error?.cause), isTrue);
+      expect(session.error?.message, job.errorMessage);
+    },
+  );
+
+  test(
+    'account mutation pauses and restores an unaffected stalled recovery',
+    () async {
+      final harness = await _draftBearingStallHarness();
+      addTearDown(harness.container.dispose);
+      harness.readiness.blockFromCall = 2;
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+      await harness.readiness.blockedCheckStarted.future;
+
+      final registry = harness.container.read(
+        votingShareTrackingRegistryProvider,
+      );
+      expect(registry.registeredSyncRecoveryKeys, contains(harness.key));
+
+      var drainCompleted = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drainCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        drainCompleted,
+        isFalse,
+        reason: 'mutation waits for the active poll',
+      );
+
+      harness.readiness.releaseBlockedChecks.complete();
+      await drain;
+      expect(drainCompleted, isTrue);
+      expect(registry.registeredSyncRecoveryKeys, isEmpty);
+      expect(
+        harness.container.read(votingSubmissionJobProvider(harness.key)).status,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(
+        harness.container.read(votingSubmissionJobsProvider).jobKeys,
+        contains(harness.key),
+      );
+
+      final callsAfterDrain = harness.readiness.calls;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(harness.readiness.calls, callsAfterDrain);
+      registry.resume(accountUuid: 'account-2');
+      registry.requestRestore();
+      harness.readiness.ready = true;
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(
+        harness.container
+            .read(votingSubmissionJobProvider(harness.key))
+            .generation,
+        greaterThan(1),
+      );
+    },
+  );
+
+  test('account mutation discards recovery for a deleted account', () async {
+    final harness = await _draftBearingStallHarness();
+    addTearDown(harness.container.dispose);
+
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+
+    final registry = harness.container.read(
+      votingShareTrackingRegistryProvider,
+    );
+    await registry.quiesceAndDrain(accountUuid: harness.key.accountUuid);
+    final accounts = harness.container.read(accountProvider.notifier);
+    (accounts as _FakeVotingAccountNotifier).removeAccountForTest(
+      harness.key.accountUuid,
+    );
+    registry.resume(accountUuid: harness.key.accountUuid);
+    registry.requestRestore();
+    await pumpEventQueue();
+
+    expect(
+      harness.container.read(votingSubmissionJobProvider(harness.key)).status,
+      VotingSubmissionJobStatus.idle,
+    );
+    expect(
+      harness.container.read(votingSubmissionJobsProvider).jobKeys,
+      isNot(contains(harness.key)),
+    );
+  });
+
+  test('stalled-recovery failure limit requires manual retry', () async {
+    final harness = await _draftBearingStallHarness();
+    addTearDown(harness.container.dispose);
+    final sessionSubscription = harness.container.listen(
+      votingSubmissionSessionProvider(harness.key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(sessionSubscription.close);
+
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+
+    harness.readiness.failure = StateError('wallet DB unavailable');
+    VotingSubmissionJobState? stopped;
+    for (var attempt = 0; attempt < 100; attempt++) {
+      final current = harness.container.read(
+        votingSubmissionJobProvider(harness.key),
+      );
+      if (current.errorMessage?.contains('Retry to check wallet sync') ??
+          false) {
+        stopped = current;
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(stopped, isNotNull);
+    expect(stopped!.status, VotingSubmissionJobStatus.error);
+    expect(stopped.errorMessage, isNot(contains('retry automatically')));
+
+    final session = harness.container
+        .read(votingSubmissionSessionProvider(harness.key))
+        .value!;
+    expect(session.phase, VotingSessionPhase.error);
+    expect(session.walletSyncStalled, isFalse);
+    expect(session.error?.message, stopped.errorMessage);
+
+    final stoppedAt = harness.readiness.calls;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(
+      harness.readiness.calls,
+      stoppedAt,
+      reason: 'recovery stopped after the consecutive-failure limit',
+    );
+
+    harness.readiness
+      ..failure = null
+      ..ready = true;
+    await harness.container
+        .read(votingSubmissionJobProvider(harness.key).notifier)
+        .retry();
+    await _waitForVoteCommitmentKey(harness.rust, '0:7');
+  });
+
+  test(
+    'stalled-recovery polling waits for unlock instead of spinning',
+    () async {
+      final security = _MutableVotingSecurityNotifier(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+      );
+      var syncStartCalls = 0;
+      final harness = await _draftBearingStallHarness(
+        securityNotifier: security,
+        walletSyncStarter: () => syncStartCalls++,
+      );
+      addTearDown(harness.container.dispose);
+
+      final startedKey = await harness.container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, harness.key);
+      await _waitForJobStatus(
+        harness.container,
+        harness.key,
+        VotingSubmissionJobStatus.error,
+      );
+
+      // Locking while the wallet is still short of the snapshot: sync cannot
+      // advance, so recovery must park on the unlock signal rather than
+      // re-checking readiness and kicking sync every tick.
+      security.setUnlocked(false);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      final whileLocked = syncStartCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(syncStartCalls, whileLocked, reason: 'no polling while locked');
+
+      // Unlock resumes recovery, which retries once sync reaches the
+      // snapshot.
+      harness.readiness.ready = true;
+      security.setUnlocked(true);
+      await _waitForVoteCommitmentKey(harness.rust, '0:7');
+      expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
+    },
+  );
+
+  test('stalled submission defers automatic retry until unlock', () async {
+    final security = _MutableVotingSecurityNotifier(
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+    );
+    final harness = await _draftBearingStallHarness(securityNotifier: security);
+    addTearDown(harness.container.dispose);
+
+    final startedKey = await harness.container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(startedKey, harness.key);
+    await _waitForJobStatus(
+      harness.container,
+      harness.key,
+      VotingSubmissionJobStatus.error,
+    );
+    final stalled = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(stalled.errorMessage, contains('has not advanced'));
+    expect(stalled.softwareAccountRequired, isFalse);
+    expect(harness.rust.voteCommitmentKeys, isEmpty);
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
+    final stalledGeneration = stalled.generation;
+
+    security.setUnlocked(false);
+    harness.readiness.ready = true;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    final stillStalled = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(stillStalled.status, VotingSubmissionJobStatus.error);
+    expect(stillStalled.errorMessage, contains('has not advanced'));
+    expect(stillStalled.softwareAccountRequired, isFalse);
+    expect(stillStalled.generation, stalledGeneration);
+    expect(harness.rust.voteCommitmentKeys, isEmpty);
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 0);
+
+    security.setUnlocked(true);
+    await _waitForVoteCommitmentKey(harness.rust, '0:7');
+
+    expect(_postRequestCount(harness.http, '/shielded-vote/v1/cast-vote'), 1);
+    final recovered = harness.container.read(
+      votingSubmissionJobProvider(harness.key),
+    );
+    expect(recovered.softwareAccountRequired, isFalse);
+    expect(
+      recovered.errorMessage,
+      isNot('Choose at least one vote before submitting.'),
+    );
+    expect(recovered.generation, greaterThan(stalledGeneration));
+  });
+
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
@@ -1733,11 +2379,13 @@ void main() {
           scannedHeight: 122,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 100,
         ),
         VotingWalletSyncReadiness(
           scannedHeight: 123,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 100,
         ),
       ],
     );
@@ -7129,6 +7777,145 @@ void main() {
     releaseDiscovery!();
   });
 
+  test(
+    'account mutation drains and blocks wallet-wide sync recoveries',
+    () async {
+      final registry = VotingShareTrackingRegistry();
+      var stoppedRecoveries = 0;
+      var stoppedOtherShareTracking = 0;
+      final releaseRecovery = Completer<void>();
+      final recoveryOwner1 = Object();
+      final recoveryOwner2 = Object();
+      final shareOwner = Object();
+      const recoveryKey1 = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      );
+      const recoveryKey2 = VotingSessionKey(
+        accountUuid: 'account-2',
+        roundId: 'round-2',
+      );
+      const shareKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: 'share-round',
+      );
+
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey1,
+          owner: recoveryOwner1,
+          stopAndDrain: () async {
+            stoppedRecoveries++;
+            await releaseRecovery.future;
+          },
+        ),
+        isTrue,
+      );
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey2,
+          owner: recoveryOwner2,
+          stopAndDrain: () async => stoppedRecoveries++,
+        ),
+        isTrue,
+      );
+      expect(
+        registry.register(
+          key: shareKey,
+          owner: shareOwner,
+          stopAndDrain: () async => stoppedOtherShareTracking++,
+        ),
+        isTrue,
+      );
+
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(stoppedRecoveries, 2);
+      expect(stoppedOtherShareTracking, 0);
+      expect(drained, isFalse);
+      expect(
+        registry.registerSyncRecovery(
+          key: const VotingSessionKey(
+            accountUuid: 'account-3',
+            roundId: 'late-recovery',
+          ),
+          owner: Object(),
+          stopAndDrain: () async {},
+        ),
+        isFalse,
+      );
+
+      releaseRecovery.complete();
+      await drain;
+      expect(registry.registeredSyncRecoveryKeys, isEmpty);
+      expect(registry.registeredKeys, {shareKey});
+
+      registry.resume(accountUuid: 'account-2');
+      expect(
+        registry.registerSyncRecovery(
+          key: recoveryKey1,
+          owner: recoveryOwner1,
+          stopAndDrain: () async {},
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'account mutation drains and blocks wallet-wide readiness waits',
+    () async {
+      final registry = VotingShareTrackingRegistry();
+      final releaseWait = Completer<void>();
+      final owner = Object();
+      var stopCalls = 0;
+
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: owner,
+          stopAndDrain: () async {
+            stopCalls++;
+            await releaseWait.future;
+          },
+        ),
+        isTrue,
+      );
+
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(stopCalls, 1);
+      expect(drained, isFalse);
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: Object(),
+          stopAndDrain: () async {},
+        ),
+        isFalse,
+      );
+
+      releaseWait.complete();
+      await drain;
+      expect(registry.registeredWalletReadinessWaitCount, 0);
+
+      registry.resume(accountUuid: 'account-2');
+      expect(
+        registry.registerWalletReadinessWait(
+          owner: Object(),
+          stopAndDrain: () async {},
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('restore request restarts discovery after destructive drain', () async {
     var loadCount = 0;
     final container = _sessionContainer(
@@ -8249,8 +9036,10 @@ ProviderContainer _sessionContainer({
   List<ProviderObserver>? observers,
   VotingTxConfirmationPolling? txConfirmationPolling,
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
+  VotingWalletSyncProgressSample? Function()? walletSyncProgressSample,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
+  Duration? walletSyncMaxWait,
   VotingPendingShareRoundLoader? pendingShareRoundLoader,
   List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
   Map<String, Uint8List>? authenticatedRoundEaPks,
@@ -8360,9 +9149,14 @@ ProviderContainer _sessionContainer({
       votingWalletSyncStarterProvider.overrideWithValue(
         walletSyncStarter ?? () {},
       ),
+      votingWalletSyncProgressSampleProvider.overrideWithValue(
+        walletSyncProgressSample ?? () => null,
+      ),
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval ?? Duration.zero,
       ),
+      if (walletSyncMaxWait != null)
+        votingWalletSyncMaxWaitProvider.overrideWithValue(walletSyncMaxWait),
       if (txConfirmationPolling != null)
         votingTxConfirmationPollingProvider.overrideWithValue(
           txConfirmationPolling,
@@ -8525,6 +9319,87 @@ FakeVotingRecoveryApi _submittedDelegationWithShareRecoveryApi(
       beforeConfirmation,
       afterConfirmation,
     ],
+  );
+}
+
+class _DraftBearingStallHarness {
+  const _DraftBearingStallHarness({
+    required this.container,
+    required this.rust,
+    required this.http,
+    required this.readiness,
+    required this.key,
+  });
+
+  final ProviderContainer container;
+  final FakeVotingRustApi rust;
+  final FakeVotingHttpClient http;
+  final _MutableVotingWalletSyncReadinessChecker readiness;
+  final VotingSessionKey key;
+}
+
+Future<_DraftBearingStallHarness> _draftBearingStallHarness({
+  AppSecurityNotifier? securityNotifier,
+  void Function()? walletSyncStarter,
+  bool initiallyReady = false,
+  int? readyCallBudget,
+}) async {
+  final rust = FakeVotingRustApi(emitCommitments: true);
+  final readiness = _MutableVotingWalletSyncReadinessChecker(
+    ready: initiallyReady,
+    readyCallBudget: readyCallBudget,
+  );
+  final roundStatus = roundStatusJson(roundId: kRoundId)
+    ..['proposals'] = [
+      {
+        'id': 7,
+        'title': 'Question',
+        'options': [
+          {'index': 0, 'label': 'No'},
+          {'index': 1, 'label': 'Yes'},
+        ],
+      },
+    ];
+  final http = FakeVotingHttpClient(
+    responses: votingHttpResponses(roundStatus: roundStatus),
+  );
+  final draftPersistence = FakeVotingDraftPersistence();
+  const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+  await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
+  const castStep = rust_wire.NextStepView(
+    kind: 'cast_vote',
+    bundleIndex: 0,
+    proposalId: 7,
+    choice: 1,
+    shareIndex: 0,
+  );
+  final container = _sessionContainer(
+    http: http,
+    rust: rust,
+    securityNotifier: securityNotifier,
+    recoveryApi: FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 1),
+      roundPlan: apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [castStep],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        needsDraftSetup: false,
+      ),
+    ),
+    draftPersistence: draftPersistence,
+    walletSyncReadinessChecker: readiness,
+    walletSyncStarter: walletSyncStarter,
+    walletSyncMaxWait: Duration.zero,
+    walletSyncPollInterval: Duration.zero,
+  );
+  return _DraftBearingStallHarness(
+    container: container,
+    rust: rust,
+    http: http,
+    readiness: readiness,
+    key: key,
   );
 }
 
@@ -9375,6 +10250,22 @@ class _FakeVotingAccountNotifier extends AccountNotifier {
     );
   }
 
+  void removeAccountForTest(String accountUuid) {
+    final current = state.value ?? const AccountState();
+    final remaining = [
+      for (final account in current.accounts)
+        if (account.uuid != accountUuid) account,
+    ];
+    state = AsyncData(
+      AccountState(
+        accounts: remaining,
+        activeAccountUuid: current.activeAccountUuid == accountUuid
+            ? null
+            : current.activeAccountUuid,
+      ),
+    );
+  }
+
   @override
   Future<String?> getMnemonicForAccount(String uuid) async {
     return softwareSecret?.mnemonic;
@@ -9509,6 +10400,7 @@ class FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: snapshotHeight,
     );
   }
 }
@@ -9533,15 +10425,30 @@ class _GatedVotingWalletSyncReadinessChecker
       scannedHeight: _ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: snapshotHeight - 10,
     );
   }
 }
 
 class _MutableVotingWalletSyncReadinessChecker
     implements VotingWalletSyncReadinessChecker {
-  _MutableVotingWalletSyncReadinessChecker({required this.ready});
+  _MutableVotingWalletSyncReadinessChecker({
+    required this.ready,
+    this.readyCallBudget,
+  });
 
   bool ready;
+  bool birthdayAfterSnapshot = false;
+  Object? failure;
+  int? blockFromCall;
+  final blockedCheckStarted = Completer<void>();
+  final releaseBlockedChecks = Completer<void>();
+
+  /// When set, only the first [readyCallBudget] checks may report ready.
+  /// Models readiness regressing mid-job (a rewind or reorg after the
+  /// initial wallet-sync gate has already passed).
+  int? readyCallBudget;
+  int calls = 0;
 
   @override
   Future<VotingWalletSyncReadiness> check({
@@ -9549,10 +10456,51 @@ class _MutableVotingWalletSyncReadinessChecker
     required String network,
     required int snapshotHeight,
   }) async {
+    calls++;
+    final firstBlockedCall = blockFromCall;
+    if (firstBlockedCall != null && calls >= firstBlockedCall) {
+      if (!blockedCheckStarted.isCompleted) blockedCheckStarted.complete();
+      await releaseBlockedChecks.future;
+    }
+    final currentFailure = failure;
+    if (currentFailure != null) throw currentFailure;
+    final budget = readyCallBudget;
+    final isReady = ready && (budget == null || calls <= budget);
     return VotingWalletSyncReadiness(
-      scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
+      scannedHeight: isReady ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: birthdayAfterSnapshot
+          ? snapshotHeight + 10
+          : snapshotHeight - 10,
+    );
+  }
+}
+
+class _ProgressiveVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  _ProgressiveVotingWalletSyncReadinessChecker({
+    required this.readyAfterChecks,
+  });
+
+  final int readyAfterChecks;
+  int calls = 0;
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    calls++;
+    final scannedHeight = calls >= readyAfterChecks
+        ? snapshotHeight
+        : snapshotHeight - readyAfterChecks + calls;
+    return VotingWalletSyncReadiness(
+      scannedHeight: scannedHeight,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 10,
+      walletBirthdayHeight: snapshotHeight - readyAfterChecks - 10,
     );
   }
 }
@@ -9921,6 +10869,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
   final voteCommitmentKeys = <String>[];
+  final voteCommitmentDraftChoices = <String>[];
   final recoveredVoteCommitmentKeys = <String>[];
   final storedDelegationTxHashes = <String>[];
   final storedVoteTxHashes = <String>[];
@@ -10514,6 +11463,9 @@ class FakeVotingRustApi implements VotingRustApi {
         voteCommitmentStarted.complete();
       }
       for (final draft in draftVotes) {
+        voteCommitmentDraftChoices.add(
+          '$bundleIndex:${draft.proposalId}:${draft.choice}',
+        );
         yield rust_api.ApiVoteCommitEvent(
           phase: 'proving',
           proposalId: draft.proposalId,

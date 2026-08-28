@@ -232,6 +232,8 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
+  final int? walletBirthdayHeight;
+  final bool walletSyncStalled;
   final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
@@ -262,6 +264,8 @@ class VotingSessionState {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
+    this.walletBirthdayHeight,
+    this.walletSyncStalled = false,
     this.isHardwareAccount = false,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
@@ -300,6 +304,31 @@ class VotingSessionState {
       error == null &&
       phase != VotingSessionPhase.error;
 
+  /// A wallet birthday past the snapshot means no account can have caused the
+  /// wallet-wide scanner to cover the snapshot. Single source of truth for
+  /// this boundary on session state; VotingWalletSyncReadiness holds the
+  /// equivalent check for raw readiness data before it reaches state.
+  bool get walletBirthdayAfterSnapshot {
+    final birthday = walletBirthdayHeight;
+    final snapshot = walletSnapshotHeight;
+    return birthday != null && snapshot != null && birthday > snapshot;
+  }
+
+  double? get walletSnapshotSyncProgress {
+    final scanned = walletScannedHeight;
+    final snapshot = walletSnapshotHeight;
+    final birthday = walletBirthdayHeight;
+    if (scanned == null || snapshot == null || birthday == null) return null;
+    // No progress to report for a permanently ineligible account.
+    if (walletBirthdayAfterSnapshot) return null;
+    // Both the scanned height and birthday are wallet-wide, so the fraction
+    // describes the contiguous range the shared scanner must cover.
+    if (scanned < birthday) return null;
+    final total = snapshot - birthday;
+    if (total <= 0) return scanned >= snapshot ? 1 : null;
+    return ((scanned - birthday) / total).clamp(0.0, 1.0).toDouble();
+  }
+
   int get keystoneResolvedBundlePrefixCount =>
       resolvedKeystoneBundlePrefixCount(
         plan: resumePlan,
@@ -335,6 +364,8 @@ class VotingSessionState {
     int? walletScannedHeight,
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
+    int? walletBirthdayHeight,
+    bool? walletSyncStalled,
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
@@ -378,6 +409,12 @@ class VotingSessionState {
       walletChainTipHeight: clearWalletSyncReadiness
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
+      walletBirthdayHeight: clearWalletSyncReadiness
+          ? null
+          : walletBirthdayHeight ?? this.walletBirthdayHeight,
+      walletSyncStalled: clearWalletSyncReadiness
+          ? false
+          : walletSyncStalled ?? this.walletSyncStalled,
       isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,

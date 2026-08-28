@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
+import 'voting/voting_service_providers.dart';
 
 Future<T> runWithSyncPausedForAccountMutation<T>(
   WidgetRef ref,
@@ -113,7 +114,10 @@ Future<void> runWithSyncPausedForWalletReset(
       try {
         await resetWallet();
       } finally {
+        // Reset mints a new DB name; every cached path must be dropped or
+        // the next resolve returns the deleted wallet's path.
         syncNotifier.clearCachedWalletDbPath();
+        ref.read(walletDbPathCacheProvider).clear();
       }
     },
     onStoppingSync: onStoppingSync,

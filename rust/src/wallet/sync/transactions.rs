@@ -813,6 +813,15 @@ fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Opti
     .map_err(|e| format!("Query error: {e}"))
 }
 
+pub(crate) fn get_wallet_birthday_height(db_path: &str) -> Result<Option<u64>, String> {
+    let conn = open_readonly_conn(db_path)?;
+    conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
+        row.get::<_, Option<u32>>(0)
+            .map(|height| height.map(u64::from))
+    })
+    .map_err(|e| format!("Query error: {e}"))
+}
+
 pub(crate) fn get_transaction_detail(
     db_path: &str,
     network: WalletNetwork,
@@ -3053,6 +3062,29 @@ mod tests {
                 .unwrap();
 
         assert_eq!(got.block_height, 200);
+    }
+
+    #[test]
+    fn account_birthday_height_returns_stored_recovery_height() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        set_account_birthday(&db, account, 123_456);
+
+        let got =
+            get_account_birthday_height(db.path().to_str().unwrap(), &account.to_string()).unwrap();
+
+        assert_eq!(got, Some(123_456));
+    }
+
+    #[test]
+    fn wallet_birthday_height_returns_earliest_account_birthday() {
+        let db = fresh_history_db();
+        set_account_birthday(&db, test_account_uuid(), 80_000);
+        set_account_birthday(&db, second_test_account_uuid(), 120_000);
+
+        let got = get_wallet_birthday_height(db.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(got, Some(80_000));
     }
 
     #[test]
