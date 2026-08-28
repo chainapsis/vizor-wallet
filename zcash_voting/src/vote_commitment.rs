@@ -115,8 +115,11 @@ pub(crate) fn sign_cast_vote(
     sign_cast_vote_digest(hotkey_seed, network, &sighash, alpha_v)
 }
 
-/// Signs a precomputed singleton or batch cast-vote digest with the randomized
-/// voting key selected by `alpha_v`.
+/// Signs a precomputed singleton or batch cast-vote digest.
+///
+/// Derives `ask_v` from the fixed voting hotkey account, decodes `alpha_v` as a
+/// Pallas scalar, and signs with `rsk_v = ask_v.randomize(alpha_v)`. The
+/// corresponding randomized verification key must match the action's `r_vpk`.
 pub(crate) fn sign_cast_vote_digest(
     hotkey_seed: &[u8],
     network: Network,
