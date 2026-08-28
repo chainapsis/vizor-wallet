@@ -487,11 +487,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   static const _notEnoughZecText = 'Not enough ZEC';
 
-  bool get _activeAccountIsHardware {
+  HardwareSignerKind? get _activeHardwareSignerKind {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (uuid == null) return false;
-    return ref.read(accountProvider.notifier).isHardwareAccount(uuid);
+    if (uuid == null) return null;
+    return ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(uuid);
   }
+
+  static const _ledgerTexUnsupportedText =
+      'Ledger does not support TEX sends yet.';
+
+  bool get _isLedgerTexRecipient =>
+      _addressType == 'tex' &&
+      _activeHardwareSignerKind == HardwareSignerKind.ledger;
 
   bool get _showRecipientContinue =>
       _addressController.text.trim().isNotEmpty || _addressFocus.hasFocus;
@@ -607,7 +616,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _continueToAmount() {
-    if (!_hasValidAddress) return;
+    if (!_hasValidAddress || _isLedgerTexRecipient) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
@@ -869,6 +878,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _maxEstimatePreconditionError() {
     if (_activeAccountUuid == null) return 'Max amount unavailable';
     if (!_hasValidAddress) return 'Max amount unavailable';
+    if (_isLedgerTexRecipient) return _ledgerTexUnsupportedText;
     if (utf8.encode(_effectiveMemo).length > 512) {
       return 'Message is too long';
     }
@@ -1309,9 +1319,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    final isHardware = ref
+    final hardwareSignerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(accountUuid);
+        .hardwareSignerKindForAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
     final reviewedFeeZatoshi = _feeZatoshi!;
@@ -1383,8 +1393,34 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _reviewFeeNotice = null;
     });
 
+    if (hardwareSignerKind == HardwareSignerKind.ledger) {
+      final ledger = await context.push<LedgerBroadcastArgs>(
+        '/send/ledger-sign',
+        extra: args,
+      );
+      if (ledger == null) {
+        unawaited(
+          discardSendProposal(
+            proposalId: args.proposalId,
+            sendFlowId: _sendFlowId,
+            logContext: 'MobileSend(ledger cancelled)',
+          ),
+        );
+        if (mounted) {
+          setState(() {
+            _isConfirmingSend = false;
+            _phase = _SendPhase.compose;
+          });
+        }
+        return;
+      }
+      if (!mounted) return;
+      _openStatusRoute(ledger);
+      return;
+    }
+
     KeystoneBroadcastArgs? keystone;
-    if (isHardware) {
+    if (hardwareSignerKind == HardwareSignerKind.keystone) {
       // Hand the PCZT to the device for the spend-auth signature; the
       // signing screen owns the QR display/scan round trip.
       keystone = await context.push<KeystoneBroadcastArgs>(
@@ -1925,16 +1961,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressErrorSpace(BuildContext context) {
     final colors = context.colors;
-    final showError = _addressType == 'invalid' || _addressType == 'error';
+    final ledgerTex = _isLedgerTexRecipient;
+    final showError =
+        _addressType == 'invalid' || _addressType == 'error' || ledgerTex;
     // The reserved line shows the validation error, or — when the address is
     // valid and matches a saved contact / own account — the resolved name so
     // the user knows the pasted/typed address is the intended one.
     Widget? line;
     if (showError) {
       line = Text(
-        _addressType == 'invalid'
-            ? 'Invalid address'
-            : 'Address validation failed',
+        ledgerTex
+            ? _ledgerTexUnsupportedText
+            : (_addressType == 'invalid'
+                  ? 'Invalid address'
+                  : 'Address validation failed'),
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,
         ),
@@ -1989,7 +2029,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
             : null,
-        onPressed: _hasValidAddress ? _continueToAmount : null,
+        onPressed: _hasValidAddress && !_isLedgerTexRecipient
+            ? _continueToAmount
+            : null,
         child: Text(
           _addressController.text.trim().isEmpty
               ? 'Enter address to continue'
@@ -2518,7 +2560,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       contacts: addressBookContacts,
       ownAccounts: ownAccounts,
     );
-    final isHardware = _activeAccountIsHardware;
+    final hardwareSignerKind = _activeHardwareSignerKind;
+    final isKeystone = hardwareSignerKind == HardwareSignerKind.keystone;
+    final isLedger = hardwareSignerKind == HardwareSignerKind.ledger;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -2626,7 +2670,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               : _confirmAndSend(),
                         ),
                   leading: AppIcon(
-                    isHardware ? AppIcons.qr : AppIcons.plane,
+                    isKeystone
+                        ? AppIcons.qr
+                        : isLedger
+                        ? AppIcons.ledger
+                        : AppIcons.plane,
                     size: 20,
                   ),
                   child: Text(
@@ -2640,7 +2688,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         ? 'Calculating fee...'
                         : !_hasCurrentReviewFeeQuote
                         ? 'Fee unavailable'
-                        : isHardware
+                        : isLedger
+                        ? 'Confirm with Ledger'
+                        : isKeystone
                         ? 'Confirm with Keystone'
                         : 'Confirm & Send',
                   ),

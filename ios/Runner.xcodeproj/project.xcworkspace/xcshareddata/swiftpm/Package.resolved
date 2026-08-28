@@ -1,0 +1,15 @@
+{
+  "originHash" : "c4830887ea5e02644130ae55c67ad9defae0427d7495ee99f628d3e3e44da867",
+  "pins" : [
+    {
+      "identity" : "hw-transport-ios-ble",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LedgerHQ/hw-transport-ios-ble.git",
+      "state" : {
+        "revision" : "4df8fff21c1738a1dff4d2ee19175dd3263d6c5f",
+        "version" : "1.0.1"
+      }
+    }
+  ],
+  "version" : 3
+}

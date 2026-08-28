@@ -68,7 +68,7 @@ class MobileTopNavAccount extends ConsumerWidget {
       avatar: MobileAccountAvatar(
         profilePictureId: account?.profilePictureId ?? kDefaultProfilePictureId,
         size: AppProfilePictureSize.navLarge,
-        isHardware: account?.isHardware ?? false,
+        hardwareSignerKind: account?.hardwareSignerKind,
         badgeRingColor: colors.background.window,
       ),
       syncLabel: showSyncStatus ? status.label : null,
