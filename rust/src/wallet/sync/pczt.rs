@@ -1272,6 +1272,18 @@ fn release_pczt_proposal_after_failure<T>(
     }
 }
 
+fn release_signed_pczt_operation_after_failure<T>(
+    proposal: Option<(u64, &str)>,
+    error: String,
+) -> Result<T, String> {
+    match proposal {
+        Some((proposal_id, send_flow_id)) => {
+            release_pczt_proposal_after_failure(proposal_id, send_flow_id, error)
+        }
+        None => Err(error),
+    }
+}
+
 fn prepare_signed_pczts(
     proofs: &[Vec<u8>],
     signatures: &[Vec<u8>],
@@ -1370,6 +1382,15 @@ enum PcztSignatures<'a> {
     Compact(&'a [Vec<pczt::roles::signer::SpendAuthSignature>]),
 }
 
+pub(crate) fn validate_signed_pczts(
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<(), String> {
+    prepare_signed_pczts(proofs, signatures, spend_params_path, output_params_path).map(|_| ())
+}
+
 /// Legacy full-PCZT completion for transparent-input transactions. It
 /// validates every signed PCZT, broadcasts it in dependency order, and then
 /// atomically persists only the accepted-or-ambiguous prefix. Definite
@@ -1440,10 +1461,6 @@ async fn store_and_broadcast_pczts_for_proposal(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<StoreAndBroadcastPcztsResult, String> {
-    use zcash_client_backend::data_api::wallet::{
-        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
-    };
-
     let proposal_lock = match stored_proposal_lock(proposal_id, send_flow_id) {
         Ok(lock) => lock,
         Err(error) => {
@@ -1458,6 +1475,55 @@ async fn store_and_broadcast_pczts_for_proposal(
         );
     }
 
+    store_and_broadcast_pczts_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        proofs,
+        signatures,
+        spend_params_path,
+        output_params_path,
+        Some((proposal_id, send_flow_id)),
+    )
+    .await
+}
+
+pub(crate) async fn store_and_broadcast_signed_pczts(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    store_and_broadcast_pczts_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        proofs,
+        PcztSignatures::Full(signatures),
+        spend_params_path,
+        output_params_path,
+        None,
+    )
+    .await
+}
+
+async fn store_and_broadcast_pczts_inner(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proofs: &[Vec<u8>],
+    signatures: PcztSignatures<'_>,
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+    proposal: Option<(u64, &str)>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    use zcash_client_backend::data_api::wallet::{
+        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+    };
+
     // This performs all correlation, dependency, signature, proof, and
     // finalization checks before either the DB or the network is touched.
     let prepared = match signatures {
@@ -1471,7 +1537,7 @@ async fn store_and_broadcast_pczts_for_proposal(
     let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+            return release_signed_pczt_operation_after_failure(proposal, error);
         }
     };
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
@@ -1489,9 +1555,8 @@ async fn store_and_broadcast_pczts_for_proposal(
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
             Ok(client) => client,
             Err(error) => {
-                return release_pczt_proposal_after_failure(
-                    proposal_id,
-                    send_flow_id,
+                return release_signed_pczt_operation_after_failure(
+                    proposal,
                     format!("Failed to open the broadcast route: {error}"),
                 );
             }
@@ -1499,9 +1564,8 @@ async fn store_and_broadcast_pczts_for_proposal(
     let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
         Ok(latest) => latest,
         Err(error) => {
-            return release_pczt_proposal_after_failure(
-                proposal_id,
-                send_flow_id,
+            return release_signed_pczt_operation_after_failure(
+                proposal,
                 format!("Failed to read the chain tip before broadcast: {error}"),
             );
         }
@@ -1520,11 +1584,16 @@ async fn store_and_broadcast_pczts_for_proposal(
             total_count,
             message: Some(error.clone()),
         };
-        return match finish_stored_proposal(proposal_id, send_flow_id, true) {
-            Ok(()) => Ok(result),
-            Err(cleanup_error) => Err(format!(
-                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
-            )),
+        return match proposal {
+            Some((proposal_id, send_flow_id)) => {
+                match finish_stored_proposal(proposal_id, send_flow_id, true) {
+                    Ok(()) => Ok(result),
+                    Err(cleanup_error) => Err(format!(
+                        "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                    )),
+                }
+            }
+            None => Ok(result),
         };
     }
     let mut first_client = Some(expiry_client);
@@ -1546,11 +1615,7 @@ async fn store_and_broadcast_pczts_for_proposal(
                         PcztBroadcastStep::Continue => unreachable!(),
                         PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
                         PcztBroadcastStep::Fail(error) => {
-                            return release_pczt_proposal_after_failure(
-                                proposal_id,
-                                send_flow_id,
-                                error,
-                            );
+                            return release_signed_pczt_operation_after_failure(proposal, error);
                         }
                     }
                 }
@@ -1571,7 +1636,7 @@ async fn store_and_broadcast_pczts_for_proposal(
                 PcztBroadcastStep::Continue => {}
                 PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
                 PcztBroadcastStep::Fail(error) => {
-                    return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+                    return release_signed_pczt_operation_after_failure(proposal, error);
                 }
             }
         }
@@ -1646,8 +1711,10 @@ async fn store_and_broadcast_pczts_for_proposal(
     );
 
     if let Err(storage_error) = store_result {
-        let retain_error = retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id)
-            .err()
+        let retain_error = proposal
+            .and_then(|(proposal_id, send_flow_id)| {
+                retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id).err()
+            })
             .map(|error| format!(" Proposal input-lock retention also failed: {error}."))
             .unwrap_or_default();
         let network_message = broadcast_plan
@@ -1672,8 +1739,12 @@ async fn store_and_broadcast_pczts_for_proposal(
 
     // The persisted network-touched prefix now owns recovery, so the original
     // proposal input lock is no longer needed.
-    if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
-        log::warn!("keystone: transactions stored but proposal lock bookkeeping failed: {error}");
+    if let Some((proposal_id, send_flow_id)) = proposal {
+        if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+            log::warn!(
+                "keystone: transactions stored but proposal lock bookkeeping failed: {error}"
+            );
+        }
     }
 
     let message = broadcast_plan.message.map(|message| {
@@ -2578,7 +2649,7 @@ mod tests {
             extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
             ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
             prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
-            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
+            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -2946,8 +3017,18 @@ mod tests {
                 .unwrap();
 
             ensure_tex_pczt_dependency(&[first.clone(), unsigned.clone()]).unwrap();
-            let reversed = ensure_tex_pczt_dependency(&[unsigned.clone(), first]).unwrap_err();
+            let reversed =
+                ensure_tex_pczt_dependency(&[unsigned.clone(), first.clone()]).unwrap_err();
             assert!(reversed.contains("does not spend the exact round 1 transaction"));
+
+            let validation_error = validate_signed_pczts(
+                &[unsigned.clone(), first.clone()],
+                &[unsigned.clone(), first],
+                None,
+                None,
+            )
+            .unwrap_err();
+            assert!(validation_error.contains("does not spend the exact round 1 transaction"));
 
             let error = match extract_transaction_from_pczt(&unsigned, &unsigned, None, None) {
                 Ok(_) => panic!("transparent input must be signed"),
