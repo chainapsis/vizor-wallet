@@ -180,12 +180,9 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
   };
 });
 
-/// Compact signing boundary used by voting delegation bundles.
-///
-/// Voting deliberately consumes only action signatures, not a transaction-like
-/// signed PCZT. The host memo associated with the request is not asserted to be
-/// clear-sign metadata displayed by the current Ledger Zcash app.
-final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
+/// Compact signing boundary for flows that persist the proofed PCZT separately
+/// and only need Ledger's spend-authorization signatures.
+final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
   final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
@@ -225,6 +222,13 @@ final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         ),
     ];
   };
+});
+
+/// Voting deliberately consumes only action signatures, not a transaction-like
+/// signed PCZT. The host memo associated with the request is not asserted to be
+/// clear-sign metadata displayed by the current Ledger Zcash app.
+final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
+  return ref.watch(ledgerActionPcztSignerProvider);
 });
 
 Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
