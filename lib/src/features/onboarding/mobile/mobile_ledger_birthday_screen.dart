@@ -32,6 +32,7 @@ class MobileLedgerBirthdayScreen extends ConsumerWidget {
             extra: LedgerSetPasswordArgs(
               account: args.account,
               birthdayHeight: height,
+              sourceAccountUuid: args.sourceAccountUuid,
             ),
           );
           return;
@@ -41,6 +42,7 @@ class MobileLedgerBirthdayScreen extends ConsumerWidget {
           extra: LedgerCustomiseAccountArgs(
             account: args.account,
             birthdayHeight: height,
+            sourceAccountUuid: args.sourceAccountUuid,
           ),
         );
       },

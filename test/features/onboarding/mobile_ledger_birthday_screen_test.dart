@@ -37,7 +37,10 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => const MobileLedgerBirthdayScreen(
-            args: LedgerBirthdayArgs(account: _account),
+            args: LedgerBirthdayArgs(
+              account: _account,
+              sourceAccountUuid: 'source-ledger',
+            ),
             loadChainMetadata: false,
           ),
         ),
@@ -46,7 +49,8 @@ void main() {
           builder: (_, state) {
             final args = state.extra! as LedgerCustomiseAccountArgs;
             return Text(
-              'customise-${args.account.accountIndex}-${args.birthdayHeight}',
+              'customise-${args.account.accountIndex}-${args.birthdayHeight}-'
+              '${args.sourceAccountUuid}',
             );
           },
         ),
@@ -69,7 +73,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('customise-7-2500000'), findsOneWidget);
+    expect(find.text('customise-7-2500000-source-ledger'), findsOneWidget);
 
     router.pop();
     await tester.pumpAndSettle();
@@ -78,7 +82,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('customise-7-2500000'), findsOneWidget);
+    expect(find.text('customise-7-2500000-source-ledger'), findsOneWidget);
   });
 
   testWidgets('routes a first Ledger account through passcode setup', (
@@ -91,7 +95,10 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => const MobileLedgerBirthdayScreen(
-            args: LedgerBirthdayArgs(account: _account),
+            args: LedgerBirthdayArgs(
+              account: _account,
+              sourceAccountUuid: 'source-ledger',
+            ),
             loadChainMetadata: false,
           ),
         ),
@@ -124,6 +131,7 @@ void main() {
     expect(find.text('passcode route'), findsOneWidget);
     expect(passcodeArgs?.account, same(_account));
     expect(passcodeArgs?.birthdayHeight, 2500000);
+    expect(passcodeArgs?.sourceAccountUuid, 'source-ledger');
   });
 }
 

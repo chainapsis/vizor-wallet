@@ -115,6 +115,7 @@ Widget _ledgerRouterApp() {
           args: LedgerSetPasswordArgs(
             account: account,
             birthdayHeight: 2500000,
+            sourceAccountUuid: 'source-ledger',
           ),
         ),
       ),
@@ -124,7 +125,8 @@ Widget _ledgerRouterApp() {
           final args = state.extra! as LedgerCustomiseAccountArgs;
           return Text(
             'ledger customise ${args.account.accountIndex} '
-            '${args.birthdayHeight} ${args.pendingPassword}',
+            '${args.birthdayHeight} ${args.pendingPassword} '
+            '${args.sourceAccountUuid}',
           );
         },
       ),
@@ -213,7 +215,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('ledger customise 7 2500000 123456'),
+      find.text('ledger customise 7 2500000 123456 source-ledger'),
       findsOneWidget,
     );
   });

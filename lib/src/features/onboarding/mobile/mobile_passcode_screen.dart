@@ -121,6 +121,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           account: ledgerArgs.account,
           birthdayHeight: ledgerArgs.birthdayHeight,
           pendingPassword: passcode,
+          sourceAccountUuid: ledgerArgs.sourceAccountUuid,
         ),
       );
       if (!mounted) return;

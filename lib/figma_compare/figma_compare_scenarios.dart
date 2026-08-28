@@ -42,6 +42,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildLedgerAdditionalAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ledger-additional-account',
+    description: 'Mobile Ledger import with known same-wallet accounts',
+    builder: buildMobileLedgerAdditionalAccountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-secret-passphrase-reveal',
     description: 'Desktop secret passphrase recovery with BIP39 passphrase',
     builder: buildSettingsSecretPassphraseRevealUseCase,
