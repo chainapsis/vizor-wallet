@@ -41,6 +41,7 @@ import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_annou
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import '../src/features/onboarding/import/import_split_view.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -196,6 +197,41 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
       ),
     ],
     child: const _CustomiseAccountHarness(),
+  );
+}
+
+Widget buildLedgerAdditionalAccountUseCase(BuildContext context) {
+  const accountState = AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'ledger-primary',
+        name: 'Primary Ledger account',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        zip32AccountIndex: 0,
+        ledgerWalletFingerprint:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+      AccountInfo(
+        uuid: 'ledger-savings',
+        name: 'Long-term shielded savings',
+        order: 1,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        zip32AccountIndex: 2,
+        ledgerWalletFingerprint:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+    ],
+    activeAccountUuid: 'ledger-primary',
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+    ],
+    child: const _LedgerAdditionalAccountHarness(),
   );
 }
 
@@ -3049,6 +3085,57 @@ class _WelcomeHarness extends StatefulWidget {
 
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
+}
+
+class _LedgerAdditionalAccountHarness extends StatefulWidget {
+  const _LedgerAdditionalAccountHarness();
+
+  @override
+  State<_LedgerAdditionalAccountHarness> createState() =>
+      _LedgerAdditionalAccountHarnessState();
+}
+
+class _LedgerAdditionalAccountHarnessState
+    extends State<_LedgerAdditionalAccountHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/onboarding/ledger',
+      routes: [
+        GoRoute(
+          path: '/onboarding/ledger',
+          builder: (_, _) =>
+              const LedgerConnectScreen(sourceAccountUuid: 'ledger-primary'),
+        ),
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
+        ),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/add-account'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: Router.withConfig(config: _router),
+    );
+  }
 }
 
 class _WelcomeHarnessState extends State<_WelcomeHarness> {
