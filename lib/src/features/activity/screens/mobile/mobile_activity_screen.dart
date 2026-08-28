@@ -18,6 +18,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../activity_feed_sections.dart';
 import '../../activity_row_mapper.dart';
+import '../../gift_card_activity_index.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
@@ -205,6 +206,10 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final giftCardActivityIndex = accountUuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
+              GiftCardActivityIndex.empty;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
@@ -232,6 +237,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
               row: buildTransactionActivityRow(
                 context: context,
                 transaction: tx,
+                giftCardKind: giftCardActivityIndex.kindFor(tx),
                 privacyModeEnabled: privacyModeEnabled,
                 onTap: () => unawaited(_openTransactionStatus(context, tx)),
               ),

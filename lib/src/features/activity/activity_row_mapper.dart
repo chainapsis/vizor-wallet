@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
+import 'gift_card_activity_index.dart';
 import 'models/activity_row_data.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
@@ -23,6 +24,7 @@ Color outgoingAmountColor(AppColors colors) =>
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
+  GiftCardActivityKind? giftCardKind,
   bool privacyModeEnabled = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
@@ -53,7 +55,13 @@ ActivityRowData buildTransactionActivityRow({
 
   return ActivityRowData(
     stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
-    title: isFailed && (isSent || isMigration)
+    title: giftCardKind != null
+        ? _giftCardTitle(
+            giftCardKind,
+            isInFlight: isInFlight,
+            isFailed: isFailed,
+          )
+        : isFailed && (isSent || isMigration)
         ? isMigration
               ? 'Migration failed'
               : 'Send failed'
@@ -66,7 +74,9 @@ ActivityRowData buildTransactionActivityRow({
                 : 'Receiving',
           )
         : _txTitle(kind),
-    leadingIconName: _txIcon(kind, isPending: isPending),
+    leadingIconName: giftCardKind != null && !isInFlight
+        ? AppIcons.giftCard
+        : _txIcon(kind, isPending: isPending),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
@@ -108,6 +118,29 @@ ActivityRowData buildTransactionActivityRow({
     ),
     onTap: onTap,
   );
+}
+
+String _giftCardTitle(
+  GiftCardActivityKind kind, {
+  required bool isInFlight,
+  required bool isFailed,
+}) {
+  if (isFailed) {
+    return switch (kind) {
+      GiftCardActivityKind.created => 'Gift Card creation failed',
+      GiftCardActivityKind.redeemed => 'Gift Card redemption failed',
+    };
+  }
+  if (isInFlight) {
+    return _pendingTxTitle(switch (kind) {
+      GiftCardActivityKind.created => 'Creating a Gift Card',
+      GiftCardActivityKind.redeemed => 'Redeeming a Gift Card',
+    });
+  }
+  return switch (kind) {
+    GiftCardActivityKind.created => 'Created a Gift Card',
+    GiftCardActivityKind.redeemed => 'Redeemed a Gift Card',
+  };
 }
 
 String _stableTransactionRole(String kind) {
