@@ -122,6 +122,7 @@ class MobileHardwareAccountDetailsScreen extends ConsumerWidget {
                     : _HardwareAccountDetails(
                         account: account,
                         showHeading: false,
+                        allowAddLedgerAccount: true,
                       ),
               ),
             ),

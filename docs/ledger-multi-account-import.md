@@ -1,6 +1,7 @@
 # Ledger multi-account import
 
-Status: approved for desktop implementation. Mobile is a follow-up.
+Status: implemented on desktop and mobile. Account-family presentation remains
+a follow-up.
 
 ## Decision
 
@@ -85,6 +86,15 @@ existing ZIP-32 account index and connection metadata.
 USB and macOS Bluetooth use the same Rust APDU plan and parser. Native BLE code
 continues to own only discovery, connection, and byte exchange.
 
+## Mobile flow
+
+Mobile reuses the same wallet identity, source verification, index suggestion,
+and duplicate rules over the selected BLE session. The Account details action
+opens the source-account flow; the general Ledger import remains index 0 with
+manual selection behind **Advanced options**. The source account context is
+preserved through birthday height, passcode setup when required, and account
+customisation.
+
 ## UI states and copy
 
 - Empty/general state: the current Connect Ledger screen and advanced index
@@ -99,24 +109,25 @@ continues to own only discovery, connection, and byte exchange.
 
 ## Scope
 
-Included in the desktop implementation:
+Included in the current implementation:
 
 - wallet identity APDU and strict response parsing;
 - USB and macOS BLE identity exchange;
 - persisted wallet fingerprint and legacy-account enrollment;
 - same-wallet account list, index suggestion, and duplicate validation;
 - Accounts context-menu and Account details entry points;
+- mobile Account details entry point and single-column account-index flow;
 - focused Rust, provider, model, and widget tests.
 
 Follow-up:
 
-- expose the same add-another-account flow on iOS and Android;
-- visually verify the final mobile form factor on simulator/device;
 - generalize the account-family presentation introduced by
   [PR #474](https://github.com/chainapsis/vizor-wallet/pull/474) so Ledger
   accounts with the same non-null `ledgerWalletFingerprint` appear under one
   editable wallet group; accounts without a verified fingerprint remain
   isolated;
+- run the final BLE identity and UFVK sequence on physical iOS and Android
+  devices;
 - consider batch discovery of every legacy Ledger account after the user has
   connected the device.
 
@@ -144,7 +155,8 @@ Out of scope:
 - General Ledger import still defaults to index 0 and keeps index selection
   under Advanced options.
 - USB and macOS BLE produce the same fingerprint for the same seed.
-- Existing mobile Ledger import behavior is unchanged in this round.
+- Mobile source-account import follows the same identity and duplicate gates;
+  general mobile Ledger import remains backward-compatible.
 
 ## Estimate
 
@@ -174,6 +186,7 @@ version still needs protocol regression coverage.
 - Dart unit tests for grouping, lowest-unused suggestion, and JSON persistence.
 - Widget tests for the source-account list, disclosure, duplicate error,
   wrong-device stop, USB continuation, and Bluetooth continuation.
-- Focused desktop build/analyze for changed files.
+- Focused desktop and mobile build/analyze for changed files.
+- Visible mobile simulator review with deterministic same-wallet accounts.
 - Visible desktop smoke test with a real Ledger before declaring the UI flow
   complete.

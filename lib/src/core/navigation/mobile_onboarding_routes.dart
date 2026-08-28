@@ -207,7 +207,11 @@ List<RouteBase> mobileOnboardingRoutes() => [
     path: '/onboarding/ledger',
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
-      child: const MobileLedgerConnectScreen(),
+      child: MobileLedgerConnectScreen(
+        sourceAccountUuid: state.extra is LedgerConnectArgs
+            ? (state.extra as LedgerConnectArgs).sourceAccountUuid
+            : null,
+      ),
     ),
   ),
   GoRoute(

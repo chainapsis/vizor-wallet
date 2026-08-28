@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -98,6 +100,47 @@ Widget _createRouterApp({
   );
 }
 
+Widget _ledgerRouterApp() {
+  const account = LedgerDeviceAccount(
+    ufvk: 'uview-ledger',
+    seedFingerprint: [1, 2, 3],
+    accountIndex: 7,
+    appVersion: '3.9.2',
+  );
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => const MobilePasscodeScreen.ledger(
+          args: LedgerSetPasswordArgs(
+            account: account,
+            birthdayHeight: 2500000,
+            sourceAccountUuid: 'source-ledger',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/ledger/customise-account',
+        builder: (_, state) {
+          final args = state.extra! as LedgerCustomiseAccountArgs;
+          return Text(
+            'ledger customise ${args.account.accountIndex} '
+            '${args.birthdayHeight} ${args.pendingPassword} '
+            '${args.sourceAccountUuid}',
+          );
+        },
+      ),
+    ],
+  );
+
+  return ProviderScope(
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
 Future<void> _enter(WidgetTester tester, String digits) async {
   for (final d in digits.split('')) {
     await tester.tap(find.bySemanticsLabel('Digit $d'));
@@ -155,6 +198,26 @@ void main() {
     );
     await tester.pump();
     expect(_stepsProgress(tester), closeTo(mobileImportProgress(4), 0.0001));
+  });
+
+  testWidgets('Ledger passcode forwards the pending password to customisation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_ledgerRouterApp());
+    await tester.pump();
+
+    expect(
+      _stepsProgress(tester),
+      closeTo(kMobileLedgerPasscodeProgress, 0.0001),
+    );
+    await _enter(tester, '123456');
+    await _enter(tester, '123456');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('ledger customise 7 2500000 123456 source-ledger'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a mismatched confirmation restarts with an error', (
