@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
@@ -20,9 +21,9 @@ import '../shared/onboarding_chrome.dart';
 import 'ledger_desktop_ble_probe_dialog.dart';
 import 'ledger_setup_args.dart';
 
-enum LedgerOnboardingStep { connect, birthday, customiseAccount }
+enum LedgerOnboardingStep { connect, birthday, setPassword, customiseAccount }
 
-class LedgerOnboardingShell extends StatelessWidget {
+class LedgerOnboardingShell extends ConsumerWidget {
   const LedgerOnboardingShell({
     required this.activeStep,
     required this.backTarget,
@@ -37,20 +38,31 @@ class LedgerOnboardingShell extends StatelessWidget {
   final Widget? overlay;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showPasswordStep = !ref.watch(
+      appSecurityProvider.select((state) => state.isPasswordConfigured),
+    );
+    final steps = [
+      LedgerOnboardingStep.connect,
+      LedgerOnboardingStep.birthday,
+      if (showPasswordStep) LedgerOnboardingStep.setPassword,
+      LedgerOnboardingStep.customiseAccount,
+    ];
     return AppDesktopShell(
       sidebar: OnboardingSidebarChrome(
         steps: [
-          for (final step in LedgerOnboardingStep.values)
+          for (final step in steps)
             OnboardingSidebarStepData(
               label: switch (step) {
                 LedgerOnboardingStep.connect => 'Connect Ledger',
                 LedgerOnboardingStep.birthday => 'Wallet Birthday Height',
+                LedgerOnboardingStep.setPassword => 'Set Password',
                 LedgerOnboardingStep.customiseAccount => 'Customise wallet',
               },
               iconName: switch (step) {
                 LedgerOnboardingStep.connect => AppIcons.ledger,
                 LedgerOnboardingStep.birthday => AppIcons.block,
+                LedgerOnboardingStep.setPassword => AppIcons.lock,
                 LedgerOnboardingStep.customiseAccount => AppIcons.user,
               },
               active: step == activeStep,

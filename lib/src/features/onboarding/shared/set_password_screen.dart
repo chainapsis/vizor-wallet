@@ -18,14 +18,25 @@ import '../../wallet_link/services/wallet_link_completion.dart';
 import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
+import '../ledger/ledger_connect_screen.dart';
 import 'onboarding_chrome.dart' as onboarding_chrome;
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
 
 class SetPasswordScreen extends ConsumerStatefulWidget {
-  const SetPasswordScreen({super.key, required this.args});
+  const SetPasswordScreen({super.key, required this.args})
+    : ledgerOnContinue = null,
+      ledgerBackTarget = null;
 
-  final SetPasswordScreenArgs args;
+  const SetPasswordScreen.ledger({
+    super.key,
+    required this.ledgerOnContinue,
+    required this.ledgerBackTarget,
+  }) : args = null;
+
+  final SetPasswordScreenArgs? args;
+  final Future<void> Function(String password)? ledgerOnContinue;
+  final onboarding_chrome.OnboardingBackTarget? ledgerBackTarget;
 
   @override
   ConsumerState<SetPasswordScreen> createState() => _SetPasswordScreenState();
@@ -66,7 +77,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   Future<void> _submit() async {
-    final args = widget.args;
     final passwordPolicyError = _passwordPolicyError;
     final password = _passwordController.text;
     if (_submitPhase != _SetPasswordSubmitPhase.idle ||
@@ -80,6 +90,22 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       _submitError = null;
     });
 
+    final ledgerOnContinue = widget.ledgerOnContinue;
+    if (ledgerOnContinue != null) {
+      try {
+        await ledgerOnContinue(password);
+      } catch (e, st) {
+        log('SetPasswordScreen._submit: Ledger continuation failed: $e\n$st');
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _SetPasswordSubmitPhase.idle;
+          _submitError = onboardingSubmitErrorMessage(e);
+        });
+      }
+      return;
+    }
+
+    final args = widget.args!;
     final router = GoRouter.of(context);
     if (args.flow != SetPasswordFlow.importWalletLink) {
       final customiseArgs = CustomiseAccountArgs(
@@ -211,19 +237,28 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitError = null;
       }),
       onSubmit: _submit,
-      idleSubmitLabel: args.flow == SetPasswordFlow.importWalletLink
+      idleSubmitLabel: args?.flow == SetPasswordFlow.importWalletLink
           ? 'Set password & finish'
           : 'Set password & continue',
     );
-    final backTarget = args.flow == SetPasswordFlow.create
+    if (widget.ledgerOnContinue != null) {
+      return LedgerOnboardingShell(
+        activeStep: LedgerOnboardingStep.setPassword,
+        backTarget: widget.ledgerBackTarget,
+        child: content,
+      );
+    }
+
+    final standardArgs = args!;
+    final backTarget = standardArgs.flow == SetPasswordFlow.create
         ? null
         : onboarding_chrome.OnboardingBackTarget.route(
-            label: _backLabel(args.flow),
-            routePath: args.backRoutePath,
-            routeExtra: args.backRouteExtra,
+            label: _backLabel(standardArgs.flow),
+            routePath: standardArgs.backRoutePath,
+            routeExtra: standardArgs.backRouteExtra,
           );
 
-    return switch (args.flow) {
+    return switch (standardArgs.flow) {
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: backTarget,
         child: content,

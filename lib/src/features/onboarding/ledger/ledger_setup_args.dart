@@ -6,12 +6,24 @@ class LedgerBirthdayArgs {
   final LedgerDeviceAccount account;
 }
 
-class LedgerCustomiseAccountArgs {
-  const LedgerCustomiseAccountArgs({
+class LedgerSetPasswordArgs {
+  const LedgerSetPasswordArgs({
     required this.account,
     required this.birthdayHeight,
   });
 
   final LedgerDeviceAccount account;
   final int birthdayHeight;
+}
+
+class LedgerCustomiseAccountArgs {
+  const LedgerCustomiseAccountArgs({
+    required this.account,
+    required this.birthdayHeight,
+    this.pendingPassword,
+  });
+
+  final LedgerDeviceAccount account;
+  final int birthdayHeight;
+  final String? pendingPassword;
 }
