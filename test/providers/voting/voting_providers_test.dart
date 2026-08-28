@@ -4015,6 +4015,102 @@ void main() {
     },
   );
 
+  test('expiry performs a final immediate-share confirmation refresh', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final voteEndSeconds = nowSeconds + 2;
+    final shareNullifier = Uint8List.fromList(List.filled(32, 9));
+    final shareId = _hexFromBytes(shareNullifier);
+    final acceptedShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      nullifier: shareNullifier,
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.one,
+    );
+    final confirmedShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: acceptedShare.roundId,
+      bundleIndex: acceptedShare.bundleIndex,
+      proposalId: acceptedShare.proposalId,
+      shareIndex: acceptedShare.shareIndex,
+      sentToUrls: acceptedShare.sentToUrls,
+      nullifier: acceptedShare.nullifier,
+      phase: VotingWorkflowPhase.confirmed,
+      confirmed: true,
+      submitAt: acceptedShare.submitAt,
+      createdAt: acceptedShare.createdAt,
+    );
+    late final FakeVotingRecoveryApi recoveryApi;
+    final rust = FakeVotingRustApi(
+      onShareConfirmed: (_, _, _) {
+        recoveryApi.state = recoveryState(
+          bundleCount: 1,
+          shareDelegations: [confirmedShare],
+        );
+      },
+    );
+    recoveryApi = _submittedDelegationWithShareRecoveryApi(
+      acceptedShare,
+      designateImmediateShare: true,
+    );
+    final http = FakeVotingHttpClient(
+      responses:
+          votingHttpResponses(
+            roundStatus: roundStatusJson(
+              roundId: kRoundId,
+              voteEnd: voteEndSeconds,
+            ),
+            dynamicConfig: dynamicConfigJson(
+              voteServers: const [
+                {'url': 'https://helper-a.example', 'label': 'helper-a'},
+              ],
+            ),
+          )..addAll({
+            'https://helper-a.example/shielded-vote/v1/share-status/$kRoundId/$shareId':
+                SequentialVotingHttpResponses([
+                  {'status': 'pending'},
+                  {'status': 'confirmed'},
+                ]),
+          }),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      txConfirmationPolling: _fastTxConfirmationPolling,
+    );
+    addTearDown(container.dispose);
+
+    final key = await container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    await _waitForStoredVanPosition(rust, '0:0');
+    expect(
+      container.read(votingSubmissionJobProvider(key!)).status,
+      VotingSubmissionJobStatus.running,
+    );
+
+    final completed = await _waitForJobStatus(
+      container,
+      key,
+      VotingSubmissionJobStatus.complete,
+      attempts: 400,
+    );
+
+    expect(completed.errorMessage, isNull);
+    expect(rust.confirmedShares, ['0:7:0']);
+    expect(
+      http.requests.where(
+        (request) => request.uri.path.contains('/share-status/'),
+      ),
+      hasLength(2),
+    );
+  });
+
   test(
     'unconfirmed immediate share fails the submission job when voting ends',
     () async {
@@ -9469,9 +9565,10 @@ FakeVotingRecoveryApi _submittedDelegationWithShareRecoveryApi(
 Future<VotingSubmissionJobState> _waitForJobStatus(
   ProviderContainer container,
   VotingSessionKey key,
-  VotingSubmissionJobStatus status,
-) async {
-  for (var i = 0; i < 100; i++) {
+  VotingSubmissionJobStatus status, {
+  int attempts = 100,
+}) async {
+  for (var i = 0; i < attempts; i++) {
     final state = container.read(votingSubmissionJobProvider(key));
     if (state.status == status) return state;
     await Future<void>.delayed(const Duration(milliseconds: 10));

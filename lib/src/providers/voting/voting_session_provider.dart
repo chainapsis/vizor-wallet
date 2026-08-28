@@ -3051,6 +3051,102 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return pass;
   }
 
+  /// Reconciles the designated immediate share without reopening recovery.
+  ///
+  /// This is the one confirmation-only exception to the vote-end boundary:
+  /// the helper may have confirmed the share before the deadline while the
+  /// last local tracking pass missed that transition. Only helpers that
+  /// already accepted the persisted share are queried, and this path never
+  /// resubmits a share or selects a new helper.
+  Future<bool> refreshImmediateShareConfirmation() async {
+    var confirmed = false;
+    await _enqueue(
+      () async {
+        final current = await future;
+        if (_isDisposed || !ref.mounted) return;
+        final context = await _loadContext(_roundId);
+        _currentContext = context;
+        var plan = await _loadResumePlan(context);
+        var roundPlan = await _loadRoundPlan(context);
+        if (hasConfirmedImmediateShare(roundPlan, plan)) {
+          confirmed = true;
+          return;
+        }
+
+        final immediateKey = roundPlan.immediateShareKey;
+        if (immediateKey == null) return;
+        rust_wire.ShareDelegationRecordView? immediateShare;
+        for (final share in plan.shareDelegations) {
+          if (share.bundleIndex == immediateKey.bundleIndex &&
+              share.proposalId == immediateKey.proposalId &&
+              share.shareIndex == immediateKey.shareIndex) {
+            immediateShare = share;
+            break;
+          }
+        }
+        if (immediateShare == null || immediateShare.confirmed) return;
+
+        final configuredServerUrls = context.config.apiServers.all
+            .map((endpoint) => endpoint.toString())
+            .toSet();
+        final acceptedUrls = immediateShare.sentToUrls.where(
+          configuredServerUrls.contains,
+        );
+        if (acceptedUrls.isEmpty) return;
+
+        final api = ref.read(
+          votingApiClientProvider(context.config.apiServers),
+        );
+        final rust = ref.read(votingRustApiProvider);
+        final helperHealth = ref.read(votingHelperHealthTrackerProvider);
+        final helperConfirmed = await _shareConfirmedByAnyHelper(
+          api: api,
+          context: context,
+          helperHealth: helperHealth,
+          share: immediateShare,
+          serverUrls: acceptedUrls,
+          isCancelled: () => _finalConfirmationCheckCancelled(context),
+        );
+        if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
+          return;
+        }
+        await rust.markShareConfirmed(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: immediateShare.roundId,
+          bundleIndex: immediateShare.bundleIndex,
+          proposalId: immediateShare.proposalId,
+          shareIndex: immediateShare.shareIndex,
+        );
+        // Persistence is the success boundary. A best-effort state reload
+        // keeps this notifier current, but must not turn a durable helper
+        // confirmation back into an expiry error if a follow-up read fails.
+        confirmed = true;
+        try {
+          plan = await _loadResumePlan(context);
+          roundPlan = await _loadRoundPlan(context);
+          _setStateForContext(
+            context,
+            (state.value ?? current).copyWith(
+              phase: _phaseForPlans(roundPlan),
+              resumePlan: plan,
+              roundPlan: roundPlan,
+            ),
+          );
+        } catch (error) {
+          debugPrint(
+            '[zcash] Voting: final immediate-share state reload skipped: '
+            '$error',
+          );
+        }
+      },
+      cleanupProcessStateOnError: false,
+      publishError: false,
+      propagateError: true,
+    );
+    return confirmed;
+  }
+
   Future<void> _startPendingSharePass() {
     return _enqueueShareTracking(() async {
       _shareTrackingTimer?.cancel();
@@ -3135,6 +3231,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             helperHealth: helperHealth,
             share: share,
             serverUrls: acceptedUrls,
+            isCancelled: () => _shareTrackingCancelled(context),
           );
           if (confirmed) {
             await rust.markShareConfirmed(
@@ -3409,24 +3506,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required VotingHelperHealthTracker helperHealth,
     required rust_wire.ShareDelegationRecordView share,
     required Iterable<String> serverUrls,
+    required bool Function() isCancelled,
   }) async {
     final shareId = bytesToHex(share.nullifier);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
-      if (_shareTrackingCancelled(context)) return false;
+      if (isCancelled()) return false;
       try {
         final status = await api.getShareStatus(
           roundId: share.roundId,
           serverUrl: Uri.parse(serverUrl),
           shareId: shareId,
-          isCancelled: () => _shareTrackingCancelled(context),
+          isCancelled: isCancelled,
         );
-        if (_automaticShareTrackingStopped || !_isCurrentContext(context)) {
-          return false;
-        }
+        if (isCancelled()) return false;
         helperHealth.recordSuccess(serverUrl);
         if (status.status == 'confirmed') return true;
       } catch (e) {
-        if (_shareTrackingCancelled(context)) return false;
+        if (isCancelled()) return false;
         debugPrint(
           '[zcash] Voting: share status check failed '
           'round=${share.roundId} bundle=${share.bundleIndex} '
@@ -3437,6 +3533,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
     return false;
+  }
+
+  bool _finalConfirmationCheckCancelled(_VotingSessionContext context) {
+    return _automaticShareTrackingStopped ||
+        _isDisposed ||
+        !ref.mounted ||
+        !_isCurrentContext(context) ||
+        ref.read(appSecurityProvider).requiresUnlock;
   }
 
   bool _shareTrackingCancelled(_VotingSessionContext context) {

@@ -284,6 +284,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   ProviderSubscription<AsyncValue<VotingSessionState>>? _sessionSubscription;
   VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
+  Future<void>? _expiryConfirmationCheck;
   _VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
 
@@ -975,7 +976,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     if (!_canCompleteSubmission(done)) {
       if (_hasExpiredUnconfirmedImmediateShare(done)) {
-        _failForExpiredImmediateShare(key: key, generation: generation);
+        _startExpiryConfirmationCheck(key: key, generation: generation);
         return;
       }
       _scheduleCompletionPoll(key: key, generation: generation);
@@ -1173,9 +1174,53 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       if (_hasExpiredUnconfirmedImmediateShare(session)) {
-        _failForExpiredImmediateShare(key: key, generation: generation);
+        _startExpiryConfirmationCheck(key: key, generation: generation);
       }
     });
+  }
+
+  void _startExpiryConfirmationCheck({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    if (_expiryConfirmationCheck != null) return;
+    _cancelCompletionPoll();
+    late final Future<void> check;
+    check =
+        _refreshImmediateShareBeforeExpiryFailure(
+          key: key,
+          generation: generation,
+        ).whenComplete(() {
+          if (identical(_expiryConfirmationCheck, check)) {
+            _expiryConfirmationCheck = null;
+          }
+        });
+    _expiryConfirmationCheck = check;
+    unawaited(check);
+  }
+
+  Future<void> _refreshImmediateShareBeforeExpiryFailure({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    var confirmed = false;
+    try {
+      confirmed = await ref
+          .read(votingSubmissionSessionProvider(key).notifier)
+          .refreshImmediateShareConfirmation();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: final immediate-share confirmation failed: '
+        '$error\n$stackTrace',
+      );
+    }
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final session = _sessionForJob(key);
+    if (confirmed || _canCompleteSubmission(session)) {
+      _completeJob(key: key, generation: generation);
+      return;
+    }
+    _failForExpiredImmediateShare(key: key, generation: generation);
   }
 
   void _cancelCompletionPoll() {
