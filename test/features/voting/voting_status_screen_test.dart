@@ -5196,6 +5196,8 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
   }) async {}
 }
 
+int _fakeShareTargetCount(int serverCount) => (serverCount + 1) ~/ 2;
+
 class _VotingStatusRustApi extends _NoopVotingRustApi {
   _VotingStatusRustApi(
     this.recoveryApi, {
@@ -5632,7 +5634,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required bool singleShare,
     int? immediateShareIndex,
   }) async {
-    final targetCount = serverUrls.length > 5 ? 5 : serverUrls.length;
+    final targetCount = _fakeShareTargetCount(serverUrls.length);
     return [
       for (var i = 0; i < shareCount; i++)
         rust_share_policy.ShareSubmissionPlan(
@@ -5648,10 +5650,18 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
     required int serverCount,
   }) {
+    final targetCount = _fakeShareTargetCount(serverCount);
+    final assignmentCount = 16 * targetCount;
+    final maxSharesPerServer = serverCount == 0
+        ? 0
+        : (assignmentCount + serverCount - 1) ~/ serverCount;
+    final minServerCount = maxSharesPerServer == 0
+        ? 0
+        : (assignmentCount + maxSharesPerServer - 1) ~/ maxSharesPerServer;
     return rust_share_policy.ShareServerSelectionPolicy(
-      targetCount: serverCount > 5 ? 5 : serverCount,
-      maxSharesPerServer: 8,
-      minServerCount: 10,
+      targetCount: targetCount,
+      maxSharesPerServer: maxSharesPerServer,
+      minServerCount: minServerCount,
       preflightSoftTimeoutMilliseconds: BigInt.zero,
       preflightHardTimeoutMilliseconds: BigInt.one,
       postTimeoutMilliseconds: BigInt.from(30000),

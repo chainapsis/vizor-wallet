@@ -2657,24 +2657,24 @@ mod tests {
 
     #[test]
     fn helper_selection_wrappers_expose_crate_policy() {
-        let policy = share_server_selection_policy(10);
-        assert_eq!(policy.target_count, 5);
+        let policy = share_server_selection_policy(6);
+        assert_eq!(policy.target_count, 3);
         assert_eq!(policy.max_shares_per_server, 8);
-        assert_eq!(policy.min_server_count, 10);
+        assert_eq!(policy.min_server_count, 6);
         assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
         assert_eq!(policy.preflight_hard_timeout_milliseconds, 30_000);
         assert_eq!(policy.post_timeout_milliseconds, 30_000);
         assert_eq!(policy.initial_delivery_timeout_milliseconds, 60_000);
         assert_eq!(policy.max_concurrent_posts, 16);
 
-        let servers: Vec<String> = (0..10)
+        let servers: Vec<String> = (0..6)
             .map(|index| format!("https://helper-{index}.example"))
             .collect();
         let plans =
-            plan_share_submissions(16, servers, 10, 100, 600, Some(120), false, None).unwrap();
+            plan_share_submissions(16, servers, 6, 100, 600, Some(120), false, None).unwrap();
         let mut usage = std::collections::HashMap::<String, usize>::new();
         for plan in plans {
-            assert_eq!(plan.target_servers.len(), 5);
+            assert_eq!(plan.target_servers.len(), 3);
             for server in plan.target_servers {
                 *usage.entry(server).or_default() += 1;
             }

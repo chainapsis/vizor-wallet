@@ -6852,8 +6852,8 @@ void main() {
         )
         .map((request) => request.uri.host)
         .toList(growable: false);
-    expect(sharePostHosts, ['helper-b.example', 'helper-a.example']);
-    expect(rust.recordedShares.single.sentToUrls, [helperB, helperA]);
+    expect(sharePostHosts, ['helper-b.example']);
+    expect(rust.recordedShares.single.sentToUrls, [helperB]);
   });
 
   test(
@@ -6902,7 +6902,7 @@ void main() {
       http.releaseSharePosts.complete();
       await cast;
 
-      expect(http.startedSharePostCount, 6);
+      expect(http.startedSharePostCount, 4);
       expect(http.maxConcurrentSharePostCount, 2);
       expect(
         rust.recordedShares.single.sentToUrls,
@@ -6910,8 +6910,6 @@ void main() {
           'https://helper-2.example',
           'https://helper-3.example',
           'https://helper-4.example',
-          'https://helper-5.example',
-          'https://helper-6.example',
         ]),
       );
     },
@@ -7021,10 +7019,13 @@ void main() {
         .toList(growable: false);
     expect(postTimeouts, hasLength(6));
     expect(
-      postTimeouts.take(5),
+      postTimeouts.take(3),
       everyElement(const Duration(milliseconds: 30)),
     );
-    expect(postTimeouts.last, lessThan(const Duration(milliseconds: 30)));
+    expect(
+      postTimeouts.skip(3),
+      everyElement(lessThan(const Duration(milliseconds: 30))),
+    );
   });
 
   test('vote commitment validates all shares before submission', () async {
@@ -7279,8 +7280,6 @@ void main() {
       'helper-2.example',
       'helper-3.example',
       'helper-4.example',
-      'helper-5.example',
-      'helper-6.example',
     ]);
     expect(sharePosts.map((request) => request.timeout).toSet(), {
       const Duration(seconds: 30),
@@ -7289,8 +7288,6 @@ void main() {
       'https://helper-2.example',
       'https://helper-3.example',
       'https://helper-4.example',
-      'https://helper-5.example',
-      'https://helper-6.example',
     ]);
   });
 
@@ -10814,6 +10811,8 @@ class _WitnessHandoffVotingRustApi extends FakeVotingRustApi {
   }
 }
 
+int _fakeShareTargetCount(int serverCount) => (serverCount + 1) ~/ 2;
+
 class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
@@ -11682,7 +11681,7 @@ class FakeVotingRustApi implements VotingRustApi {
     planLastMomentBufferSeconds.add(lastMomentBufferSeconds);
     planSingleShareValues.add(singleShare);
     planImmediateShareIndexes.add(immediateShareIndex);
-    final targetCount = serverUrls.length > 5 ? 5 : serverUrls.length;
+    final targetCount = _fakeShareTargetCount(serverUrls.length);
     final planningServerCount =
         (preferredServerCount < targetCount
                 ? targetCount
@@ -11713,10 +11712,18 @@ class FakeVotingRustApi implements VotingRustApi {
   rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
     required int serverCount,
   }) {
+    final targetCount = _fakeShareTargetCount(serverCount);
+    final assignmentCount = 16 * targetCount;
+    final maxSharesPerServer = serverCount == 0
+        ? 0
+        : (assignmentCount + serverCount - 1) ~/ serverCount;
+    final minServerCount = maxSharesPerServer == 0
+        ? 0
+        : (assignmentCount + maxSharesPerServer - 1) ~/ maxSharesPerServer;
     return rust_share_policy.ShareServerSelectionPolicy(
-      targetCount: serverCount > 5 ? 5 : serverCount,
-      maxSharesPerServer: 8,
-      minServerCount: 10,
+      targetCount: targetCount,
+      maxSharesPerServer: maxSharesPerServer,
+      minServerCount: minServerCount,
       preflightSoftTimeoutMilliseconds: BigInt.zero,
       preflightHardTimeoutMilliseconds: BigInt.one,
       postTimeoutMilliseconds: BigInt.from(helperPostTimeoutMilliseconds),
