@@ -217,6 +217,7 @@ void main() {
     );
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Alina'), findsNothing);
+    expect(find.text('u1testshielde ... 00000000000'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('send_contact_autocomplete_alice')),

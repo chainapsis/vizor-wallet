@@ -1756,7 +1756,7 @@ class _SendContactAutocompleteRowState
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      widget.contact.addressPreview,
+                      _sendContactAddressPreview(widget.contact.address),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(
@@ -1773,6 +1773,18 @@ class _SendContactAutocompleteRowState
       ),
     );
   }
+}
+
+String _sendContactAddressPreview(String address) {
+  const leadingLength = 13;
+  const trailingLength = 11;
+  const separator = ' ... ';
+  final trimmed = address.trim();
+  if (trimmed.length <= leadingLength + trailingLength + separator.length) {
+    return trimmed;
+  }
+  return '${trimmed.substring(0, leadingLength)}$separator'
+      '${trimmed.substring(trimmed.length - trailingLength)}';
 }
 
 class _SendContactsLabelButton extends StatefulWidget {
