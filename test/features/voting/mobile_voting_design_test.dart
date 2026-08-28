@@ -478,6 +478,51 @@ void main() {
     },
   );
 
+  testWidgets(
+    'unknown eligibility does not repeat the unavailable voting power label',
+    (tester) async {
+      var retries = 0;
+      await _pumpMobileFixture(
+        tester,
+        (_) => MobileVotingScaffold(
+          title: 'Coinholder voting',
+          child: VotingActivePollContent(
+            showDesktopToolbar: false,
+            roundId: 'unavailable',
+            title: 'Unavailable round',
+            snapshotHeight: 100,
+            description: 'Round description',
+            forumUri: null,
+            endDate: DateTime(2026, 8, 24),
+            votingPowerZatoshi: null,
+            votingPowerPreparing: false,
+            votingEligibilityConfirmed: false,
+            answersEditable: false,
+            votingEligibilityMessage: 'Voting power unavailable.',
+            votingEligibilityErrorMessage: null,
+            onVotingEligibilityRetry: () => retries++,
+            proposals: const [
+              VotingProposalView(
+                id: 1,
+                title: 'Question',
+                description: '',
+                options: [VotingOptionView(index: 1, label: 'Yes')],
+              ),
+            ],
+            draft: const VotingDraftState(),
+            onChoice: (_, _) => fail('Unavailable voting must stay read-only'),
+          ),
+        ),
+      );
+
+      expect(find.text('Voting power unavailable'), findsOneWidget);
+      expect(find.text('Voting power unavailable.'), findsNothing);
+      await tester.tap(find.text('Retry eligibility'));
+      expect(retries, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('selected proposal matches the mobile card geometry', (
     tester,
   ) async {

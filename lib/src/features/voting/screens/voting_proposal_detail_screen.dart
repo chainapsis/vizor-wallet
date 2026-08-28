@@ -377,8 +377,11 @@ String? _votingEligibilityMessage(
   final error = state.error;
   if (error != null) return friendlyVotingErrorText(error.message);
   if (preparing) return null;
-  return 'Voting power unavailable.';
+  return _votingPowerUnavailableMessage;
 }
+
+const _votingPowerUnavailableLabel = 'Voting power unavailable';
+const _votingPowerUnavailableMessage = '$_votingPowerUnavailableLabel.';
 
 /// One quiet line for the voters whose voting power the privacy trim reduced.
 ///
@@ -519,6 +522,12 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
 
   Widget _buildPollSummary() {
     if (kAppFormFactor == AppFormFactor.mobile) {
+      final votingEligibilityMessage =
+          widget.votingEligibilityMessage == _votingPowerUnavailableMessage &&
+              widget.votingPowerZatoshi == null &&
+              !widget.votingPowerPreparing
+          ? null
+          : widget.votingEligibilityMessage;
       return _MobilePollSummary(
         title: widget.title,
         snapshotHeight: widget.snapshotHeight,
@@ -530,7 +539,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
         endDate: widget.endDate,
         votingPowerZatoshi: widget.votingPowerZatoshi,
         votingPowerPreparing: widget.votingPowerPreparing,
-        votingEligibilityMessage: widget.votingEligibilityMessage,
+        votingEligibilityMessage: votingEligibilityMessage,
       );
     }
     return _PollSummary(
@@ -1750,7 +1759,7 @@ class _VotingPowerMeta extends StatelessWidget {
     final votingPower = zatoshi;
     if (votingPower == null) {
       if (!preparing) {
-        return const _MetaText('Voting power unavailable');
+        return const _MetaText(_votingPowerUnavailableLabel);
       }
       final colors = context.colors;
       return Row(
