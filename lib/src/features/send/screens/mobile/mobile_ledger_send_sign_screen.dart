@@ -96,8 +96,6 @@ class MobileLedgerSendSignScreen extends ConsumerStatefulWidget {
 
 class _MobileLedgerSendSignScreenState
     extends ConsumerState<MobileLedgerSendSignScreen> {
-  static const _ledgerInterRoundCooldown = Duration(seconds: 4);
-
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   LedgerSigningFailurePresentation? _failure;
   _LedgerSendRecoveryAction? _recoveryAction;
@@ -234,13 +232,6 @@ class _MobileLedgerSendSignScreenState
           _round = index;
           _phase = LedgerSigningModalPhase.awaitingDevice;
         });
-        if (index > 0) {
-          // The Zcash app briefly reports ready before it can accept another
-          // signing stream. Match the desktop transport cooldown before the
-          // next transaction in a batch.
-          await Future<void>.delayed(_ledgerInterRoundCooldown);
-          if (!_isCurrent(generation)) return;
-        }
         final signedPczt = await ref.read(ledgerPcztSignerProvider)(
           widget.args.proposalAccountUuid,
           redactedPczts[index],

@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -345,6 +346,12 @@ void main() {
   );
 
   testWidgets(
+    'shields transparent balance with Ledger through Speculos',
+    _runLedgerShieldScenario,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
     'pays with Ledger through Speculos',
     (tester) => _runLedgerSwapScenario(tester, _LedgerSwapScenario.pay),
     timeout: const Timeout(Duration(minutes: 4)),
@@ -353,6 +360,12 @@ void main() {
   testWidgets(
     'swaps with Ledger through Speculos',
     (tester) => _runLedgerSwapScenario(tester, _LedgerSwapScenario.swap),
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
+    'signs sequential voting bundles with Ledger through Speculos',
+    _runLedgerVotingSigningScenario,
     timeout: const Timeout(Duration(minutes: 4)),
   );
 
@@ -397,6 +410,58 @@ void main() {
       await signRound();
     },
     timeout: const Timeout(Duration(minutes: 4)),
+  );
+}
+
+Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
+  final fixture = _Fixture.load();
+  final sandboxDirectory = await Directory.systemTemp.createTemp(
+    'vizor-ledger-voting-speculos-e2e.',
+  );
+  addTearDown(() => sandboxDirectory.delete(recursive: true));
+  final dbPath = '${sandboxDirectory.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(
+          fixture,
+          'http://127.0.0.1:1',
+          initialLocation: '/home',
+        ),
+      ),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final signaturesByBundle = <int, LedgerVotingSignature>{};
+  for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
+    final pczt = await rust_sync.redactPcztForSigner(
+      pcztBytes: fixture.votingBundlePczts[bundleIndex],
+    );
+    final approval = _approveNextReview(fixture.signingApiUrl);
+    final signatures = container.read(ledgerVotingPcztSignerProvider)(
+      fixture.accountUuid,
+      pczt,
+    );
+    expect(await approval, isTrue);
+    signaturesByBundle[bundleIndex] = requireMatchingLedgerVotingSignature(
+      signatures: await signatures,
+      actionIndex: fixture.votingActionIndexes[bundleIndex],
+    );
+  }
+
+  expect(signaturesByBundle.keys, [0, 1]);
+  expect(signaturesByBundle[0]!.pool, 1);
+  expect(signaturesByBundle[1]!.pool, 1);
+  expect(
+    signaturesByBundle[0]!.signature,
+    isNot(equals(signaturesByBundle[1]!.signature)),
   );
 }
 
@@ -548,6 +613,106 @@ extension on _LedgerSwapScenario {
   LedgerSignedOperationKind get operationKind => isPay
       ? LedgerSignedOperationKind.payDeposit
       : LedgerSignedOperationKind.swapDeposit;
+}
+
+Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(1280, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+
+  final fixture = _Fixture.load();
+  final sandboxDirectory = await Directory.systemTemp.createTemp(
+    'vizor-ledger-shield-speculos-e2e.',
+  );
+  addTearDown(() => sandboxDirectory.delete(recursive: true));
+  final dbPath = '${sandboxDirectory.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+  final lightwalletd = _AcceptingLightwalletd();
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final operationService = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: lightwalletd.url,
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final router = GoRouter(
+    initialLocation: '/shield',
+    routes: [
+      GoRoute(
+        path: '/shield',
+        builder: (context, _) => LedgerShieldSigningOverlay(
+          onCancel: () => context.go('/home'),
+          onComplete: () => context.go('/complete'),
+        ),
+      ),
+      GoRoute(
+        path: '/complete',
+        builder: (_, _) =>
+            const SizedBox(key: ValueKey('ledger_shield_complete')),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+    ],
+  );
+  addTearDown(router.dispose);
+  final approval = _approveNextReview(fixture.signingApiUrl);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _ledgerBootstrap(
+            fixture,
+            lightwalletd.url,
+            initialLocation: '/shield',
+          ),
+        ),
+        networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+        syncProvider.overrideWith(() => _FakeSyncNotifier(fixture.accountUuid)),
+        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+        ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+        ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+        ledgerSignedOperationServiceProvider.overrideWithValue(
+          operationService,
+        ),
+      ],
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (_, child) =>
+            AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Waiting for approval')),
+    description: 'Ledger shield approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    find.byKey(const ValueKey('ledger_shield_signing_overlay_surface')),
+    findsOneWidget,
+  );
+  expect(await approval, isTrue);
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('ledger_shield_complete'))),
+    description: 'Ledger shield completion',
+    timeout: const Duration(minutes: 2),
+  );
+
+  expect(operationService.callOrder, ['checkpoint', 'broadcast']);
+  expect(operationService.checkpointCount, 1);
+  expect(operationService.broadcastCount, 1);
+  expect(
+    operationService.lastOperationId,
+    startsWith('shield:${fixture.accountUuid}:'),
+  );
+  expect(lightwalletd.sendTransactionCount, 1);
+  expect(lightwalletd.lastRawTransaction, isNotEmpty);
+  expect(await operationService.list(), isEmpty);
 }
 
 Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
@@ -992,6 +1157,8 @@ class _Fixture {
     required this.pcztBytes,
     required this.texStep1PcztBytes,
     required this.texStep2PcztBytes,
+    required this.votingBundlePczts,
+    required this.votingActionIndexes,
     required this.dbGzipBytes,
   });
 
@@ -1006,6 +1173,8 @@ class _Fixture {
   final List<int> pcztBytes;
   final List<int> texStep1PcztBytes;
   final List<int> texStep2PcztBytes;
+  final List<List<int>> votingBundlePczts;
+  final List<int> votingActionIndexes;
   final List<int> dbGzipBytes;
 
   static _Fixture load() {
@@ -1025,6 +1194,20 @@ class _Fixture {
     const texStep2PcztBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64',
     );
+    const votingBundle1PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_PCZT_BASE64',
+    );
+    const votingBundle2PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_PCZT_BASE64',
+    );
+    const votingBundle1ActionIndex = int.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX',
+      defaultValue: -1,
+    );
+    const votingBundle2ActionIndex = int.fromEnvironment(
+      'VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_ACTION_INDEX',
+      defaultValue: -1,
+    );
     const dbGzipBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_DB_GZIP_BASE64',
     );
@@ -1036,6 +1219,10 @@ class _Fixture {
         pcztBase64.isEmpty ||
         texStep1PcztBase64.isEmpty ||
         texStep2PcztBase64.isEmpty ||
+        votingBundle1PcztBase64.isEmpty ||
+        votingBundle2PcztBase64.isEmpty ||
+        votingBundle1ActionIndex < 0 ||
+        votingBundle2ActionIndex < 0 ||
         dbGzipBase64.isEmpty) {
       throw StateError(
         'Ledger fixture dart-defines are missing. Run the Speculos E2E script.',
@@ -1055,6 +1242,11 @@ class _Fixture {
       pcztBytes: base64Decode(pcztBase64),
       texStep1PcztBytes: base64Decode(texStep1PcztBase64),
       texStep2PcztBytes: base64Decode(texStep2PcztBase64),
+      votingBundlePczts: [
+        base64Decode(votingBundle1PcztBase64),
+        base64Decode(votingBundle2PcztBase64),
+      ],
+      votingActionIndexes: [votingBundle1ActionIndex, votingBundle2ActionIndex],
       dbGzipBytes: base64Decode(dbGzipBase64),
     );
   }
@@ -1413,6 +1605,7 @@ class _TrackingLedgerSignedOperationService
   int broadcastCount = 0;
   int acknowledgeCount = 0;
   String? lastOperationId;
+  final callOrder = <String>[];
 
   @override
   Future<void> checkpoint({
@@ -1423,6 +1616,7 @@ class _TrackingLedgerSignedOperationService
     required List<int> pcztWithSignaturesBytes,
     String? externalRef,
   }) async {
+    callOrder.add('checkpoint');
     checkpointCount++;
     lastOperationId = operationId;
     await delegate.checkpoint(
@@ -1444,6 +1638,7 @@ class _TrackingLedgerSignedOperationService
     required List<List<int>> pcztsWithSignatures,
     String? externalRef,
   }) async {
+    callOrder.add('checkpointBatch');
     checkpointCount++;
     batchCheckpointCount++;
     lastOperationId = operationId;
@@ -1464,6 +1659,7 @@ class _TrackingLedgerSignedOperationService
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
+    callOrder.add('broadcast');
     broadcastCount++;
     lastOperationId = operationId;
     return delegate.broadcast(
