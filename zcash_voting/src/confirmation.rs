@@ -376,7 +376,7 @@ fn parse_delegation_confirmation_for_round(
     require_tx_hash(tx_hash)?;
     let event = required_event_for_round(events, DELEGATE_VOTE_EVENT, round_id)?;
     let raw_leaf_index = required_attribute(event, DELEGATE_VOTE_EVENT, LEAF_INDEX_ATTRIBUTE)?;
-    let van_leaf_position = parse_delegation_leaf_index(raw_leaf_index)?;
+    let van_leaf_position = parse_compat_u32(raw_leaf_index, "delegate_vote leaf_index")?;
     Ok(DelegationConfirmation {
         tx_hash: tx_hash.to_string(),
         van_leaf_position,
@@ -417,11 +417,11 @@ fn parse_vote_batch_confirmation_for_round(
             ),
         });
     }
-    let batch_size = parse_u32(
+    let batch_size = parse_compat_u32(
         required_attribute(event, CAST_VOTE_BATCH_EVENT, BATCH_SIZE_ATTRIBUTE)?,
         "cast_vote_batch batch_size",
     )? as usize;
-    let van_leaf_position = parse_u32(
+    let van_leaf_position = parse_compat_u32(
         required_attribute(event, CAST_VOTE_BATCH_EVENT, FINAL_VAN_LEAF_INDEX_ATTRIBUTE)?,
         "cast_vote_batch final VAN leaf position",
     )?;
@@ -552,7 +552,7 @@ fn event_round_id_matches(event_round_id: &str, expected_round_id: &str) -> bool
         || BASE64_STANDARD.encode(event_round_id.as_bytes()) == expected_round_id
 }
 
-fn parse_delegation_leaf_index(raw: &str) -> Result<u32, VotingError> {
+fn parse_compat_u32(raw: &str, field: &str) -> Result<u32, VotingError> {
     let raw = raw.trim();
     if let Ok(position) = raw.parse::<u32>() {
         return Ok(position);
@@ -566,7 +566,22 @@ fn parse_delegation_leaf_index(raw: &str) -> Result<u32, VotingError> {
         }
     }
 
-    parse_u32(raw, "delegate_vote leaf_index")
+    parse_u32(raw, field)
+}
+
+fn parse_compat_u64(raw: &str, field: &str) -> Result<u64, VotingError> {
+    let raw = raw.trim();
+    if let Ok(position) = raw.parse::<u64>() {
+        return Ok(position);
+    }
+
+    if !raw.is_ascii() {
+        if let Ok(position) = BASE64_STANDARD.encode(raw.as_bytes()).parse::<u64>() {
+            return Ok(position);
+        }
+    }
+
+    parse_u64(raw, field)
 }
 
 fn require_tx_hash(tx_hash: &str) -> Result<(), VotingError> {
@@ -612,14 +627,14 @@ fn parse_csv_strings(raw: &str) -> Result<Vec<String>, VotingError> {
 fn parse_csv_u32(raw: &str) -> Result<Vec<u32>, VotingError> {
     parse_csv_strings(raw)?
         .into_iter()
-        .map(|value| parse_u32(&value, "cast_vote_batch proposal id"))
+        .map(|value| parse_compat_u32(&value, "cast_vote_batch proposal id"))
         .collect()
 }
 
 fn parse_csv_u64(raw: &str) -> Result<Vec<u64>, VotingError> {
     parse_csv_strings(raw)?
         .into_iter()
-        .map(|value| parse_u64(&value, "cast_vote_batch VC tree position"))
+        .map(|value| parse_compat_u64(&value, "cast_vote_batch VC tree position"))
         .collect()
 }
 
@@ -907,6 +922,35 @@ mod tests {
         .unwrap();
 
         assert_eq!(parsed.van_leaf_position, 1400);
+    }
+
+    #[test]
+    fn parses_batch_positions_changed_by_legacy_base64_heuristic() {
+        let round_id = "0400".repeat(16);
+        let decoded_round_id =
+            String::from_utf8(BASE64_STANDARD.decode(&round_id).unwrap()).unwrap();
+        let decoded_position = String::from_utf8(BASE64_STANDARD.decode("1400").unwrap()).unwrap();
+        let digest = "ab".repeat(32);
+
+        let parsed = parse_vote_batch_confirmation_for_round(
+            "batch-tx",
+            &round_id,
+            &[event_with_attrs(
+                CAST_VOTE_BATCH_EVENT,
+                &[
+                    ("vote_round_id", &decoded_round_id),
+                    (BATCH_DIGEST_ATTRIBUTE, &digest),
+                    (BATCH_SIZE_ATTRIBUTE, "1"),
+                    (FINAL_VAN_LEAF_INDEX_ATTRIBUTE, &decoded_position),
+                    (VC_LEAF_INDICES_ATTRIBUTE, &decoded_position),
+                    (PROPOSAL_IDS_ATTRIBUTE, "1"),
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(parsed.van_leaf_position, 1400);
+        assert_eq!(parsed.vc_tree_positions, vec![1400]);
     }
 
     #[test]
