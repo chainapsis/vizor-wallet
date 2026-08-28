@@ -19,6 +19,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
@@ -941,6 +942,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
     final colors = context.colors;
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
     final sendFieldLabelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
     );
@@ -990,9 +994,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     String? matchedRecipientName;
     if (_hasValidAddress) {
       final recipient = sendReviewRecipientFor(
-        contacts:
-            ref.watch(addressBookProvider).value?.contacts ??
-            const <AddressBookContact>[],
+        contacts: addressBookContacts,
         address: _addressController.text.trim(),
         ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
       );
@@ -1095,50 +1097,80 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          AppTextField(
-                            key: const ValueKey('send_address_field'),
-                            label: 'Send to',
-                            labelStyle: sendFieldLabelStyle,
-                            rightSlot: _SendContactsLabelButton(
-                              label: 'Contacts',
-                              onTap: _openContactPicker,
-                            ),
-                            tone: addressTone,
-                            borderColor:
-                                addressTone == AppTextFieldTone.destructive
-                                ? colors.border.utilityDestructive
-                                : null,
+                          RawAutocomplete<AddressBookContact>(
+                            textEditingController: _addressController,
                             focusNode: _addressFocusNode,
-                            controller: _addressController,
-                            hintText: 'Zcash address',
-                            leading: AppIcon(
-                              addressLeadingIcon,
-                              size: 20,
-                              color: addressLeadingColor,
-                            ),
-                            messageText: addressMessage,
-                            messageIcon: addressMessageIcon,
-                            onChanged: (_) => _handleAddressChanged(),
-                            keyboardType: TextInputType.text,
-                            showClearButton: true,
-                            onClear: () {
-                              _addressSeq++;
-                              _maxDebounceTimer?.cancel();
-                              setState(() {
-                                _addressType = '';
-                                _error = null;
-                                if (_isMaxMode) {
-                                  _validateSeq++;
-                                  _maxSeq++;
-                                  _maxQuote = null;
-                                  _isResolvingMax = false;
-                                  _amountError = '';
-                                }
-                              });
-                              if (!_isMaxMode) {
-                                _validateAmount();
+                            displayStringForOption: (contact) => contact.label,
+                            optionsBuilder: (value) {
+                              if (value.text.trim().isEmpty) {
+                                return const <AddressBookContact>[];
                               }
+                              return filterAddressBookContacts(
+                                addressBookContacts,
+                                query: value.text,
+                                networks: const {AddressBookNetwork.zcash},
+                              );
                             },
+                            onSelected: _selectContact,
+                            optionsViewBuilder:
+                                (context, onSelected, options) =>
+                                    _SendContactAutocompleteOptions(
+                                      contacts: options.toList(growable: false),
+                                      onSelected: onSelected,
+                                    ),
+                            fieldViewBuilder:
+                                (
+                                  context,
+                                  controller,
+                                  focusNode,
+                                  onFieldSubmitted,
+                                ) => AppTextField(
+                                  key: const ValueKey('send_address_field'),
+                                  label: 'Send to',
+                                  labelStyle: sendFieldLabelStyle,
+                                  rightSlot: _SendContactsLabelButton(
+                                    label: 'Contacts',
+                                    onTap: _openContactPicker,
+                                  ),
+                                  tone: addressTone,
+                                  borderColor:
+                                      addressTone ==
+                                          AppTextFieldTone.destructive
+                                      ? colors.border.utilityDestructive
+                                      : null,
+                                  focusNode: focusNode,
+                                  controller: controller,
+                                  hintText: 'Zcash address',
+                                  leading: AppIcon(
+                                    addressLeadingIcon,
+                                    size: 20,
+                                    color: addressLeadingColor,
+                                  ),
+                                  messageText: addressMessage,
+                                  messageIcon: addressMessageIcon,
+                                  onChanged: (_) => _handleAddressChanged(),
+                                  onSubmitted: (_) => onFieldSubmitted(),
+                                  keyboardType: TextInputType.text,
+                                  showClearButton: true,
+                                  onClear: () {
+                                    _addressSeq++;
+                                    _maxDebounceTimer?.cancel();
+                                    setState(() {
+                                      _addressType = '';
+                                      _error = null;
+                                      if (_isMaxMode) {
+                                        _validateSeq++;
+                                        _maxSeq++;
+                                        _maxQuote = null;
+                                        _isResolvingMax = false;
+                                        _amountError = '';
+                                      }
+                                    });
+                                    if (!_isMaxMode) {
+                                      _validateAmount();
+                                    }
+                                  },
+                                ),
                           ),
                           const SizedBox(
                             height: _singleLineFieldOverlayReserve,
@@ -1399,6 +1431,104 @@ class _SendTitle extends StatelessWidget {
         color: context.colors.text.accent,
       ),
       textAlign: TextAlign.center,
+    );
+  }
+}
+
+class _SendContactAutocompleteOptions extends StatelessWidget {
+  const _SendContactAutocompleteOptions({
+    required this.contacts,
+    required this.onSelected,
+  });
+
+  final List<AddressBookContact> contacts;
+  final ValueChanged<AddressBookContact> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          key: const ValueKey('send_contact_autocomplete_options'),
+          width: _SendComposeLayout.fieldsWidth,
+          constraints: const BoxConstraints(maxHeight: 240),
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          decoration: BoxDecoration(
+            color: colors.background.base,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            boxShadow: [
+              BoxShadow(
+                color: colors.shadows.subtle,
+                offset: const Offset(0, 4),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            itemCount: contacts.length,
+            itemBuilder: (context, index) {
+              final contact = contacts[index];
+              final highlighted =
+                  AutocompleteHighlightedOption.of(context) == index;
+              return InkWell(
+                key: ValueKey('send_contact_autocomplete_${contact.id}'),
+                borderRadius: BorderRadius.circular(AppRadii.small),
+                onTap: () => onSelected(contact),
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: highlighted ? colors.background.ground : null,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Row(
+                    children: [
+                      AppProfilePicture(
+                        profilePictureId: contact.profilePictureId,
+                        size: AppProfilePictureSize.large,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              contact.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              contact.addressPreview,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.text.secondary,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }

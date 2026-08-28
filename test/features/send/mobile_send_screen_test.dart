@@ -1325,6 +1325,44 @@ void main() {
     expect(find.text('Alice'), findsOneWidget);
   });
 
+  testWidgets('recipient text filters the contacts section', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+          AddressBookContact(
+            id: 'bob',
+            label: 'Bob',
+            network: AddressBookNetwork.zcash,
+            address: _transparentAddress,
+            profilePictureId: 'pfp-02',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsOneWidget);
+
+    await _enterAddress(tester, 'ali');
+
+    expect(find.text('1 contact'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsNothing);
+  });
+
   testWidgets('review marks a TEX contact distinctly from transparent', (
     tester,
   ) async {

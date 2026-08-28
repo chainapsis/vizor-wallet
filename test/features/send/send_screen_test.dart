@@ -181,6 +181,54 @@ void main() {
     expect(find.text('Contacts'), findsOneWidget);
   });
 
+  testWidgets('typing a contact name autocompletes the send address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+          ),
+          _contact(
+            id: 'alina',
+            label: 'Alina',
+            network: AddressBookNetwork.solana,
+            address: 'solana-address',
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'ALI');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsOneWidget,
+    );
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Alina'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('send_contact_autocomplete_alice')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsNothing,
+    );
+  });
+
   testWidgets('keeps contacts label for prefilled and cleared addresses', (
     tester,
   ) async {
