@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
@@ -192,6 +193,7 @@ void main() {
     tester,
   ) async {
     final ble = _FakeBleService(failCleanupStopsAfter: 2);
+    final accountApproval = Completer<LedgerDeviceAccount>();
     var connectorCalls = 0;
     int? requestedIndex;
 
@@ -201,12 +203,7 @@ void main() {
         connector: (index) async {
           connectorCalls++;
           requestedIndex = index;
-          return LedgerDeviceAccount(
-            ufvk: 'uview-$index',
-            seedFingerprint: const [1, 2, 3],
-            accountIndex: index,
-            appVersion: '3.9.2',
-          );
+          return accountApproval.future;
         },
       ),
     );
@@ -257,6 +254,27 @@ void main() {
     );
     await tester.ensureVisible(enabledImport);
     await tester.tap(enabledImport);
+    await tester.pump();
+
+    final busyImport = tester.widget<AppButton>(enabledImport);
+    final spinner = find.byKey(const ValueKey('mobile_ledger_import_spinner'));
+    expect(busyImport.leading, isNull);
+    expect(busyImport.trailing, isA<AppIcon>());
+    expect((busyImport.trailing! as AppIcon).name, AppIcons.loader);
+    expect(spinner, findsOneWidget);
+    expect(
+      tester.getCenter(spinner).dx,
+      greaterThan(tester.getCenter(enabledImport).dx),
+    );
+
+    accountApproval.complete(
+      const LedgerDeviceAccount(
+        ufvk: 'uview-12',
+        seedFingerprint: [1, 2, 3],
+        accountIndex: 12,
+        appVersion: '3.9.2',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('birthday-route-bluetooth-Nano X'), findsOneWidget);
@@ -501,12 +519,16 @@ class _FakeBleService implements LedgerMobileBleService {
   int stopCalls = 0;
   int disconnectCalls = 0;
 
+  @override
+  String? connectedDeviceId;
+
   void emit(LedgerDiscoveryUpdate update) => _updates.add(update);
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
     calls.add('connect');
     connectedIds.add(device.id);
+    connectedDeviceId = device.id;
   }
 
   @override
@@ -523,6 +545,7 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<void> disconnect() async {
     calls.add('disconnect');
     disconnectCalls++;
+    connectedDeviceId = null;
   }
 
   @override
