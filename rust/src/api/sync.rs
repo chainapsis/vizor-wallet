@@ -732,6 +732,13 @@ pub struct KeystoneSignedMigrationMessage {
     pub sigs: Vec<crate::api::keystone::KeystoneActionSig>,
 }
 
+/// One signer-redacted PCZT prepared for Keystone's signatures-only batch
+/// protocol, plus the number of Orchard/Ironwood signatures expected back.
+pub struct KeystoneBatchPczt {
+    pub redacted_pczt: Vec<u8>,
+    pub expected_signature_count: u32,
+}
+
 pub struct KeystoneMigrationProofStatus {
     pub ready_count: u32,
     pub total_count: u32,
@@ -1875,46 +1882,22 @@ pub fn create_or_resume_private_migration_draft(
 /// `Vec<u8>` sigs) into the wallet-layer form (`[u8; 64]` sigs), validating each
 /// signature is exactly 64 bytes. Shared by all three migration completion FRB
 /// wrappers so the conversion (and its length check) stays in one place.
+fn to_wallet_action_sigs(
+    label: &str,
+    sigs: Vec<crate::api::keystone::KeystoneActionSig>,
+) -> Result<Vec<pczt::roles::signer::SpendAuthSignature>, String> {
+    sigs.into_iter()
+        .map(|action| crate::api::keystone::action_sig_from_api(action, label))
+        .collect()
+}
+
 fn to_wallet_signed_messages(
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
 ) -> Result<Vec<wallet_sync::KeystoneSignedMigrationMessage>, String> {
     signed_messages
         .into_iter()
         .map(|message| {
-            let sigs = message
-                .sigs
-                .into_iter()
-                .map(|action| {
-                    let sig: [u8; 64] = action.sig.as_slice().try_into().map_err(|_| {
-                        format!(
-                            "Keystone signature for {} must be 64 bytes, got {}",
-                            message.id,
-                            action.sig.len()
-                        )
-                    })?;
-                    let value_pool = match action.pool {
-                        0 => orchard::ValuePool::Orchard,
-                        1 => orchard::ValuePool::Ironwood,
-                        other => {
-                            return Err(format!(
-                                "Keystone signature for {} has unsupported pool {other}",
-                                message.id
-                            ));
-                        }
-                    };
-                    let action_index = usize::try_from(action.action_index).map_err(|_| {
-                        format!(
-                            "Keystone signature action index {} exceeds usize",
-                            action.action_index
-                        )
-                    })?;
-                    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
-                        value_pool,
-                        action_index,
-                        sig,
-                    ))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
+            let sigs = to_wallet_action_sigs(&message.id, message.sigs)?;
             Ok(wallet_sync::KeystoneSignedMigrationMessage {
                 id: message.id,
                 sigs,
@@ -2574,8 +2557,9 @@ pub fn retain_proposal_lock_until_expiry(
 }
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
-/// is the "PCZT with proofs" half that is later combined with the signed PCZT
-/// returned by the hardware wallet.
+/// is the wallet-owned proof PCZT that later receives compact signatures from
+/// the hardware wallet. Legacy transparent-input paths combine it with a full
+/// signed PCZT instead.
 ///
 /// `spend_params_path` and `output_params_path` are only consulted when the
 /// PCZT has a non-empty Sapling bundle (e.g. sending to a Sapling-only
@@ -2595,15 +2579,25 @@ pub fn add_proofs_to_pczt(
     )
 }
 
-/// Redact information from a PCZT that the hardware signer does not need
-/// (witnesses, proprietary metadata). The returned bytes are what is sent
-/// to the Keystone device for signing.
+/// Legacy full-PCZT signer redaction for transparent-input transactions that
+/// Keystone's signatures-only batch response cannot represent.
 pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     wallet_sync::redact_pczt_for_signer(&pczt_bytes)
 }
 
-/// Validate and finalize every signed PCZT, broadcast parent before child,
-/// then atomically persist only the accepted-or-ambiguous transaction prefix.
+/// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
+/// input types that the signatures-only response cannot represent.
+pub fn prepare_pczt_for_keystone_batch(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
+    let prepared = wallet_sync::prepare_pczt_for_keystone_batch(&pczt_bytes)?;
+    Ok(KeystoneBatchPczt {
+        redacted_pczt: prepared.redacted_pczt,
+        expected_signature_count: prepared.expected_signature_count,
+    })
+}
+
+/// Legacy full-PCZT completion for transparent-input transactions. Validate
+/// and finalize every signed PCZT, broadcast parent before child, then
+/// atomically persist only the accepted-or-ambiguous transaction prefix.
 pub async fn store_and_broadcast_signed_pczts_for_proposal(
     db_path: String,
     lightwalletd_url: String,
@@ -2634,6 +2628,75 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
         &send_flow_id,
         &pczt_with_proofs,
         &pczt_with_signatures,
+        spend_params_path.as_deref(),
+        output_params_path.as_deref(),
+    )
+    .await?;
+    Ok(StoreAndBroadcastPcztsResult {
+        txids: result.txids,
+        status: result.status,
+        broadcasted_count: result.broadcasted_count,
+        total_count: result.total_count,
+        message: result.message,
+    })
+}
+
+/// Apply a compact Keystone batch response to wallet-owned proof PCZTs,
+/// validate every signature and transaction before network I/O, then broadcast
+/// and persist with the same proposal-lock guarantees as the full-PCZT path.
+pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    proposal_id: u64,
+    send_flow_id: String,
+    pczt_with_proofs: Vec<Vec<u8>>,
+    signature_blobs: Vec<Vec<u8>>,
+    spend_params_path: Option<String>,
+    output_params_path: Option<String>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    let network = match parse_network_and_migrate(&db_path, &network) {
+        Ok(network) => network,
+        Err(error) => {
+            return match wallet_sync::discard_proposal(proposal_id, &send_flow_id) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    let signatures = signature_blobs
+        .into_iter()
+        .enumerate()
+        .map(|(index, blob)| {
+            crate::wallet::keystone::decode_compact_action_sigs(&blob).map_err(|error| {
+                format!(
+                    "Decode Keystone signature batch message {}: {error}",
+                    index + 1
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, String>>();
+    let signatures = match signatures {
+        Ok(signatures) => signatures,
+        Err(error) => {
+            return match wallet_sync::discard_proposal(proposal_id, &send_flow_id) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    let result = wallet_sync::store_and_broadcast_pczts_with_compact_signatures_for_proposal(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        proposal_id,
+        &send_flow_id,
+        &pczt_with_proofs,
+        &signatures,
         spend_params_path.as_deref(),
         output_params_path.as_deref(),
     )

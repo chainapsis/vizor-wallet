@@ -877,6 +877,30 @@ class _RustApiFake implements RustLibApi {
 
   @override
   Future<StoreAndBroadcastPcztsResult>
+  crateApiSyncStoreAndBroadcastPcztsWithKeystoneSignaturesForProposal({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required BigInt proposalId,
+    required String sendFlowId,
+    required List<Uint8List> pcztWithProofs,
+    required List<Uint8List> signatureBlobs,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    storeCalls.add((
+      pcztWithProofs.map((bytes) => bytes.toList()).toList(),
+      signatureBlobs.map((bytes) => bytes.toList()).toList(),
+      spendParamsPath,
+      proposalId,
+      sendFlowId,
+    ));
+    if (storeError case final error?) throw error;
+    return storeResult!;
+  }
+
+  @override
+  Future<StoreAndBroadcastPcztsResult>
   crateApiSyncStoreAndBroadcastSignedPcztsForProposal({
     required String dbPath,
     required String lightwalletdUrl,

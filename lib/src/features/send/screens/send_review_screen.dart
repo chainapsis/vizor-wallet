@@ -22,8 +22,10 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
+import 'keystone_send_scan_screen.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_content_view.dart';
@@ -51,6 +53,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   String? _keystoneError;
   List<String> _keystoneUrParts = const [];
   List<List<String>> _keystoneUrPartsByRound = const [];
+  List<KeystoneBatchSigningRequest?> _keystoneBatchRequestsByRound = const [];
   List<List<int>> _keystonePcztsWithProofs = const [];
   final List<List<int>> _keystoneSignatures = [];
   int _keystoneRound = 0;
@@ -133,6 +136,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _keystoneError = null;
       _keystoneUrParts = const [];
       _keystoneUrPartsByRound = const [];
+      _keystoneBatchRequestsByRound = const [];
       _keystonePcztsWithProofs = const [];
       _keystoneSignatures.clear();
       _keystoneRound = 0;
@@ -218,23 +222,39 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
             ),
           ];
       final urPartsByRound = <List<String>>[];
+      final batchRequestsByRound = <KeystoneBatchSigningRequest?>[];
       final signerPczts = texPczts?.signerPczts;
       for (var index = 0; index < pczts.length; index++) {
-        final redacted =
-            signerPczts?[index] ??
-            await rust_sync.redactPcztForSigner(pcztBytes: pczts[index]);
-        urPartsByRound.add(
-          await rust_keystone.encodePcztUrParts(
-            pcztBytes: redacted,
-            maxFragmentLen: BigInt.from(140),
-          ),
-        );
+        if (widget.args.addressType == 'tex') {
+          final redacted = signerPczts![index];
+          urPartsByRound.add(
+            await rust_keystone.encodePcztUrParts(
+              pcztBytes: redacted,
+              maxFragmentLen: BigInt.from(140),
+            ),
+          );
+          batchRequestsByRound.add(null);
+        } else {
+          final request = await buildKeystoneBatchSigningRequest(
+            requestId:
+                'vizor-send-${widget.args.sendFlowId}-transaction-${index + 1}',
+            pczts: [
+              KeystoneBatchPcztSource(
+                id: 'send-transaction-${index + 1}',
+                pcztBytes: pczts[index],
+              ),
+            ],
+          );
+          urPartsByRound.add(request.urParts);
+          batchRequestsByRound.add(request);
+        }
       }
 
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.ready;
         _keystoneUrPartsByRound = urPartsByRound;
+        _keystoneBatchRequestsByRound = batchRequestsByRound;
         _keystoneUrParts = urPartsByRound.first;
       });
 
@@ -274,6 +294,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be signed.';
     }
+    if (lower.contains('batch signing does not support')) {
+      return 'This transaction uses inputs that Keystone batch signing cannot sign.';
+    }
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }
@@ -294,9 +317,30 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
 
-    final signatures = await context.push<List<int>>('/send/keystone/scan');
-    if (signatures == null || !mounted) return;
-    _keystoneSignatures.add(signatures);
+    final response = await context.push<List<int>>(
+      '/send/keystone/scan',
+      extra: _keystoneBatchRequestsByRound[_keystoneRound] == null
+          ? const KeystoneSendScanArgs()
+          : const KeystoneSendScanArgs.batch(),
+    );
+    if (response == null || !mounted) return;
+    try {
+      final batchRequest = _keystoneBatchRequestsByRound[_keystoneRound];
+      if (batchRequest == null) {
+        _keystoneSignatures.add(response);
+      } else {
+        _keystoneSignatures.addAll(await batchRequest.decodeResponse(response));
+      }
+      if (mounted) setState(() => _keystoneError = null);
+    } catch (e, st) {
+      log('SendReview._getKeystoneSignature: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _keystoneError =
+            'This QR code does not match the current Keystone signing request.';
+      });
+      return;
+    }
     if (_keystoneRound + 1 < _keystonePcztsWithProofs.length) {
       setState(() {
         _keystoneRound++;
@@ -304,6 +348,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       });
       return;
     }
+    if (!mounted) return;
 
     _handoffToKeystone = true;
     final statusArgs = KeystoneBroadcastArgs(
@@ -395,9 +440,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   subtitle: _keystoneUrPartsByRound.length == 2
                       ? 'Transaction ${_keystoneRound + 1} of 2'
                       : 'Scan with your Keystone',
-                  instruction: _keystonePcztsWithProofs.isEmpty
-                      ? 'Scan now. Signature import unlocks after proofs are ready.'
-                      : 'After you scanned, click Get signature.',
+                  instruction:
+                      _keystoneError ??
+                      (_keystonePcztsWithProofs.isEmpty
+                          ? 'Scan now. Signature import unlocks after proofs are ready.'
+                          : 'After you scanned, click Get signature.'),
                   primaryLabel: _keystonePcztsWithProofs.isEmpty
                       ? 'Preparing'
                       : 'Get signature',

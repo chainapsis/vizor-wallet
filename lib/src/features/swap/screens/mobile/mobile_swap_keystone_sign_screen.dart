@@ -95,7 +95,10 @@ class _MobileSwapKeystoneSignScreenState
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
       onCancel: _handleCancel,
-      signedPcztDecoder: widget.signedPcztDecoder,
+      signedPcztDecoder: widget.signedPcztDecoder ?? _decodeSigningResponse,
+      expectedSignedUrType: 'zcash-batch-sig-result',
+      unexpectedUrMessage:
+          'Open the signature result QR on Keystone, then scan again.',
       scannerBuilder: widget.scannerBuilder,
       forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
       keyPrefix: 'mobile_swap_keystone_sign',
@@ -171,6 +174,20 @@ class _MobileSwapKeystoneSignScreenState
       builder: (_) => const MobileSaplingParamsSheet(),
     );
     return confirmed == true;
+  }
+
+  Future<Uint8List> _decodeSigningResponse(List<int> responseCbor) async {
+    final service = _signingService;
+    final draft = _draft;
+    if (service == null || draft == null) {
+      throw StateError('Keystone signing could not be prepared.');
+    }
+    return Uint8List.fromList(
+      await service.decodeSigningResponse(
+        draft: draft,
+        responseCbor: responseCbor,
+      ),
+    );
   }
 
   Future<void> _handleSignedPczt(
@@ -334,6 +351,9 @@ class _MobileSwapKeystoneSignScreenState
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
+    }
+    if (lower.contains('batch signing does not support')) {
+      return 'This deposit uses inputs that Keystone batch signing cannot sign.';
     }
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';

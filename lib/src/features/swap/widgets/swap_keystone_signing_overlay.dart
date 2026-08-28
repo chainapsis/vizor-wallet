@@ -9,6 +9,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
+import '../../send/screens/keystone_send_scan_screen.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_keystone_broadcast_result.dart';
@@ -158,9 +159,29 @@ class _SwapKeystoneSigningOverlayState
 
   Future<void> _getSignature() async {
     if (_phase != _SwapKeystonePhase.ready || _pcztWithProofs == null) return;
-    final signatures = await context.push<List<int>>('/send/keystone/scan');
-    if (signatures == null || !mounted) return;
-    await _broadcast(signatures);
+    setState(() => _error = null);
+    final responseCbor = await context.push<List<int>>(
+      '/send/keystone/scan',
+      extra: const KeystoneSendScanArgs.batch(),
+    );
+    if (responseCbor == null || !mounted) return;
+    final service = _signingService;
+    final draft = _draft;
+    if (service == null || draft == null) return;
+    try {
+      final signatures = await service.decodeSigningResponse(
+        draft: draft,
+        responseCbor: responseCbor,
+      );
+      if (!mounted) return;
+      await _broadcast(signatures);
+    } catch (e, st) {
+      log('SwapKeystoneSigning._getSignature: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _error = 'This QR code does not match the current Keystone request.';
+      });
+    }
   }
 
   Future<void> _broadcast(List<int> signatures) async {
@@ -288,7 +309,7 @@ class _SwapKeystoneSigningOverlayState
                 ? 'Keep Vizor open while the transaction is sent.'
                 : _phase == _SwapKeystonePhase.failed
                 ? null
-                : 'After you scanned, click Get signature.',
+                : _error ?? 'After you scanned, click Get signature.',
             primaryLabel: _phase == _SwapKeystonePhase.failed || isBroadcasting
                 ? null
                 : 'Get signature',
@@ -319,6 +340,9 @@ class _SwapKeystoneSigningOverlayState
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
+    }
+    if (lower.contains('batch signing does not support')) {
+      return 'This deposit uses inputs that Keystone batch signing cannot sign.';
     }
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';

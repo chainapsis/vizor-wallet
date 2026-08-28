@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -942,8 +942,9 @@ Future<void> retainProposalLockUntilExpiry({
 );
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
-/// is the "PCZT with proofs" half that is later combined with the signed PCZT
-/// returned by the hardware wallet.
+/// is the wallet-owned proof PCZT that later receives compact signatures from
+/// the hardware wallet. Legacy transparent-input paths combine it with a full
+/// signed PCZT instead.
 ///
 /// `spend_params_path` and `output_params_path` are only consulted when the
 /// PCZT has a non-empty Sapling bundle (e.g. sending to a Sapling-only
@@ -961,14 +962,22 @@ Future<Uint8List> addProofsToPczt({
   outputParamsPath: outputParamsPath,
 );
 
-/// Redact information from a PCZT that the hardware signer does not need
-/// (witnesses, proprietary metadata). The returned bytes are what is sent
-/// to the Keystone device for signing.
+/// Legacy full-PCZT signer redaction for transparent-input transactions that
+/// Keystone's signatures-only batch response cannot represent.
 Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncRedactPcztForSigner(pcztBytes: pcztBytes);
 
-/// Validate and finalize every signed PCZT, broadcast parent before child,
-/// then atomically persist only the accepted-or-ambiguous transaction prefix.
+/// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
+/// input types that the signatures-only response cannot represent.
+Future<KeystoneBatchPczt> preparePcztForKeystoneBatch({
+  required List<int> pcztBytes,
+}) => RustLib.instance.api.crateApiSyncPreparePcztForKeystoneBatch(
+  pcztBytes: pcztBytes,
+);
+
+/// Legacy full-PCZT completion for transparent-input transactions. Validate
+/// and finalize every signed PCZT, broadcast parent before child, then
+/// atomically persist only the accepted-or-ambiguous transaction prefix.
 Future<StoreAndBroadcastPcztsResult> storeAndBroadcastSignedPcztsForProposal({
   required String dbPath,
   required String lightwalletdUrl,
@@ -990,6 +999,33 @@ Future<StoreAndBroadcastPcztsResult> storeAndBroadcastSignedPcztsForProposal({
   spendParamsPath: spendParamsPath,
   outputParamsPath: outputParamsPath,
 );
+
+/// Apply a compact Keystone batch response to wallet-owned proof PCZTs,
+/// validate every signature and transaction before network I/O, then broadcast
+/// and persist with the same proposal-lock guarantees as the full-PCZT path.
+Future<StoreAndBroadcastPcztsResult>
+storeAndBroadcastPcztsWithKeystoneSignaturesForProposal({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required BigInt proposalId,
+  required String sendFlowId,
+  required List<Uint8List> pcztWithProofs,
+  required List<Uint8List> signatureBlobs,
+  String? spendParamsPath,
+  String? outputParamsPath,
+}) => RustLib.instance.api
+    .crateApiSyncStoreAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      proposalId: proposalId,
+      sendFlowId: sendFlowId,
+      pcztWithProofs: pcztWithProofs,
+      signatureBlobs: signatureBlobs,
+      spendParamsPath: spendParamsPath,
+      outputParamsPath: outputParamsPath,
+    );
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
@@ -1285,6 +1321,29 @@ class IronwoodMigrationResult {
           message == other.message &&
           feeZatoshi == other.feeZatoshi &&
           migratedZatoshi == other.migratedZatoshi;
+}
+
+/// One signer-redacted PCZT prepared for Keystone's signatures-only batch
+/// protocol, plus the number of Orchard/Ironwood signatures expected back.
+class KeystoneBatchPczt {
+  final Uint8List redactedPczt;
+  final int expectedSignatureCount;
+
+  const KeystoneBatchPczt({
+    required this.redactedPczt,
+    required this.expectedSignatureCount,
+  });
+
+  @override
+  int get hashCode => redactedPczt.hashCode ^ expectedSignatureCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneBatchPczt &&
+          runtimeType == other.runtimeType &&
+          redactedPczt == other.redactedPczt &&
+          expectedSignatureCount == other.expectedSignatureCount;
 }
 
 class KeystoneMigrationMessage {

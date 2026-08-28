@@ -415,10 +415,13 @@ rust/src/
 │   │                    # propose_send(account_uuid), estimate_fee(account_uuid),
 │   │                    # execute_proposal, get_next_available_address(account_uuid),
 │   │                    # create_pczt_from_proposal, add_proofs_to_pczt,
-│   │                    # redact_pczt_for_signer, extract_and_broadcast_pczt,
+│   │                    # prepare_pczt_for_keystone_batch,
+│   │                    # store_and_broadcast_pczts_with_keystone_signatures_for_proposal,
 │   │                    # discard_proposal (hardware-wallet PCZT pipeline),
 │   │                    # DESIRED_SYNC_MODE, SYNC_RUNNING, SYNC_CANCEL globals
 │   └── keystone.rs     # FRB: encode_pczt_to_ur, decode_ur_to_pczt, encode_pczt_ur_parts,
+│                        # encode_zcash_sign_batch_ur_parts,
+│                        # decode_zcash_batch_sign_response,
 │                        # decode_ur_part, reset_ur_session (#[frb(sync)]),
 │                        # decode_accounts_from_cbor, decode_pczt_from_cbor,
 │                        # decode_accounts_ur. Keystone UX is QR-only.
@@ -441,7 +444,7 @@ rust/src/
 │   │                    # init_db_and_create_account (software first-account bootstrap),
 │   │                    # import_hardware_account (Keystone UFVK import;
 │   │                    # Keystone-first is allowed)
-│   ├── sync.rs         # Per-account wallet operations (balance, send, history, etc.)
+│   ├── sync/           # Per-account wallet operations (balance, send, history, etc.)
 │   │                    # All per-account functions take account_uuid parameter
 │   │                    # NoOp Sapling provers for Orchard-only software TXs
 │   │                    # TX broadcast via gRPC SendTransaction
@@ -451,7 +454,8 @@ rust/src/
 │   │                    #   explicit discard_proposal for cancel paths.
 │   │                    # Hardware PCZT pipeline:
 │   │                    #   create_pczt_from_proposal → add_proofs_to_pczt +
-│   │                    #   redact_pczt_for_signer → extract_and_broadcast_pczt
+│   │                    #   prepare_pczt_for_keystone_batch → compact signatures →
+│   │                    #   store_and_broadcast_pczts_with_compact_signatures_for_proposal
 │   │                    #   (see "Hardware Wallet (Keystone) Send Flow" above for
 │   │                    #   the broadcast-before-store and Sapling-params invariants)
 │   ├── sync_engine.rs  # run_sync_inner() — retry wrapper (3 retries, 2/4/8s backoff)
@@ -463,7 +467,7 @@ rust/src/
 │   │                    # has_new_tx from ScanSummary note counts
 │   └── keystone.rs     # Keystone hardware wallet integration:
 │                        # - UR (Uniform Resources) encode/decode for animated QR:
-│                        #   encode_pczt_ur_parts, decode_ur_part, reset_ur_session
+│                        #   batch-sign encode/decode, decode_ur_part, reset_ur_session
 │                        #   (ur::Decoder directly, not KeystoneURDecoder, to avoid
 │                        #   URType registry issues with `zcash-accounts`)
 │                        # - Single-part UR helpers retained for compatibility
@@ -615,45 +619,52 @@ while an executed denomination preparation waits for confirmations.
 
 ### Hardware Wallet (Keystone) Send Flow
 
-Hardware send uses a **three-PCZT pipeline** that matches the
-`zcash-android-wallet-sdk` / Zashi pattern. The hardware device cannot generate
-ZK proofs (proving keys are too big for the device), and the phone cannot
-sign (spending key lives on the device), so the two sides work on separate
-clones of the same base PCZT and the phone combines them at the end.
+Normal hardware sends use Keystone's signatures-only batch protocol, even for
+one transaction. The device cannot generate ZK proofs (proving keys are too
+big for the device), and the phone cannot sign (the spending key lives on the
+device), so Vizor retains the proof PCZT and applies only the compact
+Orchard/Ironwood signatures returned by Keystone.
 
 ```
-1. createPcztFromProposal                      → base PCZT (phone)
+1. createPcztFromProposal                         → base PCZT (phone)
    (IO-finalized, no proofs, no signatures)
       │
-      ├── 2a. addProofsToPczt(base, params?)   → pcztWithProofs   (phone, CPU)
-      │       (Orchard proof always; Sapling output proofs if the
+      ├── 2a. addProofsToPczt(base, params?)      → pcztWithProofs
+      │       (Orchard or Ironwood proof; Sapling output proofs if the
       │        proposal has needsSaplingParams=true)
       │
-      └── 2b. redactPcztForSigner(base)        → redactedPczt     (phone)
-              → Keystone device (animated QR)
-              → device signs Orchard spend_auth_sig
-              → signed PCZT back to phone       → pcztWithSignatures
-                                                       ↓
-3. extractAndBroadcastPczt(
-     pcztWithProofs, pcztWithSignatures,
+      └── 2b. preparePcztForKeystoneBatch(base)   → compact redacted PCZT
+              → zcash-sign-batch QR
+              → device signs Orchard/Ironwood spend_auth_sig
+              → zcash-batch-sig-result QR         → signatures only
+                                                         ↓
+3. storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+     pcztWithProofs, signatureBlobs,
      spend_params?, output_params?,
-   )                                             → txid
+   )                                                → txid
 ```
 
 Roles in the split:
 
-| Step | PCZT role              | Runs on | Needs what                          |
-|------|------------------------|---------|--------------------------------------|
-| 1    | Creator + IoFinalizer  | phone   | wallet DB                            |
-| 2a   | Prover                 | phone   | proving params (Orchard always; Sapling ~50MB if target recipient is Sapling) |
-| 2b   | Redactor               | phone   | —                                    |
-| sign | Signer                 | device  | spend_auth_sig derivation (device holds USK) |
-| 3    | Combiner + TransactionExtractor | phone | verifying keys (Orchard always; Sapling if bundle non-empty) + wallet DB |
+| Step | PCZT role | Runs on | Needs what |
+|------|-----------|---------|------------|
+| 1 | Creator + IoFinalizer | phone | wallet DB |
+| 2a | Prover | phone | proving params (Orchard or Ironwood; Sapling ~50MB if the target recipient is Sapling) |
+| 2b | Batch redactor | phone | wallet-owned base PCZT |
+| sign | Signer | device | spend authorization derivation (device holds USK) |
+| 3 | Signer application + TransactionExtractor | phone | wallet-owned proof PCZT, compact signatures, verifying keys, and wallet DB |
+
+The v1 `BatchSignResponse` can represent only Orchard and Ironwood spend
+authorization signatures. It cannot represent transparent-input or Sapling
+spend signatures. Therefore hardware TEX sends and hardware transparent
+shielding still use the full-PCZT signer response until the Keystone batch
+protocol gains transparent signatures. Normal sends and ZEC swap deposits must
+not fall back to the full-PCZT response.
 
 **Critical invariants** (each of these was a real bug at some point in
 development; breaking them is a correctness or data-loss regression):
 
-1. **`extract_and_broadcast_pczt` must broadcast before it persists.**
+1. **The hardware completion path must broadcast before it persists.**
    The function order is: `TransactionExtractor::extract()` (in-memory, no
    DB) → `send_transaction` gRPC → *only then* `extract_and_store_transaction_from_pczt`.
    Store-then-broadcast leaves the wallet in an unrecoverable state if
@@ -672,9 +683,9 @@ development; breaking them is a correctness or data-loss regression):
    on the network and not to retry.
 
 3. **Sapling params must be passed to BOTH `add_proofs_to_pczt` AND
-   `extract_and_broadcast_pczt` whenever the PCZT contains a Sapling
+   the hardware completion path whenever the PCZT contains a Sapling
    bundle.** `add_proofs_to_pczt` needs `LocalTxProver` to build Sapling
-   output proofs; `extract_and_broadcast_pczt` needs `LocalTxProver
+   output proofs; the completion path needs `LocalTxProver
    ::verifying_keys()` (a) to validate the extracted transaction and
    (b) to let `extract_and_store_transaction_from_pczt` store it. Both
    functions share the `Option<&str>` / `Option<&str>` signature. If
@@ -706,8 +717,9 @@ development; breaking them is a correctness or data-loss regression):
 
 The Dart flow in `lib/src/features/send/screens/send_screen.dart`
 implements this pipeline end-to-end; the Rust side lives in
-`rust/src/wallet/sync.rs::{create_pczt_from_proposal,
-add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt,
+`rust/src/wallet/sync/pczt.rs::{create_pczt_from_proposal,
+add_proofs_to_pczt, prepare_pczt_for_keystone_batch,
+store_and_broadcast_pczts_with_compact_signatures_for_proposal,
 discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
 
 ### Wallet Creation

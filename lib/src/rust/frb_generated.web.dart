@@ -282,6 +282,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeystoneActionSig dco_decode_keystone_action_sig(dynamic raw);
 
   @protected
+  KeystoneBatchPczt dco_decode_keystone_batch_pczt(dynamic raw);
+
+  @protected
   KeystoneMigrationMessage dco_decode_keystone_migration_message(dynamic raw);
 
   @protected
@@ -1174,6 +1177,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KeystoneActionSig sse_decode_keystone_action_sig(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneBatchPczt sse_decode_keystone_batch_pczt(
     SseDeserializer deserializer,
   );
 
@@ -2273,6 +2281,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_keystone_action_sig(
     KeystoneActionSig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_batch_pczt(
+    KeystoneBatchPczt self,
     SseSerializer serializer,
   );
 

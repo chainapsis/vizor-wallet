@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,8 +14,32 @@ import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
+class KeystoneSendScanArgs {
+  const KeystoneSendScanArgs({
+    this.expectedUrType = 'zcash-pczt',
+    this.unexpectedUrMessage =
+        'Open the signed transaction QR on Keystone, then scan again.',
+    this.decodePcztResponse = true,
+  });
+
+  const KeystoneSendScanArgs.batch()
+    : expectedUrType = 'zcash-batch-sig-result',
+      unexpectedUrMessage =
+          'Open the signature result QR on Keystone, then scan again.',
+      decodePcztResponse = false;
+
+  final String expectedUrType;
+  final String unexpectedUrMessage;
+  final bool decodePcztResponse;
+}
+
 class KeystoneSendScanScreen extends ConsumerStatefulWidget {
-  const KeystoneSendScanScreen({super.key});
+  const KeystoneSendScanScreen({
+    this.args = const KeystoneSendScanArgs(),
+    super.key,
+  });
+
+  final KeystoneSendScanArgs args;
 
   @override
   ConsumerState<KeystoneSendScanScreen> createState() =>
@@ -45,13 +68,16 @@ class _KeystoneSendScanScreenState
     });
 
     try {
-      final pcztBytes = await rust_keystone.decodePcztFromCbor(
-        cbor: result.data,
-      );
+      final response = widget.args.decodePcztResponse
+          ? await rust_keystone.decodePcztFromCbor(cbor: result.data)
+          : result.data;
       if (!mounted) return;
-      context.pop(Uint8List.fromList(pcztBytes));
-    } catch (e, st) {
-      log('KeystoneSendScanScreen: signed PCZT decode error: $e\n$st');
+      context.pop(response);
+    } catch (error, stackTrace) {
+      log(
+        'KeystoneSendScanScreen: signed response decode error: '
+        '$error\n$stackTrace',
+      );
       if (!mounted) return;
       setState(() {
         _decoding = false;
@@ -64,7 +90,7 @@ class _KeystoneSendScanScreenState
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed transaction QR on Keystone, then scan again.'
+        ? widget.args.unexpectedUrMessage
         : 'Keep the QR code steady and fully visible.';
     if (_error == message) return;
     setState(() {
@@ -123,7 +149,7 @@ class _KeystoneSendScanScreenState
                       ),
                       const SizedBox(height: AppSpacing.base),
                       KeystoneQrScannerCard(
-                        expectedUrType: 'zcash-pczt',
+                        expectedUrType: widget.args.expectedUrType,
                         decoding: _decoding,
                         error: _error,
                         onProgress: (progress) {
