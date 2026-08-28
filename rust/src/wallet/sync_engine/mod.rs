@@ -136,8 +136,10 @@ fn preparation_progress_event(
 /// contain a very large number of outputs from a sustained spam
 /// attack, making `scan_cached_blocks` significantly more expensive
 /// per block. We reduce the batch size to `BATCH_SIZE_SANDBLASTING`
-/// when any part of the scan range falls inside this window to
-/// avoid excessive memory pressure and potential timeouts.
+/// while the next batch falls inside this window to avoid excessive
+/// memory pressure and potential timeouts. Batches are clamped at both
+/// boundaries so a long historical range does not inherit the reduced
+/// size before reaching the window or keep it after leaving the window.
 ///
 /// Matches `zcash-android-wallet-sdk`'s `SANDBLASTING_RANGE` in
 /// `CompactBlockProcessor.kt:1171-1181`.
@@ -175,15 +177,32 @@ pub(crate) fn elapsed() -> String {
         .unwrap_or_default()
 }
 
-fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: BlockHeight) -> u32 {
-    let start_u32 = u32::from(start);
-    let range_end_u32 = u32::from(range_end);
-    // Overlap check: range [start, range_end) ∩ [SANDBLASTING_START, SANDBLASTING_END)
-    if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
-        BATCH_SIZE_SANDBLASTING
-    } else {
-        base_batch_size
+fn planned_batch_end(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+) -> Option<(u32, BlockHeight)> {
+    if start >= range_end {
+        return None;
     }
+
+    let start_u32 = u32::from(start);
+    let (batch_size, phase_end) = if start_u32 < SANDBLASTING_START {
+        (
+            base_batch_size,
+            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_START)),
+        )
+    } else if start_u32 < SANDBLASTING_END {
+        (
+            BATCH_SIZE_SANDBLASTING,
+            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_END)),
+        )
+    } else {
+        (base_batch_size, range_end)
+    };
+
+    let end = std::cmp::min(start + batch_size, phase_end);
+    Some((batch_size, end))
 }
 
 fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
@@ -202,9 +221,7 @@ fn scannable_batch_end(
         return None;
     }
 
-    let batch_size = batch_size_for_range(base_batch_size, start, available_end);
-    let end = std::cmp::min(start + batch_size, available_end);
-    Some((batch_size, end))
+    planned_batch_end(base_batch_size, start, available_end)
 }
 
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
@@ -2938,7 +2955,7 @@ async fn run_sync_impl(
             .checked_sub(1)
             .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
         // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
-        // when the current range overlaps the known Zcash mainnet
+        // while the next batch is inside the known Zcash mainnet
         // sandblasting attack window. These blocks contain an
         // order of magnitude more outputs than normal blocks,
         // making scan_cached_blocks much slower per block and
@@ -3571,12 +3588,10 @@ async fn run_sync_impl(
         let next_display_range = post_ranges
             .iter()
             .find(|r| is_pending_scan_range(r))
-            .map(|r| {
+            .and_then(|r| {
                 let next_start = r.block_range().start;
-                let next_batch_size =
-                    batch_size_for_range(base_batch_size, next_start, r.block_range().end);
-                let next_end = std::cmp::min(next_start + next_batch_size, r.block_range().end);
-                (next_start, next_end)
+                planned_batch_end(base_batch_size, next_start, r.block_range().end)
+                    .map(|(_, next_end)| (next_start, next_end))
             });
         let next_display_target_blocks = next_display_range
             .map(|(next_start, next_end)| {
@@ -4705,6 +4720,60 @@ mod tests {
                 121,
             ),
             None,
+        );
+    }
+
+    #[test]
+    fn planned_batch_end_uses_base_size_before_sandblasting() {
+        assert_eq!(
+            planned_batch_end(
+                1_000,
+                BlockHeight::from_u32(419_200),
+                BlockHeight::from_u32(3_500_000),
+            ),
+            Some((1_000, BlockHeight::from_u32(420_200))),
+        );
+    }
+
+    #[test]
+    fn planned_batch_end_stops_at_sandblasting_boundaries() {
+        assert_eq!(
+            planned_batch_end(
+                1_000,
+                BlockHeight::from_u32(SANDBLASTING_START - 500),
+                BlockHeight::from_u32(3_500_000),
+            ),
+            Some((1_000, BlockHeight::from_u32(SANDBLASTING_START))),
+        );
+        assert_eq!(
+            planned_batch_end(
+                1_000,
+                BlockHeight::from_u32(SANDBLASTING_START),
+                BlockHeight::from_u32(3_500_000),
+            ),
+            Some((
+                BATCH_SIZE_SANDBLASTING,
+                BlockHeight::from_u32(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING),
+            )),
+        );
+        assert_eq!(
+            planned_batch_end(
+                1_000,
+                BlockHeight::from_u32(SANDBLASTING_END - 50),
+                BlockHeight::from_u32(3_500_000),
+            ),
+            Some((
+                BATCH_SIZE_SANDBLASTING,
+                BlockHeight::from_u32(SANDBLASTING_END),
+            )),
+        );
+        assert_eq!(
+            planned_batch_end(
+                1_000,
+                BlockHeight::from_u32(SANDBLASTING_END),
+                BlockHeight::from_u32(3_500_000),
+            ),
+            Some((1_000, BlockHeight::from_u32(SANDBLASTING_END + 1_000))),
         );
     }
 
