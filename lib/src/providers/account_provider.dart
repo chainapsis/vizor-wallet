@@ -581,6 +581,40 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('recordLedgerConnection: $uuid → ${transport.name}');
   }
 
+  Future<void> recordLedgerWalletFingerprint({
+    required String uuid,
+    required String fingerprint,
+  }) async {
+    final normalized = fingerprint.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
+      throw ArgumentError.value(
+        fingerprint,
+        'fingerprint',
+        'Ledger wallet fingerprint must be a 32-byte hex digest',
+      );
+    }
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    final existing = target.single.ledgerWalletFingerprint;
+    if (existing != null && existing != normalized) {
+      throw StateError('Ledger wallet identity does not match this account.');
+    }
+    if (existing == normalized) return;
+    final updated = prev.accounts
+        .map(
+          (account) => account.uuid == uuid
+              ? account.copyWith(ledgerWalletFingerprint: normalized)
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('recordLedgerWalletFingerprint: $uuid');
+  }
+
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
@@ -1104,6 +1138,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
+    String? ledgerWalletFingerprint,
   }) async {
     try {
       final accountName = normalizeAccountName(name);
@@ -1118,6 +1153,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final normalizedProfilePictureId = normalizeProfilePictureId(
         profilePictureId,
       );
+      final normalizedLedgerWalletFingerprint = ledgerWalletFingerprint
+          ?.trim()
+          .toLowerCase();
+      if (normalizedLedgerWalletFingerprint != null &&
+          !RegExp(
+            r'^[0-9a-f]{64}$',
+          ).hasMatch(normalizedLedgerWalletFingerprint)) {
+        throw ArgumentError.value(
+          ledgerWalletFingerprint,
+          'ledgerWalletFingerprint',
+          'Ledger wallet fingerprint must be a 32-byte hex digest',
+        );
+      }
       final prev = state.value ?? const AccountState();
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
@@ -1147,6 +1195,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ledgerDeviceId: ledgerDeviceId,
         ledgerDeviceName: ledgerDeviceName,
         ledgerDeviceModel: ledgerDeviceModel,
+        ledgerWalletFingerprint: normalizedLedgerWalletFingerprint,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
