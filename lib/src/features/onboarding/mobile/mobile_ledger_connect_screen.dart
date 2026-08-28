@@ -17,6 +17,7 @@ import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../ledger/ledger_setup_args.dart';
 import 'mobile_ledger_device_sheet.dart';
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _MobileLedgerConnectPhase { idle, awaitingApproval }
@@ -148,7 +149,7 @@ class _MobileLedgerConnectScreenState
     );
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     return MobileOnboardingStepScaffold(
-      progress: 0.25,
+      progress: kMobileLedgerConnectProgress,
       title: 'Connect Ledger',
       subtitle:
           'Select your Ledger, then approve sharing its viewing key to add a watch-only account.',

@@ -54,7 +54,9 @@ pub use pczt::{
     retain_proposal_lock_until_expiry, store_and_broadcast_signed_pczts_for_proposal,
     ExtractAndBroadcastPcztResult, StoreAndBroadcastPcztsResult, TexPcztPair,
 };
-pub(crate) use pczt::{extract_compact_sigs_from_pczt, extract_transaction_from_pczt};
+pub(crate) use pczt::{
+    extract_compact_sigs_from_pczt, store_and_broadcast_signed_pczts, validate_signed_pczts,
+};
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::propose_send;

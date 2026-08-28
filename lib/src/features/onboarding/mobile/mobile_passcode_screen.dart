@@ -17,6 +17,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../wallet_link/services/wallet_link_completion.dart';
 import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
+import '../ledger/ledger_setup_args.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
@@ -36,9 +37,17 @@ enum _PasscodePhase { create, confirm, submitting }
 /// Import flows still use the desktop set-password sequence (prepare → account
 /// mutation under the sync pause → commit, with rollback on failure).
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
-  const MobilePasscodeScreen({required this.args, super.key});
+  const MobilePasscodeScreen({required SetPasswordScreenArgs this.args, super.key})
+    : ledgerArgs = null;
 
-  final SetPasswordScreenArgs args;
+  const MobilePasscodeScreen.ledger({
+    required LedgerSetPasswordArgs args,
+    super.key,
+  }) : args = null,
+       ledgerArgs = args;
+
+  final SetPasswordScreenArgs? args;
+  final LedgerSetPasswordArgs? ledgerArgs;
 
   @override
   ConsumerState<MobilePasscodeScreen> createState() =>
@@ -94,26 +103,39 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
   }
 
   /// Software and Keystone setup continue to account customisation without
-  /// persisting the pending passcode. Wallet Link remains an immediate import.
+  /// persisting the pending passcode. Ledger follows the same deferred setup
+  /// so password configuration and hardware-account import commit together.
+  /// Wallet Link remains an immediate import.
   Future<void> _submit(String passcode) async {
-    final args = widget.args;
     setState(() {
       _phase = _PasscodePhase.submitting;
       _error = null;
     });
 
     final router = GoRouter.of(context);
+    final ledgerArgs = widget.ledgerArgs;
+    if (ledgerArgs != null) {
+      await router.push<void>(
+        '/onboarding/ledger/customise-account',
+        extra: LedgerCustomiseAccountArgs(
+          account: ledgerArgs.account,
+          birthdayHeight: ledgerArgs.birthdayHeight,
+          pendingPassword: passcode,
+        ),
+      );
+      if (!mounted) return;
+      _resetEntry();
+      return;
+    }
+
+    final args = widget.args!;
     if (args.flow != SetPasswordFlow.importWalletLink) {
       await router.push<void>(
         '/onboarding/customise-account',
         extra: CustomiseAccountArgs(setupArgs: args, pendingPassword: passcode),
       );
       if (!mounted) return;
-      setState(() {
-        _phase = _PasscodePhase.create;
-        _entry = '';
-        _firstPasscode = null;
-      });
+      _resetEntry();
       return;
     }
 
@@ -205,6 +227,14 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     }
   }
 
+  void _resetEntry() {
+    setState(() {
+      _phase = _PasscodePhase.create;
+      _entry = '';
+      _firstPasscode = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -227,7 +257,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: _progressForFlow(widget.args.flow),
+              progress: widget.ledgerArgs == null
+                  ? _progressForFlow(widget.args!.flow)
+                  : kMobileLedgerPasscodeProgress,
               showBackButton: canNavigateBack,
               onBack: isSubmitting || !canNavigateBack
                   ? null

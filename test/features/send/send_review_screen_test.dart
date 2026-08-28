@@ -572,6 +572,164 @@ void main() {
     },
   );
 
+  testWidgets('Ledger TEX signs two rounds then checkpoints one batch', (
+    tester,
+  ) async {
+    final firstApproval = Completer<List<int>>();
+    final secondApproval = Completer<List<int>>();
+    final operationService = _FakeLedgerSignedOperationService();
+    final signingRequests = <List<int>>[];
+    addTearDown(() {
+      if (!firstApproval.isCompleted) firstApproval.complete([9, 1]);
+      if (!secondApproval.isCompleted) secondApproval.complete([9, 2]);
+    });
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (pczt) {
+          signingRequests.add([...pczt]);
+          return signingRequests.length == 1
+              ? firstApproval.future
+              : secondApproval.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(
+      find.text('Review Transaction 1 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(signingRequests, const [
+      [1, 4],
+    ]);
+
+    firstApproval.complete([9, 1]);
+    await _flushRealAsync(tester);
+    expect(
+      find.text('Review Transaction 2 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(signingRequests, const [
+      [1, 4],
+      [2, 4],
+    ]);
+
+    secondApproval.complete([9, 2]);
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+    expect(operationService.checkpoints, isEmpty);
+    expect(operationService.batchCheckpoints, hasLength(1));
+    expect(operationService.batchCheckpoints.single.proofs, const [
+      [3, 1],
+      [3, 2],
+    ]);
+    expect(operationService.batchCheckpoints.single.signatures, const [
+      [9, 1],
+      [9, 2],
+    ]);
+    expect(rustApi.createPcztCalls, 1);
+    expect(rustApi.redactPcztCalls, 2);
+    expect(rustApi.addProofsCalls, 2);
+  });
+
+  testWidgets('Ledger TEX second rejection can cancel without checkpointing', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    var cancelCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          if (signerCalls == 2) {
+            throw StateError('Ledger request rejected on device');
+          }
+          return [9, 1];
+        },
+        ledgerCanceller: () async => cancelCalls++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.text('Ledger signing failed'), findsOneWidget);
+    expect(
+      find.text('The transaction was rejected on your Ledger.'),
+      findsOneWidget,
+    );
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, isEmpty);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+    expect(find.byType(SendReviewScreen), findsOneWidget);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(cancelCalls, 1);
+  });
+
+  testWidgets('Ledger TEX checkpoint retry does not request approval again', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService()
+      ..failuresRemaining = 1;
+    var signerCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async => [9, ++signerCalls],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.text('Could not save signed transaction'), findsOneWidget);
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, hasLength(1));
+
+    await tester.tap(find.text('Retry saving'));
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, hasLength(2));
+    expect(
+      operationService.batchCheckpoints[1].signatures,
+      operationService.batchCheckpoints[0].signatures,
+    );
+  });
+
   for (final dismissal in ['button', 'scrim', 'escape', 'back']) {
     testWidgets(
       'Ledger $dismissal dismissal keeps the same review and ignores a late signature',
@@ -1455,9 +1613,28 @@ class _LedgerCheckpoint {
   final List<int> signatures;
 }
 
+class _LedgerBatchCheckpoint {
+  const _LedgerBatchCheckpoint({
+    required this.operationId,
+    required this.accountUuid,
+    required this.kind,
+    required this.proofs,
+    required this.signatures,
+  });
+
+  final String operationId;
+  final String accountUuid;
+  final LedgerSignedOperationKind kind;
+  final List<List<int>> proofs;
+  final List<List<int>> signatures;
+}
+
 class _FakeLedgerSignedOperationService
-    implements LedgerSignedOperationService {
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
   final checkpoints = <_LedgerCheckpoint>[];
+  final batchCheckpoints = <_LedgerBatchCheckpoint>[];
   int failuresRemaining = 0;
   Object checkpointError = StateError('checkpoint failed');
   Completer<void>? checkpointGate;
@@ -1478,6 +1655,32 @@ class _FakeLedgerSignedOperationService
         kind: kind,
         proofs: [...pcztWithProofsBytes],
         signatures: [...pcztWithSignaturesBytes],
+      ),
+    );
+    final gate = checkpointGate;
+    if (gate != null) await gate.future;
+    if (failuresRemaining > 0) {
+      failuresRemaining--;
+      throw checkpointError;
+    }
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    batchCheckpoints.add(
+      _LedgerBatchCheckpoint(
+        operationId: operationId,
+        accountUuid: accountUuid,
+        kind: kind,
+        proofs: pcztsWithProofs.map((pczt) => [...pczt]).toList(),
+        signatures: pcztsWithSignatures.map((pczt) => [...pczt]).toList(),
       ),
     );
     final gate = checkpointGate;
@@ -1747,6 +1950,9 @@ class _RustApiFake implements RustLibApi {
     required List<int> pcztBytes,
   }) async {
     redactPcztCalls++;
+    if (pcztBytes.length == 1) {
+      return Uint8List.fromList([pcztBytes.single, 4]);
+    }
     return Uint8List.fromList([4, 5, 6]);
   }
 
@@ -1765,6 +1971,9 @@ class _RustApiFake implements RustLibApi {
     String? outputParamsPath,
   }) async {
     addProofsCalls++;
+    if (pcztBytes.length == 1) {
+      return Uint8List.fromList([3, pcztBytes.single]);
+    }
     return Uint8List.fromList(_fakeProofsBytes);
   }
 

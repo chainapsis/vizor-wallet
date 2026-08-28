@@ -538,19 +538,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       '$_insufficientBalanceText including fee';
   String _insufficientBalanceWithFeeText(String feeText) =>
       '$_insufficientBalanceText (fee: $feeText)';
-  bool get _isLedgerTexSend =>
-      _isTexAddress &&
-      widget.activeHardwareSignerKind == HardwareSignerKind.ledger;
-
-  static const _ledgerTexUnsupportedText =
-      'Ledger TEX sends are not supported yet.';
-
   bool get _showAmountError =>
-      _amountError != null &&
-      _amountError!.trim().isNotEmpty &&
-      _amountError != _ledgerTexUnsupportedText;
-  String? get _ctaWarningText =>
-      _isLedgerTexSend ? _ledgerTexUnsupportedText : null;
+      _amountError != null && _amountError!.trim().isNotEmpty;
+  String? get _ctaWarningText => null;
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -577,7 +567,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       !_isResolvingMax &&
       _hasValidAddress &&
       _isAmountValid &&
-      !_isLedgerTexSend &&
       (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
@@ -615,7 +604,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) return 'No active account';
     if (!_hasValidAddress) return 'Enter a valid address to use Max';
-    if (_isLedgerTexSend) return _ledgerTexUnsupportedText;
     return _memoError;
   }
 
@@ -772,10 +760,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    if (_isLedgerTexSend) {
-      setState(() => _amountError = _ledgerTexUnsupportedText);
-      return;
-    }
     if (zatoshi > available) {
       setState(() => _amountError = _insufficientBalanceText);
       return;
@@ -868,13 +852,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      if (_isLedgerTexSend) {
-        setState(() {
-          _error = _ledgerTexUnsupportedText;
-          _isSending = false;
-        });
-        return;
-      }
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';

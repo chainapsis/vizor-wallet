@@ -507,11 +507,57 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         child: ImportWalletBirthdayScreen.ledger(
           onBirthdaySelected: (birthdayHeight) async {
             if (!context.mounted) return;
+            if (!ref.read(appSecurityProvider).isPasswordConfigured) {
+              context.go(
+                '/onboarding/ledger/set-password',
+                extra: LedgerSetPasswordArgs(
+                  account: args.account,
+                  birthdayHeight: birthdayHeight,
+                ),
+              );
+              return;
+            }
             context.go(
               '/onboarding/ledger/customise-account',
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: birthdayHeight,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/set-password',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerSetPasswordArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerSetPasswordArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: SetPasswordScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: 'Wallet Birthday Height',
+            routePath: '/onboarding/ledger/birthday',
+            routeExtra: LedgerBirthdayArgs(account: args.account),
+          ),
+          ledgerOnContinue: (password) async {
+            if (!context.mounted) return;
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: args.birthdayHeight,
+                pendingPassword: password,
               ),
             );
           },
@@ -538,19 +584,56 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         reverseTransitionDuration: kOnboardingReverseDuration,
         child: CustomiseAccountScreen.ledger(
           ledgerBackTarget: OnboardingBackTarget.route(
-            label: 'Wallet Birthday Height',
-            routePath: '/onboarding/ledger/birthday',
-            routeExtra: LedgerBirthdayArgs(account: args.account),
+            label: args.pendingPassword == null
+                ? 'Wallet Birthday Height'
+                : 'Set Password',
+            routePath: args.pendingPassword == null
+                ? '/onboarding/ledger/birthday'
+                : '/onboarding/ledger/set-password',
+            routeExtra: args.pendingPassword == null
+                ? LedgerBirthdayArgs(account: args.account)
+                : LedgerSetPasswordArgs(
+                    account: args.account,
+                    birthdayHeight: args.birthdayHeight,
+                  ),
           ),
           onFinish: (name, profilePictureId) async {
-            await ref.read(ledgerAccountImporterProvider)(
-              name: name,
-              account: args.account,
-              birthdayHeight: args.birthdayHeight,
-              profilePictureId: profilePictureId,
-            );
-            if (!context.mounted) return;
-            context.go('/home');
+            Future<void> importAccount() =>
+                ref.read(ledgerAccountImporterProvider)(
+                  name: name,
+                  account: args.account,
+                  birthdayHeight: args.birthdayHeight,
+                  profilePictureId: profilePictureId,
+                );
+
+            final pendingPassword = args.pendingPassword;
+            if (pendingPassword == null) {
+              await importAccount();
+              if (!context.mounted) return;
+              context.go('/home');
+              return;
+            }
+
+            final securityNotifier = ref.read(appSecurityProvider.notifier);
+            final routerRefresh = ref.read(routerRefreshProvider);
+            var passwordPrepared = false;
+            var passwordCommitted = false;
+            try {
+              await routerRefresh.pauseWhile(() async {
+                await securityNotifier.preparePasswordSetup(pendingPassword);
+                passwordPrepared = true;
+                await importAccount();
+                securityNotifier.commitPasswordSetup();
+                passwordCommitted = true;
+                if (!context.mounted) return;
+                context.go('/home');
+              });
+            } catch (_) {
+              if (passwordPrepared && !passwordCommitted) {
+                await securityNotifier.rollbackPasswordSetup();
+              }
+              rethrow;
+            }
           },
         ),
         transitionsBuilder: _onboardingFadeTransition,

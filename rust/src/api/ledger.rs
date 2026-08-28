@@ -291,6 +291,32 @@ pub fn ledger_checkpoint_signed_operation(
     .map(to_signed_operation)
 }
 
+/// Durably checkpoint every proof/signature PCZT pair for one Ledger operation.
+/// The complete batch is validated and committed as a single recoverable row.
+pub fn ledger_checkpoint_signed_operation_batch(
+    db_path: String,
+    network: String,
+    operation_id: String,
+    account_uuid: String,
+    kind: String,
+    external_ref: Option<String>,
+    pczt_with_proofs: Vec<Vec<u8>>,
+    pczt_with_signatures: Vec<Vec<u8>>,
+) -> Result<LedgerSignedOperation, String> {
+    let network = parse_ledger_db_network(&db_path, &network)?;
+    ledger::checkpoint_signed_operation_batch(
+        &db_path,
+        network,
+        &operation_id,
+        &account_uuid,
+        &kind,
+        external_ref.as_deref(),
+        &pczt_with_proofs,
+        &pczt_with_signatures,
+    )
+    .map(to_signed_operation)
+}
+
 /// List checkpointed Ledger operations without exposing either PCZT blob.
 pub fn ledger_list_signed_operations(
     db_path: String,

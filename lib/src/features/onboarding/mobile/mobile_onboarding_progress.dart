@@ -27,3 +27,11 @@ const kMobileKeystoneCustomiseProgress = 6 / 7;
 /// Desktop-link import has intro, scan, account selection, contact selection,
 /// then passcode.
 const kMobileWalletLinkPasscodeProgress = 5 / 6;
+
+/// Ledger onboarding has connect, birthday, passcode (first account only),
+/// then account customisation. The optional passcode step keeps additional
+/// account setup shorter without changing the relative order of the screens.
+const kMobileLedgerConnectProgress = 1 / 5;
+const kMobileLedgerBirthdayProgress = 2 / 5;
+const kMobileLedgerPasscodeProgress = 3 / 5;
+const kMobileLedgerCustomiseProgress = 4 / 5;

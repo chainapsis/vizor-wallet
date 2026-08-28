@@ -302,16 +302,49 @@ class MobileLedgerCustomiseAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileCustomiseAccountScreen(
-      progress: 0.75,
+      progress: kMobileLedgerCustomiseProgress,
       onBack: () => context.pop(),
       onFinish: (name, profilePictureId) async {
-        await ref.read(ledgerAccountImporterProvider)(
+        Future<void> importAccount() => ref.read(ledgerAccountImporterProvider)(
           name: name,
           account: args.account,
           birthdayHeight: args.birthdayHeight,
           profilePictureId: profilePictureId,
         );
-        if (context.mounted) context.go('/home');
+
+        final pendingPassword = args.pendingPassword;
+        if (pendingPassword == null) {
+          await importAccount();
+          if (context.mounted) context.go('/home');
+          return;
+        }
+
+        final securityNotifier = ref.read(appSecurityProvider.notifier);
+        final routerRefresh = ref.read(routerRefreshProvider);
+        var passwordPrepared = false;
+        var passwordCommitted = false;
+        try {
+          await routerRefresh.pauseWhile(() async {
+            await securityNotifier.preparePasswordSetup(pendingPassword);
+            passwordPrepared = true;
+            await importAccount();
+            securityNotifier.commitPasswordSetup();
+            passwordCommitted = true;
+            if (context.mounted) context.go('/onboarding/biometrics');
+          });
+        } catch (_) {
+          if (passwordPrepared && !passwordCommitted) {
+            try {
+              await securityNotifier.rollbackPasswordSetup();
+            } catch (rollbackError, rollbackStack) {
+              log(
+                'MobileLedgerCustomiseAccount: password rollback failed: '
+                '$rollbackError\n$rollbackStack',
+              );
+            }
+          }
+          rethrow;
+        }
       },
     );
   }

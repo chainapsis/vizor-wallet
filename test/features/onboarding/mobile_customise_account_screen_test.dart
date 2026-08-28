@@ -443,6 +443,119 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
+  testWidgets('sets passcode atomically for the first Ledger account', (
+    tester,
+  ) async {
+    final securityNotifier = _RecordingSecurityNotifier();
+    var importCalls = 0;
+    const account = LedgerDeviceAccount(
+      ufvk: 'uview-ledger',
+      seedFingerprint: [1, 2, 3],
+      accountIndex: 7,
+      appVersion: '3.9.2',
+    );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => const MobileLedgerCustomiseAccountScreen(
+            args: LedgerCustomiseAccountArgs(
+              account: account,
+              birthdayHeight: 2500000,
+              pendingPassword: '123456',
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/biometrics',
+          builder: (_, _) => const Text('biometrics route'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appSecurityProvider.overrideWith(() => securityNotifier),
+          ledgerAccountImporterProvider.overrideWithValue(({
+            required name,
+            required account,
+            required birthdayHeight,
+            required profilePictureId,
+          }) async {
+            importCalls++;
+          }),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(securityNotifier.preparedPassword, '123456');
+    expect(securityNotifier.committed, isTrue);
+    expect(securityNotifier.rollbackCount, 0);
+    expect(importCalls, 1);
+    expect(find.text('biometrics route'), findsOneWidget);
+  });
+
+  testWidgets('rolls back passcode when first Ledger import fails', (
+    tester,
+  ) async {
+    final securityNotifier = _RecordingSecurityNotifier();
+    const account = LedgerDeviceAccount(
+      ufvk: 'uview-ledger',
+      seedFingerprint: [1, 2, 3],
+      accountIndex: 7,
+      appVersion: '3.9.2',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appSecurityProvider.overrideWith(() => securityNotifier),
+          ledgerAccountImporterProvider.overrideWithValue(({
+            required name,
+            required account,
+            required birthdayHeight,
+            required profilePictureId,
+          }) async {
+            throw StateError('import failed');
+          }),
+        ],
+        child: MaterialApp(
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+          home: const MobileLedgerCustomiseAccountScreen(
+            args: LedgerCustomiseAccountArgs(
+              account: account,
+              birthdayHeight: 2500000,
+              pendingPassword: '123456',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(securityNotifier.preparedPassword, '123456');
+    expect(securityNotifier.committed, isFalse);
+    expect(securityNotifier.rollbackCount, 1);
+    expect(find.text('Customise Account'), findsOneWidget);
+  });
+
   testWidgets('creates the initial account with the selected persona', (
     tester,
   ) async {
@@ -756,6 +869,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
 class _RecordingSecurityNotifier extends AppSecurityNotifier {
   String? preparedPassword;
   var committed = false;
+  var rollbackCount = 0;
 
   @override
   AppSecurityState build() =>
@@ -772,7 +886,9 @@ class _RecordingSecurityNotifier extends AppSecurityNotifier {
   }
 
   @override
-  Future<void> rollbackPasswordSetup() async {}
+  Future<void> rollbackPasswordSetup() async {
+    rollbackCount++;
+  }
 }
 
 class _NoopSyncNotifier extends SyncNotifier {

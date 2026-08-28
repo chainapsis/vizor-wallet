@@ -12,6 +12,7 @@ mod serializer;
 pub(crate) use operations::{
     acknowledge as acknowledge_signed_operation, broadcast as broadcast_signed_operation,
     checkpoint as checkpoint_signed_operation,
+    checkpoint_batch as checkpoint_signed_operation_batch,
     delete_for_account_with_tx as delete_signed_operations_for_account_with_tx,
     list as list_signed_operations, SignedOperationMetadata,
 };
@@ -187,6 +188,7 @@ pub(crate) fn validate_pczt_account(
             &input.derivation,
             expected,
             &format!("transparent input {index}"),
+            true,
         )?;
     }
     for (index, output) in parsed.transparent_outputs.iter().enumerate() {
@@ -195,6 +197,7 @@ pub(crate) fn validate_pczt_account(
                 derivation,
                 expected,
                 &format!("transparent output {index}"),
+                false,
             )?;
         }
     }
@@ -225,6 +228,7 @@ fn validate_transparent_derivation(
     derivation: &parse::Bip32Derivation,
     expected: ExpectedAccount,
     label: &str,
+    allow_ephemeral_scope: bool,
 ) -> Result<(), String> {
     const HARDENED: u32 = 0x8000_0000;
     let expected_path = [
@@ -233,7 +237,10 @@ fn validate_transparent_derivation(
         HARDENED | expected.account_index,
     ];
     let path = &derivation.signing_path;
-    let valid_suffix = path.len() == 5 && matches!(path[3], 0 | 1) && path[4] & HARDENED == 0;
+    let valid_scope = path
+        .get(3)
+        .is_some_and(|scope| matches!(*scope, 0 | 1) || (allow_ephemeral_scope && *scope == 2));
+    let valid_suffix = path.len() == 5 && valid_scope && path[4] & HARDENED == 0;
     if path.get(..3) != Some(expected_path.as_slice()) || !valid_suffix {
         return Err(format!(
             "Ledger {label} derivation path does not belong to account {}",
@@ -1105,6 +1112,38 @@ mod tests {
         assert!(validate_pczt_account(&pczt_bytes, wrong_fingerprint)
             .unwrap_err()
             .contains("fingerprint"));
+    }
+
+    #[test]
+    fn zip320_ephemeral_scope_is_allowed_only_for_transparent_inputs() {
+        let expected = ExpectedAccount {
+            account_index: 0,
+            coin_type: 1,
+            seed_fingerprint: [0x22; 32],
+        };
+        let derivation = parse::Bip32Derivation {
+            pubkey: [0x02; 33],
+            signing_path: vec![0x8000_002c, 0x8000_0001, 0x8000_0000, 2, 7],
+            seed_fingerprint: [0x22; 32],
+        };
+
+        validate_transparent_derivation(&derivation, expected, "transparent input 0", true)
+            .unwrap();
+        assert!(validate_transparent_derivation(
+            &derivation,
+            expected,
+            "transparent output 0",
+            false,
+        )
+        .unwrap_err()
+        .contains("does not belong"));
+
+        let mut unrelated = derivation.clone();
+        unrelated.signing_path[3] = 3;
+        assert!(
+            validate_transparent_derivation(&unrelated, expected, "transparent input 0", true,)
+                .is_err()
+        );
     }
 
     #[test]

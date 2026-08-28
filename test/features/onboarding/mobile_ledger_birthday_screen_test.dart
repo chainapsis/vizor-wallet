@@ -80,17 +80,70 @@ void main() {
 
     expect(find.text('customise-7-2500000'), findsOneWidget);
   });
+
+  testWidgets('routes a first Ledger account through passcode setup', (
+    tester,
+  ) async {
+    LedgerSetPasswordArgs? passcodeArgs;
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => const MobileLedgerBirthdayScreen(
+            args: LedgerBirthdayArgs(account: _account),
+            loadChainMetadata: false,
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/ledger/set-passcode',
+          builder: (_, state) {
+            passcodeArgs = state.extra! as LedgerSetPasswordArgs;
+            return const Text('passcode route');
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_harness(router, passwordConfigured: false));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_import_birthday_height')),
+      '2500000',
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('passcode route'), findsOneWidget);
+    expect(passcodeArgs?.account, same(_account));
+    expect(passcodeArgs?.birthdayHeight, 2500000);
+  });
 }
 
-Widget _harness(GoRouter router) => ProviderScope(
-  overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+Widget _harness(
+  GoRouter router, {
+  bool passwordConfigured = true,
+}) => ProviderScope(
+  overrides: [
+    appBootstrapProvider.overrideWithValue(
+      _bootstrap(passwordConfigured: passwordConfigured),
+    ),
+  ],
   child: MaterialApp.router(
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   ),
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({required bool passwordConfigured}) =>
+    AppBootstrapState(
   initialLocation: '/',
   initialAccountState: const AccountState(accounts: []),
   initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -98,7 +151,7 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
   privacyModeEnabled: false,
-  isPasswordConfigured: true,
+  isPasswordConfigured: passwordConfigured,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
