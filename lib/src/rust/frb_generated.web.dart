@@ -34,8 +34,52 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     required super.portManager,
   });
 
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_VotingHelperDeliveryContextPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_VotingShareTrackingPassHandlePtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+  @protected
+  VotingHelperDeliveryContext
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    dynamic raw,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    dynamic raw,
+  );
+
+  @protected
+  VotingHelperDeliveryContext
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    dynamic raw,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    dynamic raw,
+  );
+
+  @protected
+  VotingHelperDeliveryContext
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    dynamic raw,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    dynamic raw,
+  );
 
   @protected
   RustStreamSink<ApiDelegationProofEvent>
@@ -107,6 +151,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiShareKey dco_decode_api_share_key(dynamic raw);
 
   @protected
+  ApiShareSubmissionReport dco_decode_api_share_submission_report(dynamic raw);
+
+  @protected
   ApiShareTrackingReport dco_decode_api_share_tracking_report(dynamic raw);
 
   @protected
@@ -126,6 +173,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
+
+  @protected
+  ApiVotingHelperPreflight dco_decode_api_voting_helper_preflight(dynamic raw);
 
   @protected
   ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw);
@@ -183,9 +233,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareDelegationRecordView dco_decode_box_autoadd_share_delegation_record_view(
-    dynamic raw,
-  );
+  ShareSubmissionPlan dco_decode_box_autoadd_share_submission_plan(dynamic raw);
 
   @protected
   SignedDelegationPayloadView
@@ -876,6 +924,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
+  VotingHelperDeliveryContext
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingHelperDeliveryContext
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingHelperDeliveryContext
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingShareTrackingPassHandle
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<ApiDelegationProofEvent>
   sse_decode_StreamSink_api_delegation_proof_event_Sse(
     SseDeserializer deserializer,
@@ -967,6 +1051,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiShareKey sse_decode_api_share_key(SseDeserializer deserializer);
 
   @protected
+  ApiShareSubmissionReport sse_decode_api_share_submission_report(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiShareTrackingReport sse_decode_api_share_tracking_report(
     SseDeserializer deserializer,
   );
@@ -994,6 +1083,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVotingEligibility sse_decode_api_voting_eligibility(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingHelperPreflight sse_decode_api_voting_helper_preflight(
     SseDeserializer deserializer,
   );
 
@@ -1065,7 +1159,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareDelegationRecordView sse_decode_box_autoadd_share_delegation_record_view(
+  ShareSubmissionPlan sse_decode_box_autoadd_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -1937,6 +2031,48 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    VotingHelperDeliveryContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    VotingShareTrackingPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    VotingHelperDeliveryContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    VotingShareTrackingPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    VotingHelperDeliveryContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    VotingShareTrackingPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_delegation_proof_event_Sse(
     RustStreamSink<ApiDelegationProofEvent> self,
     SseSerializer serializer,
@@ -2048,6 +2184,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_api_share_key(ApiShareKey self, SseSerializer serializer);
 
   @protected
+  void sse_encode_api_share_submission_report(
+    ApiShareSubmissionReport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_share_tracking_report(
     ApiShareTrackingReport self,
     SseSerializer serializer,
@@ -2080,6 +2222,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_voting_eligibility(
     ApiVotingEligibility self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_helper_preflight(
+    ApiVotingHelperPreflight self,
     SseSerializer serializer,
   );
 
@@ -2162,8 +2310,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_share_delegation_record_view(
-    ShareDelegationRecordView self,
+  void sse_encode_box_autoadd_share_submission_plan(
+    ShareSubmissionPlan self,
     SseSerializer serializer,
   );
 
@@ -3228,6 +3376,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
 class RustLibWire implements BaseWire {
   RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+        ptr,
+      );
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+        ptr,
+      );
 }
 
 @JS('wasm_bindgen')
@@ -3235,4 +3415,24 @@ external RustLibWasmModule get wasmModule;
 
 @JS()
 @anonymous
-extension type RustLibWasmModule._(JSObject _) implements JSObject {}
+extension type RustLibWasmModule._(JSObject _) implements JSObject {
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
+    int ptr,
+  );
+
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    int ptr,
+  );
+}

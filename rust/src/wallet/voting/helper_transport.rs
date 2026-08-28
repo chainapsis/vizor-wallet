@@ -50,6 +50,9 @@ impl Default for VotingHelperTransport {
 
 impl VotingHelperTransport {
     pub fn new() -> Self {
+        // Tests and background recovery can construct the helper transport
+        // before the app's normal initialization entrypoint runs.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let https = hyper_rustls::HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_or_http()
@@ -98,6 +101,7 @@ impl VotingHelperTransport {
             .parse()
             .map_err(|error| HelperTransportError::Transport(format!("invalid URL: {error}")))?;
         let has_body = !body.is_empty();
+        let is_post = method == Method::POST;
         let apply_headers = move |builder: http::request::Builder| {
             if has_body {
                 builder.header(http::header::CONTENT_TYPE, "application/json")
@@ -128,12 +132,19 @@ impl VotingHelperTransport {
             }
         })
         .await?
-        .map_err(|error| HelperTransportError::Transport(error.to_string()))?;
+        .map_err(|error| classify_tor_error(is_post, error))?;
 
-        Ok(HelperResponse {
-            status: response.status().as_u16(),
-            body: response.into_body(),
-        })
+        let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        Ok(HelperResponse::new(
+            status,
+            response.into_body(),
+            content_type,
+        ))
     }
 
     async fn request_direct(
@@ -159,23 +170,68 @@ impl VotingHelperTransport {
         let response = with_timeout(timeout, self.direct.request(request))
             .await?
             .map_err(|error| {
-                HelperTransportError::Transport(format!("send helper request: {error}"))
+                let message = format!("send helper request: {error}");
+                if error.is_connect() {
+                    HelperTransportError::Transport(message)
+                } else {
+                    // Once Hyper progressed past connection setup, it cannot
+                    // prove that the helper did not receive a POST body.
+                    HelperTransportError::Ambiguous(message)
+                }
             })?;
         let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
         let body = with_timeout(
             timeout,
             Limited::new(response.into_body(), MAX_HELPER_RESPONSE_BYTES).collect(),
         )
         .await?
         .map_err(|error| {
-            HelperTransportError::Transport(format!(
+            HelperTransportError::Response(format!(
                 "read helper response body (limit {MAX_HELPER_RESPONSE_BYTES} bytes): {error}"
             ))
         })?
         .to_bytes()
         .to_vec();
 
-        Ok(HelperResponse { status, body })
+        Ok(HelperResponse::new(status, body, content_type))
+    }
+}
+
+/// Separates Tor failures that prove a POST was never dispatched from failures
+/// that can happen after the helper received some or all of its body.
+fn classify_tor_error(
+    is_post: bool,
+    error: zcash_client_backend::tor::Error,
+) -> HelperTransportError {
+    use zcash_client_backend::tor::{
+        http::{HttpError, TimeoutPhase},
+        Error,
+    };
+
+    let message = error.to_string();
+    if !is_post {
+        return HelperTransportError::Transport(message);
+    }
+    let definitely_pre_dispatch = match &error {
+        Error::MissingTorDirectory | Error::Tor(_) => true,
+        Error::Http(
+            HttpError::NonHttpUrl
+            | HttpError::Http(_)
+            | HttpError::Spawn(_)
+            | HttpError::Tls(_)
+            | HttpError::Timeout(TimeoutPhase::Connect),
+        ) => true,
+        _ => false,
+    };
+    if definitely_pre_dispatch {
+        HelperTransportError::Transport(message)
+    } else {
+        HelperTransportError::Ambiguous(message)
     }
 }
 
@@ -274,5 +330,109 @@ impl tower_service::Service<Uri> for DirectRouteConnector {
             .await?;
             Ok(route.into_io(connected))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io::Read, net::TcpListener, thread, time::Duration};
+
+    use http::Method;
+    use zcash_voting::HelperTransportError;
+
+    use super::{classify_tor_error, VotingHelperTransport};
+
+    #[test]
+    fn tor_post_classification_distinguishes_pre_dispatch_failures() {
+        use zcash_client_backend::tor::{
+            http::{HttpError, TimeoutPhase},
+            Error,
+        };
+
+        let request_build_error = http::Request::builder()
+            .header("bad\nheader", "value")
+            .body(())
+            .unwrap_err();
+        let definite = vec![
+            Error::MissingTorDirectory,
+            Error::Http(HttpError::NonHttpUrl),
+            Error::Http(HttpError::Http(request_build_error)),
+            Error::Http(HttpError::Tls(std::io::Error::other("tls failed"))),
+            Error::Http(HttpError::Timeout(TimeoutPhase::Connect)),
+        ];
+        for error in definite {
+            assert!(matches!(
+                classify_tor_error(true, error),
+                HelperTransportError::Transport(_)
+            ));
+        }
+
+        let ambiguous = vec![
+            Error::Http(HttpError::Timeout(TimeoutPhase::Request)),
+            Error::Http(HttpError::Timeout(TimeoutPhase::ResponseBody)),
+            Error::Http(HttpError::Json(
+                serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
+            )),
+            Error::Io(std::io::Error::other("response stream failed")),
+        ];
+        for error in ambiguous {
+            assert!(matches!(
+                classify_tor_error(true, error),
+                HelperTransportError::Ambiguous(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn tor_get_failures_are_always_safe_to_retry() {
+        assert!(matches!(
+            classify_tor_error(false, zcash_client_backend::tor::Error::MissingTorDirectory),
+            HelperTransportError::Transport(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn post_closed_after_receipt_is_ambiguous() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 2048];
+            let bytes_read = stream.read(&mut request).unwrap();
+            assert!(request[..bytes_read].starts_with(b"POST "));
+            // Drop the connection after receipt without response headers.
+        });
+
+        let transport = VotingHelperTransport::new();
+        let result = transport
+            .request_direct(
+                Method::POST,
+                &format!("http://{address}/shielded-vote/v1/shares"),
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_secs(1),
+            )
+            .await;
+
+        assert!(matches!(result, Err(HelperTransportError::Ambiguous(_))));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn refused_connection_is_definite() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+
+        let transport = VotingHelperTransport::new();
+        let result = transport
+            .request_direct(
+                Method::POST,
+                &format!("http://{address}/shielded-vote/v1/shares"),
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_secs(1),
+            )
+            .await;
+
+        assert!(matches!(result, Err(HelperTransportError::Transport(_))));
     }
 }

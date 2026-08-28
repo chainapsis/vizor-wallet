@@ -176,27 +176,6 @@ class VotingRecoveryService {
     );
   }
 
-  /// Records additional helper servers that accepted an already-created share.
-  ///
-  /// Recovery can retry failed helpers without regenerating shares; this appends
-  /// only the newly successful URLs for the durable share key.
-  Future<void> addSentServersForShare({
-    required String dbPath,
-    required String accountUuid,
-    required rust_voting.ShareDelegationRecordView share,
-    required List<String> newUrls,
-  }) {
-    return _api.addSentServers(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: share.roundId,
-      bundleIndex: share.bundleIndex,
-      proposalId: share.proposalId,
-      shareIndex: share.shareIndex,
-      newUrls: newUrls,
-    );
-  }
-
   static int _compareVoteKeys(VotingVoteKey a, VotingVoteKey b) {
     final bundleCompare = a.bundleIndex.compareTo(b.bundleIndex);
     if (bundleCompare != 0) return bundleCompare;

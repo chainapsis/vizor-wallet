@@ -39,11 +39,11 @@ class ImmediateShareKey {
 /// Clients own transport and recovery. They should start all readiness probes
 /// together, inspect responses after the soft timeout, and continue until at
 /// least `target_count` helpers are ready or the hard timeout expires. For a
-/// complete commitment, `max_shares_per_server` is the balanced maximum when
-/// at least `min_server_count` helpers are in the preferred planning pool.
-/// These limits are derived from the configured fleet size. Retries may exceed
-/// them when needed for liveness. The limit is per helper and does not make a
-/// claim about the combined view of colluding helpers.
+/// complete commitment, `max_shares_per_server` is a hard initial-assignment
+/// quota when at least `min_server_count` helpers are available. These limits
+/// are derived from [`VOTE_COMMITMENT_SHARE_COUNT`]. Retries may exceed them
+/// when needed for liveness. The limit is per helper and does not make a claim
+/// about the combined view of colluding helpers.
 class ShareServerSelectionPolicy {
   final int targetCount;
   final int maxSharesPerServer;

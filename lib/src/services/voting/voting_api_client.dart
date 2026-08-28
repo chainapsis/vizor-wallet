@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'voting_retry.dart';
@@ -8,9 +7,8 @@ import 'voting_models.dart';
 /// Minimal REST client for vote-sdk's `/shielded-vote/v1` API surface.
 ///
 /// Chain-facing calls use the configured vote server base URL with optional
-/// failover endpoints. Helper-server share calls take an explicit [serverUrl]
-/// because foreground submission and recovery may target different helper
-/// subsets over time.
+/// failover endpoints. Helper-share traffic is owned by `zcash_voting` through
+/// Vizor's Rust route-aware transport, not this client.
 class VotingApiClient {
   VotingApiClient({
     required Uri baseUrl,
@@ -238,89 +236,6 @@ class VotingApiClient {
     );
   }
 
-  /// Returns ready helpers in response order using progressive timeouts.
-  ///
-  /// All probes start together. The first decision happens after [softTimeout];
-  /// if fewer than [readyTargetCount] helpers are ready, slower responses keep
-  /// racing until enough arrive or [hardTimeout] expires. A helper is ready only
-  /// when its public status endpoint returns `{"status":"ok"}` successfully.
-  /// Completing [cancelSignal] stops the wait and returns the responses already
-  /// collected. Outstanding probe transports are cancelled before returning.
-  Future<List<String>> preflightHelpers(
-    Iterable<Uri> serverUrls, {
-    required int readyTargetCount,
-    required Duration softTimeout,
-    required Duration hardTimeout,
-    Future<void>? cancelSignal,
-  }) async {
-    if (softTimeout.isNegative || hardTimeout <= softTimeout) {
-      throw ArgumentError(
-        'helper preflight requires 0 <= softTimeout < hardTimeout',
-      );
-    }
-
-    final seen = <String>{};
-    final servers = [
-      for (final serverUrl in serverUrls)
-        if (seen.add(serverUrl.toString())) serverUrl,
-    ];
-    if (servers.isEmpty) {
-      return const [];
-    }
-
-    final targetCount = readyTargetCount.clamp(1, servers.length).toInt();
-    final readyServers = <String>[];
-    var completedServerCount = 0;
-    var acceptingResults = true;
-    final cancelProbes = Completer<void>();
-    final targetOrAllCompleted = Completer<void>();
-    for (final serverUrl in servers) {
-      unawaited(
-        _probeHelper(
-          serverUrl,
-          timeout: hardTimeout,
-          cancelSignal: cancelProbes.future,
-        ).then((isReady) {
-          if (!acceptingResults) return;
-          completedServerCount++;
-          if (isReady) readyServers.add(serverUrl.toString());
-          if (!targetOrAllCompleted.isCompleted &&
-              (readyServers.length >= targetCount ||
-                  completedServerCount == servers.length)) {
-            targetOrAllCompleted.complete();
-          }
-        }),
-      );
-    }
-
-    final softDeadline = Completer<void>();
-    final hardDeadline = Completer<void>();
-    final softTimer = Timer(softTimeout, softDeadline.complete);
-    final hardTimer = Timer(hardTimeout, hardDeadline.complete);
-    try {
-      final cancelled = await Future.any([
-        softDeadline.future.then((_) => false),
-        if (cancelSignal != null) cancelSignal.then((_) => true),
-      ]);
-      if (!cancelled &&
-          readyServers.length < targetCount &&
-          completedServerCount < servers.length) {
-        await Future.any([
-          targetOrAllCompleted.future,
-          hardDeadline.future,
-          ?cancelSignal,
-        ]);
-      }
-    } finally {
-      softTimer.cancel();
-      hardTimer.cancel();
-      acceptingResults = false;
-      cancelProbes.complete();
-    }
-
-    return List<String>.unmodifiable(readyServers);
-  }
-
   Uri _endpoint(
     List<String> pathSegments, {
     Map<String, String>? queryParameters,
@@ -370,26 +285,6 @@ class VotingApiClient {
       },
     );
     return jsonDecode(response.bodyText);
-  }
-
-  Future<bool> _probeHelper(
-    Uri serverUrl, {
-    required Duration timeout,
-    required Future<void> cancelSignal,
-  }) async {
-    final uri = _endpoint(['status'], baseUrl: serverUrl);
-    try {
-      final response = await _get(
-        uri,
-        timeout: timeout,
-        cancelSignal: cancelSignal,
-      );
-      if (response.statusCode < 200 || response.statusCode >= 300) return false;
-      final status = _objectFromValue(jsonDecode(response.bodyText))['status'];
-      return status?.toString().trim().toLowerCase() == 'ok';
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<VotingHttpResponse> _get(

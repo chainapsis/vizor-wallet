@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
-import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
@@ -13,7 +12,6 @@ void main() {
       '125e5475f653b074d5f4c36730852695f356416c2b6c3042516a912e5bffdd11';
   const otherHexRoundId =
       'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-  const helperPostTimeout = Duration(seconds: 30);
 
   test('composes vote-sdk URLs under shielded-vote v1', () async {
     final http = FakeVotingHttpClient(
@@ -707,171 +705,6 @@ void main() {
       expect(retried.txHash, 'delegation-tx');
       expect(rejected.code, 7);
       expect(http.requests.length, 3);
-    },
-  );
-
-  test(
-    'preflight waits for the soft deadline when enough helpers are fast',
-    () async {
-      final primaryResponse = Completer<VotingHttpResponse>();
-      final secondaryResponse = Completer<VotingHttpResponse>();
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://helper-1.example/shielded-vote/v1/status':
-              primaryResponse.future,
-          'https://helper-2.example/shielded-vote/v1/status':
-              secondaryResponse.future,
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-      );
-      var completed = false;
-      final pending = client.preflightHelpers(
-        [
-          Uri.parse('https://helper-1.example'),
-          Uri.parse('https://helper-2.example'),
-        ],
-        readyTargetCount: 2,
-        softTimeout: const Duration(milliseconds: 50),
-        hardTimeout: const Duration(milliseconds: 500),
-      );
-      unawaited(pending.then((_) => completed = true));
-      await Future<void>.delayed(Duration.zero);
-
-      primaryResponse.complete(jsonResponse({'status': 'ok'}));
-      secondaryResponse.complete(jsonResponse({'status': 'ok'}));
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-
-      expect(completed, isFalse);
-      final result = await pending;
-      expect(result, ['https://helper-1.example', 'https://helper-2.example']);
-    },
-  );
-
-  test(
-    'preflight keeps racing after soft timeout until enough helpers reply',
-    () async {
-      final primaryResponse = Completer<VotingHttpResponse>();
-      final secondaryResponse = Completer<VotingHttpResponse>();
-      final blackholedResponse = Completer<VotingHttpResponse>();
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://helper-1.example/shielded-vote/v1/status':
-              primaryResponse.future,
-          'https://helper-2.example/shielded-vote/v1/status':
-              secondaryResponse.future,
-          'https://helper-3.example/shielded-vote/v1/status':
-              blackholedResponse.future,
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-      );
-      var completed = false;
-      final pending = client.preflightHelpers(
-        [
-          Uri.parse('https://helper-1.example'),
-          Uri.parse('https://helper-2.example'),
-          Uri.parse('https://helper-3.example'),
-        ],
-        readyTargetCount: 2,
-        softTimeout: const Duration(milliseconds: 20),
-        hardTimeout: const Duration(milliseconds: 500),
-      );
-      unawaited(pending.then((_) => completed = true));
-      await Future<void>.delayed(Duration.zero);
-
-      primaryResponse.complete(jsonResponse({'status': 'ok'}));
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      expect(completed, isFalse);
-
-      secondaryResponse.complete(jsonResponse({'status': 'ok'}));
-      final result = await pending;
-      expect(result, ['https://helper-1.example', 'https://helper-2.example']);
-      expect(
-        http.requests.map((request) => request.timeout),
-        everyElement(const Duration(milliseconds: 500)),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(http.cancelledRequests, [
-        Uri.parse('https://helper-3.example/shielded-vote/v1/status'),
-      ]);
-    },
-  );
-
-  test(
-    'preflight returns the available helpers at the hard deadline',
-    () async {
-      final blackholedResponse = Completer<VotingHttpResponse>();
-      final readyResponse = Completer<VotingHttpResponse>();
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://helper-1.example/shielded-vote/v1/status':
-              blackholedResponse.future,
-          'https://helper-2.example/shielded-vote/v1/status':
-              readyResponse.future,
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-      );
-      final timer = Stopwatch()..start();
-      final pending = client.preflightHelpers(
-        [
-          Uri.parse('https://helper-1.example'),
-          Uri.parse('https://helper-2.example'),
-        ],
-        readyTargetCount: 2,
-        softTimeout: const Duration(milliseconds: 10),
-        hardTimeout: const Duration(milliseconds: 60),
-      );
-      await Future<void>.delayed(Duration.zero);
-      readyResponse.complete(jsonResponse({'status': 'ok'}));
-
-      final result = await pending;
-
-      expect(
-        timer.elapsed,
-        greaterThanOrEqualTo(const Duration(milliseconds: 40)),
-      );
-      expect(timer.elapsed, lessThan(const Duration(seconds: 1)));
-      expect(result, ['https://helper-2.example']);
-    },
-  );
-
-  test(
-    'preflight cancellation returns without waiting for either deadline',
-    () async {
-      final blackholedResponse = Completer<VotingHttpResponse>();
-      final cancellation = Completer<void>();
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://helper.example/shielded-vote/v1/status':
-              blackholedResponse.future,
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-      );
-      final pending = client.preflightHelpers(
-        [Uri.parse('https://helper.example')],
-        readyTargetCount: 1,
-        softTimeout: const Duration(seconds: 5),
-        hardTimeout: const Duration(seconds: 30),
-        cancelSignal: cancellation.future,
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      cancellation.complete();
-      final result = await pending.timeout(const Duration(seconds: 1));
-
-      expect(result, isEmpty);
-      expect(http.requests.single.timeout, const Duration(seconds: 30));
     },
   );
 }

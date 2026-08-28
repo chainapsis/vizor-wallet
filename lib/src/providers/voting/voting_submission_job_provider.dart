@@ -949,7 +949,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _completeJob(key: key, generation: generation);
       return;
     }
-    await sessionNotifier.submitPendingShares();
+    await sessionNotifier.runShareTrackingPass();
     if (!_isCurrentJob(key: key, generation: generation)) return;
     done = _sessionForJob(key);
     if (done?.phase == VotingSessionPhase.error) {
@@ -1134,7 +1134,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // status screen on "Finalizing submission" for accepted-but-unrevealed
     // shares. The registry, not the job guard, is the drain barrier.
     unawaited(
-      sessionNotifier.submitPendingShares().catchError((
+      sessionNotifier.runShareTrackingPass().catchError((
         Object error,
         StackTrace stack,
       ) {
