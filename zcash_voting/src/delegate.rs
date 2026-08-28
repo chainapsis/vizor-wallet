@@ -18,7 +18,8 @@ pub use crate::selection::{
     gather_delegation_wallet_inputs, DelegationWalletInputs, GatherDelegationWalletParams,
 };
 use crate::selection::{
-    gather_delegation_wallet_inputs_for_target, GatherDelegationWalletForTargetParams,
+    gather_delegation_wallet_inputs_for_target, wallet_fully_scanned_height,
+    GatherDelegationWalletForTargetParams,
 };
 use crate::{
     governance::BUNDLE_NOTE_SLOTS,
@@ -29,7 +30,7 @@ use crate::{
         VotingHotkey, VotingHotkeyTarget,
     },
 };
-use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, Account, WalletRead};
+use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_client_sqlite::{AccountUuid, WalletDb};
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
@@ -495,14 +496,7 @@ where
     let round_name = resolved_round_name.clone();
 
     // Get the scanned height from the wallet.
-    let scanned_height = match wallet_db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| VotingError::Internal {
-            message: format!("wallet summary lookup failed: {e}"),
-        })? {
-        Some(summary) => u32::from(summary.fully_scanned_height()) as u64,
-        None => 0,
-    };
+    let scanned_height = wallet_fully_scanned_height(wallet_db)?;
 
     // Gather the wallet inputs.
     let wallet_inputs = match params.target {

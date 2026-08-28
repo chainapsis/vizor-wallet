@@ -17,7 +17,7 @@ use crate::{
 };
 
 use zcash_client_backend::{
-    data_api::{wallet::ConfirmationsPolicy, Account, WalletRead},
+    data_api::{Account, WalletRead},
     proto::service::TreeState,
 };
 use zcash_client_sqlite::util::SystemClock;
@@ -432,6 +432,44 @@ where
     }
 }
 
+/// Returns the height to which `wallet_db` has been fully scanned, falling back
+/// to the block below the wallet birthday when nothing above it has been
+/// scanned yet, and to `0` for a wallet with no accounts.
+///
+/// This reproduces `WalletSummary::fully_scanned_height` without building a
+/// summary. The summary computes that field as
+/// `block_fully_scanned().map(block_height).unwrap_or(birthday_height - 1)`, so
+/// the two agree; what it additionally does — estimate scan progress, aggregate
+/// per-account balances across every pool, read all shard roots — voting never
+/// looks at, and all of it scales with the size of the wallet.
+///
+/// The birthday query runs only on the fallback path, so the common case stays
+/// one indexed `scan_queue` row plus one `blocks` row.
+pub(crate) fn wallet_fully_scanned_height<C, P, CL, R>(
+    wallet_db: &WalletDb<C, P, CL, R>,
+) -> Result<u64, VotingError>
+where
+    C: Borrow<rusqlite::Connection>,
+    P: Parameters,
+{
+    let height = match wallet_db
+        .block_fully_scanned()
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to load fully scanned height: {e}"),
+        })? {
+        Some(meta) => Some(meta.block_height()),
+        // `BlockHeight - u32` saturates, so a birthday of 0 stays 0.
+        None => wallet_db
+            .get_wallet_birthday()
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to load wallet birthday: {e}"),
+            })?
+            .map(|birthday| birthday - 1),
+    };
+
+    Ok(height.map_or(0, |height| u64::from(u32::from(height))))
+}
+
 fn ensure_wallet_scanned_to_snapshot<C, P, CL, R>(
     wallet_db: &WalletDb<C, P, CL, R>,
     snapshot_height: u64,
@@ -440,14 +478,7 @@ where
     C: Borrow<rusqlite::Connection>,
     P: Parameters,
 {
-    let scanned_height = match wallet_db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to load wallet summary: {e}"),
-        })? {
-        Some(summary) => u32::from(summary.fully_scanned_height()) as u64,
-        None => 0,
-    };
+    let scanned_height = wallet_fully_scanned_height(wallet_db)?;
     if scanned_height >= snapshot_height {
         Ok(())
     } else {
@@ -629,6 +660,62 @@ mod tests {
             .iter()
             .all(|note| note.value_zatoshi < divisor));
         assert_eq!(crate::voting_power(&selected), divisor);
+    }
+
+    #[test]
+    fn wallet_fully_scanned_height_matches_wallet_summary() {
+        let network = crate::Network::Regtest;
+        let scanned_height = 9;
+        let mut conn = Connection::open_in_memory().unwrap();
+        let (_account_uuid, _orchard_fvk) = setup_test_account(&mut conn, network);
+
+        let db = WalletDb::from_connection(
+            &conn,
+            network,
+            SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
+
+        // A scanned range starting above the birthday leaves an unscanned gap, so
+        // `block_fully_scanned` is None while the summary is still available and
+        // falls back to `birthday_height - 1`. The cheap path must fall back the
+        // same way; returning 0 here would reject snapshots the old code accepted.
+        conn.execute("UPDATE accounts SET birthday_height = 100", [])
+            .unwrap();
+        mark_scanned_through(&conn, 150, 160);
+        assert_eq!(summary_fully_scanned_height(&db), 99);
+        assert_eq!(
+            wallet_fully_scanned_height(&db).unwrap(),
+            summary_fully_scanned_height(&db)
+        );
+
+        // Contiguously scanned from the birthday: both read the same
+        // `block_fully_scanned` value.
+        conn.execute("UPDATE accounts SET birthday_height = 1", [])
+            .unwrap();
+        mark_scanned_through(&conn, 0, scanned_height);
+        assert_eq!(summary_fully_scanned_height(&db), scanned_height);
+        assert_eq!(
+            wallet_fully_scanned_height(&db).unwrap(),
+            summary_fully_scanned_height(&db)
+        );
+    }
+
+    /// The pre-optimization way of reading the fully scanned height, kept as the
+    /// oracle that `wallet_fully_scanned_height` is checked against.
+    fn summary_fully_scanned_height<C, P, CL, R>(wallet_db: &WalletDb<C, P, CL, R>) -> u64
+    where
+        C: Borrow<rusqlite::Connection>,
+        P: Parameters,
+    {
+        wallet_db
+            .get_wallet_summary(
+                zcash_client_backend::data_api::wallet::ConfirmationsPolicy::default(),
+            )
+            .unwrap()
+            .map_or(0, |summary| {
+                u64::from(u32::from(summary.fully_scanned_height()))
+            })
     }
 
     #[test]

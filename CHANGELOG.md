@@ -54,6 +54,24 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   Witnesses still come from `prepare_delegation_bundle`. New type:
   `SnapshotBundlePrecomputeReport`.
 
+### Changed
+- Voting no longer builds a whole `WalletSummary` just to learn how far the
+  wallet has scanned. The sync guards behind `select_notes_with_wallet_db` and
+  `prepare_delegation_bundle` now read `block_fully_scanned` — one indexed
+  `scan_queue` row plus one `blocks` row — and fall back to
+  `birthday_height - 1` exactly as the summary does. Everything else the
+  summary computed was discarded: Sapling and Orchard scan-progress estimates
+  that scan the full `blocks` table with a correlated subquery per row,
+  per-account balances joined across all three shielded pools, and a shard-root
+  read per pool. That work grows with the size of the wallet, and it ran on
+  every note selection and every delegation. The summary also opened a nested
+  transaction, which errors outright if two threads ask at the same time.
+- **Behaviour:** when the wallet summary was unavailable — no chain tip
+  recorded yet, or scan progress not estimable — the sync guard previously read
+  a scanned height of 0 and rejected every nonzero snapshot height. It now
+  reads the height actually scanned. Voting needs the snapshot height to be
+  covered by the scan; it does not need the wallet to know the chain tip.
+
 ### Removed
 - **Breaking:** URL-taking lightwalletd helpers that opened their own channel:
   `latest_block_height`, `latest_block_height_with_retry`, `tree_state_bytes`,
