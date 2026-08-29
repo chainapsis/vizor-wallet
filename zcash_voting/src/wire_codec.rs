@@ -198,7 +198,19 @@ impl VoteCommitmentWire {
 
 impl VoteCommitmentBatchWire {
     /// Serializes the exact JSON request accepted by vote-sdk's batch endpoint.
+    ///
+    /// Returns [`VotingError::InvalidInput`] unless the batch contains between
+    /// one and [`crate::vote::MAX_VOTE_BATCH_ACTIONS`] actions.
     pub fn to_json(&self) -> Result<String, VotingError> {
+        if self.votes.is_empty() || self.votes.len() > crate::vote::MAX_VOTE_BATCH_ACTIONS {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "atomic vote batch must contain between 1 and {} actions, got {}",
+                    crate::vote::MAX_VOTE_BATCH_ACTIONS,
+                    self.votes.len()
+                ),
+            });
+        }
         serde_json::to_string(self).map_err(|e| VotingError::Internal {
             message: format!("serialize vote commitment batch JSON failed: {e}"),
         })
@@ -1333,6 +1345,38 @@ mod tests {
             vote_auth_sig: [9; 64],
             commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
         }
+    }
+
+    #[test]
+    fn vote_commitment_batch_wire_enforces_protocol_action_bounds() {
+        let vote = VoteCommitmentWire::try_from(&signed_vote_commitment_fixture()).unwrap();
+
+        let empty_error = VoteCommitmentBatchWire { votes: vec![] }
+            .to_json()
+            .unwrap_err();
+        assert!(empty_error.to_string().contains("between 1 and 15 actions"));
+
+        let maximum = VoteCommitmentBatchWire {
+            votes: vec![vote.clone(); crate::vote::MAX_VOTE_BATCH_ACTIONS],
+        }
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&maximum).unwrap()["votes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            crate::vote::MAX_VOTE_BATCH_ACTIONS
+        );
+
+        let oversized_error = VoteCommitmentBatchWire {
+            votes: vec![vote; crate::vote::MAX_VOTE_BATCH_ACTIONS + 1],
+        }
+        .to_json()
+        .unwrap_err();
+        assert!(oversized_error
+            .to_string()
+            .contains("between 1 and 15 actions"));
     }
 
     #[test]
