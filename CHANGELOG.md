@@ -78,20 +78,6 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   up, while balancing a complete commitment across the ready helper pool.
   Retries may exceed the initial distribution for liveness.
 
-### Fixed
-
-- Helper preflight with a zero target no longer starts status probes, helper
-  configuration rejects durations that overflow Tokio deadlines, late
-  cancellation preserves completed POST outcomes, and malformed local share
-  JSON no longer counts against helper health.
-- Helper readiness targets now count distinct canonical servers, expired
-  delivery budgets stop before dispatch, failure cooldowns begin when requests
-  complete, and every 5xx submission response is treated as outcome-unknown.
-- Helper share submission now rejects zero attempt budgets and strictly
-  validates a bounded `VoteShareWire` payload before transport or health
-  scoring. Helper-controlled error bodies and protocol status strings are no
-  longer exposed through public error text.
-
 ## v3.1.0-rc.11
 
 ### Added
