@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -282,6 +283,7 @@ Widget _app({
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
+  void Function()? warmProvingKey,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -303,6 +305,7 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
+      sendProvingKeyWarmupProvider.overrideWithValue(warmProvingKey ?? () {}),
       syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
       zecMarketDataSourceProvider.overrideWithValue(
@@ -337,6 +340,7 @@ Widget _amountStepWithPriceLoadingApp() {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(null),
       addressBookRepositoryProvider.overrideWithValue(
@@ -369,6 +373,7 @@ Widget _reviewApp({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(() => syncNotifier),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
@@ -477,6 +482,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
@@ -587,6 +593,18 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('starts Orchard proving-key warmup when mobile send loads', (
+    tester,
+  ) async {
+    var calls = 0;
+
+    await tester.pumpWidget(_app(warmProvingKey: () => calls++));
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    expect(find.byType(MobileSendScreen), findsOneWidget);
   });
 
   testWidgets('recipient step lets a hardware account continue with TEX', (

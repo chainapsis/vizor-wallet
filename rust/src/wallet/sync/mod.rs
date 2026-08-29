@@ -51,8 +51,9 @@ pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,
     discard_proposal, extract_and_broadcast_pczt, redact_pczt_for_signer,
-    retain_proposal_lock_until_expiry, store_and_broadcast_signed_pczts_for_proposal,
-    ExtractAndBroadcastPcztResult, StoreAndBroadcastPcztsResult, TexPcztPair,
+    retain_proposal_lock_until_expiry, start_orchard_proving_key_warmup,
+    store_and_broadcast_signed_pczts_for_proposal, ExtractAndBroadcastPcztResult,
+    StoreAndBroadcastPcztsResult, TexPcztPair,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
@@ -273,10 +274,11 @@ pub(crate) fn suggest_scan_ranges(
             start: u32::from(r.block_range().start) as u64,
             end: u32::from(r.block_range().end) as u64,
             priority: match r.priority() {
-                ScanPriority::Verify => 6,
-                ScanPriority::ChainTip => 5,
-                ScanPriority::FoundNote => 4,
-                ScanPriority::OpenAdjacent => 3,
+                ScanPriority::Verify => 7,
+                ScanPriority::ChainTip => 6,
+                ScanPriority::FoundNote => 5,
+                ScanPriority::OpenAdjacent => 4,
+                ScanPriority::LatestPoolActivation => 3,
                 ScanPriority::Historic => 2,
                 ScanPriority::Scanned => 1,
                 ScanPriority::Ignored => 0,

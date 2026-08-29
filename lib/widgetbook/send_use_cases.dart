@@ -18,6 +18,7 @@ import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
+import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_compose_view.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
@@ -357,6 +358,7 @@ class _MobileSendHarness extends StatelessWidget {
     return ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
+        sendProvingKeyWarmupProvider.overrideWithValue(() {}),
         syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(
