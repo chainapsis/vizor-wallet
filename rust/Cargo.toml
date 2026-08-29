@@ -100,7 +100,7 @@ version = "0.10.0"
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
+rev = "e8f0a0edb9322c80cbe53f8eb4bac4f559fdf155"
 version = "0.1.0-rc3"
 features = [
     "orchard",
@@ -115,13 +115,13 @@ features = [
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
+rev = "e8f0a0edb9322c80cbe53f8eb4bac4f559fdf155"
 version = "0.1.0-rc3"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting"
-rev = "cb2aaf0d42fd94c6c0a0bee05d879aacc1cbfaa9"
+rev = "d4549d805aea6c35b4ea6cb3ea38e3363e174fce"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -134,7 +134,7 @@ version = "=1.0.0-rc.3"
 [dependencies.pczt]
 package = "zakura-pczt"
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
+rev = "e8f0a0edb9322c80cbe53f8eb4bac4f559fdf155"
 version = "0.1.0-rc1"
 features = [
     "orchard",
