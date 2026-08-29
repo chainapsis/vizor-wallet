@@ -920,6 +920,22 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkReviewUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Redeem - Paste link',
+                      builder: buildMobilePaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Checking',
+                      builder: buildMobilePaymentLinkRedeemLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Invalid link',
+                      builder: buildMobilePaymentLinkRedeemInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift',
+                      builder: buildMobilePaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Interactive simulator',
                       builder: buildMobilePaymentLinkInteractiveUseCase,
                     ),

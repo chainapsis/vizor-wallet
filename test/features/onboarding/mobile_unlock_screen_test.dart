@@ -9,14 +9,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
@@ -103,6 +108,37 @@ class _FailingBiometricNotifier extends BiometricUnlockNotifier {
   }
 }
 
+class _SuccessfulSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: false);
+
+  @override
+  Future<bool> unlock(String password) async {
+    state = state.copyWith(isUnlocked: true);
+    return true;
+  }
+}
+
+class _RestoringAccountNotifier extends AccountNotifier {
+  @override
+  FutureOr<AccountState> build() => const AccountState();
+
+  @override
+  Future<void> restoreAfterUnlock() async {}
+}
+
+class _UnlockSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<void> refreshAfterUnlock() async {}
+
+  @override
+  Future<void> startSyncAnyway() async {}
+}
+
 AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
     AppBootstrapState(
       initialLocation: '/unlock',
@@ -137,6 +173,71 @@ Widget _app({
       home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),
   );
+}
+
+({Widget app, GoRouter router}) _routedUnlockApp({
+  FakeBiometricUnlock? biometric,
+  bool autoPromptBiometric = false,
+}) {
+  final router = GoRouter(
+    initialLocation: '/unlock',
+    routes: [
+      GoRoute(
+        path: '/unlock',
+        builder: (_, _) =>
+            MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const Text(
+          'Payment link destination',
+          textDirection: TextDirection.ltr,
+        ),
+      ),
+      GoRoute(
+        path: '/home',
+        builder: (_, _) =>
+            const Text('Home destination', textDirection: TextDirection.ltr),
+      ),
+    ],
+  );
+  final app = ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(biometricEnabled: biometric != null),
+      ),
+      appSecurityProvider.overrideWith(_SuccessfulSecurityNotifier.new),
+      accountProvider.overrideWith(_RestoringAccountNotifier.new),
+      syncProvider.overrideWith(_UnlockSyncNotifier.new),
+      if (biometric != null)
+        biometricUnlockServiceProvider.overrideWithValue(biometric),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+    ),
+  );
+  return (app: app, router: router);
+}
+
+final _pendingPaymentLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1pendinggiftcardaddress',
+  amountZatoshi: BigInt.from(100000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Gift Card',
+  createdAt: DateTime.utc(2026, 8, 28),
+);
+
+void _queuePendingPaymentLink(WidgetTester tester) {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(MobileUnlockScreen)),
+  );
+  final result = container
+      .read(paymentLinkIntakeProvider.notifier)
+      .receive(_pendingPaymentLink.toUri().toString());
+  expect(result, PaymentLinkIntakeResult.accepted);
 }
 
 Future<void> _pumpAutoBiometricPromptWait(WidgetTester tester) async {
@@ -236,6 +337,74 @@ void main() {
     expect(dots.filled, 1);
 
     await gesture.up();
+  });
+
+  group('unlock destination', () {
+    testWidgets('passcode unlock without a pending Gift Card opens home', (
+      tester,
+    ) async {
+      final routed = _routedUnlockApp();
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(routed.router.state.uri.path, '/home');
+      expect(find.text('Home destination'), findsOneWidget);
+      expect(find.text('Payment link destination'), findsNothing);
+    });
+
+    testWidgets('passcode unlock opens the pending Gift Card once', (
+      tester,
+    ) async {
+      final routed = _routedUnlockApp();
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      _queuePendingPaymentLink(tester);
+
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(routed.router.state.uri.path, '/payment-links');
+      expect(find.text('Payment link destination'), findsOneWidget);
+      expect(find.text('Home destination'), findsNothing);
+    });
+
+    testWidgets('biometric unlock opens the pending Gift Card once', (
+      tester,
+    ) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '123456',
+      );
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        autoPromptBiometric: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      _queuePendingPaymentLink(tester);
+
+      await _pumpUntilBiometricRead(tester, biometric);
+      await tester.pumpAndSettle();
+
+      expect(biometric.reads, 1);
+      expect(routed.router.state.uri.path, '/payment-links');
+      expect(find.text('Payment link destination'), findsOneWidget);
+      expect(find.text('Home destination'), findsNothing);
+    });
   });
 
   group('haptics', () {

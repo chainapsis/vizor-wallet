@@ -11,6 +11,7 @@ import '../src/core/theme/app_theme.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 const _mobilePreviewSize = Size(393, 773);
@@ -116,6 +117,56 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
       totalAmountText: _fixtureTotal,
       onContinue: _noop,
       onFeeHelp: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.paste,
+      onBack: _noop,
+      onPaste: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemLoadingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.loading,
+      onBack: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.invalid,
+      onBack: _noop,
+      onPaste: _noop,
+      onClearClipboard: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReceivedMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: kPaymentLinkMobileCardWidth,
+        cardHeight: kPaymentLinkMobileCardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      hasMessage: true,
+      onClose: _noop,
+      onClaim: _noop,
+      onRevealMessage: _noop,
+      decoration: PaymentLinkConfetti(),
     ),
   );
 }
