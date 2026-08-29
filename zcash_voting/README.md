@@ -33,7 +33,9 @@ precompute → delegate → vote → share lifecycle:
    `confirm_vote_batch_submission` after confirmation, then submit each vote's
    helper shares. `vote::commit` and `confirm_vote_submission` remain the
    singleton path. Recover and confirm existing work before preparing another
-   vote chain for the same bundle.
+   vote chain for the same bundle. While polling a batch, helper-share recovery
+   remains deferred for every member until the batch confirmation records all
+   vote commitment positions.
 7. After restart, call `resume_plan` with the round's full proposal id list and
    execute one returned `NextStep`, persist its result, then call `resume_plan`
    again. `CastVote` includes the recorded choice, and `SubmitVote` resumes an

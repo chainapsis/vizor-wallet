@@ -560,23 +560,43 @@ fn recovered_vote_work_from_steps(
     db: &VotingDb,
     round_id: &str,
     blocking_confirm_share_keys: &BTreeSet<(u32, u32, u32)>,
+    active_vote_batches: &BTreeMap<(u32, u32), ActiveVoteBatch>,
     steps: &[NextStep],
 ) -> Result<Vec<VoteRecoveryWork>, VotingError> {
     let mut work = Vec::<VoteRecoveryWork>::new();
-    let pending_vote_confirmation_keys = steps
-        .iter()
-        .filter_map(|step| match step {
+    let mut pending_vote_confirmation_keys = BTreeSet::new();
+    for step in steps {
+        match step {
             NextStep::PollVote {
                 bundle_index,
                 proposal_id,
+            } => {
+                pending_vote_confirmation_keys.insert((*bundle_index, *proposal_id));
             }
-            | NextStep::PollVoteBatch {
+            NextStep::PollVoteBatch {
                 bundle_index,
                 proposal_id,
-            } => Some((*bundle_index, *proposal_id)),
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
+            } => {
+                let batch = active_vote_batches
+                    .get(&(*bundle_index, *proposal_id))
+                    .ok_or_else(|| {
+                        missing_recovery_field(format!(
+                            "poll vote batch step missing active batch for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+                        ))
+                    })?;
+                pending_vote_confirmation_keys.extend(
+                    active_vote_batches
+                        .iter()
+                        .filter(|((member_bundle_index, _), member_batch)| {
+                            member_bundle_index == bundle_index
+                                && member_batch.digest == batch.digest
+                        })
+                        .map(|(vote_key, _)| *vote_key),
+                );
+            }
+            _ => {}
+        }
+    }
     for step in steps {
         match *step {
             NextStep::SubmitVote {
@@ -1242,8 +1262,13 @@ pub fn resume_plan(
     );
     let recovered_delegation_work =
         recovered_delegation_work_from_steps(db, round_id, &delegation, &steps)?;
-    let recovered_vote_work =
-        recovered_vote_work_from_steps(db, round_id, &blocking_confirm_share_keys, &steps)?;
+    let recovered_vote_work = recovered_vote_work_from_steps(
+        db,
+        round_id,
+        &blocking_confirm_share_keys,
+        &active_vote_batches,
+        &steps,
+    )?;
 
     Ok(RoundPlan {
         round_id: round_id.to_string(),
@@ -1803,6 +1828,51 @@ mod tests {
                 bundle_index: 0,
                 proposal_id: 2,
                 tx_hash: Some("vtx".to_string()),
+                vc_tree_position: None,
+                share_indexes: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn non_anchor_share_retry_waits_for_submitted_batch_confirmation() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        let digest = store_two_action_batch_recovery_fixture(&db);
+        crate::vote::record_batch_submission(&db, ROUND, 0, &digest, "batch-tx").unwrap();
+        record_submitted_share_fixture(&db, 0, 2, 0, &[]);
+
+        let plan = resume_plan(&db, ROUND, &[1, 2, 3]).unwrap();
+
+        assert_eq!(
+            plan.next_steps,
+            vec![
+                NextStep::PollVoteBatch {
+                    bundle_index: 0,
+                    proposal_id: 1,
+                },
+                NextStep::ConfirmShare {
+                    bundle_index: 0,
+                    proposal_id: 2,
+                    share_index: 0,
+                },
+            ]
+        );
+        assert!(plan.blocking_recovery);
+        assert!(plan.blocking_share_work);
+        assert_eq!(plan.primary_action, RoundPlanAction::Vote);
+        assert_eq!(
+            plan.recovered_vote_work,
+            vec![VoteRecoveryWork {
+                kind: VoteRecoveryWorkKind::PollVoteBatch,
+                bundle_index: 0,
+                proposal_id: 1,
+                tx_hash: Some("batch-tx".to_string()),
                 vc_tree_position: None,
                 share_indexes: Vec::new(),
             }]

@@ -21,6 +21,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   the same bundle, preventing competing spends of its current VAN.
   Changing or skipping an unsubmitted choice clears its obsolete recovery
   chain before new work is planned.
+  Submitted batches defer helper-share retry work for every member until the
+  atomic confirmation records all commitment-tree positions.
   Batches keep choices, note membership, and voting keys hidden as before, but
   intentionally reveal that their included proposal actions came from one
   transaction.
