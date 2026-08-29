@@ -941,6 +941,14 @@ Future<void> retainProposalLockUntilExpiry({
   sendFlowId: sendFlowId,
 );
 
+/// Kick off process-lifetime Orchard proving-key warm-up for sends.
+///
+/// Safe to call repeatedly. The first call starts a background worker and
+/// returns immediately; proving blocks on the same shared cache if it catches
+/// up before warm-up completes.
+void warmOrchardProvingKeyCache() =>
+    RustLib.instance.api.crateApiSyncWarmOrchardProvingKeyCache();
+
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the "PCZT with proofs" half that is later combined with the signed PCZT
 /// returned by the hardware wallet.
