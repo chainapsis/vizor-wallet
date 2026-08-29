@@ -898,10 +898,22 @@ pub fn prepare_atomic_vote_batch(
 }
 
 /// Atomically persists the complete batch after revalidating every captured row.
+/// All fallible return-payload construction happens before the write commits.
 pub fn persist_prepared_atomic_vote_batch(
     db: &VotingDb,
     prepared: PreparedAtomicVoteBatch,
 ) -> Result<SignedVoteBatch, VotingError> {
+    persist_prepared_atomic_vote_batch_inner(db, prepared, || {})
+}
+
+fn persist_prepared_atomic_vote_batch_inner<F>(
+    db: &VotingDb,
+    prepared: PreparedAtomicVoteBatch,
+    after_persist: F,
+) -> Result<SignedVoteBatch, VotingError>
+where
+    F: FnOnce(),
+{
     let PreparedAtomicVoteBatch {
         wallet_id,
         round_id,
@@ -919,11 +931,12 @@ pub fn persist_prepared_atomic_vote_batch(
             message: "prepared vote batch contains mismatched storage identities".to_string(),
         });
     }
-    let committed_votes = persist_prepared_commits(db, prepared_commits)?;
-    let mut commitments = Vec::with_capacity(committed_votes.len());
-    for committed in committed_votes {
-        commitments.push(committed.signed_commitment(db)?);
-    }
+    let commitments = prepared_commits
+        .iter()
+        .map(|prepared| signed_commitment_from_parts(&prepared.commit, &prepared.recovery))
+        .collect::<Result<Vec<_>, _>>()?;
+    persist_prepared_commits(db, prepared_commits)?;
+    after_persist();
     Ok(SignedVoteBatch {
         bundle_index,
         commitments,
@@ -3793,7 +3806,7 @@ mod tests {
         );
     }
 
-    fn prepared_vote_fixture(db: &VotingDb) -> PreparedVoteCommit {
+    fn configure_prepared_vote_fixture_bundle(db: &VotingDb) {
         db.conn()
             .execute(
                 "UPDATE bundles SET van_comm_rand = ?1, total_note_value = ?2,
@@ -3807,20 +3820,36 @@ mod tests {
                 ],
             )
             .unwrap();
-        db.set_ballot_intent(ROUND_ID, 1, crate::session::Decision::Choice(2), 3)
-            .unwrap();
-        let state =
-            queries::load_vote_preparation_state(&db.conn(), ROUND_ID, WALLET_ID, 0, 1).unwrap();
-        let recovery = recovery_bundle_fixture();
+    }
+
+    fn prepared_vote_from_recovery(
+        db: &VotingDb,
+        recovery: VoteRecoveryBundle,
+    ) -> PreparedVoteCommit {
+        db.set_ballot_intent(
+            ROUND_ID,
+            recovery.proposal_id,
+            crate::session::Decision::Choice(recovery.vote_decision),
+            recovery.num_options,
+        )
+        .unwrap();
+        let state = queries::load_vote_preparation_state(
+            &db.conn(),
+            ROUND_ID,
+            WALLET_ID,
+            0,
+            recovery.proposal_id,
+        )
+        .unwrap();
         let draft = DraftVote {
-            proposal_id: 1,
-            choice: 2,
-            num_options: 3,
-            single_share: false,
-            vc_tree_position: 456,
+            proposal_id: recovery.proposal_id,
+            choice: recovery.vote_decision,
+            num_options: recovery.num_options,
+            single_share: recovery.single_share,
+            vc_tree_position: recovery.vc_tree_position,
         };
         let commit = VoteCommit {
-            proposal_id: 1,
+            proposal_id: recovery.proposal_id,
             van_nullifier: recovery.van_nullifier,
             vote_authority_note_new: recovery.vote_authority_note_new,
             vote_commitment: recovery.vote_commitment,
@@ -3839,6 +3868,30 @@ mod tests {
             recovery,
             commit,
             captured_state: CapturedVoteState::Fresh(state),
+        }
+    }
+
+    fn prepared_vote_fixture(db: &VotingDb) -> PreparedVoteCommit {
+        configure_prepared_vote_fixture_bundle(db);
+        prepared_vote_from_recovery(db, recovery_bundle_fixture())
+    }
+
+    fn prepared_atomic_vote_batch_fixture(db: &VotingDb) -> PreparedAtomicVoteBatch {
+        configure_prepared_vote_fixture_bundle(db);
+        let (batch_digest, recoveries) = two_action_recovery_batch();
+        let commitments = recoveries
+            .into_iter()
+            .map(|recovery| prepared_vote_from_recovery(db, recovery))
+            .collect::<Vec<_>>();
+        let batch_json = canonical_batch_json(&commitments).unwrap();
+
+        PreparedAtomicVoteBatch {
+            wallet_id: WALLET_ID.to_string(),
+            round_id: ROUND_ID.to_string(),
+            bundle_index: 0,
+            commitments,
+            batch_digest,
+            batch_json,
         }
     }
 
@@ -4505,6 +4558,44 @@ mod tests {
         let stored = recovery_bundle(&db, ROUND_ID, 0, 1).unwrap().unwrap();
         assert_eq!(stored.vote_decision, 2);
         assert_eq!(stored.proof, vec![0x13; 96]);
+    }
+
+    #[test]
+    fn atomic_batch_persist_returns_payload_after_concurrent_invalidation() {
+        let db = db_with_vote();
+        let prepared = prepared_atomic_vote_batch_fixture(&db);
+        let expected_batch_json = prepared.batch_json.clone();
+        let expected_recovery_json = prepared
+            .commitments
+            .iter()
+            .map(|prepared| serialize_recovery(&prepared.recovery).unwrap())
+            .collect::<Vec<_>>();
+
+        let signed = persist_prepared_atomic_vote_batch_inner(&db, prepared, || {
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        db.set_ballot_intent(ROUND_ID, 2, crate::session::Decision::Skipped, 3)
+                            .unwrap();
+                    })
+                    .join()
+                    .unwrap();
+            });
+        })
+        .unwrap();
+
+        assert_eq!(signed.batch_json, expected_batch_json);
+        assert_eq!(signed.commitments.len(), 2);
+        for (index, commitment) in signed.commitments.iter().enumerate() {
+            assert_eq!(commitment.proposal_id, index as u32 + 1);
+            assert_eq!(
+                commitment.commitment_bundle_json,
+                expected_recovery_json[index]
+            );
+            assert!(recovery_bundle(&db, ROUND_ID, 0, commitment.proposal_id)
+                .unwrap()
+                .is_none());
+        }
     }
 
     #[test]
