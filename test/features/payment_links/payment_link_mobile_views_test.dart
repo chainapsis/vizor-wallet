@@ -95,6 +95,52 @@ void main() {
     final selector = find.byKey(const ValueKey('mobile_selector_probe'));
     expect(tester.getTopLeft(selector).dy, closeTo(466.625, 0.01));
   });
+
+  testWidgets('redeem states match paste, checking, and invalid surfaces', (
+    tester,
+  ) async {
+    await _pumpRedeem(tester, PaymentLinkRedeemMobileState.paste);
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_redeem_drop_zone')),
+      findsOneWidget,
+    );
+    expect(find.text('Paste card link'), findsOneWidget);
+
+    await _pumpRedeem(tester, PaymentLinkRedeemMobileState.loading);
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_loading_card')),
+      findsOneWidget,
+    );
+    expect(find.text('Checking ...'), findsOneWidget);
+
+    await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
+    expect(find.text('The link doesn’t look legit.'), findsOneWidget);
+    expect(find.text('Clear clipboard'), findsOneWidget);
+  });
+
+  testWidgets('received card exposes Figma claim copy and action', (
+    tester,
+  ) async {
+    var claimCalls = 0;
+    var closeCalls = 0;
+    await _pumpReceived(
+      tester,
+      onClaim: () => claimCalls++,
+      onClose: () => closeCalls++,
+    );
+
+    expect(find.text('You’ve received a gift!'), findsOneWidget);
+    expect(find.text('Message attached.'), findsOneWidget);
+    expect(find.text('Claim the gift'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Close'));
+    expect(closeCalls, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_mobile_claim_button')),
+    );
+    expect(claimCalls, 1);
+  });
 }
 
 Future<void> _pumpReview(WidgetTester tester, {VoidCallback? onFeeHelp}) async {
@@ -148,6 +194,66 @@ Future<void> _pumpAmount(WidgetTester tester) async {
               height: 60,
             ),
             onBack: _noop,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpRedeem(
+  WidgetTester tester,
+  PaymentLinkRedeemMobileState state,
+) async {
+  await tester.binding.setSurfaceSize(const Size(393, 773));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+
+  await tester.pumpWidget(
+    MaterialApp(
+      builder: (_, navigator) =>
+          AppTheme(data: AppThemeData.light, child: navigator!),
+      home: Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 393,
+          height: 773,
+          child: PaymentLinkRedeemMobileView(
+            state: state,
+            onBack: _noop,
+            onPaste: _noop,
+            onClearClipboard: _noop,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpReceived(
+  WidgetTester tester, {
+  VoidCallback? onClaim,
+  VoidCallback? onClose,
+}) async {
+  await tester.binding.setSurfaceSize(const Size(393, 773));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+
+  await tester.pumpWidget(
+    MaterialApp(
+      builder: (_, navigator) =>
+          AppTheme(data: AppThemeData.light, child: navigator!),
+      home: Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 393,
+          height: 773,
+          child: PaymentLinkReceivedMobileView(
+            card: const SizedBox(
+              width: kPaymentLinkMobileCardWidth,
+              height: kPaymentLinkMobileCardHeight,
+            ),
+            hasMessage: true,
+            onClose: onClose ?? _noop,
+            onClaim: onClaim,
           ),
         ),
       ),

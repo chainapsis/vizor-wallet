@@ -27,6 +27,7 @@ import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
+import '../widgets/mobile/payment_link_mobile_views.dart';
 
 enum _PaymentLinksLocalPage {
   home,
@@ -126,6 +127,12 @@ class _PaymentLinksDesktopScreenState
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      _page = _PaymentLinksLocalPage.redeem;
+      if (ref.read(paymentLinkIntakeProvider).pendingLink != null) {
+        _redeemState = PaymentLinkRedeemVisualState.loading;
+      }
+    }
     final initialCards = widget.initialCards;
     if (initialCards != null) {
       _recoveries = initialCards.created;
@@ -134,7 +141,9 @@ class _PaymentLinksDesktopScreenState
     _amountFocusNode.addListener(_handleAmountFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+      if (kAppFormFactor == AppFormFactor.desktop) {
+        ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+      }
       if (initialCards == null) {
         unawaited(_loadRecoveries());
         unawaited(_loadReceivedCards());
@@ -891,13 +900,16 @@ class _PaymentLinksDesktopScreenState
     final link = _receivedLink;
     final session = _receivedClaimSession;
     if (link == null || session == null || _operationInProgress) return;
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
     setState(() {
       _operationInProgress = true;
-      _receivedLink = null;
       _receivedShowsBack = false;
       _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
-      _page = _PaymentLinksLocalPage.home;
+      if (!mobile) {
+        _receivedLink = null;
+        _page = _PaymentLinksLocalPage.home;
+      }
       _showHelp = false;
     });
     try {
@@ -907,9 +919,11 @@ class _PaymentLinksDesktopScreenState
         // Broadcast acceptance is not receipt. The persisted receiver record
         // remains Receiving until main-wallet history sees the claim mined.
         _receivedClaimSession = null;
+        if (mobile) _receivedLink = null;
       });
       showAppToast(context, 'Gift claim submitted');
       unawaited(_refreshReceivedClaims());
+      if (mobile) context.go('/home');
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -959,6 +973,10 @@ class _PaymentLinksDesktopScreenState
     );
     if (pendingLink != null) _schedulePendingPaymentLink();
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return _buildMobileScreen();
+    }
+
     final currentPage = _buildCurrentPage();
     final keystoneRequest = _keystoneFundingRequest;
     final pane = keystoneRequest != null
@@ -988,6 +1006,82 @@ class _PaymentLinksDesktopScreenState
       key: const ValueKey('payment_links_desktop_screen'),
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(padding: EdgeInsets.zero, child: pane),
+    );
+  }
+
+  Widget _buildMobileScreen() {
+    final page = switch (_page) {
+      _PaymentLinksLocalPage.received => _buildMobileReceived(),
+      _ => PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.values.byName(_redeemState.name),
+        onBack: _leaveMobilePaymentLinks,
+        onPaste: _operationInProgress ? null : _pastePaymentLink,
+        onClearClipboard: _operationInProgress ? null : _clearClipboard,
+      ),
+    };
+
+    return Scaffold(
+      key: const ValueKey('payment_links_mobile_screen'),
+      backgroundColor: context.colors.background.window,
+      body: AppToastHost(child: SafeArea(child: page)),
+    );
+  }
+
+  void _leaveMobilePaymentLinks() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
+  void _returnHomeFromReceivedGift() => context.go('/home');
+
+  Widget _buildMobileReceived() {
+    final link = _receivedLink;
+    if (link == null) {
+      return PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.paste,
+        onBack: _leaveMobilePaymentLinks,
+        onPaste: _operationInProgress ? null : _pastePaymentLink,
+        onClearClipboard: _operationInProgress ? null : _clearClipboard,
+      );
+    }
+    final artwork = PaymentLinkCardArtwork.fromProtocolId(
+      link.presentation?.artworkId,
+    );
+    final message = link.presentation?.message ?? '';
+    final hasMessage = message.isNotEmpty;
+    final front = PaymentLinkGiftCard(
+      artwork: artwork,
+      cardWidth: kPaymentLinkMobileCardWidth,
+      cardHeight: kPaymentLinkMobileCardHeight,
+      amountText: formatZecAmount(link.amountZatoshi),
+      showCaret: false,
+    );
+    final card = hasMessage
+        ? PaymentLinkCardFlip(
+            showBack: _receivedShowsBack,
+            front: front,
+            back: PaymentLinkGiftCard(
+              artwork: artwork,
+              cardWidth: kPaymentLinkMobileCardWidth,
+              cardHeight: kPaymentLinkMobileCardHeight,
+              showBack: true,
+              message: message,
+            ),
+          )
+        : front;
+    return PaymentLinkReceivedMobileView(
+      card: card,
+      hasMessage: hasMessage,
+      onClose: _returnHomeFromReceivedGift,
+      decoration: const PaymentLinkConfetti(),
+      onRevealMessage: hasMessage
+          ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
+          : null,
+      onClaim: _operationInProgress ? null : _claimReceivedLink,
+      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the gift',
     );
   }
 

@@ -96,6 +96,14 @@ Widget _app(
 );
 
 void main() {
+  test('registers the mobile payment-link intake route', () {
+    final paths = buildMobileRoutes(
+      entryRoutes: const [],
+    ).whereType<GoRoute>().map((route) => route.path);
+
+    expect(paths, contains('/payment-links'));
+  });
+
   test('does not register the removed private review route', () {
     final paths = buildMobileRoutes(
       entryRoutes: const [],
