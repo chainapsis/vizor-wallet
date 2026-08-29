@@ -259,6 +259,36 @@ void main() {
     );
   });
 
+  testWidgets('typing a contact address does not autocomplete the contact', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'testshielded');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsNothing,
+    );
+    expect(find.text('Alice'), findsNothing);
+  });
+
   testWidgets('refreshes autocomplete when contacts finish loading', (
     tester,
   ) async {

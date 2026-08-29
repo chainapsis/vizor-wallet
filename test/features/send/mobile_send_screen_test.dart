@@ -1381,6 +1381,32 @@ void main() {
     expect(find.text('Bob'), findsNothing);
   });
 
+  testWidgets('recipient text does not filter contacts by address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [
+          AddressBookContact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+            profilePictureId: 'pfp-01',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'testshielded');
+
+    expect(find.text('1 contact'), findsNothing);
+    expect(find.text('Alice'), findsNothing);
+  });
+
   testWidgets('review marks a TEX contact distinctly from transparent', (
     tester,
   ) async {
