@@ -19,7 +19,7 @@
 //! retrying it on the same helper risks a duplicate. Moving to the next helper
 //! is both safer and faster.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use serde_json::Value;
 use tokio::task::JoinSet;
@@ -79,6 +79,11 @@ pub enum HelperError {
     /// be retried against that helper. Tracking retains it as outcome-unknown
     /// and polls the helper for a definitive status instead.
     AmbiguousSubmissionResponse { message: String },
+    /// The overall delivery deadline elapsed before a request was dispatched.
+    ///
+    /// This is a definite local outcome: the helper did not receive the share,
+    /// so the error is neither ambiguous nor charged against helper health.
+    DeadlineExceeded,
     /// The caller asked to stop before the request finished.
     Cancelled,
 }
@@ -95,9 +100,10 @@ impl HelperError {
             Self::Status { status, .. } => {
                 matches!(status, 429 | 500 | 502 | 503 | 504)
             }
-            Self::Decode { .. } | Self::AmbiguousSubmissionResponse { .. } | Self::Cancelled => {
-                false
-            }
+            Self::Decode { .. }
+            | Self::AmbiguousSubmissionResponse { .. }
+            | Self::DeadlineExceeded
+            | Self::Cancelled => false,
         }
     }
 
@@ -109,11 +115,8 @@ impl HelperError {
                 HelperTransportError::Timeout
                     | HelperTransportError::Ambiguous(_)
                     | HelperTransportError::Response(_)
-            ) | Self::Status {
-                status: 500 | 502 | 503 | 504,
-                ..
-            } | Self::AmbiguousSubmissionResponse { .. }
-        )
+            ) | Self::AmbiguousSubmissionResponse { .. }
+        ) || matches!(self, Self::Status { status, .. } if (500..=599).contains(status))
     }
 }
 
@@ -127,6 +130,12 @@ impl std::fmt::Display for HelperError {
             Self::Decode { message } => write!(f, "helper response was not usable: {message}"),
             Self::AmbiguousSubmissionResponse { message } => {
                 write!(f, "helper submission outcome is unknown: {message}")
+            }
+            Self::DeadlineExceeded => {
+                write!(
+                    f,
+                    "helper delivery deadline elapsed before request dispatch"
+                )
             }
             Self::Cancelled => write!(f, "helper request cancelled"),
         }
@@ -170,30 +179,37 @@ impl Default for HelperClientConfig {
 
 impl HelperClientConfig {
     /// Sets the complete status-request deadline.
+    ///
+    /// The duration must be nonzero and representable by Tokio's monotonic
+    /// clock.
     pub fn with_request_timeout(mut self, timeout: Duration) -> Result<Self, VotingError> {
-        require_nonzero_timeout(timeout, "request_timeout")?;
+        require_valid_duration(timeout, "request_timeout")?;
         self.request_timeout = timeout;
         Ok(self)
     }
 
     /// Sets the complete helper POST deadline.
+    ///
+    /// The duration must be nonzero and representable by Tokio's monotonic
+    /// clock.
     pub fn with_post_timeout(mut self, timeout: Duration) -> Result<Self, VotingError> {
-        require_nonzero_timeout(timeout, "post_timeout")?;
+        require_valid_duration(timeout, "post_timeout")?;
         self.post_timeout = timeout;
         Ok(self)
     }
 
     /// Sets the initial and absolute readiness-race deadlines.
     ///
-    /// The soft timeout must not exceed the hard timeout. Pending probes stay
-    /// alive after the soft timeout when too few helpers are ready.
+    /// Both durations must be nonzero and representable by Tokio's monotonic
+    /// clock. The soft timeout must not exceed the hard timeout. Pending probes
+    /// stay alive after the soft timeout when too few helpers are ready.
     pub fn with_preflight_timeouts(
         mut self,
         soft_timeout: Duration,
         hard_timeout: Duration,
     ) -> Result<Self, VotingError> {
-        require_nonzero_timeout(soft_timeout, "preflight_soft_timeout")?;
-        require_nonzero_timeout(hard_timeout, "preflight_hard_timeout")?;
+        require_valid_duration(soft_timeout, "preflight_soft_timeout")?;
+        require_valid_duration(hard_timeout, "preflight_hard_timeout")?;
         if soft_timeout > hard_timeout {
             return Err(VotingError::InvalidInput {
                 message: "preflight_soft_timeout must not exceed preflight_hard_timeout"
@@ -206,6 +222,9 @@ impl HelperClientConfig {
     }
 
     /// Sets at most two retry backoffs, for at most three total attempts.
+    ///
+    /// Every delay must be nonzero and representable by Tokio's monotonic
+    /// clock.
     pub fn with_retry_delays(mut self, retry_delays: Vec<Duration>) -> Result<Self, VotingError> {
         if retry_delays.len() > HELPER_RETRY_DELAYS_MS.len() {
             return Err(VotingError::InvalidInput {
@@ -215,10 +234,8 @@ impl HelperClientConfig {
                 ),
             });
         }
-        if retry_delays.iter().any(Duration::is_zero) {
-            return Err(VotingError::InvalidInput {
-                message: "retry delays must be nonzero".to_string(),
-            });
+        for (index, delay) in retry_delays.iter().copied().enumerate() {
+            require_valid_duration(delay, &format!("retry_delays[{index}]"))?;
         }
         self.retry_delays = retry_delays;
         Ok(self)
@@ -231,10 +248,15 @@ impl HelperClientConfig {
     }
 }
 
-fn require_nonzero_timeout(timeout: Duration, name: &str) -> Result<(), VotingError> {
-    if timeout.is_zero() {
+fn require_valid_duration(duration: Duration, name: &str) -> Result<(), VotingError> {
+    if duration.is_zero() {
         return Err(VotingError::InvalidInput {
             message: format!("{name} must be nonzero"),
+        });
+    }
+    if tokio::time::Instant::now().checked_add(duration).is_none() {
+        return Err(VotingError::InvalidInput {
+            message: format!("{name} is too large for Tokio's monotonic clock"),
         });
     }
     Ok(())
@@ -278,34 +300,35 @@ impl HelperClient {
     /// advisory, so an unreachable helper is simply not ready.
     ///
     /// All valid probes start together. Pending probes stay alive past the soft
-    /// timeout until `target_count` helpers are ready, every probe completes,
-    /// or the hard timeout expires. Results preserve caller order and use
-    /// canonical URLs for valid inputs; probes still pending when the race ends
-    /// are reported as not ready.
+    /// timeout until `target_count` distinct canonical helpers are ready, every
+    /// probe completes, or the hard timeout expires. Equivalent accepted URL
+    /// spellings share one probe and readiness result. Results preserve caller
+    /// order and use canonical URLs for valid inputs; probes still pending when
+    /// the race ends are reported as not ready. A zero target still
+    /// canonicalizes the result list but never starts a probe.
     pub async fn preflight(
         &self,
         server_urls: &[String],
         target_count: u32,
     ) -> Vec<(String, bool)> {
-        let started = tokio::time::Instant::now();
-        let soft_deadline = started + self.config.preflight_soft_timeout;
-        let hard_deadline = started + self.config.preflight_hard_timeout;
         let mut results = Vec::with_capacity(server_urls.len());
-        let mut probes = JoinSet::new();
+        let mut probe_groups: Vec<(String, Vec<usize>)> = Vec::with_capacity(server_urls.len());
+        let mut probe_indices: HashMap<String, usize> = HashMap::with_capacity(server_urls.len());
 
-        for (index, server_url) in server_urls.iter().enumerate() {
+        for server_url in server_urls {
             match canonicalize_helper_base_url(server_url) {
                 Ok(canonical) => {
+                    let result_index = results.len();
+                    results.push((canonical.clone(), false));
+                    if let Some(&probe_index) = probe_indices.get(&canonical) {
+                        probe_groups[probe_index].1.push(result_index);
+                        continue;
+                    }
                     let Ok(url) = join_helper_url(&canonical, &["status"]) else {
-                        results.push((canonical, false));
                         continue;
                     };
-                    results.push((canonical, false));
-                    let transport = Arc::clone(&self.transport);
-                    probes.spawn(async move {
-                        let ready = Self::probe(transport, &url, hard_deadline).await;
-                        (index, ready)
-                    });
+                    probe_indices.insert(canonical, probe_groups.len());
+                    probe_groups.push((url, vec![result_index]));
                 }
                 Err(_) => results.push((server_url.clone(), false)),
             }
@@ -313,8 +336,22 @@ impl HelperClient {
 
         let target_count = usize::try_from(target_count).unwrap_or(usize::MAX);
         if target_count == 0 {
-            probes.abort_all();
             return results;
+        }
+        let started = tokio::time::Instant::now();
+        let Some(soft_deadline) = started.checked_add(self.config.preflight_soft_timeout) else {
+            return results;
+        };
+        let Some(hard_deadline) = started.checked_add(self.config.preflight_hard_timeout) else {
+            return results;
+        };
+        let mut probes = JoinSet::new();
+        for (url, result_indices) in probe_groups {
+            let transport = Arc::clone(&self.transport);
+            probes.spawn(async move {
+                let ready = Self::probe(transport, &url, hard_deadline).await;
+                (result_indices, ready)
+            });
         }
         let mut ready_count = 0usize;
         let mut soft_elapsed = false;
@@ -328,8 +365,10 @@ impl HelperClient {
                 soft_deadline
             };
             match tokio::time::timeout_at(deadline, probes.join_next()).await {
-                Ok(Some(Ok((index, ready)))) => {
-                    results[index].1 = ready;
+                Ok(Some(Ok((result_indices, ready)))) => {
+                    for index in result_indices {
+                        results[index].1 = ready;
+                    }
                     ready_count += usize::from(ready);
                 }
                 Ok(Some(Err(_))) => {}
@@ -372,7 +411,9 @@ impl HelperClient {
     /// without opening another connection.
     ///
     /// This records helper health as a side effect: a usable answer is a
-    /// success, anything else a failure.
+    /// success, anything else a failure. `now_seconds` is the request's wall
+    /// time at invocation; scoring advances it by the monotonic time spent on
+    /// the complete request and its retries.
     pub async fn share_status(
         &self,
         server_url: &str,
@@ -399,6 +440,7 @@ impl HelperClient {
             },
         )?;
 
+        let request_started = tokio::time::Instant::now();
         let result = self
             .with_retry(cancel, true, None, |_| {
                 let url = url.clone();
@@ -414,7 +456,7 @@ impl HelperClient {
             })
             .await;
 
-        self.score(&server_url, &result, now_seconds);
+        self.score(&server_url, &result, now_seconds, request_started);
         result
     }
 
@@ -424,7 +466,11 @@ impl HelperClient {
     /// retried against the same helper: the share may already be queued there.
     /// This includes a timeout, a 5xx response, a failure to finish reading a
     /// response after its headers arrived, and a successful response whose
-    /// submission status is missing or unusable.
+    /// submission status is missing or unusable. Cancellation can suppress a
+    /// later attempt, but does not replace the result of a completed POST.
+    /// Malformed local JSON is rejected without network I/O or health scoring.
+    /// `now_seconds` is the request's wall time at invocation; health scoring
+    /// advances it by the monotonic time spent completing the operation.
     pub async fn submit_share(
         &self,
         server_url: &str,
@@ -463,17 +509,19 @@ impl HelperClient {
             canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
                 message: error.to_string(),
             })?;
+        let body = validate_share_body(share_wire_json)?;
+        let request_started = tokio::time::Instant::now();
         let result = self
             .post_share(
                 &server_url,
-                share_wire_json,
+                body,
                 cancel,
                 false,
                 timeout.min(self.config.post_timeout),
                 deadline,
             )
             .await;
-        self.score(&server_url, &result, now_seconds);
+        self.score(&server_url, &result, now_seconds, request_started);
         result
     }
 
@@ -481,7 +529,11 @@ impl HelperClient {
     ///
     /// One transport attempt only. A timeout here is ambiguous, and the caller
     /// — which is already walking a randomized helper order — is better placed
-    /// than this client to decide whether to try elsewhere or wait.
+    /// than this client to decide whether to try elsewhere or wait. Once the
+    /// POST completes, late cancellation does not replace its result. Malformed
+    /// local JSON is rejected without network I/O or health scoring.
+    /// `now_seconds` is the request's wall time at invocation; health scoring
+    /// advances it by the monotonic time spent completing the operation.
     pub async fn resubmit_share(
         &self,
         server_url: &str,
@@ -493,17 +545,19 @@ impl HelperClient {
             canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
                 message: error.to_string(),
             })?;
+        let body = validate_share_body(share_wire_json)?;
+        let request_started = tokio::time::Instant::now();
         let result = self
             .post_share(
                 &server_url,
-                share_wire_json,
+                body,
                 cancel,
                 true,
                 self.config.post_timeout,
                 None,
             )
             .await;
-        self.score(&server_url, &result, now_seconds);
+        self.score(&server_url, &result, now_seconds, request_started);
         result
     }
 
@@ -511,7 +565,7 @@ impl HelperClient {
     async fn post_share(
         &self,
         server_url: &str,
-        share_wire_json: &str,
+        body: Vec<u8>,
         cancel: &(dyn Fn() -> bool + Send + Sync),
         single_attempt: bool,
         post_timeout: Duration,
@@ -521,28 +575,16 @@ impl HelperClient {
             join_helper_url(server_url, &["shares"]).map_err(|error| HelperError::Decode {
                 message: error.to_string(),
             })?;
-        // Validate before spending a request: a malformed body would be
-        // rejected by every helper in the order, burning the whole retry set.
-        if serde_json::from_str::<Value>(share_wire_json).is_err() {
-            return Err(HelperError::Decode {
-                message: "share body is not valid JSON".to_string(),
-            });
-        }
-        let body = share_wire_json.as_bytes().to_vec();
 
         if single_attempt {
             if cancel() {
                 return Err(HelperError::Cancelled);
             }
-            let result = self
+            return self
                 .post_json(&url, body, post_timeout)
                 .await
                 .map_err(HelperError::Transport)
                 .and_then(parse_submission_response);
-            if result.is_err() && cancel() {
-                return Err(HelperError::Cancelled);
-            }
-            return result;
         }
 
         self.with_retry(cancel, false, deadline, |remaining| {
@@ -569,7 +611,10 @@ impl HelperClient {
         url: &str,
         timeout: Duration,
     ) -> Result<HelperResponse, HelperTransportError> {
-        tokio::time::timeout(timeout, self.transport.get(url, timeout))
+        let deadline = tokio::time::Instant::now()
+            .checked_add(timeout)
+            .ok_or(HelperTransportError::Timeout)?;
+        tokio::time::timeout_at(deadline, self.transport.get(url, timeout))
             .await
             .map_err(|_| HelperTransportError::Timeout)?
     }
@@ -582,7 +627,10 @@ impl HelperClient {
         body: Vec<u8>,
         timeout: Duration,
     ) -> Result<HelperResponse, HelperTransportError> {
-        tokio::time::timeout(timeout, self.transport.post_json(url, body, timeout))
+        let deadline = tokio::time::Instant::now()
+            .checked_add(timeout)
+            .ok_or(HelperTransportError::Timeout)?;
+        tokio::time::timeout_at(deadline, self.transport.post_json(url, body, timeout))
             .await
             .map_err(|_| HelperTransportError::Timeout)?
     }
@@ -594,10 +642,12 @@ impl HelperClient {
     /// for submissions.
     ///
     /// Before each attempt, `operation` receives the time remaining until
-    /// `deadline`. A backoff sleep that would reach the deadline is skipped and
-    /// the held error is returned instead: the caller cancels the whole future
-    /// at that deadline, and a definite failure must not be converted into an
-    /// unknown outcome by cancellation during a sleep.
+    /// `deadline`. An elapsed deadline before attempt zero returns
+    /// [`HelperError::DeadlineExceeded`] without dispatching a request. A
+    /// backoff sleep that would reach the deadline is skipped and the held
+    /// error is returned instead: the caller cancels the whole future at that
+    /// deadline, and a definite failure must not be converted into an unknown
+    /// outcome by cancellation during a sleep.
     async fn with_retry<T, F, Fut>(
         &self,
         cancel: &(dyn Fn() -> bool + Send + Sync),
@@ -617,27 +667,28 @@ impl HelperClient {
             }
             let remaining = deadline
                 .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()));
-            if attempt > 0 && remaining.is_some_and(|remaining| remaining.is_zero()) {
-                return Err(held_error.expect("a retry always has a held error"));
+            if remaining.is_some_and(|remaining| remaining.is_zero()) {
+                return Err(held_error.take().unwrap_or(HelperError::DeadlineExceeded));
             }
             match operation(remaining).await {
                 Ok(value) => return Ok(value),
                 Err(error) => {
-                    if cancel() {
-                        return Err(HelperError::Cancelled);
-                    }
                     let retryable =
                         error.is_transient() && (retry_ambiguous || !error.is_ambiguous());
                     if attempt == attempts || !retryable {
                         return Err(error);
                     }
+                    if cancel() {
+                        return Err(HelperError::Cancelled);
+                    }
                     let delay = self.config.retry_delays[attempt];
-                    if deadline
-                        .is_some_and(|deadline| tokio::time::Instant::now() + delay >= deadline)
-                    {
+                    let Some(wake_at) = tokio::time::Instant::now().checked_add(delay) else {
+                        return Err(error);
+                    };
+                    if deadline.is_some_and(|deadline| wake_at >= deadline) {
                         return Err(error);
                     }
-                    tokio::time::sleep(delay).await;
+                    tokio::time::sleep_until(wake_at).await;
                     if cancel() {
                         return Err(HelperError::Cancelled);
                     }
@@ -654,14 +705,34 @@ impl HelperClient {
 
     /// Applies one request's outcome to the helper's health score.
     ///
-    /// A cancellation is not the helper's fault and is not scored.
-    fn score<T>(&self, server_url: &str, result: &Result<T, HelperError>, now_seconds: u64) {
+    /// A cancellation or pre-dispatch deadline is not the helper's fault and is
+    /// not scored. Failure timestamps use completion time so slow requests do
+    /// not consume their own cooldown while still in flight.
+    fn score<T>(
+        &self,
+        server_url: &str,
+        result: &Result<T, HelperError>,
+        now_seconds: u64,
+        request_started: tokio::time::Instant,
+    ) {
         match result {
             Ok(_) => self.health.record_success(server_url),
-            Err(HelperError::Cancelled) => {}
-            Err(_) => self.health.record_failure(server_url, now_seconds),
+            Err(HelperError::Cancelled | HelperError::DeadlineExceeded) => {}
+            Err(_) => self.health.record_failure(
+                server_url,
+                now_seconds.saturating_add(request_started.elapsed().as_secs()),
+            ),
         }
     }
+}
+
+fn validate_share_body(share_wire_json: &str) -> Result<Vec<u8>, HelperError> {
+    // Validate before health scoring or network I/O: a malformed body is a
+    // caller error that would be rejected by every helper in the order.
+    serde_json::from_str::<Value>(share_wire_json).map_err(|_| HelperError::Decode {
+        message: "share body is not valid JSON".to_string(),
+    })?;
+    Ok(share_wire_json.as_bytes().to_vec())
 }
 
 fn require_success(response: HelperResponse) -> Result<HelperResponse, HelperError> {
@@ -1017,7 +1088,7 @@ mod tests {
     }
 
     #[test]
-    fn helper_config_rejects_zero_deadlines_and_excessive_retries() {
+    fn helper_config_rejects_invalid_durations_and_excessive_retries() {
         assert!(HelperClientConfig::default()
             .with_post_timeout(Duration::ZERO)
             .is_err());
@@ -1039,6 +1110,31 @@ mod tests {
         assert!(HelperClientConfig::default()
             .with_retry_delays(vec![Duration::ZERO])
             .is_err());
+        assert!(HelperClientConfig::default()
+            .with_post_timeout(Duration::MAX)
+            .is_err());
+        assert!(HelperClientConfig::default()
+            .with_request_timeout(Duration::MAX)
+            .is_err());
+        assert!(HelperClientConfig::default()
+            .with_preflight_timeouts(Duration::from_secs(1), Duration::MAX)
+            .is_err());
+        assert!(HelperClientConfig::default()
+            .with_preflight_timeouts(Duration::MAX, Duration::MAX)
+            .is_err());
+        assert!(HelperClientConfig::default()
+            .with_retry_delays(vec![Duration::MAX])
+            .is_err());
+
+        HelperClientConfig::default()
+            .with_request_timeout(Duration::from_secs(1))
+            .unwrap()
+            .with_post_timeout(Duration::from_secs(1))
+            .unwrap()
+            .with_preflight_timeouts(Duration::from_secs(1), Duration::from_secs(2))
+            .unwrap()
+            .with_retry_delays(vec![Duration::from_millis(1)])
+            .unwrap();
     }
 
     #[test]
@@ -1108,13 +1204,30 @@ mod tests {
             assert!(error.is_transient());
             assert_eq!(error.is_ambiguous(), status != 429);
         }
-        for status in [400u16, 404, 409] {
+        for status in [400u16, 404, 409, 507, 508] {
+            let error = HelperError::Status {
+                status,
+                body: String::new(),
+            };
+            assert!(!error.is_transient());
+            assert_eq!(error.is_ambiguous(), (500..=599).contains(&status));
+        }
+        for status in 500u16..=599 {
+            assert!(HelperError::Status {
+                status,
+                body: String::new()
+            }
+            .is_ambiguous());
+        }
+        for status in [429u16, 499, 600] {
             assert!(!HelperError::Status {
                 status,
                 body: String::new()
             }
-            .is_transient());
+            .is_ambiguous());
         }
+        assert!(!HelperError::DeadlineExceeded.is_transient());
+        assert!(!HelperError::DeadlineExceeded.is_ambiguous());
         assert!(!HelperError::Cancelled.is_transient());
     }
 
@@ -1207,6 +1320,45 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn preflight_counts_equivalent_urls_as_one_ready_helper() {
+        let transport = Arc::new(MockTransport::default());
+        let canonical_url = "https://helper.example/shielded-vote/v1/status";
+        let slow_url = "https://slow.example/shielded-vote/v1/status";
+        // The second canned reply makes the old duplicate-probe behavior
+        // falsely satisfy the target at the soft deadline.
+        transport.queue_get(canonical_url, json_status("ok"));
+        transport.queue_get(canonical_url, json_status("ok"));
+        transport.queue_get_after(slow_url, Duration::from_secs(3), json_status("ok"));
+        let config = HelperClientConfig::default()
+            .with_preflight_timeouts(Duration::from_secs(2), Duration::from_secs(5))
+            .unwrap();
+        let client = HelperClient::with_config(transport.clone(), HelperHealth::default(), config);
+        let started = tokio::time::Instant::now();
+
+        let results = client
+            .preflight(
+                &[
+                    "https://helper.example".to_string(),
+                    "https://helper.example/".to_string(),
+                    "https://slow.example".to_string(),
+                ],
+                2,
+            )
+            .await;
+
+        assert_eq!(
+            results,
+            vec![
+                ("https://helper.example".to_string(), true),
+                ("https://helper.example".to_string(), true),
+                ("https://slow.example".to_string(), true),
+            ]
+        );
+        assert_eq!(transport.call_count(canonical_url), 1);
+        assert_eq!(started.elapsed(), Duration::from_secs(3));
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn preflight_stops_at_the_soft_window_when_enough_helpers_are_ready() {
         let transport = Arc::new(MockTransport::default());
         transport.queue_get(
@@ -1266,20 +1418,22 @@ mod tests {
         assert_eq!(started.elapsed(), Duration::from_secs(5));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn preflight_with_zero_target_does_not_open_connections() {
         let transport = Arc::new(MockTransport::default());
-        transport.queue_get(
-            "https://helper.example/shielded-vote/v1/status",
-            json_status("ok"),
-        );
         let client = client_with(transport.clone());
+        let mut server_urls = vec!["file:///etc/passwd".to_string()];
+        server_urls.extend((0..256).map(|index| format!("HTTPS://HELPER-{index}.EXAMPLE/")));
 
-        let results = client
-            .preflight(&["https://helper.example/".to_string()], 0)
-            .await;
+        let results = client.preflight(&server_urls, 0).await;
 
-        assert_eq!(results, vec![("https://helper.example".to_string(), false)]);
+        assert_eq!(results.len(), server_urls.len());
+        assert_eq!(results[0], ("file:///etc/passwd".to_string(), false));
+        assert_eq!(results[1], ("https://helper-0.example".to_string(), false));
+        assert_eq!(
+            results.last(),
+            Some(&("https://helper-255.example".to_string(), false))
+        );
         assert_eq!(transport.call_count("GET"), 0);
     }
 
@@ -1395,6 +1549,52 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn late_cancellation_preserves_ambiguous_submission_errors() {
+        for reply in [
+            Err(HelperTransportError::Timeout),
+            Err(HelperTransportError::Response(
+                "response body ended early".to_string(),
+            )),
+            http_status(503),
+        ] {
+            let transport = Arc::new(MockTransport::default());
+            let url = post_url();
+            transport.queue_post(&url, reply);
+            transport.queue_post(&url, json_status("queued"));
+            let cancel_after_request = || transport.call_count(&url) > 0;
+            let client = client_with(transport.clone());
+
+            let error = client
+                .submit_share(helper(), r#"{"share_index":0}"#, 10, &cancel_after_request)
+                .await
+                .unwrap_err();
+
+            assert!(error.is_ambiguous());
+            assert_eq!(transport.call_count(&url), 1);
+            assert_eq!(client.health().failure_count(helper()), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_suppresses_a_pending_retry() {
+        let transport = Arc::new(MockTransport::default());
+        let url = post_url();
+        transport.queue_post(&url, http_status(429));
+        transport.queue_post(&url, json_status("queued"));
+        let cancel_after_request = || transport.call_count(&url) > 0;
+        let client = client_with(transport.clone());
+
+        let error = client
+            .submit_share(helper(), r#"{"share_index":0}"#, 10, &cancel_after_request)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, HelperError::Cancelled));
+        assert_eq!(transport.call_count(&url), 1);
+        assert_eq!(client.health().failure_count(helper()), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn cancellation_before_request_is_not_scored() {
         let transport = Arc::new(MockTransport::default());
         let client = client_with(transport.clone());
@@ -1417,10 +1617,10 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn resubmit_makes_one_attempt_and_propagates_late_cancellation() {
+    async fn resubmit_makes_one_attempt_and_preserves_its_result() {
         let transport = Arc::new(MockTransport::default());
         let url = post_url();
-        transport.queue_post(&url, http_status(400));
+        transport.queue_post(&url, Err(HelperTransportError::Timeout));
         transport.queue_post(&url, json_status("queued"));
         let cancel_after_request = || transport.call_count(&url) > 0;
         let client = client_with(transport.clone());
@@ -1430,9 +1630,9 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, HelperError::Cancelled));
+        assert!(error.is_ambiguous());
         assert_eq!(transport.call_count(&url), 1);
-        assert_eq!(client.health().failure_count(helper()), 0);
+        assert_eq!(client.health().failure_count(helper()), 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1458,6 +1658,70 @@ mod tests {
         ));
         assert_eq!(started.elapsed(), Duration::from_secs(1));
         assert_eq!(transport.call_count(&url), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slow_failure_starts_health_cooldown_at_completion() {
+        let transport = Arc::new(MockTransport::default());
+        let url = post_url();
+        transport.queue_post_after(&url, Duration::ZERO, http_status(400));
+        transport.queue_post_after(&url, Duration::ZERO, http_status(400));
+        transport.queue_post_after(&url, Duration::from_secs(31), json_status("queued"));
+        let config = HelperClientConfig::default()
+            .with_post_timeout(Duration::from_secs(30))
+            .unwrap();
+        let client = HelperClient::with_config(transport, HelperHealth::default(), config);
+
+        for _ in 0..2 {
+            client
+                .submit_share(helper(), r#"{"share_index":0}"#, 100, &never_cancel())
+                .await
+                .unwrap_err();
+        }
+        let started = tokio::time::Instant::now();
+        let error = client
+            .submit_share(helper(), r#"{"share_index":0}"#, 100, &never_cancel())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            HelperError::Transport(HelperTransportError::Timeout)
+        ));
+        assert_eq!(started.elapsed(), Duration::from_secs(30));
+        let servers = vec![helper().to_string(), "https://healthy.example".to_string()];
+        assert_eq!(
+            client.health().candidate_servers(&servers, 130),
+            vec!["https://healthy.example".to_string(), helper().to_string()]
+        );
+        assert_eq!(
+            client.health().candidate_servers(&servers, 159),
+            vec!["https://healthy.example".to_string(), helper().to_string(),]
+        );
+        assert_eq!(client.health().candidate_servers(&servers, 160), servers);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_delivery_deadline_does_not_dispatch_or_score() {
+        let transport = Arc::new(MockTransport::default());
+        let client = client_with(transport.clone());
+
+        let error = client
+            .submit_share_with_timeout(
+                helper(),
+                r#"{"share_index":0}"#,
+                10,
+                &never_cancel(),
+                Duration::from_secs(1),
+                Some(tokio::time::Instant::now()),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, HelperError::DeadlineExceeded));
+        assert!(!error.is_ambiguous());
+        assert_eq!(transport.call_count("POST"), 0);
+        assert_eq!(client.health().failure_count(helper()), 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1574,18 +1838,33 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn malformed_share_body_is_rejected_before_network_io() {
+    async fn malformed_share_body_is_not_sent_or_scored() {
         let transport = Arc::new(MockTransport::default());
         let client = client_with(transport.clone());
 
-        let error = client
+        let submit_error = client
             .submit_share(helper(), "not json", 10, &never_cancel())
             .await
             .unwrap_err();
+        let resubmit_error = client
+            .resubmit_share(helper(), "not json", 10, &never_cancel())
+            .await
+            .unwrap_err();
 
-        assert!(matches!(error, HelperError::Decode { .. }));
-        assert!(!error.is_ambiguous());
+        assert!(matches!(submit_error, HelperError::Decode { .. }));
+        assert!(matches!(resubmit_error, HelperError::Decode { .. }));
+        assert!(!submit_error.is_ambiguous());
+        assert!(!resubmit_error.is_ambiguous());
         assert_eq!(transport.call_count("POST"), 0);
+        assert_eq!(client.health().failure_count(helper()), 0);
+
+        transport.queue_post(&post_url(), http_status(400));
+        client
+            .resubmit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .await
+            .unwrap_err();
+        assert_eq!(transport.call_count("POST"), 1);
+        assert_eq!(client.health().failure_count(helper()), 1);
     }
 
     #[tokio::test(start_paused = true)]
