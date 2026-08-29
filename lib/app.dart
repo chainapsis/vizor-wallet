@@ -15,6 +15,7 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
+import 'src/core/navigation/vizor_deep_link.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -1137,7 +1138,7 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _IncomingPaymentLinkHost(
+                child: _IncomingDeepLinkHost(
                   router: router,
                   child: _RpcEndpointFailoverToastListener(
                     child: _DesktopOpaqueWindowBackground(
@@ -1219,22 +1220,20 @@ class _MacOSUpdatePrivacyChoiceHostState
   Widget build(BuildContext context) => widget.child;
 }
 
-class _IncomingPaymentLinkHost extends ConsumerStatefulWidget {
-  const _IncomingPaymentLinkHost({required this.router, required this.child});
+class _IncomingDeepLinkHost extends ConsumerStatefulWidget {
+  const _IncomingDeepLinkHost({required this.router, required this.child});
 
   final GoRouter router;
   final Widget child;
 
   @override
-  ConsumerState<_IncomingPaymentLinkHost> createState() =>
-      _IncomingPaymentLinkHostState();
+  ConsumerState<_IncomingDeepLinkHost> createState() =>
+      _IncomingDeepLinkHostState();
 }
 
-class _IncomingPaymentLinkHostState
-    extends ConsumerState<_IncomingPaymentLinkHost> {
+class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
   StreamSubscription<String>? _subscription;
   ProviderSubscription<VizorPaymentLink?>? _intakeSubscription;
-  ProviderSubscription<AppSecurityState>? _securitySubscription;
   bool _navigationScheduled = false;
 
   @override
@@ -1246,27 +1245,36 @@ class _IncomingPaymentLinkHostState
         if (link != null) _openPendingPaymentLink();
       },
     );
-    _securitySubscription = ref.listenManual(appSecurityProvider, (_, state) {
-      if (!state.requiresUnlock) _openPendingPaymentLink();
-    });
     final service = ref.read(incomingUriServiceProvider);
-    _subscription = service.uriStream.listen((rawUri) {
-      ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
-    });
+    _subscription = service.uriStream.listen(_handleIncomingUri);
     unawaited(service.initialize());
+  }
+
+  void _handleIncomingUri(String rawUri) {
+    final uri = Uri.tryParse(rawUri.trim());
+    if (uri == null) return;
+
+    switch (VizorDeepLink.routeFor(uri)) {
+      case VizorDeepLinkRoute.home:
+        if (!ref.read(appSecurityProvider).requiresUnlock) {
+          widget.router.go('/home');
+        }
+      case VizorDeepLinkRoute.paymentLink:
+        ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
+      case null:
+        return;
+    }
   }
 
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
     _intakeSubscription?.close();
-    _securitySubscription?.close();
     super.dispose();
   }
 
   void _openPendingPaymentLink() {
     if (_navigationScheduled ||
-        kAppFormFactor != AppFormFactor.desktop ||
         ref.read(appSecurityProvider).requiresUnlock ||
         ref.read(paymentLinkIntakeProvider).pendingLink == null) {
       return;

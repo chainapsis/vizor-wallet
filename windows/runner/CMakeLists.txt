@@ -10,8 +10,6 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "single_instance.cpp"
-  "payment_uri_handoff.cpp"
-  "payment_uri_protocol.cpp"
   "utils.cpp"
   "velopack_uninstall.cpp"
   "velopack_update.cpp"
@@ -63,7 +61,6 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_WINDOWS_STORAGE_PREFIX=\"${VIZOR_WINDOWS_STORAGE_PREFIX}\"")
-target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_WINDOWS_PAYMENT_URI_OWNER=${VIZOR_WINDOWS_PAYMENT_URI_OWNER}")
 
 if(DEFINED ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64})
   target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_FEED_PUBLIC_KEY_B64=\"$ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64}\"")

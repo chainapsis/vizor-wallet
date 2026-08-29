@@ -12,9 +12,10 @@ final incomingUriServiceProvider = Provider<IncomingUriService>((ref) {
   return service;
 });
 
-/// Shared native-to-Dart URI intake. Scheme-specific parsing belongs to
-/// subscribers so `zcash:` ZIP-321 requests and `vizor:` bearer links can use
-/// one OS channel without competing MethodChannel handlers.
+/// Mobile native-to-Dart intake for verified Vizor HTTPS deeplinks.
+///
+/// Desktop runners intentionally do not register this channel. Desktop users
+/// open supported links from their corresponding in-app entry points.
 class IncomingUriService {
   IncomingUriService({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel(kIncomingUriChannelName);
@@ -61,11 +62,7 @@ class IncomingUriService {
   bool get _isSupportedPlatform {
     if (kIsWeb) return false;
     return switch (defaultTargetPlatform) {
-      TargetPlatform.android ||
-      TargetPlatform.iOS ||
-      TargetPlatform.linux ||
-      TargetPlatform.macOS ||
-      TargetPlatform.windows => true,
+      TargetPlatform.android || TargetPlatform.iOS => true,
       _ => false,
     };
   }

@@ -11,6 +11,9 @@ class SceneDelegate: FlutterSceneDelegate {
     IncomingUriChannelBridge.shared.handle(
       urlContexts: connectionOptions.urlContexts
     )
+    for userActivity in connectionOptions.userActivities {
+      _ = IncomingUriChannelBridge.shared.handle(userActivity: userActivity)
+    }
   }
 
   override func scene(
@@ -19,11 +22,17 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     IncomingUriChannelBridge.shared.handle(urlContexts: URLContexts)
     let remaining = URLContexts.filter {
-      !($0.url.scheme?.lowercased() == "vizor" &&
-        $0.url.host?.lowercased() == "payment-link")
+      !IncomingUriChannelBridge.shared.handles($0.url)
     }
     if !remaining.isEmpty {
       super.scene(scene, openURLContexts: Set(remaining))
     }
+  }
+
+  override func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    if IncomingUriChannelBridge.shared.handle(userActivity: userActivity) {
+      return
+    }
+    super.scene(scene, continue: userActivity)
   }
 }

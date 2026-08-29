@@ -399,10 +399,6 @@ class AppDelegate: FlutterAppDelegate {
 #endif
   }
 
-  override func application(_ application: NSApplication, open urls: [URL]) {
-    IncomingUriChannel.handle(urls: urls)
-  }
-
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
   }

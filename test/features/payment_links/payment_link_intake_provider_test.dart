@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 
@@ -35,7 +36,7 @@ void main() {
     expect(
       container
           .read(paymentLinkIntakeProvider.notifier)
-          .receive('https://functions.vizor.cash/health'),
+          .receive('https://${VizorDeepLink.host}/health'),
       PaymentLinkIntakeResult.ignored,
     );
   });
@@ -47,7 +48,10 @@ void main() {
     final notifier = container.read(paymentLinkIntakeProvider.notifier);
     notifier.receive(link.toUri().toString());
 
-    final result = notifier.receive('vizor://payment-link?p=not-base64');
+    final result = notifier.receive(
+      'https://${VizorDeepLink.host}'
+      '${VizorDeepLink.paymentLinkPath}#v1=not-base64',
+    );
 
     expect(result, PaymentLinkIntakeResult.rejected);
     final state = container.read(paymentLinkIntakeProvider);
@@ -135,11 +139,8 @@ void main() {
       container
           .read(paymentLinkIntakeProvider)
           .pendingLinks
-          .map((link) => link.toUri().queryParameters['p']),
-      [
-        original,
-        ...changedPayloads,
-      ].map((link) => link.toUri().queryParameters['p']),
+          .map((link) => link.toUri().fragment),
+      [original, ...changedPayloads].map((link) => link.toUri().fragment),
     );
   });
 

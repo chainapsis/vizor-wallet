@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:characters/characters.dart';
 
+import '../../../core/navigation/vizor_deep_link.dart';
+
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
   kPaymentLinkRegtestEnabledEnvKey,
@@ -93,10 +95,9 @@ class VizorPaymentLink {
     this.presentation,
   });
 
-  static const scheme = 'vizor';
-  static const host = 'payment-link';
   static const maxEncodedLength = 16 * 1024;
   static const _version = 1;
+  static const _fragmentPrefix = 'v1=';
 
   final String network;
   final String address;
@@ -123,9 +124,10 @@ class VizorPaymentLink {
 
   Uri toUri() {
     return Uri(
-      scheme: scheme,
-      host: host,
-      queryParameters: {'p': _encodedPayload()},
+      scheme: VizorDeepLink.scheme,
+      host: VizorDeepLink.host,
+      path: VizorDeepLink.paymentLinkPath,
+      fragment: '$_fragmentPrefix${_encodedPayload()}',
     );
   }
 
@@ -154,7 +156,7 @@ class VizorPaymentLink {
   }
 
   static bool matchesEndpoint(Uri uri) {
-    return uri.scheme.toLowerCase() == scheme && uri.host.toLowerCase() == host;
+    return VizorDeepLink.routeFor(uri) == VizorDeepLinkRoute.paymentLink;
   }
 
   static VizorPaymentLink parse(String rawLink) {
@@ -166,20 +168,16 @@ class VizorPaymentLink {
     if (uri == null || !matchesEndpoint(uri)) {
       throw const FormatException('This is not a Vizor payment link.');
     }
-    if (uri.userInfo.isNotEmpty ||
-        uri.hasPort ||
-        uri.path.isNotEmpty ||
-        uri.hasFragment) {
+    if (uri.userInfo.isNotEmpty || uri.hasPort || uri.hasQuery) {
       throw const FormatException('Payment link URL is invalid.');
     }
 
-    final queryParameters = uri.queryParametersAll;
-    final payloads = queryParameters['p'];
-    if (queryParameters.length != 1 || payloads?.length != 1) {
-      throw const FormatException('Payment link URL is invalid.');
+    final fragment = uri.fragment;
+    if (!fragment.startsWith(_fragmentPrefix)) {
+      throw const FormatException('Payment link is missing its payload.');
     }
-    final encoded = payloads!.single;
-    if (encoded.isEmpty) {
+    final encoded = fragment.substring(_fragmentPrefix.length);
+    if (encoded.isEmpty || encoded.contains('&')) {
       throw const FormatException('Payment link payload is invalid.');
     }
 

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
+import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -312,7 +313,9 @@ Future<String> _readPaymentLinkFromClipboard() async {
   if (rawLink.isEmpty) {
     fail('The payment link was not copied to the clipboard.');
   }
-  if (!rawLink.startsWith('vizor://payment-link?')) {
+  if (!rawLink.startsWith(
+    'https://${VizorDeepLink.host}${VizorDeepLink.paymentLinkPath}#v1=',
+  )) {
     fail('The clipboard did not contain a Vizor payment link.');
   }
   return rawLink;
