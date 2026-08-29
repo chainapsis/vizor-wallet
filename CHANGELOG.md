@@ -14,8 +14,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   `recover_atomic_vote_batch` APIs return `SignedVoteBatch`, whose canonical
   `batch_json` belongs on the chain's `cast-vote-batch` endpoint. The existing
   `commit_batch`, `prepare_commit_batch`, `persist_prepared_commit_batch`, and
-  `SignedVoteCommitments` APIs retain their independently signed singleton
-  behavior for current wallet integrations.
+  `SignedVoteCommitments` APIs remain one-draft singleton compatibility
+  wrappers for current wallet integrations; multi-proposal callers must use the
+  atomic APIs so one witness cannot produce competing singleton spends.
   `confirmation::confirm_vote_batch_submission` atomically records the shared
   transaction hash, ordered vote-commitment positions, and final VAN position.
   Restart planning groups committed or submitted batch members into one

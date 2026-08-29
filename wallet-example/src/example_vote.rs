@@ -29,7 +29,10 @@ pub struct WalletVoteCommitRequest<'a> {
     pub voting_hotkey: &'a VotingHotkey,
 }
 
-/// Inputs for independently committing one bundle's cast-votes.
+/// Inputs for the historical batch-named singleton compatibility API.
+///
+/// `drafts` must contain exactly one item. Use
+/// [`WalletAtomicVoteBatchRequest`] for multiple proposals.
 pub struct WalletVoteCommitBatchRequest<'a> {
     pub round_id: &'a str,
     pub bundle_index: u32,
@@ -128,10 +131,10 @@ pub fn commit_vote_bundle(
     .context("commit cast-vote")
 }
 
-/// Builds independently signed commitments for singleton submission.
+/// Builds one signed commitment through the historical batch-named API.
 ///
-/// This preserves the historical wallet integration. Submit each returned
-/// commitment to the singleton cast-vote endpoint in order.
+/// `request.drafts` must contain exactly one item. Submit the returned
+/// commitment to the singleton cast-vote endpoint.
 pub fn commit_vote_bundle_batch(
     voting_db: &VotingDb,
     request: WalletVoteCommitBatchRequest<'_>,

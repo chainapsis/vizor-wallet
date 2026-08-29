@@ -127,7 +127,7 @@ custody provider integrations.
   confirmation API parses the chain `leaf_index` events and records tx hashes,
   VAN positions, and VC positions atomically.
 - Use `vote::commit` for one singleton. The existing `vote::commit_batch`
-  remains the independently signed submission path, while
+  remains as a one-draft compatibility wrapper for singleton submission, while
   `vote::commit_atomic_vote_batch` builds one atomic, ordered multi-question
   transaction. The distinct `SignedVoteCommitments` and `SignedVoteBatch`
   result types keep the singleton and atomic submission endpoints separate.

@@ -33,7 +33,8 @@ precompute → delegate → vote → share lifecycle:
    chain either accepts the complete authority chain or none of it. Use
    `confirm_vote_batch_submission` after confirmation, then submit each vote's
    helper shares. `vote::commit` and the existing `vote::commit_batch` retain
-   independently signed singleton behavior. Recover and confirm existing work
+   singleton behavior; the batch-named compatibility API accepts one draft.
+   Recover and confirm existing work
    before preparing another vote chain for the same bundle. While polling an
    atomic batch, helper-share recovery remains deferred for every member until
    batch confirmation records all vote commitment positions.
@@ -421,7 +422,7 @@ boundary, so production builds should not enable this feature.
   material through crate APIs such as `vote::submission`,
   `vote::recover_commit`, `share::*`, and the tx hash accessors.
 - Use `vote::commit` for one singleton. The existing `vote::commit_batch`
-  remains the independently signed submission path, while
+  remains as a one-draft compatibility wrapper for singleton submission, while
   `vote::commit_atomic_vote_batch` builds one atomic, canonical multi-question
   transaction. Use `vote::submission`, `vote::recover_commit`,
   `vote::record_submission`, and `vote::record_vc_position` for the cast-vote

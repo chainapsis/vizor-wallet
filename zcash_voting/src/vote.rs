@@ -72,6 +72,26 @@ pub fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), VotingError
     Ok(())
 }
 
+/// Validates the one-draft contract of the historical batch-named singleton APIs.
+///
+/// Multiple singleton proofs built from one witness would spend the same current
+/// VAN. Callers voting on multiple proposals must use the atomic batch API.
+fn validate_legacy_singleton_batch(draft_votes: &[DraftVote]) -> Result<(), VotingError> {
+    validate_draft_votes(draft_votes)?;
+    validate_legacy_singleton_batch_len(draft_votes.len())
+}
+
+fn validate_legacy_singleton_batch_len(len: usize) -> Result<(), VotingError> {
+    if len != 1 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "legacy singleton batch APIs require exactly one draft, got {len}; use commit_atomic_vote_batch for multiple drafts"
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn validate_atomic_vote_batch(draft_votes: &[DraftVote]) -> Result<(), VotingError> {
     if draft_votes.len() > MAX_VOTE_BATCH_ACTIONS {
         return Err(VotingError::InvalidInput {
@@ -185,9 +205,9 @@ pub struct SignedVoteCommitment {
     pub commitment_bundle_json: String,
 }
 
-/// Independently signed vote commitments produced for one delegation bundle.
+/// One-item result from the historical batch-named singleton API.
 ///
-/// Each commitment is submitted through the singleton cast-vote endpoint.
+/// The contained commitment is submitted through the singleton cast-vote endpoint.
 #[derive(Clone, Debug)]
 pub struct SignedVoteCommitments {
     pub bundle_index: u32,
@@ -462,12 +482,10 @@ fn signed_commitment_from_parts(
     })
 }
 
-/// Inputs for preparing independently submitted cast-vote commitments for one
-/// delegation bundle.
+/// Inputs for the historical batch-named singleton preparation API.
 ///
-/// Each prepared commitment retains the singleton signing domain used by the
-/// historical API. Use [`AtomicVoteBatch`] when all drafts will be submitted in
-/// one atomic transaction.
+/// `drafts` must contain exactly one item. Use [`AtomicVoteBatch`] for multiple
+/// proposals submitted in one atomic transaction.
 pub struct VoteCommitBatch<'a> {
     pub round_id: &'a str,
     pub bundle_index: u32,
@@ -476,11 +494,11 @@ pub struct VoteCommitBatch<'a> {
     pub stages: &'a dyn crate::types::VoteCommitStageReporter,
 }
 
-/// Builds signed singleton vote commitments for every draft in one bundle.
+/// Builds one signed singleton vote commitment under the historical batch name.
 ///
-/// This preserves the historical API and its independently submittable
-/// singleton signatures. Use [`commit_atomic_vote_batch`] to bind and submit
-/// all drafts in one atomic transaction.
+/// `drafts` must contain exactly one item because multiple singleton proofs from
+/// one witness would spend the same current VAN. Use
+/// [`commit_atomic_vote_batch`] for multiple proposals.
 #[allow(clippy::too_many_arguments)]
 pub fn commit_batch(
     db: &VotingDb,
@@ -491,7 +509,7 @@ pub fn commit_batch(
     signer: VoteSigner<'_>,
     stages: &dyn crate::types::VoteCommitStageReporter,
 ) -> Result<SignedVoteCommitments, VotingError> {
-    validate_draft_votes(drafts)?;
+    validate_legacy_singleton_batch(drafts)?;
     let bundle_count = db.get_bundle_count(round_id)?;
     crate::round::validate_bundle_index(bundle_count, bundle_index, "voting")?;
 
@@ -508,14 +526,17 @@ pub fn commit_batch(
     })
 }
 
-/// Builds and signs independent singleton commitments without holding SQLite
-/// during ZKP #2 computation.
+/// Builds and signs one singleton commitment without holding SQLite during
+/// ZKP #2 computation.
+///
+/// `batch.drafts` must contain exactly one item. Use
+/// [`prepare_atomic_vote_batch`] for multiple proposals.
 pub fn prepare_commit_batch(
     db: &VotingDb,
     signer: VoteSigner<'_>,
     batch: VoteCommitBatch<'_>,
 ) -> Result<PreparedVoteCommitments, VotingError> {
-    validate_draft_votes(batch.drafts)?;
+    validate_legacy_singleton_batch(batch.drafts)?;
     let bundle_count = db.get_bundle_count(batch.round_id)?;
     crate::round::validate_bundle_index(bundle_count, batch.bundle_index, "voting")?;
 
@@ -538,11 +559,12 @@ pub fn prepare_commit_batch(
     })
 }
 
-/// Persists commitments prepared through [`prepare_commit_batch`].
+/// Persists the one commitment prepared through [`prepare_commit_batch`].
 pub fn persist_prepared_commit_batch(
     db: &VotingDb,
     prepared: PreparedVoteCommitments,
 ) -> Result<SignedVoteCommitments, VotingError> {
+    validate_legacy_singleton_batch_len(prepared.commitments.len())?;
     let mut commitments = Vec::with_capacity(prepared.commitments.len());
     for prepared_commit in prepared.commitments {
         let committed = persist_prepared_commit(db, prepared_commit)?;
@@ -3503,6 +3525,87 @@ mod tests {
         assert!(err.to_string().contains("duplicate proposal_id"), "{err}");
     }
 
+    fn legacy_batch_drafts() -> [DraftVote; 2] {
+        [
+            DraftVote {
+                proposal_id: 2,
+                ..draft_vote_fixture()
+            },
+            DraftVote {
+                proposal_id: 3,
+                ..draft_vote_fixture()
+            },
+        ]
+    }
+
+    fn assert_no_legacy_batch_vote_state(db: &VotingDb) {
+        for proposal_id in [2, 3] {
+            assert!(
+                queries::load_vote_row_state(&db.conn(), ROUND_ID, WALLET_ID, 0, proposal_id,)
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(recovery_bundle(db, ROUND_ID, 0, proposal_id)
+                .unwrap()
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn legacy_commit_batch_rejects_multiple_drafts_without_persisting() {
+        let db = db_with_vote();
+        let drafts = legacy_batch_drafts();
+        let hotkey = VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap();
+
+        let error = commit_batch(
+            &db,
+            ROUND_ID,
+            0,
+            &drafts,
+            &VanWitness {
+                auth_path: Vec::new(),
+                position: 0,
+                anchor_height: 0,
+            },
+            VoteSigner::hotkey(&hotkey),
+            &NoopProgressReporter,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("commit_atomic_vote_batch"));
+        assert_no_legacy_batch_vote_state(&db);
+    }
+
+    #[test]
+    fn legacy_prepare_commit_batch_rejects_multiple_drafts_before_proving() {
+        let db = db_with_vote();
+        let drafts = legacy_batch_drafts();
+        let hotkey = VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap();
+        let witness = VanWitness {
+            auth_path: Vec::new(),
+            position: 0,
+            anchor_height: 0,
+        };
+
+        let error = match prepare_commit_batch(
+            &db,
+            VoteSigner::hotkey(&hotkey),
+            VoteCommitBatch {
+                round_id: ROUND_ID,
+                bundle_index: 0,
+                drafts: &drafts,
+                witness: &witness,
+                stages: &NoopProgressReporter,
+            },
+        ) {
+            Ok(_) => panic!("multiple legacy drafts must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("commit_atomic_vote_batch"));
+        assert_no_legacy_batch_vote_state(&db);
+    }
+
     #[test]
     fn atomic_vote_batch_reports_the_protocol_action_limit() {
         let drafts = (1..=(MAX_VOTE_BATCH_ACTIONS as u32 + 1))
@@ -4741,6 +4844,34 @@ mod tests {
 
         let error = recover_atomic_vote_batch(&db, ROUND_ID, 0, 1).unwrap_err();
         assert!(error.to_string().contains("recover_signed_commitments"));
+    }
+
+    #[test]
+    fn legacy_prepared_batch_rejects_multiple_before_persisting() {
+        let db = db_with_vote();
+        let prepared = PreparedVoteCommitments {
+            bundle_index: 0,
+            commitments: vec![prepared_vote_fixture(&db), prepared_vote_fixture(&db)],
+        };
+
+        let error = persist_prepared_commit_batch(&db, prepared).unwrap_err();
+        assert!(error.to_string().contains("commit_atomic_vote_batch"));
+        assert!(recovery_bundle(&db, ROUND_ID, 0, 1).unwrap().is_none());
+    }
+
+    #[test]
+    fn legacy_prepared_batch_persists_one_fresh_commitment() {
+        let db = db_with_vote();
+        let prepared = PreparedVoteCommitments {
+            bundle_index: 0,
+            commitments: vec![prepared_vote_fixture(&db)],
+        };
+
+        let signed = persist_prepared_commit_batch(&db, prepared).unwrap();
+        assert_eq!(signed.bundle_index, 0);
+        assert_eq!(signed.commitments.len(), 1);
+        assert_eq!(signed.commitments[0].proposal_id, 1);
+        assert!(recovery_bundle(&db, ROUND_ID, 0, 1).unwrap().is_some());
     }
 
     #[test]
