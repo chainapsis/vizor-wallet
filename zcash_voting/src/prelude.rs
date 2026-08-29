@@ -31,6 +31,9 @@ pub use crate::delegation_capability::{
 };
 pub use crate::error::VotingError;
 pub use crate::governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
+pub use crate::helper::client::{
+    HelperClient, HelperClientConfig, HelperError, ShareStatus, ShareSubmissionStatus,
+};
 pub use crate::helper::health::{HelperHealth, HELPER_COOLDOWN_SECONDS, HELPER_FAILURE_THRESHOLD};
 pub use crate::helper::transport::{
     HelperFuture, HelperResponse, HelperTransport, HelperTransportError, MAX_HELPER_RESPONSE_BYTES,

@@ -30,9 +30,15 @@ pub mod serde_base64_bytes {
         D: serde::Deserializer<'de>,
     {
         let encoded = String::deserialize(deserializer)?;
-        BASE64_STANDARD
+        let decoded = BASE64_STANDARD
             .decode(encoded.as_bytes())
-            .map_err(serde::de::Error::custom)
+            .map_err(serde::de::Error::custom)?;
+        if BASE64_STANDARD.encode(&decoded) != encoded {
+            return Err(serde::de::Error::custom(
+                "byte string must use canonical padded standard Base64",
+            ));
+        }
+        Ok(decoded)
     }
 }
 
@@ -109,9 +115,11 @@ pub struct VoteCommitmentBatchWire {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VoteShareWire {
     /// Voting round ID as 32 bytes encoded in lowercase hex.
     pub vote_round_id: String,
+    /// Poseidon output encoded as a canonical Pallas base-field element.
     pub shares_hash: String,
     pub proposal_id: u32,
     pub vote_decision: u32,
@@ -120,6 +128,7 @@ pub struct VoteShareWire {
     pub share_index: u32,
     #[serde(rename = "tree_position")]
     pub vc_tree_position: u64,
+    /// All 16 per-share commitments as canonical Pallas base-field elements.
     pub share_comms: Vec<String>,
     pub primary_blind: String,
     pub submit_at: u64,

@@ -7,6 +7,15 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## Unreleased
 
 ### Added
+- Added a typed `HelperClient` for readiness checks, share submission, and
+  status polling. It validates canonical round IDs, protocol fields,
+  ciphertext points, complete 16-share reveal inputs, and JSON responses;
+  reports locally invalid routes and payloads as unscored `InvalidRequest`s;
+  keeps slow readiness probes alive through the shared hard window; caps every
+  retry to its remaining delivery budget; and updates process-local helper
+  health without retrying outcome-unknown share submissions.
+- Helper health now uses canonical helper URL identities across equivalent
+  configuration spellings.
 - Cast-vote batches now build an ordered vote-authority chain, prove up to three
   ZKP #2 actions concurrently by default, sign every action over one
   domain-separated batch digest, and persist the whole recovery set atomically.

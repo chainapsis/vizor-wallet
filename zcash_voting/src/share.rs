@@ -265,6 +265,7 @@ mod tests {
         types::{EncryptedShare, NoteInfo},
         vote::{serialize_recovery, VoteRecoveryBundle},
     };
+    use pasta_curves::group::{Group, GroupEncoding};
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
     const WALLET_ID: &str = "wallet";
@@ -335,28 +336,30 @@ mod tests {
             vote_authority_note_new: [0x11; 32],
             vote_commitment: [0x12; 32],
             proof: vec![0x13; 96],
-            shares_hash: [0x14; 32],
+            shares_hash: field_bytes(5),
             r_vpk: [0x15; 32],
             alpha_v: [0x16; 32],
             vote_auth_sig: [0x17; 64],
             encrypted_shares: vec![
                 EncryptedShare {
-                    c1: vec![0x21; 32],
-                    c2: vec![0x22; 32],
+                    c1: point_bytes(1),
+                    c2: point_bytes(2),
                     share_index: 0,
                     plaintext_value: 5,
                     randomness: vec![0x23; 32],
                 },
                 EncryptedShare {
-                    c1: vec![0x31; 32],
-                    c2: vec![0x32; 32],
+                    c1: point_bytes(3),
+                    c2: point_bytes(4),
                     share_index: 1,
                     plaintext_value: 6,
                     randomness: vec![0x33; 32],
                 },
             ],
             share_blinds: vec![field_bytes(1), field_bytes(2)],
-            share_comms: vec![[0x51; 32], [0x52; 32]],
+            share_comms: (0..crate::share_policy::VOTE_COMMITMENT_SHARE_COUNT)
+                .map(|index| field_bytes(index as u8 + 10))
+                .collect(),
             batch: None,
         }
     }
@@ -373,7 +376,7 @@ mod tests {
         assert_eq!(payload.vote_round_id, ROUND_ID);
         assert_eq!(payload.enc_share.share_index, 1);
         assert_eq!(payload.all_enc_shares.len(), 2);
-        assert_eq!(payload.share_comms[1], vec![0x52; 32]);
+        assert_eq!(payload.share_comms[1], field_bytes(11));
         assert_eq!(payload.primary_blind, field_bytes(2).to_vec());
         assert_eq!(nullifier.len(), 32);
     }
@@ -507,5 +510,11 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[0] = value;
         bytes
+    }
+
+    fn point_bytes(multiplier: u64) -> Vec<u8> {
+        (pallas::Point::generator() * pallas::Scalar::from(multiplier))
+            .to_bytes()
+            .to_vec()
     }
 }

@@ -10,15 +10,18 @@
 #[allow(unused_imports)]
 pub(crate) use crate::backend::{orchard, pasta_curves, zcash_client_backend};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use pasta_curves::group::ff::PrimeField;
+use pasta_curves::pallas;
 
 use crate::{
     delegate::{DelegationSubmission, PreparedDelegationReport, SignedDelegationBundle},
     phases::WorkflowPhase,
     recovery, session,
     types::{
-        validate_round_params, validate_vote_chain_id, validate_vote_round_id_hex, Network,
-        NoteRef, RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VotingError,
-        VotingHotkeyTarget,
+        validate_32_bytes, validate_encrypted_shares, validate_proposal_id, validate_round_params,
+        validate_share_index, validate_vote_chain_id, validate_vote_round_id_hex, Network, NoteRef,
+        RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VotingError, VotingHotkeyTarget,
+        MAX_VOTE_OPTIONS,
     },
     vote::{SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments},
     wire::{
@@ -35,8 +38,10 @@ use crate::{
 };
 
 const MAX_SAFE_JSON_INTEGER: u64 = 0x1f_ffff_ffff_ffff;
+const MAX_HELPER_TREE_POSITION: u64 = u32::MAX as u64;
 const VOTING_HOTKEY_TARGET_FORMAT_VERSION: u32 = 1;
 const MAX_VOTING_HOTKEY_TARGET_JSON_BYTES: usize = 2_048;
+const MAX_VOTE_SHARE_JSON_BYTES: usize = 4_096;
 
 impl VotingHotkeyTargetV1 {
     /// Parses and validates a version 1 target from JSON.
@@ -218,31 +223,54 @@ impl VoteCommitmentBatchWire {
 }
 
 impl VoteShareWire {
+    /// Parses and validates one helper-share request from JSON.
+    ///
+    /// Unknown and duplicate fields, noncanonical encodings, oversized input,
+    /// and values outside the helper protocol's bounds are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when the JSON or any share field
+    /// violates the helper request contract.
+    pub fn from_json(json: &str) -> Result<Self, VotingError> {
+        if json.len() > MAX_VOTE_SHARE_JSON_BYTES {
+            return Err(VotingError::InvalidInput {
+                message: format!("vote share JSON exceeds {MAX_VOTE_SHARE_JSON_BYTES} bytes"),
+            });
+        }
+        let wire: Self = serde_json::from_str(json).map_err(|e| VotingError::InvalidInput {
+            message: format!("invalid vote share JSON: {e}"),
+        })?;
+        wire.validate()?;
+        Ok(wire)
+    }
+
     pub fn from_payload(
         payload: &SharePayload,
         vc_tree_position: Option<u64>,
         submit_at: u64,
     ) -> Result<Self, VotingError> {
         crate::types::validate_vote_round_id_hex(&payload.vote_round_id)?;
-        Ok(Self {
+        let wire = Self {
             vote_round_id: payload.vote_round_id.clone(),
             shares_hash: b64(&payload.shares_hash),
             proposal_id: payload.proposal_id,
             vote_decision: payload.vote_decision,
             encrypted_share: payload.enc_share.clone(),
             share_index: payload.enc_share.share_index,
-            vc_tree_position: json_safe_u64(
+            vc_tree_position: helper_tree_position(
                 vc_tree_position.unwrap_or(payload.tree_position),
-                "tree_position",
             )?,
             share_comms: payload.share_comms.iter().map(b64).collect(),
             primary_blind: b64(&payload.primary_blind),
             submit_at: json_safe_u64(submit_at, "submit_at")?,
-        })
+        };
+        wire.validate()?;
+        Ok(wire)
     }
 
     pub fn to_json(&self) -> Result<String, VotingError> {
-        crate::types::validate_vote_round_id_hex(&self.vote_round_id)?;
+        self.validate()?;
         serde_json::to_string(self).map_err(|e| VotingError::Internal {
             message: format!("serialize vote share wire JSON failed: {e}"),
         })
@@ -254,11 +282,75 @@ impl VoteShareWire {
         submit_at: u64,
     ) -> Result<Self, VotingError> {
         if let Some(position) = vc_tree_position {
-            self.vc_tree_position = json_safe_u64(position, "tree_position")?;
+            self.vc_tree_position = helper_tree_position(position)?;
         }
         self.submit_at = json_safe_u64(submit_at, "submit_at")?;
         Ok(self)
     }
+
+    fn validate(&self) -> Result<(), VotingError> {
+        validate_vote_round_id_hex(&self.vote_round_id)?;
+        validate_canonical_field_b64_32(&self.shares_hash, "shares_hash")?;
+        validate_proposal_id(self.proposal_id)?;
+        if self.vote_decision >= MAX_VOTE_OPTIONS {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "vote_decision must be in [0, {MAX_VOTE_OPTIONS}), got {}",
+                    self.vote_decision
+                ),
+            });
+        }
+        validate_encrypted_shares(std::slice::from_ref(&self.encrypted_share))?;
+        validate_share_index(self.share_index)?;
+        if self.share_index != self.encrypted_share.share_index {
+            return Err(VotingError::InvalidInput {
+                message: "share_index must match enc_share.share_index".to_string(),
+            });
+        }
+        helper_tree_position(self.vc_tree_position)?;
+        if self.share_comms.len() != crate::share_policy::VOTE_COMMITMENT_SHARE_COUNT {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "share_comms must have exactly {} entries, got {}",
+                    crate::share_policy::VOTE_COMMITMENT_SHARE_COUNT,
+                    self.share_comms.len()
+                ),
+            });
+        }
+        for (index, share_comm) in self.share_comms.iter().enumerate() {
+            validate_canonical_field_b64_32(share_comm, &format!("share_comms[{index}]"))?;
+        }
+        validate_canonical_field_b64_32(&self.primary_blind, "primary_blind")?;
+        json_safe_u64(self.submit_at, "submit_at")?;
+        Ok(())
+    }
+}
+
+fn decode_canonical_b64_32(value: &str, field: &str) -> Result<[u8; 32], VotingError> {
+    let decoded =
+        BASE64_STANDARD
+            .decode(value.as_bytes())
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!("{field} must be canonical padded standard Base64"),
+            })?;
+    if BASE64_STANDARD.encode(&decoded) != value {
+        return Err(VotingError::InvalidInput {
+            message: format!("{field} must be canonical padded standard Base64"),
+        });
+    }
+    validate_32_bytes(&decoded, field)?;
+    Ok(decoded
+        .try_into()
+        .expect("validated 32-byte value must convert to an array"))
+}
+
+fn validate_canonical_field_b64_32(value: &str, field: &str) -> Result<(), VotingError> {
+    let decoded = decode_canonical_b64_32(value, field)?;
+    Option::<pallas::Base>::from(pallas::Base::from_repr(decoded))
+        .map(|_| ())
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: format!("{field} is not a canonical Pallas field element"),
+        })
 }
 
 impl TryFrom<&DelegationSubmission> for DelegationSubmissionWire {
@@ -729,17 +821,69 @@ fn json_safe_u64(value: u64, field: &str) -> Result<u64, VotingError> {
     Ok(value)
 }
 
+fn helper_tree_position(value: u64) -> Result<u64, VotingError> {
+    if value > MAX_HELPER_TREE_POSITION {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "field tree_position exceeds helper protocol maximum {MAX_HELPER_TREE_POSITION}"
+            ),
+        });
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::vote::SignedVoteCommitment;
     use crate::VotingHotkey;
-    use pasta_curves::group::ff::PrimeField;
-    use pasta_curves::pallas;
+    use pasta_curves::group::{Group, GroupEncoding};
     use zcash_client_backend::proto::service::TreeState;
 
     fn decode_b64(value: &str) -> Vec<u8> {
         BASE64_STANDARD.decode(value).unwrap()
+    }
+
+    fn point_bytes(multiplier: u64) -> Vec<u8> {
+        (pallas::Point::generator() * pallas::Scalar::from(multiplier))
+            .to_bytes()
+            .to_vec()
+    }
+
+    fn field_bytes(value: u64) -> Vec<u8> {
+        pallas::Base::from(value).to_repr().to_vec()
+    }
+
+    fn full_share_comm_arrays() -> Vec<[u8; 32]> {
+        (0..crate::share_policy::VOTE_COMMITMENT_SHARE_COUNT)
+            .map(|index| pallas::Base::from(index as u64 + 10).to_repr())
+            .collect()
+    }
+
+    fn full_share_comms() -> Vec<Vec<u8>> {
+        full_share_comm_arrays()
+            .into_iter()
+            .map(|comm| comm.to_vec())
+            .collect()
+    }
+
+    fn valid_vote_share_wire() -> VoteShareWire {
+        VoteShareWire {
+            vote_round_id: "01".repeat(32),
+            shares_hash: b64(field_bytes(1)),
+            proposal_id: 1,
+            vote_decision: 0,
+            encrypted_share: crate::WireEncryptedShare {
+                c1: point_bytes(2),
+                c2: point_bytes(3),
+                share_index: 0,
+            },
+            share_index: 0,
+            vc_tree_position: 1,
+            share_comms: full_share_comms().iter().map(b64).collect(),
+            primary_blind: b64(field_bytes(4)),
+            submit_at: 0,
+        }
     }
 
     fn target_round_params(value: u64) -> VotingRoundParams {
@@ -1018,12 +1162,12 @@ mod tests {
     fn vote_share_wire_json_contains_only_assigned_encrypted_share() {
         let payload = SharePayload {
             vote_round_id: "01".repeat(32),
-            shares_hash: vec![0x21; 32],
+            shares_hash: field_bytes(1),
             proposal_id: 9,
             vote_decision: 2,
             enc_share: crate::WireEncryptedShare {
-                c1: vec![0x22; 32],
-                c2: vec![0x23; 32],
+                c1: point_bytes(2),
+                c2: point_bytes(3),
                 share_index: 1,
             },
             tree_position: 99,
@@ -1039,8 +1183,8 @@ mod tests {
                     share_index: 1,
                 },
             ],
-            share_comms: vec![vec![0x26; 32]],
-            primary_blind: vec![0x27; 32],
+            share_comms: full_share_comms(),
+            primary_blind: field_bytes(4),
         };
 
         let json = payload.to_wire_json(None, 123).unwrap();
@@ -1058,7 +1202,23 @@ mod tests {
     }
 
     #[test]
-    fn vote_share_wire_json_rejects_large_json_integer() {
+    fn vote_share_wire_from_json_rejects_noncanonical_shares_hash_field() {
+        let mut wire = valid_vote_share_wire();
+        wire.shares_hash = BASE64_STANDARD.encode([0xff_u8; 32]);
+        let raw_json = serde_json::to_string(&wire).unwrap();
+
+        let error = VoteShareWire::from_json(&raw_json).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("shares_hash is not a canonical Pallas field element"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn vote_share_wire_rejects_tree_position_above_helper_protocol_maximum() {
         let payload = SharePayload {
             vote_round_id: "01".repeat(32),
             shares_hash: vec![0x21; 32],
@@ -1078,7 +1238,18 @@ mod tests {
         let err = payload.to_wire_json(None, 10).unwrap_err();
         assert!(err
             .to_string()
-            .contains("field tree_position is too large to encode as JSON integer"));
+            .contains("field tree_position exceeds helper protocol maximum 4294967295"));
+    }
+
+    #[test]
+    fn vote_share_wire_accepts_maximum_helper_tree_position() {
+        let mut wire = valid_vote_share_wire();
+        wire.vc_tree_position = MAX_HELPER_TREE_POSITION;
+
+        let json = wire.to_json().unwrap();
+        let decoded = VoteShareWire::from_json(&json).unwrap();
+
+        assert_eq!(decoded.vc_tree_position, MAX_HELPER_TREE_POSITION);
     }
 
     #[test]
@@ -1110,18 +1281,18 @@ mod tests {
         let mut wire = VoteShareWire::from_payload(
             &SharePayload {
                 vote_round_id: "01".repeat(32),
-                shares_hash: vec![0x21; 32],
+                shares_hash: field_bytes(1),
                 proposal_id: 1,
                 vote_decision: 1,
                 enc_share: crate::WireEncryptedShare {
-                    c1: vec![0x22; 32],
-                    c2: vec![0x23; 32],
+                    c1: point_bytes(2),
+                    c2: point_bytes(3),
                     share_index: 0,
                 },
                 tree_position: 1,
                 all_enc_shares: vec![],
-                share_comms: vec![],
-                primary_blind: vec![0x27; 32],
+                share_comms: full_share_comms(),
+                primary_blind: field_bytes(4),
             },
             None,
             10,
@@ -1319,28 +1490,28 @@ mod tests {
             vote_commitment: [3; 32],
             proof: vec![4; 10],
             encrypted_shares: vec![crate::WireEncryptedShare {
-                c1: vec![5; 32],
-                c2: vec![6; 32],
+                c1: point_bytes(5),
+                c2: point_bytes(6),
                 share_index: 0,
             }],
             share_payloads: vec![crate::SharePayload {
                 vote_round_id: "00".repeat(32),
-                shares_hash: vec![7; 32],
+                shares_hash: field_bytes(7),
                 proposal_id: 2,
                 vote_decision: 1,
                 enc_share: crate::WireEncryptedShare {
-                    c1: vec![5; 32],
-                    c2: vec![6; 32],
+                    c1: point_bytes(5),
+                    c2: point_bytes(6),
                     share_index: 0,
                 },
                 tree_position: 9,
                 all_enc_shares: vec![],
-                share_comms: vec![vec![8; 32]],
-                primary_blind: vec![9; 32],
+                share_comms: full_share_comms(),
+                primary_blind: field_bytes(9),
             }],
             anchor_height: 100,
-            shares_hash: [7; 32],
-            share_comms: vec![[8; 32]],
+            shares_hash: pallas::Base::from(7).to_repr(),
+            share_comms: full_share_comm_arrays(),
             r_vpk: [10; 32],
             vote_auth_sig: [9; 64],
             commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
@@ -1392,11 +1563,11 @@ mod tests {
         assert_eq!(view.commitments[0].shares[0].vote_round_id, "00".repeat(32));
         assert_eq!(
             view.commitments[0].shares[0].encrypted_share.c1,
-            vec![5; 32]
+            point_bytes(5)
         );
         assert_eq!(
             view.commitments[0].shares[0].primary_blind,
-            base64::engine::general_purpose::STANDARD.encode(vec![9; 32])
+            base64::engine::general_purpose::STANDARD.encode(field_bytes(9))
         );
         assert_eq!(
             view.commitments[0].wire.vote_auth_sig,

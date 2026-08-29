@@ -125,10 +125,11 @@ impl HelperResponse {
         (200..300).contains(&self.status)
     }
 
-    /// Returns the body as UTF-8, replacing invalid sequences lossily.
+    /// Returns the attacker-controlled body as UTF-8, replacing invalid
+    /// sequences lossily.
     ///
-    /// Diagnostics embed this, so a helper returning binary garbage must not
-    /// take down the caller.
+    /// Callers must not place this text in logs, telemetry, or crash reports
+    /// without strict escaping, truncation, and an explicit privacy review.
     pub fn body_text(&self) -> String {
         String::from_utf8_lossy(&self.body).into_owned()
     }
