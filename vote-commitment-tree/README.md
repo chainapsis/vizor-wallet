@@ -4,9 +4,9 @@ Append-only Poseidon Merkle tree for Vote Authority Notes (VANs) and vote commit
 
 The tree is maintained per vote round. Each delegation appends a VAN leaf; each cast-vote appends a new VAN plus a vote-commitment leaf. The chain publishes the tree root at every block height, which wallets use as a public input to ZKP2 (vote-commitment proof).
 
-The default `upstream` feature uses the crates.io voting crypto libraries. A
-Zakura consumer must use `default-features = false, features = ["zakura"]`.
-The two backend features are mutually exclusive.
+The default `zakura` feature uses the stable Zakura 1.0 cryptography family.
+An LRZ consumer uses `default-features = false, features = ["lrz"]`. The two
+backend features are mutually exclusive.
 
 ## Usage
 

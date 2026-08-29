@@ -1,10 +1,9 @@
-#[cfg(all(feature = "upstream", feature = "zakura"))]
-compile_error!("features `upstream` and `zakura` cannot be enabled together");
+#[cfg(all(feature = "lrz", feature = "zakura"))]
+compile_error!("features `lrz` and `zakura` cannot be enabled together");
 
-#[cfg(not(any(feature = "upstream", feature = "zakura")))]
-compile_error!("enable exactly one of the `upstream` or `zakura` features");
+#[cfg(not(any(feature = "lrz", feature = "zakura")))]
+compile_error!("enable exactly one of the `lrz` or `zakura` features");
 
-mod backend;
 pub mod example_capability_handoff;
 pub mod example_config;
 pub mod example_delegation;

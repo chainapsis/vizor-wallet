@@ -1,8 +1,8 @@
 //! Selected wallet and proving crates.
 //!
-//! `zakura-wallet-lib` and `voting-crypto-deps` each pick one family. This
-//! module re-exports them under the upstream names the rest of the crate
-//! already uses, so backend selection stays in `Cargo.toml`.
+//! Exactly one crate feature selects the concrete dependency family. This
+//! module re-exports that family's crates under stable internal names so the
+//! rest of the implementation remains backend-agnostic.
 
 pub use voting_crypto_deps::{halo2_gadgets, halo2_proofs, pasta_curves};
 pub use zakura_wallet_lib::{

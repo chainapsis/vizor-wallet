@@ -1,83 +1,60 @@
 [package]
 name = "zcash_voting"
-version = "3.1.0-rc.12"
+version = "3.1.0-rc.13"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/valargroup/zcash_voting"
 readme = "README.md"
 
 [features]
-default = ["upstream"]
-# crates.io librustzcash + voting-crypto-deps/upstream. What ZODL builds.
-upstream = [
-    "vote-commitment-tree/upstream",
-    "vote-commitment-tree-client/upstream",
-    "voting-circuits/upstream",
-    "voting-crypto-deps/upstream",
-    "imt-tree/upstream",
+default = ["zakura"]
+lrz = [
+    "voting-crypto-deps/lrz",
+    "voting-circuits/lrz",
     "pir-client/upstream",
     "pir-types/upstream",
+    "imt-tree/upstream",
+    "vote-commitment-tree/lrz",
+    "vote-commitment-tree-client/lrz",
     "zakura-wallet-lib/lrz",
-    "zakura-wallet-lib/orchard",
-    "dep:orchard",
-    "dep:pczt",
-    "dep:zcash_client_backend",
-    "dep:zcash_client_sqlite",
-    "dep:zcash_keys",
-    "dep:zcash_primitives",
 ]
-# Zakura wallet-libraries forks + voting-crypto-deps/zakura. What Vizor builds.
 zakura = [
-    "vote-commitment-tree/zakura",
-    "vote-commitment-tree-client/zakura",
-    "voting-circuits/zakura",
-    "voting-crypto-deps/zakura",
-    "imt-tree/zakura",
+    "voting-crypto-deps/default",
+    "voting-circuits/default",
     "pir-client/zakura",
     "pir-types/zakura",
+    "imt-tree/zakura",
+    "vote-commitment-tree/zakura",
+    "vote-commitment-tree-client/zakura",
     "zakura-wallet-lib/zakura",
-    "zakura-wallet-lib/orchard",
-    "dep:zakura-orchard",
-    "dep:zakura-pczt",
-    "dep:zakura-client-sqlite",
-    "dep:zakura-client-backend",
-    "dep:zakura-keys",
-    "dep:zakura-primitives",
 ]
 test-fixtures = []
 
 [dependencies]
-# Randomness
 rand = "0.8"
-
-# Hashing
 blake2b_simd = "1"
 voting-crypto-deps = { workspace = true }
 
-# Serialization
 base64 = "0.22"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+url = "2"
 prost = "0.14"
 sha2 = "0.10"
 ed25519-dalek = "2"
 
-# PIR (private nullifier exclusion proofs).
-pir-client = { version = "=0.6.0", default-features = false }
-# Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
-# direct dependencies constrain the versions Cargo may resolve, but they do not
-# change whether upstream build scripts execute.
-pir-types = { version = "=0.5.0", default-features = false }
+pir-client = { version = "=0.7.2", default-features = false }
+pir-types = { version = "=0.6.2", default-features = false }
 valar-spiral-rs = { version = "=0.5.2", default-features = false }
 valar-ypir = { version = "=0.2.0", default-features = false }
-imt-tree = { version = "=0.4.0", default-features = false }
+imt-tree = { version = "=0.5.2", default-features = false }
 
-bytes = { version = "1" }
-http = { version = "1" }
-http-body-util = { version = "0.1" }
+bytes = "1"
+http = "1"
+http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1", "http2"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
@@ -85,44 +62,38 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.5.2", default-features = false }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.7.2", default-features = false, features = ["http"] }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.6.0", default-features = false }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.8.0", default-features = false, features = ["http"] }
 
-# Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
 
-# Error handling
 anyhow = "1"
 thiserror = "2"
 zeroize = "1"
 
-# Backend selection: `zakura-wallet-lib` re-exports one wallet stack, and
-# `voting-crypto-deps` re-exports one proving stack. Optional crates below
-# exist only to turn on features (tonic, pczt roles) that the facade does not
-# forward; they unify onto the same packages the facade selected.
 subtle = "2.6"
-zakura-wallet-lib = { workspace = true }
 voting-circuits = { workspace = true }
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"
 
 zcash_protocol = { workspace = true }
-pczt = { workspace = true, optional = true }
-orchard = { workspace = true, optional = true }
-zcash_client_backend = { workspace = true, optional = true }
-zcash_client_sqlite = { workspace = true, optional = true }
-zcash_keys = { workspace = true, optional = true }
-zcash_primitives = { workspace = true, optional = true }
-zakura-orchard = { package = "zakura-orchard", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["circuit", "std", "unstable-voting-circuits"] }
-zakura-pczt = { package = "zakura-pczt", version = "0.1.0-rc1", optional = true, features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zakura-client-backend = { package = "zakura-client-backend", version = "0.1.0-rc2", default-features = false, optional = true, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zakura-client-sqlite = { package = "zakura-client-sqlite", version = "0.1.0-rc2", default-features = false, optional = true, features = ["orchard"] }
-zakura-keys = { package = "zakura-keys", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["orchard"] }
-zakura-primitives = { package = "zakura-primitives", version = "1.0.0-rc.3", default-features = false, optional = true, features = ["std", "circuits"] }
+zakura-wallet-lib = { version = "=0.1.0-rc4", default-features = false }
 uuid = "1.23.1"
 
 [dev-dependencies]
+anyhow = "1"
+base64 = "0.22"
+bytes = "1"
+ed25519-dalek = "2"
+hex = "0.4"
+http = "1"
+http-body-util = "0.1"
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
 secrecy = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 zcash_note_encryption = "0.4.2"

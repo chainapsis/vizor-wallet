@@ -32,6 +32,24 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   intentionally reveal that their included proposal actions came from one
   transaction.
 
+## v3.1.0-rc.13
+
+### Changed
+- `zcash_voting` now defaults to Zakura and exposes upstream librustzcash
+  through the mutually exclusive `lrz` feature while depending directly on
+  the leak-free `zakura` or `lrz` complete backend mode from
+  `zakura-wallet-lib`. This keeps wallet-family selection in one facade while
+  preventing disabled Zakura forks from entering LRZ consumers' Cargo
+  lockfiles and metadata. See the "Dependency notes" section of
+  `zcash_voting/README.md`.
+- Updated the Zakura stack to wallet-libraries RC4 and stable crypto 1.0,
+  `voting-crypto-deps 0.2.2`, `voting-circuits 0.11.2`, `imt-tree 0.5.2`,
+  `pir-types 0.6.2`, and `pir-client 0.7.2`. This raises the workspace MSRV to
+  Rust 1.91.
+- Prepared `vote-commitment-tree 0.6.0` and
+  `vote-commitment-tree-client 0.8.0` for their Zakura-default feature
+  contracts; publish them before `zcash_voting 3.1.0-rc.13`.
+
 ## v3.1.0-rc.12
 
 ### Added
@@ -41,6 +59,13 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Added process-local `HelperHealth` scoring that demotes repeatedly failing
   helper servers for fixed cooldown windows, immediately re-demotes them on the
   first failure after expiry, and never removes them from candidate lists.
+- Added public helper URL canonicalization for stable server identity. Helper
+  base URLs may use HTTP or HTTPS and a mount path, but not credentials, query
+  parameters, or fragments; equivalent default ports, trailing slashes, and
+  mount-path percent escapes are normalized before comparison or persistence.
+- Added a host-owned `HelperTransport` abstraction for helper-server requests.
+  The bundled `HyperTransport` provides direct HTTP, while wallets can supply
+  Tor or proxy-backed transports without fallback to a different route.
 
 ### Changed
 - Initial share delivery continues to target half the configured fleet, rounded

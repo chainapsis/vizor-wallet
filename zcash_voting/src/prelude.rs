@@ -32,6 +32,10 @@ pub use crate::delegation_capability::{
 pub use crate::error::VotingError;
 pub use crate::governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
 pub use crate::helper::health::{HelperHealth, HELPER_COOLDOWN_SECONDS, HELPER_FAILURE_THRESHOLD};
+pub use crate::helper::transport::{
+    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, MAX_HELPER_RESPONSE_BYTES,
+};
+pub use crate::helper::url::{canonical_helper_url_list, canonicalize_helper_base_url};
 pub use crate::hotkey::{
     generate_random_voting_hotkey, VOTING_HOTKEY_ACCOUNT_INDEX, VOTING_HOTKEY_ADDRESS_INDEX,
     VOTING_HOTKEY_STORED_SECRET_LEN,
