@@ -6811,7 +6811,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vote-commitment-tree"
 version = "0.5.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=cfe224ab86e9857314e292d730503431826e0ce1#cfe224ab86e9857314e292d730503431826e0ce1"
+source = "git+https://github.com/valargroup/zcash_voting?rev=775024296cde7dd16815cee6fd5d5caabffa196f#775024296cde7dd16815cee6fd5d5caabffa196f"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -6825,7 +6825,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.7.2"
-source = "git+https://github.com/valargroup/zcash_voting?rev=cfe224ab86e9857314e292d730503431826e0ce1#cfe224ab86e9857314e292d730503431826e0ce1"
+source = "git+https://github.com/valargroup/zcash_voting?rev=775024296cde7dd16815cee6fd5d5caabffa196f#775024296cde7dd16815cee6fd5d5caabffa196f"
 dependencies = [
  "base64",
  "hex",
@@ -8026,7 +8026,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "3.1.0-rc.12"
-source = "git+https://github.com/valargroup/zcash_voting?rev=cfe224ab86e9857314e292d730503431826e0ce1#cfe224ab86e9857314e292d730503431826e0ce1"
+source = "git+https://github.com/valargroup/zcash_voting?rev=775024296cde7dd16815cee6fd5d5caabffa196f#775024296cde7dd16815cee6fd5d5caabffa196f"
 dependencies = [
  "anyhow",
  "base64",
@@ -8055,6 +8055,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tonic",
+ "url",
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
