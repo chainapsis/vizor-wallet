@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(payload.vote_round_id, ROUND_ID);
         assert_eq!(payload.enc_share.share_index, 1);
         assert_eq!(payload.all_enc_shares.len(), 2);
-        assert_eq!(payload.share_comms[1], vec![0x52; 32]);
+        assert_eq!(payload.share_comms[1], vec![0x32; 32]);
         assert_eq!(payload.primary_blind, field_bytes(2).to_vec());
         assert_eq!(nullifier.len(), 32);
     }

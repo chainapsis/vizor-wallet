@@ -611,6 +611,7 @@ pub struct VoteCommitmentBundle {
 /// Wire-safe encrypted share — contains only the public ciphertext components.
 /// Secrets (`plaintext_value`, `randomness`) are kept inside Rust and never cross the FFI boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WireEncryptedShare {
     #[serde(with = "crate::wire::serde_base64_bytes")]
     pub c1: Vec<u8>,

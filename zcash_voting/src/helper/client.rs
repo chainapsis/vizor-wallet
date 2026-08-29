@@ -37,6 +37,7 @@ use crate::{
         SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
     },
     types::VotingError,
+    wire::VoteShareWire,
 };
 
 /// Default per-request deadline for helper share-status calls.
@@ -67,10 +68,15 @@ pub enum ShareSubmissionStatus {
 /// A helper request that did not produce a usable answer.
 #[derive(Clone, Debug)]
 pub enum HelperError {
+    /// The caller supplied a request that cannot be dispatched safely.
+    InvalidRequest { message: String },
     /// The request never completed. Carries the ambiguity of a timeout.
     Transport(HelperTransportError),
     /// The helper answered with a non-2xx status.
-    Status { status: u16, body: String },
+    ///
+    /// Response bodies are intentionally excluded because they are controlled
+    /// by the helper and may contain secrets or log-injection payloads.
+    Status { status: u16 },
     /// The helper answered, but not with something this protocol understands.
     Decode { message: String },
     /// A successful share submission returned an unusable protocol response.
@@ -97,10 +103,9 @@ impl HelperError {
     fn is_transient(&self) -> bool {
         match self {
             Self::Transport(_) => true,
-            Self::Status { status, .. } => {
-                matches!(status, 429 | 500 | 502 | 503 | 504)
-            }
-            Self::Decode { .. }
+            Self::Status { status } => matches!(status, 429 | 500 | 502 | 503 | 504),
+            Self::InvalidRequest { .. }
+            | Self::Decode { .. }
             | Self::AmbiguousSubmissionResponse { .. }
             | Self::DeadlineExceeded
             | Self::Cancelled => false,
@@ -116,17 +121,16 @@ impl HelperError {
                     | HelperTransportError::Ambiguous(_)
                     | HelperTransportError::Response(_)
             ) | Self::AmbiguousSubmissionResponse { .. }
-        ) || matches!(self, Self::Status { status, .. } if (500..=599).contains(status))
+        ) || matches!(self, Self::Status { status } if (500..=599).contains(status))
     }
 }
 
 impl std::fmt::Display for HelperError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidRequest { message } => write!(f, "invalid helper request: {message}"),
             Self::Transport(error) => write!(f, "{error}"),
-            Self::Status { status, body } => {
-                write!(f, "helper returned HTTP {status}: {body}")
-            }
+            Self::Status { status } => write!(f, "helper returned HTTP {status}"),
             Self::Decode { message } => write!(f, "helper response was not usable: {message}"),
             Self::AmbiguousSubmissionResponse { message } => {
                 write!(f, "helper submission outcome is unknown: {message}")
@@ -505,6 +509,11 @@ impl HelperClient {
         timeout: Duration,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<ShareSubmissionStatus, HelperError> {
+        if timeout.is_zero() {
+            return Err(HelperError::InvalidRequest {
+                message: "share submission timeout must be nonzero".to_string(),
+            });
+        }
         let server_url =
             canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
                 message: error.to_string(),
@@ -583,7 +592,6 @@ impl HelperClient {
             return self
                 .post_json(&url, body, post_timeout)
                 .await
-                .map_err(HelperError::Transport)
                 .and_then(parse_submission_response);
         }
 
@@ -594,10 +602,7 @@ impl HelperClient {
                 .map(|remaining| post_timeout.min(remaining))
                 .unwrap_or(post_timeout);
             async move {
-                let response = self
-                    .post_json(&url, body, attempt_timeout)
-                    .await
-                    .map_err(HelperError::Transport)?;
+                let response = self.post_json(&url, body, attempt_timeout).await?;
                 parse_submission_response(response)
             }
         })
@@ -626,13 +631,19 @@ impl HelperClient {
         url: &str,
         body: Vec<u8>,
         timeout: Duration,
-    ) -> Result<HelperResponse, HelperTransportError> {
+    ) -> Result<HelperResponse, HelperError> {
+        if timeout.is_zero() {
+            return Err(HelperError::InvalidRequest {
+                message: "share submission attempt timeout must be nonzero".to_string(),
+            });
+        }
         let deadline = tokio::time::Instant::now()
             .checked_add(timeout)
-            .ok_or(HelperTransportError::Timeout)?;
+            .ok_or(HelperError::Transport(HelperTransportError::Timeout))?;
         tokio::time::timeout_at(deadline, self.transport.post_json(url, body, timeout))
             .await
-            .map_err(|_| HelperTransportError::Timeout)?
+            .map_err(|_| HelperError::Transport(HelperTransportError::Timeout))?
+            .map_err(HelperError::Transport)
     }
 
     /// Runs `operation` with the configured backoff.
@@ -717,7 +728,11 @@ impl HelperClient {
     ) {
         match result {
             Ok(_) => self.health.record_success(server_url),
-            Err(HelperError::Cancelled | HelperError::DeadlineExceeded) => {}
+            Err(
+                HelperError::InvalidRequest { .. }
+                | HelperError::Cancelled
+                | HelperError::DeadlineExceeded,
+            ) => {}
             Err(_) => self.health.record_failure(
                 server_url,
                 now_seconds.saturating_add(request_started.elapsed().as_secs()),
@@ -727,26 +742,26 @@ impl HelperClient {
 }
 
 fn validate_share_body(share_wire_json: &str) -> Result<Vec<u8>, HelperError> {
-    // Validate before health scoring or network I/O: a malformed body is a
-    // caller error that would be rejected by every helper in the order.
-    serde_json::from_str::<Value>(share_wire_json).map_err(|_| HelperError::Decode {
-        message: "share body is not valid JSON".to_string(),
-    })?;
-    Ok(share_wire_json.as_bytes().to_vec())
+    // Parse into the closed wire schema before health scoring or network I/O.
+    // Re-serialization ensures the transport receives only approved fields.
+    let share =
+        VoteShareWire::from_json(share_wire_json).map_err(|_| HelperError::InvalidRequest {
+            message: "share body does not match the vote-share wire schema".to_string(),
+        })?;
+    share
+        .to_json()
+        .map(String::into_bytes)
+        .map_err(|_| HelperError::InvalidRequest {
+            message: "share body does not match the vote-share wire schema".to_string(),
+        })
 }
 
 fn require_success(response: HelperResponse) -> Result<HelperResponse, HelperError> {
     if response.is_success() {
         return Ok(response);
     }
-    let body = if response.body().len() > MAX_HELPER_RESPONSE_BYTES {
-        format!("helper response exceeds {MAX_HELPER_RESPONSE_BYTES} byte limit")
-    } else {
-        truncate_for_diagnostics(&response.body_text())
-    };
     Err(HelperError::Status {
         status: response.status(),
-        body,
     })
 }
 
@@ -770,18 +785,6 @@ fn validate_json_response(response: &HelperResponse) -> Result<(), HelperError> 
     Ok(())
 }
 
-fn truncate_for_diagnostics(body: &str) -> String {
-    const MAX: usize = 512;
-    if body.len() <= MAX {
-        return body.to_string();
-    }
-    let mut end = MAX;
-    while end > 0 && !body.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &body[..end])
-}
-
 fn json_field(response: &HelperResponse, field: &str) -> Option<String> {
     if response.body().len() > MAX_HELPER_RESPONSE_BYTES {
         return None;
@@ -796,8 +799,8 @@ fn parse_share_status(response: &HelperResponse) -> Result<ShareStatus, HelperEr
         Some("pending") => Ok(ShareStatus::Pending),
         // The endpoint has only the two global confirmation states. Anything
         // else is a broken or incompatible response.
-        Some(other) => Err(HelperError::Decode {
-            message: format!("unexpected helper share status: {other}"),
+        Some(_) => Err(HelperError::Decode {
+            message: "unexpected helper share status".to_string(),
         }),
         None => Err(HelperError::Decode {
             message: "helper share status response has no status field".to_string(),
@@ -817,8 +820,8 @@ fn parse_submission_response(
     match json_field(&response, "status").as_deref() {
         Some("queued") => Ok(ShareSubmissionStatus::Queued),
         Some("duplicate") => Ok(ShareSubmissionStatus::Duplicate),
-        Some(other) => Err(HelperError::AmbiguousSubmissionResponse {
-            message: format!("unexpected helper share submit status: {other}"),
+        Some(_) => Err(HelperError::AmbiguousSubmissionResponse {
+            message: "unexpected helper share submit status".to_string(),
         }),
         None => Err(HelperError::AmbiguousSubmissionResponse {
             message: "helper share submit response has no status field".to_string(),
@@ -887,6 +890,8 @@ mod tests {
         collections::{HashMap, VecDeque},
         sync::Mutex,
     };
+
+    use base64::Engine as _;
 
     use super::*;
     use crate::helper::transport::HelperFuture;
@@ -1063,6 +1068,28 @@ mod tests {
         Ok(HelperResponse::json(status, b"{}".to_vec()))
     }
 
+    fn valid_share_json() -> String {
+        let encoded = base64::engine::general_purpose::STANDARD.encode([1_u8; 32]);
+        VoteShareWire {
+            vote_round_id: "01".repeat(32),
+            shares_hash: encoded.clone(),
+            proposal_id: 1,
+            vote_decision: 0,
+            encrypted_share: crate::WireEncryptedShare {
+                c1: vec![2; 32],
+                c2: vec![3; 32],
+                share_index: 0,
+            },
+            share_index: 0,
+            vc_tree_position: 1,
+            share_comms: vec![encoded.clone()],
+            primary_blind: encoded,
+            submit_at: 0,
+        }
+        .to_json()
+        .unwrap()
+    }
+
     fn client_with(transport: Arc<MockTransport>) -> HelperClient {
         HelperClient::new(transport, HelperHealth::default())
     }
@@ -1197,34 +1224,20 @@ mod tests {
         assert!(!unusable_submission.is_transient());
         assert!(unusable_submission.is_ambiguous());
         for status in [429u16, 500, 502, 503, 504] {
-            let error = HelperError::Status {
-                status,
-                body: String::new(),
-            };
+            let error = HelperError::Status { status };
             assert!(error.is_transient());
             assert_eq!(error.is_ambiguous(), status != 429);
         }
         for status in [400u16, 404, 409, 507, 508] {
-            let error = HelperError::Status {
-                status,
-                body: String::new(),
-            };
+            let error = HelperError::Status { status };
             assert!(!error.is_transient());
             assert_eq!(error.is_ambiguous(), (500..=599).contains(&status));
         }
         for status in 500u16..=599 {
-            assert!(HelperError::Status {
-                status,
-                body: String::new()
-            }
-            .is_ambiguous());
+            assert!(HelperError::Status { status }.is_ambiguous());
         }
         for status in [429u16, 499, 600] {
-            assert!(!HelperError::Status {
-                status,
-                body: String::new()
-            }
-            .is_ambiguous());
+            assert!(!HelperError::Status { status }.is_ambiguous());
         }
         assert!(!HelperError::DeadlineExceeded.is_transient());
         assert!(!HelperError::DeadlineExceeded.is_ambiguous());
@@ -1242,23 +1255,45 @@ mod tests {
         assert!(error.is_transient());
         assert!(error.is_ambiguous());
         match error {
-            HelperError::Status { status, body } => {
-                assert_eq!(status, 503);
-                assert_eq!(
-                    body,
-                    format!("helper response exceeds {MAX_HELPER_RESPONSE_BYTES} byte limit")
-                );
-            }
+            HelperError::Status { status } => assert_eq!(status, 503),
             other => panic!("unexpected error: {other}"),
         }
     }
 
     #[test]
-    fn diagnostics_truncation_respects_char_boundaries() {
-        let body = "é".repeat(400);
-        let truncated = truncate_for_diagnostics(&body);
-        assert!(truncated.len() <= body.len());
-        assert!(truncated.ends_with('…'));
+    fn helper_controlled_diagnostics_are_not_exposed() {
+        let reflected_secret = "primary_blind=wallet-secret";
+        let status_error = require_success(HelperResponse::json(
+            400,
+            format!("first line\n\u{1b}[31m{reflected_secret}\u{1b}[0m").into_bytes(),
+        ))
+        .unwrap_err();
+        let rendered = status_error.to_string();
+        assert_eq!(rendered, "helper returned HTTP 400");
+        assert!(!rendered.contains(reflected_secret));
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\u{1b}'));
+
+        let attacker_status = format!("{reflected_secret}{}", "x".repeat(8_192));
+        let response = HelperResponse::json(
+            200,
+            serde_json::to_vec(&serde_json::json!({ "status": attacker_status })).unwrap(),
+        );
+        let status_error = parse_share_status(&response).unwrap_err();
+        let rendered = status_error.to_string();
+        assert_eq!(
+            rendered,
+            "helper response was not usable: unexpected helper share status"
+        );
+        assert!(!rendered.contains(reflected_secret));
+
+        let submission_error = parse_submission_response(response).unwrap_err();
+        let rendered = submission_error.to_string();
+        assert_eq!(
+            rendered,
+            "helper submission outcome is unknown: unexpected helper share submit status"
+        );
+        assert!(!rendered.contains(reflected_secret));
     }
 
     #[tokio::test(start_paused = true)]
@@ -1470,7 +1505,7 @@ mod tests {
         let client = client_with(transport.clone());
 
         let status = client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap();
 
@@ -1487,7 +1522,7 @@ mod tests {
             let client = client_with(transport.clone());
 
             let error = client
-                .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+                .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
                 .await
                 .unwrap_err();
 
@@ -1501,7 +1536,7 @@ mod tests {
         let client = client_with(transport.clone());
 
         let error = client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap_err();
 
@@ -1536,7 +1571,7 @@ mod tests {
             let client = client_with(transport.clone());
 
             let error = client
-                .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+                .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
                 .await
                 .unwrap_err();
 
@@ -1565,7 +1600,7 @@ mod tests {
             let client = client_with(transport.clone());
 
             let error = client
-                .submit_share(helper(), r#"{"share_index":0}"#, 10, &cancel_after_request)
+                .submit_share(helper(), &valid_share_json(), 10, &cancel_after_request)
                 .await
                 .unwrap_err();
 
@@ -1585,7 +1620,7 @@ mod tests {
         let client = client_with(transport.clone());
 
         let error = client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &cancel_after_request)
+            .submit_share(helper(), &valid_share_json(), 10, &cancel_after_request)
             .await
             .unwrap_err();
 
@@ -1626,7 +1661,7 @@ mod tests {
         let client = client_with(transport.clone());
 
         let error = client
-            .resubmit_share(helper(), r#"{"share_index":0}"#, 10, &cancel_after_request)
+            .resubmit_share(helper(), &valid_share_json(), 10, &cancel_after_request)
             .await
             .unwrap_err();
 
@@ -1648,7 +1683,7 @@ mod tests {
         let started = tokio::time::Instant::now();
 
         let error = client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap_err();
 
@@ -1674,13 +1709,13 @@ mod tests {
 
         for _ in 0..2 {
             client
-                .submit_share(helper(), r#"{"share_index":0}"#, 100, &never_cancel())
+                .submit_share(helper(), &valid_share_json(), 100, &never_cancel())
                 .await
                 .unwrap_err();
         }
         let started = tokio::time::Instant::now();
         let error = client
-            .submit_share(helper(), r#"{"share_index":0}"#, 100, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 100, &never_cancel())
             .await
             .unwrap_err();
 
@@ -1709,7 +1744,7 @@ mod tests {
         let error = client
             .submit_share_with_timeout(
                 helper(),
-                r#"{"share_index":0}"#,
+                &valid_share_json(),
                 10,
                 &never_cancel(),
                 Duration::from_secs(1),
@@ -1722,6 +1757,36 @@ mod tests {
         assert!(!error.is_ambiguous());
         assert_eq!(transport.call_count("POST"), 0);
         assert_eq!(client.health().failure_count(helper()), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn zero_submission_timeout_does_not_dispatch_or_score() {
+        let transport = Arc::new(MockTransport::default());
+        let client = client_with(transport.clone());
+
+        let error = client
+            .submit_share_with_timeout(
+                helper(),
+                &valid_share_json(),
+                10,
+                &never_cancel(),
+                Duration::ZERO,
+                Some(tokio::time::Instant::now() + Duration::from_secs(1)),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, HelperError::InvalidRequest { .. }));
+        assert!(!error.is_ambiguous());
+        assert_eq!(transport.call_count("POST"), 0);
+        assert_eq!(client.health().failure_count(helper()), 0);
+
+        let error = client
+            .post_json(&post_url(), valid_share_json().into_bytes(), Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, HelperError::InvalidRequest { .. }));
+        assert_eq!(transport.call_count("POST"), 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1748,7 +1813,7 @@ mod tests {
         let error = client
             .submit_share_with_timeout(
                 helper(),
-                r#"{"share_index":0}"#,
+                &valid_share_json(),
                 10,
                 &never_cancel(),
                 Duration::from_secs(10),
@@ -1791,7 +1856,7 @@ mod tests {
         let error = client
             .submit_share_with_timeout(
                 helper(),
-                r#"{"share_index":0}"#,
+                &valid_share_json(),
                 10,
                 &never_cancel(),
                 Duration::from_secs(10),
@@ -1827,7 +1892,7 @@ mod tests {
         let client = HelperClient::with_config(transport.clone(), HelperHealth::default(), config);
 
         client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap();
 
@@ -1838,33 +1903,84 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn malformed_share_body_is_not_sent_or_scored() {
+    async fn invalid_share_bodies_are_not_sent_or_scored() {
         let transport = Arc::new(MockTransport::default());
         let client = client_with(transport.clone());
+        client.health().record_failure(helper(), 1);
 
-        let submit_error = client
-            .submit_share(helper(), "not json", 10, &never_cancel())
-            .await
-            .unwrap_err();
+        let valid: Value = serde_json::from_str(&valid_share_json()).unwrap();
+        let mut unknown_field = valid.clone();
+        unknown_field
+            .as_object_mut()
+            .unwrap()
+            .insert("all_enc_shares".to_string(), serde_json::json!([]));
+        let mut nested_unknown_field = valid.clone();
+        nested_unknown_field["enc_share"]["plaintext_value"] = serde_json::json!(42);
+        let mut short_ciphertext = valid.clone();
+        short_ciphertext["enc_share"]["c1"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0_u8; 31]));
+        let mut mismatched_index = valid.clone();
+        mismatched_index["share_index"] = serde_json::json!(1);
+        let mut missing_indexed_commitment = valid.clone();
+        missing_indexed_commitment["share_index"] = serde_json::json!(1);
+        missing_indexed_commitment["enc_share"]["share_index"] = serde_json::json!(1);
+        let mut noncanonical_field = valid.clone();
+        noncanonical_field["primary_blind"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]));
+        let mut unsafe_integer = valid.clone();
+        unsafe_integer["submit_at"] = serde_json::json!(0x20_0000_0000_0000_u64);
+        let duplicate_field = valid_share_json().replacen(
+            r#""proposal_id":1"#,
+            r#""proposal_id":1,"proposal_id":1"#,
+            1,
+        );
+        let mut oversized = valid_share_json();
+        oversized.push_str(&" ".repeat(5_000));
+
+        let invalid_bodies = [
+            "not json".to_string(),
+            "null".to_string(),
+            "{}".to_string(),
+            "[]".to_string(),
+            serde_json::to_string(&unknown_field).unwrap(),
+            serde_json::to_string(&nested_unknown_field).unwrap(),
+            serde_json::to_string(&short_ciphertext).unwrap(),
+            serde_json::to_string(&mismatched_index).unwrap(),
+            serde_json::to_string(&missing_indexed_commitment).unwrap(),
+            serde_json::to_string(&noncanonical_field).unwrap(),
+            serde_json::to_string(&unsafe_integer).unwrap(),
+            duplicate_field,
+            oversized,
+        ];
+        for body in invalid_bodies {
+            let error = client
+                .submit_share(helper(), &body, 10, &never_cancel())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, HelperError::InvalidRequest { .. }),
+                "{body}"
+            );
+            assert!(!error.is_ambiguous());
+        }
+
         let resubmit_error = client
             .resubmit_share(helper(), "not json", 10, &never_cancel())
             .await
             .unwrap_err();
 
-        assert!(matches!(submit_error, HelperError::Decode { .. }));
-        assert!(matches!(resubmit_error, HelperError::Decode { .. }));
-        assert!(!submit_error.is_ambiguous());
+        assert!(matches!(resubmit_error, HelperError::InvalidRequest { .. }));
         assert!(!resubmit_error.is_ambiguous());
         assert_eq!(transport.call_count("POST"), 0);
-        assert_eq!(client.health().failure_count(helper()), 0);
+        assert_eq!(client.health().failure_count(helper()), 1);
 
         transport.queue_post(&post_url(), http_status(400));
         client
-            .resubmit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .resubmit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap_err();
         assert_eq!(transport.call_count("POST"), 1);
-        assert_eq!(client.health().failure_count(helper()), 1);
+        assert_eq!(client.health().failure_count(helper()), 2);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1887,7 +2003,7 @@ mod tests {
             .await
             .unwrap();
         client
-            .submit_share(helper(), r#"{"share_index":0}"#, 10, &never_cancel())
+            .submit_share(helper(), &valid_share_json(), 10, &never_cancel())
             .await
             .unwrap();
 
