@@ -61,7 +61,6 @@
 //!    the persisted transactions now own recovery.
 
 use std::convert::Infallible;
-use std::sync::OnceLock;
 
 use transparent::address::TransparentAddress;
 use transparent::bundle::{OutPoint, TxOut};
@@ -70,7 +69,10 @@ use zcash_address::{ToAddress, ZcashAddress};
 use zcash_client_backend::data_api::{Account, OutputLockStore, WalletRead};
 use zcash_client_backend::proposal::{Proposal, Step, StepOutputIndex};
 use zcash_client_backend::wallet::WalletTransparentOutput;
-use zcash_primitives::transaction::{builder::BundlePadding, Transaction, TxId};
+use zcash_primitives::transaction::{
+    builder::{cached_orchard_proving_key, BundlePadding},
+    Transaction, TxId,
+};
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
@@ -308,16 +310,20 @@ pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, Str
 }
 
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    static LEGACY_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
-    LEGACY_ORCHARD_PROVING_KEY.get_or_init(|| {
-        orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
-    })
+    cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
 
 fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    static IRONWOOD_ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
-    IRONWOOD_ORCHARD_PROVING_KEY
-        .get_or_init(|| orchard::circuit::ProvingKey::build(ironwood_orchard_circuit_version()))
+    cached_orchard_proving_key(ironwood_orchard_circuit_version())
+}
+
+/// Starts process-lifetime post-NU6.3 Orchard proving-key warm-up.
+///
+/// Returns immediately. A proof requested before warm-up completes blocks on
+/// the transaction builder's shared cache, so this is a latency optimization
+/// rather than a correctness requirement.
+pub fn start_orchard_proving_key_warmup() {
+    zcash_client_backend::start_orchard_proving_key_warmup(ironwood_orchard_circuit_version());
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
@@ -2330,6 +2336,22 @@ mod tests {
             orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_3)),
             orchard::bundle::BundleVersion::orchard_v3().circuit_version(),
         );
+    }
+
+    #[test]
+    fn pczt_and_warmup_share_the_transaction_builder_proving_key() {
+        start_orchard_proving_key_warmup();
+        start_orchard_proving_key_warmup();
+
+        let builder_key = cached_orchard_proving_key(ironwood_orchard_circuit_version());
+        assert!(std::ptr::eq(ironwood_orchard_proving_key(), builder_key));
+
+        let legacy_builder_key =
+            cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
+        assert!(std::ptr::eq(
+            legacy_orchard_proving_key(),
+            legacy_builder_key
+        ));
     }
 
     #[test]
