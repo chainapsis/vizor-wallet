@@ -67,6 +67,7 @@ fn recovery_fixture() -> VoteRecoveryBundle {
         }],
         share_blinds: vec![[0x31; 32]],
         share_comms: vec![[0x41; 32]],
+        batch: None,
     }
 }
 

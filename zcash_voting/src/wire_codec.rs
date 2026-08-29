@@ -20,15 +20,16 @@ use crate::{
         NoteRef, RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VotingError,
         VotingHotkeyTarget,
     },
-    vote::{SignedVoteCommitment, SignedVoteCommitments},
+    vote::{SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments},
     wire::{
         CompletedVoteChoiceView, CompletedVoteDisplayView, DelegationPirPrecomputeResultView,
         DelegationRecoveryView, DelegationRecoveryWorkView, DelegationStatusView,
         DelegationSubmissionWire, NextStepView, RoundPlanView, RoundRecoveryStateView,
         ShareDelegationRecordView, ShareWorkflowRecoveryView, SignedDelegationPayloadView,
-        SignedVoteCommitmentView, SignedVoteCommitmentsView, VoteCommitmentWire, VoteRecoveryView,
-        VoteRecoveryWorkView, VoteShareWire, VotingHotkeyTargetV1, VotingNoteRefView,
-        VotingNoteSelectionResultView, VotingRoundParams,
+        SignedVoteBatchView, SignedVoteCommitmentView, SignedVoteCommitmentsView,
+        VoteCommitmentBatchWire, VoteCommitmentWire, VoteRecoveryView, VoteRecoveryWorkView,
+        VoteShareWire, VotingHotkeyTargetV1, VotingNoteRefView, VotingNoteSelectionResultView,
+        VotingRoundParams,
     },
     BundlePolicy,
 };
@@ -191,6 +192,27 @@ impl VoteCommitmentWire {
     pub fn to_json(&self) -> Result<String, VotingError> {
         serde_json::to_string(self).map_err(|e| VotingError::Internal {
             message: format!("serialize vote commitment wire JSON failed: {e}"),
+        })
+    }
+}
+
+impl VoteCommitmentBatchWire {
+    /// Serializes the exact JSON request accepted by vote-sdk's batch endpoint.
+    ///
+    /// Returns [`VotingError::InvalidInput`] unless the batch contains between
+    /// one and [`crate::vote::MAX_VOTE_BATCH_ACTIONS`] actions.
+    pub fn to_json(&self) -> Result<String, VotingError> {
+        if self.votes.is_empty() || self.votes.len() > crate::vote::MAX_VOTE_BATCH_ACTIONS {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "atomic vote batch must contain between 1 and {} actions, got {}",
+                    crate::vote::MAX_VOTE_BATCH_ACTIONS,
+                    self.votes.len()
+                ),
+            });
+        }
+        serde_json::to_string(self).map_err(|e| VotingError::Internal {
+            message: format!("serialize vote commitment batch JSON failed: {e}"),
         })
     }
 }
@@ -424,6 +446,23 @@ impl TryFrom<SignedVoteCommitments> for SignedVoteCommitmentsView {
     }
 }
 
+impl TryFrom<SignedVoteBatch> for SignedVoteBatchView {
+    type Error = VotingError;
+
+    fn try_from(batch: SignedVoteBatch) -> Result<Self, Self::Error> {
+        Ok(Self {
+            bundle_index: batch.bundle_index,
+            commitments: batch
+                .commitments
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<_>, _>>()?,
+            batch_digest: batch.batch_digest.to_vec(),
+            batch_json: batch.batch_json,
+        })
+    }
+}
+
 impl From<recovery::DelegationRecovery> for DelegationRecoveryView {
     fn from(record: recovery::DelegationRecovery) -> Self {
         Self {
@@ -533,7 +572,15 @@ impl TryFrom<session::NextStep> for NextStepView {
                 bundle_index,
                 proposal_id,
             }
+            | session::NextStep::SubmitVoteBatch {
+                bundle_index,
+                proposal_id,
+            }
             | session::NextStep::PollVote {
+                bundle_index,
+                proposal_id,
+            }
+            | session::NextStep::PollVoteBatch {
                 bundle_index,
                 proposal_id,
             } => Ok(Self {
@@ -1262,45 +1309,81 @@ mod tests {
         assert!(draft.single_share);
     }
 
-    #[test]
-    fn signed_vote_commitments_view_preserves_public_wire_fields() {
-        let view = SignedVoteCommitmentsView::try_from(crate::vote::SignedVoteCommitments {
-            bundle_index: 1,
-            commitments: vec![crate::vote::SignedVoteCommitment {
-                proposal_id: 2,
-                choice: 1,
+    fn signed_vote_commitment_fixture() -> crate::vote::SignedVoteCommitment {
+        crate::vote::SignedVoteCommitment {
+            proposal_id: 2,
+            choice: 1,
+            vote_round_id: "00".repeat(32),
+            van_nullifier: [1; 32],
+            vote_authority_note_new: [2; 32],
+            vote_commitment: [3; 32],
+            proof: vec![4; 10],
+            encrypted_shares: vec![crate::WireEncryptedShare {
+                c1: vec![5; 32],
+                c2: vec![6; 32],
+                share_index: 0,
+            }],
+            share_payloads: vec![crate::SharePayload {
                 vote_round_id: "00".repeat(32),
-                van_nullifier: [1; 32],
-                vote_authority_note_new: [2; 32],
-                vote_commitment: [3; 32],
-                proof: vec![4; 10],
-                encrypted_shares: vec![crate::WireEncryptedShare {
+                shares_hash: vec![7; 32],
+                proposal_id: 2,
+                vote_decision: 1,
+                enc_share: crate::WireEncryptedShare {
                     c1: vec![5; 32],
                     c2: vec![6; 32],
                     share_index: 0,
-                }],
-                share_payloads: vec![crate::SharePayload {
-                    vote_round_id: "00".repeat(32),
-                    shares_hash: vec![7; 32],
-                    proposal_id: 2,
-                    vote_decision: 1,
-                    enc_share: crate::WireEncryptedShare {
-                        c1: vec![5; 32],
-                        c2: vec![6; 32],
-                        share_index: 0,
-                    },
-                    tree_position: 9,
-                    all_enc_shares: vec![],
-                    share_comms: vec![vec![8; 32]],
-                    primary_blind: vec![9; 32],
-                }],
-                anchor_height: 100,
-                shares_hash: [7; 32],
-                share_comms: vec![[8; 32]],
-                r_vpk: [10; 32],
-                vote_auth_sig: [9; 64],
-                commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
+                },
+                tree_position: 9,
+                all_enc_shares: vec![],
+                share_comms: vec![vec![8; 32]],
+                primary_blind: vec![9; 32],
             }],
+            anchor_height: 100,
+            shares_hash: [7; 32],
+            share_comms: vec![[8; 32]],
+            r_vpk: [10; 32],
+            vote_auth_sig: [9; 64],
+            commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
+        }
+    }
+
+    #[test]
+    fn vote_commitment_batch_wire_enforces_protocol_action_bounds() {
+        let vote = VoteCommitmentWire::try_from(&signed_vote_commitment_fixture()).unwrap();
+
+        let empty_error = VoteCommitmentBatchWire { votes: vec![] }
+            .to_json()
+            .unwrap_err();
+        assert!(empty_error.to_string().contains("between 1 and 15 actions"));
+
+        let maximum = VoteCommitmentBatchWire {
+            votes: vec![vote.clone(); crate::vote::MAX_VOTE_BATCH_ACTIONS],
+        }
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&maximum).unwrap()["votes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            crate::vote::MAX_VOTE_BATCH_ACTIONS
+        );
+
+        let oversized_error = VoteCommitmentBatchWire {
+            votes: vec![vote; crate::vote::MAX_VOTE_BATCH_ACTIONS + 1],
+        }
+        .to_json()
+        .unwrap_err();
+        assert!(oversized_error
+            .to_string()
+            .contains("between 1 and 15 actions"));
+    }
+
+    #[test]
+    fn signed_vote_commitments_view_preserves_singleton_wire_fields() {
+        let view = SignedVoteCommitmentsView::try_from(crate::vote::SignedVoteCommitments {
+            bundle_index: 1,
+            commitments: vec![signed_vote_commitment_fixture()],
         })
         .unwrap();
         assert_eq!(view.bundle_index, 1);
@@ -1319,6 +1402,21 @@ mod tests {
             view.commitments[0].wire.vote_auth_sig,
             base64::engine::general_purpose::STANDARD.encode(vec![9; 64])
         );
+    }
+
+    #[test]
+    fn signed_vote_batch_view_preserves_atomic_fields() {
+        let view = SignedVoteBatchView::try_from(crate::vote::SignedVoteBatch {
+            bundle_index: 1,
+            commitments: vec![signed_vote_commitment_fixture()],
+            batch_digest: [0xAB; 32],
+            batch_json: "{\"votes\":[]}".to_string(),
+        })
+        .unwrap();
+        assert_eq!(view.bundle_index, 1);
+        assert_eq!(view.batch_digest, vec![0xAB; 32]);
+        assert_eq!(view.batch_json, "{\"votes\":[]}");
+        assert_eq!(view.commitments[0].proposal_id, 2);
     }
 
     #[test]
@@ -1433,17 +1531,25 @@ mod tests {
                     bundle_index: 4,
                     proposal_id: 12,
                 },
-                session::NextStep::PollVote {
+                session::NextStep::SubmitVoteBatch {
                     bundle_index: 5,
                     proposal_id: 13,
                 },
-                session::NextStep::SubmitShares {
+                session::NextStep::PollVote {
                     bundle_index: 6,
+                    proposal_id: 14,
+                },
+                session::NextStep::PollVoteBatch {
+                    bundle_index: 7,
+                    proposal_id: 15,
+                },
+                session::NextStep::SubmitShares {
+                    bundle_index: 8,
                     proposal_id: 14,
                     share_index: 0,
                 },
                 session::NextStep::ConfirmShare {
-                    bundle_index: 7,
+                    bundle_index: 9,
                     proposal_id: 15,
                     share_index: 1,
                 },
@@ -1459,14 +1565,32 @@ mod tests {
                 phase: crate::phases::DelegationPhase::Submitted,
                 tx_hash: Some("delegation-tx".to_string()),
             }],
-            recovered_vote_work: vec![session::VoteRecoveryWork {
-                kind: session::VoteRecoveryWorkKind::SubmitShares,
-                bundle_index: 6,
-                proposal_id: 14,
-                tx_hash: None,
-                vc_tree_position: Some(99),
-                share_indexes: vec![0, 1],
-            }],
+            recovered_vote_work: vec![
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::SubmitVoteBatch,
+                    bundle_index: 4,
+                    proposal_id: 12,
+                    tx_hash: None,
+                    vc_tree_position: None,
+                    share_indexes: Vec::new(),
+                },
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::PollVoteBatch,
+                    bundle_index: 5,
+                    proposal_id: 13,
+                    tx_hash: Some("batch-tx".to_string()),
+                    vc_tree_position: None,
+                    share_indexes: Vec::new(),
+                },
+                session::VoteRecoveryWork {
+                    kind: session::VoteRecoveryWorkKind::SubmitShares,
+                    bundle_index: 6,
+                    proposal_id: 14,
+                    tx_hash: None,
+                    vc_tree_position: Some(99),
+                    share_indexes: vec![0, 1],
+                },
+            ],
             open_proposals: vec![11, 12],
             immediate_share_key: Some(crate::share_policy::ImmediateShareKey {
                 bundle_index: 7,
@@ -1523,7 +1647,9 @@ mod tests {
                 "poll_delegation",
                 "cast_vote",
                 "submit_vote",
+                "submit_vote_batch",
                 "poll_vote",
+                "poll_vote_batch",
                 "submit_shares",
                 "confirm_share"
             ]
@@ -1531,11 +1657,17 @@ mod tests {
         assert_eq!(view.next_steps[0].bundle_index, 1);
         assert_eq!(view.next_steps[2].proposal_id, 11);
         assert_eq!(view.next_steps[2].choice, 1);
-        assert_eq!(view.next_steps[6].share_index, 1);
+        assert_eq!(view.next_steps[8].share_index, 1);
         assert_eq!(view.delegation_statuses[0].phase, "submitted_delegation");
         assert_eq!(view.recovered_delegation_work[0].kind, "poll_delegation");
-        assert_eq!(view.recovered_vote_work[0].kind, "submit_shares");
-        assert_eq!(view.recovered_vote_work[0].vc_tree_position, Some(99));
-        assert_eq!(view.recovered_vote_work[0].share_indexes, vec![0, 1]);
+        assert_eq!(view.recovered_vote_work[0].kind, "submit_vote_batch");
+        assert_eq!(view.recovered_vote_work[1].kind, "poll_vote_batch");
+        assert_eq!(
+            view.recovered_vote_work[1].tx_hash.as_deref(),
+            Some("batch-tx")
+        );
+        assert_eq!(view.recovered_vote_work[2].kind, "submit_shares");
+        assert_eq!(view.recovered_vote_work[2].vc_tree_position, Some(99));
+        assert_eq!(view.recovered_vote_work[2].share_indexes, vec![0, 1]);
     }
 }

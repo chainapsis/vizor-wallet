@@ -4,6 +4,34 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Cast-vote batches now build an ordered vote-authority chain, prove up to three
+  ZKP #2 actions concurrently by default, sign every action over one
+  domain-separated batch digest, and persist the whole recovery set atomically.
+  The explicit `commit_atomic_vote_batch`, `prepare_atomic_vote_batch`, and
+  `recover_atomic_vote_batch` APIs return `SignedVoteBatch`, whose canonical
+  `batch_json` belongs on the chain's `cast-vote-batch` endpoint. The existing
+  `commit_batch`, `prepare_commit_batch`, `persist_prepared_commit_batch`, and
+  `SignedVoteCommitments` APIs remain one-draft singleton compatibility
+  wrappers for current wallet integrations; multi-proposal callers must use the
+  atomic APIs so one witness cannot produce competing singleton spends.
+  `confirmation::confirm_vote_batch_submission` atomically records the shared
+  transaction hash, ordered vote-commitment positions, and final VAN position.
+  Restart planning groups committed or submitted batch members into one
+  `SubmitVoteBatch` or `PollVoteBatch` step, whose recovery anchor reconstructs
+  the complete canonical request and shared digest without duplicate submits.
+  Fresh vote preparation waits for an existing authority chain to confirm for
+  the same bundle, preventing competing spends of its current VAN.
+  Changing or skipping an unsubmitted choice clears its obsolete recovery
+  chain before new work is planned.
+  Submitted batches defer helper-share retry work for every member until the
+  atomic confirmation records all commitment-tree positions.
+  Batches keep choices, note membership, and voting keys hidden as before, but
+  intentionally reveal that their included proposal actions came from one
+  transaction.
+
 ## v3.1.0-rc.13
 
 ### Changed

@@ -5,8 +5,8 @@
 //! needed by mobile SDK boundaries without exposing proof-circuit internals.
 
 pub use crate::confirmation::{
-    confirm_delegation_submission, confirm_vote_submission, DelegationConfirmation, TxEvent,
-    TxEventAttribute, VoteConfirmation,
+    confirm_delegation_submission, confirm_vote_batch_submission, confirm_vote_submission,
+    DelegationConfirmation, TxEvent, TxEventAttribute, VoteBatchConfirmation, VoteConfirmation,
 };
 pub use crate::delegate::gather_delegation_lwd_inputs;
 pub use crate::delegate::LightwalletdBranchIdProvider;
@@ -89,17 +89,22 @@ pub use crate::types::{
     MAX_PROPOSAL_ID, MAX_VOTE_OPTIONS, MIN_PROPOSAL_ID, MIN_VOTE_OPTIONS,
 };
 pub use crate::vote::{
-    commit as commit_vote, commit_batch, parse_recovery, persist_prepared_commit,
-    persist_prepared_commit_batch, prepare_commit, prepare_commit_batch,
-    record_submission as record_vote_submission, record_vc_position,
+    commit as commit_vote, commit_atomic_vote_batch, commit_batch, parse_recovery,
+    persist_prepared_atomic_vote_batch, persist_prepared_commit, persist_prepared_commit_batch,
+    prepare_atomic_vote_batch, prepare_commit, prepare_commit_batch,
+    record_batch_submission as record_vote_batch_submission,
+    record_submission as record_vote_submission, record_vc_position, recover_atomic_vote_batch,
     recover_commit as recover_vote_commit, recover_signed_commitments, recovery_bundle,
     serialize_recovery, submission as vote_submission, validate_draft_vote, validate_draft_votes,
-    CommittedVote, DraftVote, PreparedVoteCommit, PreparedVoteCommitments, SignedVoteCommitment,
-    SignedVoteCommitments, VanWitness, VoteCommit, VoteCommitBatch, VoteCommitStage,
-    VoteRecoveryBundle, VoteSigner, VoteSubmission,
+    AtomicVoteBatch, CommittedVote, DraftVote, PreparedAtomicVoteBatch, PreparedVoteCommit,
+    PreparedVoteCommitments, SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments,
+    VanWitness, VoteBatchRecovery, VoteCommit, VoteCommitBatch, VoteCommitStage,
+    VoteRecoveryBundle, VoteSigner, VoteSubmission, DEFAULT_BATCH_PROOF_CONCURRENCY,
+    MAX_VOTE_BATCH_ACTIONS,
 };
 pub use crate::wire::{
-    DelegationSubmissionWire, VoteCommitmentWire, VoteShareWire, VotingHotkeyTargetV1,
+    DelegationSubmissionWire, SignedVoteBatchView, VoteCommitmentBatchWire, VoteCommitmentWire,
+    VoteShareWire, VotingHotkeyTargetV1,
 };
 pub use crate::{warm_proving_caches, warm_zkp2_proving_cache};
 

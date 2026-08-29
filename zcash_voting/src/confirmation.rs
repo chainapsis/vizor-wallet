@@ -10,11 +10,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::storage::{queries, VotingDb};
 use crate::types::VotingError;
-pub use crate::wire::{DelegationConfirmation, VoteConfirmation};
+pub use crate::wire::{DelegationConfirmation, VoteBatchConfirmation, VoteConfirmation};
 
 const DELEGATE_VOTE_EVENT: &str = "delegate_vote";
 const CAST_VOTE_EVENT: &str = "cast_vote";
+const CAST_VOTE_BATCH_EVENT: &str = "cast_vote_batch";
 const LEAF_INDEX_ATTRIBUTE: &str = "leaf_index";
+const BATCH_DIGEST_ATTRIBUTE: &str = "batch_digest";
+const BATCH_SIZE_ATTRIBUTE: &str = "batch_size";
+const FINAL_VAN_LEAF_INDEX_ATTRIBUTE: &str = "final_van_leaf_index";
+const VC_LEAF_INDICES_ATTRIBUTE: &str = "vote_commitment_leaf_indices";
+const PROPOSAL_IDS_ATTRIBUTE: &str = "proposal_ids";
+const VAN_NULLIFIERS_ATTRIBUTE: &str = "van_nullifiers";
 const ROUND_ID_ATTRIBUTES: [&str; 2] = ["vote_round_id", "round_id"];
 
 /// One chain transaction event returned by a wallet's chain client.
@@ -115,8 +122,8 @@ fn record_delegation_confirmation(
 ///
 /// Returns an error when confirmation parsing fails, the vote or bundle row is
 /// missing, the event round id does not match `round_id`, stored confirmation
-/// fields conflict, multiple same-round cast-vote events are present, or the DB
-/// transaction cannot commit.
+/// fields conflict, the vote belongs to an atomic batch, multiple same-round
+/// cast-vote events are present, or the DB transaction cannot commit.
 pub fn confirm_vote_submission(
     db: &VotingDb,
     round_id: &str,
@@ -128,6 +135,131 @@ pub fn confirm_vote_submission(
     let confirmation = parse_vote_confirmation_for_round(tx_hash, round_id, events)?;
     record_vote_confirmation(db, round_id, bundle_index, proposal_id, &confirmation)?;
     Ok(confirmation)
+}
+
+/// Parses and atomically records a confirmed atomic cast-vote batch.
+pub fn confirm_vote_batch_submission(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    expected_batch_digest: &[u8],
+    tx_hash: &str,
+    events: &[TxEvent],
+) -> Result<VoteBatchConfirmation, VotingError> {
+    let expected_batch_digest: [u8; 32] =
+        expected_batch_digest
+            .try_into()
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!(
+                    "expected_batch_digest must be 32 bytes, got {}",
+                    expected_batch_digest.len()
+                ),
+            })?;
+    let confirmation = parse_vote_batch_confirmation_for_round(tx_hash, round_id, events)?;
+    if confirmation.batch_digest.as_slice() != expected_batch_digest {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "cast_vote_batch digest mismatch: expected {}, got {}",
+                hex::encode(expected_batch_digest),
+                hex::encode(&confirmation.batch_digest)
+            ),
+        });
+    }
+    record_vote_batch_confirmation(
+        db,
+        round_id,
+        bundle_index,
+        expected_batch_digest,
+        &confirmation,
+        events,
+    )?;
+    Ok(confirmation)
+}
+
+fn record_vote_batch_confirmation(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    batch_digest: [u8; 32],
+    confirmation: &VoteBatchConfirmation,
+    events: &[TxEvent],
+) -> Result<(), VotingError> {
+    require_tx_hash(&confirmation.tx_hash)?;
+    let event = required_event_for_round(events, CAST_VOTE_BATCH_EVENT, round_id)?;
+    let event_nullifiers = parse_csv_strings(required_attribute(
+        event,
+        CAST_VOTE_BATCH_EVENT,
+        VAN_NULLIFIERS_ATTRIBUTE,
+    )?)?;
+    let mut conn = db.conn();
+    let wallet_id = db.wallet_id();
+    let tx = conn.transaction().map_err(|e| VotingError::Internal {
+        message: format!("vote batch confirmation transaction failed: {e}"),
+    })?;
+    let recoveries = crate::vote::load_vote_batch_recoveries_with_conn(
+        &tx,
+        &wallet_id,
+        round_id,
+        bundle_index,
+        batch_digest,
+    )?;
+    let expected_proposals = recoveries
+        .iter()
+        .map(|recovery| recovery.proposal_id)
+        .collect::<Vec<_>>();
+    let expected_nullifiers = recoveries
+        .iter()
+        .map(|recovery| hex::encode(recovery.van_nullifier))
+        .collect::<Vec<_>>();
+    if confirmation.proposal_ids != expected_proposals || event_nullifiers != expected_nullifiers {
+        return Err(VotingError::InvalidInput {
+            message: "cast_vote_batch event actions do not match persisted recovery data"
+                .to_string(),
+        });
+    }
+    if confirmation.vc_tree_positions.len() != recoveries.len() {
+        return Err(VotingError::InvalidInput {
+            message: "cast_vote_batch event has the wrong number of VC positions".to_string(),
+        });
+    }
+    for (recovery, vc_tree_position) in recoveries
+        .iter()
+        .zip(confirmation.vc_tree_positions.iter().copied())
+    {
+        queries::record_vote_submission(
+            &tx,
+            round_id,
+            &wallet_id,
+            bundle_index,
+            recovery.proposal_id,
+            &confirmation.tx_hash,
+        )?;
+        require_vote_recovery_json(
+            &tx,
+            round_id,
+            &wallet_id,
+            bundle_index,
+            recovery.proposal_id,
+        )?;
+        crate::vote::record_vc_position_with_conn(
+            &tx,
+            &wallet_id,
+            round_id,
+            bundle_index,
+            recovery.proposal_id,
+            vc_tree_position,
+        )?;
+    }
+    advance_van_position_in_tx(
+        &tx,
+        round_id,
+        &wallet_id,
+        bundle_index,
+        confirmation.van_leaf_position,
+    )?;
+    tx.commit().map_err(|e| VotingError::Internal {
+        message: format!("commit vote batch confirmation transaction failed: {e}"),
+    })
 }
 
 /// Records a confirmed cast-vote transaction atomically.
@@ -154,6 +286,14 @@ fn record_vote_confirmation(
     let tx = conn.transaction().map_err(|e| VotingError::Internal {
         message: format!("vote confirmation transaction failed: {e}"),
     })?;
+
+    crate::vote::ensure_singleton_vote_update_with_conn(
+        &tx,
+        &wallet_id,
+        round_id,
+        bundle_index,
+        proposal_id,
+    )?;
 
     queries::record_vote_submission(
         &tx,
@@ -236,7 +376,7 @@ fn parse_delegation_confirmation_for_round(
     require_tx_hash(tx_hash)?;
     let event = required_event_for_round(events, DELEGATE_VOTE_EVENT, round_id)?;
     let raw_leaf_index = required_attribute(event, DELEGATE_VOTE_EVENT, LEAF_INDEX_ATTRIBUTE)?;
-    let van_leaf_position = parse_delegation_leaf_index(raw_leaf_index)?;
+    let van_leaf_position = parse_compat_u32(raw_leaf_index, "delegate_vote leaf_index")?;
     Ok(DelegationConfirmation {
         tx_hash: tx_hash.to_string(),
         van_leaf_position,
@@ -252,6 +392,66 @@ fn parse_vote_confirmation_for_round(
     let event = required_event_for_round(events, CAST_VOTE_EVENT, round_id)?;
     let raw_leaf_index = required_attribute(event, CAST_VOTE_EVENT, LEAF_INDEX_ATTRIBUTE)?;
     parse_vote_confirmation_leaf_index(tx_hash, raw_leaf_index)
+}
+
+fn parse_vote_batch_confirmation_for_round(
+    tx_hash: &str,
+    round_id: &str,
+    events: &[TxEvent],
+) -> Result<VoteBatchConfirmation, VotingError> {
+    require_tx_hash(tx_hash)?;
+    let event = required_event_for_round(events, CAST_VOTE_BATCH_EVENT, round_id)?;
+    let batch_digest = hex::decode(required_attribute(
+        event,
+        CAST_VOTE_BATCH_EVENT,
+        BATCH_DIGEST_ATTRIBUTE,
+    )?)
+    .map_err(|e| VotingError::InvalidInput {
+        message: format!("cast_vote_batch batch_digest is not hex: {e}"),
+    })?;
+    if batch_digest.len() != 32 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "cast_vote_batch batch_digest must decode to 32 bytes, got {}",
+                batch_digest.len()
+            ),
+        });
+    }
+    let batch_size = parse_compat_u32(
+        required_attribute(event, CAST_VOTE_BATCH_EVENT, BATCH_SIZE_ATTRIBUTE)?,
+        "cast_vote_batch batch_size",
+    )? as usize;
+    let van_leaf_position = parse_compat_u32(
+        required_attribute(event, CAST_VOTE_BATCH_EVENT, FINAL_VAN_LEAF_INDEX_ATTRIBUTE)?,
+        "cast_vote_batch final VAN leaf position",
+    )?;
+    let proposal_ids = parse_csv_u32(required_attribute(
+        event,
+        CAST_VOTE_BATCH_EVENT,
+        PROPOSAL_IDS_ATTRIBUTE,
+    )?)?;
+    let vc_tree_positions = parse_csv_u64(required_attribute(
+        event,
+        CAST_VOTE_BATCH_EVENT,
+        VC_LEAF_INDICES_ATTRIBUTE,
+    )?)?;
+    if batch_size == 0 || proposal_ids.len() != batch_size || vc_tree_positions.len() != batch_size
+    {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "cast_vote_batch event size mismatch: size={batch_size}, proposals={}, VC positions={}",
+                proposal_ids.len(),
+                vc_tree_positions.len()
+            ),
+        });
+    }
+    Ok(VoteBatchConfirmation {
+        tx_hash: tx_hash.to_string(),
+        batch_digest,
+        van_leaf_position,
+        proposal_ids,
+        vc_tree_positions,
+    })
 }
 
 fn parse_vote_confirmation_leaf_index(
@@ -352,7 +552,7 @@ fn event_round_id_matches(event_round_id: &str, expected_round_id: &str) -> bool
         || BASE64_STANDARD.encode(event_round_id.as_bytes()) == expected_round_id
 }
 
-fn parse_delegation_leaf_index(raw: &str) -> Result<u32, VotingError> {
+fn parse_compat_u32(raw: &str, field: &str) -> Result<u32, VotingError> {
     let raw = raw.trim();
     if let Ok(position) = raw.parse::<u32>() {
         return Ok(position);
@@ -366,7 +566,22 @@ fn parse_delegation_leaf_index(raw: &str) -> Result<u32, VotingError> {
         }
     }
 
-    parse_u32(raw, "delegate_vote leaf_index")
+    parse_u32(raw, field)
+}
+
+fn parse_compat_u64(raw: &str, field: &str) -> Result<u64, VotingError> {
+    let raw = raw.trim();
+    if let Ok(position) = raw.parse::<u64>() {
+        return Ok(position);
+    }
+
+    if !raw.is_ascii() {
+        if let Ok(position) = BASE64_STANDARD.encode(raw.as_bytes()).parse::<u64>() {
+            return Ok(position);
+        }
+    }
+
+    parse_u64(raw, field)
 }
 
 fn require_tx_hash(tx_hash: &str) -> Result<(), VotingError> {
@@ -388,6 +603,39 @@ fn parse_u64(raw: &str, field: &str) -> Result<u64, VotingError> {
     raw.parse::<u64>().map_err(|_| VotingError::InvalidInput {
         message: format!("{field} must be an unsigned 64-bit integer, got {raw:?}"),
     })
+}
+
+fn parse_csv_strings(raw: &str) -> Result<Vec<String>, VotingError> {
+    if raw.is_empty() {
+        return Err(VotingError::InvalidInput {
+            message: "comma-separated event attribute must not be empty".to_string(),
+        });
+    }
+    let values = raw
+        .split(',')
+        .map(str::trim)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if values.iter().any(String::is_empty) {
+        return Err(VotingError::InvalidInput {
+            message: format!("malformed comma-separated event attribute {raw:?}"),
+        });
+    }
+    Ok(values)
+}
+
+fn parse_csv_u32(raw: &str) -> Result<Vec<u32>, VotingError> {
+    parse_csv_strings(raw)?
+        .into_iter()
+        .map(|value| parse_compat_u32(&value, "cast_vote_batch proposal id"))
+        .collect()
+}
+
+fn parse_csv_u64(raw: &str) -> Result<Vec<u64>, VotingError> {
+    parse_csv_strings(raw)?
+        .into_iter()
+        .map(|value| parse_compat_u64(&value, "cast_vote_batch VC tree position"))
+        .collect()
 }
 
 fn load_bundle_confirmation_fields(
@@ -479,6 +727,8 @@ mod tests {
     use super::*;
     use crate::round::{RoundParams, VotingDb};
     use crate::storage::queries;
+    use crate::types::EncryptedShare;
+    use crate::vote::{VoteBatchRecovery, VoteRecoveryBundle};
 
     const ROUND_ID: &str = "1111111111111111111111111111111111111111111111111111111111111111";
     const OTHER_ROUND_ID: &str = "2222222222222222222222222222222222222222222222222222222222222222";
@@ -631,6 +881,123 @@ mod tests {
         .unwrap();
     }
 
+    fn batch_recovery(proposal_id: u32, vote_decision: u32, marker: u8) -> VoteRecoveryBundle {
+        VoteRecoveryBundle {
+            vote_round_id: ROUND_ID.to_string(),
+            bundle_index: 0,
+            proposal_id,
+            vote_decision,
+            anchor_height: 100,
+            vc_tree_position: 0,
+            single_share: true,
+            num_options: 3,
+            van_nullifier: [marker; 32],
+            vote_authority_note_new: [marker.wrapping_add(1); 32],
+            vote_commitment: [marker.wrapping_add(2); 32],
+            proof: vec![marker.wrapping_add(3); 8],
+            shares_hash: [marker.wrapping_add(4); 32],
+            r_vpk: [marker.wrapping_add(5); 32],
+            alpha_v: [marker.wrapping_add(6); 32],
+            vote_auth_sig: [marker.wrapping_add(7); 64],
+            encrypted_shares: vec![EncryptedShare {
+                c1: vec![marker.wrapping_add(8); 32],
+                c2: vec![marker.wrapping_add(9); 32],
+                share_index: 0,
+                plaintext_value: 1,
+                randomness: vec![marker.wrapping_add(10); 32],
+            }],
+            share_blinds: vec![[marker.wrapping_add(11); 32]],
+            share_comms: vec![[marker.wrapping_add(12); 32]],
+            batch: None,
+        }
+    }
+
+    fn recovery_commitment_bytes_for(recovery: &VoteRecoveryBundle) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "van_nullifier": hex::encode(recovery.van_nullifier),
+            "vote_authority_note_new": hex::encode(recovery.vote_authority_note_new),
+            "vote_commitment": hex::encode(recovery.vote_commitment),
+            "proof": hex::encode(&recovery.proof),
+        }))
+        .unwrap()
+    }
+
+    fn store_two_action_batch(db: &VotingDb) -> ([u8; 32], [VoteRecoveryBundle; 2]) {
+        let mut first = batch_recovery(1, 0, 0x21);
+        let mut second = batch_recovery(2, 1, 0x41);
+        let actions = [&first, &second]
+            .into_iter()
+            .map(
+                |recovery| crate::vote_commitment::CastVoteBatchSighashAction {
+                    r_vpk: &recovery.r_vpk,
+                    van_nullifier: &recovery.van_nullifier,
+                    vote_authority_note_new: &recovery.vote_authority_note_new,
+                    vote_commitment: &recovery.vote_commitment,
+                    proposal_id: recovery.proposal_id,
+                },
+            )
+            .collect::<Vec<_>>();
+        let digest =
+            crate::vote_commitment::cast_vote_batch_sighash(ROUND_ID, 100, &actions).unwrap();
+        first.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 0,
+            size: 2,
+        });
+        second.batch = Some(VoteBatchRecovery {
+            digest,
+            index: 1,
+            size: 2,
+        });
+
+        for recovery in [&first, &second] {
+            db.conn()
+                .execute(
+                    "INSERT INTO votes (
+                        round_id, wallet_id, bundle_index, proposal_id, choice,
+                        commitment, commitment_bundle_json, created_at
+                    ) VALUES (
+                        :round_id, :wallet_id, :bundle_index, :proposal_id, :choice,
+                        :commitment, :recovery, :created_at
+                    )",
+                    named_params! {
+                        ":round_id": ROUND_ID,
+                        ":wallet_id": WALLET_ID,
+                        ":bundle_index": recovery.bundle_index as i64,
+                        ":proposal_id": recovery.proposal_id as i64,
+                        ":choice": recovery.vote_decision as i64,
+                        ":commitment": recovery_commitment_bytes_for(recovery),
+                        ":recovery": crate::vote::serialize_recovery(recovery).unwrap(),
+                        ":created_at": 1_i64,
+                    },
+                )
+                .unwrap();
+        }
+
+        (digest, [first, second])
+    }
+
+    fn vote_batch_events(digest: [u8; 32], recoveries: &[VoteRecoveryBundle]) -> Vec<TxEvent> {
+        let digest = hex::encode(digest);
+        let nullifiers = recoveries
+            .iter()
+            .map(|recovery| hex::encode(recovery.van_nullifier))
+            .collect::<Vec<_>>()
+            .join(",");
+        vec![event_with_attrs(
+            CAST_VOTE_BATCH_EVENT,
+            &[
+                ("round_id", ROUND_ID),
+                (BATCH_DIGEST_ATTRIBUTE, &digest),
+                (BATCH_SIZE_ATTRIBUTE, "2"),
+                (FINAL_VAN_LEAF_INDEX_ATTRIBUTE, "10"),
+                (VC_LEAF_INDICES_ATTRIBUTE, "11,12"),
+                (PROPOSAL_IDS_ATTRIBUTE, "1,2"),
+                (VAN_NULLIFIERS_ATTRIBUTE, &nullifiers),
+            ],
+        )]
+    }
+
     #[test]
     fn parses_delegation_leaf_index() {
         let parsed = parse_delegation_confirmation_for_round(
@@ -677,6 +1044,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_batch_positions_changed_by_legacy_base64_heuristic() {
+        let round_id = "0400".repeat(16);
+        let decoded_round_id =
+            String::from_utf8(BASE64_STANDARD.decode(&round_id).unwrap()).unwrap();
+        let decoded_position = String::from_utf8(BASE64_STANDARD.decode("1400").unwrap()).unwrap();
+        let digest = "ab".repeat(32);
+
+        let parsed = parse_vote_batch_confirmation_for_round(
+            "batch-tx",
+            &round_id,
+            &[event_with_attrs(
+                CAST_VOTE_BATCH_EVENT,
+                &[
+                    ("vote_round_id", &decoded_round_id),
+                    (BATCH_DIGEST_ATTRIBUTE, &digest),
+                    (BATCH_SIZE_ATTRIBUTE, "1"),
+                    (FINAL_VAN_LEAF_INDEX_ATTRIBUTE, &decoded_position),
+                    (VC_LEAF_INDICES_ATTRIBUTE, &decoded_position),
+                    (PROPOSAL_IDS_ATTRIBUTE, "1"),
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(parsed.van_leaf_position, 1400);
+        assert_eq!(parsed.vc_tree_positions, vec![1400]);
+    }
+
+    #[test]
     fn parses_cast_vote_leaf_indexes() {
         let parsed = parse_vote_confirmation_for_round(
             "tx-1",
@@ -696,6 +1092,34 @@ mod tests {
                 vc_tree_position: 789,
             }
         );
+    }
+
+    #[test]
+    fn parses_cast_vote_batch_event_in_action_order() {
+        let digest = "ab".repeat(32);
+        let parsed = parse_vote_batch_confirmation_for_round(
+            "batch-tx",
+            ROUND_ID,
+            &[event_with_attrs(
+                CAST_VOTE_BATCH_EVENT,
+                &[
+                    ("round_id", ROUND_ID),
+                    (BATCH_DIGEST_ATTRIBUTE, &digest),
+                    (BATCH_SIZE_ATTRIBUTE, "2"),
+                    (FINAL_VAN_LEAF_INDEX_ATTRIBUTE, "7"),
+                    (VC_LEAF_INDICES_ATTRIBUTE, "8,9"),
+                    (PROPOSAL_IDS_ATTRIBUTE, "1,15"),
+                    (VAN_NULLIFIERS_ATTRIBUTE, "aa,bb"),
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(parsed.tx_hash, "batch-tx");
+        assert_eq!(parsed.batch_digest, vec![0xAB; 32]);
+        assert_eq!(parsed.van_leaf_position, 7);
+        assert_eq!(parsed.proposal_ids, vec![1, 15]);
+        assert_eq!(parsed.vc_tree_positions, vec![8, 9]);
     }
 
     #[test]
@@ -985,6 +1409,156 @@ mod tests {
                 .unwrap()
                 .vc_tree_position,
             789
+        );
+    }
+
+    #[test]
+    fn records_vote_batch_confirmation_replay_and_helper_positions() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        let (digest, recoveries) = store_two_action_batch(&db);
+        let events = vote_batch_events(digest, &recoveries);
+
+        let first =
+            confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events).unwrap();
+        let replay =
+            confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events).unwrap();
+
+        assert_eq!(replay, first);
+        assert_eq!(
+            queries::load_van_position(&db.conn(), ROUND_ID, WALLET_ID, 0).unwrap(),
+            10
+        );
+        for (proposal_id, vc_tree_position) in [(1, 11), (2, 12)] {
+            assert_eq!(
+                queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, proposal_id)
+                    .unwrap()
+                    .as_deref(),
+                Some("batch-tx")
+            );
+            assert_eq!(
+                db.vote_phase(ROUND_ID, 0, proposal_id).unwrap(),
+                crate::phases::VotePhase::Confirmed
+            );
+            let recovery = crate::vote::recovery_bundle(&db, ROUND_ID, 0, proposal_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(recovery.vc_tree_position, vc_tree_position);
+            assert!(crate::share::recover_payloads(&recovery)
+                .unwrap()
+                .iter()
+                .all(|payload| payload.tree_position == vc_tree_position));
+        }
+    }
+
+    #[test]
+    fn vote_batch_confirmation_rolls_back_when_a_later_member_conflicts() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        let (digest, recoveries) = store_two_action_batch(&db);
+        let events = vote_batch_events(digest, &recoveries);
+        db.conn()
+            .execute(
+                "UPDATE votes SET vc_tree_position = 999
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0
+                   AND proposal_id = 2",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+            )
+            .unwrap();
+
+        let error = confirm_vote_batch_submission(&db, ROUND_ID, 0, &digest, "batch-tx", &events)
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("vote commitment tree position already recorded"));
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 1).unwrap(),
+            None
+        );
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 2).unwrap(),
+            None
+        );
+        assert_eq!(
+            crate::vote::recovery_bundle(&db, ROUND_ID, 0, 1)
+                .unwrap()
+                .unwrap()
+                .vc_tree_position,
+            0
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 1)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            None
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 2)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            Some(999)
+        );
+        let van_position: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT van_leaf_position FROM bundles
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(van_position, None);
+    }
+
+    #[test]
+    fn singleton_confirmation_rejects_batch_member_without_mutation() {
+        let db = test_db();
+        insert_bundle(&db, 0);
+        insert_vote(&db, 0, 1);
+        let mut recovery: serde_json::Value =
+            serde_json::from_str(&valid_recovery_json(456)).unwrap();
+        recovery["batch_digest"] = serde_json::json!(vec![0xAB_u8; 32]);
+        recovery["batch_index"] = serde_json::json!(0);
+        recovery["batch_size"] = serde_json::json!(2);
+        store_recovery_json(&db, 0, 1, &serde_json::to_string(&recovery).unwrap());
+
+        let error = record_vote_confirmation(
+            &db,
+            ROUND_ID,
+            0,
+            1,
+            &VoteConfirmation {
+                tx_hash: "single-tx".to_string(),
+                van_leaf_position: 7,
+                vc_tree_position: 789,
+            },
+        )
+        .expect_err("a batch member must not use singleton confirmation");
+
+        assert!(
+            error.to_string().contains("complete batch lifecycle"),
+            "{error}"
+        );
+        assert_eq!(
+            queries::get_vote_tx_hash(&db.conn(), ROUND_ID, WALLET_ID, 0, 1).unwrap(),
+            None
+        );
+        assert_eq!(
+            db.get_commitment_bundle_recovery_fields(ROUND_ID, 0, 1)
+                .unwrap()
+                .and_then(|(_, position)| position),
+            None
         );
     }
 

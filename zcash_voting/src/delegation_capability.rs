@@ -1290,18 +1290,19 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    #[ignore = "generates a real ZKP2 proof"]
-    fn delegation_capability_handoff_confirms_tree_leaf_and_builds_a_real_vote() {
-        use crate::{
-            confirmation::{confirm_delegation_submission, TxEvent, TxEventAttribute},
-            types::NoopProgressReporter,
-            vote::{DraftVote, VoteSigner},
-        };
+    fn confirmed_capability_fixture(
+        path: &str,
+    ) -> (
+        VotingDb,
+        VotingRoundParams,
+        VotingHotkey,
+        crate::vote::VanWitness,
+    ) {
+        use crate::confirmation::{confirm_delegation_submission, TxEvent, TxEventAttribute};
         use vote_commitment_tree::MemoryTreeServer;
 
         let (_, params, hotkey, capability) = exported_fixture();
-        let customer = test_db(":memory:");
+        let customer = test_db(path);
         import_capability(&customer, &capability, import_context(&hotkey, &params)).unwrap();
 
         for bundle_index in 0..2 {
@@ -1343,6 +1344,18 @@ mod tests {
         let witness = tree
             .generate_van_witness(&customer, &params.vote_round_id, 0, anchor_height)
             .unwrap();
+
+        (customer, params, hotkey, witness)
+    }
+
+    #[test]
+    #[ignore = "generates a real ZKP2 proof"]
+    fn delegation_capability_handoff_confirms_tree_leaf_and_builds_a_real_vote() {
+        use crate::{
+            types::NoopProgressReporter,
+            vote::{DraftVote, VoteSigner},
+        };
+        let (customer, params, hotkey, witness) = confirmed_capability_fixture(":memory:");
         let committed = crate::vote::commit(
             &customer,
             &params.vote_round_id,
@@ -1362,5 +1375,126 @@ mod tests {
 
         assert_eq!(committed.proposal_id, 1);
         assert!(!committed.proof.is_empty());
+    }
+
+    #[test]
+    #[ignore = "generates two real ZKP2 proofs"]
+    fn fresh_vote_batch_chains_signs_and_recovers_after_restart() {
+        use crate::backend::orchard::primitives::redpallas::{
+            Signature, SpendAuth, VerificationKey,
+        };
+        use crate::{
+            session::Decision,
+            types::NoopProgressReporter,
+            vote::{DraftVote, VoteSigner},
+        };
+
+        let path = temp_db_path("capability-batch-vote");
+        let path_string = path.to_str().unwrap().to_string();
+        let (customer, params, hotkey, witness) = confirmed_capability_fixture(&path_string);
+        let drafts = [
+            DraftVote {
+                proposal_id: 1,
+                choice: 0,
+                num_options: 2,
+                single_share: true,
+                vc_tree_position: 0,
+            },
+            DraftVote {
+                proposal_id: 2,
+                choice: 1,
+                num_options: 2,
+                single_share: true,
+                vc_tree_position: 0,
+            },
+        ];
+        for draft in &drafts {
+            customer
+                .set_ballot_intent(
+                    &params.vote_round_id,
+                    draft.proposal_id,
+                    Decision::Choice(draft.choice),
+                    draft.num_options,
+                )
+                .unwrap();
+        }
+
+        let state =
+            queries::load_zkp2_inputs(&customer.conn(), &params.vote_round_id, WALLET, 0).unwrap();
+        let round_id_bytes = hex::decode(&params.vote_round_id).unwrap();
+        let first_transition = crate::zkp2::plan_vote_authority_transition(
+            hotkey.stored_secret(),
+            Network::Regtest,
+            state.address_index,
+            state.total_note_value,
+            &state.gov_comm_rand,
+            &round_id_bytes,
+            drafts[0].proposal_id,
+            state.proposal_authority,
+        )
+        .unwrap();
+        let second_transition = crate::zkp2::plan_vote_authority_transition(
+            hotkey.stored_secret(),
+            Network::Regtest,
+            state.address_index,
+            state.total_note_value,
+            &state.gov_comm_rand,
+            &round_id_bytes,
+            drafts[1].proposal_id,
+            first_transition.proposal_authority_new,
+        )
+        .unwrap();
+        assert_eq!(
+            second_transition.vote_authority_note_old,
+            first_transition.vote_authority_note_new
+        );
+
+        let committed = crate::vote::commit_atomic_vote_batch(
+            &customer,
+            &params.vote_round_id,
+            0,
+            &drafts,
+            &witness,
+            VoteSigner::hotkey(&hotkey),
+            &NoopProgressReporter,
+        )
+        .unwrap();
+
+        assert_eq!(committed.commitments.len(), 2);
+        assert_eq!(
+            committed.commitments[0].vote_authority_note_new,
+            first_transition.vote_authority_note_new
+        );
+        assert_eq!(
+            committed.commitments[1].vote_authority_note_new,
+            second_transition.vote_authority_note_new
+        );
+        let digest = committed.batch_digest;
+        for commitment in &committed.commitments {
+            VerificationKey::<SpendAuth>::try_from(commitment.r_vpk)
+                .unwrap()
+                .verify(
+                    &digest,
+                    &Signature::<SpendAuth>::from(commitment.vote_auth_sig),
+                )
+                .unwrap();
+        }
+        let batch_json = committed.batch_json;
+        drop(customer);
+
+        let reopened = test_db(&path_string);
+        let recovered = crate::vote::recover_atomic_vote_batch(
+            &reopened,
+            &params.vote_round_id,
+            0,
+            drafts[0].proposal_id,
+        )
+        .unwrap();
+        assert_eq!(recovered.batch_digest, digest);
+        assert_eq!(recovered.batch_json, batch_json);
+        assert_eq!(recovered.commitments.len(), 2);
+
+        drop(reopened);
+        std::fs::remove_file(path).ok();
     }
 }

@@ -1598,6 +1598,10 @@ impl VotingDb {
         queries::get_vote_tx_hash(&conn, round_id, &wallet_id, bundle_index, proposal_id)
     }
 
+    /// Records a transaction hash for one singleton vote.
+    ///
+    /// Atomic batch members must use `vote::record_batch_submission` so every
+    /// action advances together.
     pub fn record_vote_submission(
         &self,
         round_id: &str,
@@ -1607,6 +1611,13 @@ impl VotingDb {
     ) -> Result<(), VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
+        crate::vote::ensure_singleton_vote_update_with_conn(
+            &conn,
+            &wallet_id,
+            round_id,
+            bundle_index,
+            proposal_id,
+        )?;
         queries::record_vote_submission(
             &conn,
             round_id,
@@ -1637,7 +1648,10 @@ impl VotingDb {
         })
     }
 
-    /// Atomically records a vote transaction hash with idempotency checks.
+    /// Atomically records a singleton vote transaction hash with idempotency checks.
+    ///
+    /// Atomic batch members must use `vote::record_batch_submission` so every
+    /// action advances together.
     pub fn mark_vote_submitted(
         &self,
         round_id: &str,
@@ -1650,6 +1664,13 @@ impl VotingDb {
         let tx = conn.transaction().map_err(|e| VotingError::Internal {
             message: format!("begin vote submitted transaction failed: {e}"),
         })?;
+        crate::vote::ensure_singleton_vote_update_with_conn(
+            &tx,
+            &wallet_id,
+            round_id,
+            bundle_index,
+            proposal_id,
+        )?;
         let stored =
             queries::get_vote_tx_hash(&tx, round_id, &wallet_id, bundle_index, proposal_id)?;
         check_text_conflict(stored.as_deref(), tx_hash, "vote tx_hash")?;

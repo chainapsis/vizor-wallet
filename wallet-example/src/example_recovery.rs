@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use zcash_voting::prelude::{
-    resume_plan, round_snapshot, CommittedVote, NextStep, RoundPlan, RoundRecoverySnapshot,
-    VotingDb,
+    recover_atomic_vote_batch, resume_plan, round_snapshot, CommittedVote, NextStep, RoundPlan,
+    RoundRecoverySnapshot, SignedVoteBatch, VotingDb,
 };
 
 /// One round-level recovery payload fetched in a single caller entrypoint.
@@ -14,6 +14,12 @@ pub struct RoundRecoveryContext {
 pub struct RecoveredVoteStep {
     pub step: NextStep,
     pub committed_vote: CommittedVote,
+}
+
+/// One recovered atomic batch keyed by its planner step.
+pub struct RecoveredVoteBatchStep {
+    pub step: NextStep,
+    pub signed_batch: SignedVoteBatch,
 }
 
 /// Loads the typed recovery snapshot for one round.
@@ -38,8 +44,9 @@ pub fn snapshot_with_resume_plan(
 /// Loads round recovery data and planner steps in one wallet-facing call.
 ///
 /// Wallet code can persist this result and drive retries by iterating
-/// `context.plan.next_steps`. For `submit_vote` / `submit_shares`, recover the
-/// committed vote payload once and submit network requests from that payload.
+/// `context.plan.next_steps`. Recover singleton and helper-share payloads with
+/// `recover_committed_vote_for_step`, and atomic batches with
+/// `recover_vote_batch_for_step`.
 pub fn load_round_recovery_context(
     voting_db: &VotingDb,
     round_id: &str,
@@ -51,8 +58,8 @@ pub fn load_round_recovery_context(
 
 /// Reconstructs the committed vote payload for a resume step.
 ///
-/// Use this for `NextStep::SubmitVote` and `NextStep::SubmitShares` to avoid
-/// rebuilding proofs during recovery.
+/// Use this for singleton `NextStep::SubmitVote` and per-vote
+/// `NextStep::SubmitShares` work to avoid rebuilding proofs during recovery.
 pub fn recover_committed_vote_for_step(
     voting_db: &VotingDb,
     round_id: &str,
@@ -74,6 +81,31 @@ pub fn recover_committed_vote_for_step(
     }
 }
 
+/// Reconstructs one complete atomic batch for a batch resume step.
+///
+/// Submit `batch_json` once for `NextStep::SubmitVoteBatch`. For either batch
+/// step, retain `batch_digest` for `record_vote_batch_submission` and
+/// `confirm_vote_batch_submission`.
+pub fn recover_vote_batch_for_step(
+    voting_db: &VotingDb,
+    round_id: &str,
+    step: &NextStep,
+) -> Result<Option<SignedVoteBatch>> {
+    match *step {
+        NextStep::SubmitVoteBatch {
+            bundle_index,
+            proposal_id,
+        }
+        | NextStep::PollVoteBatch {
+            bundle_index,
+            proposal_id,
+        } => recover_atomic_vote_batch(voting_db, round_id, bundle_index, proposal_id)
+            .map(Some)
+            .context("recover atomic vote batch for resume step"),
+        _ => Ok(None),
+    }
+}
+
 /// Reconstructs committed-vote payloads for all planner steps that require them.
 ///
 /// The returned list is ordered exactly as `plan.next_steps`, so callers can
@@ -89,6 +121,24 @@ pub fn recover_committed_votes_for_plan(
             recovered.push(RecoveredVoteStep {
                 step: step.clone(),
                 committed_vote,
+            });
+        }
+    }
+    Ok(recovered)
+}
+
+/// Reconstructs complete atomic batches for all batch planner steps.
+pub fn recover_vote_batches_for_plan(
+    voting_db: &VotingDb,
+    round_id: &str,
+    plan: &RoundPlan,
+) -> Result<Vec<RecoveredVoteBatchStep>> {
+    let mut recovered = Vec::new();
+    for step in &plan.next_steps {
+        if let Some(signed_batch) = recover_vote_batch_for_step(voting_db, round_id, step)? {
+            recovered.push(RecoveredVoteBatchStep {
+                step: step.clone(),
+                signed_batch,
             });
         }
     }

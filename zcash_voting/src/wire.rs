@@ -100,6 +100,14 @@ pub struct VoteCommitmentWire {
     pub vote_auth_sig: String,
 }
 
+/// Canonical request body for an atomic cast-vote batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VoteCommitmentBatchWire {
+    /// Ordered actions. Their order is part of the batch digest and authority chain.
+    pub votes: Vec<VoteCommitmentWire>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoteShareWire {
     /// Voting round ID as 32 bytes encoded in lowercase hex.
@@ -135,6 +143,21 @@ pub struct VoteConfirmation {
     pub van_leaf_position: u32,
     /// Confirmed vote commitment tree position.
     pub vc_tree_position: u64,
+}
+
+/// Parsed confirmation data for one atomic cast-vote batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoteBatchConfirmation {
+    /// Confirmed transaction hash shared by every action.
+    pub tx_hash: String,
+    /// Raw 32-byte digest emitted by the chain.
+    pub batch_digest: Vec<u8>,
+    /// Leaf position of the batch's final vote-authority note.
+    pub van_leaf_position: u32,
+    /// Proposal identifiers in signed action order.
+    pub proposal_ids: Vec<u32>,
+    /// Vote-commitment leaf positions in signed action order.
+    pub vc_tree_positions: Vec<u64>,
 }
 
 /// Version 1 public handoff for a round-bound voting hotkey target.
@@ -242,6 +265,17 @@ pub struct SignedVoteCommitmentView {
 pub struct SignedVoteCommitmentsView {
     pub bundle_index: u32,
     pub commitments: Vec<SignedVoteCommitmentView>,
+}
+
+/// FFI-safe representation of one atomic vote batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedVoteBatchView {
+    pub bundle_index: u32,
+    pub commitments: Vec<SignedVoteCommitmentView>,
+    /// Raw 32-byte batch digest signed by every action.
+    pub batch_digest: Vec<u8>,
+    /// Canonical JSON body to POST to the batch vote endpoint.
+    pub batch_json: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
