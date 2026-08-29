@@ -997,6 +997,14 @@ pub fn resume_plan(
     let active_vote_batches =
         active_vote_batches_by_vote(db, round_id, &votes, &vote_choices, &intents)?;
     let mut planned_vote_batches = BTreeSet::new();
+    let bundles_with_pending_vote_chains = votes
+        .iter()
+        .filter(|(key, phase)| {
+            !stale_vote_keys.contains(key)
+                && matches!(phase, VotePhase::Committed | VotePhase::Submitted)
+        })
+        .map(|(&(bundle_index, _), _)| bundle_index)
+        .collect::<BTreeSet<_>>();
 
     for &(bundle_index, proposal_id) in &stale_vote_keys {
         if matches!(
@@ -1022,6 +1030,9 @@ pub fn resume_plan(
             if stale_vote_keys.contains(&vote_key)
                 || vote_choices.get(&vote_key) != Some(&intent_choice)
             {
+                if bundles_with_pending_vote_chains.contains(&b) {
+                    continue;
+                }
                 steps.push(NextStep::CastVote {
                     bundle_index: b,
                     proposal_id: pid,
@@ -1088,6 +1099,9 @@ pub fn resume_plan(
                 }
                 // Prepared or no row yet -> still needs casting.
                 _ => {
+                    if bundles_with_pending_vote_chains.contains(&b) {
+                        continue;
+                    }
                     steps.push(NextStep::CastVote {
                         bundle_index: b,
                         proposal_id: pid,
@@ -1447,9 +1461,17 @@ mod tests {
     }
 
     fn store_two_action_batch_recovery_fixture(db: &VotingDb) -> [u8; 32] {
-        let mut first = recovery_bundle_fixture(0, 1, 0, 0);
+        store_two_action_batch_recovery_fixture_for(db, (1, 0), (2, 1))
+    }
+
+    fn store_two_action_batch_recovery_fixture_for(
+        db: &VotingDb,
+        first_vote: (u32, u32),
+        second_vote: (u32, u32),
+    ) -> [u8; 32] {
+        let mut first = recovery_bundle_fixture(0, first_vote.0, first_vote.1, 0);
         first.vote_commitment = [0x61; 32];
-        let mut second = recovery_bundle_fixture(0, 2, 1, 0);
+        let mut second = recovery_bundle_fixture(0, second_vote.0, second_vote.1, 0);
         second.van_nullifier = [0x20; 32];
         second.vote_authority_note_new = [0x21; 32];
         second.vote_commitment = [0x62; 32];
@@ -2003,6 +2025,41 @@ mod tests {
     }
 
     #[test]
+    fn pending_batch_defers_a_new_lower_proposal_cast_until_confirmation() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 3, Decision::Choice(2), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        let digest = store_two_action_batch_recovery_fixture_for(&db, (2, 1), (3, 2));
+
+        let committed_plan = resume_plan(&db, ROUND, &[1, 2, 3]).unwrap();
+        assert_eq!(
+            committed_plan.next_steps,
+            vec![NextStep::SubmitVoteBatch {
+                bundle_index: 0,
+                proposal_id: 2,
+            }]
+        );
+
+        crate::vote::record_batch_submission(&db, ROUND, 0, &digest, "batch-tx").unwrap();
+
+        let submitted_plan = resume_plan(&db, ROUND, &[1, 2, 3]).unwrap();
+
+        assert_eq!(
+            submitted_plan.next_steps,
+            vec![NextStep::PollVoteBatch {
+                bundle_index: 0,
+                proposal_id: 2,
+            }]
+        );
+    }
+
+    #[test]
     fn changed_choice_after_submission_is_invalid_recovery_state() {
         let db = db_with_bundle();
         db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
@@ -2407,7 +2464,7 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_second_bundle_vote_stays_before_later_proposals() {
+    fn interrupted_second_bundle_vote_defers_its_later_proposals() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(W);
         db.create_round(crate::Network::Testnet, &round_params(), None)
@@ -2446,17 +2503,7 @@ mod tests {
                     choice: 1,
                 },
                 NextStep::CastVote {
-                    bundle_index: 1,
-                    proposal_id: 2,
-                    choice: 1,
-                },
-                NextStep::CastVote {
                     bundle_index: 0,
-                    proposal_id: 3,
-                    choice: 0,
-                },
-                NextStep::CastVote {
-                    bundle_index: 1,
                     proposal_id: 3,
                     choice: 0,
                 },

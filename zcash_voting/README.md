@@ -32,7 +32,7 @@ precompute → delegate → vote → share lifecycle:
    so the chain either accepts the complete authority chain or none of it. Use
    `confirm_vote_batch_submission` after confirmation, then submit each vote's
    helper shares. `vote::commit` and `confirm_vote_submission` remain the
-   singleton path. Recover or submit existing work before preparing another
+   singleton path. Recover and confirm existing work before preparing another
    vote chain for the same bundle.
 7. After restart, call `resume_plan` with the round's full proposal id list and
    execute one returned `NextStep`, persist its result, then call `resume_plan`
