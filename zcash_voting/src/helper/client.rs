@@ -36,7 +36,7 @@ use crate::{
         SHARE_HELPER_POST_TIMEOUT_MILLISECONDS, SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
         SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
     },
-    types::VotingError,
+    types::{validate_vote_round_id_bytes, VotingError},
     wire::VoteShareWire,
 };
 
@@ -417,7 +417,9 @@ impl HelperClient {
     /// This records helper health as a side effect: a usable answer is a
     /// success, anything else a failure. `now_seconds` is the request's wall
     /// time at invocation; scoring advances it by the monotonic time spent on
-    /// the complete request and its retries.
+    /// the complete request and its retries. Invalid helper URLs, round IDs,
+    /// and share IDs return [`HelperError::InvalidRequest`] before network I/O
+    /// or health scoring.
     pub async fn share_status(
         &self,
         server_url: &str,
@@ -426,23 +428,11 @@ impl HelperClient {
         now_seconds: u64,
         cancel: &(dyn Fn() -> bool + Send + Sync),
     ) -> Result<ShareStatus, HelperError> {
-        let server_url =
-            canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
-                message: error.to_string(),
-            })?;
-        let round_id = normalize_round_id(round_id).map_err(|error| HelperError::Decode {
-            message: error.to_string(),
-        })?;
-        let share_id = validate_hex_path_segment(share_id, "share_id").map_err(|error| {
-            HelperError::Decode {
-                message: error.to_string(),
-            }
-        })?;
-        let url = join_helper_url(&server_url, &["share-status", &round_id, &share_id]).map_err(
-            |error| HelperError::Decode {
-                message: error.to_string(),
-            },
-        )?;
+        let server_url = canonicalize_helper_base_url(server_url).map_err(invalid_request)?;
+        let round_id = normalize_round_id(round_id).map_err(invalid_request)?;
+        let share_id = validate_hex_path_segment(share_id, "share_id").map_err(invalid_request)?;
+        let url = join_helper_url(&server_url, &["share-status", &round_id, &share_id])
+            .map_err(invalid_request)?;
 
         let request_started = tokio::time::Instant::now();
         let result = self
@@ -472,7 +462,8 @@ impl HelperClient {
     /// response after its headers arrived, and a successful response whose
     /// submission status is missing or unusable. Cancellation can suppress a
     /// later attempt, but does not replace the result of a completed POST.
-    /// Malformed local JSON is rejected without network I/O or health scoring.
+    /// Malformed local JSON and invalid helper URLs return
+    /// [`HelperError::InvalidRequest`] without network I/O or health scoring.
     /// `now_seconds` is the request's wall time at invocation; health scoring
     /// advances it by the monotonic time spent completing the operation.
     pub async fn submit_share(
@@ -514,10 +505,7 @@ impl HelperClient {
                 message: "share submission timeout must be nonzero".to_string(),
             });
         }
-        let server_url =
-            canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
-                message: error.to_string(),
-            })?;
+        let server_url = canonicalize_helper_base_url(server_url).map_err(invalid_request)?;
         let body = validate_share_body(share_wire_json)?;
         let request_started = tokio::time::Instant::now();
         let result = self
@@ -540,9 +528,10 @@ impl HelperClient {
     /// — which is already walking a randomized helper order — is better placed
     /// than this client to decide whether to try elsewhere or wait. Once the
     /// POST completes, late cancellation does not replace its result. Malformed
-    /// local JSON is rejected without network I/O or health scoring.
-    /// `now_seconds` is the request's wall time at invocation; health scoring
-    /// advances it by the monotonic time spent completing the operation.
+    /// local JSON and invalid helper URLs return [`HelperError::InvalidRequest`]
+    /// without network I/O or health scoring. `now_seconds` is the request's
+    /// wall time at invocation; health scoring advances it by the monotonic
+    /// time spent completing the operation.
     pub async fn resubmit_share(
         &self,
         server_url: &str,
@@ -550,10 +539,7 @@ impl HelperClient {
         now_seconds: u64,
         cancel: &(dyn Fn() -> bool + Send + Sync),
     ) -> Result<ShareSubmissionStatus, HelperError> {
-        let server_url =
-            canonicalize_helper_base_url(server_url).map_err(|error| HelperError::Decode {
-                message: error.to_string(),
-            })?;
+        let server_url = canonicalize_helper_base_url(server_url).map_err(invalid_request)?;
         let body = validate_share_body(share_wire_json)?;
         let request_started = tokio::time::Instant::now();
         let result = self
@@ -580,10 +566,7 @@ impl HelperClient {
         post_timeout: Duration,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<ShareSubmissionStatus, HelperError> {
-        let url =
-            join_helper_url(server_url, &["shares"]).map_err(|error| HelperError::Decode {
-                message: error.to_string(),
-            })?;
+        let url = join_helper_url(server_url, &["shares"]).map_err(invalid_request)?;
 
         if single_attempt {
             if cancel() {
@@ -756,6 +739,12 @@ fn validate_share_body(share_wire_json: &str) -> Result<Vec<u8>, HelperError> {
         })
 }
 
+fn invalid_request(error: VotingError) -> HelperError {
+    HelperError::InvalidRequest {
+        message: error.to_string(),
+    }
+}
+
 fn require_success(response: HelperResponse) -> Result<HelperResponse, HelperError> {
     if response.is_success() {
         return Ok(response);
@@ -832,16 +821,23 @@ fn parse_submission_response(
 /// Normalizes a vote round id to the lowercase hex form used in helper routes.
 ///
 /// Accepts 64 hex characters or a 32-byte base64 string, matching what wallet
-/// config and vote-server responses may carry.
+/// config and vote-server responses may carry. The decoded bytes must be a
+/// canonical Pallas base-field element, matching the voting-circuit round-id
+/// representation.
 pub fn normalize_round_id(value: &str) -> Result<String, VotingError> {
     use base64::Engine as _;
 
     let trimmed = value.trim();
     if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Ok(trimmed.to_ascii_lowercase());
+        let bytes = hex::decode(trimmed).map_err(|error| VotingError::InvalidInput {
+            message: format!("round_id is not valid hex: {error}"),
+        })?;
+        validate_vote_round_id_bytes(&bytes)?;
+        return Ok(hex::encode(bytes));
     }
     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(trimmed) {
         if bytes.len() == 32 {
+            validate_vote_round_id_bytes(&bytes)?;
             return Ok(hex::encode(bytes));
         }
     }
@@ -894,7 +890,13 @@ mod tests {
     use base64::Engine as _;
 
     use super::*;
-    use crate::helper::transport::HelperFuture;
+    use crate::{
+        backend::pasta_curves::{
+            group::{ff::PrimeField, Group, GroupEncoding},
+            pallas,
+        },
+        helper::transport::HelperFuture,
+    };
 
     type Reply = Result<HelperResponse, HelperTransportError>;
 
@@ -1048,7 +1050,7 @@ mod tests {
         format!(
             "{}/shielded-vote/v1/share-status/{}/{}",
             helper(),
-            "ab".repeat(32),
+            "01".repeat(32),
             "cd".repeat(32)
         )
     }
@@ -1068,22 +1070,33 @@ mod tests {
         Ok(HelperResponse::json(status, b"{}".to_vec()))
     }
 
+    fn encoded_point(multiplier: u64) -> Vec<u8> {
+        (pallas::Point::generator() * pallas::Scalar::from(multiplier))
+            .to_bytes()
+            .to_vec()
+    }
+
+    fn encoded_field(value: u64) -> String {
+        base64::engine::general_purpose::STANDARD.encode(pallas::Base::from(value).to_repr())
+    }
+
     fn valid_share_json() -> String {
-        let encoded = base64::engine::general_purpose::STANDARD.encode([1_u8; 32]);
         VoteShareWire {
             vote_round_id: "01".repeat(32),
-            shares_hash: encoded.clone(),
+            shares_hash: encoded_field(1),
             proposal_id: 1,
             vote_decision: 0,
             encrypted_share: crate::WireEncryptedShare {
-                c1: vec![2; 32],
-                c2: vec![3; 32],
+                c1: encoded_point(2),
+                c2: encoded_point(3),
                 share_index: 0,
             },
             share_index: 0,
             vc_tree_position: 1,
-            share_comms: vec![encoded.clone()],
-            primary_blind: encoded,
+            share_comms: (0..crate::share_policy::VOTE_COMMITMENT_SHARE_COUNT)
+                .map(|index| encoded_field(index as u64 + 10))
+                .collect(),
+            primary_blind: encoded_field(4),
             submit_at: 0,
         }
         .to_json()
@@ -1100,18 +1113,22 @@ mod tests {
 
     #[test]
     fn round_id_accepts_hex_and_base64() {
-        let hex_id = "AB".repeat(32);
-        assert_eq!(normalize_round_id(&hex_id).unwrap(), "ab".repeat(32));
+        let bytes = pallas::Base::from(10).to_repr();
+        let hex_id = hex::encode(bytes).to_uppercase();
+        assert_eq!(normalize_round_id(&hex_id).unwrap(), hex::encode(bytes));
 
         use base64::Engine as _;
-        let base64_id = base64::engine::general_purpose::STANDARD.encode([0x0au8; 32]);
-        assert_eq!(normalize_round_id(&base64_id).unwrap(), "0a".repeat(32));
+        let base64_id = base64::engine::general_purpose::STANDARD.encode(bytes);
+        assert_eq!(normalize_round_id(&base64_id).unwrap(), hex::encode(bytes));
     }
 
     #[test]
     fn round_id_rejects_other_encodings() {
         assert!(normalize_round_id("not-a-round").is_err());
         assert!(normalize_round_id(&"ab".repeat(16)).is_err());
+        assert!(normalize_round_id(&"ff".repeat(32)).is_err());
+        let noncanonical_base64 = base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]);
+        assert!(normalize_round_id(&noncanonical_base64).is_err());
     }
 
     #[test]
@@ -1483,7 +1500,7 @@ mod tests {
         let status = client
             .share_status(
                 helper(),
-                &"ab".repeat(32),
+                &"01".repeat(32),
                 &"cd".repeat(32),
                 10,
                 &never_cancel(),
@@ -1494,6 +1511,69 @@ mod tests {
         assert_eq!(status, ShareStatus::Pending);
         assert_eq!(transport.call_count(&url), 2);
         assert_eq!(client.health().failure_count(helper()), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn local_route_validation_is_invalid_request_without_dispatch_or_scoring() {
+        let transport = Arc::new(MockTransport::default());
+        let client = client_with(transport.clone());
+
+        let status_errors = [
+            client
+                .share_status(
+                    "file:///tmp/helper",
+                    &"01".repeat(32),
+                    &"cd".repeat(32),
+                    10,
+                    &never_cancel(),
+                )
+                .await
+                .unwrap_err(),
+            client
+                .share_status(
+                    helper(),
+                    &"ff".repeat(32),
+                    &"cd".repeat(32),
+                    10,
+                    &never_cancel(),
+                )
+                .await
+                .unwrap_err(),
+            client
+                .share_status(helper(), &"01".repeat(32), "../share", 10, &never_cancel())
+                .await
+                .unwrap_err(),
+        ];
+        for error in status_errors {
+            assert!(matches!(error, HelperError::InvalidRequest { .. }));
+        }
+
+        let submit_error = client
+            .submit_share(
+                "file:///tmp/helper",
+                &valid_share_json(),
+                10,
+                &never_cancel(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(submit_error, HelperError::InvalidRequest { .. }));
+
+        let resubmit_error = client
+            .resubmit_share(
+                "file:///tmp/helper",
+                &valid_share_json(),
+                10,
+                &never_cancel(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(resubmit_error, HelperError::InvalidRequest { .. }));
+
+        assert_eq!(transport.call_count("GET"), 0);
+        assert_eq!(transport.call_count("POST"), 0);
+        assert_eq!(client.health().failure_count(helper()), 0);
+        assert_eq!(client.health().failure_count("file:///tmp/helper"), 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1638,7 +1718,7 @@ mod tests {
         let error = client
             .share_status(
                 helper(),
-                &"ab".repeat(32),
+                &"01".repeat(32),
                 &"cd".repeat(32),
                 10,
                 &always_cancel,
@@ -1921,12 +2001,34 @@ mod tests {
             serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0_u8; 31]));
         let mut mismatched_index = valid.clone();
         mismatched_index["share_index"] = serde_json::json!(1);
-        let mut missing_indexed_commitment = valid.clone();
-        missing_indexed_commitment["share_index"] = serde_json::json!(1);
-        missing_indexed_commitment["enc_share"]["share_index"] = serde_json::json!(1);
+        let mut too_few_commitments = valid.clone();
+        too_few_commitments["share_comms"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        let mut too_many_commitments = valid.clone();
+        too_many_commitments["share_comms"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(encoded_field(99)));
+        let mut noncanonical_shares_hash = valid.clone();
+        noncanonical_shares_hash["shares_hash"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]));
         let mut noncanonical_field = valid.clone();
         noncanonical_field["primary_blind"] =
             serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]));
+        let mut malformed_c1 = valid.clone();
+        malformed_c1["enc_share"]["c1"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]));
+        let mut malformed_c2 = valid.clone();
+        malformed_c2["enc_share"]["c2"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([0xff_u8; 32]));
+        let identity =
+            base64::engine::general_purpose::STANDARD.encode(pallas::Point::identity().to_bytes());
+        let mut identity_c1 = valid.clone();
+        identity_c1["enc_share"]["c1"] = serde_json::json!(identity.clone());
+        let mut identity_c2 = valid.clone();
+        identity_c2["enc_share"]["c2"] = serde_json::json!(identity);
         let mut unsafe_integer = valid.clone();
         unsafe_integer["submit_at"] = serde_json::json!(0x20_0000_0000_0000_u64);
         let duplicate_field = valid_share_json().replacen(
@@ -1946,8 +2048,14 @@ mod tests {
             serde_json::to_string(&nested_unknown_field).unwrap(),
             serde_json::to_string(&short_ciphertext).unwrap(),
             serde_json::to_string(&mismatched_index).unwrap(),
-            serde_json::to_string(&missing_indexed_commitment).unwrap(),
+            serde_json::to_string(&too_few_commitments).unwrap(),
+            serde_json::to_string(&too_many_commitments).unwrap(),
+            serde_json::to_string(&noncanonical_shares_hash).unwrap(),
             serde_json::to_string(&noncanonical_field).unwrap(),
+            serde_json::to_string(&malformed_c1).unwrap(),
+            serde_json::to_string(&malformed_c2).unwrap(),
+            serde_json::to_string(&identity_c1).unwrap(),
+            serde_json::to_string(&identity_c2).unwrap(),
             serde_json::to_string(&unsafe_integer).unwrap(),
             duplicate_field,
             oversized,
@@ -1984,6 +2092,30 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn out_of_protocol_tree_position_is_not_sent_or_scored() {
+        let transport = Arc::new(MockTransport::default());
+        let client = client_with(transport.clone());
+        client.health().record_failure(helper(), 1);
+        let mut body: Value = serde_json::from_str(&valid_share_json()).unwrap();
+        body["tree_position"] = serde_json::json!(u64::from(u32::MAX) + 1);
+
+        let error = client
+            .submit_share(
+                helper(),
+                &serde_json::to_string(&body).unwrap(),
+                10,
+                &never_cancel(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, HelperError::InvalidRequest { .. }));
+        assert!(!error.is_ambiguous());
+        assert_eq!(transport.call_count("POST"), 0);
+        assert_eq!(client.health().failure_count(helper()), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn defaults_use_distinct_status_and_post_deadlines() {
         let transport = Arc::new(MockTransport::default());
         let status_url = status_url();
@@ -1995,7 +2127,7 @@ mod tests {
         client
             .share_status(
                 helper(),
-                &"ab".repeat(32),
+                &"01".repeat(32),
                 &"cd".repeat(32),
                 10,
                 &never_cancel(),

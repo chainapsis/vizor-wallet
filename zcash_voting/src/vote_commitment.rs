@@ -250,19 +250,29 @@ fn extend_u64_padded32(out: &mut Vec<u8>, value: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pasta_curves::{
+        group::{Group, GroupEncoding},
+        pallas,
+    };
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+
+    fn point_bytes(multiplier: u64) -> Vec<u8> {
+        (pallas::Point::generator() * pallas::Scalar::from(multiplier))
+            .to_bytes()
+            .to_vec()
+    }
 
     fn mock_enc_shares() -> Vec<WireEncryptedShare> {
         vec![
             WireEncryptedShare {
-                c1: vec![0xC1; 32],
-                c2: vec![0xC2; 32],
+                c1: point_bytes(1),
+                c2: point_bytes(2),
                 share_index: 0,
             },
             WireEncryptedShare {
-                c1: vec![0xC1; 32],
-                c2: vec![0xC2; 32],
+                c1: point_bytes(3),
+                c2: point_bytes(4),
                 share_index: 1,
             },
         ]

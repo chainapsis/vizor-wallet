@@ -119,6 +119,7 @@ pub struct VoteCommitmentBatchWire {
 pub struct VoteShareWire {
     /// Voting round ID as 32 bytes encoded in lowercase hex.
     pub vote_round_id: String,
+    /// Poseidon output encoded as a canonical Pallas base-field element.
     pub shares_hash: String,
     pub proposal_id: u32,
     pub vote_decision: u32,
@@ -127,6 +128,7 @@ pub struct VoteShareWire {
     pub share_index: u32,
     #[serde(rename = "tree_position")]
     pub vc_tree_position: u64,
+    /// All 16 per-share commitments as canonical Pallas base-field elements.
     pub share_comms: Vec<String>,
     pub primary_blind: String,
     pub submit_at: u64,

@@ -3,7 +3,7 @@ pub(crate) use crate::backend::{orchard, pasta_curves, zcash_client_backend, zca
 use std::fmt;
 
 use orchard::note::{ExtractedNoteCommitment, NoteVersion};
-use pasta_curves::group::ff::PrimeField;
+use pasta_curves::group::{ff::PrimeField, Group, GroupEncoding};
 use pasta_curves::pallas;
 use serde::{Deserialize, Serialize};
 use subtle::CtOption;
@@ -591,13 +591,15 @@ pub struct VoteCommitmentBundle {
     /// Voting round ID as a canonical Pallas field element encoded in 64
     /// lowercase hex characters.
     pub vote_round_id: String,
-    /// Poseidon hash of encrypted share coordinates (32 bytes).
+    /// Poseidon hash of encrypted share coordinates (canonical 32-byte
+    /// little-endian `pallas::Base` representation).
     /// Intermediate value: vote_commitment = H(DOMAIN_VC, voting_round_id, shares_hash, proposal_id, vote_decision).
     pub shares_hash: Vec<u8>,
     /// Per-share blind factors (16 x 32 bytes, LE pallas::Base repr).
     /// Deterministically derived from (sk, round_id, proposal_id, van_commitment, share_index).
     pub share_blinds: Vec<Vec<u8>>,
-    /// Pre-computed per-share Poseidon commitments (N x 32 bytes, LE pallas::Base repr).
+    /// All 16 pre-computed per-share Poseidon commitments (32 bytes each,
+    /// little-endian `pallas::Base` representations).
     /// share_comm_i = Poseidon(blind_i, c1_i_x, c2_i_x, c1_i_y, c2_i_y).
     /// Sent as public inputs to ZKP #3; the helper only needs the primary blind.
     pub share_comms: Vec<Vec<u8>>,
@@ -608,7 +610,11 @@ pub struct VoteCommitmentBundle {
     pub alpha_v: Vec<u8>,
 }
 
-/// Wire-safe encrypted share — contains only the public ciphertext components.
+/// Wire-safe encrypted share containing only public ciphertext components.
+///
+/// Before protocol use, `c1` and `c2` are validated as canonical compressed,
+/// non-identity Pallas points by [`validate_encrypted_shares`].
+///
 /// Secrets (`plaintext_value`, `randomness`) are kept inside Rust and never cross the FFI boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -652,7 +658,7 @@ pub struct SharePayload {
     pub tree_position: u64,
     /// All encrypted shares (public components only).
     pub all_enc_shares: Vec<WireEncryptedShare>,
-    /// Pre-computed per-share Poseidon commitments (N x 32 bytes).
+    /// All 16 pre-computed per-share Poseidon commitments (32 bytes each).
     /// Provided as public inputs to ZKP #3.
     pub share_comms: Vec<Vec<u8>>,
     /// Blind factor for this specific share (32 bytes, LE pallas::Base repr).
@@ -1333,6 +1339,53 @@ mod tests {
         assert!(validate_vote_round_id_hex(&"AA".repeat(32)).is_err());
     }
 
+    fn encrypted_share(c1: pallas::Point, c2: pallas::Point) -> WireEncryptedShare {
+        WireEncryptedShare {
+            c1: c1.to_bytes().to_vec(),
+            c2: c2.to_bytes().to_vec(),
+            share_index: 0,
+        }
+    }
+
+    #[test]
+    fn encrypted_share_validation_accepts_nonidentity_pallas_points() {
+        let share = encrypted_share(
+            pallas::Point::generator(),
+            pallas::Point::generator() * pallas::Scalar::from(2),
+        );
+
+        assert!(validate_encrypted_shares(&[share]).is_ok());
+    }
+
+    #[test]
+    fn encrypted_share_validation_rejects_malformed_points() {
+        let valid = pallas::Point::generator();
+        for (c1, c2) in [
+            (vec![0xff; 32], valid.to_bytes().to_vec()),
+            (valid.to_bytes().to_vec(), vec![0xff; 32]),
+        ] {
+            let share = WireEncryptedShare {
+                c1,
+                c2,
+                share_index: 0,
+            };
+            assert!(validate_encrypted_shares(&[share]).is_err());
+        }
+    }
+
+    #[test]
+    fn encrypted_share_validation_rejects_identity_points() {
+        let identity = pallas::Point::identity();
+        let valid = pallas::Point::generator();
+        for share in [
+            encrypted_share(identity, valid),
+            encrypted_share(valid, identity),
+        ] {
+            let error = validate_encrypted_shares(&[share]).unwrap_err();
+            assert!(error.to_string().contains("identity point"), "{error}");
+        }
+    }
+
     #[test]
     fn voting_hotkey_exposes_validated_secret_free_target() {
         let hotkey = VotingHotkey::from_stored_secret(&[0xAB; 64], Network::Regtest).unwrap();
@@ -1402,11 +1455,33 @@ mod tests {
     }
 }
 
+/// Validates encrypted-share indexes and compressed Pallas ciphertext points.
+///
+/// Both ciphertext components must use canonical encodings of non-identity
+/// points because the reveal protocol binds their affine x and y coordinates.
 pub fn validate_encrypted_shares(shares: &[WireEncryptedShare]) -> Result<(), VotingError> {
     for (i, share) in shares.iter().enumerate() {
-        validate_32_bytes(&share.c1, &format!("enc_shares[{}].c1", i))?;
-        validate_32_bytes(&share.c2, &format!("enc_shares[{}].c2", i))?;
+        validate_encrypted_share_point(&share.c1, &format!("enc_shares[{i}].c1"))?;
+        validate_encrypted_share_point(&share.c2, &format!("enc_shares[{i}].c2"))?;
         validate_share_index(share.share_index)?;
+    }
+    Ok(())
+}
+
+fn validate_encrypted_share_point(bytes: &[u8], field: &str) -> Result<(), VotingError> {
+    let encoded: [u8; 32] = bytes.try_into().map_err(|_| VotingError::InvalidInput {
+        message: format!("{field} must be 32 bytes, got {}", bytes.len()),
+    })?;
+    let point =
+        Option::<pallas::Point>::from(pallas::Point::from_bytes(&encoded)).ok_or_else(|| {
+            VotingError::InvalidInput {
+                message: format!("{field} is not a valid compressed Pallas point"),
+            }
+        })?;
+    if bool::from(point.is_identity()) {
+        return Err(VotingError::InvalidInput {
+            message: format!("{field} must not be the identity point"),
+        });
     }
     Ok(())
 }
