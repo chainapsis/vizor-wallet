@@ -337,28 +337,35 @@ The crate no longer accepts root wallet seed material for delegation signing.
 
 ## Dependency notes
 
-The default `upstream` feature uses the Ironwood librustzcash stack selected by
-the workspace root. `--no-default-features --features zakura` selects the Zakura
-wallet-libraries forks and the matching proving backend. The two features are
-mutually exclusive.
+This crate contains the canonical implementation and retains mutually
+exclusive `lrz`/`zakura` features. Its default is the Zakura wallet-libraries
+family; use `--no-default-features --features lrz` for upstream librustzcash.
+
+Wallet-family selection is consolidated in `zakura-wallet-lib` using its only
+two complete backend modes: `zakura` and `lrz`. Unlike its former generic
+capability selectors, those features never weak-reference both optional
+backend families. External-consumer regression tests verify that selecting
+`zcash_voting/lrz` puts no Zakura forks in Cargo lockfiles or resolved
+metadata. The selected wallet facade release is `zakura-wallet-lib
+0.1.0-rc4`.
 
 `Cargo.toml` is the source of truth for version and feature requirements, and
 `Cargo.lock` records the exact package sources and versions used by this branch.
-This release line requires Rust 1.88 or newer.
+This release line requires Rust 1.91 or newer.
 
 - **`orchard 0.15`** from [zcash/orchard](https://github.com/zcash/orchard),
   with `unstable-voting-circuits` enabled for the governance proof paths
-  (or `zakura-orchard 1.0.0-rc.1` when the `zakura` feature is selected).
-- **`voting-circuits 0.10.2`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+  (or `zakura-orchard 1.0.0` with the `zakura` feature).
+- **`voting-circuits 0.11.2`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
-- **`vote-commitment-tree 0.5.0`** and
-  **`vote-commitment-tree-client 0.7.0`** for vote commitment tree state
+- **`vote-commitment-tree 0.6.0`** and
+  **`vote-commitment-tree-client 0.8.0`** for vote commitment tree state
   and optional HTTP sync.
 - **`pczt 0.9.2`, `zcash_client_backend 0.24.0-rc.7`,
   `zcash_client_sqlite 0.22.0-rc.7`, `zcash_keys 0.16.1`,
   `zcash_primitives 0.30.0`, and `zcash_protocol 0.10.4`** from published
-  librustzcash releases (or the `zakura-*` wallet-libraries forks when the
-  `zakura` feature is selected).
+  librustzcash releases (or the stable `zakura-*` family and RC4 wallet crates in
+  `zakura` builds).
 
 ## Downstream test fixtures
 

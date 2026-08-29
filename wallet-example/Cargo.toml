@@ -5,19 +5,9 @@ edition = "2021"
 publish = false
 
 [features]
-default = ["upstream"]
-upstream = [
-    "zcash_voting/upstream",
-    "voting-crypto-deps/upstream",
-    "zakura-wallet-lib/lrz",
-    "zakura-wallet-lib/orchard",
-]
-zakura = [
-    "zcash_voting/zakura",
-    "voting-crypto-deps/zakura",
-    "zakura-wallet-lib/zakura",
-    "zakura-wallet-lib/orchard",
-]
+default = ["zakura"]
+lrz = ["zcash_voting/lrz", "voting-crypto-deps/lrz"]
+zakura = ["zcash_voting/zakura", "voting-crypto-deps/default"]
 
 [dependencies]
 anyhow = "1"
@@ -33,7 +23,6 @@ rusqlite = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 voting-crypto-deps = { workspace = true }
-zakura-wallet-lib = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_voting = { path = "../zcash_voting", default-features = false }
 zip32 = "0.2"

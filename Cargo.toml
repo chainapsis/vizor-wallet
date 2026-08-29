@@ -5,23 +5,18 @@ members = [
     "vote-commitment-tree-client",
     "wallet-example",
 ]
+# The default root build is the Zakura application path. LRZ and the
+# lower-level VCT packages are validated in separate invocations because their
+# backend features are mutually exclusive within one Cargo resolve.
+default-members = [
+    "zcash_voting",
+    "wallet-example",
+]
 resolver = "2"
 
 [workspace.dependencies]
-# orchard, voting-circuits, and librustzcash all resolve to the same Orchard
-# release, keeping the dependency graph type-compatible across PCZT construction
-# and vote proofs.
-orchard = { version = "0.15", features = ["unstable-voting-circuits"] }
-voting-circuits = { version = "=0.10.3", default-features = false }
-voting-crypto-deps = { version = "=0.1.2", default-features = false }
-zakura-wallet-lib = { version = "0.1.0-rc2", default-features = false }
-
-# These published librustzcash versions include the Ironwood historical selector.
-pczt = { version = "0.9.2", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zcash_client_backend = { version = "0.24.0-rc.7", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zcash_client_sqlite = { version = "0.22.0-rc.7", default-features = false, features = ["orchard"] }
-zcash_keys = { version = "0.16.1", features = ["orchard"] }
-zcash_primitives = { version = "0.30.0" }
+voting-circuits = { version = "=0.11.2", default-features = false }
+voting-crypto-deps = { version = "=0.2.2", default-features = false }
 zcash_protocol = { version = "0.10.4" }
 
 [profile.test.package.imt-tree]

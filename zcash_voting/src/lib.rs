@@ -9,14 +9,14 @@
 //! `confirmation`, `share`, and `session` rather than writing storage rows
 //! directly.
 
-#[cfg(all(feature = "upstream", feature = "zakura"))]
-compile_error!("features `upstream` and `zakura` cannot be enabled together");
+#[cfg(all(feature = "lrz", feature = "zakura"))]
+compile_error!("features `lrz` and `zakura` cannot be enabled together");
 
-#[cfg(not(any(feature = "upstream", feature = "zakura")))]
-compile_error!("enable exactly one of the `upstream` or `zakura` features");
+#[cfg(not(any(feature = "lrz", feature = "zakura")))]
+compile_error!("enable exactly one of the `lrz` or `zakura` features");
 
 pub mod action;
-mod backend;
+pub mod backend;
 pub mod config;
 pub mod confirmation;
 pub mod delegate;

@@ -22,7 +22,7 @@ publish `wallet-example`.
 Use these tag forms:
 
 - `zcash_voting`: `v<version>`
-- Other crates: `<crate-name>-v<version>`
+- Other crates: `<package-name>-v<version>`
 
 ## Hard guards
 
@@ -133,11 +133,22 @@ Do not rewrite historical sections.
 Run:
 
 ```bash
-cargo check --workspace
-cargo test --workspace --locked
+cargo check
+cargo test --locked
+cargo test -p zcash_voting -p zcash-voting-wallet-example \
+  --all-targets --no-default-features --features lrz \
+  --locked
+cargo test -p vote-commitment-tree -p vote-commitment-tree-client \
+  --all-targets --features vote-commitment-tree-client/cli --locked
+cargo test -p vote-commitment-tree -p vote-commitment-tree-client \
+  --all-targets --no-default-features \
+  --features vote-commitment-tree/lrz,vote-commitment-tree-client/lrz,vote-commitment-tree-client/cli \
+  --locked
 git diff --check
 ```
 
+Do not combine the Zakura-default and LRZ package sets in one Cargo
+invocation; their transitive cryptography features are mutually exclusive.
 Also run focused or feature-specific tests indicated by the changed code or
 repository documentation. Resolve failures before proceeding.
 

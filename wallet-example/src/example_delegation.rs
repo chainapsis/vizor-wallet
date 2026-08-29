@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use voting_crypto_deps::pasta_curves::group::ff::PrimeField;
 
-use crate::backend::{orchard, pasta_curves, zcash_client_sqlite, zcash_keys};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_protocol::consensus::Parameters;
+use zcash_voting::backend::{orchard, pasta_curves, zcash_client_sqlite, zcash_keys};
 use zcash_voting::delegate::ResolveDelegationLwdParams;
 use zcash_voting::prelude::{
     export_delegation_capability, gather_delegation_lwd_inputs, import_delegation_capability,
