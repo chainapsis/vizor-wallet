@@ -17,6 +17,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   Restart planning groups committed or submitted batch members into one
   `SubmitVoteBatch` or `PollVoteBatch` step, whose recovery anchor reconstructs
   the complete canonical request and shared digest without duplicate submits.
+  Fresh vote preparation rejects a second unsubmitted authority chain for the
+  same bundle, preventing competing spends of its current VAN.
   Batches keep choices, note membership, and voting keys hidden as before, but
   intentionally reveal that their included proposal actions came from one
   transaction.

@@ -443,6 +443,7 @@ fn signed_commitment_from_parts(
 /// This validates the draft list and bundle index once, then commits each draft
 /// in order while reporting commit progress. Imported capability rounds require
 /// every delegation bundle to be confirmed before the first vote is committed.
+/// A bundle cannot start another vote chain while one remains unsubmitted.
 #[allow(clippy::too_many_arguments)]
 pub fn commit_batch(
     db: &VotingDb,
@@ -523,6 +524,20 @@ pub fn prepare_commit_batch(
             return Err(VotingError::InvalidInput {
                 message: "found a partial persisted vote batch; recover or clear the inconsistent local state before rebuilding".to_string(),
             });
+        }
+        let proposal_ids = batch
+            .drafts
+            .iter()
+            .map(|draft| draft.proposal_id)
+            .collect::<Vec<_>>();
+        if recovered_count == 0 {
+            ensure_no_competing_unsubmitted_vote_chain_with_conn(
+                &tx,
+                &wallet_id,
+                batch.round_id,
+                batch.bundle_index,
+                &proposal_ids,
+            )?;
         }
         let (captured, recovered) = if recovered_count == recoveries.len() {
             let recovered = batch
@@ -1341,6 +1356,8 @@ pub fn commit(
 }
 
 /// Builds and signs one vote while keeping the SQLite mutation window short.
+///
+/// A bundle cannot start another vote chain while one remains unsubmitted.
 #[allow(clippy::too_many_arguments)]
 pub fn prepare_commit(
     db: &VotingDb,
@@ -1381,6 +1398,15 @@ pub fn prepare_commit(
                 Ok((recovered, CapturedVoteState::Recovered(state)))
             })
             .transpose()?;
+        if recovered.is_none() {
+            ensure_no_competing_unsubmitted_vote_chain_with_conn(
+                &tx,
+                &wallet_id,
+                round_id,
+                bundle_index,
+                &[draft.proposal_id],
+            )?;
+        }
         tx.commit().map_err(|e| VotingError::Internal {
             message: format!("failed to finish recovered vote preparation transaction: {e}"),
         })?;
@@ -1526,6 +1552,23 @@ fn persist_prepared_commits(
         .map_err(|e| VotingError::Internal {
             message: format!("failed to begin prepared vote persistence transaction: {e}"),
         })?;
+    let fresh_proposal_ids = prepared
+        .iter()
+        .filter(|vote| matches!(&vote.captured_state, CapturedVoteState::Fresh(_)))
+        .map(|vote| vote.draft.proposal_id)
+        .collect::<Vec<_>>();
+    if let Some(first_fresh) = prepared
+        .iter()
+        .find(|vote| matches!(&vote.captured_state, CapturedVoteState::Fresh(_)))
+    {
+        ensure_no_competing_unsubmitted_vote_chain_with_conn(
+            &tx,
+            &first_fresh.wallet_id,
+            &first_fresh.round_id,
+            first_fresh.bundle_index,
+            &fresh_proposal_ids,
+        )?;
+    }
     let mut stored_fresh_vote = false;
     for vote in &prepared {
         match &vote.captured_state {
@@ -2915,6 +2958,60 @@ fn ensure_vote_rebuild_allowed(
     Ok(())
 }
 
+/// Rejects another unsubmitted commitment that would spend the bundle's same current VAN.
+fn ensure_no_competing_unsubmitted_vote_chain_with_conn(
+    conn: &rusqlite::Connection,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_ids: &[u32],
+) -> Result<(), VotingError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT proposal_id FROM votes
+             WHERE round_id = :round_id
+               AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index
+               AND commitment_bundle_json IS NOT NULL
+               AND tx_hash IS NULL
+             ORDER BY proposal_id",
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to prepare unsubmitted vote-chain query: {e}"),
+        })?;
+    let rows = stmt
+        .query_map(
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+            },
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to query unsubmitted vote chains: {e}"),
+        })?;
+    for row in rows {
+        let stored_proposal_id = row.map_err(|e| VotingError::Internal {
+            message: format!("failed to read unsubmitted vote-chain proposal: {e}"),
+        })?;
+        let stored_proposal_id =
+            u32::try_from(stored_proposal_id).map_err(|_| VotingError::Internal {
+                message: format!(
+                    "stored unsubmitted vote-chain proposal must be non-negative, got {stored_proposal_id}"
+                ),
+            })?;
+        if !proposal_ids.contains(&stored_proposal_id) {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "round {round_id} bundle {bundle_index} already has an unsubmitted vote chain for proposal {stored_proposal_id}; recover and submit it before preparing another vote chain"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl VoteRecoveryBundle {
     fn from_parts(
         bundle_index: u32,
@@ -3322,6 +3419,91 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn fresh_batch_rejects_another_unsubmitted_batch_for_the_bundle() {
+        let (db, _) = db_with_two_action_recovery_batch();
+        let drafts = [
+            DraftVote {
+                proposal_id: 3,
+                choice: 0,
+                num_options: 2,
+                single_share: false,
+                vc_tree_position: 0,
+            },
+            DraftVote {
+                proposal_id: 4,
+                choice: 1,
+                num_options: 2,
+                single_share: false,
+                vc_tree_position: 0,
+            },
+        ];
+        let witness = VanWitness {
+            auth_path: Vec::new(),
+            position: 0,
+            anchor_height: 0,
+        };
+        let hotkey = VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap();
+
+        let err = match prepare_commit_batch(
+            &db,
+            VoteSigner::hotkey(&hotkey),
+            VoteCommitBatch {
+                round_id: ROUND_ID,
+                bundle_index: 0,
+                drafts: &drafts,
+                witness: &witness,
+                stages: &NoopProgressReporter,
+                max_proof_concurrency: 1,
+            },
+        ) {
+            Ok(_) => panic!("a disjoint batch must not reuse an unsubmitted bundle VAN"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string()
+                .contains("already has an unsubmitted vote chain"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn fresh_singleton_rejects_an_unsubmitted_batch_for_the_bundle() {
+        let (db, _) = db_with_two_action_recovery_batch();
+        let witness = VanWitness {
+            auth_path: Vec::new(),
+            position: 0,
+            anchor_height: 0,
+        };
+        let hotkey = VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap();
+
+        let err = match prepare_commit(
+            &db,
+            ROUND_ID,
+            0,
+            &DraftVote {
+                proposal_id: 3,
+                choice: 0,
+                num_options: 2,
+                single_share: false,
+                vc_tree_position: 0,
+            },
+            &witness,
+            VoteSigner::hotkey(&hotkey),
+            &NoopProgressReporter,
+        ) {
+            Ok(_) => panic!("a singleton must not reuse an unsubmitted batch VAN"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string()
+                .contains("already has an unsubmitted vote chain"),
+            "{err}"
+        );
     }
 
     fn prepared_vote_fixture(db: &VotingDb) -> PreparedVoteCommit {
@@ -4044,6 +4226,45 @@ mod tests {
         let err = persist_prepared_commit(&db, prepared).unwrap_err();
         assert!(
             err.to_string().contains("bundle VAN position changed"),
+            "{err}"
+        );
+        assert!(recovery_bundle(&db, ROUND_ID, 0, 1).unwrap().is_none());
+    }
+
+    #[test]
+    fn prepared_vote_rejects_a_competing_chain_before_persistence() {
+        let db = db_with_vote();
+        let prepared = prepared_vote_fixture(&db);
+        let mut competing = recovery_bundle_fixture();
+        competing.proposal_id = 2;
+        competing.vote_commitment = [0x62; 32];
+        let commitment = stored_vote_commitment_bytes(&competing).unwrap();
+        queries::store_vote(
+            &db.conn(),
+            ROUND_ID,
+            WALLET_ID,
+            0,
+            competing.proposal_id,
+            competing.vote_decision,
+            &commitment,
+        )
+        .unwrap();
+        store_recovery_json_for_vote(
+            &db,
+            ROUND_ID,
+            0,
+            competing.proposal_id,
+            competing.vote_decision,
+            Some(&commitment),
+            &serialize_recovery(&competing).unwrap(),
+        )
+        .unwrap();
+
+        let err = persist_prepared_commit(&db, prepared).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("already has an unsubmitted vote chain"),
             "{err}"
         );
         assert!(recovery_bundle(&db, ROUND_ID, 0, 1).unwrap().is_none());
