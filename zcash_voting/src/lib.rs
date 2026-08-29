@@ -55,6 +55,9 @@ pub mod zkp1;
 pub mod zkp2;
 
 pub use helper::health::HelperHealth;
+pub use helper::transport::{
+    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, MAX_HELPER_RESPONSE_BYTES,
+};
 pub use http_transport::HyperTransport;
 pub use pir::{
     connect_pir, connect_pir_blocking, negotiated_pir_layout, ImtProofData, NegotiatedPirLayout,

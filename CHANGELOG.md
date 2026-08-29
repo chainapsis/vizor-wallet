@@ -17,6 +17,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   base URLs may use HTTP or HTTPS and a mount path, but not credentials, query
   parameters, or fragments; equivalent default ports, trailing slashes, and
   mount-path percent escapes are normalized before comparison or persistence.
+- Added a host-owned `HelperTransport` abstraction for helper-server requests.
+  The bundled `HyperTransport` provides direct HTTP, while wallets can supply
+  Tor or proxy-backed transports without fallback to a different route.
 
 ### Changed
 - Initial share delivery continues to target half the configured fleet, rounded
