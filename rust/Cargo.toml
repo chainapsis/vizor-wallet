@@ -11,14 +11,14 @@ flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
 voting-crypto-deps = { version = "0.1.2", default-features = false, features = ["zakura"] }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "1.0.0-rc.3", default-features = false, features = ["circuit"] }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.0.0-rc.3", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "1.0.0-rc.3" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=1.0.0-rc.3" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "1.0.0-rc.3" }
-bls12_381 = { package = "zakura-bls12-381", version = "1.0.0-rc.3" }
+jubjub = { package = "zakura-jubjub", version = "=1.0.0-rc.3" }
+bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0-rc.3" }
 rand_core = "0.6"
 
 # Key generation
@@ -80,14 +80,14 @@ url = "2.5.8"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "1.0.0-rc.3"
+version = "=1.0.0-rc.3"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "1.0.0-rc.3"
+version = "=1.0.0-rc.3"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -99,7 +99,9 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "0.1.0-rc2"
+git = "https://github.com/zakura-core/wallet-libraries"
+rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
+version = "0.1.0-rc3"
 features = [
     "orchard",
     "transparent-inputs",
@@ -112,24 +114,27 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "0.1.0-rc2"
+git = "https://github.com/zakura-core/wallet-libraries"
+rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
+version = "0.1.0-rc3"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=3.1.0-rc.12"
-default-features = false
-features = ["zakura"]
+git = "https://github.com/valargroup/zcash_voting"
+rev = "cb2aaf0d42fd94c6c0a0bee05d879aacc1cbfaa9"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "1.0.0-rc.3"
+version = "=1.0.0-rc.3"
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "1.0.0-rc.3"
+version = "=1.0.0-rc.3"
 
 [dependencies.pczt]
 package = "zakura-pczt"
+git = "https://github.com/zakura-core/wallet-libraries"
+rev = "ee6e1f0e1cd108990bba242eae628fcb3c820d82"
 version = "0.1.0-rc1"
 features = [
     "orchard",
