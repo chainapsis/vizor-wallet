@@ -26,16 +26,17 @@ precompute → delegate → vote → share lifecycle:
    plus `confirm_delegation_submission` after confirmation.
 6. Record each terminal ballot decision with `set_ballot_intent`, passing the
    proposal's declared option count so choices are validated before persistence.
-   For multiple answered proposals in one bundle, call `vote::commit_batch` once
-   with their canonical order and submit the returned `batch_json` to the
-   chain's `cast-vote-batch` endpoint. Every action signs the same batch digest,
-   so the chain either accepts the complete authority chain or none of it. Use
+   For multiple answered proposals in one bundle, call
+   `vote::commit_atomic_vote_batch` once with their canonical order and submit
+   the returned `SignedVoteBatch::batch_json` to the chain's
+   `cast-vote-batch` endpoint. Every action signs the same batch digest, so the
+   chain either accepts the complete authority chain or none of it. Use
    `confirm_vote_batch_submission` after confirmation, then submit each vote's
-   helper shares. `vote::commit` and `confirm_vote_submission` remain the
-   singleton path. Recover and confirm existing work before preparing another
-   vote chain for the same bundle. While polling a batch, helper-share recovery
-   remains deferred for every member until the batch confirmation records all
-   vote commitment positions.
+   helper shares. `vote::commit` and the existing `vote::commit_batch` retain
+   independently signed singleton behavior. Recover and confirm existing work
+   before preparing another vote chain for the same bundle. While polling an
+   atomic batch, helper-share recovery remains deferred for every member until
+   batch confirmation records all vote commitment positions.
 7. After restart, call `resume_plan` with the round's full proposal id list and
    execute one returned `NextStep`, persist its result, then call `resume_plan`
    again. `CastVote` includes the recorded choice, and `SubmitVote` resumes an
@@ -43,7 +44,7 @@ precompute → delegate → vote → share lifecycle:
    persist the cast-vote tx hash with `vote::record_submission` while polling,
    then record confirmed cast-vote events with `confirm_vote_submission`.
    `SubmitVoteBatch` and `PollVoteBatch` carry the first ordered proposal as a
-   recovery anchor. Use it with `vote::recover_signed_commitments`, submit the
+   recovery anchor. Use it with `vote::recover_atomic_vote_batch`, submit the
    canonical `batch_json` once, persist the shared hash with
    `vote::record_batch_submission`, and confirm with
    `confirm_vote_batch_submission`. After confirmation, call
@@ -419,9 +420,10 @@ boundary, so production builds should not enable this feature.
   delegation, vote, and share phases in wallet code. Fetch step execution
   material through crate APIs such as `vote::submission`,
   `vote::recover_commit`, `share::*`, and the tx hash accessors.
-- Use `vote::commit` for singleton transactions or `vote::commit_batch` for one
-  atomic, canonical multi-question transaction. Use `vote::submission`,
-  `vote::recover_commit`,
+- Use `vote::commit` for one singleton. The existing `vote::commit_batch`
+  remains the independently signed submission path, while
+  `vote::commit_atomic_vote_batch` builds one atomic, canonical multi-question
+  transaction. Use `vote::submission`, `vote::recover_commit`,
   `vote::record_submission`, and `vote::record_vc_position` for the cast-vote
   lifecycle. Wallets should not write recovery JSON, submission flags, or vote
   commitment positions directly.

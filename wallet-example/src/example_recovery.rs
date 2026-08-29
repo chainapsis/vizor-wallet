@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use zcash_voting::prelude::{
-    recover_signed_commitments, resume_plan, round_snapshot, CommittedVote, NextStep, RoundPlan,
-    RoundRecoverySnapshot, SignedVoteCommitments, VotingDb,
+    recover_atomic_vote_batch, resume_plan, round_snapshot, CommittedVote, NextStep, RoundPlan,
+    RoundRecoverySnapshot, SignedVoteBatch, VotingDb,
 };
 
 /// One round-level recovery payload fetched in a single caller entrypoint.
@@ -19,7 +19,7 @@ pub struct RecoveredVoteStep {
 /// One recovered atomic batch keyed by its planner step.
 pub struct RecoveredVoteBatchStep {
     pub step: NextStep,
-    pub signed_commitments: SignedVoteCommitments,
+    pub signed_batch: SignedVoteBatch,
 }
 
 /// Loads the typed recovery snapshot for one round.
@@ -90,7 +90,7 @@ pub fn recover_vote_batch_for_step(
     voting_db: &VotingDb,
     round_id: &str,
     step: &NextStep,
-) -> Result<Option<SignedVoteCommitments>> {
+) -> Result<Option<SignedVoteBatch>> {
     match *step {
         NextStep::SubmitVoteBatch {
             bundle_index,
@@ -99,7 +99,7 @@ pub fn recover_vote_batch_for_step(
         | NextStep::PollVoteBatch {
             bundle_index,
             proposal_id,
-        } => recover_signed_commitments(voting_db, round_id, bundle_index, proposal_id)
+        } => recover_atomic_vote_batch(voting_db, round_id, bundle_index, proposal_id)
             .map(Some)
             .context("recover atomic vote batch for resume step"),
         _ => Ok(None),
@@ -135,10 +135,10 @@ pub fn recover_vote_batches_for_plan(
 ) -> Result<Vec<RecoveredVoteBatchStep>> {
     let mut recovered = Vec::new();
     for step in &plan.next_steps {
-        if let Some(signed_commitments) = recover_vote_batch_for_step(voting_db, round_id, step)? {
+        if let Some(signed_batch) = recover_vote_batch_for_step(voting_db, round_id, step)? {
             recovered.push(RecoveredVoteBatchStep {
                 step: step.clone(),
-                signed_commitments,
+                signed_batch,
             });
         }
     }

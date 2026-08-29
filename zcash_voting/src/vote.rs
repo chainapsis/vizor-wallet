@@ -55,14 +55,6 @@ pub fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), VotingError
             message: "draft_votes must not be empty".to_string(),
         });
     }
-    if draft_votes.len() > MAX_VOTE_BATCH_ACTIONS {
-        return Err(VotingError::InvalidInput {
-            message: format!(
-                "draft_votes must contain at most {MAX_VOTE_BATCH_ACTIONS} actions, got {}",
-                draft_votes.len()
-            ),
-        });
-    }
 
     let mut proposal_ids = HashSet::with_capacity(draft_votes.len());
     for draft in draft_votes {
@@ -78,6 +70,18 @@ pub fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), VotingError
     }
 
     Ok(())
+}
+
+fn validate_atomic_vote_batch(draft_votes: &[DraftVote]) -> Result<(), VotingError> {
+    if draft_votes.len() > MAX_VOTE_BATCH_ACTIONS {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "atomic vote batch must contain at most {MAX_VOTE_BATCH_ACTIONS} actions, got {}",
+                draft_votes.len()
+            ),
+        });
+    }
+    validate_draft_votes(draft_votes)
 }
 
 /// VAN Merkle witness produced by `precompute::van_witness`.
@@ -181,16 +185,29 @@ pub struct SignedVoteCommitment {
     pub commitment_bundle_json: String,
 }
 
-/// Signed vote commitments produced for one delegation bundle.
+/// Independently signed vote commitments produced for one delegation bundle.
+///
+/// Each commitment is submitted through the singleton cast-vote endpoint.
 #[derive(Clone, Debug)]
 pub struct SignedVoteCommitments {
     pub bundle_index: u32,
     pub commitments: Vec<SignedVoteCommitment>,
-    /// Batch-wide digest signed by every commitment. `None` denotes a legacy
-    /// singleton result recovered through the compatibility API.
-    pub batch_digest: Option<[u8; 32]>,
-    /// Canonical JSON body for `/shielded-vote/v1/cast-vote-batch`.
-    pub batch_json: Option<String>,
+}
+
+/// One signed atomic vote batch ready for the batch transaction endpoint.
+///
+/// The digest and canonical request body are mandatory so an atomic batch
+/// cannot be mistaken for a collection of singleton vote submissions.
+#[derive(Clone, Debug)]
+pub struct SignedVoteBatch {
+    /// Delegation bundle that authorized every action.
+    pub bundle_index: u32,
+    /// Ordered commitments carried by the atomic transaction.
+    pub commitments: Vec<SignedVoteCommitment>,
+    /// Batch-wide digest signed by every commitment.
+    pub batch_digest: [u8; 32],
+    /// Canonical request body for the batch cast-vote endpoint.
+    pub batch_json: String,
 }
 
 /// Unpersisted cast-vote work produced without holding the voting database lock.
@@ -212,8 +229,15 @@ enum CapturedVoteState {
     Recovered(crate::storage::queries::VoteRowState),
 }
 
-/// Unpersisted cast-vote work for one delegation bundle.
+/// Opaque handoff for independently signed commitments prepared through the
+/// historical batch API.
 pub struct PreparedVoteCommitments {
+    bundle_index: u32,
+    commitments: Vec<PreparedVoteCommit>,
+}
+
+/// Unpersisted atomic cast-vote work for one delegation bundle.
+pub struct PreparedAtomicVoteBatch {
     wallet_id: String,
     round_id: String,
     bundle_index: u32,
@@ -438,12 +462,25 @@ fn signed_commitment_from_parts(
     })
 }
 
-/// Builds signed vote commitments for every draft in one bundle.
+/// Inputs for preparing independently submitted cast-vote commitments for one
+/// delegation bundle.
 ///
-/// This validates the draft list and bundle index once, then commits each draft
-/// in order while reporting commit progress. Imported capability rounds require
-/// every delegation bundle to be confirmed before the first vote is committed.
-/// A bundle cannot start another vote chain while one remains unconfirmed.
+/// Each prepared commitment retains the singleton signing domain used by the
+/// historical API. Use [`AtomicVoteBatch`] when all drafts will be submitted in
+/// one atomic transaction.
+pub struct VoteCommitBatch<'a> {
+    pub round_id: &'a str,
+    pub bundle_index: u32,
+    pub drafts: &'a [DraftVote],
+    pub witness: &'a VanWitness,
+    pub stages: &'a dyn crate::types::VoteCommitStageReporter,
+}
+
+/// Builds signed singleton vote commitments for every draft in one bundle.
+///
+/// This preserves the historical API and its independently submittable
+/// singleton signatures. Use [`commit_atomic_vote_batch`] to bind and submit
+/// all drafts in one atomic transaction.
 #[allow(clippy::too_many_arguments)]
 pub fn commit_batch(
     db: &VotingDb,
@@ -454,44 +491,141 @@ pub fn commit_batch(
     signer: VoteSigner<'_>,
     stages: &dyn crate::types::VoteCommitStageReporter,
 ) -> Result<SignedVoteCommitments, VotingError> {
-    let prepared = prepare_commit_batch(
-        db,
-        signer,
-        VoteCommitBatch {
-            round_id,
-            bundle_index,
-            drafts,
-            witness,
-            stages,
-            max_proof_concurrency: DEFAULT_BATCH_PROOF_CONCURRENCY,
-        },
-    )?;
-    persist_prepared_commit_batch(db, prepared)
+    validate_draft_votes(drafts)?;
+    let bundle_count = db.get_bundle_count(round_id)?;
+    crate::round::validate_bundle_index(bundle_count, bundle_index, "voting")?;
+
+    let mut commitments = Vec::with_capacity(drafts.len());
+    for draft in drafts {
+        let committed =
+            CommittedVote::commit(db, round_id, bundle_index, draft, witness, signer, stages)?;
+        commitments.push(committed.signed_commitment(db)?);
+    }
+
+    Ok(SignedVoteCommitments {
+        bundle_index,
+        commitments,
+    })
 }
 
-/// Inputs for preparing cast-vote commitments for one delegation bundle.
-pub struct VoteCommitBatch<'a> {
-    pub round_id: &'a str,
-    pub bundle_index: u32,
-    pub drafts: &'a [DraftVote],
-    pub witness: &'a VanWitness,
-    pub stages: &'a dyn crate::types::VoteCommitStageReporter,
-    /// Maximum number of expensive ZKP #2 builders to run concurrently.
-    pub max_proof_concurrency: usize,
-}
-
-/// Builds and signs a batch without holding SQLite during ZKP #2 computation.
+/// Builds and signs independent singleton commitments without holding SQLite
+/// during ZKP #2 computation.
 pub fn prepare_commit_batch(
     db: &VotingDb,
     signer: VoteSigner<'_>,
     batch: VoteCommitBatch<'_>,
 ) -> Result<PreparedVoteCommitments, VotingError> {
     validate_draft_votes(batch.drafts)?;
-    if batch.max_proof_concurrency == 0 {
-        return Err(VotingError::InvalidInput {
-            message: "max_proof_concurrency must be at least 1".to_string(),
-        });
+    let bundle_count = db.get_bundle_count(batch.round_id)?;
+    crate::round::validate_bundle_index(bundle_count, batch.bundle_index, "voting")?;
+
+    let mut commitments = Vec::with_capacity(batch.drafts.len());
+    for draft in batch.drafts {
+        commitments.push(prepare_commit(
+            db,
+            batch.round_id,
+            batch.bundle_index,
+            draft,
+            batch.witness,
+            signer,
+            batch.stages,
+        )?);
     }
+
+    Ok(PreparedVoteCommitments {
+        bundle_index: batch.bundle_index,
+        commitments,
+    })
+}
+
+/// Persists commitments prepared through [`prepare_commit_batch`].
+pub fn persist_prepared_commit_batch(
+    db: &VotingDb,
+    prepared: PreparedVoteCommitments,
+) -> Result<SignedVoteCommitments, VotingError> {
+    let mut commitments = Vec::with_capacity(prepared.commitments.len());
+    for prepared_commit in prepared.commitments {
+        let committed = persist_prepared_commit(db, prepared_commit)?;
+        commitments.push(committed.signed_commitment(db)?);
+    }
+    Ok(SignedVoteCommitments {
+        bundle_index: prepared.bundle_index,
+        commitments,
+    })
+}
+
+/// Builds, signs, and persists one atomic vote batch with default proof
+/// concurrency.
+#[allow(clippy::too_many_arguments)]
+pub fn commit_atomic_vote_batch(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    drafts: &[DraftVote],
+    witness: &VanWitness,
+    signer: VoteSigner<'_>,
+    stages: &dyn crate::types::VoteCommitStageReporter,
+) -> Result<SignedVoteBatch, VotingError> {
+    let prepared = prepare_atomic_vote_batch(
+        db,
+        signer,
+        AtomicVoteBatch::new(round_id, bundle_index, drafts, witness, stages),
+    )?;
+    persist_prepared_atomic_vote_batch(db, prepared)
+}
+
+/// Inputs for preparing one atomic vote batch.
+pub struct AtomicVoteBatch<'a> {
+    round_id: &'a str,
+    bundle_index: u32,
+    drafts: &'a [DraftVote],
+    witness: &'a VanWitness,
+    stages: &'a dyn crate::types::VoteCommitStageReporter,
+    max_proof_concurrency: usize,
+}
+
+impl<'a> AtomicVoteBatch<'a> {
+    /// Creates an atomic batch using [`DEFAULT_BATCH_PROOF_CONCURRENCY`].
+    pub fn new(
+        round_id: &'a str,
+        bundle_index: u32,
+        drafts: &'a [DraftVote],
+        witness: &'a VanWitness,
+        stages: &'a dyn crate::types::VoteCommitStageReporter,
+    ) -> Self {
+        Self {
+            round_id,
+            bundle_index,
+            drafts,
+            witness,
+            stages,
+            max_proof_concurrency: DEFAULT_BATCH_PROOF_CONCURRENCY,
+        }
+    }
+
+    /// Overrides the maximum number of ZKP #2 builders that may run at once.
+    pub fn with_max_proof_concurrency(
+        mut self,
+        max_proof_concurrency: usize,
+    ) -> Result<Self, VotingError> {
+        if max_proof_concurrency == 0 {
+            return Err(VotingError::InvalidInput {
+                message: "max_proof_concurrency must be at least 1".to_string(),
+            });
+        }
+        self.max_proof_concurrency = max_proof_concurrency;
+        Ok(self)
+    }
+}
+
+/// Builds and signs an atomic batch without holding SQLite during ZKP #2
+/// computation.
+pub fn prepare_atomic_vote_batch(
+    db: &VotingDb,
+    signer: VoteSigner<'_>,
+    batch: AtomicVoteBatch<'_>,
+) -> Result<PreparedAtomicVoteBatch, VotingError> {
+    validate_atomic_vote_batch(batch.drafts)?;
     let bundle_count = db.get_bundle_count(batch.round_id)?;
     crate::round::validate_bundle_index(bundle_count, batch.bundle_index, "voting")?;
     let (secret, network) = signer_secret_and_network(signer);
@@ -731,7 +865,7 @@ pub fn prepare_commit_batch(
     }
 
     let batch_json = canonical_batch_json(&commitments)?;
-    Ok(PreparedVoteCommitments {
+    Ok(PreparedAtomicVoteBatch {
         wallet_id,
         round_id: batch.round_id.to_string(),
         bundle_index: batch.bundle_index,
@@ -742,11 +876,11 @@ pub fn prepare_commit_batch(
 }
 
 /// Atomically persists the complete batch after revalidating every captured row.
-pub fn persist_prepared_commit_batch(
+pub fn persist_prepared_atomic_vote_batch(
     db: &VotingDb,
-    prepared: PreparedVoteCommitments,
-) -> Result<SignedVoteCommitments, VotingError> {
-    let PreparedVoteCommitments {
+    prepared: PreparedAtomicVoteBatch,
+) -> Result<SignedVoteBatch, VotingError> {
+    let PreparedAtomicVoteBatch {
         wallet_id,
         round_id,
         bundle_index,
@@ -768,11 +902,11 @@ pub fn persist_prepared_commit_batch(
     for committed in committed_votes {
         commitments.push(committed.signed_commitment(db)?);
     }
-    Ok(SignedVoteCommitments {
+    Ok(SignedVoteBatch {
         bundle_index,
         commitments,
-        batch_digest: Some(batch_digest),
-        batch_json: Some(batch_json),
+        batch_digest,
+        batch_json,
     })
 }
 
@@ -790,93 +924,53 @@ pub fn recover_signed_commitments(
             ),
         }
     })?;
-    let Some(requested_batch) = requested.batch.as_ref() else {
-        let committed = CommittedVote::recover(db, round_id, bundle_index, proposal_id)?;
-        return Ok(SignedVoteCommitments {
-            bundle_index,
-            commitments: vec![committed.signed_commitment(db)?],
-            batch_digest: None,
-            batch_json: None,
-        });
-    };
-
-    let digest = requested_batch.digest;
-    let conn = db.conn();
-    let wallet_id = db.wallet_id();
-    let mut stmt = conn
-        .prepare(
-            "SELECT commitment_bundle_json FROM votes
-             WHERE round_id = :round_id AND wallet_id = :wallet_id
-               AND bundle_index = :bundle_index AND commitment_bundle_json IS NOT NULL",
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("prepare vote batch recovery query failed: {e}"),
-        })?;
-    let rows = stmt
-        .query_map(
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":bundle_index": bundle_index as i64,
-            },
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("query vote batch recovery rows failed: {e}"),
-        })?;
-    let mut recoveries = Vec::new();
-    for row in rows {
-        let recovery = parse_recovery(&row.map_err(|e| VotingError::Internal {
-            message: format!("read vote batch recovery row failed: {e}"),
-        })?)?;
-        if recovery
-            .batch
-            .as_ref()
-            .is_some_and(|batch| batch.digest == digest)
-        {
-            recoveries.push(recovery);
-        }
-    }
-    recoveries.sort_by_key(|recovery| recovery.batch.as_ref().map(|batch| batch.index));
-    let expected_size = requested_batch.size as usize;
-    if recoveries.len() != expected_size
-        || recoveries.iter().enumerate().any(|(index, recovery)| {
-            recovery.batch.as_ref().is_none_or(|batch| {
-                batch.index != index as u32 || batch.size as usize != expected_size
-            })
-        })
-    {
+    if requested.batch.is_some() {
         return Err(VotingError::InvalidInput {
-            message: "persisted atomic vote batch is incomplete or out of order".to_string(),
+            message: "vote belongs to an atomic batch; use recover_atomic_vote_batch".to_string(),
         });
     }
+    let committed = CommittedVote::recover(db, round_id, bundle_index, proposal_id)?;
+    Ok(SignedVoteCommitments {
+        bundle_index,
+        commitments: vec![committed.signed_commitment(db)?],
+    })
+}
 
+/// Recovers the complete atomic batch containing `proposal_id`.
+pub fn recover_atomic_vote_batch(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<SignedVoteBatch, VotingError> {
+    let requested = recovery_bundle(db, round_id, bundle_index, proposal_id)?.ok_or_else(|| {
+        VotingError::InvalidInput {
+            message: format!(
+                "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+            ),
+        }
+    })?;
+    let batch = requested
+        .batch
+        .as_ref()
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "vote is a singleton; use recover_signed_commitments".to_string(),
+        })?;
+    let digest = batch.digest;
+    let recoveries = {
+        let conn = db.conn();
+        load_vote_batch_recoveries_with_conn(
+            &conn,
+            &db.wallet_id(),
+            round_id,
+            bundle_index,
+            digest,
+        )?
+    };
     let mut commitments = Vec::with_capacity(recoveries.len());
     for recovery in &recoveries {
         let commit = commit_from_recovery(recovery)?;
         commitments.push(signed_commitment_from_parts(&commit, recovery)?);
-    }
-    let actions = commitments
-        .iter()
-        .map(
-            |commitment| crate::vote_commitment::CastVoteBatchSighashAction {
-                r_vpk: &commitment.r_vpk,
-                van_nullifier: &commitment.van_nullifier,
-                vote_authority_note_new: &commitment.vote_authority_note_new,
-                vote_commitment: &commitment.vote_commitment,
-                proposal_id: commitment.proposal_id,
-            },
-        )
-        .collect::<Vec<_>>();
-    let recomputed = crate::vote_commitment::cast_vote_batch_sighash(
-        round_id,
-        commitments[0].anchor_height as u64,
-        &actions,
-    )?;
-    if recomputed != digest {
-        return Err(VotingError::InvalidInput {
-            message: "persisted atomic vote batch digest does not match its actions".to_string(),
-        });
     }
     let batch_json = crate::wire::VoteCommitmentBatchWire {
         votes: commitments
@@ -885,11 +979,11 @@ pub fn recover_signed_commitments(
             .collect::<Result<Vec<_>, _>>()?,
     }
     .to_json()?;
-    Ok(SignedVoteCommitments {
+    Ok(SignedVoteBatch {
         bundle_index,
         commitments,
-        batch_digest: Some(digest),
-        batch_json: Some(batch_json),
+        batch_digest: digest,
+        batch_json,
     })
 }
 
@@ -1072,7 +1166,7 @@ fn prepare_recovered_vote_batch(
     bundle_index: u32,
     drafts: &[DraftVote],
     captured: Vec<(crate::storage::queries::VoteRowState, VoteRecoveryBundle)>,
-) -> Result<PreparedVoteCommitments, VotingError> {
+) -> Result<PreparedAtomicVoteBatch, VotingError> {
     let size = u32::try_from(drafts.len()).map_err(|_| VotingError::Internal {
         message: "vote batch length does not fit in u32".to_string(),
     })?;
@@ -1130,7 +1224,7 @@ fn prepare_recovered_vote_batch(
         });
     }
     let batch_json = canonical_batch_json(&commitments)?;
-    Ok(PreparedVoteCommitments {
+    Ok(PreparedAtomicVoteBatch {
         wallet_id: wallet_id.to_string(),
         round_id: round_id.to_string(),
         bundle_index,
@@ -3410,6 +3504,22 @@ mod tests {
     }
 
     #[test]
+    fn atomic_vote_batch_reports_the_protocol_action_limit() {
+        let drafts = (1..=(MAX_VOTE_BATCH_ACTIONS as u32 + 1))
+            .map(|proposal_id| DraftVote {
+                proposal_id,
+                choice: 0,
+                num_options: 2,
+                single_share: false,
+                vc_tree_position: 0,
+            })
+            .collect::<Vec<_>>();
+
+        let error = validate_atomic_vote_batch(&drafts).unwrap_err();
+        assert!(error.to_string().contains("at most 15 actions"));
+    }
+
+    #[test]
     fn batch_recovery_metadata_round_trips() {
         let (digest, recoveries) = two_action_recovery_batch();
         for (index, recovery) in recoveries.iter().enumerate() {
@@ -3495,18 +3605,10 @@ mod tests {
         };
         let hotkey = VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap();
 
-        let err = match prepare_commit_batch(
-            &db,
-            VoteSigner::hotkey(&hotkey),
-            VoteCommitBatch {
-                round_id: ROUND_ID,
-                bundle_index: 0,
-                drafts: &drafts,
-                witness: &witness,
-                stages: &NoopProgressReporter,
-                max_proof_concurrency: 1,
-            },
-        ) {
+        let batch = AtomicVoteBatch::new(ROUND_ID, 0, &drafts, &witness, &NoopProgressReporter)
+            .with_max_proof_concurrency(1)
+            .unwrap();
+        let err = match prepare_atomic_vote_batch(&db, VoteSigner::hotkey(&hotkey), batch) {
             Ok(_) => panic!("a disjoint batch must not reuse an unsubmitted bundle VAN"),
             Err(err) => err,
         };
@@ -4212,7 +4314,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_batch_returns_signed_commitments_for_bundle() {
+    fn atomic_vote_batch_replays_signed_commitments_for_bundle() {
         let db = db_with_vote();
         let mut recovery = recovery_bundle_fixture();
         recovery.share_blinds = vec![scalar_bytes(1), scalar_bytes(2)];
@@ -4255,7 +4357,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = commit_batch(
+        let result = commit_atomic_vote_batch(
             &db,
             ROUND_ID,
             0,
@@ -4282,8 +4384,11 @@ mod tests {
         assert_eq!(result.commitments.len(), 1);
         assert_eq!(result.commitments[0].proposal_id, 1);
         assert_eq!(result.commitments[0].choice, 2);
-        assert_eq!(result.batch_digest, Some(digest));
-        assert!(result.batch_json.unwrap().starts_with("{\"votes\":["));
+        assert_eq!(result.batch_digest, digest);
+        assert!(result.batch_json.starts_with("{\"votes\":["));
+
+        let error = recover_signed_commitments(&db, ROUND_ID, 0, 1).unwrap_err();
+        assert!(error.to_string().contains("recover_atomic_vote_batch"));
     }
 
     #[test]
@@ -4576,7 +4681,7 @@ mod tests {
     }
 
     #[test]
-    fn recover_signed_commitments_returns_single_item_batch() {
+    fn legacy_commit_batch_and_recovery_keep_singleton_result() {
         let db = db_with_vote();
         let mut recovery = recovery_bundle_fixture();
         recovery.share_blinds = vec![scalar_bytes(1), scalar_bytes(2)];
@@ -4603,10 +4708,39 @@ mod tests {
         )
         .unwrap();
 
+        let committed = commit_batch(
+            &db,
+            ROUND_ID,
+            0,
+            &[DraftVote {
+                proposal_id: 1,
+                choice: 2,
+                num_options: 3,
+                single_share: false,
+                vc_tree_position: 456,
+            }],
+            &VanWitness {
+                auth_path: vec![vec![0xAA; 32]; VAN_AUTH_PATH_LEN],
+                position: 7,
+                anchor_height: 123,
+            },
+            VoteSigner::hotkey(
+                &VotingHotkey::from_stored_secret(&[0x99; 64], Network::Testnet).unwrap(),
+            ),
+            &NoopProgressReporter,
+        )
+        .unwrap();
+        assert_eq!(committed.bundle_index, 0);
+        assert_eq!(committed.commitments.len(), 1);
+        assert_eq!(committed.commitments[0].proposal_id, 1);
+
         let signed = recover_signed_commitments(&db, ROUND_ID, 0, 1).unwrap();
         assert_eq!(signed.bundle_index, 0);
         assert_eq!(signed.commitments.len(), 1);
         assert_eq!(signed.commitments[0].commitment_bundle_json, recovery_json);
+
+        let error = recover_atomic_vote_batch(&db, ROUND_ID, 0, 1).unwrap_err();
+        assert!(error.to_string().contains("recover_signed_commitments"));
     }
 
     #[test]

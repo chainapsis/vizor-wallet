@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use zcash_voting::prelude::{
-    commit_batch, sync_vote_tree, van_witness, CommittedVote, DraftVote, NoopProgressReporter,
-    SharePayload, SignedVoteCommitment, SignedVoteCommitments, VanWitness, VoteSigner,
-    VoteSubmission, VotingDb, VotingHotkey,
+    commit_atomic_vote_batch, commit_batch, sync_vote_tree, van_witness, CommittedVote, DraftVote,
+    NoopProgressReporter, SharePayload, SignedVoteBatch, SignedVoteCommitment,
+    SignedVoteCommitments, VanWitness, VoteSigner, VoteSubmission, VotingDb, VotingHotkey,
 };
 
 /// Inputs for deriving a Merkle witness for one confirmed delegation bundle.
@@ -29,8 +29,17 @@ pub struct WalletVoteCommitRequest<'a> {
     pub voting_hotkey: &'a VotingHotkey,
 }
 
-/// Inputs for committing one bundle's cast-votes in one call.
+/// Inputs for independently committing one bundle's cast-votes.
 pub struct WalletVoteCommitBatchRequest<'a> {
+    pub round_id: &'a str,
+    pub bundle_index: u32,
+    pub drafts: &'a [DraftVote],
+    pub van_witness: &'a VanWitness,
+    pub voting_hotkey: &'a VotingHotkey,
+}
+
+/// Inputs for committing one bundle's cast-votes in one atomic transaction.
+pub struct WalletAtomicVoteBatchRequest<'a> {
     pub round_id: &'a str,
     pub bundle_index: u32,
     pub drafts: &'a [DraftVote],
@@ -119,10 +128,10 @@ pub fn commit_vote_bundle(
     .context("commit cast-vote")
 }
 
-/// Builds, signs, and persists recovery state for a bundle's cast-vote batch.
+/// Builds independently signed commitments for singleton submission.
 ///
-/// This is the high-level helper that mirrors wallet API boundaries where one
-/// bundle can include multiple proposal drafts in one proof/signing workflow.
+/// This preserves the historical wallet integration. Submit each returned
+/// commitment to the singleton cast-vote endpoint in order.
 pub fn commit_vote_bundle_batch(
     voting_db: &VotingDb,
     request: WalletVoteCommitBatchRequest<'_>,
@@ -137,7 +146,28 @@ pub fn commit_vote_bundle_batch(
         VoteSigner::hotkey(request.voting_hotkey),
         &progress,
     )
-    .context("commit cast-vote batch")
+    .context("commit independent cast-votes")
+}
+
+/// Builds, signs, and persists recovery state for one atomic cast-vote batch.
+///
+/// The returned value contains one canonical batch request body. Its individual
+/// commitments must not be submitted through the singleton endpoint.
+pub fn commit_atomic_vote_bundle_batch(
+    voting_db: &VotingDb,
+    request: WalletAtomicVoteBatchRequest<'_>,
+) -> Result<SignedVoteBatch> {
+    let progress = NoopProgressReporter;
+    commit_atomic_vote_batch(
+        voting_db,
+        request.round_id,
+        request.bundle_index,
+        request.drafts,
+        request.van_witness,
+        VoteSigner::hotkey(request.voting_hotkey),
+        &progress,
+    )
+    .context("commit atomic cast-vote batch")
 }
 
 /// Returns the payloads the caller should submit to external services.

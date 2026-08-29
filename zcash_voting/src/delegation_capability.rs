@@ -1449,7 +1449,7 @@ mod tests {
             first_transition.vote_authority_note_new
         );
 
-        let committed = crate::vote::commit_batch(
+        let committed = crate::vote::commit_atomic_vote_batch(
             &customer,
             &params.vote_round_id,
             0,
@@ -1469,7 +1469,7 @@ mod tests {
             committed.commitments[1].vote_authority_note_new,
             second_transition.vote_authority_note_new
         );
-        let digest = committed.batch_digest.unwrap();
+        let digest = committed.batch_digest;
         for commitment in &committed.commitments {
             VerificationKey::<SpendAuth>::try_from(commitment.r_vpk)
                 .unwrap()
@@ -1479,19 +1479,19 @@ mod tests {
                 )
                 .unwrap();
         }
-        let batch_json = committed.batch_json.unwrap();
+        let batch_json = committed.batch_json;
         drop(customer);
 
         let reopened = test_db(&path_string);
-        let recovered = crate::vote::recover_signed_commitments(
+        let recovered = crate::vote::recover_atomic_vote_batch(
             &reopened,
             &params.vote_round_id,
             0,
             drafts[0].proposal_id,
         )
         .unwrap();
-        assert_eq!(recovered.batch_digest, Some(digest));
-        assert_eq!(recovered.batch_json.as_deref(), Some(batch_json.as_str()));
+        assert_eq!(recovered.batch_digest, digest);
+        assert_eq!(recovered.batch_json, batch_json);
         assert_eq!(recovered.commitments.len(), 2);
 
         drop(reopened);

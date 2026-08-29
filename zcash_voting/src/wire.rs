@@ -265,10 +265,17 @@ pub struct SignedVoteCommitmentView {
 pub struct SignedVoteCommitmentsView {
     pub bundle_index: u32,
     pub commitments: Vec<SignedVoteCommitmentView>,
+}
+
+/// FFI-safe representation of one atomic vote batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedVoteBatchView {
+    pub bundle_index: u32,
+    pub commitments: Vec<SignedVoteCommitmentView>,
     /// Raw 32-byte batch digest signed by every action.
-    pub batch_digest: Option<Vec<u8>>,
+    pub batch_digest: Vec<u8>,
     /// Canonical JSON body to POST to the batch vote endpoint.
-    pub batch_json: Option<String>,
+    pub batch_json: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

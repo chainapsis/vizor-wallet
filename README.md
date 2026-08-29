@@ -80,7 +80,7 @@ stage-oriented API:
   singleton through `vote::submission`, `vote::record_submission`, and
   `confirmation::confirm_vote_submission`. `SubmitVoteBatch` and
   `PollVoteBatch` identify the first ordered action as a recovery anchor. Pass
-  that key to `vote::recover_signed_commitments`, submit its canonical
+  that key to `vote::recover_atomic_vote_batch`, submit its canonical
   `batch_json` once, persist the shared tx hash with
   `vote::record_batch_submission`, and record its ordered event with
   `confirmation::confirm_vote_batch_submission`. After confirmation, call
@@ -126,11 +126,15 @@ custody provider integrations.
   after chain clients report confirmed delegation or cast-vote tx events. The
   confirmation API parses the chain `leaf_index` events and records tx hashes,
   VAN positions, and VC positions atomically.
-- Use `vote::commit` for singletons or `vote::commit_batch` for an atomic,
-  ordered multi-question transaction. Use `vote::submission`, `vote::recover_commit`,
-  `vote::record_submission`, and `vote::record_vc_position` for the cast-vote
-  lifecycle. Wallets should not write recovery JSON, submission flags, or vote
-  commitment positions directly.
+- Use `vote::commit` for one singleton. The existing `vote::commit_batch`
+  remains the independently signed submission path, while
+  `vote::commit_atomic_vote_batch` builds one atomic, ordered multi-question
+  transaction. The distinct `SignedVoteCommitments` and `SignedVoteBatch`
+  result types keep the singleton and atomic submission endpoints separate.
+  Use `vote::submission`, `vote::recover_commit`, `vote::record_submission`,
+  and `vote::record_vc_position` for the singleton lifecycle. Wallets should
+  not write recovery JSON, submission flags, or vote commitment positions
+  directly.
 
 Pre-launch wallet databases with older schema versions are reset when opened by
 this branch; callers that need to preserve test data should export it before

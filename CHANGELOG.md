@@ -10,8 +10,12 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Cast-vote batches now build an ordered vote-authority chain, prove up to three
   ZKP #2 actions concurrently by default, sign every action over one
   domain-separated batch digest, and persist the whole recovery set atomically.
-  The returned `SignedVoteCommitments` includes canonical `batch_json` for the
-  chain's `cast-vote-batch` endpoint, while
+  The explicit `commit_atomic_vote_batch`, `prepare_atomic_vote_batch`, and
+  `recover_atomic_vote_batch` APIs return `SignedVoteBatch`, whose canonical
+  `batch_json` belongs on the chain's `cast-vote-batch` endpoint. The existing
+  `commit_batch`, `prepare_commit_batch`, `persist_prepared_commit_batch`, and
+  `SignedVoteCommitments` APIs retain their independently signed singleton
+  behavior for current wallet integrations.
   `confirmation::confirm_vote_batch_submission` atomically records the shared
   transaction hash, ordered vote-commitment positions, and final VAN position.
   Restart planning groups committed or submitted batch members into one

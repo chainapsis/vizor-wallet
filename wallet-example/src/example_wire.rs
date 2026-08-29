@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use zcash_voting::prelude::{
-    recover_wire_json, SharePayload, SignedVoteCommitment, SignedVoteCommitments,
+    recover_wire_json, SharePayload, SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments,
 };
 
 /// Serialize a delegation submission payload for vote-chain REST submission.
@@ -19,31 +19,10 @@ pub fn vote_commitment_wire_json(commitment: &SignedVoteCommitment) -> Result<St
         .context("serialize vote commitment wire JSON")
 }
 
-/// Serialize a legacy singleton result for vote-chain REST submission.
-///
-/// Atomic batches must instead be submitted once with [`vote_batch_wire_json`].
-/// This helper rejects batch results so their batch signatures cannot be sent
-/// with singleton request bodies.
+/// Serialize independently signed commitments for singleton REST submission.
 pub fn vote_commitments_wire_json(
     commitments: &SignedVoteCommitments,
 ) -> Result<Vec<(u32, String)>> {
-    match (&commitments.batch_digest, &commitments.batch_json) {
-        (Some(_), Some(_)) => {
-            bail!("atomic vote batch must be submitted once using vote_batch_wire_json")
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            bail!("atomic vote batch metadata is incomplete")
-        }
-        (None, None) => {}
-    }
-
-    if commitments.commitments.len() != 1 {
-        bail!(
-            "legacy singleton result must contain exactly one commitment, got {}",
-            commitments.commitments.len()
-        );
-    }
-
     commitments
         .commitments
         .iter()
@@ -61,14 +40,8 @@ pub fn vote_commitments_wire_json(
 ///
 /// Submit this JSON once to the vote-chain batch endpoint. Do not serialize or
 /// submit the batch's individual commitments as singleton requests.
-pub fn vote_batch_wire_json(commitments: &SignedVoteCommitments) -> Result<String> {
-    match (&commitments.batch_digest, &commitments.batch_json) {
-        (Some(_), Some(batch_json)) => Ok(batch_json.clone()),
-        (Some(_), None) | (None, Some(_)) => {
-            bail!("atomic vote batch metadata is incomplete")
-        }
-        (None, None) => bail!("legacy singleton result has no atomic vote batch JSON"),
-    }
+pub fn vote_batch_wire_json(batch: &SignedVoteBatch) -> String {
+    batch.batch_json.clone()
 }
 
 /// Serialize one helper-share payload for helper-server submission.
@@ -127,17 +100,30 @@ mod tests {
     fn signed_commitments() -> SignedVoteCommitments {
         SignedVoteCommitments {
             bundle_index: 1,
+            commitments: vec![
+                signed_commitment(),
+                SignedVoteCommitment {
+                    proposal_id: 3,
+                    ..signed_commitment()
+                },
+            ],
+        }
+    }
+
+    fn signed_batch() -> SignedVoteBatch {
+        SignedVoteBatch {
+            bundle_index: 1,
             commitments: vec![signed_commitment()],
-            batch_digest: None,
-            batch_json: None,
+            batch_digest: [0xAB; 32],
+            batch_json: "{\"votes\":[]}".to_string(),
         }
     }
 
     #[test]
-    fn legacy_singleton_result_still_serializes_one_request() {
+    fn independently_signed_commitments_serialize_as_separate_requests() {
         let requests = vote_commitments_wire_json(&signed_commitments()).unwrap();
 
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, 2);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&requests[0].1).unwrap()["proposal_id"],
@@ -147,34 +133,6 @@ mod tests {
 
     #[test]
     fn atomic_batch_returns_its_canonical_request_body_once() {
-        let mut commitments = signed_commitments();
-        commitments.batch_digest = Some([0xAB; 32]);
-        commitments.batch_json = Some("{\"votes\":[]}".to_string());
-
-        assert_eq!(
-            vote_batch_wire_json(&commitments).unwrap(),
-            "{\"votes\":[]}"
-        );
-        assert!(vote_commitments_wire_json(&commitments)
-            .unwrap_err()
-            .to_string()
-            .contains("must be submitted once"));
-    }
-
-    #[test]
-    fn incomplete_batch_metadata_is_rejected() {
-        let mut missing_json = signed_commitments();
-        missing_json.batch_digest = Some([0xAB; 32]);
-        assert!(vote_batch_wire_json(&missing_json)
-            .unwrap_err()
-            .to_string()
-            .contains("metadata is incomplete"));
-
-        let mut missing_digest = signed_commitments();
-        missing_digest.batch_json = Some("{\"votes\":[]}".to_string());
-        assert!(vote_commitments_wire_json(&missing_digest)
-            .unwrap_err()
-            .to_string()
-            .contains("metadata is incomplete"));
+        assert_eq!(vote_batch_wire_json(&signed_batch()), "{\"votes\":[]}");
     }
 }

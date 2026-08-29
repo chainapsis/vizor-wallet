@@ -214,7 +214,7 @@ pub enum NextStep {
     /// Submit one previously committed atomic vote batch.
     ///
     /// `proposal_id` identifies the batch's first ordered action and is only a
-    /// recovery anchor. Pass it to `vote::recover_signed_commitments`, submit
+    /// recovery anchor. Pass it to `vote::recover_atomic_vote_batch`, submit
     /// the returned canonical `batch_json` once, and atomically persist the
     /// shared transaction hash with `vote::record_batch_submission`.
     SubmitVoteBatch {
@@ -230,7 +230,7 @@ pub enum NextStep {
     ///
     /// `proposal_id` is the same recovery anchor returned by
     /// `SubmitVoteBatch`. Recover the batch digest with
-    /// `vote::recover_signed_commitments`, then pass it to
+    /// `vote::recover_atomic_vote_batch`, then pass it to
     /// `confirmation::confirm_vote_batch_submission` after confirmation.
     PollVoteBatch {
         bundle_index: u32,
@@ -1944,10 +1944,10 @@ mod tests {
                 share_indexes: Vec::new(),
             }]
         );
-        let recovered = crate::vote::recover_signed_commitments(&db, ROUND, 0, 1).unwrap();
-        assert_eq!(recovered.batch_digest, Some(digest));
+        let recovered = crate::vote::recover_atomic_vote_batch(&db, ROUND, 0, 1).unwrap();
+        assert_eq!(recovered.batch_digest, digest);
         assert_eq!(recovered.commitments.len(), 2);
-        assert!(recovered.batch_json.is_some());
+        assert!(recovered.batch_json.starts_with("{\"votes\":["));
     }
 
     #[test]

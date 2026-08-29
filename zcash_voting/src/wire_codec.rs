@@ -20,15 +20,16 @@ use crate::{
         NoteRef, RoundBoundVotingHotkeyTarget, SelectedNotes, SharePayload, VotingError,
         VotingHotkeyTarget,
     },
-    vote::{SignedVoteCommitment, SignedVoteCommitments},
+    vote::{SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments},
     wire::{
         CompletedVoteChoiceView, CompletedVoteDisplayView, DelegationPirPrecomputeResultView,
         DelegationRecoveryView, DelegationRecoveryWorkView, DelegationStatusView,
         DelegationSubmissionWire, NextStepView, RoundPlanView, RoundRecoveryStateView,
         ShareDelegationRecordView, ShareWorkflowRecoveryView, SignedDelegationPayloadView,
-        SignedVoteCommitmentView, SignedVoteCommitmentsView, VoteCommitmentBatchWire,
-        VoteCommitmentWire, VoteRecoveryView, VoteRecoveryWorkView, VoteShareWire,
-        VotingHotkeyTargetV1, VotingNoteRefView, VotingNoteSelectionResultView, VotingRoundParams,
+        SignedVoteBatchView, SignedVoteCommitmentView, SignedVoteCommitmentsView,
+        VoteCommitmentBatchWire, VoteCommitmentWire, VoteRecoveryView, VoteRecoveryWorkView,
+        VoteShareWire, VotingHotkeyTargetV1, VotingNoteRefView, VotingNoteSelectionResultView,
+        VotingRoundParams,
     },
     BundlePolicy,
 };
@@ -429,8 +430,23 @@ impl TryFrom<SignedVoteCommitments> for SignedVoteCommitmentsView {
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect::<Result<Vec<_>, _>>()?,
-            batch_digest: commitments.batch_digest.map(|digest| digest.to_vec()),
-            batch_json: commitments.batch_json,
+        })
+    }
+}
+
+impl TryFrom<SignedVoteBatch> for SignedVoteBatchView {
+    type Error = VotingError;
+
+    fn try_from(batch: SignedVoteBatch) -> Result<Self, Self::Error> {
+        Ok(Self {
+            bundle_index: batch.bundle_index,
+            commitments: batch
+                .commitments
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<_>, _>>()?,
+            batch_digest: batch.batch_digest.to_vec(),
+            batch_json: batch.batch_json,
         })
     }
 }
@@ -1281,52 +1297,52 @@ mod tests {
         assert!(draft.single_share);
     }
 
-    #[test]
-    fn signed_vote_commitments_view_preserves_public_wire_fields() {
-        let view = SignedVoteCommitmentsView::try_from(crate::vote::SignedVoteCommitments {
-            bundle_index: 1,
-            commitments: vec![crate::vote::SignedVoteCommitment {
-                proposal_id: 2,
-                choice: 1,
+    fn signed_vote_commitment_fixture() -> crate::vote::SignedVoteCommitment {
+        crate::vote::SignedVoteCommitment {
+            proposal_id: 2,
+            choice: 1,
+            vote_round_id: "00".repeat(32),
+            van_nullifier: [1; 32],
+            vote_authority_note_new: [2; 32],
+            vote_commitment: [3; 32],
+            proof: vec![4; 10],
+            encrypted_shares: vec![crate::WireEncryptedShare {
+                c1: vec![5; 32],
+                c2: vec![6; 32],
+                share_index: 0,
+            }],
+            share_payloads: vec![crate::SharePayload {
                 vote_round_id: "00".repeat(32),
-                van_nullifier: [1; 32],
-                vote_authority_note_new: [2; 32],
-                vote_commitment: [3; 32],
-                proof: vec![4; 10],
-                encrypted_shares: vec![crate::WireEncryptedShare {
+                shares_hash: vec![7; 32],
+                proposal_id: 2,
+                vote_decision: 1,
+                enc_share: crate::WireEncryptedShare {
                     c1: vec![5; 32],
                     c2: vec![6; 32],
                     share_index: 0,
-                }],
-                share_payloads: vec![crate::SharePayload {
-                    vote_round_id: "00".repeat(32),
-                    shares_hash: vec![7; 32],
-                    proposal_id: 2,
-                    vote_decision: 1,
-                    enc_share: crate::WireEncryptedShare {
-                        c1: vec![5; 32],
-                        c2: vec![6; 32],
-                        share_index: 0,
-                    },
-                    tree_position: 9,
-                    all_enc_shares: vec![],
-                    share_comms: vec![vec![8; 32]],
-                    primary_blind: vec![9; 32],
-                }],
-                anchor_height: 100,
-                shares_hash: [7; 32],
-                share_comms: vec![[8; 32]],
-                r_vpk: [10; 32],
-                vote_auth_sig: [9; 64],
-                commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
+                },
+                tree_position: 9,
+                all_enc_shares: vec![],
+                share_comms: vec![vec![8; 32]],
+                primary_blind: vec![9; 32],
             }],
-            batch_digest: Some([0xAB; 32]),
-            batch_json: Some("{\"votes\":[]}".to_string()),
+            anchor_height: 100,
+            shares_hash: [7; 32],
+            share_comms: vec![[8; 32]],
+            r_vpk: [10; 32],
+            vote_auth_sig: [9; 64],
+            commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
+        }
+    }
+
+    #[test]
+    fn signed_vote_commitments_view_preserves_singleton_wire_fields() {
+        let view = SignedVoteCommitmentsView::try_from(crate::vote::SignedVoteCommitments {
+            bundle_index: 1,
+            commitments: vec![signed_vote_commitment_fixture()],
         })
         .unwrap();
         assert_eq!(view.bundle_index, 1);
-        assert_eq!(view.batch_digest, Some(vec![0xAB; 32]));
-        assert_eq!(view.batch_json.as_deref(), Some("{\"votes\":[]}"));
         assert_eq!(view.commitments[0].proposal_id, 2);
         assert_eq!(view.commitments[0].wire.proposal_id, 2);
         assert_eq!(view.commitments[0].shares[0].vote_round_id, "00".repeat(32));
@@ -1342,6 +1358,21 @@ mod tests {
             view.commitments[0].wire.vote_auth_sig,
             base64::engine::general_purpose::STANDARD.encode(vec![9; 64])
         );
+    }
+
+    #[test]
+    fn signed_vote_batch_view_preserves_atomic_fields() {
+        let view = SignedVoteBatchView::try_from(crate::vote::SignedVoteBatch {
+            bundle_index: 1,
+            commitments: vec![signed_vote_commitment_fixture()],
+            batch_digest: [0xAB; 32],
+            batch_json: "{\"votes\":[]}".to_string(),
+        })
+        .unwrap();
+        assert_eq!(view.bundle_index, 1);
+        assert_eq!(view.batch_digest, vec![0xAB; 32]);
+        assert_eq!(view.batch_json, "{\"votes\":[]}");
+        assert_eq!(view.commitments[0].proposal_id, 2);
     }
 
     #[test]
