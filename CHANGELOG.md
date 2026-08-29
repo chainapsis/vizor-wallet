@@ -58,7 +58,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   across the preferred helper pool.
 - Added process-local `HelperHealth` scoring that demotes repeatedly failing
   helper servers for fixed cooldown windows, immediately re-demotes them on the
-  first failure after expiry, and never removes them from candidate lists.
+  first failure after expiry, never removes them from candidate lists, and uses
+  canonical helper URL identities across equivalent configuration spellings.
 - Added public helper URL canonicalization for stable server identity. Helper
   base URLs may use HTTP or HTTPS and a mount path, but not credentials, query
   parameters, or fragments; equivalent default ports, trailing slashes, and
@@ -66,6 +67,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Added a host-owned `HelperTransport` abstraction for helper-server requests.
   The bundled `HyperTransport` provides direct HTTP, while wallets can supply
   Tor or proxy-backed transports without fallback to a different route.
+- Added a typed `HelperClient` for readiness checks, share submission, and
+  status polling. It validates helper routes and JSON responses, keeps slow
+  readiness probes alive through the shared hard window, caps every retry to
+  its remaining delivery budget, and updates process-local helper health
+  without retrying outcome-unknown share submissions.
 
 ### Changed
 - Initial share delivery continues to target half the configured fleet, rounded

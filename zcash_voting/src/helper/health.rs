@@ -14,6 +14,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::helper::url::canonicalize_helper_base_url;
+
 /// Consecutive failures before a helper enters cooldown.
 pub const HELPER_FAILURE_THRESHOLD: u32 = 3;
 /// Seconds a helper stays demoted after crossing the failure threshold.
@@ -63,8 +65,10 @@ impl HelperHealth {
     /// wallet whose whole helper set is struggling still tries all of them
     /// instead of stalling.
     ///
-    /// This expires elapsed cooldowns before ordering. [`Self::record_failure`]
-    /// performs the same expiry before scoring a later failure.
+    /// Accepted URL spellings are compared by their canonical helper identity,
+    /// while returned values retain the caller's spelling. This expires elapsed
+    /// cooldowns before ordering. [`Self::record_failure`] performs the same
+    /// expiry before scoring a later failure.
     pub fn candidate_servers(&self, server_urls: &[String], now_seconds: u64) -> Vec<String> {
         if server_urls.is_empty() {
             return Vec::new();
@@ -89,8 +93,9 @@ impl HelperHealth {
 
     /// Clears any degraded state for a helper that answered successfully.
     pub fn record_success(&self, server_url: &str) {
+        let server_url = helper_identity_key(server_url);
         if let Ok(mut states) = self.states.lock() {
-            states.remove(server_url);
+            states.remove(&server_url);
         }
     }
 
@@ -100,8 +105,9 @@ impl HelperHealth {
     /// anchored to when the helper first crossed the threshold. A failure after
     /// expiry immediately opens a fresh cooldown.
     pub fn record_failure(&self, server_url: &str, now_seconds: u64) {
+        let server_url = helper_identity_key(server_url);
         if let Ok(mut states) = self.states.lock() {
-            let state = states.entry(server_url.to_string()).or_default();
+            let state = states.entry(server_url).or_default();
             self.expire_cooldown_if_elapsed(state, now_seconds);
             state.consecutive_failures = state.consecutive_failures.saturating_add(1);
             if state.consecutive_failures >= self.failure_threshold && state.opened_at.is_none() {
@@ -115,12 +121,13 @@ impl HelperHealth {
     /// Exposed for diagnostics and tests; scheduling decisions should go
     /// through [`HelperHealth::candidate_servers`].
     pub fn failure_count(&self, server_url: &str) -> u32 {
+        let server_url = helper_identity_key(server_url);
         self.states
             .lock()
             .ok()
             .and_then(|states| {
                 states
-                    .get(server_url)
+                    .get(&server_url)
                     .map(|state| state.consecutive_failures)
             })
             .unwrap_or(0)
@@ -132,10 +139,11 @@ impl HelperHealth {
     /// rather than a clean slate, so one further failure demotes it again
     /// immediately instead of granting it a fresh run of attempts.
     fn is_available(&self, server_url: &str, now_seconds: u64) -> bool {
+        let server_url = helper_identity_key(server_url);
         let Ok(mut states) = self.states.lock() else {
             return true;
         };
-        let Some(state) = states.get_mut(server_url) else {
+        let Some(state) = states.get_mut(&server_url) else {
             return true;
         };
         self.expire_cooldown_if_elapsed(state, now_seconds);
@@ -154,6 +162,10 @@ impl HelperHealth {
         state.opened_at = None;
         state.consecutive_failures = self.failure_threshold.saturating_sub(1);
     }
+}
+
+fn helper_identity_key(server_url: &str) -> String {
+    canonicalize_helper_base_url(server_url).unwrap_or_else(|_| server_url.to_string())
 }
 
 #[cfg(test)]
@@ -183,6 +195,35 @@ mod tests {
             health.candidate_servers(&servers, 100),
             urls(&["https://b.example", "https://a.example"])
         );
+    }
+
+    #[test]
+    fn equivalent_url_spellings_share_one_health_identity() {
+        let health = HelperHealth::default();
+        for _ in 0..HELPER_FAILURE_THRESHOLD {
+            health.record_failure("HTTPS://A.Example:443/", 100);
+        }
+
+        assert_eq!(
+            health.failure_count("https://a.example"),
+            HELPER_FAILURE_THRESHOLD
+        );
+        assert_eq!(
+            health.candidate_servers(&urls(&["https://a.example/", "https://b.example"]), 100),
+            urls(&["https://b.example", "https://a.example/"])
+        );
+
+        health.record_success("https://a.example");
+        assert_eq!(health.failure_count("https://a.example/"), 0);
+    }
+
+    #[test]
+    fn invalid_urls_keep_their_exact_health_identity() {
+        let health = HelperHealth::new(1, HELPER_COOLDOWN_SECONDS);
+        health.record_failure("not a url", 100);
+
+        assert_eq!(health.failure_count("not a url"), 1);
+        assert_eq!(health.failure_count("not a url "), 0);
     }
 
     #[test]

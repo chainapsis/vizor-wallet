@@ -54,6 +54,9 @@ pub mod witness;
 pub mod zkp1;
 pub mod zkp2;
 
+pub use helper::client::{
+    HelperClient, HelperClientConfig, HelperError, ShareStatus, ShareSubmissionStatus,
+};
 pub use helper::health::HelperHealth;
 pub use helper::transport::{
     HelperFuture, HelperResponse, HelperTransport, HelperTransportError, MAX_HELPER_RESPONSE_BYTES,
