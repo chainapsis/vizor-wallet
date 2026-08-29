@@ -6,13 +6,13 @@ Build an isolated executable before running this destructive smoke test:
     -Network mainnet `
     -PackId com.keplr.vizor.single-instance-smoke `
     -PackTitle "Vizor Single Instance Smoke" `
-    -WindowsStoragePrefix VizorSingleInstanceSmoke `
     -Channel win-x64-single-instance-smoke `
     -OutputDir build\velopack\single-instance-smoke
 
-The PackTitle isolates the application-support directory used by the wallet
-database and flutter_secure_storage. WindowsStoragePrefix separately isolates
-the single-instance lock. Both values are required for this destructive smoke.
+The PackTitle sets the executable's VERSIONINFO ProductName, which determines
+the Windows application-support directory used by the wallet database and
+flutter_secure_storage. Changing only VIZOR_WINDOWS_STORAGE_PREFIX does not
+isolate those files.
 #>
 
 param(
@@ -26,7 +26,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $requiredProductName = "Vizor Single Instance Smoke"
-$requiredStoragePrefix = "VizorSingleInstanceSmoke"
 
 function Wait-ForMainWindow {
   param(
@@ -76,65 +75,16 @@ if (-not [string]::Equals(
   throw "Executable ProductName '$actualProductName' does not match required smoke ProductName '$requiredProductName'."
 }
 if (-not $ConfirmIsolatedStorage) {
-  throw "This smoke test forcibly terminates Vizor. ProductName '$actualProductName' and storage prefix '$requiredStoragePrefix' must be isolated; pass -ConfirmIsolatedStorage to continue."
+  throw "This smoke test forcibly terminates Vizor. ProductName '$actualProductName' is storage-isolated; pass -ConfirmIsolatedStorage to continue."
 }
 
 Write-Host "Verified isolated ProductName: $actualProductName"
-Write-Host "Using isolated storage prefix: $requiredStoragePrefix"
 
 $primary = $null
 $secondary = $null
 $replacement = $null
-$delayedRelay = $null
-$delayedPrimary = $null
-$delayedLockStream = $null
-$delayedLockHeld = $false
 
 try {
-  $lockDirectory = Join-Path $env:LOCALAPPDATA "com.keplr\VizorInstanceLocks"
-  New-Item -ItemType Directory -Path $lockDirectory -Force | Out-Null
-  $lockPath = Join-Path $lockDirectory "$requiredStoragePrefix.lock"
-  $delayedLockStream = [System.IO.File]::Open(
-    $lockPath,
-    [System.IO.FileMode]::OpenOrCreate,
-    [System.IO.FileAccess]::ReadWrite,
-    [System.IO.FileShare]::ReadWrite
-  )
-  $delayedLockStream.Lock(0, 1)
-  $delayedLockHeld = $true
-
-  Write-Host "Starting payment-link relay while the primary window is delayed"
-  $delayedRelay = Start-Process `
-    -FilePath $resolvedExecutable `
-    -ArgumentList "vizor://payment-link?payload=single-instance-smoke" `
-    -PassThru
-  Start-Sleep -Milliseconds 2500
-  $delayedRelay.Refresh()
-  if ($delayedRelay.HasExited) {
-    throw "Payment-link relay exited before the delayed lock was released."
-  }
-
-  $delayedLockStream.Unlock(0, 1)
-  $delayedLockHeld = $false
-  $delayedLockStream.Dispose()
-  $delayedLockStream = $null
-
-  $delayedPrimary = Start-Process -FilePath $resolvedExecutable -PassThru
-  Wait-ForMainWindow `
-    -Process $delayedPrimary `
-    -TimeoutSeconds $StartupTimeoutSeconds
-  if (-not $delayedRelay.WaitForExit($SecondaryExitTimeoutSeconds * 1000)) {
-    throw "Payment-link relay did not exit after the delayed primary created its window."
-  }
-  if ($delayedRelay.ExitCode -ne 0) {
-    throw "Payment-link relay exited with code $($delayedRelay.ExitCode) after delayed primary startup."
-  }
-  if ($delayedPrimary.HasExited) {
-    throw "Delayed primary exited while receiving the payment link."
-  }
-  Stop-OwnedProcess -Process $delayedPrimary
-  $delayedPrimary = $null
-
   Write-Host "Starting primary: $resolvedExecutable"
   $primary = Start-Process -FilePath $resolvedExecutable -PassThru
   Wait-ForMainWindow -Process $primary -TimeoutSeconds $StartupTimeoutSeconds
@@ -158,33 +108,9 @@ try {
   $replacement = Start-Process -FilePath $resolvedExecutable -PassThru
   Wait-ForMainWindow -Process $replacement -TimeoutSeconds $StartupTimeoutSeconds
 
-  Write-Host "PASS: delayed payment-link relay, secondary blocking, and lock recovery succeeded."
+  Write-Host "PASS: secondary execution was blocked and the lock recovered after termination."
 } finally {
-  if ($delayedLockHeld -and $null -ne $delayedLockStream) {
-    try {
-      $delayedLockStream.Unlock(0, 1)
-    } catch {
-      Write-Warning "Could not release delayed-start lock: $_"
-    }
-  }
-  if ($null -ne $delayedLockStream) {
-    try {
-      $delayedLockStream.Dispose()
-    } catch {
-      Write-Warning "Could not dispose delayed-start lock stream: $_"
-    }
-  }
-  foreach ($ownedProcess in @(
-      $delayedRelay,
-      $delayedPrimary,
-      $secondary,
-      $primary,
-      $replacement
-    )) {
-    try {
-      Stop-OwnedProcess -Process $ownedProcess
-    } catch {
-      Write-Warning "Could not stop an owned smoke-test process: $_"
-    }
-  }
+  Stop-OwnedProcess -Process $secondary
+  Stop-OwnedProcess -Process $primary
+  Stop-OwnedProcess -Process $replacement
 }

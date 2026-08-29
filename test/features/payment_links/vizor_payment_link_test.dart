@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 
 void main() {
@@ -17,11 +18,11 @@ void main() {
       final decoded = VizorPaymentLink.parse(uri.toString());
       final payload = _decodePayload(uri);
 
-      expect(uri.scheme, 'vizor');
-      expect(uri.host, 'payment-link');
-      expect(uri.path, isEmpty);
-      expect(uri.queryParameters['p'], isNotEmpty);
-      expect(uri.fragment, isEmpty);
+      expect(uri.scheme, 'https');
+      expect(uri.host, VizorDeepLink.host);
+      expect(uri.path, '/payment-links/open');
+      expect(uri.query, isEmpty);
+      expect(uri.fragment, startsWith('v1='));
       expect(decoded.network, 'main');
       expect(decoded.address, link.address);
       expect(decoded.amountZatoshi, BigInt.from(123456789));
@@ -132,7 +133,7 @@ void main() {
 
     test('rejects URLs outside the Vizor payment-link endpoint', () {
       expect(
-        () => VizorPaymentLink.parse('vizor://other?p=legacy'),
+        () => VizorPaymentLink.parse('vizor://payment-link?p=legacy'),
         throwsFormatException,
       );
       expect(
@@ -140,7 +141,9 @@ void main() {
         throwsFormatException,
       );
       expect(
-        () => VizorPaymentLink.parse('vizor://payment-link/other?p=payload'),
+        () => VizorPaymentLink.parse(
+          'https://${VizorDeepLink.host}/payment-links/other#v1=payload',
+        ),
         throwsFormatException,
       );
     });
@@ -148,8 +151,8 @@ void main() {
     test('accepts the scheme and host case-insensitively', () {
       final link = _link();
       final uppercaseLink = link.toUri().toString().replaceFirst(
-        'vizor://payment-link',
-        'VIZOR://PAYMENT-LINK',
+        'https://${VizorDeepLink.host}',
+        'HTTPS://${VizorDeepLink.host.toUpperCase()}',
       );
 
       final decoded = VizorPaymentLink.parse(uppercaseLink);
@@ -160,7 +163,10 @@ void main() {
 
     test('rejects malformed payloads', () {
       expect(
-        () => VizorPaymentLink.parse('vizor://payment-link?p=not-base64'),
+        () => VizorPaymentLink.parse(
+          'https://${VizorDeepLink.host}'
+          '${VizorDeepLink.paymentLinkPath}#v1=not-base64',
+        ),
         throwsFormatException,
       );
     });
@@ -168,7 +174,8 @@ void main() {
     test('rejects oversized inbound links before decoding', () {
       expect(
         () => VizorPaymentLink.parse(
-          'vizor://payment-link?p='
+          'https://${VizorDeepLink.host}'
+          '${VizorDeepLink.paymentLinkPath}#v1='
           '${'a' * VizorPaymentLink.maxEncodedLength}',
         ),
         throwsFormatException,
@@ -177,39 +184,44 @@ void main() {
 
     test('rejects unsupported versions', () {
       final encoded = Uri(
-        scheme: VizorPaymentLink.scheme,
-        host: VizorPaymentLink.host,
-        queryParameters: const {'p': 'eyJ2IjoyfQ=='},
+        scheme: VizorDeepLink.scheme,
+        host: VizorDeepLink.host,
+        path: VizorDeepLink.paymentLinkPath,
+        fragment: 'v1=eyJ2IjoyfQ==',
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
     });
 
-    test('rejects extra URL components and duplicate payloads', () {
-      final payload = _link().toUri().queryParameters['p']!;
+    test('rejects extra URL components and malformed fragments', () {
+      final payload = _link().toUri().fragment;
 
       expect(
         () => VizorPaymentLink.parse(
-          'vizor://payment-link?p=$payload&other=hidden',
+          'https://${VizorDeepLink.host}'
+          '${VizorDeepLink.paymentLinkPath}?payload=hidden#$payload',
         ),
-        throwsFormatException,
-      );
-      expect(
-        () => VizorPaymentLink.parse('vizor://user@payment-link?p=$payload'),
-        throwsFormatException,
-      );
-      expect(
-        () => VizorPaymentLink.parse('vizor://payment-link:8443?p=$payload'),
         throwsFormatException,
       );
       expect(
         () => VizorPaymentLink.parse(
-          'vizor://payment-link?p=$payload&p=$payload',
+          'https://user@${VizorDeepLink.host}'
+          '${VizorDeepLink.paymentLinkPath}#$payload',
         ),
         throwsFormatException,
       );
       expect(
-        () => VizorPaymentLink.parse('vizor://payment-link?p=$payload#extra'),
+        () => VizorPaymentLink.parse(
+          'https://${VizorDeepLink.host}:8443'
+          '${VizorDeepLink.paymentLinkPath}#$payload',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => VizorPaymentLink.parse(
+          'https://${VizorDeepLink.host}'
+          '${VizorDeepLink.paymentLinkPath}#$payload&extra',
+        ),
         throwsFormatException,
       );
     });
@@ -226,11 +238,10 @@ void main() {
         'createdAt': DateTime.utc(2026, 6, 21).toIso8601String(),
       };
       final encoded = Uri(
-        scheme: VizorPaymentLink.scheme,
-        host: VizorPaymentLink.host,
-        queryParameters: {
-          'p': base64UrlEncode(utf8.encode(jsonEncode(payload))),
-        },
+        scheme: VizorDeepLink.scheme,
+        host: VizorDeepLink.host,
+        path: VizorDeepLink.paymentLinkPath,
+        fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
@@ -261,7 +272,7 @@ void main() {
 }
 
 Map<String, Object?> _decodePayload(Uri uri) {
-  final encoded = uri.queryParameters['p']!;
+  final encoded = uri.fragment.substring('v1='.length);
   return jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(encoded))))
       as Map<String, Object?>;
 }

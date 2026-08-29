@@ -781,10 +781,14 @@ import UIKit
   }
 }
 
-/// Buffers bearer payment links until the Dart isolate has installed its
-/// handler. Never logs the URL because it contains account recovery material.
+/// Buffers trusted Vizor HTTPS links until the Dart isolate has installed its
+/// handler. Never logs the URL because a route may contain bearer material.
 final class IncomingUriChannelBridge {
   static let shared = IncomingUriChannelBridge()
+  private static let deeplinkHosts: Set<String> = [
+    "link.vizor.cash",
+    "2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws",
+  ]
   private static let maxIncomingUriBytes = 16 * 1024
   private static let maxPendingUris = 16
   private init() {}
@@ -810,16 +814,33 @@ final class IncomingUriChannelBridge {
   }
 
   func handle(urlContexts: Set<UIOpenURLContext>) {
-    var handledPaymentLink = false
-    for context in urlContexts {
-      let url = context.url
-      guard
-        url.scheme?.lowercased() == "vizor",
-        url.host?.lowercased() == "payment-link"
-      else {
-        continue
-      }
-      handledPaymentLink = true
+    handle(urls: urlContexts.map(\.url))
+  }
+
+  @discardableResult
+  func handle(userActivity: NSUserActivity) -> Bool {
+    guard
+      userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+      let url = userActivity.webpageURL
+    else {
+      return false
+    }
+    return handle(urls: [url])
+  }
+
+  func handles(_ url: URL) -> Bool {
+    url.scheme?.lowercased() == "https"
+      && Self.deeplinkHosts.contains(url.host?.lowercased() ?? "")
+      && url.user == nil
+      && url.port == nil
+  }
+
+  @discardableResult
+  private func handle(urls: [URL]) -> Bool {
+    var handledDeeplink = false
+    for url in urls {
+      guard handles(url) else { continue }
+      handledDeeplink = true
       let uri = url.absoluteString
       guard
         uri.utf8.count <= Self.maxIncomingUriBytes,
@@ -830,8 +851,10 @@ final class IncomingUriChannelBridge {
       }
       pendingUris.append(uri)
     }
-    guard handledPaymentLink else { return }
-    flush()
+    if handledDeeplink {
+      flush()
+    }
+    return handledDeeplink
   }
 
   private func flush() {

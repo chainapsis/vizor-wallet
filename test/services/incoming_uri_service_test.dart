@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
@@ -9,12 +10,15 @@ void main() {
   late List<String> nativeCalls;
 
   setUp(() {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     nativeCalls = [];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           nativeCalls.add(call.method);
           return switch (call.method) {
-            'takePendingUris' => <String>['vizor://payment-link?p=cold'],
+            'takePendingUris' => <String>[
+              'https://example.test/payment-links/open#v1=cold',
+            ],
             'ready' => null,
             _ => throw MissingPluginException(),
           };
@@ -22,8 +26,19 @@ void main() {
   });
 
   tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+  });
+
+  test('leaves desktop URI intake disabled', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final service = IncomingUriService(channel: channel);
+    addTearDown(service.dispose);
+
+    await service.initialize();
+
+    expect(nativeCalls, isEmpty);
   });
 
   test('drains cold-start URIs before announcing readiness', () async {
@@ -38,7 +53,7 @@ void main() {
     await service.initialize();
 
     expect(nativeCalls, ['takePendingUris', 'ready']);
-    expect(received, ['vizor://payment-link?p=cold']);
+    expect(received, ['https://example.test/payment-links/open#v1=cold']);
   });
 
   test('forwards warm URIs after initialization', () async {
@@ -55,12 +70,14 @@ void main() {
         .handlePlatformMessage(
           kIncomingUriChannelName,
           const StandardMethodCodec().encodeMethodCall(
-            const MethodCall('onUris', <String>['vizor://payment-link?p=warm']),
+            const MethodCall('onUris', <String>[
+              'https://example.test/payment-links/open#v1=warm',
+            ]),
           ),
           (_) {},
         );
     await Future<void>.delayed(Duration.zero);
 
-    expect(received.last, 'vizor://payment-link?p=warm');
+    expect(received.last, 'https://example.test/payment-links/open#v1=warm');
   });
 }

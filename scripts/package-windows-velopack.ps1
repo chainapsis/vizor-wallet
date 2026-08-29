@@ -5,7 +5,6 @@ param(
   [string]$Network = "mainnet",
   [string]$PackId = "",
   [string]$PackTitle = "",
-  [string]$WindowsStoragePrefix = "",
   [string]$Channel = "",
   [string]$OutputDir = "",
   [string]$UpdateFeedSigningKey = $env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64,
@@ -286,9 +285,7 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\mainnet"
   }
   $NetworkDartDefine = "main"
-  if ([string]::IsNullOrWhiteSpace($WindowsStoragePrefix)) {
-    $WindowsStoragePrefix = "Vizor"
-  }
+  $WindowsStoragePrefix = "Vizor"
 } else {
   if ([string]::IsNullOrWhiteSpace($PackId)) {
     $PackId = "com.keplr.vizor.testnet"
@@ -303,9 +300,7 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\testnet"
   }
   $NetworkDartDefine = "test"
-  if ([string]::IsNullOrWhiteSpace($WindowsStoragePrefix)) {
-    $WindowsStoragePrefix = "VizorTestnet"
-  }
+  $WindowsStoragePrefix = "VizorTestnet"
 }
 
 $env:VIZOR_WINDOWS_COMPANY_NAME = "com.keplr"
@@ -315,24 +310,6 @@ $env:VIZOR_WINDOWS_LEGAL_COPYRIGHT = "Copyright (C) 2026 com.keplr. All rights r
 $env:VIZOR_WINDOWS_ORIGINAL_FILENAME = "Vizor.exe"
 $env:VIZOR_WINDOWS_PRODUCT_NAME = $PackTitle
 $env:VIZOR_WINDOWS_STORAGE_PREFIX = $WindowsStoragePrefix
-$env:VIZOR_WINDOWS_PAYMENT_URI_OWNER = "0"
-$isOfficialPackageId = [string]::Equals(
-  $PackId,
-  "com.keplr.vizor",
-  [System.StringComparison]::Ordinal
-)
-$isProductionStorage = [string]::Equals(
-  $WindowsStoragePrefix,
-  "Vizor",
-  [System.StringComparison]::Ordinal
-)
-if (
-  $Network -eq "mainnet" -and
-  $isOfficialPackageId -and
-  $isProductionStorage
-) {
-  $env:VIZOR_WINDOWS_PAYMENT_URI_OWNER = "1"
-}
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   $env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64 = $UpdateFeedSigningKey.Trim()

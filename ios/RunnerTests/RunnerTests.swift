@@ -8,6 +8,51 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testIncomingDeeplinkAcceptsOnlyVerifiedHTTPSHost() {
+    let bridge = IncomingUriChannelBridge.shared
+
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string:
+            "https://link.vizor.cash/payment-links/open#v1=test"
+        )!
+      )
+    )
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string:
+            "https://2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/payment-links/open#v1=test"
+        )!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string:
+            "https://2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/payment-links/other#v1=test"
+        )!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://example.com/payment-links/open#v1=test")!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(
+          string:
+            "https://user@2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/"
+        )!
+      )
+    )
+  }
+
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(
       IronwoodMigrationNotificationAuthorizationStatus(.notDetermined),

@@ -60,7 +60,6 @@ int paymentLinkConfirmationCount({
 /// transaction-history API currently exposes the same SQLite txid bytes in
 /// storage order. Accept both byte orders at this boundary so a mined funding
 /// transaction can advance its persisted payment link.
-@visibleForTesting
 bool paymentLinkTxidsMatch(String first, String second) {
   final normalizedFirst = _normalizeTxid(first);
   final normalizedSecond = _normalizeTxid(second);
