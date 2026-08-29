@@ -19,6 +19,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   the complete canonical request and shared digest without duplicate submits.
   Fresh vote preparation waits for an existing authority chain to confirm for
   the same bundle, preventing competing spends of its current VAN.
+  Changing or skipping an unsubmitted choice clears its obsolete recovery
+  chain before new work is planned.
   Batches keep choices, note membership, and voting keys hidden as before, but
   intentionally reveal that their included proposal actions came from one
   transaction.

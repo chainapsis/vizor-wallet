@@ -79,7 +79,7 @@ impl VotingDb {
             skipped_bool,
             choice_u32,
         )?;
-        crate::vote::invalidate_unsubmitted_vote_batches_for_intent(
+        crate::vote::invalidate_unsubmitted_vote_recoveries_for_intent(
             &tx,
             &wallet_id,
             round_id,
@@ -1945,6 +1945,34 @@ mod tests {
                 bundle_index: 0,
                 proposal_id: 1,
                 choice: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn skipping_an_unsubmitted_singleton_clears_its_recovery() {
+        let db = db_with_bundle();
+        db.set_ballot_intent(ROUND, 1, Decision::Choice(0), 3)
+            .unwrap();
+        db.set_ballot_intent(ROUND, 2, Decision::Choice(1), 3)
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND, 0, "dtx").unwrap();
+        db.store_van_position(ROUND, 0, 7).unwrap();
+        crate::storage::queries::store_vote(&db.conn(), ROUND, W, 0, 1, 0, &[0xCC; 16]).unwrap();
+        store_vote_recovery_fixture(&db, 0, 1, 0, None);
+
+        db.set_ballot_intent(ROUND, 1, Decision::Skipped, 3)
+            .unwrap();
+
+        assert!(crate::vote::recovery_bundle(&db, ROUND, 0, 1)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            resume_plan(&db, ROUND, &[1, 2]).unwrap().next_steps,
+            vec![NextStep::CastVote {
+                bundle_index: 0,
+                proposal_id: 2,
+                choice: 1,
             }]
         );
     }

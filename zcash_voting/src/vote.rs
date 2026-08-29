@@ -1874,10 +1874,9 @@ pub(crate) fn load_vote_batch_recoveries_with_conn(
     Ok(recoveries)
 }
 
-/// Clears a complete unsubmitted batch when one member no longer matches the
-/// ballot intent. A batch is one signed envelope, so none of its old recovery
-/// data can be reused after any action changes.
-pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
+/// Clears unsubmitted recovery when a vote no longer matches ballot intent.
+/// A batch is one signed envelope, so changing one member clears every member.
+pub(crate) fn invalidate_unsubmitted_vote_recoveries_for_intent(
     conn: &rusqlite::Connection,
     wallet_id: &str,
     round_id: &str,
@@ -1917,6 +1916,7 @@ pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
         })?;
 
     let mut batch_keys = BTreeSet::new();
+    let mut singleton_keys = BTreeSet::new();
     for row in rows {
         let (bundle_index, stored_choice, recovery_json) =
             row.map_err(|e| VotingError::Internal {
@@ -1926,9 +1926,6 @@ pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
             message: format!("stored bundle_index must be non-negative, got {bundle_index}"),
         })?;
         let recovery = parse_recovery(&recovery_json)?;
-        let Some(batch) = recovery.batch.as_ref() else {
-            continue;
-        };
         validate_recovery_matches_stored_vote(
             &recovery,
             round_id,
@@ -1940,7 +1937,11 @@ pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
         if choice == Some(recovery.vote_decision) {
             continue;
         }
-        batch_keys.insert((bundle_index, batch.digest));
+        if let Some(batch) = recovery.batch.as_ref() {
+            batch_keys.insert((bundle_index, batch.digest));
+        } else {
+            singleton_keys.insert((bundle_index, proposal_id));
+        }
     }
     drop(stmt);
 
@@ -1973,54 +1974,101 @@ pub(crate) fn invalidate_unsubmitted_vote_batches_for_intent(
         batches.push((bundle_index, recoveries));
     }
 
-    for (bundle_index, recoveries) in batches {
-        for recovery in recoveries {
-            let updated = conn
-                .execute(
-                    "UPDATE votes SET commitment_bundle_json = NULL
-                     WHERE round_id = :round_id
-                       AND wallet_id = :wallet_id
-                       AND bundle_index = :bundle_index
-                       AND proposal_id = :proposal_id
-                       AND tx_hash IS NULL
-                       AND vc_tree_position IS NULL",
-                    named_params! {
-                        ":round_id": round_id,
-                        ":wallet_id": wallet_id,
-                        ":bundle_index": bundle_index as i64,
-                        ":proposal_id": recovery.proposal_id as i64,
-                    },
-                )
-                .map_err(|e| VotingError::Internal {
-                    message: format!("clear stale vote batch recovery failed: {e}"),
-                })?;
-            if updated != 1 {
-                return Err(VotingError::InvalidInput {
-                    message: format!(
-                        "atomic vote batch changed while updating ballot intent for round={round_id}, bundle={bundle_index}, proposal={}",
-                        recovery.proposal_id
-                    ),
-                });
-            }
-            conn.execute(
-                "DELETE FROM share_delegations
-                 WHERE round_id = :round_id
-                   AND wallet_id = :wallet_id
-                   AND bundle_index = :bundle_index
-                   AND proposal_id = :proposal_id",
-                named_params! {
-                    ":round_id": round_id,
-                    ":wallet_id": wallet_id,
-                    ":bundle_index": bundle_index as i64,
-                    ":proposal_id": recovery.proposal_id as i64,
-                },
-            )
-            .map_err(|e| VotingError::Internal {
-                message: format!("clear stale vote batch shares failed: {e}"),
-            })?;
+    for &(bundle_index, singleton_proposal_id) in &singleton_keys {
+        let state = crate::storage::queries::load_vote_row_state(
+            conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            singleton_proposal_id,
+        )?
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: format!(
+                "persisted singleton vote is missing for round={round_id}, bundle={bundle_index}, proposal={singleton_proposal_id}"
+            ),
+        })?;
+        if state.tx_hash.is_some() || state.vc_tree_position.is_some() {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "round {round_id} bundle {bundle_index} has a submitted singleton vote that conflicts with ballot intent for proposal {singleton_proposal_id}"
+                ),
+            });
         }
     }
 
+    for (bundle_index, recoveries) in batches {
+        for recovery in recoveries {
+            clear_unsubmitted_vote_recovery_with_conn(
+                conn,
+                wallet_id,
+                round_id,
+                bundle_index,
+                recovery.proposal_id,
+            )?;
+        }
+    }
+    for (bundle_index, singleton_proposal_id) in singleton_keys {
+        clear_unsubmitted_vote_recovery_with_conn(
+            conn,
+            wallet_id,
+            round_id,
+            bundle_index,
+            singleton_proposal_id,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn clear_unsubmitted_vote_recovery_with_conn(
+    conn: &rusqlite::Connection,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<(), VotingError> {
+    let updated = conn
+        .execute(
+            "UPDATE votes SET commitment_bundle_json = NULL
+             WHERE round_id = :round_id
+               AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index
+               AND proposal_id = :proposal_id
+               AND tx_hash IS NULL
+               AND vc_tree_position IS NULL",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+                ":proposal_id": proposal_id as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("clear stale vote recovery failed: {e}"),
+        })?;
+    if updated != 1 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "vote recovery changed while updating ballot intent for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+            ),
+        });
+    }
+    conn.execute(
+        "DELETE FROM share_delegations
+         WHERE round_id = :round_id
+           AND wallet_id = :wallet_id
+           AND bundle_index = :bundle_index
+           AND proposal_id = :proposal_id",
+        named_params! {
+            ":round_id": round_id,
+            ":wallet_id": wallet_id,
+            ":bundle_index": bundle_index as i64,
+            ":proposal_id": proposal_id as i64,
+        },
+    )
+    .map_err(|e| VotingError::Internal {
+        message: format!("clear stale vote shares failed: {e}"),
+    })?;
     Ok(())
 }
 
