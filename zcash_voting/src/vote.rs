@@ -37,6 +37,7 @@ pub const DEFAULT_BATCH_PROOF_CONCURRENCY: usize = 3;
 pub const MAX_VOTE_BATCH_ACTIONS: usize = 15;
 
 const VOTE_RECOVERY_FORMAT: &str = "zcash_voting_vote_recovery_v1";
+const VOTE_BATCH_RECOVERY_FORMAT: &str = "zcash_voting_vote_batch_recovery_v1";
 
 /// Wallet-supplied cast-vote intent for one proposal in one bundle.
 pub use crate::wire::DraftVote;
@@ -2421,10 +2422,25 @@ pub fn parse_recovery(json: &str) -> Result<VoteRecoveryBundle, VotingError> {
         serde_json::from_str(json).map_err(|e| VotingError::InvalidInput {
             message: format!("invalid vote recovery JSON: {e}"),
         })?;
-    if parsed.format != VOTE_RECOVERY_FORMAT {
-        return Err(VotingError::InvalidInput {
-            message: format!("unsupported vote recovery format: {}", parsed.format),
-        });
+    let has_batch_metadata = parsed.batch_digest.is_some()
+        || parsed.batch_index.is_some()
+        || parsed.batch_size.is_some();
+    match parsed.format.as_str() {
+        VOTE_RECOVERY_FORMAT if !has_batch_metadata => {}
+        VOTE_BATCH_RECOVERY_FORMAT if has_batch_metadata => {}
+        VOTE_RECOVERY_FORMAT | VOTE_BATCH_RECOVERY_FORMAT => {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "vote recovery format {} does not match its record contents",
+                    parsed.format
+                ),
+            });
+        }
+        _ => {
+            return Err(VotingError::InvalidInput {
+                message: format!("unsupported vote recovery format: {}", parsed.format),
+            });
+        }
     }
     VoteRecoveryBundle::try_from(parsed)
 }
@@ -3227,7 +3243,12 @@ impl VoteRecoveryBundle {
 impl From<&VoteRecoveryBundle> for VoteRecoveryJson {
     fn from(bundle: &VoteRecoveryBundle) -> Self {
         Self {
-            format: VOTE_RECOVERY_FORMAT.to_string(),
+            format: if bundle.batch.is_some() {
+                VOTE_BATCH_RECOVERY_FORMAT
+            } else {
+                VOTE_RECOVERY_FORMAT
+            }
+            .to_string(),
             vote_round_id: bundle.vote_round_id.clone(),
             bundle_index: bundle.bundle_index,
             proposal_id: bundle.proposal_id,
@@ -3639,7 +3660,10 @@ mod tests {
     fn batch_recovery_metadata_round_trips() {
         let (digest, recoveries) = two_action_recovery_batch();
         for (index, recovery) in recoveries.iter().enumerate() {
-            let parsed = parse_recovery(&serialize_recovery(recovery).unwrap()).unwrap();
+            let json = serialize_recovery(recovery).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(value["format"], VOTE_BATCH_RECOVERY_FORMAT);
+            let parsed = parse_recovery(&json).unwrap();
             assert_eq!(
                 parsed.batch,
                 Some(VoteBatchRecovery {
@@ -3649,6 +3673,19 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn batch_recovery_rejects_the_singleton_format() {
+        let (_, recoveries) = two_action_recovery_batch();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&serialize_recovery(&recoveries[0]).unwrap()).unwrap();
+        value["format"] = serde_json::json!(VOTE_RECOVERY_FORMAT);
+
+        let error = parse_recovery(&value.to_string()).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("does not match its record contents"));
     }
 
     #[test]
@@ -3998,6 +4035,8 @@ mod tests {
         let bundle = recovery_bundle_fixture();
 
         let json = serialize_recovery(&bundle).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["format"], VOTE_RECOVERY_FORMAT);
         let parsed = parse_recovery(&json).unwrap();
 
         assert_eq!(parsed.vote_round_id, ROUND_ID);
