@@ -29,6 +29,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Added shared progressive helper timing and initial-delivery limits, plus
   readiness-ranked batch planning that balances a commitment's initial shares
   across the preferred helper pool.
+- Added process-local `HelperHealth` scoring that demotes repeatedly failing
+  helper servers for fixed cooldown windows, immediately re-demotes them on the
+  first failure after expiry, and never removes them from candidate lists.
 
 ### Changed
 - Initial share delivery continues to target half the configured fleet, rounded

@@ -23,6 +23,7 @@ pub mod delegate;
 pub mod delegation_capability;
 pub mod error;
 pub mod governance;
+pub mod helper;
 pub mod hotkey;
 mod http_transport;
 pub mod lwd;
@@ -53,6 +54,7 @@ pub mod witness;
 pub mod zkp1;
 pub mod zkp2;
 
+pub use helper::health::HelperHealth;
 pub use http_transport::HyperTransport;
 pub use pir::{
     connect_pir, connect_pir_blocking, negotiated_pir_layout, ImtProofData, NegotiatedPirLayout,
