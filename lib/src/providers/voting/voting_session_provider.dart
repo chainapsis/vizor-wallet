@@ -1220,11 +1220,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             0,
             (total, work) => total + work.bundleIndexes.length,
           );
-      final configuredHelperUrls = context.config.apiServers.all
-          .map((endpoint) => endpoint.toString())
-          .toList(growable: false);
+      final configuredHelperUrls = _configuredHelperTransportUrls(context);
       final helperSelectionPolicy = rust.shareServerSelectionPolicy(
         helperCount: configuredHelperUrls.length,
+      );
+      final helperPostPool = _AsyncPermitPool(
+        helperSelectionPolicy.maxConcurrentPosts,
       );
       final helperPreflight = totalBundleTasks == 0
           ? Future.value(
@@ -1320,6 +1321,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           commitments,
           helperPreflight: helperPreflight,
           helperSelectionPolicy: helperSelectionPolicy,
+          helperPostPool: helperPostPool,
           vcTreePositions: vcTreePositions,
           singleShare: _commitmentsUseSingleShare(commitments),
           immediateShareKey: roundPlan?.immediateShareKey,
@@ -1375,6 +1377,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             totalQuestions: totalQuestions,
             helperPreflight: helperPreflight,
             helperSelectionPolicy: helperSelectionPolicy,
+            helperPostPool: helperPostPool,
             immediateShareKey: roundPlan?.immediateShareKey,
           );
         } catch (_) {
@@ -1540,6 +1543,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     rust_wire.SignedVoteCommitmentsView commitments, {
     required Future<rust_api.ApiVotingHelperPreflight> helperPreflight,
     required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
     Map<int, BigInt> vcTreePositions = const {},
     Set<int>? shareIndexFilter,
     void Function(VotingSessionProgress progress)? publishProgress,
@@ -1667,13 +1671,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final submissions = [
         for (final prepared in preparedSubmissions)
-          _submitInitialShareToHelpers(
-            rust: rust,
-            context: context,
-            bundleIndex: commitments.bundleIndex,
-            share: prepared.share,
-            plan: prepared.plan,
-            configuredHelperUrls: prepared.configuredHelperUrls,
+          helperPostPool.run(
+            () => _submitInitialShareToHelpers(
+              rust: rust,
+              context: context,
+              bundleIndex: commitments.bundleIndex,
+              share: prepared.share,
+              plan: prepared.plan,
+              configuredHelperUrls: prepared.configuredHelperUrls,
+            ),
           ),
       ];
       _InitialShareSubmissionResult? failedResult;
@@ -1923,6 +1929,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalQuestions,
     required Future<rust_api.ApiVotingHelperPreflight> helperPreflight,
     required rust_share_policy.ShareServerSelectionPolicy helperSelectionPolicy,
+    required _AsyncPermitPool helperPostPool,
     required rust_share_policy.ImmediateShareKey? immediateShareKey,
   }) async {
     // Transpose proposal -> bundles into bundle -> proposals. Proposal order
@@ -2262,6 +2269,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 commitments,
                 helperPreflight: helperPreflight,
                 helperSelectionPolicy: helperSelectionPolicy,
+                helperPostPool: helperPostPool,
                 vcTreePositions: vcTreePositions,
                 publishProgress: publish,
                 singleShare: singleShare,
@@ -3009,9 +3017,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
         if (immediateShare == null || immediateShare.confirmed) return;
 
-        final configuredHelperUrls = context.config.apiServers.all
-            .map((endpoint) => endpoint.toString())
-            .toList(growable: false);
+        final configuredHelperUrls = _configuredHelperTransportUrls(context);
 
         final rust = ref.read(votingRustApiProvider);
         final helperContext = _helperDeliveryContextFor(rust, context);
@@ -3120,9 +3126,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
 
       final rust = ref.read(votingRustApiProvider);
-      final configuredHelperUrls = context.config.apiServers.all
-          .map((endpoint) => endpoint.toString())
-          .toList(growable: false);
+      final configuredHelperUrls = _configuredHelperTransportUrls(context);
       final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final voteEnd = context.round.voteEndTime;
       final voteEndSeconds = voteEnd == null
@@ -3446,6 +3450,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   String _transportUrl(Uri logicalUrl) {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
+  }
+
+  List<String> _configuredHelperTransportUrls(_VotingSessionContext context) {
+    return context.config.apiServers.all
+        .map(_transportUrl)
+        .toList(growable: false);
   }
 
   List<String> _delegationPirTransportUrls(VotingSessionState session) {
