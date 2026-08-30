@@ -14,16 +14,28 @@ called out explicitly.
 
 The main implementation surfaces are:
 
-- [`share_policy`](../zcash_voting/src/share_policy.rs), which decides helper
-  placement and timing;
+- [`share_policy`](../zcash_voting/src/share_policy/), whose
+  [`mod.rs`](../zcash_voting/src/share_policy/mod.rs) facade exposes helper
+  placement, server ordering, submission scheduling, and timing implemented in
+  [`initial_placement.rs`](../zcash_voting/src/share_policy/initial_placement.rs),
+  [`server_order.rs`](../zcash_voting/src/share_policy/server_order.rs),
+  [`submission_schedule.rs`](../zcash_voting/src/share_policy/submission_schedule.rs),
+  and [`timing.rs`](../zcash_voting/src/share_policy/timing.rs);
 - [`helper`](../zcash_voting/src/helper/), which defines helper identity,
   transport, retry, and health behavior;
-- [`share_tracking`](../zcash_voting/src/share_tracking.rs), which executes
-  initial fan-out, polling, and recovery;
+- [`share_tracking`](../zcash_voting/src/share_tracking/), whose
+  [`mod.rs`](../zcash_voting/src/share_tracking/mod.rs) facade coordinates the
+  validated fleet, initial fan-out, polling, and recovery implemented in
+  [`configured_fleet.rs`](../zcash_voting/src/share_tracking/configured_fleet.rs),
+  [`initial_delivery.rs`](../zcash_voting/src/share_tracking/initial_delivery.rs),
+  [`confirmation.rs`](../zcash_voting/src/share_tracking/confirmation.rs), and
+  [`recovery.rs`](../zcash_voting/src/share_tracking/recovery.rs);
 - [`share`](../zcash_voting/src/share.rs), which derives and records share
   identity and reconstructs recovery payloads; and
-- [`storage`](../zcash_voting/src/storage/), which preserves delivery state
-  across restarts.
+- [`storage`](../zcash_voting/src/storage/), whose
+  [`queries/mod.rs`](../zcash_voting/src/storage/queries/mod.rs) facade and
+  [`queries/share_delegations.rs`](../zcash_voting/src/storage/queries/share_delegations.rs)
+  preserve delivery state across restarts.
 
 ## Confidentiality statement
 
@@ -96,7 +108,16 @@ sent_to_urls, ambiguous_urls, or attempting_urls
     -- confirmed status from the configured quorum --> confirmed
 ```
 
-`sent_to_urls`, `ambiguous_urls`, and `attempting_urls` MUST remain disjoint.
+The authoritative in-memory contract is `ShareDeliveryState` in
+[`share.rs`](../zcash_voting/src/share.rs). Its precedence is **Accepted >
+OutcomeUnknown > InFlight**: stronger evidence replaces weaker evidence, while
+weaker evidence cannot replace stronger evidence. The persisted public/schema
+field names remain `sent_to_urls`, `ambiguous_urls`, and `attempting_urls`,
+respectively, and MUST remain disjoint. The same state transitions are enforced
+for storage updates in
+[`storage/queries/share_delegations.rs`](../zcash_voting/src/storage/queries/share_delegations.rs).
+`delivery_state_preserves_order_and_strongest_evidence` exercises this
+precedence directly.
 
 A helper in either outcome-unknown set is poll-only for early replenishment.
 Overdue recovery, which is liveness-critical, MAY re-POST an outcome-unknown
@@ -250,14 +271,17 @@ Regression coverage:
    single-share planning can assign `submit_at = 0` to undesignated shares.
 
 Enforcement:
-[`round_immediate_share_key`](../zcash_voting/src/share_policy.rs) and
-[`plan_share_submissions`](../zcash_voting/src/share_policy.rs).
+[`round_immediate_share_key`](../zcash_voting/src/share_policy/initial_placement.rs)
+and
+[`plan_share_submissions`](../zcash_voting/src/share_policy/initial_placement.rs).
 
 Regression tests:
 `round_immediate_share_key_uses_highest_bundle_lowest_voted_proposal_and_share_zero`,
 `immediate_batch_position_stays_aligned_and_does_not_perturb_other_plan`,
 `immediate_marker_is_distinct_when_all_shares_submit_immediately`, and the
-round-plan tests in [`session.rs`](../zcash_voting/src/session.rs).
+round-plan tests in [`session.rs`](../zcash_voting/src/session.rs). The policy
+tests are in
+[`share_policy/tests/initial_placement.rs`](../zcash_voting/src/share_policy/tests/initial_placement.rs).
 
 ### Placement target
 
@@ -284,25 +308,25 @@ The concrete values include:
 | 100 | 10 |
 
 An empty helper list is invalid for initial planning even though the pure
-target-count function returns zero. Duplicate input URL strings are also
-invalid because placement is intended to count distinct endpoints. The
-planner itself does not parse or canonicalize URLs, so the host MUST supply
-validated canonical helper identities before planning.
+target-count function returns zero. Exactly duplicated input URL strings are
+also invalid because placement is intended to count distinct endpoints. The
+planner itself checks exact strings; it does not parse or canonicalize URLs, so
+the host MUST canonicalize and validate helper identities before planning.
 `canonicalize_helper_base_url` and `canonical_helper_url_list` are exported
 for exactly that purpose.
 
-The delivery entry points enforce the URL contract themselves:
-`submit_share_to_helpers` and `track_pending_shares` reject a configured URL
-that fails canonicalization with `InvalidInput` before any network I/O, and
-never silently drop it — a misconfigured fleet must surface as an error, not
-as an error-free non-delivery. Equivalent spellings of the same canonical
-identity still collapse by deduplication.
+The delivery and tracking entry points enforce the stronger trust-boundary
+contract through `ConfiguredHelperFleet`: `submit_share_to_helpers` and
+`track_pending_shares` reject empty fleets, URLs that fail canonicalization,
+and distinct spellings that canonicalize to the same helper identity with
+`InvalidInput` before any storage or network effect. Misconfiguration must
+surface as an error; configured entries are never silently dropped or
+collapsed.
 
-Planning clamps an explicitly requested target to the available list. Initial
-fan-out, however, preserves the caller's requested target in the durable
-report even if deduplication leaves fewer usable candidates. Recovery can
-then repair the deficit if the configured fleet later supplies enough valid
-helpers.
+Planning clamps an explicitly requested target to the available list. The
+crate-private raw fan-out routine preserves its caller's requested target in
+the durable report, but the public typed delivery boundary admits only a
+validated `ConfiguredHelperFleet`.
 
 `target_count` is a target for definite acceptances, not an upper bound on the
 number of helpers that may physically hold a share. An ambiguous helper may
@@ -311,9 +335,13 @@ acceptances. Recovery can therefore cause more than `target_count` helpers to
 hold the same share.
 
 Enforcement:
-[`share_submission_target_count`](../zcash_voting/src/share_policy.rs),
-`require_share_servers`, and
-[`submit_share_to_helpers`](../zcash_voting/src/share_tracking.rs).
+[`share_submission_target_count`](../zcash_voting/src/share_policy/server_order.rs),
+`require_share_servers` in
+[`share_policy/initial_placement.rs`](../zcash_voting/src/share_policy/initial_placement.rs),
+and `ConfiguredHelperFleet` plus `submit_share_to_helpers` in
+[`share_tracking/configured_fleet.rs`](../zcash_voting/src/share_tracking/configured_fleet.rs)
+and
+[`share_tracking/initial_delivery.rs`](../zcash_voting/src/share_tracking/initial_delivery.rs).
 
 Regression tests:
 `helper_target_count_is_half_rounded_up_and_capped_by_protocol_policy`,
@@ -322,7 +350,12 @@ Regression tests:
 `committed_vote_submission_rejects_uncapped_large_fleet_target`,
 `fan_out_canonicalizes_candidates_without_shrinking_the_target`,
 `submit_rejects_invalid_candidate_url_before_any_network_io`, and
-`tracking_rejects_invalid_configured_url`.
+`tracking_rejects_invalid_configured_url`. Boundary coverage additionally
+includes
+`committed_submission_rejects_duplicate_spelling_fleet_before_effects`,
+`tracking_rejects_duplicate_spelling_fleet_before_effects`, and
+`tracking_rejects_empty_fleet_before_effects` in
+[`share_tracking/tests/initial_delivery.rs`](../zcash_voting/src/share_tracking/tests/initial_delivery.rs).
 
 ### Helper selection and balancing
 
@@ -358,7 +391,9 @@ Enforcement:
 `shuffled_share_server_order`,
 `plan_share_submissions_with_preferred_servers`, and
 `select_batch_share_submission_targets` in
-[`share_policy.rs`](../zcash_voting/src/share_policy.rs).
+[`share_policy/server_order.rs`](../zcash_voting/src/share_policy/server_order.rs)
+and
+[`share_policy/initial_placement.rs`](../zcash_voting/src/share_policy/initial_placement.rs).
 
 Regression tests: `randomized_helper_order_uses_entropy`,
 `share_submission_batch_plan_uses_independent_entropy_per_share`,
@@ -369,7 +404,10 @@ Regression tests: `randomized_helper_order_uses_entropy`,
 `infeasible_initial_assignment_capacity_is_rejected`,
 `incomplete_batch_is_exempt_from_complete_batch_usage_cap`,
 `single_share_mode_is_exempt_from_complete_batch_usage_cap`, and
-`complete_batch_with_one_helper_is_forced_full_coverage`.
+`complete_batch_with_one_helper_is_forced_full_coverage` in
+[`share_policy/tests/server_order.rs`](../zcash_voting/src/share_policy/tests/server_order.rs)
+and
+[`share_policy/tests/initial_placement.rs`](../zcash_voting/src/share_policy/tests/initial_placement.rs).
 
 ## Scheduling invariants
 
@@ -399,14 +437,18 @@ The round-designated immediate share is independently forced to
 Enforcement: `last_moment_buffer_seconds`,
 `delayed_share_window_seconds`, and
 `scheduled_share_submit_at_from_entropy` in
-[`share_policy.rs`](../zcash_voting/src/share_policy.rs).
+[`share_policy/timing.rs`](../zcash_voting/src/share_policy/timing.rs) and
+[`share_policy/submission_schedule.rs`](../zcash_voting/src/share_policy/submission_schedule.rs).
 
 Regression tests: `last_moment_buffer_uses_two_fifths_of_round_duration`,
 `last_moment_buffer_caps_at_six_hours`,
 `scheduled_submit_at_from_random_unit_samples_before_deadline`,
 `delayed_share_window_caps_long_round_at_100_hours`,
 `delayed_share_window_is_immediate_inside_last_moment_buffer`, and
-`scheduled_submit_at_entropy_requirement_matches_delay_window`.
+`scheduled_submit_at_entropy_requirement_matches_delay_window` in
+[`share_policy/tests/timing.rs`](../zcash_voting/src/share_policy/tests/timing.rs)
+and
+[`share_policy/tests/submission_schedule.rs`](../zcash_voting/src/share_policy/tests/submission_schedule.rs).
 
 ### Polling and overdue timing
 
@@ -431,14 +473,20 @@ shares yields no next delay.
 
 Enforcement: `share_recovery_base_time`, `should_resubmit_share`,
 `is_share_resubmission_window_open`, and `next_tracking_delay_seconds` in
-[`share_policy.rs`](../zcash_voting/src/share_policy.rs).
+[`share_policy/timing.rs`](../zcash_voting/src/share_policy/timing.rs).
 
 Regression tests: `immediate_shares_use_created_at_for_status_and_retry`,
 `delayed_shares_use_submit_at_for_status_and_retry`,
 `overdue_threshold_is_quarter_window_with_bounds`,
 `resubmission_window_closes_exactly_at_the_cutoff`,
 `next_tracking_delay_applies_minimum_and_future_cap`, and
-`next_tracking_delay_uses_ready_poll_interval_for_ready_pending_shares`.
+`next_tracking_delay_uses_ready_poll_interval_for_ready_pending_shares` in
+[`share_policy/tests/timing.rs`](../zcash_voting/src/share_policy/tests/timing.rs).
+Facade-level timing behavior is covered by
+`confirmed_shares_are_never_ready_or_overdue`,
+`missing_vote_end_suppresses_overdue_but_not_status_checks`, and
+`young_share_is_idle_until_the_status_grace_passes` in
+[`share_tracking/tests/timing_policy.rs`](../zcash_voting/src/share_tracking/tests/timing_policy.rs).
 
 ## Transport and timeout invariants
 
@@ -517,7 +565,7 @@ Enforcement:
 [`helper/client.rs`](../zcash_voting/src/helper/client.rs),
 [`helper/transport.rs`](../zcash_voting/src/helper/transport.rs),
 [`http_transport.rs`](../zcash_voting/src/http_transport.rs), and
-[`share_tracking.rs`](../zcash_voting/src/share_tracking.rs).
+[`share_tracking/initial_delivery.rs`](../zcash_voting/src/share_tracking/initial_delivery.rs).
 
 Regression tests: `preflight_keeps_slow_probes_alive_until_the_target_is_ready`,
 `preflight_stops_at_the_soft_window_when_enough_helpers_are_ready`,
@@ -582,7 +630,7 @@ Regression tests: `submit_retries_definite_throttling_but_not_ambiguous_failures
 `late_cancellation_preserves_ambiguous_submission_errors`,
 `cancellation_suppresses_a_pending_retry`,
 `resubmit_makes_one_attempt_and_preserves_its_result`, and
-`malformed_share_body_is_not_sent_or_scored`.
+`invalid_share_bodies_are_not_sent_or_scored`.
 
 ## Initial fan-out invariants
 
@@ -622,7 +670,7 @@ state that has already been journaled; the tracker is responsible for
 repairing any remaining deficit.
 
 Regression tests in
-[`share_tracking.rs`](../zcash_voting/src/share_tracking.rs):
+[`share_tracking/tests/initial_delivery.rs`](../zcash_voting/src/share_tracking/tests/initial_delivery.rs):
 `fan_out_stops_at_the_target_count`,
 `fan_out_moves_past_a_refusing_helper`,
 `fan_out_never_retries_the_same_helper`,
@@ -630,7 +678,7 @@ Regression tests in
 `fan_out_retains_ambiguous_attempts_separately`. Durable dispatch ordering is
 covered by `initial_post_is_journaled_before_transport_dispatch`,
 `definite_initial_failure_clears_attempt_and_remains_retryable`,
-`ambiguous_initial_failure_is_persisted_and_never_replayed`,
+`ambiguous_initial_failure_is_not_replayed_by_initial_delivery`,
 `failed_outcome_write_leaves_attempting_marker`, and
 `failed_attempt_write_prevents_network_dispatch`. Typed-boundary coverage is
 provided by
@@ -684,7 +732,10 @@ Regression tests: `two_distinct_confirmations_stop_status_checks`,
 `every_helper_pending_reports_not_confirmed`,
 `pending_status_keeps_an_ambiguous_attempt_out_of_placement`,
 `invalid_status_scores_a_failure_without_blocking_confirmation`, and
-`unconfigured_helpers_are_not_polled`.
+`unconfigured_helpers_are_not_polled` in
+[`share_tracking/tests/confirmation.rs`](../zcash_voting/src/share_tracking/tests/confirmation.rs)
+and
+[`share_tracking/tests/recovery.rs`](../zcash_voting/src/share_tracking/tests/recovery.rs).
 
 ### Helper health
 
@@ -715,7 +766,7 @@ Health is a process-local ordering hint, not a block list.
 Enforcement:
 [`helper/health.rs`](../zcash_voting/src/helper/health.rs) and
 `HelperClient::score`, plus `poll_share_helpers` in
-[`share_tracking.rs`](../zcash_voting/src/share_tracking.rs).
+[`share_tracking/confirmation.rs`](../zcash_voting/src/share_tracking/confirmation.rs).
 
 Regression tests: `degraded_helper_is_demoted_not_removed`,
 `all_helpers_degraded_still_returns_every_candidate`,
@@ -723,10 +774,10 @@ Regression tests: `degraded_helper_is_demoted_not_removed`,
 `invalid_urls_keep_their_exact_health_identity`,
 `success_clears_accumulated_failures`,
 `cooldown_expiry_readmits_one_failure_below_threshold`,
-`cancellation_is_not_scored_against_a_helper`,
+`cancellation_before_request_is_not_scored`,
 `cancellation_aborts_bounded_in_flight_status_polls`, and
 `stalled_status_poll_does_not_starve_a_later_share`. Local submission
-validation is covered by `malformed_share_body_is_not_sent_or_scored`.
+validation is covered by `invalid_share_bodies_are_not_sent_or_scored`.
 
 ## Recovery invariants
 
@@ -771,7 +822,8 @@ Regression tests: `under_placed_share_preserves_delayed_submit_at`,
 `overdue_recovery_reposts_to_accepted_helper_after_untried_helpers_fail`,
 `ambiguous_accepted_helper_retry_preserves_the_stronger_delivery_state`,
 `small_fleet_all_ambiguous_still_recovers`, and
-`ambiguous_repost_failure_keeps_ambiguous_state`.
+`ambiguous_repost_failure_keeps_ambiguous_state` in
+[`share_tracking/tests/recovery.rs`](../zcash_voting/src/share_tracking/tests/recovery.rs).
 
 ### Durability and cutoff
 
@@ -813,7 +865,8 @@ Regression tests: `ambiguous_attempt_is_durable_before_recovery_advances`,
 `concurrent_confirmation_stops_outcome_unknown_retry`,
 `under_placement_stops_at_the_resubmission_cutoff`,
 `resubmission_rechecks_the_cutoff_before_every_post`, and
-`missing_vote_end_still_allows_early_replenishment`.
+`missing_vote_end_still_allows_early_replenishment` in
+[`share_tracking/tests/recovery.rs`](../zcash_voting/src/share_tracking/tests/recovery.rs).
 
 ### Recovery material
 
@@ -832,7 +885,7 @@ reported as unrecoverable rather than retried across helpers.
 Enforcement:
 [`helper_recovery_material`](../zcash_voting/src/recovery.rs) and
 `resubmit_to_next_helper` in
-[`share_tracking.rs`](../zcash_voting/src/share_tracking.rs).
+[`share_tracking/recovery.rs`](../zcash_voting/src/share_tracking/recovery.rs).
 
 Regression tests: `missing_recovery_material_is_reported_not_retried` and
 `resubmission_waits_for_the_confirmed_vc_position`.
@@ -859,7 +912,7 @@ result is treated as ambiguous.
 
 Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
 `cancelled_pass_reports_cancellation_and_keeps_durable_effects`,
-`cancellation_is_not_scored_against_a_helper`,
+`cancellation_before_request_is_not_scored`,
 `late_cancellation_does_not_replace_final_failed_poll`, and
 `late_cancellation_does_not_replace_final_failed_resubmission`.
 
@@ -892,7 +945,7 @@ Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
 Enforcement:
 [`share.rs`](../zcash_voting/src/share.rs),
 [`storage/operations.rs`](../zcash_voting/src/storage/operations.rs), and
-[`storage/queries.rs`](../zcash_voting/src/storage/queries.rs).
+[`storage/queries/share_delegations.rs`](../zcash_voting/src/storage/queries/share_delegations.rs).
 
 Regression coverage: `test_share_delegation_lifecycle` in
 `storage/operations.rs`,
@@ -929,7 +982,7 @@ Enforcement:
 [`migrations.rs`](../zcash_voting/src/storage/migrations.rs),
 [`001_init.sql`](../zcash_voting/src/storage/migrations/001_init.sql), and
 `partition_stored_helper_urls` in
-[`storage/queries.rs`](../zcash_voting/src/storage/queries.rs).
+[`storage/queries/share_delegations.rs`](../zcash_voting/src/storage/queries/share_delegations.rs).
 
 Regression tests: `migrate_from_launch_version_preserves_delegation_state`,
 `incremental_migrations_form_an_unbroken_chain_to_current`,
@@ -949,7 +1002,7 @@ a separate operation.
 Enforcement:
 [`recovery::clear`](../zcash_voting/src/recovery.rs) and
 `clear_recovery_state` in
-[`storage/queries.rs`](../zcash_voting/src/storage/queries.rs).
+[`storage/queries/mod.rs`](../zcash_voting/src/storage/queries/mod.rs).
 
 Regression tests:
 `clear_preserves_recorded_positions_and_resets_unconfirmed_votes` and
@@ -1040,13 +1093,13 @@ status requests and ten seconds of quorum search even when a configured
 per-request timeout or retry sequence would run longer.
 
 The initial planner checks only for empty and exactly duplicated URL strings;
-it does not parse or canonicalize helper endpoints. Equivalent spellings can
-therefore collapse later during fan-out. Hosts MUST canonicalize their helper
-configuration before computing targets and plans, using the exported
-`canonicalize_helper_base_url` / `canonical_helper_url_list`. The delivery
-entry points enforce that contract: a configured URL that fails
-canonicalization fails `submit_share_to_helpers` and `track_pending_shares`
-with `InvalidInput` before any network I/O.
+it does not parse or canonicalize helper endpoints. Hosts MUST canonicalize
+their helper configuration before computing targets and plans, using the
+exported `canonicalize_helper_base_url` / `canonical_helper_url_list`. The
+delivery entry points independently construct `ConfiguredHelperFleet` and
+reject an empty fleet, any URL that fails canonicalization, or distinct
+spellings of one canonical identity with `InvalidInput` before storage or
+network effects.
 
 ## Reviewer checklist
 

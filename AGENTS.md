@@ -18,7 +18,8 @@ by this repository. In particular:
   specification before implementing it.
 
 These instructions apply to all files that can affect helper-share behavior,
-including `zcash_voting/src/share_policy.rs`,
-`zcash_voting/src/share_tracking.rs`, `zcash_voting/src/share.rs`,
-`zcash_voting/src/recovery.rs`, `zcash_voting/src/helper/`, and helper-share
-storage or wire representations.
+including the `zcash_voting/src/share_policy/` and
+`zcash_voting/src/share_tracking/` facade packages,
+`zcash_voting/src/share.rs`, `zcash_voting/src/recovery.rs`,
+`zcash_voting/src/helper/`, `zcash_voting/src/storage/queries/`, and
+helper-share wire representations.
