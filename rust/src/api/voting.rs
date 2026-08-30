@@ -615,7 +615,7 @@ pub async fn preflight_voting_helpers(
     })
 }
 
-fn helper_session_db(
+fn helper_delivery_db(
     db_path: &str,
     account_uuid: &str,
     database: &Mutex<Option<Arc<zcash_voting::round::VotingDb>>>,
@@ -662,7 +662,7 @@ pub async fn track_pending_shares(
 
     // Open under the sidecar lock so a concurrent opener cannot race schema
     // migration, then run the network pass without holding it.
-    let db = helper_session_db(
+    let db = helper_delivery_db(
         &pass_handle.db_path,
         &pass_handle.account_uuid,
         &pass_handle.database,
@@ -741,7 +741,7 @@ pub async fn submit_committed_share_to_helpers(
     let cancel = || false;
 
     let client = helper_client(&context.health);
-    let db = helper_session_db(&context.db_path, &context.account_uuid, &context.database)?;
+    let db = helper_delivery_db(&context.db_path, &context.account_uuid, &context.database)?;
     let committed = zcash_voting::vote::CommittedVote::recover(
         &db,
         &context.round_id,
