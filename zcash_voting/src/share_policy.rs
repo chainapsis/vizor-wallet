@@ -27,6 +27,21 @@ pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
 pub const SHARE_SUBMIT_AT_MAX_DELAY_SECONDS: u64 = 100 * 60 * 60;
 /// Number of encrypted shares in one complete vote commitment.
 pub const VOTE_COMMITMENT_SHARE_COUNT: usize = 16;
+/// Numerator of the strict initial per-helper share fraction.
+pub const SHARE_HELPER_INITIAL_MAX_FRACTION_NUMERATOR: usize = 3;
+/// Denominator of the strict initial per-helper share fraction.
+pub const SHARE_HELPER_INITIAL_MAX_FRACTION_DENOMINATOR: usize = 4;
+/// Maximum initial shares assigned to one helper in a complete normal batch.
+pub const SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER: usize = VOTE_COMMITMENT_SHARE_COUNT
+    * SHARE_HELPER_INITIAL_MAX_FRACTION_NUMERATOR
+    / SHARE_HELPER_INITIAL_MAX_FRACTION_DENOMINATOR;
+/// Protocol cap on definite helper acceptances targeted for one share.
+pub const SHARE_HELPER_TARGET_COUNT_CAP: usize = 10;
+
+const _: () = assert!(VOTE_COMMITMENT_SHARE_COUNT >= 2);
+const _: () = assert!(SHARE_HELPER_INITIAL_MAX_FRACTION_DENOMINATOR > 0);
+const _: () = assert!(SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER > 0);
+const _: () = assert!(SHARE_HELPER_TARGET_COUNT_CAP > 0);
 /// Initial helper readiness window before slower transports keep racing.
 pub const SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS: u64 = 2_000;
 /// Absolute deadline for the helper readiness race.
@@ -92,11 +107,11 @@ pub struct ShareSubmissionPlan {
 /// Clients own transport and recovery. They should start all readiness probes
 /// together, inspect responses after the soft timeout, and continue until at
 /// least `target_count` helpers are ready or the hard timeout expires. For a
-/// complete commitment, `max_shares_per_server` is the balanced maximum when
-/// at least `min_server_count` helpers are in the preferred planning pool.
-/// These limits are derived from the configured fleet size. Retries may exceed
-/// them when needed for liveness. The limit is per helper and does not make a
-/// claim about the combined view of colluding helpers.
+/// complete commitment, `max_shares_per_server` is a hard initial-assignment
+/// quota when at least `min_server_count` helpers are available. These limits
+/// are derived from [`VOTE_COMMITMENT_SHARE_COUNT`]. Retries may exceed them
+/// when needed for liveness. The limit is per helper and does not make a claim
+/// about the combined view of colluding helpers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareServerSelectionPolicy {
     pub target_count: u32,
@@ -476,25 +491,34 @@ fn delayed_share_window_seconds(
 
 /// Return how many helpers should receive each initial share.
 ///
-/// This is half of the configured helpers, rounded up, and 0 when there are no
-/// helpers.
+/// This is half of the configured helpers, rounded up and capped by the
+/// protocol's helper-distribution policy. It is 0 when there are no helpers.
 pub fn share_submission_target_count(server_count: usize) -> usize {
-    server_count / 2 + server_count % 2
+    (server_count / 2 + server_count % 2).min(SHARE_HELPER_TARGET_COUNT_CAP)
+}
+
+fn minimum_complete_batch_planning_server_count(target_count: usize) -> usize {
+    if target_count == 0 {
+        return 0;
+    }
+    VOTE_COMMITMENT_SHARE_COUNT
+        .checked_mul(target_count)
+        .expect("share-count-derived assignment total fits usize")
+        .div_ceil(SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER)
 }
 
 /// Return the shared helper probe and initial-delivery policy.
 pub fn share_server_selection_policy(server_count: usize) -> ShareServerSelectionPolicy {
     let target_count = share_submission_target_count(server_count);
-    let assignment_count = VOTE_COMMITMENT_SHARE_COUNT.saturating_mul(target_count);
-    let max_shares_per_server = if server_count == 0 {
-        0
+    let (max_shares_per_server, min_server_count) = if server_count == 0 {
+        (0, 0)
+    } else if server_count == 1 {
+        (VOTE_COMMITMENT_SHARE_COUNT, 1)
     } else {
-        assignment_count.div_ceil(server_count)
-    };
-    let min_server_count = if max_shares_per_server == 0 {
-        0
-    } else {
-        assignment_count.div_ceil(max_shares_per_server)
+        (
+            SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER,
+            minimum_complete_batch_planning_server_count(target_count),
+        )
     };
 
     ShareServerSelectionPolicy {
@@ -682,12 +706,12 @@ pub fn plan_share_submission(
 /// share. Use `share_submission_random_bytes_required` to size the two entropy
 /// inputs.
 ///
-/// For a complete normal 16-share commitment, each share targets half of the
-/// configured helpers, rounded up, and the assignments are balanced across the
-/// fleet. Each returned plan contains its final initial target list. This
-/// guarantee applies only to initial submission. Fallback and recovery may send
-/// an initially omitted share to any configured helper, including one that
-/// ultimately receives all 16 shares, when needed to preserve liveness.
+/// For a complete normal commitment, each share targets half of the configured
+/// helpers rounded up, capped by [`SHARE_HELPER_TARGET_COUNT_CAP`]. Assignments
+/// are balanced across the fleet and no helper receives more than the derived
+/// three-quarters quota. Each returned plan contains its final initial target
+/// list. This guarantee applies only to initial planning. Fallback and recovery
+/// may exceed the quota when needed to preserve liveness.
 ///
 /// `server_urls` must contain distinct, valid helper endpoint URLs. This
 /// function checks only that the list is non-empty and has no duplicates; it
@@ -730,12 +754,13 @@ pub fn plan_share_submissions(
 /// every remaining configured helper in stable order. `preferred_server_count`
 /// is the number of ready helpers in that prefix. When fewer than the target
 /// are ready, the planner includes enough fallback helpers to return a complete
-/// plan. For a complete 16-share commitment, targets are balanced across the
-/// planning pool and use independent caller-provided entropy for tie-breaking.
-/// The fleet-derived balanced maximum from [`share_server_selection_policy`] is
-/// guaranteed when the planning pool has at least that policy's
-/// `min_server_count` and is best effort for smaller pools. Recovery is outside
-/// this initial-only contract and may use any configured helper.
+/// plan. For a complete normal commitment, planning widens the pool to the
+/// minimum capacity exposed by [`share_server_selection_policy`], targets are
+/// balanced with independent caller-provided entropy for tie-breaking, and the
+/// per-helper maximum is enforced as a hard quota. Single-share and incomplete
+/// batches keep readiness-first planning and do not claim a commitment-wide
+/// quota. Recovery is outside this initial-only contract and may use any
+/// configured helper.
 pub fn plan_share_submissions_with_preferred_servers(
     share_count: usize,
     ranked_server_urls: &[String],
@@ -794,10 +819,27 @@ pub fn plan_share_submissions_with_preferred_servers(
     }
 
     let target_count = share_submission_target_count(ranked_server_urls.len());
+    let complete_normal_batch = share_count == VOTE_COMMITMENT_SHARE_COUNT && !single_share;
+    let selection_policy = share_server_selection_policy(ranked_server_urls.len());
+    let minimum_planning_server_count = if complete_normal_batch {
+        selection_policy.min_server_count as usize
+    } else {
+        target_count
+    };
+    if minimum_planning_server_count > ranked_server_urls.len() {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "complete share batch requires at least {minimum_planning_server_count} helpers to keep each helper at or below {} initial shares",
+                SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER
+            ),
+        });
+    }
     let planning_server_count = preferred_server_count
-        .max(target_count)
+        .max(minimum_planning_server_count)
         .min(ranked_server_urls.len());
     let planning_servers = &ranked_server_urls[..planning_server_count];
+    let max_shares_per_server = (complete_normal_batch && planning_server_count > 1)
+        .then_some(SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER);
     let mut server_usage = HashMap::<String, usize>::new();
 
     let mut plans = Vec::with_capacity(share_count);
@@ -809,6 +851,7 @@ pub fn plan_share_submissions_with_preferred_servers(
         let target_servers = select_batch_share_submission_targets(
             planning_servers,
             target_count,
+            max_shares_per_server,
             &mut server_usage,
             &server_random_bytes[server_start..server_end],
         )?;
@@ -932,6 +975,7 @@ fn require_unique_share_servers(server_urls: &[String]) -> Result<(), VotingErro
 fn select_batch_share_submission_targets(
     server_urls: &[String],
     target_count: usize,
+    max_shares_per_server: Option<usize>,
     server_usage: &mut HashMap<String, usize>,
     server_random_bytes: &[u8],
 ) -> Result<Vec<String>, VotingError> {
@@ -943,9 +987,20 @@ fn select_batch_share_submission_targets(
     });
     let selected: Vec<_> = ranked
         .into_iter()
-        .take(target_count.min(server_urls.len()))
+        .filter(|(_, server)| {
+            max_shares_per_server
+                .is_none_or(|maximum| server_usage.get(*server).copied().unwrap_or(0) < maximum)
+        })
+        .take(target_count)
         .map(|(_, server)| server.clone())
         .collect();
+    if selected.len() != target_count {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "cannot select {target_count} distinct helpers without exceeding the initial per-helper share quota"
+            ),
+        });
+    }
     for server in &selected {
         *server_usage.entry(server.clone()).or_default() += 1;
     }
@@ -1066,6 +1121,14 @@ fn min_second(current: Option<u64>, candidate: u64) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn planned_server_usage(plans: &[ShareSubmissionPlan]) -> HashMap<String, usize> {
+        let mut usage = HashMap::new();
+        for server in plans.iter().flat_map(|plan| &plan.target_servers) {
+            *usage.entry(server.clone()).or_default() += 1;
+        }
+        usage
+    }
 
     fn share(submit_at: u64, created_at: u64) -> ShareDelegationRecord {
         ShareDelegationRecord {
@@ -1472,16 +1535,19 @@ mod tests {
     }
 
     #[test]
-    fn helper_target_count_is_half_rounded_up() {
+    fn helper_target_count_is_half_rounded_up_and_capped_by_protocol_policy() {
         assert_eq!(share_submission_target_count(0), 0);
         assert_eq!(share_submission_target_count(1), 1);
         assert_eq!(share_submission_target_count(2), 1);
         assert_eq!(share_submission_target_count(3), 2);
         assert_eq!(share_submission_target_count(5), 3);
-        assert_eq!(share_submission_target_count(8), 4);
         assert_eq!(share_submission_target_count(10), 5);
-        assert_eq!(share_submission_target_count(12), 6);
-        assert_eq!(share_submission_target_count(33), 17);
+        assert_eq!(share_submission_target_count(20), 10);
+        assert_eq!(share_submission_target_count(21), 10);
+        assert_eq!(share_submission_target_count(30), 10);
+        assert_eq!(share_submission_target_count(100), 10);
+        assert_eq!(SHARE_HELPER_TARGET_COUNT_CAP, 10);
+        assert_eq!(SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER, 12);
     }
 
     #[test]
@@ -1490,8 +1556,8 @@ mod tests {
             share_server_selection_policy(10),
             ShareServerSelectionPolicy {
                 target_count: 5,
-                max_shares_per_server: 8,
-                min_server_count: 10,
+                max_shares_per_server: 12,
+                min_server_count: 7,
                 preflight_soft_timeout_milliseconds: 2_000,
                 preflight_hard_timeout_milliseconds: 30_000,
                 post_timeout_milliseconds: 30_000,
@@ -1505,7 +1571,7 @@ mod tests {
                 share_server_selection_policy(3).max_shares_per_server,
                 share_server_selection_policy(3).min_server_count,
             ),
-            (2, 11, 3)
+            (2, 12, 3)
         );
         assert_eq!(
             (
@@ -1513,15 +1579,31 @@ mod tests {
                 share_server_selection_policy(5).max_shares_per_server,
                 share_server_selection_policy(5).min_server_count,
             ),
-            (3, 10, 5)
+            (3, 12, 4)
         );
         assert_eq!(
             (
-                share_server_selection_policy(33).target_count,
-                share_server_selection_policy(33).max_shares_per_server,
-                share_server_selection_policy(33).min_server_count,
+                share_server_selection_policy(100).target_count,
+                share_server_selection_policy(100).max_shares_per_server,
+                share_server_selection_policy(100).min_server_count,
             ),
-            (17, 9, 31)
+            (10, 12, 14)
+        );
+        assert_eq!(
+            (
+                share_server_selection_policy(0).target_count,
+                share_server_selection_policy(0).max_shares_per_server,
+                share_server_selection_policy(0).min_server_count,
+            ),
+            (0, 0, 0)
+        );
+        assert_eq!(
+            (
+                share_server_selection_policy(1).target_count,
+                share_server_selection_policy(1).max_shares_per_server,
+                share_server_selection_policy(1).min_server_count,
+            ),
+            (1, 16, 1)
         );
     }
 
@@ -1765,7 +1847,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_batch_caps_ten_helper_usage_at_eight() {
+    fn complete_batch_caps_helper_usage_at_derived_three_quarters() {
         let servers: Vec<String> = (0..10)
             .map(|index| format!("https://helper-{index}.example.com"))
             .collect();
@@ -1788,7 +1870,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut usage = HashMap::<String, usize>::new();
+        let usage = planned_server_usage(&plans);
         let target_count = share_submission_target_count(servers.len());
         for plan in &plans {
             assert_eq!(plan.target_servers.len(), target_count);
@@ -1796,13 +1878,13 @@ mod tests {
                 plan.target_servers.iter().collect::<HashSet<_>>().len(),
                 target_count
             );
-            for server in &plan.target_servers {
-                *usage.entry(server.clone()).or_default() += 1;
-            }
         }
         assert!(servers
             .iter()
             .all(|server| usage.get(server).copied() == Some(8)));
+        assert!(usage
+            .values()
+            .all(|count| *count <= SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER));
     }
 
     #[test]
@@ -1875,7 +1957,7 @@ mod tests {
             VOTE_COMMITMENT_SHARE_COUNT * target_count
         );
         assert_eq!(usage.len(), servers.len());
-        assert!(usage.values().all(|count| (8..=9).contains(count)));
+        assert!(usage.values().all(|count| (4..=5).contains(count)));
     }
 
     #[test]
@@ -1914,7 +1996,7 @@ mod tests {
     }
 
     #[test]
-    fn preferred_pool_adds_fallbacks_to_reach_target() {
+    fn minimum_planning_pool_enforces_derived_three_quarters_cap() {
         let servers: Vec<String> = (0..10)
             .map(|index| format!("https://helper-{index}.example.com"))
             .collect();
@@ -1938,13 +2020,112 @@ mod tests {
         )
         .unwrap();
 
+        let usage = planned_server_usage(&plans);
         assert!(plans.iter().all(|plan| {
             plan.target_servers.len() == 5
                 && plan
                     .target_servers
                     .iter()
-                    .all(|server| servers[..5].contains(server))
+                    .all(|server| servers[..7].contains(server))
         }));
+        assert_eq!(usage.values().sum::<usize>(), 80);
+        assert_eq!(usage.len(), 7);
+        assert!(usage
+            .values()
+            .all(|count| *count <= SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER));
+    }
+
+    #[test]
+    fn protocol_target_cap_uses_fourteen_helpers_for_complete_batch_capacity() {
+        for server_count in [20, 21, 30, 100] {
+            let servers: Vec<String> = (0..server_count)
+                .map(|index| format!("https://helper-{index}.example.com"))
+                .collect();
+            let server_random_bytes =
+                vec![
+                    0;
+                    VOTE_COMMITMENT_SHARE_COUNT
+                        * share_server_order_random_bytes_required(servers.len())
+                ];
+
+            let plans = plan_share_submissions_with_preferred_servers(
+                VOTE_COMMITMENT_SHARE_COUNT,
+                &servers,
+                1,
+                1_000,
+                2_000,
+                None,
+                false,
+                None,
+                &[],
+                &server_random_bytes,
+            )
+            .unwrap();
+
+            let usage = planned_server_usage(&plans);
+            assert!(plans.iter().all(|plan| plan.target_count == 10));
+            assert_eq!(usage.values().sum::<usize>(), 160);
+            assert_eq!(usage.len(), 14);
+            assert!(usage.values().all(|count| (11..=12).contains(count)));
+            assert!(usage.keys().all(|server| servers[..14].contains(server)));
+        }
+    }
+
+    #[test]
+    fn infeasible_initial_assignment_capacity_is_rejected() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+        ];
+        let mut usage = HashMap::from([
+            (
+                servers[0].clone(),
+                SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER,
+            ),
+            (
+                servers[1].clone(),
+                SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER,
+            ),
+        ]);
+
+        assert!(matches!(
+            select_batch_share_submission_targets(
+                &servers,
+                1,
+                Some(SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER),
+                &mut usage,
+                &random_bytes(&[0]),
+            ),
+            Err(VotingError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn incomplete_batch_is_exempt_from_complete_batch_usage_cap() {
+        let servers: Vec<String> = (0..15)
+            .map(|index| format!("https://helper-{index}.example.com"))
+            .collect();
+        let share_count = VOTE_COMMITMENT_SHARE_COUNT - 1;
+        let plans = plan_share_submissions_with_preferred_servers(
+            share_count,
+            &servers,
+            8,
+            1_000,
+            2_000,
+            None,
+            false,
+            None,
+            &[],
+            &vec![0; share_count * share_server_order_random_bytes_required(servers.len())],
+        )
+        .unwrap();
+
+        let usage = planned_server_usage(&plans);
+        assert_eq!(usage.len(), 8);
+        assert!(usage.values().all(|count| *count == share_count));
+        assert!(usage
+            .values()
+            .all(|count| *count > SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER));
     }
 
     #[test]
@@ -1969,13 +2150,35 @@ mod tests {
     }
 
     #[test]
-    fn share_submission_batch_plan_allows_one_helper_when_no_alternative_exists() {
+    fn complete_batch_with_one_helper_is_forced_full_coverage() {
         let servers = vec!["https://only.example.com".to_string()];
 
-        let plans = plan_share_submissions(16, &servers, 1_000, 2_000, None, false, None, &[], &[])
-            .unwrap();
+        let plans = plan_share_submissions(
+            VOTE_COMMITMENT_SHARE_COUNT,
+            &servers,
+            1_000,
+            2_000,
+            None,
+            false,
+            None,
+            &[],
+            &[],
+        )
+        .unwrap();
 
         assert!(plans.iter().all(|plan| plan.target_servers == servers));
+        assert_eq!(planned_server_usage(&plans)[&servers[0]], 16);
+    }
+
+    #[test]
+    fn single_share_mode_is_exempt_from_complete_batch_usage_cap() {
+        let servers = vec!["https://only.example.com".to_string()];
+
+        let plans =
+            plan_share_submissions(1, &servers, 1_000, 2_000, None, true, None, &[], &[]).unwrap();
+
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].target_servers, servers);
     }
 
     #[test]
