@@ -5,7 +5,7 @@
 //! back into voting DB state.
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use rusqlite::{named_params, OptionalExtension};
+use rusqlite::{named_params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::storage::{queries, VotingDb};
@@ -82,9 +82,11 @@ fn record_delegation_confirmation(
     require_tx_hash(&confirmation.tx_hash)?;
     let mut conn = db.conn();
     let wallet_id = db.wallet_id();
-    let tx = conn.transaction().map_err(|e| VotingError::Internal {
-        message: format!("delegation confirmation transaction failed: {e}"),
-    })?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| VotingError::Internal {
+            message: format!("delegation confirmation transaction failed: {e}"),
+        })?;
 
     let (stored_hash, stored_van_position) =
         load_bundle_confirmation_fields(&tx, round_id, &wallet_id, bundle_index)?;
@@ -193,9 +195,11 @@ fn record_vote_batch_confirmation(
     )?)?;
     let mut conn = db.conn();
     let wallet_id = db.wallet_id();
-    let tx = conn.transaction().map_err(|e| VotingError::Internal {
-        message: format!("vote batch confirmation transaction failed: {e}"),
-    })?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| VotingError::Internal {
+            message: format!("vote batch confirmation transaction failed: {e}"),
+        })?;
     let recoveries = crate::vote::load_vote_batch_recoveries_with_conn(
         &tx,
         &wallet_id,
@@ -283,9 +287,11 @@ fn record_vote_confirmation(
     require_tx_hash(&confirmation.tx_hash)?;
     let mut conn = db.conn();
     let wallet_id = db.wallet_id();
-    let tx = conn.transaction().map_err(|e| VotingError::Internal {
-        message: format!("vote confirmation transaction failed: {e}"),
-    })?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| VotingError::Internal {
+            message: format!("vote confirmation transaction failed: {e}"),
+        })?;
 
     crate::vote::ensure_singleton_vote_update_with_conn(
         &tx,

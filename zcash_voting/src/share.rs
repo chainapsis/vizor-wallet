@@ -221,6 +221,7 @@ impl ShareDeliveryState {
 }
 use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
+use rusqlite::TransactionBehavior;
 
 pub use crate::types::ShareDelegationRecord as ShareRecord;
 
@@ -311,16 +312,43 @@ fn record_impl(
     sent_to_urls: &[String],
     submit_at: u64,
 ) -> Result<(), VotingError> {
-    let nullifier = delivery_nullifier(db, round_id, bundle_index, proposal_id, share_index)?;
-    db.record_share_delegation(
+    // Reserve the WAL writer before loading recovery identity. Otherwise a
+    // concurrent recast can replace the recovery bundle after this read and
+    // the old share nullifier can be recorded under the replacement vote key.
+    let mut conn = db.conn();
+    let wallet_id = db.wallet_id();
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| VotingError::Internal {
+            message: format!("begin recovered share transaction failed: {e}"),
+        })?;
+    let bundle =
+        crate::vote::recovery_bundle_with_conn(&tx, &wallet_id, round_id, bundle_index, proposal_id)?
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: format!(
+                    "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+                ),
+            })?;
+    ensure_recovery_proposal(&bundle, proposal_id)?;
+    let payload = recover_payload(&bundle, share_index)?;
+    let primary_blind = array32("primary_blind", payload.primary_blind.clone())?;
+    let nullifier = compute_nullifier(&bundle.vote_commitment, share_index, &primary_blind)?;
+    crate::storage::queries::record_share_delegation(
+        &tx,
         round_id,
+        &wallet_id,
         bundle_index,
         proposal_id,
         share_index,
         sent_to_urls,
+        &[],
+        0,
         &nullifier,
         submit_at,
-    )
+    )?;
+    tx.commit().map_err(|e| VotingError::Internal {
+        message: format!("commit recovered share transaction failed: {e}"),
+    })
 }
 
 /// Records a helper-share submission for integration-test fixture setup.
@@ -678,6 +706,16 @@ pub(crate) fn nullifier_from_recovery_json(
     share_index: u32,
 ) -> Result<[u8; 32], VotingError> {
     let bundle = crate::vote::parse_recovery(commitment_bundle_json)?;
+    ensure_recovery_proposal(&bundle, proposal_id)?;
+    let payload = recover_payload(&bundle, share_index)?;
+    let primary_blind = array32("primary_blind", payload.primary_blind.clone())?;
+    compute_nullifier(&bundle.vote_commitment, share_index, &primary_blind)
+}
+
+fn ensure_recovery_proposal(
+    bundle: &VoteRecoveryBundle,
+    proposal_id: u32,
+) -> Result<(), VotingError> {
     if bundle.proposal_id != proposal_id {
         return Err(VotingError::InvalidInput {
             message: format!(
@@ -686,9 +724,7 @@ pub(crate) fn nullifier_from_recovery_json(
             ),
         });
     }
-    let payload = recover_payload(&bundle, share_index)?;
-    let primary_blind = array32("primary_blind", payload.primary_blind.clone())?;
-    compute_nullifier(&bundle.vote_commitment, share_index, &primary_blind)
+    Ok(())
 }
 
 /// Lists all helper-share records for a round.
@@ -889,14 +925,7 @@ pub fn recover_wire_json(
     submit_at: u64,
 ) -> Result<String, VotingError> {
     let bundle = crate::vote::parse_recovery(commitment_bundle_json)?;
-    if bundle.proposal_id != proposal_id {
-        return Err(VotingError::InvalidInput {
-            message: format!(
-                "recovery proposal_id {} does not match requested {proposal_id}",
-                bundle.proposal_id
-            ),
-        });
-    }
+    ensure_recovery_proposal(&bundle, proposal_id)?;
     let payload = recover_payload(&bundle, share_index)?;
     payload.to_wire_json(Some(vc_tree_position), submit_at)
 }
@@ -919,9 +948,17 @@ mod tests {
         vote::{serialize_recovery, VoteRecoveryBundle},
     };
     use pasta_curves::group::{Group, GroupEncoding};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
     const WALLET_ID: &str = "wallet";
+    static SQLITE_BUSY_OBSERVED: AtomicBool = AtomicBool::new(false);
+
+    fn signal_sqlite_busy(_attempt: i32) -> bool {
+        SQLITE_BUSY_OBSERVED.store(true, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        true
+    }
 
     fn db_with_vote_recovery() -> VotingDb {
         db_with_vote_recovery_and_session(None)
@@ -1118,6 +1155,172 @@ mod tests {
         confirm(&db, ROUND_ID, 0, 1, 1).unwrap();
         assert!(unconfirmed(&db, ROUND_ID).unwrap().is_empty());
         assert_eq!(list(&db, ROUND_ID).unwrap()[0].confirmed, true);
+    }
+
+    #[test]
+    fn record_rejects_recovery_for_a_different_proposal() {
+        let db = db_with_vote_recovery();
+        let mut mismatched = recovery_bundle_fixture();
+        mismatched.proposal_id = 2;
+        db.conn()
+            .execute(
+                "UPDATE votes SET commitment_bundle_json = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3
+                   AND bundle_index = 0 AND proposal_id = 1",
+                rusqlite::params![
+                    serialize_recovery(&mismatched).unwrap(),
+                    ROUND_ID,
+                    WALLET_ID
+                ],
+            )
+            .unwrap();
+
+        let error = record(
+            &db,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper.example".to_string()],
+            99,
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("recovery proposal_id 2 does not match requested 1"),
+            "unexpected error: {error}"
+        );
+        assert!(list(&db, ROUND_ID).unwrap().is_empty());
+    }
+
+    #[test]
+    fn record_derives_share_identity_after_reserving_wal_writer() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "zcash-voting-share-recovery-identity-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        let path_string = path.to_string_lossy().into_owned();
+        let db_a = VotingDb::open(&path_string).unwrap();
+        db_a.set_wallet_id(WALLET_ID);
+        db_a.create_round(crate::Network::Testnet, &round_params(), None)
+            .unwrap();
+        db_a.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
+        queries::store_vote(&db_a.conn(), ROUND_ID, WALLET_ID, 0, 1, 2, &[0xCA; 32]).unwrap();
+        db_a.set_ballot_intent(ROUND_ID, 1, crate::session::Decision::Choice(2), 3)
+            .unwrap();
+
+        let initial = recovery_bundle_fixture();
+        db_a.conn()
+            .execute(
+                "UPDATE votes SET commitment_bundle_json = ?1, vc_tree_position = 456
+                 WHERE round_id = ?2 AND wallet_id = ?3
+                   AND bundle_index = 0 AND proposal_id = 1",
+                rusqlite::params![serialize_recovery(&initial).unwrap(), ROUND_ID, WALLET_ID],
+            )
+            .unwrap();
+
+        let mut replacement = initial.clone();
+        replacement.vote_decision = 1;
+        replacement.vote_commitment = field_bytes(20);
+        replacement.share_blinds[1] = field_bytes(3);
+        let expected_payload = recover_payload(&replacement, 1).unwrap();
+        let expected_nullifier = compute_nullifier(
+            &replacement.vote_commitment,
+            1,
+            &array32("primary_blind", expected_payload.primary_blind).unwrap(),
+        )
+        .unwrap();
+        let initial_payload = recover_payload(&initial, 1).unwrap();
+        let initial_nullifier = compute_nullifier(
+            &initial.vote_commitment,
+            1,
+            &array32("primary_blind", initial_payload.primary_blind).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(initial_nullifier, expected_nullifier);
+
+        let db_b = VotingDb::open(&path_string).unwrap();
+        db_b.set_wallet_id(WALLET_ID);
+        db_a.conn().busy_handler(Some(signal_sqlite_busy)).unwrap();
+
+        SQLITE_BUSY_OBSERVED.store(false, Ordering::SeqCst);
+        let mut writer_conn = db_b.conn();
+        let writer_tx = writer_conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        writer_tx
+            .execute(
+                "UPDATE votes SET choice = 1, commitment_bundle_json = ?1
+                 WHERE round_id = ?2 AND wallet_id = ?3
+                   AND bundle_index = 0 AND proposal_id = 1",
+                rusqlite::params![
+                    serialize_recovery(&replacement).unwrap(),
+                    ROUND_ID,
+                    WALLET_ID
+                ],
+            )
+            .unwrap();
+        writer_tx
+            .execute(
+                "UPDATE ballot_intent SET skipped = 0, choice = 1
+                 WHERE round_id = ?1 AND wallet_id = ?2 AND proposal_id = 1",
+                rusqlite::params![ROUND_ID, WALLET_ID],
+            )
+            .unwrap();
+
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                result_tx
+                    .send(record(
+                        &db_a,
+                        ROUND_ID,
+                        0,
+                        1,
+                        1,
+                        &["https://helper.example".to_string()],
+                        99,
+                    ))
+                    .unwrap();
+            });
+
+            let contention_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while !SQLITE_BUSY_OBSERVED.load(Ordering::SeqCst) {
+                if let Ok(result) = result_rx.try_recv() {
+                    drop(writer_tx);
+                    panic!("share recording completed before SQLite contention: {result:?}");
+                }
+                if std::time::Instant::now() >= contention_deadline {
+                    drop(writer_tx);
+                    panic!("share recording never reached SQLite contention");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+
+            writer_tx.commit().unwrap();
+            result_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap()
+                .unwrap();
+        });
+
+        let records = list(&db_a, ROUND_ID).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].nullifier, expected_nullifier);
+        assert_ne!(records[0].nullifier, initial_nullifier);
+
+        drop(writer_conn);
+        drop(db_b);
+        drop(db_a);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path_string}-shm"));
+        let _ = std::fs::remove_file(format!("{path_string}-wal"));
     }
 
     #[test]

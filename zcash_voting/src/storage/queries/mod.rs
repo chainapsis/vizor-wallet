@@ -2238,11 +2238,12 @@ pub fn replace_bundle_witnesses(
     bundle_index: u32,
     witnesses: &[WitnessData],
 ) -> Result<(), VotingError> {
-    require_witness_positions_match_bundle(conn, round_id, wallet_id, bundle_index, witnesses)?;
-
-    let tx = conn.transaction().map_err(|e| VotingError::Internal {
-        message: format!("failed to begin witness replacement transaction: {}", e),
-    })?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to begin witness replacement transaction: {}", e),
+        })?;
+    require_witness_positions_match_bundle(&tx, round_id, wallet_id, bundle_index, witnesses)?;
 
     tx.execute(
         "DELETE FROM witnesses

@@ -5,7 +5,7 @@
 //! APIs in `crate::phases`. The wallet executes each step with its own
 //! network/proof/sign plumbing.
 
-use rusqlite::named_params;
+use rusqlite::{named_params, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -66,9 +66,11 @@ impl VotingDb {
         let now = now_secs();
         let mut conn = self.conn();
         let wallet_id = self.wallet_id();
-        let tx = conn.transaction().map_err(|e| VotingError::Internal {
-            message: format!("set_ballot_intent transaction failed: {e}"),
-        })?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| VotingError::Internal {
+                message: format!("set_ballot_intent transaction failed: {e}"),
+            })?;
         let skipped_bool = skipped != 0;
         let choice_u32 = choice.map(|c| c as u32);
         queries::ensure_no_submitted_vote_conflict_for_intent(

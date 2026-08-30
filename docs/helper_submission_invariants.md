@@ -1072,8 +1072,9 @@ Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
 
 1. The persisted key is wallet, round, bundle, proposal, and share index.
 2. The share nullifier is derived from persisted recovery material rather than
-   accepted from a wallet caller. Re-recording the key with a different
-   nullifier fails.
+   accepted from a wallet caller. The recovery material's embedded proposal
+   MUST match the proposal in that persisted key. Re-recording the key with a
+   different nullifier fails.
 3. Re-recording merges accepted, ambiguous, and attempting history instead of
    replacing it.
 4. A definite acceptance removes the same helper from the ambiguous set.
@@ -1096,6 +1097,15 @@ Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
     on that wallet and the exact persisted share nullifier. A deleted or
     replacement generation is left untouched, and its stale helper result is
     omitted from reports.
+13. Storage operations that validate durable state before updating it begin an
+    immediate SQLite transaction. The writer reservation is acquired before
+    the validation read, so a concurrent WAL writer waits or is waited on
+    within the configured busy timeout instead of invalidating the operation's
+    snapshot with `SQLITE_BUSY_SNAPSHOT`.
+14. Confirmation and sent-server updates carry the nullifier of the share
+    generation whose helper result they apply. The transactional read and
+    update require that exact nullifier, so a delayed result for a cleared
+    generation cannot confirm or add placement evidence to its replacement.
 
 Enforcement:
 [`share.rs`](../zcash_voting/src/share.rs),
@@ -1111,7 +1121,18 @@ Regression coverage: `test_share_delegation_lifecycle` in
 `initial_delivery_rejects_a_replaced_share_generation`, and
 `initial_delivery_does_not_recreate_share_after_recovery_cleanup`,
 `interrupted_retry_does_not_resolve_a_replaced_share_generation` in
-`share_tracking/tests`, and `changed_choice_ignores_stale_share_confirmations` and
+`share_tracking/tests`,
+`public_vote_writers_reserve_before_validation_and_wait_on_contention`
+in `storage/operations.rs` for public submission and VC-position writes, and
+`helper_share_writers_reserve_before_validation_and_reject_stale_intent` in
+`storage/operations.rs` for share recording, confirmation, and server updates,
+`record_derives_share_identity_after_reserving_wal_writer` in `share.rs` for
+recovery-identity derivation under the same reservation,
+`record_rejects_recovery_for_a_different_proposal` in `share.rs` for binding
+the embedded recovery proposal to the durable key,
+`stale_helper_results_do_not_mutate_replacement_share` in `share.rs` for
+identity-bound confirmation and placement updates, and
+`changed_choice_ignores_stale_share_confirmations` and
 `skipped_intent_clears_and_blocks_stale_share_rows` in `session.rs`.
 
 ### Configuration and migration
