@@ -115,9 +115,11 @@ package = "zakura-client-sqlite"
 version = "0.1.0-rc2"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
+# LOCAL REPLACE — point back at the git pin before committing.
+# zcash_voting: /Users/roman/projects-copy/zcash_voting (cheap-scanned-height)
+# wallet-libraries: /Users/roman/projects/wallet-libraries (feat/ironwood-first-scan-priority)
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "f02ffe030376126b3606e667d957bb6b0053c247"
+path = "../../../projects-copy/zcash_voting/zcash_voting"
 default-features = false
 features = ["zakura"]
 
@@ -164,9 +166,24 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
+path = "../../../projects-copy/zcash_voting/vote-commitment-tree"
 version = "=0.5.2"
 default-features = false
 features = ["zakura"]
+
+# Local wallet-layer + voting workspace crates for the replaces above.
+# Crypto (zakura-orchard/keys/primitives/…) stays on crates.io; only the
+# forked wallet crates and in-workspace VCT live here. voting-circuits and
+# vote-nullifier-pir stay on crates.io — versions already match (=0.10.3 /
+# pir-client=0.6.0 / imt-tree=0.4.0). Add path patches below if a local WIP
+# in those repos is required.
+[patch.crates-io]
+zakura-client-backend = { path = "../../wallet-libraries/librustzcash/zcash_client_backend" }
+zakura-client-sqlite = { path = "../../wallet-libraries/librustzcash/zcash_client_sqlite" }
+zakura-pczt = { path = "../../wallet-libraries/librustzcash/pczt" }
+zakura-wallet-lib = { path = "../../wallet-libraries/wallet-lib" }
+vote-commitment-tree = { path = "../../../projects-copy/zcash_voting/vote-commitment-tree" }
+vote-commitment-tree-client = { path = "../../../projects-copy/zcash_voting/vote-commitment-tree-client" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
