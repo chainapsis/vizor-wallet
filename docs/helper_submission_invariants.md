@@ -606,20 +606,24 @@ For current POST classification:
 | `queued` or `duplicate` | Definite acceptance | Stop |
 | DNS, connect, TLS, or route failure before dispatch | Definite failure | Retry |
 | HTTP 429 | Definite transient failure | Retry |
-| HTTP 500, 502, 503, or 504 | Ambiguous | Never |
+| HTTP 500, 502, 503, or 504 | Ambiguous transient failure | Never |
 | Timeout | Ambiguous | Never |
 | Failure after dispatch but before headers | Ambiguous | Never |
 | Failure while reading the response body | Ambiguous | Never |
 | 2xx with missing or unknown submission status | Ambiguous | Never |
-| Other non-2xx, including other 5xx statuses | Definite non-transient failure | Never |
+| Other 5xx statuses | Ambiguous non-transient failure | Never |
+| Other non-2xx statuses | Definite non-transient failure | Never |
 | Malformed caller-supplied JSON | Local definite failure | No request |
 
 Malformed caller JSON is rejected before the submission enters the scored
 network path. It therefore performs no request and does not increment or clear
 the selected helper's health state.
 
-The specific ambiguous HTTP set is `500`, `502`, `503`, and `504`; the
-implementation does not classify every possible 5xx status as ambiguous.
+Every 5xx response is ambiguous because the helper may have processed the
+share before returning a server error. The narrower set `500`, `502`, `503`,
+and `504` is also transient, which permits same-helper retries for idempotent
+GETs. Initial POST submission never retries any ambiguous response, including
+an otherwise transient 5xx.
 
 Enforcement: `HelperError::is_transient`, `HelperError::is_ambiguous`,
 `HelperClient::with_retry`, and `parse_submission_response` in
@@ -630,7 +634,9 @@ Regression tests: `submit_retries_definite_throttling_but_not_ambiguous_failures
 `late_cancellation_preserves_ambiguous_submission_errors`,
 `cancellation_suppresses_a_pending_retry`,
 `resubmit_makes_one_attempt_and_preserves_its_result`, and
-`invalid_share_bodies_are_not_sent_or_scored`.
+`invalid_share_bodies_are_not_sent_or_scored`. The adversarial integration
+test `mixed_initial_failures_follow_current_retry_and_durability_rules` covers
+the ambiguous, non-transient 501 boundary.
 
 ## Initial fan-out invariants
 
