@@ -591,8 +591,8 @@ helper transport timeout/body tests in `http_transport.rs`.
 | Call | Attempts | Same-helper retry rule |
 | --- | ---: | --- |
 | `GET /status` | 1 | Never retried |
-| `GET /share-status/{round_id}/{share_id}` | Up to 3 | Retry transient failures, including ambiguous transport failures |
 | Initial `POST /shares` | Up to 3 | Retry only definite transient failures |
+| `GET /share-status/{round_id}/{share_id}` | Up to 3 | Retry transient failures, including ambiguous transport failures |
 | Recovery `POST /shares` | 1 | Never retried by the client |
 
 The two configured backoffs produce at most three attempts. GET retries are
