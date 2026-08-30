@@ -14,6 +14,14 @@ use crate::{
 /// Recoverable vote commitment bundle for one `(bundle_index, proposal_id)`.
 pub use crate::wire::RecoverableCommitmentBundle;
 
+/// Whether persisted vote recovery state is safe to send to a helper.
+pub(crate) enum HelperRecoveryMaterial {
+    Ready(RecoverableCommitmentBundle),
+    /// The vote bundle exists, but confirmation has not recorded its VC leaf.
+    AwaitingVcPosition,
+    Missing,
+}
+
 /// Delegation recovery state for one bundle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DelegationRecovery {
@@ -116,6 +124,40 @@ pub fn recoverable_commitment_bundle(
         }
         Some((Some(_), None)) => Ok(None),
         _ => Ok(None),
+    }
+}
+
+/// Loads recovery material only when its real VC-tree position is persisted.
+///
+/// The public recovery snapshot intentionally uses a placeholder position for
+/// submitted-but-unconfirmed votes. Helper payloads cannot: position zero is a
+/// real leaf and would produce a stale or invalid submission.
+pub(crate) fn helper_recovery_material_for_wallet(
+    db: &VotingDb,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<HelperRecoveryMaterial, VotingError> {
+    match db.get_commitment_bundle_recovery_fields_for_wallet(
+        wallet_id,
+        round_id,
+        bundle_index,
+        proposal_id,
+    )? {
+        Some((Some(commitment_bundle_json), Some(position))) => {
+            let vc_tree_position = u64::try_from(position).map_err(|_| VotingError::Internal {
+                message: format!("stored vc_tree_position must be non-negative, got {position}"),
+            })?;
+            Ok(HelperRecoveryMaterial::Ready(RecoverableCommitmentBundle {
+                bundle_index,
+                proposal_id,
+                commitment_bundle_json,
+                vc_tree_position,
+            }))
+        }
+        Some((Some(_), None)) => Ok(HelperRecoveryMaterial::AwaitingVcPosition),
+        _ => Ok(HelperRecoveryMaterial::Missing),
     }
 }
 

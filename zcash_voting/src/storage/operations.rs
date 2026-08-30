@@ -1709,12 +1709,27 @@ impl VotingDb {
         bundle_index: u32,
         proposal_id: u32,
     ) -> Result<Option<(Option<String>, Option<i64>)>, VotingError> {
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
+        self.get_commitment_bundle_recovery_fields_for_wallet(
+            &wallet_id,
+            round_id,
+            bundle_index,
+            proposal_id,
+        )
+    }
+
+    pub(crate) fn get_commitment_bundle_recovery_fields_for_wallet(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+    ) -> Result<Option<(Option<String>, Option<i64>)>, VotingError> {
+        let conn = self.conn();
         queries::get_commitment_bundle_recovery(
             &conn,
             round_id,
-            &wallet_id,
+            wallet_id,
             bundle_index,
             proposal_id,
         )
@@ -1778,8 +1793,10 @@ impl VotingDb {
     ///
     /// This raw storage helper is crate-internal because callers must provide a
     /// nullifier that matches the persisted vote recovery bundle. Wallet
-    /// integrations should use `share::record`, which derives that nullifier
-    /// from recovery state.
+    /// integrations should use
+    /// `CommittedVote::submit_share_to_helpers`, which derives the nullifier
+    /// and owns journaled delivery.
+    #[cfg(any(test, feature = "test-fixtures"))]
     pub(crate) fn record_share_delegation(
         &self,
         round_id: &str,
@@ -1790,18 +1807,196 @@ impl VotingDb {
         nullifier: &[u8],
         submit_at: u64,
     ) -> Result<(), VotingError> {
-        let conn = self.conn();
-        let wallet_id = self.wallet_id();
-        queries::record_share_delegation(
-            &conn,
+        self.record_share_delivery(
             round_id,
-            &wallet_id,
             bundle_index,
             proposal_id,
             share_index,
             sent_to_urls,
+            &[],
+            // Legacy callers do not supply the planned placement target. Zero
+            // tells tracking to derive the canonical target from the current
+            // helper fleet instead of mistaking partial success for the goal.
+            0,
             nullifier,
             submit_at,
+        )
+        .map(|_| ())
+    }
+
+    /// Record helper deliveries and return the effective write-once schedule.
+    #[cfg(any(test, feature = "test-fixtures"))]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_share_delivery(
+        &self,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        sent_to_urls: &[String],
+        ambiguous_urls: &[String],
+        target_count: u32,
+        nullifier: &[u8],
+        submit_at: u64,
+    ) -> Result<u64, VotingError> {
+        let wallet_id = self.wallet_id();
+        self.record_share_delivery_for_wallet(
+            &wallet_id,
+            round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            sent_to_urls,
+            ambiguous_urls,
+            target_count,
+            nullifier,
+            submit_at,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_share_delivery_for_wallet(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        sent_to_urls: &[String],
+        ambiguous_urls: &[String],
+        target_count: u32,
+        nullifier: &[u8],
+        submit_at: u64,
+    ) -> Result<u64, VotingError> {
+        let conn = self.conn();
+        queries::record_share_delegation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            sent_to_urls,
+            ambiguous_urls,
+            target_count,
+            nullifier,
+            submit_at,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_share_delivery_for_vote_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        sent_to_urls: &[String],
+        ambiguous_urls: &[String],
+        target_count: u32,
+        nullifier: &[u8],
+        submit_at: u64,
+        expected_commitment_bundle_json: &str,
+    ) -> Result<u64, VotingError> {
+        let mut conn = self.conn();
+        queries::record_share_delegation_for_vote_generation(
+            &mut conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            sent_to_urls,
+            ambiguous_urls,
+            target_count,
+            nullifier,
+            submit_at,
+            expected_commitment_bundle_json,
+        )
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_attempting_server(
+        &self,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        server_url: &str,
+        placement_server_urls: &[String],
+        target_count: usize,
+    ) -> Result<bool, VotingError> {
+        let wallet_id = self.wallet_id();
+        Ok(matches!(
+            self.add_attempting_server_for_generation(
+                &wallet_id,
+                round_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                server_url,
+                placement_server_urls,
+                target_count,
+                crate::share::ShareAttemptCapacityPolicy::EnforcePlacementTarget,
+                None,
+            )?,
+            queries::ShareAttemptReservation::Started
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_attempting_server_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        server_url: &str,
+        placement_server_urls: &[String],
+        target_count: usize,
+        capacity_policy: crate::share::ShareAttemptCapacityPolicy,
+        expected_nullifier: Option<&[u8]>,
+    ) -> Result<queries::ShareAttemptReservation, VotingError> {
+        let conn = self.conn();
+        queries::add_attempting_server_for_generation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            server_url,
+            placement_server_urls,
+            target_count,
+            capacity_policy,
+            expected_nullifier,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn remove_attempting_server_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        server_url: &str,
+        expected_nullifier: Option<&[u8]>,
+    ) -> Result<bool, VotingError> {
+        let conn = self.conn();
+        queries::remove_attempting_server_for_generation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            server_url,
+            expected_nullifier,
         )
     }
 
@@ -1810,9 +2005,17 @@ impl VotingDb {
         &self,
         round_id: &str,
     ) -> Result<Vec<crate::ShareDelegationRecord>, VotingError> {
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
-        queries::get_share_delegations(&conn, round_id, &wallet_id)
+        self.get_share_delegations_for_wallet(round_id, &wallet_id)
+    }
+
+    pub(crate) fn get_share_delegations_for_wallet(
+        &self,
+        round_id: &str,
+        wallet_id: &str,
+    ) -> Result<Vec<crate::ShareDelegationRecord>, VotingError> {
+        let conn = self.conn();
+        queries::get_share_delegations(&conn, round_id, wallet_id)
     }
 
     /// Load only unconfirmed share delegations for a round.
@@ -1820,9 +2023,17 @@ impl VotingDb {
         &self,
         round_id: &str,
     ) -> Result<Vec<crate::ShareDelegationRecord>, VotingError> {
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
-        queries::get_unconfirmed_delegations(&conn, round_id, &wallet_id)
+        self.get_unconfirmed_delegations_for_wallet(round_id, &wallet_id)
+    }
+
+    pub(crate) fn get_unconfirmed_delegations_for_wallet(
+        &self,
+        round_id: &str,
+        wallet_id: &str,
+    ) -> Result<Vec<crate::ShareDelegationRecord>, VotingError> {
+        let conn = self.conn();
+        queries::get_unconfirmed_delegations(&conn, round_id, wallet_id)
     }
 
     /// Loads round identifiers and caller context for unconfirmed helper shares.
@@ -1834,28 +2045,81 @@ impl VotingDb {
         queries::pending_share_rounds(&conn, &wallet_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn share_is_confirmed_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        expected_nullifier: Option<&[u8]>,
+    ) -> Result<Option<bool>, VotingError> {
+        let conn = self.conn();
+        queries::share_is_confirmed_for_generation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            expected_nullifier,
+        )
+    }
+
+    #[cfg(test)]
     /// Mark a share delegation as confirmed on-chain.
-    pub fn mark_share_confirmed(
+    pub(crate) fn mark_share_confirmed(
         &self,
         round_id: &str,
         bundle_index: u32,
         proposal_id: u32,
         share_index: u32,
     ) -> Result<(), VotingError> {
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
-        queries::mark_share_confirmed(
-            &conn,
-            round_id,
+        if self.mark_share_confirmed_for_generation(
             &wallet_id,
+            round_id,
             bundle_index,
             proposal_id,
             share_index,
+            None,
+        )? {
+            Ok(())
+        } else {
+            Err(VotingError::Internal {
+                message: format!(
+                    "no share delegation found: round={round_id}, bundle={bundle_index}, proposal={proposal_id}, share={share_index}"
+                ),
+            })
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn mark_share_confirmed_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        expected_nullifier: Option<&[u8]>,
+    ) -> Result<bool, VotingError> {
+        let conn = self.conn();
+        queries::mark_share_confirmed(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            expected_nullifier,
         )
     }
 
-    /// Append new server URLs to a share delegation's sent_to_urls.
-    pub fn add_sent_servers(
+    #[cfg(test)]
+    /// Append new server URLs and make the share immediately actionable.
+    pub(crate) fn add_sent_servers(
         &self,
         round_id: &str,
         bundle_index: u32,
@@ -1863,16 +2127,121 @@ impl VotingDb {
         share_index: u32,
         new_urls: &[String],
     ) -> Result<(), VotingError> {
-        let conn = self.conn();
         let wallet_id = self.wallet_id();
-        queries::add_sent_servers(
-            &conn,
-            round_id,
+        if self.add_sent_servers_for_generation(
             &wallet_id,
+            round_id,
             bundle_index,
             proposal_id,
             share_index,
             new_urls,
+            None,
+            true,
+        )? {
+            Ok(())
+        } else {
+            Err(VotingError::Internal {
+                message: format!(
+                    "no share delegation found: round={round_id}, bundle={bundle_index}, proposal={proposal_id}, share={share_index}"
+                ),
+            })
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_sent_servers_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        new_urls: &[String],
+        expected_nullifier: Option<&[u8]>,
+        reset_submit_at: bool,
+    ) -> Result<bool, VotingError> {
+        let conn = self.conn();
+        if reset_submit_at {
+            queries::add_sent_servers_for_generation(
+                &conn,
+                round_id,
+                wallet_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                new_urls,
+                expected_nullifier,
+            )
+        } else {
+            queries::add_sent_servers_preserving_schedule_for_generation(
+                &conn,
+                round_id,
+                wallet_id,
+                bundle_index,
+                proposal_id,
+                share_index,
+                new_urls,
+                expected_nullifier,
+            )
+        }
+    }
+
+    /// Append outcome-unknown helper attempts to a share delegation.
+    /// `reset_submit_at` distinguishes overdue recovery from early replenishment.
+    #[cfg(test)]
+    pub(crate) fn add_ambiguous_servers(
+        &self,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        new_urls: &[String],
+        reset_submit_at: bool,
+    ) -> Result<(), VotingError> {
+        let wallet_id = self.wallet_id();
+        if self.add_ambiguous_servers_for_generation(
+            &wallet_id,
+            round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            new_urls,
+            reset_submit_at,
+            None,
+        )? {
+            Ok(())
+        } else {
+            Err(VotingError::Internal {
+                message: format!(
+                    "no share delegation found: round={round_id}, bundle={bundle_index}, proposal={proposal_id}, share={share_index}"
+                ),
+            })
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_ambiguous_servers_for_generation(
+        &self,
+        wallet_id: &str,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+        new_urls: &[String],
+        reset_submit_at: bool,
+        expected_nullifier: Option<&[u8]>,
+    ) -> Result<bool, VotingError> {
+        let conn = self.conn();
+        queries::add_ambiguous_servers_for_generation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            new_urls,
+            reset_submit_at,
+            expected_nullifier,
         )
     }
 }
@@ -5292,21 +5661,57 @@ mod tests {
 
         let urls_a = vec!["https://helper-a.example".to_string()];
         let urls_b = vec!["https://helper-b.example".to_string()];
+        let urls_d = vec!["https://helper-d.example/".to_string()];
         let nf = vec![0xDD; 32];
 
         // Record two share delegations (share 0 and share 1)
         db.record_share_delegation(ROUND_ID, 0, 0, 0, &urls_a, &nf, 1000)
             .unwrap();
-        db.record_share_delegation(ROUND_ID, 0, 0, 1, &urls_b, &nf, 2000)
+        let urls_c = vec!["https://helper-c.example".to_string()];
+        let initial_submit_at = db
+            .record_share_delivery(ROUND_ID, 0, 0, 1, &urls_b, &urls_c, 2, &nf, 2000)
             .unwrap();
+        assert_eq!(initial_submit_at, 2000);
 
         // Query all — should return both
         let all = db.get_share_delegations(ROUND_ID).unwrap();
         assert_eq!(all.len(), 2);
+        assert_eq!(
+            all.iter()
+                .find(|share| share.share_index == 0)
+                .unwrap()
+                .target_count,
+            0,
+            "legacy recording must preserve the canonical-target sentinel"
+        );
 
         // Both unconfirmed
         let unconfirmed = db.get_unconfirmed_delegations(ROUND_ID).unwrap();
         assert_eq!(unconfirmed.len(), 2);
+
+        // A resumed fan-out merges history: prior accepted URLs survive, a
+        // newly accepted URL outranks its old ambiguous state, and the desired
+        // placement cannot shrink.
+        let resumed_submit_at = db
+            .record_share_delivery(ROUND_ID, 0, 0, 1, &urls_c, &urls_d, 1, &nf, 2500)
+            .unwrap();
+        assert_eq!(resumed_submit_at, 2000);
+        let rerecorded = db
+            .get_share_delegations(ROUND_ID)
+            .unwrap()
+            .into_iter()
+            .find(|share| share.share_index == 1)
+            .unwrap();
+        assert_eq!(
+            rerecorded.sent_to_urls,
+            vec![urls_b[0].clone(), urls_c[0].clone()]
+        );
+        assert_eq!(rerecorded.ambiguous_urls, vec!["https://helper-d.example"]);
+        assert_eq!(rerecorded.target_count, 2);
+        assert_eq!(
+            rerecorded.submit_at, 2000,
+            "resumed fan-out must preserve the originally delivered schedule"
+        );
 
         // Confirm share 0
         db.mark_share_confirmed(ROUND_ID, 0, 0, 0).unwrap();
@@ -5320,7 +5725,6 @@ mod tests {
         db.mark_share_confirmed(ROUND_ID, 0, 0, 0).unwrap();
 
         // Resubmit share 1 to additional servers
-        let urls_c = vec!["https://helper-c.example".to_string()];
         db.add_sent_servers(ROUND_ID, 0, 0, 1, &urls_c).unwrap();
 
         // Verify URLs merged and deduplicated
@@ -5333,6 +5737,8 @@ mod tests {
             .sent_to_urls
             .contains(&"https://helper-c.example".to_string()));
         assert_eq!(share1.sent_to_urls.len(), 2);
+        assert_eq!(share1.ambiguous_urls, vec!["https://helper-d.example"]);
+        assert_eq!(share1.target_count, 2);
         // submit_at reset to 0 after resubmission
         assert_eq!(share1.submit_at, 0);
 
@@ -5345,7 +5751,8 @@ mod tests {
             "unexpected error: {err}"
         );
 
-        // Re-record a confirmed share (e.g. recovery path) — confirmed must be preserved
+        // Re-record a confirmed share (e.g. recovery path) — confirmation and
+        // the originally delivered schedule must both be preserved.
         db.record_share_delegation(ROUND_ID, 0, 0, 0, &urls_a, &nf, 3000)
             .unwrap();
         let all = db.get_share_delegations(ROUND_ID).unwrap();
@@ -5354,10 +5761,70 @@ mod tests {
             share0.confirmed,
             "ON CONFLICT must preserve confirmed status"
         );
-        assert_eq!(share0.submit_at, 3000, "submit_at should be updated");
+        assert_eq!(share0.submit_at, 1000, "submit_at must remain write-once");
 
         // Confirm non-existent share — should error
         let err = db.mark_share_confirmed(ROUND_ID, 0, 99, 0);
         assert!(err.is_err());
+
+        // Rows written before helper URL canonicalization may contain an
+        // identity that is no longer safe to contact. One such entry must not
+        // make the complete round unreadable, and later updates must preserve
+        // it verbatim in the stored row while keeping it out of the in-memory
+        // view — it is recorded delivery history, even if never contacted
+        // again.
+        db.conn()
+            .execute(
+                "UPDATE share_delegations
+                 SET sent_to_urls = '[\"https://legacy.example/path?token=secret\"]',
+                     ambiguous_urls = '[\"https://legacy-ambiguous.example/#fragment\"]'
+                 WHERE round_id = ?1 AND wallet_id = ?2 AND share_index = 1",
+                rusqlite::params![ROUND_ID, W],
+            )
+            .unwrap();
+        let all = db.get_share_delegations(ROUND_ID).unwrap();
+        assert_eq!(all.len(), 2);
+        let legacy = all.iter().find(|share| share.share_index == 1).unwrap();
+        assert!(legacy.sent_to_urls.is_empty());
+        assert!(legacy.ambiguous_urls.is_empty());
+
+        let replacement = vec!["https://replacement.example".to_string()];
+        db.add_sent_servers(ROUND_ID, 0, 0, 1, &replacement)
+            .unwrap();
+        db.add_ambiguous_servers(
+            ROUND_ID,
+            0,
+            0,
+            1,
+            &["https://maybe.example".to_string()],
+            false,
+        )
+        .unwrap();
+        let repaired = db
+            .get_share_delegations(ROUND_ID)
+            .unwrap()
+            .into_iter()
+            .find(|share| share.share_index == 1)
+            .unwrap();
+        assert_eq!(repaired.sent_to_urls, replacement);
+        assert_eq!(repaired.ambiguous_urls, vec!["https://maybe.example"]);
+
+        let (raw_sent, raw_ambiguous): (String, String) = db
+            .conn()
+            .query_row(
+                "SELECT sent_to_urls, ambiguous_urls FROM share_delegations
+                 WHERE round_id = ?1 AND wallet_id = ?2 AND share_index = 1",
+                rusqlite::params![ROUND_ID, W],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(
+            raw_sent.contains("https://legacy.example/path?token=secret"),
+            "legacy sent entry must survive rewrites: {raw_sent}"
+        );
+        assert!(
+            raw_ambiguous.contains("https://legacy-ambiguous.example/#fragment"),
+            "legacy ambiguous entry must survive rewrites: {raw_ambiguous}"
+        );
     }
 }

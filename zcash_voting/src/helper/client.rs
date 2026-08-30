@@ -267,6 +267,11 @@ fn require_valid_duration(duration: Duration, name: &str) -> Result<(), VotingEr
 }
 
 /// REST client for helper-server share endpoints.
+///
+/// Clones share the caller-owned transport and helper-health state while
+/// retaining the same request policy. Tracking uses cheap clones to run a
+/// bounded number of independent status requests concurrently.
+#[derive(Clone)]
 pub struct HelperClient {
     transport: Arc<dyn HelperTransport>,
     health: HelperHealth,

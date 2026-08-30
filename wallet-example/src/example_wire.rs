@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use zcash_voting::prelude::{
-    recover_wire_json, SharePayload, SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments,
-};
+use zcash_voting::prelude::{SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments};
 
 /// Serialize a delegation submission payload for vote-chain REST submission.
 pub fn delegation_wire_json(
@@ -42,35 +40,6 @@ pub fn vote_commitments_wire_json(
 /// submit the batch's individual commitments as singleton requests.
 pub fn vote_batch_wire_json(batch: &SignedVoteBatch) -> String {
     batch.batch_json.clone()
-}
-
-/// Serialize one helper-share payload for helper-server submission.
-pub fn vote_share_wire_json(
-    payload: &SharePayload,
-    vc_tree_position: Option<u64>,
-    submit_at: u64,
-) -> Result<String> {
-    payload
-        .to_wire_json(vc_tree_position, submit_at)
-        .context("serialize vote share wire JSON")
-}
-
-/// Rebuild and serialize one helper-share payload from stored vote recovery JSON.
-pub fn recovered_vote_share_wire_json(
-    commitment_bundle_json: &str,
-    proposal_id: u32,
-    share_index: u32,
-    vc_tree_position: u64,
-    submit_at: u64,
-) -> Result<String> {
-    recover_wire_json(
-        commitment_bundle_json,
-        proposal_id,
-        share_index,
-        vc_tree_position,
-        submit_at,
-    )
-    .context("recover vote share wire JSON")
 }
 
 #[cfg(test)]

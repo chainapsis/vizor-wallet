@@ -67,8 +67,10 @@ stage-oriented API:
   hashes and tree positions atomically.
 - `vote::*` builds ZKP #2, signs cast-vote payloads, persists the canonical
   `VoteRecoveryBundle`, and reconstructs vote-chain submissions after a crash.
-- `share::*` recovers helper-share payloads, computes share nullifiers, applies
-  share scheduling policy, and records helper-share confirmation state.
+- `share::*` recovers helper-share payloads, computes share nullifiers, and
+  applies share scheduling policy. `CommittedVote::submit_share_to_helpers`
+  owns journaled initial delivery, while `track_pending_shares` requires two
+  distinct configured helpers to agree before persisting confirmation.
 - `session::*` records durable ballot intent and returns a round-level
   `RoundPlan` with ordered `NextStep`s for restart recovery. Wallets should
   write `Decision::Choice` with the proposal's declared option count before
@@ -84,11 +86,14 @@ stage-oriented API:
   `batch_json` once, persist the shared tx hash with
   `vote::record_batch_submission`, and record its ordered event with
   `confirmation::confirm_vote_batch_submission`. After confirmation, call
-  `vote::recover_commit` again and use its helper-share payloads so they carry
-  the confirmed VC position. Persist each accepted helper share with
-  `share::record`, and re-run the planner because later work may depend on
-  on-chain confirmations. `open_proposals` contains only proposals with no
-  terminal decision yet.
+  `vote::CommittedVote::recover`. Create and persist its complete helper-share
+  plan set if none exists, then call its typed `submit_share_to_helpers` method
+  with each stored plan and the complete current helper fleet. The crate
+  rebuilds each payload with the confirmed VC position and journals delivery
+  before dispatch. After restart, reuse the original complete helper plan;
+  never replan only the missing shares. Re-run `resume_plan` after each durable
+  action because later work may depend on on-chain confirmations.
+  `open_proposals` contains only proposals with no terminal decision yet.
 
 The Zcash-format transaction signed during delegation is specified separately
 in [Delegation signing transaction (TX1)](docs/delegation-signing-transaction.md).

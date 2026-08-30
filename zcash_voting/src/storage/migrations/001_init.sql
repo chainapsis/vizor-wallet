@@ -103,6 +103,9 @@ CREATE TABLE share_delegations (
     confirmed       INTEGER NOT NULL DEFAULT 0,
     submit_at       INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL,
+    ambiguous_urls  TEXT NOT NULL DEFAULT '[]',
+    attempting_urls TEXT NOT NULL DEFAULT '[]',
+    target_count    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (round_id, wallet_id, bundle_index, proposal_id, share_index),
     FOREIGN KEY (round_id, wallet_id, bundle_index)
         REFERENCES bundles(round_id, wallet_id, bundle_index) ON DELETE CASCADE

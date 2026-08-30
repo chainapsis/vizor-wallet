@@ -1,20 +1,50 @@
 #![cfg(feature = "test-fixtures")]
 
+use std::{sync::Arc, time::Duration};
+
 use zcash_voting::{
     phases::VotePhase,
     round::{RoundParams, VotingDb},
     share,
+    share_tracking::{track_pending_shares, ShareTrackingParams},
     storage::RoundPhase,
     types::{EncryptedShare, Network, NoteInfo},
     vote::{
         insert_recovery_fixture, record_submission, record_vc_position, recover_commit,
         recovery_bundle, serialize_recovery, VoteRecoveryBundle,
     },
-    BALLOT_DIVISOR,
+    HelperClient, HelperFuture, HelperHealth, HelperResponse, HelperTransport,
+    HelperTransportError, BALLOT_DIVISOR,
 };
 
 const ROUND_ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
 const WALLET_ID: &str = "downstream-fixture-wallet";
+
+struct ConfirmedHelperTransport;
+
+impl HelperTransport for ConfirmedHelperTransport {
+    fn get<'a>(&'a self, _url: &'a str, _timeout: Duration) -> HelperFuture<'a> {
+        Box::pin(async {
+            Ok(HelperResponse::json(
+                200,
+                br#"{"status":"confirmed"}"#.to_vec(),
+            ))
+        })
+    }
+
+    fn post_json<'a>(
+        &'a self,
+        _url: &'a str,
+        _body: Vec<u8>,
+        _timeout: Duration,
+    ) -> HelperFuture<'a> {
+        Box::pin(async {
+            Err(HelperTransportError::Transport(
+                "fixture confirmation must not submit a share".to_string(),
+            ))
+        })
+    }
+}
 
 fn round_params(round_id: &str) -> RoundParams {
     RoundParams {
@@ -214,8 +244,8 @@ fn downstream_fixture_does_not_reset_a_recorded_position() {
     );
 }
 
-#[test]
-fn downstream_fixture_replacement_clears_stale_share_tracking() {
+#[tokio::test]
+async fn downstream_fixture_replacement_clears_stale_share_tracking() {
     let db = db_with_bundle();
     let mut fixture = recovery_fixture();
     fixture.share_blinds[0] = [0x01; 32];
@@ -230,7 +260,25 @@ fn downstream_fixture_replacement_clears_stale_share_tracking() {
         99,
     )
     .unwrap();
-    share::confirm(&db, ROUND_ID, 0, 1, 0).unwrap();
+    let helper_url = "https://helper.example".to_string();
+    let configured_helpers = [helper_url];
+    let random_bytes = |len| vec![0; len];
+    let report = track_pending_shares(
+        &db,
+        &ShareTrackingParams {
+            round_id: ROUND_ID,
+            configured_server_urls: &configured_helpers,
+            now_seconds: u64::MAX,
+            vote_end_time_seconds: None,
+            policy: share::ShareTimingPolicy::default(),
+            random_bytes: &random_bytes,
+        },
+        &HelperClient::new(Arc::new(ConfirmedHelperTransport), HelperHealth::default()),
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.confirmed.len(), 1);
 
     insert_recovery_fixture(&db, &fixture).unwrap();
     let tracked = share::list(&db, ROUND_ID).unwrap();

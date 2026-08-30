@@ -7,8 +7,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::note_bundling::BundlePolicy;
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
-use crate::types::{
-    Network, NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData,
+use crate::types::{Network, NoteInfo, VotingError, VotingRoundParams, WitnessData};
+
+mod share_delegations;
+
+#[cfg(test)]
+pub(crate) use share_delegations::record_share_delegation_with_after_read;
+pub use share_delegations::{
+    add_ambiguous_servers, add_attempting_server, add_sent_servers_preserving_schedule,
+    clear_stale_share_delegations_for_intent, get_share_delegations, get_unconfirmed_delegations,
+    pending_share_rounds, remove_attempting_server, share_is_confirmed,
+};
+pub(crate) use share_delegations::{
+    add_ambiguous_servers_for_generation, add_attempting_server_for_generation,
+    add_sent_servers_for_generation, add_sent_servers_preserving_schedule_for_generation,
+    mark_share_confirmed, record_share_delegation, record_share_delegation_for_vote_generation,
+    remove_attempting_server_for_generation, share_is_confirmed_for_generation,
+    ShareAttemptReservation,
 };
 
 const NOTE_IDENTITY_HASH_BYTES: usize = 32;
@@ -2624,22 +2639,13 @@ pub fn store_vote(
         })?;
 
         if vote_changed {
-            conn.execute(
-                "DELETE FROM share_delegations
-                 WHERE round_id = :round_id
-                   AND wallet_id = :wallet_id
-                   AND bundle_index = :bundle_index
-                   AND proposal_id = :proposal_id",
-                named_params! {
-                    ":round_id": round_id,
-                    ":wallet_id": wallet_id,
-                    ":bundle_index": bundle_index as i64,
-                    ":proposal_id": proposal_id as i64,
-                },
-            )
-            .map_err(|e| VotingError::Internal {
-                message: format!("failed to clear stale share delegations: {}", e),
-            })?;
+            share_delegations::delete_for_replaced_vote(
+                conn,
+                round_id,
+                wallet_id,
+                bundle_index,
+                proposal_id,
+            )?;
         }
 
         Ok(())
@@ -2658,56 +2664,6 @@ pub fn store_vote(
             Err(err)
         }
     }
-}
-
-pub fn clear_stale_share_delegations_for_intent(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    proposal_id: u32,
-    skipped: bool,
-    choice: Option<u32>,
-) -> Result<u64, VotingError> {
-    let rows = if skipped {
-        conn.execute(
-            "DELETE FROM share_delegations
-             WHERE round_id = :round_id
-               AND wallet_id = :wallet_id
-               AND proposal_id = :proposal_id",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":proposal_id": proposal_id as i64,
-            },
-        )
-    } else if let Some(choice) = choice {
-        conn.execute(
-            "DELETE FROM share_delegations
-             WHERE round_id = :round_id
-               AND wallet_id = :wallet_id
-               AND proposal_id = :proposal_id
-               AND NOT EXISTS (
-                   SELECT 1 FROM votes
-                   WHERE votes.round_id = share_delegations.round_id
-                     AND votes.wallet_id = share_delegations.wallet_id
-                     AND votes.bundle_index = share_delegations.bundle_index
-                     AND votes.proposal_id = share_delegations.proposal_id
-                     AND votes.choice = :choice
-               )",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":proposal_id": proposal_id as i64,
-                ":choice": choice as i64,
-            },
-        )
-    } else {
-        Ok(0)
-    }
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear stale share delegations: {}", e),
-    })?;
-    Ok(rows as u64)
 }
 
 pub fn ensure_no_submitted_vote_conflict_for_intent(
@@ -3303,289 +3259,6 @@ pub fn clear_recovery_state(
     Ok(())
 }
 
-// --- Share delegation tracking ---
-
-/// Record a share delegation after sending to helper servers.
-///
-/// This raw SQL helper is crate-internal because callers must provide a
-/// nullifier that matches the persisted vote recovery bundle. Wallet
-/// integrations should use `share::record`, which derives that nullifier from
-/// recovery state before storing the helper delivery state.
-pub(crate) fn record_share_delegation(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    sent_to_urls: &[String],
-    nullifier: &[u8],
-    submit_at: u64,
-) -> Result<(), VotingError> {
-    ensure_share_matches_ballot_intent(conn, round_id, wallet_id, bundle_index, proposal_id)?;
-    let urls_json = serde_json::to_string(sent_to_urls).map_err(|e| VotingError::Internal {
-        message: format!("failed to serialize sent_to_urls: {}", e),
-    })?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    conn.execute(
-        "INSERT INTO share_delegations \
-         (round_id, wallet_id, bundle_index, proposal_id, share_index, sent_to_urls, nullifier, confirmed, submit_at, created_at) \
-         VALUES (:round_id, :wallet_id, :bundle_index, :proposal_id, :share_index, :sent_to_urls, :nullifier, 0, :submit_at, :created_at) \
-         ON CONFLICT (round_id, wallet_id, bundle_index, proposal_id, share_index) DO UPDATE SET \
-         sent_to_urls = excluded.sent_to_urls, \
-         submit_at = excluded.submit_at \
-         WHERE share_delegations.nullifier = excluded.nullifier",
-        named_params! {
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index,
-            ":proposal_id": proposal_id,
-            ":share_index": share_index,
-            ":sent_to_urls": urls_json,
-            ":nullifier": nullifier,
-            ":submit_at": submit_at,
-            ":created_at": now,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to record share delegation: {}", e),
-    })
-    .and_then(|rows| {
-        if rows == 0 {
-            return Err(VotingError::InvalidInput {
-                message: format!(
-                    "share nullifier conflict for round={}, wallet={}, bundle={}, proposal={}, share={}",
-                    round_id, wallet_id, bundle_index, proposal_id, share_index
-                ),
-            });
-        }
-        Ok(())
-    })?;
-    Ok(())
-}
-
-/// Load all share delegations for a round.
-pub fn get_share_delegations(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-) -> Result<Vec<ShareDelegationRecord>, VotingError> {
-    load_share_delegations(
-        conn,
-        "SELECT bundle_index, proposal_id, share_index, sent_to_urls, nullifier, confirmed, submit_at, created_at, round_id \
-         FROM share_delegations WHERE round_id = :round_id AND wallet_id = :wallet_id \
-         ORDER BY proposal_id, share_index",
-        round_id,
-        wallet_id,
-    )
-}
-
-/// Load only unconfirmed share delegations for a round.
-pub fn get_unconfirmed_delegations(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-) -> Result<Vec<ShareDelegationRecord>, VotingError> {
-    load_share_delegations(
-        conn,
-        "SELECT bundle_index, proposal_id, share_index, sent_to_urls, nullifier, confirmed, submit_at, created_at, round_id \
-         FROM share_delegations WHERE round_id = :round_id AND wallet_id = :wallet_id AND confirmed = 0 \
-         ORDER BY proposal_id, share_index",
-        round_id,
-        wallet_id,
-    )
-}
-
-/// Load each round with at least one unconfirmed helper share once.
-pub fn pending_share_rounds(
-    conn: &Connection,
-    wallet_id: &str,
-) -> Result<Vec<(String, Option<String>)>, VotingError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT rounds.round_id, rounds.session_json
-             FROM rounds
-             WHERE rounds.wallet_id = :wallet_id
-               AND EXISTS (
-                   SELECT 1
-                   FROM share_delegations
-                   WHERE share_delegations.round_id = rounds.round_id
-                     AND share_delegations.wallet_id = rounds.wallet_id
-                     AND share_delegations.confirmed = 0
-               )
-             ORDER BY rounds.created_at DESC, rounds.round_id",
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to prepare pending share round query: {e}"),
-        })?;
-    let rows = stmt
-        .query_map(named_params! { ":wallet_id": wallet_id }, |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to query pending share rounds: {e}"),
-        })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to read pending share round row: {e}"),
-        })
-}
-
-fn load_share_delegations(
-    conn: &Connection,
-    sql: &str,
-    round_id: &str,
-    wallet_id: &str,
-) -> Result<Vec<ShareDelegationRecord>, VotingError> {
-    let mut stmt = conn.prepare(sql).map_err(|e| VotingError::Internal {
-        message: format!("failed to prepare share delegation query: {}", e),
-    })?;
-    let rows = stmt
-        .query_map(
-            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-            |row| {
-                let urls_json: String = row.get(3)?;
-                let nullifier_blob: Vec<u8> = row.get(4)?;
-                let confirmed_int: i32 = row.get(5)?;
-                let round_id_val: String = row.get(8)?;
-                Ok((
-                    row.get::<_, u32>(0)?,
-                    row.get::<_, u32>(1)?,
-                    row.get::<_, u32>(2)?,
-                    urls_json,
-                    nullifier_blob,
-                    confirmed_int != 0,
-                    row.get::<_, u64>(6)?,
-                    row.get::<_, u64>(7)?,
-                    round_id_val,
-                ))
-            },
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to query share delegations: {}", e),
-        })?;
-
-    let mut results = Vec::new();
-    for row in rows {
-        let (
-            bundle_index,
-            proposal_id,
-            share_index,
-            urls_json,
-            nullifier,
-            confirmed,
-            submit_at,
-            created_at,
-            round_id_val,
-        ) = row.map_err(|e| VotingError::Internal {
-            message: format!("failed to read share delegation row: {}", e),
-        })?;
-        let sent_to_urls: Vec<String> =
-            serde_json::from_str(&urls_json).map_err(|e| VotingError::Internal {
-                message: format!("failed to deserialize sent_to_urls: {}", e),
-            })?;
-        results.push(ShareDelegationRecord {
-            round_id: round_id_val,
-            bundle_index,
-            proposal_id,
-            share_index,
-            sent_to_urls,
-            nullifier,
-            confirmed,
-            submit_at,
-            created_at,
-        });
-    }
-    Ok(results)
-}
-
-/// Mark a share delegation as confirmed on-chain.
-pub fn mark_share_confirmed(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-) -> Result<(), VotingError> {
-    ensure_share_matches_ballot_intent(conn, round_id, wallet_id, bundle_index, proposal_id)?;
-    let updated = conn
-        .execute(
-            "UPDATE share_delegations SET confirmed = 1 \
-             WHERE round_id = :round_id AND wallet_id = :wallet_id \
-             AND bundle_index = :bundle_index AND proposal_id = :proposal_id AND share_index = :share_index",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":bundle_index": bundle_index,
-                ":proposal_id": proposal_id,
-                ":share_index": share_index,
-            },
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to mark share confirmed: {}", e),
-        })?;
-    if updated == 0 {
-        return Err(VotingError::Internal {
-            message: format!(
-                "no share delegation found: round={}, bundle={}, proposal={}, share={}",
-                round_id, bundle_index, proposal_id, share_index
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn ensure_share_matches_ballot_intent(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-) -> Result<(), VotingError> {
-    let intent = load_ballot_intent(conn, round_id, wallet_id, proposal_id, "share delegation")?;
-    let Some((skipped, choice)) = intent else {
-        return Ok(());
-    };
-    if skipped != 0 {
-        return Err(VotingError::InvalidInput {
-            message: format!(
-                "cannot record share delegation for skipped proposal round={}, wallet={}, bundle={}, proposal={}",
-                round_id, wallet_id, bundle_index, proposal_id
-            ),
-        });
-    }
-    let Some(choice) = choice else {
-        return Err(VotingError::InvalidInput {
-            message: format!(
-                "ballot intent choice missing for round={}, wallet={}, proposal={}",
-                round_id, wallet_id, proposal_id
-            ),
-        });
-    };
-    let vote_choice = load_vote_choice_for_intent_check(
-        conn,
-        round_id,
-        wallet_id,
-        bundle_index,
-        proposal_id,
-        "share delegation",
-    )?;
-    if vote_choice == Some(choice) {
-        return Ok(());
-    }
-    Err(VotingError::InvalidInput {
-        message: format!(
-            "share delegation conflicts with ballot intent for round={}, wallet={}, bundle={}, proposal={}",
-            round_id, wallet_id, bundle_index, proposal_id
-        ),
-    })
-}
-
 fn ensure_vote_submission_matches_ballot_intent(
     conn: &Connection,
     round_id: &str,
@@ -3686,70 +3359,4 @@ fn load_vote_choice_for_intent_check(
     .map_err(|e| VotingError::Internal {
         message: format!("failed to load vote choice for {}: {}", artifact, e),
     })
-}
-
-/// Append new server URLs to a share delegation's sent_to_urls.
-/// Used after resubmitting an overdue share to additional servers.
-pub fn add_sent_servers(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    new_urls: &[String],
-) -> Result<(), VotingError> {
-    ensure_share_matches_ballot_intent(conn, round_id, wallet_id, bundle_index, proposal_id)?;
-    // Read current URLs
-    let current_json: String = conn
-        .query_row(
-            "SELECT sent_to_urls FROM share_delegations \
-             WHERE round_id = :round_id AND wallet_id = :wallet_id \
-             AND bundle_index = :bundle_index AND proposal_id = :proposal_id AND share_index = :share_index",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":bundle_index": bundle_index,
-                ":proposal_id": proposal_id,
-                ":share_index": share_index,
-            },
-            |row| row.get(0),
-        )
-        .map_err(|e| VotingError::Internal {
-            message: format!("failed to read sent_to_urls for update: {}", e),
-        })?;
-
-    let mut urls: Vec<String> =
-        serde_json::from_str(&current_json).map_err(|e| VotingError::Internal {
-            message: format!("failed to deserialize sent_to_urls: {}", e),
-        })?;
-
-    // Append new URLs (deduplicated)
-    for url in new_urls {
-        if !urls.contains(url) {
-            urls.push(url.clone());
-        }
-    }
-
-    let updated_json = serde_json::to_string(&urls).map_err(|e| VotingError::Internal {
-        message: format!("failed to serialize updated sent_to_urls: {}", e),
-    })?;
-
-    conn.execute(
-        "UPDATE share_delegations SET sent_to_urls = :urls, submit_at = 0 \
-         WHERE round_id = :round_id AND wallet_id = :wallet_id \
-         AND bundle_index = :bundle_index AND proposal_id = :proposal_id AND share_index = :share_index",
-        named_params! {
-            ":urls": updated_json,
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index,
-            ":proposal_id": proposal_id,
-            ":share_index": share_index,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to update sent_to_urls: {}", e),
-    })?;
-    Ok(())
 }

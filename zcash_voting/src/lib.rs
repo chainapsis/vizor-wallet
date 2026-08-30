@@ -40,6 +40,7 @@ pub mod selection;
 pub mod session;
 pub mod share;
 pub mod share_policy;
+pub mod share_tracking;
 mod shielded_protocol;
 pub mod storage;
 pub mod transport;

@@ -44,9 +44,10 @@ pub fn snapshot_with_resume_plan(
 /// Loads round recovery data and planner steps in one wallet-facing call.
 ///
 /// Wallet code can persist this result and drive retries by iterating
-/// `context.plan.next_steps`. Recover singleton and helper-share payloads with
-/// `recover_committed_vote_for_step`, and atomic batches with
-/// `recover_vote_batch_for_step`.
+/// `context.plan.next_steps`. Recover singleton vote handles and helper-share
+/// identities with `recover_committed_vote_for_step`, and atomic batches with
+/// `recover_vote_batch_for_step`. Helper delivery must reuse the wallet's
+/// persisted complete plan through `example_vote::submit_committed_vote_shares`.
 pub fn load_round_recovery_context(
     voting_db: &VotingDb,
     round_id: &str,
@@ -56,7 +57,7 @@ pub fn load_round_recovery_context(
     Ok(RoundRecoveryContext { snapshot, plan })
 }
 
-/// Reconstructs the committed vote payload for a resume step.
+/// Reconstructs the committed vote handle for a resume step.
 ///
 /// Use this for singleton `NextStep::SubmitVote` and per-vote
 /// `NextStep::SubmitShares` work to avoid rebuilding proofs during recovery.
@@ -106,10 +107,11 @@ pub fn recover_vote_batch_for_step(
     }
 }
 
-/// Reconstructs committed-vote payloads for all planner steps that require them.
+/// Reconstructs committed-vote handles for all planner steps that require them.
 ///
 /// The returned list is ordered exactly as `plan.next_steps`, so callers can
-/// execute vote-chain and helper-server retries in the planner's order.
+/// execute vote-chain work in planner order and route `SubmitShares` through
+/// the persisted full-batch plan and durable helper-submission API.
 pub fn recover_committed_votes_for_plan(
     voting_db: &VotingDb,
     round_id: &str,

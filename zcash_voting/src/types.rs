@@ -666,19 +666,36 @@ pub struct SharePayload {
     pub primary_blind: Vec<u8>,
 }
 
-/// A share delegation record from the local DB.
-/// Tracks which helper servers received each share and its on-chain confirmation status.
+/// Durable helper-delivery and confirmation state for one committed share.
 #[derive(Clone, Debug)]
 pub struct ShareDelegationRecord {
+    /// Stable vote-round identifier.
     pub round_id: String,
+    /// Index of the committed vote bundle that owns the share.
     pub bundle_index: u32,
+    /// Proposal whose vote commitment contains the share.
     pub proposal_id: u32,
+    /// Position of the share within that proposal's commitment.
     pub share_index: u32,
-    /// JSON-decoded list of helper server URLs that received this share.
+    /// Canonical helper URLs that definitely acknowledged the share.
     pub sent_to_urls: Vec<String>,
-    /// Pre-computed share reveal nullifier (32 bytes).
+    /// Canonical helpers whose acceptance outcome is unknown.
+    ///
+    /// They do not count toward definite placement. Early replenishment
+    /// excludes them, while overdue duplicate-safe recovery may retry them.
+    pub ambiguous_urls: Vec<String>,
+    /// Helpers whose POST was durably recorded before dispatch but has not yet
+    /// reached a definite outcome. After restart these are treated as
+    /// outcome-unknown under the same early-versus-overdue retry policy.
+    pub attempting_urls: Vec<String>,
+    /// Desired number of definite helper placements.
+    ///
+    /// Zero identifies records created before placement targets were stored;
+    /// tracking derives the canonical target from the current helper set.
+    pub target_count: u32,
+    /// Precomputed 32-byte reveal nullifier used for helper status queries.
     pub nullifier: Vec<u8>,
-    /// Whether the share has been confirmed on-chain.
+    /// Whether the configured-helper confirmation quorum was durably observed.
     pub confirmed: bool,
     /// Unix seconds: when the helper should submit the share (0 = immediate).
     pub submit_at: u64,

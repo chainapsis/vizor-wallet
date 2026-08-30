@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 15;
+const CURRENT_VERSION: u32 = 16;
 
 /// Schema version that `001_init.sql` produces, and the oldest version that can
 /// be upgraded in place.
@@ -48,6 +48,12 @@ SELECT i.wallet_id, r.network, i.nullifier, i.root, i.nf_bounds, i.leaf_pos, i.p
 FROM imt_proofs i
 JOIN rounds r ON r.round_id = i.round_id AND r.wallet_id = i.wallet_id;
 DROP TABLE imt_proofs;",
+    ),
+    (
+        15,
+        "ALTER TABLE share_delegations ADD COLUMN ambiguous_urls TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE share_delegations ADD COLUMN attempting_urls TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE share_delegations ADD COLUMN target_count INTEGER NOT NULL DEFAULT 0;",
     ),
 ];
 
@@ -158,6 +164,14 @@ mod tests {
         format!("{}{}", &schema[..start], &schema[end..])
     }
 
+    /// Strips helper-delivery columns added at version 16.
+    fn without_durable_ambiguous_deliveries(schema: &str) -> String {
+        schema
+            .replace("    ambiguous_urls  TEXT NOT NULL DEFAULT '[]',\n", "")
+            .replace("    attempting_urls TEXT NOT NULL DEFAULT '[]',\n", "")
+            .replace("    target_count    INTEGER NOT NULL DEFAULT 0,\n", "")
+    }
+
     /// The bundle-scoped `imt_proofs` table that version 15 replaced with
     /// `pir_proof_cache`, exactly as `001_init.sql` created it through v14.
     const V14_IMT_PROOFS_SQL: &str = "CREATE TABLE imt_proofs (
@@ -176,9 +190,10 @@ mod tests {
 
     /// The version-14 schema: no `pir_proof_cache` yet, `imt_proofs` still present.
     fn v14_schema() -> String {
+        let schema = without_durable_ambiguous_deliveries(include_str!("migrations/001_init.sql"));
         format!(
             "{}\n{}\n",
-            without_pir_proof_cache(include_str!("migrations/001_init.sql")),
+            without_pir_proof_cache(&schema),
             V14_IMT_PROOFS_SQL
         )
     }
@@ -283,6 +298,13 @@ mod tests {
             rusqlite::params![vec![0xAB_u8; 32], vec![0xCD_u8; 32]],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO share_delegations
+             (round_id, wallet_id, bundle_index, proposal_id, share_index, sent_to_urls, nullifier, confirmed, submit_at, created_at)
+             VALUES ('test-round', 'wallet', 0, 1, 0, '[\"https://helper.example\"]', X'01', 0, 100, 90)",
+            [],
+        )
+        .unwrap();
         conn.pragma_update(None, "user_version", LAUNCH_VERSION)
             .unwrap();
 
@@ -313,6 +335,19 @@ mod tests {
             )
             .unwrap();
         assert!(stored_policy.is_none());
+
+        let delivery: (String, String, String, u32) = conn
+            .query_row(
+                "SELECT sent_to_urls, ambiguous_urls, attempting_urls, target_count
+                 FROM share_delegations WHERE round_id = 'test-round' AND wallet_id = 'wallet'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(delivery.0, "[\"https://helper.example\"]");
+        assert_eq!(delivery.1, "[]");
+        assert_eq!(delivery.2, "[]");
+        assert_eq!(delivery.3, 0);
     }
 
     #[test]

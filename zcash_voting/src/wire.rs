@@ -328,6 +328,10 @@ pub struct ShareDelegationRecordView {
     pub proposal_id: u32,
     pub share_index: u32,
     pub sent_to_urls: Vec<String>,
+    #[serde(default)]
+    pub ambiguous_urls: Vec<String>,
+    #[serde(default)]
+    pub target_count: u32,
     pub nullifier: Vec<u8>,
     pub phase: String,
     pub confirmed: bool,

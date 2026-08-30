@@ -8,11 +8,217 @@
 pub(crate) use crate::backend::pasta_curves;
 use crate::{
     round::VotingDb,
+    share_tracking::ShareSubmissionReport,
     types::{
         ct_option_to_result, ShareDelegationRecord, SharePayload, VotingError, WireEncryptedShare,
     },
     vote::{validate_recovery_bundle_vote_fields, VoteRecoveryBundle},
 };
+
+/// Inputs for durably recording one helper-share fan-out.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ShareDeliveryRecordParams<'a> {
+    /// Round that owns the share.
+    pub round_id: &'a str,
+    /// Vote bundle that owns the share.
+    pub bundle_index: u32,
+    /// Proposal that owns the share.
+    pub proposal_id: u32,
+    /// Share position within the proposal's commitment.
+    pub share_index: u32,
+    /// Definite and outcome-unknown helper attempts plus the placement target.
+    pub submission: &'a ShareSubmissionReport,
+    /// Unix seconds when helpers should submit the share, or zero for immediate.
+    pub submit_at: u64,
+}
+
+/// Identity and policy needed to durably journal a helper POST.
+#[derive(Clone, Copy, Debug)]
+pub struct ShareDeliveryAttemptParams<'a> {
+    /// Round that owns the share.
+    pub round_id: &'a str,
+    /// Index of the committed vote bundle that owns the share.
+    pub bundle_index: u32,
+    /// Proposal whose vote commitment contains the share.
+    pub proposal_id: u32,
+    /// Position of the share within that proposal's commitment.
+    pub share_index: u32,
+    /// Canonical base URL of the helper receiving the POST.
+    pub server_url: &'a str,
+    /// Desired number of definite helper placements.
+    pub target_count: usize,
+    /// Unix seconds when the helper should submit, or zero for immediate.
+    pub submit_at: u64,
+}
+
+/// Whether a fresh durable helper reservation must respect the placement target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ShareAttemptCapacityPolicy {
+    /// Refuse a fresh reservation once accepted plus in-flight placements reach the target.
+    EnforcePlacementTarget,
+    /// Permit recovery to exceed the target when retry ordering or liveness requires it.
+    AllowRecoveryBeyondPlacementTarget,
+}
+
+/// Wallet identity captured before an asynchronous helper-share operation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ShareOperationScope {
+    wallet_id: String,
+}
+
+impl ShareOperationScope {
+    pub(crate) fn capture(db: &VotingDb) -> Self {
+        Self {
+            wallet_id: db.wallet_id(),
+        }
+    }
+
+    pub(crate) fn wallet_id(&self) -> &str {
+        &self.wallet_id
+    }
+}
+
+/// Exact persisted share generation that an asynchronous result may mutate.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ShareGeneration<'a> {
+    scope: &'a ShareOperationScope,
+    nullifier: &'a [u8],
+}
+
+impl<'a> ShareGeneration<'a> {
+    pub(crate) fn new(scope: &'a ShareOperationScope, nullifier: &'a [u8]) -> Self {
+        Self { scope, nullifier }
+    }
+
+    pub(crate) fn scope(self) -> &'a ShareOperationScope {
+        self.scope
+    }
+
+    pub(crate) fn nullifier(self) -> &'a [u8] {
+        self.nullifier
+    }
+}
+
+/// Definite state transition for a previously journaled helper POST.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShareDeliveryAttemptOutcome {
+    /// The helper definitely acknowledged acceptance.
+    Accepted,
+    /// The request may have reached the helper, but no acknowledgement arrived.
+    Ambiguous,
+    /// The request definitely did not reach an accepted state.
+    DefiniteFailure,
+}
+
+/// Canonical per-helper delivery state for one share.
+///
+/// A helper has exactly one state. Stronger evidence always wins:
+/// accepted > outcome unknown > in flight. Each list retains the order in
+/// which helpers first entered that state.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ShareDeliveryState {
+    accepted_urls: Vec<String>,
+    outcome_unknown_urls: Vec<String>,
+    in_flight_urls: Vec<String>,
+}
+
+impl ShareDeliveryState {
+    pub(crate) fn from_url_lists(
+        accepted_urls: &[String],
+        outcome_unknown_urls: &[String],
+        in_flight_urls: &[String],
+    ) -> Result<Self, VotingError> {
+        let mut state = Self::default();
+        state.merge_persisted_report(accepted_urls, outcome_unknown_urls)?;
+        for url in crate::helper::url::canonical_helper_url_list(in_flight_urls)? {
+            if !state.contains(&url) {
+                state.in_flight_urls.push(url);
+            }
+        }
+        Ok(state)
+    }
+
+    /// Merges a persisted report without allowing weaker evidence to replace
+    /// stronger evidence already held by the state.
+    pub(crate) fn merge_persisted_report(
+        &mut self,
+        accepted_urls: &[String],
+        outcome_unknown_urls: &[String],
+    ) -> Result<(), VotingError> {
+        for url in crate::helper::url::canonical_helper_url_list(accepted_urls)? {
+            self.mark_accepted_canonical(url);
+        }
+        for url in crate::helper::url::canonical_helper_url_list(outcome_unknown_urls)? {
+            self.mark_outcome_unknown_canonical(url);
+        }
+        Ok(())
+    }
+
+    /// Starts a new attempt unless this helper already has any delivery state.
+    pub(crate) fn begin(&mut self, url: &str) -> Result<bool, VotingError> {
+        let url = crate::helper::url::canonicalize_helper_base_url(url)?;
+        if self.contains(&url) {
+            return Ok(false);
+        }
+        self.in_flight_urls.push(url);
+        Ok(true)
+    }
+
+    pub(crate) fn mark_accepted(&mut self, url: &str) -> Result<(), VotingError> {
+        let url = crate::helper::url::canonicalize_helper_base_url(url)?;
+        self.mark_accepted_canonical(url);
+        Ok(())
+    }
+
+    pub(crate) fn mark_outcome_unknown(&mut self, url: &str) -> Result<(), VotingError> {
+        let url = crate::helper::url::canonicalize_helper_base_url(url)?;
+        self.mark_outcome_unknown_canonical(url);
+        Ok(())
+    }
+
+    pub(crate) fn mark_definite_failure(&mut self, url: &str) -> Result<(), VotingError> {
+        let url = crate::helper::url::canonicalize_helper_base_url(url)?;
+        self.in_flight_urls.retain(|candidate| candidate != &url);
+        Ok(())
+    }
+
+    pub(crate) fn accepted_urls(&self) -> &[String] {
+        &self.accepted_urls
+    }
+
+    pub(crate) fn outcome_unknown_urls(&self) -> &[String] {
+        &self.outcome_unknown_urls
+    }
+
+    pub(crate) fn in_flight_urls(&self) -> &[String] {
+        &self.in_flight_urls
+    }
+
+    fn contains(&self, url: &str) -> bool {
+        self.accepted_urls.iter().any(|candidate| candidate == url)
+            || self
+                .outcome_unknown_urls
+                .iter()
+                .any(|candidate| candidate == url)
+            || self.in_flight_urls.iter().any(|candidate| candidate == url)
+    }
+
+    fn mark_accepted_canonical(&mut self, url: String) {
+        self.outcome_unknown_urls
+            .retain(|candidate| candidate != &url);
+        self.in_flight_urls.retain(|candidate| candidate != &url);
+        if !self.accepted_urls.contains(&url) {
+            self.accepted_urls.push(url);
+        }
+    }
+
+    fn mark_outcome_unknown_canonical(&mut self, url: String) {
+        self.in_flight_urls.retain(|candidate| candidate != &url);
+        if !self.accepted_urls.contains(&url) && !self.outcome_unknown_urls.contains(&url) {
+            self.outcome_unknown_urls.push(url);
+        }
+    }
+}
 use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
 
@@ -88,7 +294,15 @@ pub fn compute_nullifier(
 }
 
 /// Records a helper-share submission using nullifier material from recovery state.
-pub fn record(
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] when any entry in `sent_to_urls`
+/// fails [`crate::helper::url::canonicalize_helper_base_url`]. Validate
+/// helper URLs with that function before delivering a share over the
+/// network, so an already-delivered share can always be recorded.
+#[cfg(any(test, feature = "test-fixtures"))]
+fn record_impl(
     db: &VotingDb,
     round_id: &str,
     bundle_index: u32,
@@ -97,15 +311,7 @@ pub fn record(
     sent_to_urls: &[String],
     submit_at: u64,
 ) -> Result<(), VotingError> {
-    let bundle = crate::vote::recovery_bundle(db, round_id, bundle_index, proposal_id)?
-        .ok_or_else(|| VotingError::InvalidInput {
-            message: format!(
-                "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
-            ),
-        })?;
-    let payload = recover_payload(&bundle, share_index)?;
-    let primary_blind = array32("primary_blind", payload.primary_blind.clone())?;
-    let nullifier = compute_nullifier(&bundle.vote_commitment, share_index, &primary_blind)?;
+    let nullifier = delivery_nullifier(db, round_id, bundle_index, proposal_id, share_index)?;
     db.record_share_delegation(
         round_id,
         bundle_index,
@@ -117,9 +323,385 @@ pub fn record(
     )
 }
 
+/// Records a helper-share submission for integration-test fixture setup.
+///
+/// Production callers submit through
+/// [`crate::vote::CommittedVote::submit_share_to_helpers`], which owns the
+/// journal-before-dispatch lifecycle. This lower-level entry point exists only
+/// for the `test-fixtures` feature so integration tests can seed durable state
+/// without opening a network connection.
+#[cfg(any(test, feature = "test-fixtures"))]
+#[doc(hidden)]
+pub fn record(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    sent_to_urls: &[String],
+    submit_at: u64,
+) -> Result<(), VotingError> {
+    record_impl(
+        db,
+        round_id,
+        bundle_index,
+        proposal_id,
+        share_index,
+        sent_to_urls,
+        submit_at,
+    )
+}
+
+/// Records definite and outcome-unknown helper submissions for later tracking.
+///
+/// `params.submission.target_count` is the number of definite placements the
+/// tracker should maintain. Outcome-unknown helpers never count toward that
+/// target because `pending` does not prove possession. Tracking excludes them
+/// during early replenishment but may retry them during overdue duplicate-safe
+/// recovery.
+///
+/// Returns the effective durable `submit_at`, preserving an existing schedule.
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] when the target does not fit the
+/// persisted representation, the vote recovery bundle is missing or invalid,
+/// or any reported URL fails
+/// [`crate::helper::url::canonicalize_helper_base_url`] — validate helper
+/// URLs before delivering over the network. Storage failures are returned
+/// unchanged.
+#[cfg(any(test, feature = "test-fixtures"))]
+fn record_delivery_impl(
+    db: &VotingDb,
+    params: &ShareDeliveryRecordParams<'_>,
+) -> Result<u64, VotingError> {
+    let scope = ShareOperationScope::capture(db);
+    record_delivery_for_scope(db, &scope, params).map(|(submit_at, _)| submit_at)
+}
+
+pub(crate) fn record_delivery_for_scope(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    params: &ShareDeliveryRecordParams<'_>,
+) -> Result<(u64, [u8; 32]), VotingError> {
+    let target_count = persisted_delivery_target_count(params)?;
+    let nullifier = delivery_nullifier_for_scope(
+        db,
+        scope,
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+    )?;
+    let submit_at = db.record_share_delivery_for_wallet(
+        scope.wallet_id(),
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        &params.submission.accepted_urls,
+        &params.submission.ambiguous_urls,
+        target_count,
+        &nullifier,
+        params.submit_at,
+    )?;
+    Ok((submit_at, nullifier))
+}
+
+/// Records delivery while atomically requiring the recovery generation that
+/// was validated before the share payload was built.
+pub(crate) fn record_delivery_for_committed_vote(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    params: &ShareDeliveryRecordParams<'_>,
+    expected_commitment_bundle_json: &str,
+    expected_nullifier: &[u8; 32],
+) -> Result<(u64, [u8; 32]), VotingError> {
+    let target_count = persisted_delivery_target_count(params)?;
+    let submit_at = db.record_share_delivery_for_vote_generation(
+        scope.wallet_id(),
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        &params.submission.accepted_urls,
+        &params.submission.ambiguous_urls,
+        target_count,
+        expected_nullifier,
+        params.submit_at,
+        expected_commitment_bundle_json,
+    )?;
+    Ok((submit_at, *expected_nullifier))
+}
+
+fn persisted_delivery_target_count(
+    params: &ShareDeliveryRecordParams<'_>,
+) -> Result<u32, VotingError> {
+    u32::try_from(params.submission.target_count).map_err(|_| VotingError::InvalidInput {
+        message: format!(
+            "target_count {} does not fit u32",
+            params.submission.target_count
+        ),
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn record_delivery(
+    db: &VotingDb,
+    params: &ShareDeliveryRecordParams<'_>,
+) -> Result<u64, VotingError> {
+    record_delivery_impl(db, params)
+}
+
+/// Seeds complete helper-delivery metadata for integration-test fixtures.
+///
+/// This bypasses network dispatch and is unavailable without the
+/// `test-fixtures` feature. Production callers must use
+/// [`crate::vote::CommittedVote::submit_share_to_helpers`].
+#[cfg(feature = "test-fixtures")]
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn record_delivery_fixture(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    accepted_urls: &[String],
+    ambiguous_urls: &[String],
+    target_count: usize,
+    submit_at: u64,
+) -> Result<(), VotingError> {
+    let submission = ShareSubmissionReport {
+        accepted_urls: accepted_urls.to_vec(),
+        ambiguous_urls: ambiguous_urls.to_vec(),
+        target_count,
+    };
+    record_delivery_impl(
+        db,
+        &ShareDeliveryRecordParams {
+            round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            submission: &submission,
+            submit_at,
+        },
+    )
+    .map(|_| ())
+}
+
+/// Writes an `attempting` marker before a helper POST may be dispatched.
+///
+/// The helper must belong to `placement_server_urls`. A reservation starts
+/// only while the number of accepted plus in-flight configured helpers is
+/// below `params.target_count`; an existing helper state, a satisfied capacity,
+/// or a stale generation is reported without writing a marker. The marker is
+/// persisted before `Started` is returned, so dispatch can safely occur only
+/// afterward.
+pub(crate) fn begin_delivery_attempt_for_generation(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    generation: ShareGeneration<'_>,
+    placement_server_urls: &[String],
+) -> Result<crate::storage::queries::ShareAttemptReservation, VotingError> {
+    db.add_attempting_server_for_generation(
+        generation.scope().wallet_id(),
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        params.server_url,
+        placement_server_urls,
+        params.target_count,
+        ShareAttemptCapacityPolicy::EnforcePlacementTarget,
+        Some(generation.nullifier()),
+    )
+}
+
+/// Journals a POST for a share record that recovery has already loaded.
+///
+/// Returns `false` if the helper already has delivery state or the configured
+/// placement capacity is already satisfied.
+#[cfg(test)]
+pub(crate) fn begin_existing_delivery_attempt(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    placement_server_urls: &[String],
+) -> Result<bool, VotingError> {
+    db.add_attempting_server(
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        params.server_url,
+        placement_server_urls,
+        params.target_count,
+    )
+}
+
+/// Journals a recovery POST under the caller-selected placement-capacity policy.
+///
+/// The durable target remains `params.target_count` even when overdue or
+/// interrupted recovery is explicitly allowed to reserve beyond it.
+pub(crate) fn begin_existing_delivery_attempt_for_generation(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    generation: ShareGeneration<'_>,
+    placement_server_urls: &[String],
+    capacity_policy: ShareAttemptCapacityPolicy,
+) -> Result<crate::storage::queries::ShareAttemptReservation, VotingError> {
+    db.add_attempting_server_for_generation(
+        generation.scope().wallet_id(),
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        params.server_url,
+        placement_server_urls,
+        params.target_count,
+        capacity_policy,
+        Some(generation.nullifier()),
+    )
+}
+
+/// Persists the observed result of a journaled helper POST.
+///
+/// Outcome-unknown state remains excluded from ordinary delivery. Overdue
+/// recovery may explicitly retry it through the duplicate-safe helper path.
+#[cfg(test)]
+pub(crate) fn resolve_delivery_attempt(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    outcome: ShareDeliveryAttemptOutcome,
+    reset_submit_at: bool,
+) -> Result<(), VotingError> {
+    let scope = ShareOperationScope::capture(db);
+    let nullifier = delivery_nullifier_for_scope(
+        db,
+        &scope,
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+    )?;
+    resolve_delivery_attempt_for_generation(
+        db,
+        params,
+        ShareGeneration::new(&scope, &nullifier),
+        outcome,
+        reset_submit_at,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn resolve_delivery_attempt_for_generation(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    generation: ShareGeneration<'_>,
+    outcome: ShareDeliveryAttemptOutcome,
+    reset_submit_at: bool,
+) -> Result<bool, VotingError> {
+    let url = [params.server_url.to_string()];
+    match outcome {
+        ShareDeliveryAttemptOutcome::Accepted => db.add_sent_servers_for_generation(
+            generation.scope().wallet_id(),
+            params.round_id,
+            params.bundle_index,
+            params.proposal_id,
+            params.share_index,
+            &url,
+            Some(generation.nullifier()),
+            reset_submit_at,
+        ),
+        ShareDeliveryAttemptOutcome::Ambiguous => db.add_ambiguous_servers_for_generation(
+            generation.scope().wallet_id(),
+            params.round_id,
+            params.bundle_index,
+            params.proposal_id,
+            params.share_index,
+            &url,
+            reset_submit_at,
+            Some(generation.nullifier()),
+        ),
+        ShareDeliveryAttemptOutcome::DefiniteFailure => db.remove_attempting_server_for_generation(
+            generation.scope().wallet_id(),
+            params.round_id,
+            params.bundle_index,
+            params.proposal_id,
+            params.share_index,
+            params.server_url,
+            Some(generation.nullifier()),
+        ),
+    }
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
+fn delivery_nullifier(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<[u8; 32], VotingError> {
+    let scope = ShareOperationScope::capture(db);
+    delivery_nullifier_for_scope(db, &scope, round_id, bundle_index, proposal_id, share_index)
+}
+
+fn delivery_nullifier_for_scope(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<[u8; 32], VotingError> {
+    let fields = db.get_commitment_bundle_recovery_fields_for_wallet(
+        scope.wallet_id(),
+        round_id,
+        bundle_index,
+        proposal_id,
+    )?;
+    let bundle = fields
+        .and_then(|(json, _)| json)
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: format!(
+                "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+            ),
+        })?;
+    nullifier_from_recovery_json(&bundle, proposal_id, share_index)
+}
+
+pub(crate) fn nullifier_from_recovery_json(
+    commitment_bundle_json: &str,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<[u8; 32], VotingError> {
+    let bundle = crate::vote::parse_recovery(commitment_bundle_json)?;
+    if bundle.proposal_id != proposal_id {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "recovery proposal_id {} does not match requested {proposal_id}",
+                bundle.proposal_id
+            ),
+        });
+    }
+    let payload = recover_payload(&bundle, share_index)?;
+    let primary_blind = array32("primary_blind", payload.primary_blind.clone())?;
+    compute_nullifier(&bundle.vote_commitment, share_index, &primary_blind)
+}
+
 /// Lists all helper-share records for a round.
 pub fn list(db: &VotingDb, round_id: &str) -> Result<Vec<ShareDelegationRecord>, VotingError> {
     db.get_share_delegations(round_id)
+}
+
+pub(crate) fn list_for_scope(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    round_id: &str,
+) -> Result<Vec<ShareDelegationRecord>, VotingError> {
+    db.get_share_delegations_for_wallet(round_id, scope.wallet_id())
 }
 
 /// Lists unconfirmed helper-share records for retry and polling.
@@ -128,6 +710,14 @@ pub fn unconfirmed(
     round_id: &str,
 ) -> Result<Vec<ShareDelegationRecord>, VotingError> {
     db.get_unconfirmed_delegations(round_id)
+}
+
+pub(crate) fn unconfirmed_for_scope(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    round_id: &str,
+) -> Result<Vec<ShareDelegationRecord>, VotingError> {
+    db.get_unconfirmed_delegations_for_wallet(round_id, scope.wallet_id())
 }
 
 /// Lists rounds with at least one unconfirmed helper share.
@@ -147,8 +737,45 @@ pub fn pending_rounds(db: &VotingDb) -> Result<Vec<PendingShareRound>, VotingErr
     })
 }
 
+/// Re-reads whether one helper-share record is durably confirmed.
+pub(crate) fn is_confirmed_for_generation(
+    db: &VotingDb,
+    params: &ShareDeliveryAttemptParams<'_>,
+    generation: ShareGeneration<'_>,
+) -> Result<Option<bool>, VotingError> {
+    db.share_is_confirmed_for_generation(
+        generation.scope().wallet_id(),
+        params.round_id,
+        params.bundle_index,
+        params.proposal_id,
+        params.share_index,
+        Some(generation.nullifier()),
+    )
+}
+
+/// Re-reads whether the exact helper-share generation still owns its durable key.
+pub(crate) fn is_current_generation(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    generation: ShareGeneration<'_>,
+) -> Result<bool, VotingError> {
+    db.share_is_confirmed_for_generation(
+        generation.scope().wallet_id(),
+        round_id,
+        bundle_index,
+        proposal_id,
+        share_index,
+        Some(generation.nullifier()),
+    )
+    .map(|confirmed| confirmed.is_some())
+}
+
 /// Marks one helper-share record confirmed.
-pub fn confirm(
+#[cfg(test)]
+pub(crate) fn confirm(
     db: &VotingDb,
     round_id: &str,
     bundle_index: u32,
@@ -158,8 +785,33 @@ pub fn confirm(
     db.mark_share_confirmed(round_id, bundle_index, proposal_id, share_index)
 }
 
-/// Adds helper URLs to an existing share record after resubmission.
-pub fn add_sent_servers(
+pub(crate) fn confirm_for_generation(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    generation: ShareGeneration<'_>,
+) -> Result<bool, VotingError> {
+    db.mark_share_confirmed_for_generation(
+        generation.scope().wallet_id(),
+        round_id,
+        bundle_index,
+        proposal_id,
+        share_index,
+        Some(generation.nullifier()),
+    )
+}
+
+/// Adds helper URLs after immediate resubmission and clears a delayed schedule.
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] when any entry in `new_urls` fails
+/// [`crate::helper::url::canonicalize_helper_base_url`]; validate helper URLs
+/// before delivering over the network.
+#[cfg(test)]
+pub(crate) fn add_sent_servers(
     db: &VotingDb,
     round_id: &str,
     bundle_index: u32,
@@ -494,6 +1146,62 @@ mod tests {
 
         confirm(&db, ROUND_ID, 0, 1, 1).unwrap();
         assert!(pending_rounds(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delivery_state_preserves_order_and_strongest_evidence() {
+        let accepted = vec![
+            "https://accepted-1.example".to_string(),
+            "HTTPS://ACCEPTED-1.EXAMPLE:443/".to_string(),
+        ];
+        let outcome_unknown = vec![
+            "https://unknown-1.example".to_string(),
+            "https://accepted-1.example".to_string(),
+        ];
+        let in_flight = vec![
+            "https://flight-1.example".to_string(),
+            "https://unknown-1.example".to_string(),
+            "https://accepted-1.example".to_string(),
+        ];
+        let mut state =
+            ShareDeliveryState::from_url_lists(&accepted, &outcome_unknown, &in_flight).unwrap();
+
+        assert_eq!(state.accepted_urls(), &["https://accepted-1.example"]);
+        assert_eq!(state.outcome_unknown_urls(), &["https://unknown-1.example"]);
+        assert_eq!(state.in_flight_urls(), &["https://flight-1.example"]);
+        assert!(!state.begin("https://unknown-1.example/").unwrap());
+        assert!(state.begin("https://flight-2.example").unwrap());
+
+        state
+            .mark_outcome_unknown("https://flight-2.example")
+            .unwrap();
+        state.mark_accepted("https://unknown-1.example").unwrap();
+        state
+            .mark_definite_failure("https://flight-1.example")
+            .unwrap();
+        state
+            .merge_persisted_report(
+                &["https://accepted-2.example".to_string()],
+                &[
+                    "https://accepted-1.example".to_string(),
+                    "https://unknown-2.example".to_string(),
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.accepted_urls(),
+            &[
+                "https://accepted-1.example",
+                "https://unknown-1.example",
+                "https://accepted-2.example",
+            ]
+        );
+        assert_eq!(
+            state.outcome_unknown_urls(),
+            &["https://flight-2.example", "https://unknown-2.example",]
+        );
+        assert!(state.in_flight_urls().is_empty());
     }
 
     #[test]

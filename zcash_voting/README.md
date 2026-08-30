@@ -49,9 +49,24 @@ precompute → delegate → vote → share lifecycle:
    canonical `batch_json` once, persist the shared hash with
    `vote::record_batch_submission`, and confirm with
    `confirm_vote_batch_submission`. After confirmation, call
-   `vote::recover_commit` again and use its helper-share payloads so they carry
-   the confirmed VC position, then record each accepted helper share with
-   `share::record`. `Decision::Skipped` is terminal, so `open_proposals`
+   `vote::CommittedVote::recover` for each vote, create its full plan set with
+   `share::policy::plan_share_submissions`, and persist those `SharePlan`s
+   before submitting any share. Pass each share's stored plan to
+   `CommittedVote::submit_share_to_helpers`. The crate does not yet persist
+   planner output: after restart, reuse the original full plan set for that
+   vote rather than replanning only missing shares. Replanning a subset loses
+   commitment-wide balancing and quota context and can exceed the initial
+   per-helper quota. Pass the complete current helper fleet when submitting;
+   reject the stored plan before any POST if a planned target was removed or
+   the fleet now requires a different target count. Compatible fleet changes
+   may continue without replanning. The crate reconstructs each wire payload
+   with the durable confirmed VC position and journals every delivery attempt
+   before dispatch.
+   `track_pending_shares`
+   polls the complete current fleet and requires two distinct confirmations
+   when at least two helpers are configured; a one-helper fleet uses its only
+   available confirmation. The result is persisted internally.
+   `Decision::Skipped` is terminal, so `open_proposals`
    contains only proposals that have no recorded decision.
 
 ## Crate layout
@@ -326,10 +341,13 @@ that should stay consistent across SDKs:
   waiting for the half-fleet target (capped by protocol policy at 10 helpers),
   and stop at 30 seconds
 - 30-second helper POST attempts with bounded initial-delivery concurrency
+- helper confirmation polling bounded to four concurrent requests and ten
+  seconds per share so stalled helpers cannot starve later shares
 - share-count-derived batch planning with independent entropy per share, a
   minimum capacity pool, and a hard initial quota of `floor(3S / 4)` shares per
   helper (12 when `S = 16`); retries remain liveness-first and may exceed it
-- resubmission ordering with untried helpers before already-sent helpers
+- resubmission ordering with untried helpers first; overdue recovery then
+  retries outcome-unknown helpers before falling back to already-sent helpers
 - share tracking summaries, readiness checks, retry thresholds, and polling delay
 
 Wallet SDKs should provide fresh CSPRNG bytes from their platform RNG and let the

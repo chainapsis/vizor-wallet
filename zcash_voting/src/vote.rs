@@ -342,6 +342,42 @@ impl CommittedVote {
         &self.commit.share_payloads
     }
 
+    /// Submits one committed helper share using crate-owned durable journaling.
+    ///
+    /// The request selects only a share index and a planner-produced placement
+    /// plan. Identity, payload bytes, nullifier material, placement target,
+    /// and schedule are derived from this committed vote, so they cannot be
+    /// supplied inconsistently. Every POST is reserved in storage before
+    /// dispatch and its outcome is persisted before this future returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] before storage or network side
+    /// effects when the fleet is empty, invalid, or duplicated; the plan does
+    /// not match that fleet; the share index is absent; or this handle has been
+    /// replaced by a newer committed vote. Storage and payload reconstruction
+    /// failures are returned unchanged.
+    pub async fn submit_share_to_helpers(
+        &self,
+        db: &VotingDb,
+        client: &crate::helper::client::HelperClient,
+        request: crate::share_tracking::ShareSubmissionRequest<'_>,
+        cancel: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<crate::share_tracking::ShareSubmissionReport, VotingError> {
+        crate::share_tracking::submit_committed_share_to_helpers(
+            db,
+            client,
+            &self.round_id,
+            self.bundle_index,
+            self.commit.proposal_id,
+            &self.commit.vote_commitment,
+            &self.commit.share_payloads,
+            request,
+            cancel,
+        )
+        .await
+    }
+
     /// Reconstructs chain-ready cast-vote fields from persisted recovery state.
     pub fn submission(&self, db: &VotingDb) -> Result<VoteSubmission, VotingError> {
         submission(
@@ -384,53 +420,6 @@ impl CommittedVote {
             ),
         })?;
         signed_commitment_from_parts(&self.commit, &recovery)
-    }
-
-    /// Records a helper-share submission using recovery-owned nullifier material.
-    pub fn record_share(
-        &self,
-        db: &VotingDb,
-        share_index: u32,
-        sent_to_urls: &[String],
-        submit_at: u64,
-    ) -> Result<(), VotingError> {
-        crate::share::record(
-            db,
-            &self.round_id,
-            self.bundle_index,
-            self.commit.proposal_id,
-            share_index,
-            sent_to_urls,
-            submit_at,
-        )
-    }
-
-    /// Marks one helper-share submission confirmed.
-    pub fn confirm_share(&self, db: &VotingDb, share_index: u32) -> Result<(), VotingError> {
-        crate::share::confirm(
-            db,
-            &self.round_id,
-            self.bundle_index,
-            self.commit.proposal_id,
-            share_index,
-        )
-    }
-
-    /// Adds helper URLs to a previously recorded share submission.
-    pub fn add_sent_servers(
-        &self,
-        db: &VotingDb,
-        share_index: u32,
-        new_urls: &[String],
-    ) -> Result<(), VotingError> {
-        crate::share::add_sent_servers(
-            db,
-            &self.round_id,
-            self.bundle_index,
-            self.commit.proposal_id,
-            share_index,
-            new_urls,
-        )
     }
 
     /// Records the cast-vote transaction hash for this vote.
@@ -4431,12 +4420,25 @@ mod tests {
         assert_eq!(submission.vote_round_id, ROUND_ID);
         assert_eq!(submission.vote_auth_sig, [0x17; 64]);
 
-        recovered
-            .record_share(&db, 0, &["https://helper-a.example".to_string()], 1234)
-            .unwrap();
-        recovered
-            .add_sent_servers(&db, 0, &["https://helper-b.example".to_string()])
-            .unwrap();
+        crate::share::record(
+            &db,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-a.example".to_string()],
+            1234,
+        )
+        .unwrap();
+        crate::share::add_sent_servers(
+            &db,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-b.example".to_string()],
+        )
+        .unwrap();
         let shares = crate::share::list(&db, ROUND_ID).unwrap();
         assert_eq!(shares.len(), 1);
         assert_eq!(
@@ -4447,7 +4449,7 @@ mod tests {
             ]
         );
 
-        recovered.confirm_share(&db, 0).unwrap();
+        crate::share::confirm(&db, ROUND_ID, 0, 1, 0).unwrap();
         assert!(crate::share::unconfirmed(&db, ROUND_ID).unwrap().is_empty());
 
         recovered.record_submission(&db, "vote-tx").unwrap();

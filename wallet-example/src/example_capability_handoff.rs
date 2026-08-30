@@ -22,13 +22,13 @@
 //! 5. After broadcast, the voter calls [`voter_confirm_delegation`] for every
 //!    bundle with its confirmed transaction event. Imported capability rounds
 //!    cannot create votes until every bundle has a public VAN position.
-//! 6. The voter calls [`voter_build_signed_vote`], submits its payloads, and
-//!    records the results with the remaining helpers in
-//!    [`crate::example_vote`].
+//! 6. The voter calls [`voter_build_signed_vote`], submits the vote-chain
+//!    payload, records its confirmed tree position, then persists and submits
+//!    one complete helper-share plan through [`crate::example_vote`].
 //!
 //! Authenticated transport, durable controller outbox storage, chain
-//! submission, event monitoring, and helper-server delivery remain owned by
-//! the integrating applications.
+//! submission, event monitoring, helper transport routing, plan persistence,
+//! and tracking timers remain owned by the integrating applications.
 
 use anyhow::{Context, Result};
 use zcash_voting::prelude::{
@@ -124,9 +124,14 @@ pub fn voter_confirm_delegation(
 
 /// Voter step: syncs the confirmed VAN, builds ZKP2, and signs one vote.
 ///
-/// The caller submits the resulting chain and helper payloads through
-/// [`crate::example_vote::committed_vote_payloads`], then persists successful
-/// external results with [`crate::example_vote::record_committed_vote_execution`].
+/// Submit the chain payload from
+/// [`crate::example_vote::committed_vote_submission`], then persist its hash
+/// and confirmed tree position with
+/// [`crate::example_vote::record_committed_vote_execution`]. Create and persist
+/// one complete helper plan with
+/// [`crate::example_vote::plan_committed_vote_shares`] before calling
+/// [`crate::example_vote::submit_committed_vote_shares`]. Reuse that plan after
+/// restart and pass the complete current helper fleet to submission.
 pub fn voter_build_signed_vote(
     voting_db: &VotingDb,
     round_id: &str,

@@ -73,7 +73,31 @@ placements.
 An **attempting helper** is an initial-submission or recovery target durably
 reserved in `attempting_urls` before its POST is dispatched. A process
 interruption can leave that reservation without a classified response; on
-restart it is treated as outcome-unknown and remains poll-only.
+restart it is treated as outcome-unknown and receives one duplicate-safe
+reconciliation attempt per pass after untried helpers. Cancellation that is
+observed before a fresh reservation dispatches is different: because the POST
+is definitely unsent, the reservation is cleared as a definite failure rather
+than retained as outcome-unknown.
+
+An **interrupted helper** is an attempting helper whose durable reservation is
+loaded by a later tracking operation with no corresponding live request in
+that operation. The earlier process may have stopped before dispatch, during
+transport, or before persisting the response, so interruption proves neither
+acceptance nor non-acceptance. It remains in `attempting_urls` until a
+duplicate-safe reconciliation classifies it as accepted or explicitly
+ambiguous.
+
+Initial network fan-out and tracking acquire one process-wide asynchronous lock
+keyed by wallet, round, bundle, proposal, and share. Durable initial preparation
+occurs before that lock and is protected by its own generation-bound atomic
+write. After acquiring the lock, each network operation re-reads the exact
+nullifier generation. Two live operations in one process therefore cannot
+mistake each other's reservation for an interrupted attempt, act on a replaced
+generation, or independently advance through fallback helpers. The durable
+initial-reservation compare-and-swap also counts configured accepted and
+attempting helpers against the placement target, so separate database
+connections cannot reserve disjoint excess initial placements. This lock is
+per share; unrelated shares remain independent.
 
 The durable **placement target** is the desired number of definite helper
 acceptances for one share. Tracking caps its effective value to both the
@@ -100,9 +124,13 @@ under-placed or overdue --> attempting_urls --> recovery POST
                                                |-- definite --> sent_to_urls
                                                \-- unknown --> ambiguous_urls
 
-overdue only: ambiguous_urls or attempting_urls --> duplicate-safe re-POST
-                                                   |-- accepted --> sent_to_urls
-                                                   \-- otherwise --> unchanged
+early or overdue: attempting_urls --> duplicate-safe re-POST
+                                      |-- accepted --> sent_to_urls
+                                      \-- otherwise --> ambiguous_urls
+
+overdue only: ambiguous_urls --> duplicate-safe re-POST
+                                |-- accepted --> sent_to_urls
+                                \-- otherwise --> unchanged
 
 sent_to_urls, ambiguous_urls, or attempting_urls
     -- confirmed status from the configured quorum --> confirmed
@@ -119,14 +147,13 @@ for storage updates in
 `delivery_state_preserves_order_and_strongest_evidence` exercises this
 precedence directly.
 
-A helper in either outcome-unknown set is poll-only for early replenishment.
-Overdue recovery, which is liveness-critical, MAY re-POST an outcome-unknown
-helper — after every untried helper and at most once per tracking pass —
-because helper-side duplicate detection (`duplicate` is a definite acceptance)
-makes the re-POST converge instead of double-counting. A definite acceptance
-of the re-POST moves the helper to `sent_to_urls`; a definite failure of the
-re-POST says nothing about the original POST and leaves the outcome-unknown
-state in place.
+An explicitly ambiguous helper is poll-only for early replenishment. An
+interrupted helper is retried after every untried helper, even without vote-end
+timing, and at most once per tracking pass. Helper-side duplicate detection
+(`duplicate` is a definite acceptance) makes the re-POST converge instead of
+double-counting. Acceptance moves it to `sent_to_urls`; any completed
+non-acceptance moves the crash marker to explicit `ambiguous_urls`, preventing
+unbounded early replay while preserving the original unknown outcome.
 
 ## Planning invariants
 
@@ -142,9 +169,11 @@ N = number of distinct configured helpers
 R = number of ready helpers in the readiness-ranked prefix
 ```
 
-The normal protocol MUST have `S >= 2`. Single-share mode is a separate mode;
-it does not change `S` and is exempt from the commitment-wide distribution
-bound below. `C = 10` is an independent protocol choice: it bounds initial
+The normal protocol MUST have `S >= 2`. Single-share mode is a separate mode,
+is valid only when the planned payload count is exactly one, does not change
+`S`, and is exempt from the commitment-wide distribution bound below. A caller
+cannot mark an `S`-share commitment as single-share to bypass that bound.
+`C = 10` is an independent protocol choice: it bounds initial
 fan-out and prevents fleet growth from increasing per-share distribution
 without limit. It is not derived from `S`.
 
@@ -247,6 +276,7 @@ Regression coverage:
 - planning fails rather than exceeding `M` when presented with an infeasible
   capacity;
 - the one-helper and single-share forced-coverage exceptions are explicit;
+- single-share mode rejects zero, incomplete, and complete multi-share batches;
 - incomplete or independently planned batches do not advertise the complete
   batch guarantee;
 - fallback and recovery remain able to exceed the initial-only quota; and
@@ -257,7 +287,8 @@ Regression coverage:
 ### Share count and identity
 
 1. A normal vote commitment contains 16 encrypted shares. Single-share mode
-   emits only domain share index 0.
+   emits only domain share index 0, and the planner rejects `single_share =
+   true` unless the caller supplies exactly one payload.
 2. Share indexes identify the post-ZKP-2 shuffled shares. Share index 0 does
    not imply a particular denomination or value.
 3. At most one share is designated as the round's immediate share. It is share
@@ -278,7 +309,8 @@ and
 Regression tests:
 `round_immediate_share_key_uses_highest_bundle_lowest_voted_proposal_and_share_zero`,
 `immediate_batch_position_stays_aligned_and_does_not_perturb_other_plan`,
-`immediate_marker_is_distinct_when_all_shares_submit_immediately`, and the
+`immediate_marker_is_distinct_when_all_shares_submit_immediately`,
+`single_share_mode_rejects_non_singleton_batches`, and the
 round-plan tests in [`session.rs`](../zcash_voting/src/session.rs). The policy
 tests are in
 [`share_policy/tests/initial_placement.rs`](../zcash_voting/src/share_policy/tests/initial_placement.rs).
@@ -314,6 +346,11 @@ planner itself checks exact strings; it does not parse or canonicalize URLs, so
 the host MUST canonicalize and validate helper identities before planning.
 `canonicalize_helper_base_url` and `canonical_helper_url_list` are exported
 for exactly that purpose.
+
+Canonicalization returning fewer entries than the configured input is a
+duplicate-fleet error, not permission to plan against the reduced list. The
+wallet example enforces this comparison before entropy sizing or planning for
+both exact duplicates and distinct spellings of one canonical endpoint.
 
 The delivery and tracking entry points enforce the stronger trust-boundary
 contract through `ConfiguredHelperFleet`: `submit_share_to_helpers` and
@@ -356,6 +393,8 @@ includes
 `tracking_rejects_duplicate_spelling_fleet_before_effects`, and
 `tracking_rejects_empty_fleet_before_effects` in
 [`share_tracking/tests/initial_delivery.rs`](../zcash_voting/src/share_tracking/tests/initial_delivery.rs).
+The wallet boundary is covered by
+`helper_planning_rejects_exact_and_canonical_duplicates`.
 
 ### Helper selection and balancing
 
@@ -644,25 +683,51 @@ the ambiguous, non-transient 501 boundary.
 ## Initial fan-out invariants
 
 `CommittedVote::submit_share_to_helpers` accepts only a committed share index,
-a planner-produced `ShareSubmissionPlan`, the complete configured fleet, and
-the current health-ordering time. It derives the round, bundle, proposal,
-payload, confirmed VC-tree position, target, and schedule from the committed
-vote and durable confirmation state. It rejects an empty, duplicated, or
-noncanonical fleet, a plan that does not exactly match that fleet, or a missing
-confirmed VC position before touching storage or the network. The raw
-journaled submission routine is crate-private, and there is no public
-post-hoc delivery mutator.
+a planner-produced `ShareSubmissionPlan`, the complete current configured
+fleet, and the current health-ordering time. It derives the round, bundle,
+proposal, payload, confirmed VC-tree position, target, and schedule from the
+committed vote and durable confirmation state. It rejects an empty, duplicated,
+or noncanonical fleet, a plan whose target count or targets are not valid for
+that current fleet, a missing confirmed VC position, or a committed handle
+whose vote commitment no longer matches the current durable recovery bundle
+before touching storage or the network. At the wallet host boundary, a
+planning-time fleet change is compatible only while every stored plan remains
+valid against the current fleet; removed planned targets and target-count drift
+are rejected rather than remapped or replanned. The raw journaled submission
+routine is crate-private, and there is no public post-hoc delivery mutator.
 
 The `test-fixtures` feature exposes hidden `share::record` and
 `share::record_delivery_fixture` seed helpers for external integration tests.
 They do not exist in production builds and MUST NOT be used to model wallet
 submission behavior.
 
-After validation it creates or merges the durable share record. Planned
-targets are attempted first, followed by the remaining configured fleet.
-Health ranking is applied independently within those groups, so a healthy
-fallback never moves ahead of a degraded planned target. For every selected
-helper it writes
+Durable preparation is bound atomically to the commitment-bundle generation
+validated for the `CommittedVote` handle. The storage write locks and compares
+that exact recovery snapshot before creating or merging the share row. A
+replacement that lands after the earlier recovery read therefore fails
+preparation before any helper POST instead of combining the old payload with
+the replacement's nullifier.
+
+After validation it creates or merges the durable share record. Persistence
+returns the effective write-once `submit_at`; resumed fan-out rebuilds the wire
+payload with that durable schedule before contacting any newly selected
+helper. A recomputed plan therefore cannot split one share across different
+schedules, and an existing immediate schedule (`submit_at = 0`) cannot be
+resurrected as delayed.
+
+Before network fan-out, live initial delivery and tracking passes for the same
+share are serialized by the per-share operation lock described above. A
+waiting operation re-reads the exact row generation after acquiring the lock.
+Initial reservation itself is also target-aware: its atomic storage update
+refuses a fresh configured helper when the number of configured definite
+acceptances plus configured `attempting_urls` already reaches `target_count`.
+An `AlreadyRecorded` result for one helper therefore cannot let an overlapping
+pass walk disjoint fallbacks beyond the shared target.
+
+Planned targets are attempted first, followed by the remaining configured
+fleet. Health ranking is applied independently within those groups, so a
+healthy fallback never moves ahead of a degraded planned target. For every
+selected helper it writes
 `attempting_urls` before dispatch, then:
 
 1. re-evaluates helper health before each attempt;
@@ -675,8 +740,13 @@ helper it writes
    a network-level function error.
 
 Ambiguous attempts do not satisfy the target. The returned report summarizes
-state that has already been journaled; the tracker is responsible for
-repairing any remaining deficit.
+the exact current durable generation after fan-out, including placements made
+by a serialized overlapping caller; a deleted or replaced generation fails
+instead of returning its stale snapshot. The tracker is responsible for
+repairing any remaining deficit. `ShareSubmissionReport` has no separate
+in-flight field, so its `ambiguous_urls` projection includes both durable
+`ambiguous_urls` and process-interrupted `attempting_urls`. Storage and tracker
+logic continue to keep those states distinct.
 
 Regression tests in
 [`share_tracking/tests/initial_delivery.rs`](../zcash_voting/src/share_tracking/tests/initial_delivery.rs):
@@ -688,13 +758,34 @@ Regression tests in
 covered by `initial_post_is_journaled_before_transport_dispatch`,
 `definite_initial_failure_clears_attempt_and_remains_retryable`,
 `ambiguous_initial_failure_is_not_replayed_by_initial_delivery`,
-`failed_outcome_write_leaves_attempting_marker`, and
-`failed_attempt_write_prevents_network_dispatch`. Typed-boundary coverage is
+`failed_outcome_write_is_reported_as_ambiguous_on_resume`, and
+`failed_attempt_write_prevents_network_dispatch`. Overlap coverage is provided
+by `overlapping_initial_fan_outs_share_one_target`,
+`tracking_waits_for_live_initial_fan_out_before_replenishing`, and
+`concurrent_attempt_reservations_share_one_placement_capacity`.
+Cancellation while waiting for that serialization boundary is covered by
+`cancellation_aborts_initial_wait_for_live_share_operation`.
+Typed-boundary coverage is
 provided by
 `committed_vote_submission_keeps_degraded_planned_target_before_healthy_fallback`,
+`stale_committed_vote_submission_is_rejected_before_side_effects`,
+`generation_bound_preparation_rejects_replacement_after_validation`,
 `repeated_committed_submission_preserves_the_original_schedule`,
+`repeated_partial_committed_submission_sends_original_schedule_to_new_helper`,
+`repeated_committed_submission_does_not_resurrect_zero_schedule`,
 `committed_vote_submission_rejects_mismatched_plan_before_side_effects`, and
-`invalid_candidate_url_does_not_create_a_share_record`.
+`invalid_candidate_url_does_not_create_a_share_record`. Cleanup concurrency is
+covered by `initial_delivery_does_not_recreate_share_after_recovery_cleanup`.
+The wallet example validates the complete stored plan set before entering its
+submission loop; `helper_submission_allows_compatible_current_fleet_churn`,
+`helper_submission_rejects_a_removed_planned_target`,
+`helper_submission_rejects_current_fleet_target_drift`, and
+`helper_submission_validates_every_plan_before_delivery` cover its current-
+fleet boundary. `helper_submission_accepts_complete_batch_at_assignment_quota`,
+`helper_submission_rejects_complete_batch_assignment_quota_violation`, and
+`helper_submission_preserves_the_one_helper_complete_batch_exception` ensure a
+persisted complete plan cannot bypass the aggregate per-helper assignment
+limit before delivery begins.
 
 ## Confirmation and health invariants
 
@@ -732,7 +823,9 @@ The status endpoint recognizes exactly `pending` and `confirmed`.
 
 Regression tests: `two_distinct_confirmations_stop_status_checks`,
 `stalled_status_poll_does_not_starve_a_later_share`,
+`expired_status_budget_does_not_start_or_penalize_helpers`,
 `cancellation_aborts_bounded_in_flight_status_polls`,
+`late_cancellation_does_not_replace_final_confirmation`,
 `one_confirmation_is_not_enough`,
 `one_helper_fleet_uses_its_only_available_confirmation`,
 `two_helper_fleet_polls_beyond_its_single_placement`,
@@ -756,10 +849,12 @@ Health is a process-local ordering hint, not a block list.
    the consecutive-failure count. Readiness probes and failures rejected
    before scoring, such as an invalid helper base URL or malformed caller JSON,
    are not scored.
-3. When the ten-second status budget expires, the tracker records one failure
-   for each helper whose request is still in flight. Quorum and caller
-   cancellation abort outstanding tasks without charging the abort itself as a
-   helper failure.
+3. When the ten-second status budget expires, the tracker aborts and drains the
+   task set, preserves every result that completed at the boundary, and records
+   one failure only for each helper whose task actually aborted and therefore
+   remains in flight. A completed poll keeps its own single success or failure
+   score. Quorum and caller cancellation abort outstanding tasks without
+   charging the abort itself as a helper failure.
 4. Three consecutive failures demote a helper for 30 seconds.
 5. Demotion moves the helper behind healthy peers but never removes it.
 6. If every candidate is degraded, caller order is returned unchanged.
@@ -785,8 +880,10 @@ Regression tests: `degraded_helper_is_demoted_not_removed`,
 `cooldown_expiry_readmits_one_failure_below_threshold`,
 `cancellation_before_request_is_not_scored`,
 `cancellation_aborts_bounded_in_flight_status_polls`, and
-`stalled_status_poll_does_not_starve_a_later_share`. Local submission
-validation is covered by `invalid_share_bodies_are_not_sent_or_scored`.
+`stalled_status_poll_does_not_starve_a_later_share`. The budget-boundary race is
+covered by `budget_expiry_scores_only_polls_that_are_still_running` and
+`budget_expiry_preserves_boundary_quorum_without_penalizing_abort`. Local
+submission validation is covered by `invalid_share_bodies_are_not_sent_or_scored`.
 
 ## Recovery invariants
 
@@ -798,27 +895,42 @@ configured helper set.
 
 1. Under-placement starts replenishment immediately; it does not wait for the
    share to become status-checkable or overdue.
-2. Early replenishment preserves the durable `submit_at` and considers only
-   helpers that have not definitely accepted the share.
+2. Early replenishment preserves the durable `submit_at`. It tries untried
+   helpers first, then process-interrupted helpers. Explicitly ambiguous and
+   accepted helpers remain excluded.
 3. Overdue recovery rebuilds the payload with `submit_at = 0`. It tries
-   untried helpers first, then outcome-unknown helpers, then previously
-   accepted helpers. Outcome-unknown and accepted retries rely on their
-   existing durable history instead of trying to add a fresh attempt marker.
+   untried helpers first, then interrupted helpers, explicitly ambiguous
+   helpers, and finally previously accepted helpers. Already-journaled retries
+   rely on their durable history instead of adding a fresh attempt marker.
 4. The untried and previously accepted groups are independently randomized
-   from host-supplied CSPRNG bytes. The outcome-unknown retry group is a
-   deterministic last resort whose membership is already persisted; health
+   from host-supplied CSPRNG bytes. Interrupted and ambiguous retry groups are
+   deterministic last resorts whose membership is already persisted; health
    ordering is applied within every group.
 5. An ambiguous helper stays poll-only for early replenishment. Overdue
    recovery re-POSTs it at most once per pass; a definite acceptance
    (including `duplicate`) moves it to `sent_to_urls`, while a definite
    failure of the re-POST leaves the outcome-unknown state untouched because
    it says nothing about the original POST.
-6. A definite failure is attempted at most once in one tracking pass. It can
+6. An interrupted helper is retried at most once per pass. Acceptance makes it
+   definite; an ambiguous or definite failure moves it to explicit ambiguity,
+   consuming the early-retry crash marker without discarding uncertainty.
+7. A definite failure is attempted at most once in one tracking pass. It can
    become eligible again in a later pass.
-7. One pass continues until it fills the complete definite-placement deficit
+8. One pass continues until it fills the complete definite-placement deficit
    or has no eligible helper that accepts.
-8. Recovery may use any configured helper for liveness; initial balancing is
-   not a recovery cap.
+9. A configured interrupted marker is an independent reconciliation trigger,
+   even when definite placement already meets the target and vote-end timing is
+   unavailable. In that placement-satisfied case, tracking preserves the
+   durable schedule and contacts only interrupted helpers; it does not expand
+   to untried, explicitly ambiguous, or accepted helpers. It continues until
+   every configured interrupted marker is classified or another normal stop
+   condition fires.
+10. Recovery may use any configured helper for liveness; initial balancing is
+    not a recovery cap. Fresh reservations normally enforce the placement
+    target. Overdue recovery and early recovery that must preserve
+    untried-before-interrupted ordering select an explicit recovery policy that
+    permits reservations beyond the target instead of changing the target
+    value itself.
 
 Regression tests: `under_placed_share_preserves_delayed_submit_at`,
 `overdue_share_reaches_an_untried_helper_and_records_it`,
@@ -827,6 +939,9 @@ Regression tests: `under_placed_share_preserves_delayed_submit_at`,
 `one_tracking_pass_does_not_repeat_a_definite_failure`,
 `a_definite_failure_is_eligible_again_on_a_later_pass`,
 `early_replenishment_excludes_ambiguous_helpers`,
+`interrupted_one_helper_share_recovers_without_vote_end_time`,
+`failed_early_interrupted_retry_is_not_repeated_without_vote_end_time`,
+`placement_satisfied_share_reconciles_interrupted_attempt_without_expanding`,
 `overdue_recovery_retries_ambiguous_helper_after_untried`,
 `overdue_recovery_reposts_to_accepted_helper_after_untried_helpers_fail`,
 `ambiguous_accepted_helper_retry_preserves_the_stronger_delivery_state`,
@@ -838,8 +953,8 @@ Regression tests: `under_placed_share_preserves_delayed_submit_at`,
 
 Before dispatching any initial or recovery POST, the helper MUST be durably
 journaled: a fresh target is added to `attempting_urls`, while an overdue
-re-POST to an outcome-unknown or accepted helper relies on its already-
-persisted delivery history. A definite acceptance moves the helper to
+re-POST to an ambiguous or accepted helper and any interrupted re-POST rely on
+already-persisted delivery history. A definite acceptance moves the helper to
 `sent_to_urls`; an ambiguous result moves a fresh helper to `ambiguous_urls`;
 and a definite failure of a fresh attempt removes the reservation so the
 helper can be retried in a later pass. A definite failure of an overdue
@@ -849,10 +964,11 @@ transition is persisted before the workflow contacts another helper.
 
 A process interruption during an in-flight initial or recovery request leaves
 the helper in `attempting_urls`. On restart, that state is exposed as
-outcome-unknown: poll-only for early replenishment, with any further POST
-deferred to the deliberate, duplicate-safe overdue retry above. A failed
-outcome write has the same conservative behavior: the attempting marker
-remains rather than making the helper eligible for a fresh reservation.
+outcome-unknown and receives a deliberate, duplicate-safe reconciliation after
+untried helpers, even when vote-end timing is unavailable. A completed
+non-acceptance promotes it to explicit ambiguity; a second early pass therefore
+does not replay it again. A failed outcome write has the same conservative
+behavior as process interruption.
 
 Immediately before every recovery POST, the durable confirmation bit is
 re-read. A fresh helper gets this check while its `attempting_urls` reservation
@@ -871,6 +987,7 @@ suppresses overdue recovery.
 
 Regression tests: `ambiguous_attempt_is_durable_before_recovery_advances`,
 `ambiguous_resubmission_is_recorded_while_recovery_continues`,
+`cancellation_before_interrupted_retry_keeps_the_crash_marker`,
 `concurrent_confirmation_stops_outcome_unknown_retry`,
 `under_placement_stops_at_the_resubmission_cutoff`,
 `resubmission_rechecks_the_cutoff_before_every_post`, and
@@ -889,38 +1006,59 @@ A recovery POST MUST use:
 Position zero is a valid tree position and MUST NOT be used as a placeholder
 for a submitted but unconfirmed vote. Recovery with a commitment bundle but no
 real position waits without posting. Missing or corrupt recovery material is
-reported as unrecoverable rather than retried across helpers.
+reported as unrecoverable rather than retried across helpers. If parseable
+recovery material derives a different nullifier from the loaded share, tracking
+re-reads the exact row generation: the same generation makes the mismatch
+persistently unrecoverable, while a deleted or different generation is a
+concurrent stale replacement and is silently left to its owning operation.
 
 Enforcement:
 [`helper_recovery_material`](../zcash_voting/src/recovery.rs) and
 `resubmit_to_next_helper` in
 [`share_tracking/recovery.rs`](../zcash_voting/src/share_tracking/recovery.rs).
 
-Regression tests: `missing_recovery_material_is_reported_not_retried` and
+Regression tests: `missing_recovery_material_is_reported_not_retried`,
+`persistent_recovery_nullifier_mismatch_is_reported_unrecoverable`,
+`recovery_nullifier_mismatch_from_replacement_remains_stale`, and
 `resubmission_waits_for_the_confirmed_vc_position`.
 
 ### Cancellation
 
 The cancellation callback is checked between shares, POST targets, attempts,
-and retry backoffs. While concurrent status tasks are pending, the tracker also
-checks it on a 50-millisecond interval. Cancellation prevents additional
+and retry backoffs. While concurrent status tasks are pending or an initial or
+tracking pass is waiting for another operation on the same share, it is also
+checked on a 50-millisecond interval. Cancellation prevents additional
 requests from starting, returns the effects already recorded, sets
-`ShareTrackingReport::cancelled`, and is not charged to helper health when it
-suppresses pending work. Once the final observed request has completed, its
-result takes precedence: cancellation observed afterward does not replace that
-result or suppress its health score.
+`ShareTrackingReport::cancelled` for tracking, and is not charged to helper
+health when it suppresses pending work. Once the final observed request has
+completed, its result takes precedence: cancellation observed afterward does
+not replace that result or suppress its health score.
 
-The concurrent status poller responds to caller cancellation, confirmation
-quorum, or its ten-second budget by signalling its status clients and aborting
-the task set. This drops in-flight status transport futures instead of waiting
-for their individual request timeouts. Outside that poller, cancellation does
-not generally interrupt an already-running custom transport request because
-`HelperTransport` does not receive the callback. Initial fan-out's outer
+If cancellation becomes visible after a fresh helper has been reserved but
+before its POST dispatches, recovery resolves that reservation as a definite
+failure so the helper remains eligible on the next pass. Cancellation before a
+retry backed by an interrupted, explicitly ambiguous, or accepted durable
+state does not weaken or erase that existing evidence.
+
+The concurrent status poller responds to caller cancellation or confirmation
+quorum by signalling its status clients and aborting the task set. At budget
+expiry it aborts first and drains the set, preserving results that completed at
+the boundary before scoring only the tasks that actually aborted. This drops
+in-flight status transport futures instead of waiting for their individual
+request timeouts. Outside that poller, cancellation does not generally
+interrupt an already-running custom transport request because `HelperTransport`
+does not receive the callback. Initial fan-out's outer
 60-second deadline can additionally drop the in-flight POST future; that
 result is treated as ambiguous.
 
 Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
+`fresh_recovery_cancelled_before_dispatch_clears_marker_and_remains_retryable`,
+`cancellation_before_interrupted_retry_keeps_the_crash_marker`,
+`cancelled_outcome_unknown_retry_preserves_ambiguous_state`,
+`cancelled_accepted_fallback_preserves_acceptance`,
 `cancelled_pass_reports_cancellation_and_keeps_durable_effects`,
+`cancellation_aborts_initial_wait_for_live_share_operation`,
+`cancellation_aborts_wait_for_live_share_operation`,
 `cancellation_before_request_is_not_scored`,
 `late_cancellation_does_not_replace_final_failed_poll`, and
 `late_cancellation_does_not_replace_final_failed_resubmission`.
@@ -950,6 +1088,11 @@ Regression tests: `cancellation_aborts_bounded_in_flight_status_polls`,
    Changing or skipping that intent clears stale share rows.
 11. Pending rounds are wallet-scoped and remain discoverable until every share
     is confirmed.
+12. An asynchronous submission or tracking pass captures its wallet scope
+    before storage or network work. Every post-await transition is conditional
+    on that wallet and the exact persisted share nullifier. A deleted or
+    replacement generation is left untouched, and its stale helper result is
+    omitted from reports.
 
 Enforcement:
 [`share.rs`](../zcash_voting/src/share.rs),
@@ -959,7 +1102,13 @@ Enforcement:
 Regression coverage: `test_share_delegation_lifecycle` in
 `storage/operations.rs`,
 `pending_rounds_return_session_context_until_all_shares_confirm` in
-`share.rs`, and `changed_choice_ignores_stale_share_confirmations` and
+`share.rs`, `confirmation_stays_bound_to_the_wallet_that_started_tracking`,
+`confirmation_does_not_apply_to_a_replaced_share_generation`,
+`initial_delivery_stays_bound_to_its_starting_wallet`,
+`initial_delivery_rejects_a_replaced_share_generation`, and
+`initial_delivery_does_not_recreate_share_after_recovery_cleanup`,
+`interrupted_retry_does_not_resolve_a_replaced_share_generation` in
+`share_tracking/tests`, and `changed_choice_ignores_stale_share_confirmations` and
 `skipped_intent_clears_and_blocks_stale_share_rows` in `session.rs`.
 
 ### Configuration and migration
@@ -1022,7 +1171,9 @@ Enforcement:
 
 Regression tests:
 `clear_preserves_recorded_positions_and_resets_unconfirmed_votes` and
-`test_clear_recovery_state_resets_vote_recovery`.
+`test_clear_recovery_state_resets_vote_recovery`, plus
+`initial_delivery_does_not_recreate_share_after_recovery_cleanup` for cleanup
+racing active helper delivery.
 
 ## Helper identity and payload invariants
 
@@ -1068,10 +1219,13 @@ host wallet:
    timing and ordering input. `os_random_bytes` is provided for Rust hosts.
 4. **Lifecycle.** The host owns the timer, app-lock and round-expiry behavior,
    invokes `track_pending_shares`, and supplies cancellation.
-5. **Initial identity.** The host MUST retain the `CommittedVote`, pass the
-   exact planner-produced plan and complete configured fleet, and call its
-   typed `submit_share_to_helpers` method. The crate derives the durable
-   identity and wire payload and journals every POST before dispatch.
+5. **Initial identity.** The host MUST retain the `CommittedVote`, persist the
+   complete original plan set before the first helper POST, pass each exact
+   planner-produced plan with the complete current configured fleet, and call
+   its typed `submit_share_to_helpers` method. The host MUST reject a stored
+   plan whose target count or target membership is no longer valid for the
+   current fleet rather than replanning missing shares. The crate derives the
+   durable identity and wire payload and journals every POST before dispatch.
 6. **Helper-operator trust.** The protocol assumes that the authority supplying
    the wallet's helper configuration is trusted to choose independent operators
    and govern changes. URLs are endpoint identities, not authenticated operator
@@ -1100,7 +1254,9 @@ unmet.
 The maximum concurrent POST count remains policy metadata:
 `submit_share_to_helpers` is sequential. A host that implements concurrent
 initial delivery MUST still preserve all target, timeout, ambiguity,
-distinct-helper, persistence, and routing invariants in this document.
+distinct-helper, persistence, per-share serialization, and routing invariants
+in this document. The built-in initial and tracking entry points serialize live
+work for the same share even when a host invokes them concurrently.
 
 `SHARE_STATUS_MAX_CONCURRENT_POLLS` and
 `SHARE_STATUS_POLL_BUDGET_MILLISECONDS` are enforced tracker behavior, not
@@ -1112,6 +1268,8 @@ The initial planner checks only for empty and exactly duplicated URL strings;
 it does not parse or canonicalize helper endpoints. Hosts MUST canonicalize
 their helper configuration before computing targets and plans, using the
 exported `canonicalize_helper_base_url` / `canonical_helper_url_list`. The
+host MUST reject the configuration when canonicalization changes its length;
+silently planning against the deduplicated result changes helper counts. The
 delivery entry points independently construct `ConfiguredHelperFleet` and
 reject an empty fleet, any URL that fails canonicalization, or distinct
 spellings of one canonical identity with `InvalidInput` before storage or
@@ -1127,11 +1285,15 @@ A change to helper submission or recovery should answer all of the following:
 - Does every complete normal batch assign each helper no more than
   `floor(3S / 4)` shares, except for the documented one-helper case?
 - Does the change preserve independent CSPRNG timing and helper ordering?
+- Can `single_share = true` reach planning with any payload count other than
+  exactly one?
 - Can an ambiguous POST be repeated against the same helper outside the
   deliberate, duplicate-safe overdue retry?
 - Can an invalid configured helper URL disappear silently instead of failing
   the entry point?
 - Is every initial and recovery helper reserved durably before dispatch?
+- Can overlapping initial and tracking operations for one share independently
+  advance beyond its placement target?
 - Are accepted, ambiguous, and attempting states separated and disjoint?
 - Is every recovery outcome resolved durably before another helper is
   contacted?
@@ -1145,9 +1307,11 @@ A change to helper submission or recovery should answer all of the following:
   per share?
 - Can a stalled share prevent later durable shares from being processed?
 - Are quorum and caller-cancellation aborts unscored while status-budget expiry
-  degrades helpers whose requests remain in flight?
+  degrades each genuinely aborted request exactly once without re-scoring a
+  boundary completion?
 - Does cancellation avoid starting additional work without erasing completed
   effects?
+- Can cancellation interrupt a wait for the per-share operation lock?
 - Is the trust placed in a helper `confirmed` response still explicit?
 - Do schema and wire changes preserve legacy rows and safe helper identity?
 - Are exported policy values correctly distinguished between readiness and
