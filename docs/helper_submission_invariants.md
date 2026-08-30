@@ -506,8 +506,11 @@ finishes, or the shared 30-second hard deadline expires. If the target is met
 before the soft boundary, pending probes are stopped at that boundary; a zero
 target still produces the ordered canonicalized result list but returns before
 creating the probe task set, so it opens no connections even on a multi-threaded
-runtime. Probes are not retried. Results preserve caller order, use canonical
-spellings for valid URLs, and report invalid or unfinished entries as not ready.
+runtime. Probes are not retried because readiness is only a bounded,
+best-effort ranking hint; an unsuccessful helper remains available as a
+planning fallback, and delivery applies its own retry and recovery policy.
+Results preserve caller order, use canonical spellings for valid URLs, and
+report invalid or unfinished entries as not ready.
 
 ### Default limits
 
@@ -967,6 +970,13 @@ removed from configuration are neither polled nor counted. A durable target
 above `C` remains historical data but cannot drive additional placement above
 the protocol cap. If a legacy row has `target_count = 0`, tracking derives
 `min(ceil(N / 2), C)` from the current helper set.
+
+During a pending vote, fleet contraction clamps the effective target and
+replenishes among the remaining helpers where possible. Fleet expansion can
+repair an unmet durable target but does not by itself increase a nonzero
+target. Removed helpers may retain shares, so churn can increase the lifetime
+set of helpers that possessed a share; liveness remains best-effort within the
+reachable fleet and recovery cutoff.
 
 Schema version 16 adds `ambiguous_urls` and `attempting_urls` with default `[]`
 and `target_count` with default `0`. Databases from launch schema version 13
