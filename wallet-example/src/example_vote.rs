@@ -80,9 +80,6 @@ pub struct WalletHelperSharePlanningRequest<'a> {
     pub now_seconds: u64,
     pub vote_end_time_seconds: u64,
     pub last_moment_buffer_seconds: Option<u64>,
-    /// Whether the committed vote contains the protocol's single share.
-    /// This is valid only when the commitment exposes exactly one payload.
-    pub single_share: bool,
     /// Position in this committed vote's share payloads, not a domain share ID.
     pub immediate_share_index: Option<u32>,
 }
@@ -262,13 +259,14 @@ pub fn plan_committed_vote_shares(
 ) -> Result<WalletHelperSharePlan> {
     let configured_server_urls = canonical_distinct_helper_urls(request.configured_server_urls)?;
     let share_count = committed.share_payloads().len();
+    let single_share = helper_share_mode_from_payload_count(share_count);
     let required = share_submission_random_bytes_required(
         share_count,
         configured_server_urls.len(),
         request.now_seconds,
         request.vote_end_time_seconds,
         request.last_moment_buffer_seconds,
-        request.single_share,
+        single_share,
     );
     let submit_at_random_bytes = os_random_bytes(required.submit_at_random_bytes);
     let server_random_bytes = os_random_bytes(required.server_random_bytes);
@@ -278,7 +276,7 @@ pub fn plan_committed_vote_shares(
         request.now_seconds,
         request.vote_end_time_seconds,
         request.last_moment_buffer_seconds,
-        request.single_share,
+        single_share,
         request.immediate_share_index,
         &submit_at_random_bytes,
         &server_random_bytes,
@@ -289,6 +287,10 @@ pub fn plan_committed_vote_shares(
         configured_server_urls,
         share_plans,
     })
+}
+
+fn helper_share_mode_from_payload_count(share_count: usize) -> bool {
+    share_count == 1
 }
 
 fn canonical_distinct_helper_urls(configured_server_urls: &[String]) -> Result<Vec<String>> {
@@ -455,7 +457,8 @@ pub fn record_committed_vote_execution(
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_distinct_helper_urls, validate_helper_submission_plan, WalletHelperSharePlan,
+        canonical_distinct_helper_urls, helper_share_mode_from_payload_count,
+        validate_helper_submission_plan, WalletHelperSharePlan,
         SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER, VOTE_COMMITMENT_SHARE_COUNT,
     };
     use zcash_voting::prelude::SharePlan;
@@ -523,6 +526,14 @@ mod tests {
                 "https://two.example/base".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn helper_planning_derives_single_share_mode_from_payload_count() {
+        assert!(helper_share_mode_from_payload_count(1));
+        assert!(!helper_share_mode_from_payload_count(
+            VOTE_COMMITMENT_SHARE_COUNT
+        ));
     }
 
     #[test]

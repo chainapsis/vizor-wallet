@@ -40,46 +40,20 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   Batches keep choices, note membership, and voting keys hidden as before, but
   intentionally reveal that their included proposal actions came from one
   transaction.
-
-## v3.1.0-rc.13
-
-### Changed
-- `zcash_voting` now defaults to Zakura and exposes upstream librustzcash
-  through the mutually exclusive `lrz` feature while depending directly on
-  the leak-free `zakura` or `lrz` complete backend mode from
-  `zakura-wallet-lib`. This keeps wallet-family selection in one facade while
-  preventing disabled Zakura forks from entering LRZ consumers' Cargo
-  lockfiles and metadata. See the "Dependency notes" section of
-  `zcash_voting/README.md`.
-- Updated the Zakura stack to wallet-libraries RC4 and stable crypto 1.0,
-  `voting-crypto-deps 0.2.2`, `voting-circuits 0.11.2`, `imt-tree 0.5.2`,
-  `pir-types 0.6.2`, and `pir-client 0.7.2`. This raises the workspace MSRV to
-  Rust 1.91.
-- Prepared `vote-commitment-tree 0.6.0` and
-  `vote-commitment-tree-client 0.8.0` for their Zakura-default feature
-  contracts; publish them before `zcash_voting 3.1.0-rc.13`.
-
-## v3.1.0-rc.12
-
-### Added
-- Added shared progressive helper timing and initial-delivery limits, plus
-  readiness-ranked batch planning that balances a commitment's initial shares
-  across the preferred helper pool.
-- Added process-local `HelperHealth` scoring that demotes repeatedly failing
-  helper servers for fixed cooldown windows, immediately re-demotes them on the
-  first failure after expiry, and never removes them from candidate lists.
-- Added public helper URL canonicalization for stable server identity. Helper
-  base URLs may use HTTP or HTTPS and a mount path, but not credentials, query
-  parameters, or fragments; equivalent default ports, trailing slashes, and
-  mount-path percent escapes are normalized before comparison or persistence.
-- Added a host-owned `HelperTransport` abstraction for helper-server requests.
-  The bundled `HyperTransport` provides direct HTTP, while wallets can supply
-  Tor or proxy-backed transports without fallback to a different route.
+- Added a helper-server client and host-owned `HelperTransport` abstraction for
+  readiness checks, share submission, and status polling. The client applies
+  endpoint-specific timeout and retry rules, bounds response bodies, and uses
+  process-local helper health scoring to deprioritize repeatedly failing
+  servers without blocking recovery. `HyperTransport` provides the default
+  direct HTTP implementation, while wallets can supply Tor or proxy-backed
+  transports without fallback to a different route.
+- Added `track_pending_shares` and related share-tracking APIs to confirm
+  persisted shares, resubmit overdue or under-placed shares to randomized
+  helpers, durably record progress, support cancellation between requests, and
+  report confirmations, resubmissions, unrecoverable shares, and the next
+  polling delay.
 
 ### Changed
-- Initial share delivery continues to target half the configured fleet, rounded
-  up, while balancing a complete commitment across the ready helper pool.
-  Retries may exceed the initial distribution for liveness.
 - Share confirmation polls now run at most four helper requests concurrently
   and spend at most ten seconds on one share before advancing, preventing a
   stalled helper set from starving later shares in the same tracking pass.
@@ -113,9 +87,16 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - **Breaking:** removed `HELPER_PREFLIGHT_TIMEOUT_SECONDS`; the client's
   preflight timeout is now derived from
   `share_policy::SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS`.
+- Helper share delivery records now distinguish definite acceptances from
+  outcome-unknown attempts and persist the intended placement target. Schema
+  version 16 preserves existing records while adding this state, allowing the
+  tracker to replenish under-placed shares without discarding their delayed
+  reveal schedule, keep ambiguous helpers poll-only, and avoid retrying
+  non-idempotent submissions whose outcome is unknown. Successful submission
+  responses with a missing or unusable status are also retained as ambiguous,
+  because the helper may already have queued the share.
 
 ### Fixed
-
 - Wallet helper-share examples now expose vote-chain submission separately
   from helper delivery, validate every persisted full-batch plan against the
   complete current helper fleet before any POST, and route delivery only
@@ -123,10 +104,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   removed planned targets and target-count drift fail without remapping or
   replanning missing shares, and malformed complete plans cannot exceed the
   aggregate per-helper initial-assignment quota.
-- Single-share helper planning now rejects any batch whose payload count is not
-  exactly one, and the wallet planning example rejects exact or canonically
-  equivalent duplicate configured helpers instead of silently shrinking the
-  fleet before placement targets are computed.
+- The wallet planning example now derives single-share mode from the committed
+  payload count, and rejects exact or canonically equivalent duplicate
+  configured helpers instead of silently shrinking the fleet before placement
+  targets are computed.
 - Initial delivery and tracking are serialized per durable share identity and
   validate the exact generation after acquiring the lock. Waiting callers
   continue to observe cancellation. Initial attempt reservations atomically
@@ -209,6 +190,46 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   rejects a stale `CommittedVote` handle whose commitment no longer matches the
   current durable recovery bundle before storage or network side effects.
 
+## v3.1.0-rc.13
+
+### Changed
+- `zcash_voting` now defaults to Zakura and exposes upstream librustzcash
+  through the mutually exclusive `lrz` feature while depending directly on
+  the leak-free `zakura` or `lrz` complete backend mode from
+  `zakura-wallet-lib`. This keeps wallet-family selection in one facade while
+  preventing disabled Zakura forks from entering LRZ consumers' Cargo
+  lockfiles and metadata. See the "Dependency notes" section of
+  `zcash_voting/README.md`.
+- Updated the Zakura stack to wallet-libraries RC4 and stable crypto 1.0,
+  `voting-crypto-deps 0.2.2`, `voting-circuits 0.11.2`, `imt-tree 0.5.2`,
+  `pir-types 0.6.2`, and `pir-client 0.7.2`. This raises the workspace MSRV to
+  Rust 1.91.
+- Prepared `vote-commitment-tree 0.6.0` and
+  `vote-commitment-tree-client 0.8.0` for their Zakura-default feature
+  contracts; publish them before `zcash_voting 3.1.0-rc.13`.
+
+## v3.1.0-rc.12
+
+### Added
+- Added shared progressive helper timing and initial-delivery limits, plus
+  readiness-ranked batch planning that balances a commitment's initial shares
+  across the preferred helper pool.
+- Added process-local `HelperHealth` scoring that demotes repeatedly failing
+  helper servers for fixed cooldown windows, immediately re-demotes them on the
+  first failure after expiry, and never removes them from candidate lists.
+- Added public helper URL canonicalization for stable server identity. Helper
+  base URLs may use HTTP or HTTPS and a mount path, but not credentials, query
+  parameters, or fragments; equivalent default ports, trailing slashes, and
+  mount-path percent escapes are normalized before comparison or persistence.
+- Added a host-owned `HelperTransport` abstraction for helper-server requests.
+  The bundled `HyperTransport` provides direct HTTP, while wallets can supply
+  Tor or proxy-backed transports without fallback to a different route.
+
+### Changed
+- Initial share delivery continues to target half the configured fleet, rounded
+  up, while balancing a complete commitment across the ready helper pool.
+  Retries may exceed the initial distribution for liveness.
+
 ## v3.1.0-rc.11
 
 ### Added
@@ -225,33 +246,11 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## v3.1.0-rc.10
 
 ### Added
-- Added a helper-server client and host-owned `HelperTransport` abstraction for
-  readiness checks, share submission, and status polling. The client applies
-  endpoint-specific timeout and retry rules, bounds response bodies, and uses
-  process-local helper health scoring to deprioritize repeatedly failing
-  servers without blocking recovery. `HyperTransport` provides the default
-  direct HTTP implementation, while wallets can supply Tor or proxy-backed
-  transports without fallback to a different route.
-- Added `track_pending_shares` and related share-tracking APIs to confirm
-  persisted shares, resubmit overdue or under-placed shares to randomized
-  helpers, durably record progress, support cancellation between requests, and
-  report confirmations, resubmissions, unrecoverable shares, and the next
-  polling delay.
 - Added deterministic round-level immediate-share selection: share index 0 of
   the lowest voted proposal in the lowest-value eligible bundle is designated
   for immediate helper submission. `RoundPlan` and `RoundPlanView` expose the
   selected `ImmediateShareKey`, while batch submission plans mark the matching
   caller-supplied batch position with `immediate = true` and `submit_at = 0`.
-
-### Changed
-- Helper share delivery records now distinguish definite acceptances from
-  outcome-unknown attempts and persist the intended placement target. Schema
-  version 16 preserves existing records while adding this state, allowing the
-  tracker to replenish under-placed shares without discarding their delayed
-  reveal schedule, keep ambiguous helpers poll-only, and avoid retrying
-  non-idempotent submissions whose outcome is unknown. Successful submission
-  responses with a missing or unusable status are also retained as ambiguous,
-  because the helper may already have queued the share.
 
 ## v3.1.0-rc.9
 

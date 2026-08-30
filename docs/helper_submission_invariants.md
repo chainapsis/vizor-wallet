@@ -288,7 +288,9 @@ Regression coverage:
 
 1. A normal vote commitment contains 16 encrypted shares. Single-share mode
    emits only domain share index 0, and the planner rejects `single_share =
-   true` unless the caller supplies exactly one payload.
+   true` unless the caller supplies exactly one payload. The wallet example
+   derives this mode from the committed payload count rather than accepting a
+   second caller-supplied mode flag that could contradict the commitment.
 2. Share indexes identify the post-ZKP-2 shuffled shares. Share index 0 does
    not imply a particular denomination or value.
 3. At most one share is designated as the round's immediate share. It is share
@@ -310,7 +312,8 @@ Regression tests:
 `round_immediate_share_key_uses_highest_bundle_lowest_voted_proposal_and_share_zero`,
 `immediate_batch_position_stays_aligned_and_does_not_perturb_other_plan`,
 `immediate_marker_is_distinct_when_all_shares_submit_immediately`,
-`single_share_mode_rejects_non_singleton_batches`, and the
+`single_share_mode_rejects_non_singleton_batches`,
+`helper_planning_derives_single_share_mode_from_payload_count`, and the
 round-plan tests in [`session.rs`](../zcash_voting/src/session.rs). The policy
 tests are in
 [`share_policy/tests/initial_placement.rs`](../zcash_voting/src/share_policy/tests/initial_placement.rs).
