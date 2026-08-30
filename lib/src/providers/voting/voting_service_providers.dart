@@ -569,6 +569,16 @@ abstract interface class VotingRustApi {
     BigInt? voteEndTimeSeconds,
   });
 
+  /// Checks and persists quorum confirmation for exactly one helper share.
+  Future<bool> confirmShareWithHelpers({
+    required VotingShareTrackingPassHandle passHandle,
+    required List<String> configuredHelperUrls,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required BigInt nowSeconds,
+  });
+
   /// Creates account-and-round helper state shared by delivery and tracking.
   VotingHelperDeliveryContext createVotingHelperDeliveryContext({
     required String dbPath,
@@ -1118,6 +1128,32 @@ class FrbVotingRustApi implements VotingRustApi {
       configuredHelperUrls: configuredHelperUrls,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  Future<bool> confirmShareWithHelpers({
+    required VotingShareTrackingPassHandle passHandle,
+    required List<String> configuredHelperUrls,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required BigInt nowSeconds,
+  }) {
+    if (passHandle is! _FrbVotingShareTrackingPassHandle) {
+      throw ArgumentError.value(
+        passHandle,
+        'passHandle',
+        'Expected an FRB voting share tracking pass handle',
+      );
+    }
+    return rust_api.confirmShareWithHelpers(
+      passHandle: passHandle.inner,
+      configuredHelperUrls: configuredHelperUrls,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+      nowSeconds: nowSeconds,
     );
   }
 

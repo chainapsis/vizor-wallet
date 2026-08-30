@@ -3992,6 +3992,10 @@ void main() {
   });
 
   test('immediate share waits until two accepted helpers corroborate', () async {
+    final fullTrackingGate = Completer<void>();
+    addTearDown(() {
+      if (!fullTrackingGate.isCompleted) fullTrackingGate.complete();
+    });
     final shareNullifier = Uint8List.fromList(List.filled(32, 9));
     final shareId = _hexFromBytes(shareNullifier);
     final acceptedShare = rust_frb_types.ShareDelegationRecordView(
@@ -4027,6 +4031,7 @@ void main() {
     );
     late final FakeVotingRecoveryApi recoveryApi;
     final rust = FakeVotingRustApi(
+      trackingPassPolicyGate: fullTrackingGate,
       onShareConfirmed: (_, _, _) {
         recoveryApi.state = recoveryState(
           bundleCount: 1,
@@ -4073,10 +4078,13 @@ void main() {
 
     expect(completed.errorMessage, isNull);
     expect(rust.confirmedShares, ['0:7:0']);
+    expect(rust.focusedShareConfirmationCalls, ['0:7:0']);
+    expect(rust.trackingPassPolicyStarted.isCompleted, isFalse);
     expect(rust.shareTrackingPassHandles, hasLength(1));
     expect(rust.shareTrackingPassHandles.single.isCancelled, isFalse);
     expect(rust.shareTrackingPassHandles.single.isDisposed, isTrue);
     expect(rust.helperDeliveryContexts, hasLength(1));
+    await container.pump();
     expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
     expect(
       http.requests
@@ -11958,6 +11966,7 @@ class FakeVotingRustApi implements VotingRustApi {
   /// Helper protocol behavior itself is covered by `zcash_voting`'s own tests;
   /// what matters here is that Dart starts, cancels, and reacts to a pass.
   final trackPendingSharesCalls = <String>[];
+  final focusedShareConfirmationCalls = <String>[];
   Completer<void>? trackPendingSharesGate;
   final trackPendingSharesStarted = Completer<void>();
   final helperDeliveryContexts = <_FakeVotingHelperDeliveryContext>[];
@@ -11977,6 +11986,69 @@ class FakeVotingRustApi implements VotingRustApi {
 
   /// Recovery double whose share rows a tracking pass advances.
   FakeVotingRecoveryApi? helperRecoveryApi;
+
+  @override
+  Future<bool> confirmShareWithHelpers({
+    required VotingShareTrackingPassHandle passHandle,
+    required List<String> configuredHelperUrls,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required BigInt nowSeconds,
+  }) async {
+    final context = (passHandle as _FakeVotingShareTrackingPassHandle).context;
+    focusedShareConfirmationCalls.add('$bundleIndex:$proposalId:$shareIndex');
+    if (passHandle.isCancelled) return false;
+    final recovery = helperRecoveryApi;
+    final transport = helperTransport;
+    if (recovery == null || transport == null) return false;
+    final share = recovery.state.shareDelegations
+        .where(
+          (record) =>
+              record.bundleIndex == bundleIndex &&
+              record.proposalId == proposalId &&
+              record.shareIndex == shareIndex,
+        )
+        .firstOrNull;
+    if (share == null) {
+      throw StateError('focused helper share not found');
+    }
+    if (share.confirmed) return true;
+
+    final shareId = share.nullifier
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    final quorum = configuredHelperUrls.length == 1 ? 1 : 2;
+    var confirmations = 0;
+    for (final helperUrl in configuredHelperUrls) {
+      if (passHandle.isCancelled) return false;
+      try {
+        final response = await transport.get(
+          Uri.parse(
+            '$helperUrl/shielded-vote/v1/share-status/'
+            '${passHandle.roundId}/$shareId',
+          ),
+        );
+        final status = (jsonDecode(response.bodyText) as Map)['status'];
+        if (status == 'confirmed') confirmations++;
+      } catch (_) {
+        // Mirrors the production API: unusable helper responses do not make
+        // the focused quorum check itself fail.
+      }
+      if (confirmations >= quorum) {
+        await _markShareConfirmed(
+          dbPath: context.dbPath,
+          accountUuid: passHandle.accountUuid,
+          roundId: passHandle.roundId,
+          bundleIndex: bundleIndex,
+          proposalId: proposalId,
+          shareIndex: shareIndex,
+        );
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   Future<rust_api.ApiShareTrackingReport> trackPendingShares({

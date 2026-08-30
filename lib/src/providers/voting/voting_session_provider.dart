@@ -3031,17 +3031,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             passHandle.cancel();
           },
         );
-        final rust_api.ApiShareTrackingReport report;
+        final bool helperConfirmed;
         try {
           final nowSeconds =
               DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-          report = await rust.trackPendingShares(
+          helperConfirmed = await rust.confirmShareWithHelpers(
             passHandle: passHandle,
             configuredHelperUrls: configuredHelperUrls,
+            bundleIndex: immediateShare.bundleIndex,
+            proposalId: immediateShare.proposalId,
+            shareIndex: immediateShare.shareIndex,
             nowSeconds: BigInt.from(nowSeconds),
-            voteEndTimeSeconds: BigInt.from(
-              context.round.voteEndTime!.millisecondsSinceEpoch ~/ 1000,
-            ),
           );
         } finally {
           cancellationWatchdog.cancel();
@@ -3050,12 +3050,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           }
           passHandle.dispose();
         }
-        final helperConfirmed = report.confirmed.any(
-          (share) =>
-              share.bundleIndex == immediateShare!.bundleIndex &&
-              share.proposalId == immediateShare.proposalId &&
-              share.shareIndex == immediateShare.shareIndex,
-        );
         if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
           return;
         }
@@ -3074,6 +3068,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               roundPlan: roundPlan,
             ),
           );
+          if (plan.unconfirmedShareDelegations.isEmpty) {
+            _releaseAutomaticShareTracking();
+          }
         } catch (error) {
           debugPrint(
             '[zcash] Voting: final immediate-share state reload skipped: '
