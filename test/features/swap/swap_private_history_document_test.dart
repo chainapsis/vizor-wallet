@@ -30,6 +30,7 @@ void main() {
     expect(raw, isNot(contains('local-contact')));
     expect(raw, isNot(contains('local network failed')));
     expect(raw, isNot(contains('local notice')));
+    expect(jsonDecode(raw), isA<List<dynamic>>());
     expect(decoded.id, source.id);
     expect(decoded.status, SwapIntentStatus.complete);
     expect(decoded.depositTxHash, source.depositTxHash);
@@ -39,15 +40,10 @@ void main() {
   });
 
   test('rejects namespace confusion and duplicate identities', () {
-    final swapBytes = SwapPrivateHistoryDocument(
-      kind: SwapPrivateHistoryKind.swap,
-      records: [_record('swap-a')],
-    ).encode();
-
     expect(
-      () => SwapPrivateHistoryDocument.decode(
-        swapBytes,
-        expectedKind: SwapPrivateHistoryKind.pay,
+      () => SwapPrivateHistoryDocument(
+        kind: SwapPrivateHistoryKind.pay,
+        records: [_record('swap-a')],
       ),
       throwsA(isA<PrivateStateProtocolException>()),
     );
@@ -70,7 +66,7 @@ void main() {
     );
   });
 
-  test('round-trips the minimal record shape accepted by legacy v1', () {
+  test('round-trips the minimal record shape', () {
     final source = _record('legacy');
     final minimal = SwapIntentRecord(
       id: source.id,
@@ -179,9 +175,8 @@ void main() {
       kind: SwapPrivateHistoryKind.swap,
       records: [_record('swap-a')],
     ).encode();
-    final raw = jsonDecode(utf8.decode(encoded)) as Map<String, dynamic>;
-    final records = raw['records'] as List<dynamic>;
-    final record = records.single as Map<String, dynamic>;
+    final raw = jsonDecode(utf8.decode(encoded)) as List<dynamic>;
+    final record = raw.single as Map<String, dynamic>;
     record['updated_at'] = '2026-08-25T12:00:00';
 
     expect(
@@ -244,14 +239,13 @@ void main() {
       expectedKind: SwapPrivateHistoryKind.swap,
     );
 
-    expect(compacted.truncated, isTrue);
     expect(decoded.records.any((record) => record.id == 'open'), isFalse);
     expect(decoded.records.any((record) => record.id == 'terminal-99'), isTrue);
     expect(decoded.records.any((record) => record.id == 'terminal-0'), isFalse);
     expect(compacted.encode().length, lessThanOrEqualTo(192 * 1024));
   });
 
-  test('compaction prunes a valid legacy history over the record cap', () {
+  test('compaction prunes history over the record cap', () {
     final compacted = SwapPrivateHistoryDocument.compact(
       kind: SwapPrivateHistoryKind.swap,
       records: [
@@ -264,7 +258,6 @@ void main() {
       ],
     );
 
-    expect(compacted.truncated, isTrue);
     expect(compacted.records.length, lessThanOrEqualTo(512));
     expect(
       compacted.records.any((record) => record.id == 'terminal-599'),

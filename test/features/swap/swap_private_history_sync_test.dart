@@ -20,18 +20,16 @@ void main() {
 
   test('metadata round-trips the merged archive state', () {
     final archiveState = _document(['remote']);
+    final encoded = FinalizedActivityArchiveMetadata(
+      lastSlot: 1,
+      hiddenRecordIds: const {'hidden'},
+      archiveState: archiveState,
+    ).toJson();
     final decoded = FinalizedActivityArchiveMetadata.fromJson(
-      jsonDecode(
-        jsonEncode(
-          FinalizedActivityArchiveMetadata(
-            lastSlot: 1,
-            hiddenRecordIds: const {'hidden'},
-            archiveState: archiveState,
-          ).toJson(),
-        ),
-      ),
+      jsonDecode(jsonEncode(encoded)),
     );
 
+    expect(encoded['schema'], 1);
     expect(decoded?.lastSlot, 1);
     expect(decoded?.hiddenRecordIds, {'hidden'});
     expect(decoded?.archiveState, archiveState);
@@ -58,13 +56,8 @@ void main() {
     ]);
     final sync = _sync(repository: repository, store: store);
 
-    final result = await sync.synchronize(
-      account: account,
-      kind: SwapPrivateHistoryKind.swap,
-    );
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-    expect(result.remoteWritten, isTrue);
-    expect(result.lastSlot, 1);
     expect(repository.createdKeys.single.itemKey, 'delta-v1:1');
     final document = SwapPrivateHistoryDocument.decode(
       repository.objects['delta-v1:1']!,
@@ -106,12 +99,12 @@ void main() {
 
     await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
     store.records.add(_record('second', SwapIntentStatus.refunded));
-    final result = await sync.synchronize(
-      account: account,
-      kind: SwapPrivateHistoryKind.swap,
-    );
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-    expect(result.lastSlot, 2);
+    expect(repository.createdKeys.map((key) => key.itemKey), [
+      'delta-v1:1',
+      'delta-v1:2',
+    ]);
     final first = SwapPrivateHistoryDocument.decode(
       repository.objects['delta-v1:1']!,
       expectedKind: SwapPrivateHistoryKind.swap,
@@ -136,12 +129,11 @@ void main() {
         ]),
       );
 
-      final result = await sync.synchronize(
+      await sync.synchronize(
         account: account,
         kind: SwapPrivateHistoryKind.swap,
       );
 
-      expect(result.remoteWritten, isFalse);
       expect(repository.createdKeys, isEmpty);
     },
   );
@@ -158,16 +150,36 @@ void main() {
       metadata: metadata,
     );
 
-    final result = await sync.synchronize(
-      account: account,
-      kind: SwapPrivateHistoryKind.swap,
-    );
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-    expect(result.lastSlot, 2);
-    expect(result.remoteWritten, isFalse);
     expect(store.records.map((record) => record.id).toSet(), {
       'remote-a',
       'remote-b',
+    });
+    expect(metadata.value?.lastSlot, 2);
+  });
+
+  test('pay recovery merges every contiguous delta', () async {
+    Uint8List payDocument(String id) => SwapPrivateHistoryDocument(
+      kind: SwapPrivateHistoryKind.pay,
+      records: [_record(id, SwapIntentStatus.complete, payMode: true)],
+    ).encode();
+
+    final repository = _MemoryRepository()
+      ..objects['delta-v1:1'] = payDocument('pay-a')
+      ..objects['delta-v1:2'] = payDocument('pay-b');
+    final store = _MemoryActivityStore(const []);
+    final metadata = _MemoryMetadataStore();
+
+    await _sync(
+      repository: repository,
+      store: store,
+      metadata: metadata,
+    ).synchronize(account: account, kind: SwapPrivateHistoryKind.pay);
+
+    expect(store.records.map((record) => record.id).toSet(), {
+      'pay-a',
+      'pay-b',
     });
     expect(metadata.value?.lastSlot, 2);
   });
@@ -215,13 +227,12 @@ void main() {
       ),
     );
 
-    final result = await _sync(
+    await _sync(
       repository: repository,
       store: store,
       metadata: metadata,
     ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-    expect(result.remoteWritten, isFalse);
     expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:2']);
     expect(repository.createdKeys, isEmpty);
   });
@@ -268,28 +279,6 @@ void main() {
     expect(metadata.value?.archiveState, delta);
   });
 
-  test('preserves a remote truncation marker without writing a slot', () async {
-    final repository = _MemoryRepository()
-      ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
-        kind: SwapPrivateHistoryKind.swap,
-        records: [_record('newest', SwapIntentStatus.complete)],
-        truncated: true,
-      ).encode();
-    final sync = _sync(
-      repository: repository,
-      store: _MemoryActivityStore(const []),
-    );
-
-    final result = await sync.synchronize(
-      account: account,
-      kind: SwapPrivateHistoryKind.swap,
-    );
-
-    expect(result.truncated, isTrue);
-    expect(result.remoteWritten, isFalse);
-    expect(repository.createdKeys, isEmpty);
-  });
-
   test(
     'create collision merges winner and advances to the next slot',
     () async {
@@ -301,12 +290,11 @@ void main() {
       ]);
       final sync = _sync(repository: repository, store: store);
 
-      final result = await sync.synchronize(
+      await sync.synchronize(
         account: account,
         kind: SwapPrivateHistoryKind.swap,
       );
 
-      expect(result.lastSlot, 2);
       expect(repository.createdKeys.map((key) => key.itemKey), [
         'delta-v1:1',
         'delta-v1:2',
@@ -343,12 +331,11 @@ void main() {
       );
       store.records = const [];
 
-      final result = await sync.synchronize(
+      await sync.synchronize(
         account: account,
         kind: SwapPrivateHistoryKind.swap,
       );
 
-      expect(result.remoteWritten, isFalse);
       expect(store.records, isEmpty);
       expect(repository.objects.keys, ['delta-v1:1']);
       expect(metadata.value?.hiddenRecordIds, {'remote'});

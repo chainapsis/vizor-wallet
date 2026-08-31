@@ -12,22 +12,6 @@ import 'swap_private_history_sync_metadata.dart';
 
 const _archiveSlotPrefix = 'delta-v1:';
 
-class FinalizedActivityArchiveSyncResult {
-  FinalizedActivityArchiveSyncResult({
-    required Iterable<SwapIntentRecord> records,
-    required this.kind,
-    required this.lastSlot,
-    required this.remoteWritten,
-    required this.truncated,
-  }) : records = List.unmodifiable(records);
-
-  final List<SwapIntentRecord> records;
-  final SwapPrivateHistoryKind kind;
-  final int lastSlot;
-  final bool remoteWritten;
-  final bool truncated;
-}
-
 class FinalizedActivityArchiveConflictException implements Exception {
   const FinalizedActivityArchiveConflictException(this.attempts);
 
@@ -39,7 +23,7 @@ class FinalizedActivityArchiveConflictException implements Exception {
 }
 
 abstract interface class FinalizedActivityArchiveSynchronizer {
-  Future<FinalizedActivityArchiveSyncResult> synchronize({
+  Future<void> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   });
@@ -96,7 +80,7 @@ class FinalizedActivityArchiveSync
   }
 
   @override
-  Future<FinalizedActivityArchiveSyncResult> synchronize({
+  Future<void> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) {
@@ -107,7 +91,7 @@ class FinalizedActivityArchiveSync
     });
   }
 
-  Future<FinalizedActivityArchiveSyncResult> _synchronize({
+  Future<void> _synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
@@ -162,17 +146,10 @@ class FinalizedActivityArchiveSync
         local.where((record) => !hidden.contains(record.id)),
         kind: kind,
       );
-      var desired = SwapPrivateHistoryDocument.compact(
+      final desired = SwapPrivateHistoryDocument.compact(
         kind: kind,
         records: combined,
       );
-      if (archive?.truncated == true && !desired.truncated) {
-        desired = SwapPrivateHistoryDocument(
-          kind: kind,
-          records: desired.records,
-          truncated: true,
-        );
-      }
       final pending = _changedRecords(archive, desired, kind: kind);
       if (pending.isEmpty) {
         await _saveMetadata(
@@ -183,24 +160,15 @@ class FinalizedActivityArchiveSync
           archiveState: archive?.encode(),
         );
         return _complete(
+          kind: kind,
           outcome: archive == null ? 'empty' : 'unchanged',
+          slot: lastSlot,
           archiveRecords: archive?.records.length ?? 0,
-          result: FinalizedActivityArchiveSyncResult(
-            records: local,
-            kind: kind,
-            lastSlot: lastSlot,
-            remoteWritten: false,
-            truncated: desired.truncated,
-          ),
         );
       }
 
       final nextSlot = lastSlot + 1;
-      final delta = SwapPrivateHistoryDocument(
-        kind: kind,
-        records: pending,
-        truncated: desired.truncated,
-      );
+      final delta = SwapPrivateHistoryDocument(kind: kind, records: pending);
       final write = await _repository.create(
         account: account,
         key: _key(kind, nextSlot),
@@ -216,15 +184,10 @@ class FinalizedActivityArchiveSync
           archiveState: archive.encode(),
         );
         return _complete(
+          kind: kind,
           outcome: 'written',
+          slot: nextSlot,
           archiveRecords: archive.records.length,
-          result: FinalizedActivityArchiveSyncResult(
-            records: local,
-            kind: kind,
-            lastSlot: nextSlot,
-            remoteWritten: true,
-            truncated: archive.truncated,
-          ),
         );
       }
 
@@ -247,17 +210,16 @@ class FinalizedActivityArchiveSync
     throw FinalizedActivityArchiveConflictException(maxCreateAttempts);
   }
 
-  FinalizedActivityArchiveSyncResult _complete({
+  void _complete({
+    required SwapPrivateHistoryKind kind,
     required String outcome,
+    required int slot,
     required int archiveRecords,
-    required FinalizedActivityArchiveSyncResult result,
   }) {
     debugPrint(
-      '[private-state] activity sync complete kind=${result.kind.wireName} '
-      'outcome=$outcome slot=${result.lastSlot} '
-      'records=$archiveRecords truncated=${result.truncated}',
+      '[private-state] activity sync complete kind=${kind.wireName} '
+      'outcome=$outcome slot=$slot records=$archiveRecords',
     );
-    return result;
   }
 
   Future<SwapPrivateHistoryDocument?> _readSlot({
@@ -343,7 +305,7 @@ SwapPrivateHistoryDocument _mergeArchiveDocuments(
   SwapPrivateHistoryDocument delta, {
   required SwapPrivateHistoryKind kind,
 }) {
-  var merged = SwapPrivateHistoryDocument.compact(
+  return SwapPrivateHistoryDocument.compact(
     kind: kind,
     records: _mergeFinalizedRecords(
       archive?.records ?? const [],
@@ -351,14 +313,6 @@ SwapPrivateHistoryDocument _mergeArchiveDocuments(
       kind: kind,
     ),
   );
-  if ((archive?.truncated == true || delta.truncated) && !merged.truncated) {
-    merged = SwapPrivateHistoryDocument(
-      kind: kind,
-      records: merged.records,
-      truncated: true,
-    );
-  }
-  return merged;
 }
 
 List<SwapIntentRecord> _changedRecords(

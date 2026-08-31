@@ -5,8 +5,8 @@ import 'dart:typed_data';
 import '../../../core/storage/app_secure_store.dart';
 import 'swap_private_history_document.dart';
 
-const _metadataSchemaVersion = 4;
-const _metadataKeyPrefix = 'zcash_finalized_activity_archive_v2';
+const _metadataSchemaVersion = 1;
+const _metadataKeyPrefix = 'zcash_finalized_activity_delta_v1';
 const _maxLocallyHiddenRecords = 2048;
 
 /// Local-only progress for the append-only finalized activity archive.

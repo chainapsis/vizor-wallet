@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import '../../../core/private_state_sync/private_state_models.dart';
 import '../models/swap_models.dart';
 
-const swapPrivateHistorySchemaVersion = 2;
 const maxSwapPrivateHistoryPlaintextBytes = 192 * 1024;
 const _maxHistoryRecords = 512;
 const _maxShortTextBytes = 512;
@@ -24,7 +23,6 @@ class SwapPrivateHistoryDocument {
   SwapPrivateHistoryDocument({
     required this.kind,
     required Iterable<SwapIntentRecord> records,
-    this.truncated = false,
   }) : records = List.unmodifiable(records),
        super() {
     _validateRecords();
@@ -32,19 +30,13 @@ class SwapPrivateHistoryDocument {
 
   final SwapPrivateHistoryKind kind;
   final List<SwapIntentRecord> records;
-  final bool truncated;
 
   Uint8List encode() {
     final sorted = List<SwapIntentRecord>.of(records)
       ..sort(_compareCanonicalRecords);
     final bytes = Uint8List.fromList(
       utf8.encode(
-        jsonEncode({
-          'schema': swapPrivateHistorySchemaVersion,
-          'kind': kind.wireName,
-          'truncated': truncated,
-          'records': [for (final record in sorted) _recordToJson(record)],
-        }),
+        jsonEncode([for (final record in sorted) _recordToJson(record)]),
       ),
     );
     if (bytes.length > maxSwapPrivateHistoryPlaintextBytes) {
@@ -95,30 +87,16 @@ class SwapPrivateHistoryDocument {
     });
 
     final selected = <SwapIntentRecord>[];
-    final requiredOnly = SwapPrivateHistoryDocument(
-      kind: kind,
-      records: selected,
-      truncated: true,
-    );
-    requiredOnly.encode();
     for (final candidate in optional) {
       final next = [...selected, candidate];
       try {
-        SwapPrivateHistoryDocument(
-          kind: kind,
-          records: next,
-          truncated: true,
-        ).encode();
+        SwapPrivateHistoryDocument(kind: kind, records: next).encode();
         selected.add(candidate);
       } on PrivateStateProtocolException {
         break;
       }
     }
-    return SwapPrivateHistoryDocument(
-      kind: kind,
-      records: selected,
-      truncated: selected.length != scoped.length,
-    );
+    return SwapPrivateHistoryDocument(kind: kind, records: selected);
   }
 
   static SwapPrivateHistoryDocument decode(
@@ -138,28 +116,14 @@ class SwapPrivateHistoryDocument {
         'Swap history plaintext is not valid UTF-8 JSON: $error',
       );
     }
-    if (decoded is! Map<String, dynamic> ||
-        decoded.length != 4 ||
-        decoded.keys.any(
-          (key) =>
-              !const {'schema', 'kind', 'truncated', 'records'}.contains(key),
-        ) ||
-        decoded['schema'] != swapPrivateHistorySchemaVersion ||
-        decoded['kind'] != expectedKind.wireName ||
-        decoded['truncated'] is! bool) {
+    if (decoded is! List || decoded.length > _maxHistoryRecords) {
       throw const PrivateStateProtocolException(
-        'Swap history document has an invalid schema.',
-      );
-    }
-    final rawRecords = decoded['records'];
-    if (rawRecords is! List || rawRecords.length > _maxHistoryRecords) {
-      throw const PrivateStateProtocolException(
-        'Swap history record count is invalid.',
+        'Swap history document has an invalid shape or record count.',
       );
     }
     final records = <SwapIntentRecord>[];
     final identities = <String>{};
-    for (final raw in rawRecords) {
+    for (final raw in decoded) {
       if (raw is! Map<String, dynamic>) {
         throw const PrivateStateProtocolException(
           'Swap history record has an invalid shape.',
@@ -174,11 +138,7 @@ class SwapPrivateHistoryDocument {
       }
       records.add(record);
     }
-    return SwapPrivateHistoryDocument(
-      kind: expectedKind,
-      records: records,
-      truncated: decoded['truncated'] as bool,
-    );
+    return SwapPrivateHistoryDocument(kind: expectedKind, records: records);
   }
 
   void _validateRecords() {

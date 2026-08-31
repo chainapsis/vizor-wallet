@@ -403,7 +403,7 @@ class _RecordingSynchronizer implements FinalizedActivityArchiveSynchronizer {
   }
 
   @override
-  Future<FinalizedActivityArchiveSyncResult> synchronize({
+  Future<void> synchronize({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
@@ -414,13 +414,6 @@ class _RecordingSynchronizer implements FinalizedActivityArchiveSynchronizer {
       await releaseFirstCall!.future;
     }
     if (failFirstCall && calls.length == 1) throw StateError('offline');
-    return FinalizedActivityArchiveSyncResult(
-      records: const [],
-      kind: kind,
-      lastSlot: 0,
-      remoteWritten: false,
-      truncated: false,
-    );
   }
 }
 

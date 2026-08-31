@@ -171,12 +171,11 @@ void main() {
         replica: SwapActivityReplica(activityStore: recoveryStore),
         metadataStore: _MemoryMetadataStore(),
       );
-      final result = await recovery.synchronize(
+      await recovery.synchronize(
         account: recoveryAccount,
         kind: SwapPrivateHistoryKind.swap,
       );
 
-      expect(result.lastSlot, 2);
       expect(recoveryStore.records.map((record) => record.id).toSet(), {
         'desktop-complete',
         'mobile-refunded',
