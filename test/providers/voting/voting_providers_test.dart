@@ -48,6 +48,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
+import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
@@ -7027,6 +7028,94 @@ void main() {
     },
   );
 
+  test('helper fan-out honors the shared concurrent post cap', () async {
+    final http = _GatedSharePostVotingHttpClient(
+      expectedShareCount: 2,
+      gatedShareIndexes: const {0, 1, 2},
+      responses: votingHttpResponses(),
+    );
+    addTearDown(() {
+      if (!http.releaseSharePosts.isCompleted) {
+        http.releaseSharePosts.complete();
+      }
+    });
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      commitmentShareCount: 3,
+      maxConcurrentHelperPosts: 2,
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    await http.allSharePostsStarted.future.timeout(const Duration(seconds: 1));
+    expect(http.startedShareIndexes, hasLength(2));
+    expect(http.maxConcurrentSharePostCount, 2);
+
+    http.releaseSharePosts.complete();
+    await cast;
+
+    expect(http.startedShareIndexes, {0, 1, 2});
+    expect(http.maxConcurrentSharePostCount, 2);
+  });
+
+  test('helper traffic uses the regtest endpoint mapping', () async {
+    const logicalHelper = 'https://helper-a.vizor-vote.invalid';
+    const mappedHelper =
+        'http://127.0.0.1:18080/gateway/helper-a.vizor-vote.invalid';
+    final http = FakeVotingHttpClient(
+      responses:
+          votingHttpResponses(
+            dynamicConfig: dynamicConfigJson(
+              voteServers: const [
+                {'url': logicalHelper, 'label': 'helper-a'},
+              ],
+            ),
+          )..addAll({
+            '$mappedHelper/shielded-vote/v1/status': {'status': 'ok'},
+            '$mappedHelper/shielded-vote/v1/shares': {'status': 'queued'},
+          }),
+    );
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+      extraOverrides: [
+        votingEndpointMapperProvider.overrideWithValue(
+          VotingEndpointMapper(
+            isRegtest: true,
+            gatewayUrl: 'http://127.0.0.1:18080/gateway',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    expect(rust.preflightConfiguredHelperUrls, [
+      [mappedHelper],
+    ]);
+    expect(
+      http.requests
+          .where((request) => request.uri.path.endsWith('/shares'))
+          .map((request) => request.uri.toString()),
+      contains('$mappedHelper/shielded-vote/v1/shares'),
+    );
+  });
+
   test('vote commitment validates all shares before submission', () async {
     final http = FakeVotingHttpClient(responses: votingHttpResponses());
     final rust = FakeVotingRustApi(
@@ -11873,6 +11962,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final trackPendingSharesStarted = Completer<void>();
   final helperDeliveryContexts = <_FakeVotingHelperDeliveryContext>[];
   final preflightDeliveryContexts = <VotingHelperDeliveryContext>[];
+  final preflightConfiguredHelperUrls = <List<String>>[];
   final initialDeliveryContexts = <VotingHelperDeliveryContext>[];
   final shareTrackingPassHandles = <_FakeVotingShareTrackingPassHandle>[];
   rust_api.ApiShareTrackingReport Function()? trackPendingSharesResult;
@@ -12102,6 +12192,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required int targetCount,
   }) async {
     preflightDeliveryContexts.add(context);
+    preflightConfiguredHelperUrls.add(List.of(configuredHelperUrls));
     if (configuredHelperUrls.isEmpty ||
         configuredHelperUrls.toSet().length != configuredHelperUrls.length) {
       throw ArgumentError('configured helper URLs must be nonempty and unique');
