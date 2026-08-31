@@ -42,16 +42,19 @@ The main implementation surfaces are:
 The primary confidentiality adversary considered by the helper-distribution
 policy is collusion by the MPC validator committee. Decrypting an encrypted
 share requires control of at least the protocol's two-thirds validator
-threshold. For a complete normal commitment planned as one batch with at least
-two configured helpers, an adversary controlling that threshold together with
-one helper can obtain at most 12 of the 16 plaintext shares from that helper's
-returned initial target assignments.
+threshold. For a complete normal commitment planned once as one batch with at
+least two configured helpers, an adversary controlling that threshold together
+with one helper can obtain at most 12 of the 16 plaintext shares from that
+helper's returned initial target assignments.
 
 This is a 75-percent share-count bound, not necessarily a bound on the
 percentage of voting balance revealed. It is an initial-planning statement,
 not a lifetime possession bound: ambiguous delivery, initial-delivery
 fallback, replenishment, overdue recovery, fleet changes, incomplete or
-independently planned batches, and single-share mode fall outside it. The
+independently planned batches, missing-share batches replanned after a process
+interruption, and single-share mode fall outside it. A host using best-effort
+restart replanning can eventually place all 16 shares on one helper and MUST
+NOT advertise the 75-percent bound for that interrupted commitment. The
 statement also makes no claim about the combined view of colluding helpers.
 
 ## Terminology and state model
@@ -241,8 +244,9 @@ normal batch of exactly `S` shares. It does not claim that a helper can never
 physically hold more than `M` shares:
 
 - single-share mode necessarily gives a selected helper the only share;
-- incomplete batches and independently planned shares have no
-  commitment-wide usage history and therefore provide no percentage bound;
+- incomplete batches, independently planned shares, and missing-share batches
+  replanned after interruption have no commitment-wide usage history and
+  therefore provide no percentage bound;
 - an ambiguous POST may have reached a helper without producing a definite
   acceptance; and
 - initial fallback, early replenishment, overdue recovery, and fleet changes
@@ -277,8 +281,8 @@ Regression coverage:
   capacity;
 - the one-helper and single-share forced-coverage exceptions are explicit;
 - single-share mode rejects zero, incomplete, and complete multi-share batches;
-- incomplete or independently planned batches do not advertise the complete
-  batch guarantee;
+- incomplete, independently planned, or restart-replanned batches do not
+  advertise the complete batch guarantee;
 - fallback and recovery remain able to exceed the initial-only quota; and
 - `legacy_target_above_protocol_cap_is_effectively_clamped` ensures a durable
   target above the protocol cap cannot drive new placements above the
@@ -425,9 +429,10 @@ The wallet boundary is covered by
 7. Plans remain positionally aligned with their input shares. The immediate
    index passed to the batch planner is a batch position, not a domain share
    index.
-8. The commitment-wide bound applies only when all `S` shares are planned in
-   one batch. Single-share mode and incomplete or independently planned
-   batches do not claim it.
+8. The commitment-wide bound applies only when all `S` shares are planned once
+   in one batch. Single-share mode, incomplete or independently planned
+   batches, and missing-share batches replanned after interruption do not claim
+   it. Repeated best-effort replanning can assign every share to one helper.
 
 Enforcement:
 `shuffled_share_server_order`,
@@ -699,6 +704,17 @@ valid against the current fleet; removed planned targets and target-count drift
 are rejected rather than remapped or replanned. The raw journaled submission
 routine is crate-private, and there is no public post-hoc delivery mutator.
 
+Hosts may instead choose the best-effort recovery profile described under
+**Host responsibilities and trust boundaries**. Such a host plans a fresh
+complete commitment as one batch but, after process interruption, may plan only
+the missing shares with fresh entropy and the complete current fleet. Each new
+plan still passes the typed boundary above, and every selected helper still
+receives durable pre-dispatch journaling, timeout protection, ambiguous-outcome
+classification, and per-share serialization. What is lost is commitment-wide
+assignment history: the SDK cannot know how the earlier process planned or
+delivered the other shares, so no aggregate per-helper share-count claim
+survives the restart.
+
 The `test-fixtures` feature exposes hidden `share::record` and
 `share::record_delivery_fixture` seed helpers for external integration tests.
 They do not exist in production builds and MUST NOT be used to model wallet
@@ -809,9 +825,10 @@ The status endpoint recognizes exactly `pending` and `confirmed`.
   configured helpers, one confirmation remains insufficient: polling
   continues, the share remains durable-unconfirmed, and recovery is not
   suppressed.
-- `track_pending_shares` is the only public confirmation mutation path. The
-  raw storage transition is crate-private so supported integrations cannot
-  bypass the configured-fleet quorum.
+- `track_pending_shares` and the focused `confirm_pending_share` are the only
+  public confirmation mutation paths. Both use the same quorum poller and
+  generation-bound write. The raw storage transition is crate-private so
+  supported integrations cannot bypass the configured-fleet quorum.
 - `pending` means only that the nullifier is not globally confirmed. It does
   not prove that the answering helper stores the share.
 - A pending response from an ambiguous helper does not promote it into
@@ -825,6 +842,13 @@ The status endpoint recognizes exactly `pending` and `confirmed`.
   toward placement.
 
 Regression tests: `two_distinct_confirmations_stop_status_checks`,
+`focused_confirmation_confirms_only_the_requested_share`,
+`focused_confirmation_ignores_malformed_unrelated_share`,
+`focused_confirmation_rejects_a_missing_share_without_network_io`,
+`focused_confirmation_returns_an_existing_confirmation_without_network_io`,
+`focused_confirmation_bypasses_the_tracker_status_grace`,
+`focused_confirmation_does_not_confirm_a_replacement_generation`,
+`focused_confirmation_reports_cancellation_without_mutation`,
 `stalled_status_poll_does_not_starve_a_later_share`,
 `expired_status_budget_does_not_start_or_penalize_helpers`,
 `cancellation_aborts_bounded_in_flight_status_polls`,
@@ -1243,13 +1267,23 @@ host wallet:
    timing and ordering input. `os_random_bytes` is provided for Rust hosts.
 4. **Lifecycle.** The host owns the timer, app-lock and round-expiry behavior,
    invokes `track_pending_shares`, and supplies cancellation.
-5. **Initial identity.** The host MUST retain the `CommittedVote`, persist the
-   complete original plan set before the first helper POST, pass each exact
-   planner-produced plan with the complete current configured fleet, and call
-   its typed `submit_share_to_helpers` method. The host MUST reject a stored
-   plan whose target count or target membership is no longer valid for the
-   current fleet rather than replanning missing shares. The crate derives the
-   durable identity and wire payload and journals every POST before dispatch.
+5. **Initial identity and recovery profile.** Every host MUST retain the
+   `CommittedVote`, pass planner-produced plans with the complete current
+   configured fleet, and call its typed `submit_share_to_helpers` method. The
+   crate derives the durable identity and wire payload and journals every POST
+   before dispatch. The host MUST also choose and accurately document one of
+   these profiles:
+   - **Strict privacy.** Persist the complete original plan set before the
+     first helper POST, reuse each exact plan after restart, and reject a stored
+     plan whose target count or target membership is no longer valid for the
+     current fleet. Only this profile retains the commitment-wide 75-percent
+     initial-assignment claim across restart.
+   - **Best-effort recovery.** Plan a fresh commitment as one complete batch,
+     but after interruption permit missing shares to be planned again with
+     fresh entropy and the complete current fleet. This prioritizes liveness,
+     but the host MUST NOT claim a per-helper share-count bound for the
+     interrupted commitment; repeated replanning can place all 16 shares on one
+     helper.
 6. **Helper-operator trust.** The protocol assumes that the authority supplying
    the wallet's helper configuration is trusted to choose independent operators
    and govern changes. URLs are endpoint identities, not authenticated operator
@@ -1282,6 +1316,13 @@ distinct-helper, persistence, per-share serialization, and routing invariants
 in this document. The built-in initial and tracking entry points serialize live
 work for the same share even when a host invokes them concurrently.
 
+The SDK validates every supplied plan against its supplied current fleet, but
+individual calls carry no commitment-wide assignment history. It therefore
+cannot reconstruct or enforce the complete-batch quota across independently
+planned calls. A strict-profile host supplies that history by persisting the
+complete original plan; a best-effort host explicitly gives up that aggregate
+claim after interruption.
+
 `SHARE_STATUS_MAX_CONCURRENT_POLLS` and
 `SHARE_STATUS_POLL_BUDGET_MILLISECONDS` are enforced tracker behavior, not
 descriptive metadata. `poll_share_helpers` limits each share to four in-flight
@@ -1308,6 +1349,10 @@ A change to helper submission or recovery should answer all of the following:
   minimum planning-pool capacity still calculated from `S`, `T`, and `M`?
 - Does every complete normal batch assign each helper no more than
   `floor(3S / 4)` shares, except for the documented one-helper case?
+- Does the host identify whether it uses strict persisted-plan recovery or
+  best-effort restart replanning?
+- If restart replanning is allowed, are all commitment-wide share-count claims
+  suppressed for interrupted commitments?
 - Does the change preserve independent CSPRNG timing and helper ordering?
 - Can `single_share = true` reach planning with any payload count other than
   exactly one?

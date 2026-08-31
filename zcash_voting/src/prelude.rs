@@ -84,7 +84,8 @@ pub use crate::share::{
     ShareTimingPolicy, ShareTrackingSummary,
 };
 pub use crate::share_tracking::{
-    os_random_bytes, share_tracking_flags, track_pending_shares, ResubmittedShare, ShareKey,
+    confirm_pending_share, os_random_bytes, share_tracking_flags, track_pending_shares,
+    ResubmittedShare, ShareConfirmationParams, ShareConfirmationReport, ShareKey,
     ShareSubmissionReport, ShareSubmissionRequest, ShareTrackingFlags, ShareTrackingParams,
     ShareTrackingReport,
 };

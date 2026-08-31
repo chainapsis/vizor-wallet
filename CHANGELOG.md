@@ -52,11 +52,20 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   helpers, durably record progress, support cancellation between requests, and
   report confirmations, resubmissions, unrecoverable shares, and the next
   polling delay.
+- Added `confirm_pending_share` for foreground flows that must check exactly
+  one durable helper share. It shares the full tracker's configured-helper
+  quorum, health ordering, four-request concurrency limit, ten-second budget,
+  cancellation, and generation-bound confirmation write without walking or
+  resubmitting unrelated shares.
 
 ### Changed
 - Share confirmation polls now run at most four helper requests concurrently
   and spend at most ten seconds on one share before advancing, preventing a
   stalled helper set from starving later shares in the same tracking pass.
+- Helper-share integration guidance now distinguishes strict persisted-plan
+  recovery, which retains the complete-batch assignment bound across restart,
+  from best-effort missing-share replanning, which prioritizes liveness and
+  makes no per-helper share-count claim after interruption.
 - **Breaking:** `submit_share_to_helpers` and `track_pending_shares` now reject
   helper URLs that fail canonicalization with `VotingError::InvalidInput`
   before any network I/O, instead of silently dropping them — an

@@ -740,6 +740,24 @@ pub(crate) fn list_for_scope(
     db.get_share_delegations_for_wallet(round_id, scope.wallet_id())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn get_delegation_for_scope(
+    db: &VotingDb,
+    scope: &ShareOperationScope,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<Option<ShareDelegationRecord>, VotingError> {
+    db.get_share_delegation_for_wallet(
+        round_id,
+        scope.wallet_id(),
+        bundle_index,
+        proposal_id,
+        share_index,
+    )
+}
+
 /// Lists unconfirmed helper-share records for retry and polling.
 pub fn unconfirmed(
     db: &VotingDb,

@@ -271,6 +271,33 @@ pub struct ShareTrackingReport {
     pub next_delay_seconds: Option<u64>,
 }
 
+/// Inputs for a focused confirmation check over one durable helper share.
+///
+/// Unlike [`ShareTrackingParams`], this request never replenishes or
+/// resubmits a share and does not walk other shares in the round. It is meant
+/// for a foreground completion gate that needs the same configured-helper
+/// quorum and generation binding as [`track_pending_shares`].
+pub struct ShareConfirmationParams<'a> {
+    /// Round that owns `share`.
+    pub round_id: &'a str,
+    /// Exact durable share key to check.
+    pub share: ShareKey,
+    /// Complete helper fleet currently configured for this wallet.
+    pub configured_server_urls: &'a [String],
+    /// Unix time used for process-local helper health ordering.
+    pub now_seconds: u64,
+}
+
+/// Result of one focused helper-share confirmation check.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShareConfirmationReport {
+    /// True when this call observed the configured-helper quorum and durably
+    /// confirmed the exact share generation, or found it already confirmed.
+    pub confirmed: bool,
+    /// True when caller cancellation stopped the check.
+    pub cancelled: bool,
+}
+
 /// Inputs for one tracking pass.
 pub struct ShareTrackingParams<'a> {
     /// Round whose unconfirmed shares should be tracked.
@@ -321,6 +348,141 @@ use recovery::{
     resubmit_to_next_helper, ResubmissionCandidates, ResubmissionSchedule, ResubmitOutcome,
     ResubmitRequest,
 };
+
+/// Polls and, on quorum, confirms exactly one durable helper share.
+///
+/// This focused path intentionally bypasses the normal status-check grace: a
+/// foreground flow calls it only after the vote transaction is confirmed and
+/// the immediate share has been delivered. It still enforces the same
+/// configured-fleet trust boundary, health ordering, four-request concurrency
+/// limit, ten-second total status budget, cancellable per-share lock, and
+/// generation-qualified confirmation write as [`track_pending_shares`]. It
+/// never performs recovery POSTs and never inspects unrelated shares.
+///
+/// # Errors
+///
+/// Returns [`VotingError::InvalidInput`] when the helper fleet is invalid or
+/// the requested durable share does not exist. Storage errors are returned
+/// unchanged.
+pub async fn confirm_pending_share(
+    db: &VotingDb,
+    params: &ShareConfirmationParams<'_>,
+    client: &HelperClient,
+    cancel: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<ShareConfirmationReport, VotingError> {
+    let scope = share::ShareOperationScope::capture(db);
+    let configured_fleet = ConfiguredHelperFleet::new(params.configured_server_urls)?;
+    let loaded_share = share::get_delegation_for_scope(
+        db,
+        &scope,
+        params.round_id,
+        params.share.bundle_index,
+        params.share.proposal_id,
+        params.share.share_index,
+    )?
+    .ok_or_else(|| VotingError::InvalidInput {
+        message: format!(
+            "helper share not found: round={}, bundle={}, proposal={}, share={}",
+            params.round_id,
+            params.share.bundle_index,
+            params.share.proposal_id,
+            params.share.share_index
+        ),
+    })?;
+
+    let Some(_operation_guard) = lock_share_operation_or_cancel(
+        &scope,
+        params.round_id,
+        params.share.bundle_index,
+        params.share.proposal_id,
+        params.share.share_index,
+        cancel,
+    )
+    .await?
+    else {
+        return Ok(ShareConfirmationReport {
+            cancelled: true,
+            ..ShareConfirmationReport::default()
+        });
+    };
+
+    let Some(share) = share::get_delegation_for_scope(
+        db,
+        &scope,
+        params.round_id,
+        params.share.bundle_index,
+        params.share.proposal_id,
+        params.share.share_index,
+    )?
+    .filter(|share| share.nullifier == loaded_share.nullifier) else {
+        return Ok(ShareConfirmationReport::default());
+    };
+
+    poll_and_confirm_share(
+        db,
+        &scope,
+        params.round_id,
+        &share,
+        configured_fleet.urls(),
+        client,
+        params.now_seconds,
+        cancel,
+    )
+    .await
+}
+
+async fn poll_and_confirm_share(
+    db: &VotingDb,
+    scope: &share::ShareOperationScope,
+    round_id: &str,
+    share: &ShareDelegationRecord,
+    configured_urls: &[String],
+    client: &HelperClient,
+    now_seconds: u64,
+    cancel: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<ShareConfirmationReport, VotingError> {
+    if share.confirmed {
+        return Ok(ShareConfirmationReport {
+            confirmed: true,
+            cancelled: false,
+        });
+    }
+
+    let share_id = hex::encode(&share.nullifier);
+    match poll_share_helpers(
+        client,
+        round_id,
+        &share_id,
+        configured_urls,
+        now_seconds,
+        cancel,
+    )
+    .await
+    {
+        ShareStatusOutcome::Cancelled => Ok(ShareConfirmationReport {
+            confirmed: false,
+            cancelled: true,
+        }),
+        ShareStatusOutcome::ConfiguredHelperQuorumNotObserved => {
+            Ok(ShareConfirmationReport::default())
+        }
+        ShareStatusOutcome::ConfiguredHelperQuorumObserved => {
+            let generation = share::ShareGeneration::new(scope, &share.nullifier);
+            let confirmed = share::confirm_for_generation(
+                db,
+                round_id,
+                share.bundle_index,
+                share.proposal_id,
+                share.share_index,
+                generation,
+            )?;
+            Ok(ShareConfirmationReport {
+                confirmed,
+                cancelled: false,
+            })
+        }
+    }
+}
 
 /// Runs one confirm-or-retry pass over a round's unconfirmed shares.
 ///
@@ -460,37 +622,24 @@ async fn track_pending_shares_with_elapsed(
         }
 
         if flags.ready_for_status_check {
-            let share_id = hex::encode(&share.nullifier);
-            let status_outcome = poll_share_helpers(
-                client,
+            let confirmation = poll_and_confirm_share(
+                db,
+                &scope,
                 params.round_id,
-                &share_id,
+                &share,
                 configured_urls,
+                client,
                 current_time,
                 cancel,
             )
-            .await;
-            match status_outcome {
-                ShareStatusOutcome::Cancelled => {
-                    report.cancelled = true;
-                    break;
-                }
-                ShareStatusOutcome::ConfiguredHelperQuorumObserved => {
-                    let generation = share::ShareGeneration::new(&scope, &share.nullifier);
-                    if !share::confirm_for_generation(
-                        db,
-                        params.round_id,
-                        share.bundle_index,
-                        share.proposal_id,
-                        share.share_index,
-                        generation,
-                    )? {
-                        continue;
-                    }
-                    report.confirmed.push(ShareKey::of(&share));
-                    continue;
-                }
-                ShareStatusOutcome::ConfiguredHelperQuorumNotObserved => {}
+            .await?;
+            if confirmation.cancelled {
+                report.cancelled = true;
+                break;
+            }
+            if confirmation.confirmed {
+                report.confirmed.push(ShareKey::of(&share));
+                continue;
             }
         }
 

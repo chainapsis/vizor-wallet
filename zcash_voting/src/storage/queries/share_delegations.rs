@@ -764,9 +764,36 @@ pub fn get_share_delegations(
         "SELECT bundle_index, proposal_id, share_index, sent_to_urls, ambiguous_urls, attempting_urls, target_count, nullifier, confirmed, submit_at, created_at, round_id \
          FROM share_delegations WHERE round_id = :round_id AND wallet_id = :wallet_id \
          ORDER BY proposal_id, share_index",
-        round_id,
-        wallet_id,
+        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
     )
+}
+
+/// Load one share delegation by its complete durable key.
+#[allow(clippy::too_many_arguments)]
+pub fn get_share_delegation(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<Option<ShareDelegationRecord>, VotingError> {
+    let mut shares = load_share_delegations(
+        conn,
+        "SELECT bundle_index, proposal_id, share_index, sent_to_urls, ambiguous_urls, attempting_urls, target_count, nullifier, confirmed, submit_at, created_at, round_id \
+         FROM share_delegations \
+         WHERE round_id = :round_id AND wallet_id = :wallet_id \
+           AND bundle_index = :bundle_index AND proposal_id = :proposal_id \
+           AND share_index = :share_index",
+        named_params! {
+            ":round_id": round_id,
+            ":wallet_id": wallet_id,
+            ":bundle_index": bundle_index,
+            ":proposal_id": proposal_id,
+            ":share_index": share_index,
+        },
+    )?;
+    Ok(shares.pop())
 }
 
 /// Load only unconfirmed share delegations for a round.
@@ -780,8 +807,7 @@ pub fn get_unconfirmed_delegations(
         "SELECT bundle_index, proposal_id, share_index, sent_to_urls, ambiguous_urls, attempting_urls, target_count, nullifier, confirmed, submit_at, created_at, round_id \
          FROM share_delegations WHERE round_id = :round_id AND wallet_id = :wallet_id AND confirmed = 0 \
          ORDER BY proposal_id, share_index",
-        round_id,
-        wallet_id,
+        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
     )
 }
 
@@ -822,42 +848,38 @@ pub fn pending_share_rounds(
         })
 }
 
-fn load_share_delegations(
+fn load_share_delegations<P: rusqlite::Params>(
     conn: &Connection,
     sql: &str,
-    round_id: &str,
-    wallet_id: &str,
+    params: P,
 ) -> Result<Vec<ShareDelegationRecord>, VotingError> {
     let mut stmt = conn.prepare(sql).map_err(|e| VotingError::Internal {
         message: format!("failed to prepare share delegation query: {}", e),
     })?;
     let share_delegation_rows = stmt
-        .query_map(
-            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-            |row| {
-                let definite_acceptance_json: String = row.get(3)?;
-                let outcome_unknown_json: String = row.get(4)?;
-                let in_flight_json: String = row.get(5)?;
-                let target_count: u32 = row.get(6)?;
-                let nullifier_blob: Vec<u8> = row.get(7)?;
-                let confirmed_int: i32 = row.get(8)?;
-                let persisted_round_id: String = row.get(11)?;
-                Ok((
-                    row.get::<_, u32>(0)?,
-                    row.get::<_, u32>(1)?,
-                    row.get::<_, u32>(2)?,
-                    definite_acceptance_json,
-                    outcome_unknown_json,
-                    in_flight_json,
-                    target_count,
-                    nullifier_blob,
-                    confirmed_int != 0,
-                    row.get::<_, u64>(9)?,
-                    row.get::<_, u64>(10)?,
-                    persisted_round_id,
-                ))
-            },
-        )
+        .query_map(params, |row| {
+            let definite_acceptance_json: String = row.get(3)?;
+            let outcome_unknown_json: String = row.get(4)?;
+            let in_flight_json: String = row.get(5)?;
+            let target_count: u32 = row.get(6)?;
+            let nullifier_blob: Vec<u8> = row.get(7)?;
+            let confirmed_int: i32 = row.get(8)?;
+            let persisted_round_id: String = row.get(11)?;
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                definite_acceptance_json,
+                outcome_unknown_json,
+                in_flight_json,
+                target_count,
+                nullifier_blob,
+                confirmed_int != 0,
+                row.get::<_, u64>(9)?,
+                row.get::<_, u64>(10)?,
+                persisted_round_id,
+            ))
+        })
         .map_err(|e| VotingError::Internal {
             message: format!("failed to query share delegations: {}", e),
         })?;

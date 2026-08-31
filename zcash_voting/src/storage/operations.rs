@@ -2062,6 +2062,26 @@ impl VotingDb {
         queries::get_share_delegations(&conn, round_id, wallet_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn get_share_delegation_for_wallet(
+        &self,
+        round_id: &str,
+        wallet_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+    ) -> Result<Option<crate::ShareDelegationRecord>, VotingError> {
+        let conn = self.conn();
+        queries::get_share_delegation(
+            &conn,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+        )
+    }
+
     /// Load only unconfirmed share delegations for a round.
     pub fn get_unconfirmed_delegations(
         &self,

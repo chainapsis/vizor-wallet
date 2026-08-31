@@ -104,6 +104,375 @@ async fn one_helper_fleet_uses_its_only_available_confirmation() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn focused_confirmation_confirms_only_the_requested_share() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    let second_submission = ShareSubmissionReport {
+        accepted_urls: configured.clone(),
+        ambiguous_urls: Vec::new(),
+        target_count: configured.len(),
+    };
+    share::record_delivery(
+        &db,
+        &share::ShareDeliveryRecordParams {
+            round_id: ROUND_ID,
+            bundle_index: 0,
+            proposal_id: 1,
+            share_index: 1,
+            submission: &second_submission,
+            submit_at: SUBMIT_AT,
+        },
+    )
+    .unwrap();
+    let requested_id = share_id_at(&db, 0);
+    let unrelated_id = share_id_at(&db, 1);
+    let transport = Arc::new(MockTransport::default());
+    for index in 1..=2 {
+        transport.queue_get(
+            &format!(
+                "{}/shielded-vote/v1/share-status/{ROUND_ID}/{requested_id}",
+                helper(index)
+            ),
+            json_status("confirmed"),
+        );
+    }
+    let client = client_with(transport.clone());
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: ready_not_overdue(),
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        report,
+        ShareConfirmationReport {
+            confirmed: true,
+            cancelled: false,
+        }
+    );
+    assert!(
+        share::list(&db, ROUND_ID)
+            .unwrap()
+            .into_iter()
+            .find(|share| share.share_index == 0)
+            .unwrap()
+            .confirmed
+    );
+    assert!(
+        !share::list(&db, ROUND_ID)
+            .unwrap()
+            .into_iter()
+            .find(|share| share.share_index == 1)
+            .unwrap()
+            .confirmed
+    );
+    assert_eq!(transport.call_count(&unrelated_id), 0);
+    assert_eq!(transport.call_count("/shares"), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_ignores_malformed_unrelated_share() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    share::record_delivery(
+        &db,
+        &share::ShareDeliveryRecordParams {
+            round_id: ROUND_ID,
+            bundle_index: 0,
+            proposal_id: 1,
+            share_index: 1,
+            submission: &ShareSubmissionReport {
+                accepted_urls: configured.clone(),
+                ambiguous_urls: Vec::new(),
+                target_count: configured.len(),
+            },
+            submit_at: SUBMIT_AT,
+        },
+    )
+    .unwrap();
+    let requested_id = share_id_at(&db, 0);
+    db.conn()
+        .execute(
+            "UPDATE share_delegations SET sent_to_urls = 'not-json'
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = 0 AND proposal_id = 1 AND share_index = 1",
+            rusqlite::named_params! {
+                ":round_id": ROUND_ID,
+                ":wallet_id": WALLET_ID,
+            },
+        )
+        .unwrap();
+    let transport = Arc::new(MockTransport::default());
+    for index in 1..=2 {
+        transport.queue_get(
+            &format!(
+                "{}/shielded-vote/v1/share-status/{ROUND_ID}/{requested_id}",
+                helper(index)
+            ),
+            json_status("confirmed"),
+        );
+    }
+    let client = client_with(transport);
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: ready_not_overdue(),
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        report,
+        ShareConfirmationReport {
+            confirmed: true,
+            cancelled: false,
+        }
+    );
+    let confirmed = db
+        .conn()
+        .query_row(
+            "SELECT confirmed FROM share_delegations
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = 0 AND proposal_id = 1 AND share_index = 0",
+            rusqlite::named_params! {
+                ":round_id": ROUND_ID,
+                ":wallet_id": WALLET_ID,
+            },
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap();
+    assert!(confirmed);
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_rejects_a_missing_share_without_network_io() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    let transport = Arc::new(MockTransport::default());
+    let client = client_with(transport.clone());
+
+    let error = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 99,
+            },
+            configured_server_urls: &configured,
+            now_seconds: ready_not_overdue(),
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        VotingError::InvalidInput { message }
+            if message.contains("helper share not found")
+                && message.contains("share=99")
+    ));
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_returns_an_existing_confirmation_without_network_io() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    share::confirm(&db, ROUND_ID, 0, 1, 0).unwrap();
+    let transport = Arc::new(MockTransport::default());
+    let client = client_with(transport.clone());
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: SUBMIT_AT,
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        report,
+        ShareConfirmationReport {
+            confirmed: true,
+            cancelled: false,
+        }
+    );
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_bypasses_the_tracker_status_grace() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    let share_id = share_id_of(&db);
+    let transport = Arc::new(MockTransport::default());
+    for index in 1..=2 {
+        transport.queue_get(
+            &format!(
+                "{}/shielded-vote/v1/share-status/{ROUND_ID}/{share_id}",
+                helper(index)
+            ),
+            json_status("confirmed"),
+        );
+    }
+    let client = client_with(transport.clone());
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: SUBMIT_AT,
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap();
+
+    assert!(report.confirmed);
+    assert_eq!(transport.calls().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_does_not_confirm_a_replacement_generation() {
+    let configured = helpers(2);
+    let db = Arc::new(db_with_delivery(&configured, &[], configured.len()));
+    let original_id = share_id_of(&db);
+    let replacement_nullifier = vec![0xF4; 32];
+    let transport = Arc::new(MockTransport::default());
+    for index in 1..=2 {
+        transport.queue_get(
+            &format!(
+                "{}/shielded-vote/v1/share-status/{ROUND_ID}/{original_id}",
+                helper(index)
+            ),
+            json_status("confirmed"),
+        );
+    }
+    let replacing_db = Arc::clone(&db);
+    let replacement_for_observer = replacement_nullifier.clone();
+    transport.observe_gets(move |_| {
+        replacing_db
+            .conn()
+            .execute(
+                "UPDATE share_delegations SET nullifier = :nullifier
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = 0 AND proposal_id = 1 AND share_index = 0",
+                rusqlite::named_params! {
+                    ":nullifier": replacement_for_observer,
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+            )
+            .unwrap();
+    });
+    let client = client_with(transport);
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: ready_not_overdue(),
+        },
+        &client,
+        &never_cancel(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(report, ShareConfirmationReport::default());
+    let stored = only_share(&db);
+    assert_eq!(stored.nullifier, replacement_nullifier);
+    assert!(!stored.confirmed);
+}
+
+#[tokio::test(start_paused = true)]
+async fn focused_confirmation_reports_cancellation_without_mutation() {
+    let configured = helpers(2);
+    let db = db_with_delivery(&configured, &[], configured.len());
+    let transport = Arc::new(MockTransport::default());
+    let client = client_with(transport.clone());
+
+    let report = confirm_pending_share(
+        &db,
+        &ShareConfirmationParams {
+            round_id: ROUND_ID,
+            share: ShareKey {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+            },
+            configured_server_urls: &configured,
+            now_seconds: ready_not_overdue(),
+        },
+        &client,
+        &|| true,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        report,
+        ShareConfirmationReport {
+            confirmed: false,
+            cancelled: true,
+        }
+    );
+    assert!(!only_share(&db).confirmed);
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn every_helper_pending_reports_not_confirmed() {
     let round_id = field_hex(1);
     let share_id = "cd".repeat(32);

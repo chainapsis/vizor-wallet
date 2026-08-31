@@ -60,10 +60,14 @@ pub struct WalletAtomicVoteBatchRequest<'a> {
     pub voting_hotkey: &'a VotingHotkey,
 }
 
-/// Persist this complete plan set before submitting its first helper share.
+/// Strict-privacy profile: persist this complete plan set before submitting
+/// its first helper share.
 ///
 /// Keeping the canonical fleet with the plans lets restart recovery reuse the
-/// same commitment-wide balancing and quota context.
+/// same commitment-wide balancing and quota context. Hosts that intentionally
+/// choose the documented best-effort recovery profile may instead replan
+/// missing shares after interruption, but cannot retain the commitment-wide
+/// per-helper share-count claim.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WalletHelperSharePlan {
     /// Canonical planning-time fleet retained as historical plan context.
