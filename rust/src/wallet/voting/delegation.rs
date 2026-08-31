@@ -27,32 +27,10 @@ use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
-const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-// This value affects bundle identity and must not change for recovery v1.
-// Introduce a new recovery policy version before changing it.
-const RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 25_000 * ZATOSHI_PER_ZEC;
 // Matches zcash_voting / voting-circuits keygen warm-up threads.
 const PROVING_CACHE_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 static PROVING_CACHE_WARMUP_STARTED: OnceLock<()> = OnceLock::new();
-
-/// Extend a bundle policy with Vizor's frozen recovery-v1 whale threshold.
-///
-/// The normal API path supplies [`zcash_voting::recoverable_bundle_policy_v1`]
-/// so restoring the same hotkey and wallet notes reconstructs the same bundle
-/// identities and VANs. Vizor additionally freezes this threshold as part of
-/// that reconstruction contract.
-fn with_recoverable_v1_whale_threshold(bundle_policy: BundlePolicy) -> BundlePolicy {
-    bundle_policy.with_bundle_addition_threshold(RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI)
-}
-
-fn prepare_params_with_whale_protection<'a>(
-    mut prepare_params: PrepareDelegationBundleParams<'a>,
-) -> PrepareDelegationBundleParams<'a> {
-    prepare_params.bundle_policy =
-        with_recoverable_v1_whale_threshold(prepare_params.bundle_policy);
-    prepare_params
-}
 
 fn normalize_pir_server_urls(pir_server_urls: &[String]) -> Result<Vec<String>, String> {
     let mut normalized = Vec::with_capacity(pir_server_urls.len());
@@ -340,7 +318,6 @@ pub async fn setup_delegation_bundles(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let bundle_policy = with_recoverable_v1_whale_threshold(bundle_policy);
     with_voting_sidecar_write_lock(db_path, || {
         voting_db
             .ensure_bundles_with_skipped_suffix_with_policy(
@@ -436,7 +413,6 @@ pub async fn precompute_snapshot_bundles(
     let db_path = db_path.to_string();
     let account_uuid = account_uuid.to_string();
     let round_id = round_params.vote_round_id;
-    let policy = with_recoverable_v1_whale_threshold(bundle_policy);
     let report = tokio::task::spawn_blocking(move || {
         let pir_client = pir_connect.join()?;
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
@@ -445,7 +421,7 @@ pub async fn precompute_snapshot_bundles(
                 &voting_db,
                 &round_id,
                 &note_infos,
-                policy,
+                bundle_policy,
                 &pir_client,
                 network,
             )
@@ -535,8 +511,7 @@ pub async fn check_voting_eligibility(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let seed_policy = with_recoverable_v1_whale_threshold(bundle_policy);
-    voting_eligibility_report(voting_db, round_id, &note_infos, seed_policy)
+    voting_eligibility_report(voting_db, round_id, &note_infos, bundle_policy)
 }
 
 /// Warms PIR state for a single delegation bundle.
@@ -589,7 +564,6 @@ pub async fn precompute_delegation_pir(
             bundle_index,
             bundle_policy,
         };
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
         let (voting_db, prepared) =
             with_open_voting_db_write(&db_path, &account_uuid, |voting_db| {
                 zcash_voting::delegate::prepare_delegation_bundle(
@@ -734,8 +708,7 @@ pub async fn warm_pir_proof_cache(
         .name("voting-pir-cache-warmup".to_string())
         .spawn(move || {
             let pir_client = pir_connect.join()?;
-            let bundle_policy =
-                with_recoverable_v1_whale_threshold(zcash_voting::recoverable_bundle_policy_v1());
+            let bundle_policy = zcash_voting::recoverable_bundle_policy_v1();
             // The cache upserts are idempotent and run outside the process-local
             // sidecar write lock, so a lost SQLite writer race is safely retried.
             // `precompute_pir_proofs` also prunes rows older than four weeks.
@@ -810,7 +783,6 @@ where
             db_path,
             wallet_network(prepare_params.voting_hotkey.network()),
         )?;
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
         let pczt_progress = on_progress.clone();
         let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
             pczt_progress(progress);
@@ -926,7 +898,6 @@ pub async fn build_keystone_delegation_request(
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
-    let prepare_params = prepare_params_with_whale_protection(prepare_params);
     with_open_voting_db_write(db_path, account_uuid, |voting_db| {
         let prepared = zcash_voting::delegate::prepare_delegation_bundle(
             voting_db,
@@ -979,7 +950,6 @@ where
             db_path,
             wallet_network(prepare_params.voting_hotkey.network()),
         )?;
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
         with_open_voting_db_write(db_path, account_uuid, |voting_db| {
             zcash_voting::delegate::prepare_delegation_bundle(voting_db, &wallet_db, prepare_params)
                 .map_err(|e| e.to_string())
@@ -1032,6 +1002,8 @@ mod tests {
         Arc, Barrier, Mutex,
     };
     use zip32::{fingerprint::SeedFingerprint, AccountId};
+
+    const ZATOSHI_PER_ZEC: u64 = 100_000_000;
 
     fn note_with_value(position: u64, value: u64) -> zcash_voting::NoteInfo {
         let tag = position as u8;
@@ -1156,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn whale_protection_starts_new_bundle_when_addition_would_cross_threshold() {
+    fn recoverable_v1_policy_starts_new_bundle_after_canonical_zip_318_shape() {
         let notes = vec![
             note_with_value(1, 10_000 * ZATOSHI_PER_ZEC),
             note_with_value(2, 10_000 * ZATOSHI_PER_ZEC),
@@ -1167,7 +1139,7 @@ mod tests {
             zcash_voting::round::note_bundles_with_policy(&notes, BundlePolicy::default()).unwrap();
         assert_eq!(default_plan[0].len(), 4);
 
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
         let protected_plan = zcash_voting::round::note_bundles_with_policy(&notes, policy).unwrap();
         let protected_positions: Vec<Vec<u64>> = protected_plan
             .iter()
@@ -1189,8 +1161,7 @@ mod tests {
 
     #[test]
     fn recoverable_v1_policy_preserves_vizor_whale_protection() {
-        let policy =
-            with_recoverable_v1_whale_threshold(zcash_voting::recoverable_bundle_policy_v1());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
 
         assert_eq!(policy.max_real_notes_per_bundle(), 5);
         assert_eq!(policy.max_privacy_bundles(), Some(2));
@@ -1198,7 +1169,7 @@ mod tests {
         assert_eq!(policy.max_privacy_drop_zatoshi(), Some(100_000_000_000));
         assert_eq!(
             policy.bundle_addition_threshold(),
-            Some(RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI)
+            Some(25_000 * ZATOSHI_PER_ZEC)
         );
     }
 
@@ -1238,7 +1209,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = test_voting_db(&temp_dir);
         let notes = whale_with_dust_tail_notes();
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
 
         let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
 
@@ -1266,7 +1237,7 @@ mod tests {
         let notes: Vec<_> = (1..=20)
             .map(|position| note_with_value(position, 50 * ZATOSHI_PER_ZEC))
             .collect();
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
 
         let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
 
@@ -1279,7 +1250,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = test_voting_db(&temp_dir);
         let notes = whale_with_dust_tail_notes();
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
         let layout = db
             .ensure_bundles_with_policy(ROUND_ID, &notes, policy)
             .unwrap();
@@ -1302,7 +1273,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = test_voting_db(&temp_dir);
         let notes = whale_with_dust_tail_notes();
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
         db.ensure_bundles_with_policy(ROUND_ID, &notes, policy.with_max_privacy_bundles(None))
             .unwrap();
         // A round carried across the in-place schema upgrade has bundle rows
@@ -1328,7 +1299,7 @@ mod tests {
         let db = test_voting_db(&temp_dir);
         let mut notes = whale_with_dust_tail_notes();
         notes.extend(whale_with_dust_tail_notes());
-        let policy = with_recoverable_v1_whale_threshold(BundlePolicy::default());
+        let policy = zcash_voting::recoverable_bundle_policy_v1();
 
         let report = voting_eligibility_report(&db, ROUND_ID, &notes, policy).unwrap();
 
