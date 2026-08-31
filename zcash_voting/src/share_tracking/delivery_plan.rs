@@ -86,11 +86,7 @@ pub(crate) fn prepare_share_delivery_plan(
         proposal_id,
         &commitment_bundle_json,
     )? {
-        validate_share_delivery_plan(
-            &existing,
-            params.fleet.configured_server_urls(),
-            payloads.len(),
-        )?;
+        validate_share_delivery_plan(&existing, payloads.len())?;
         validate_immediate_plan(&existing, immediate_position)?;
         tx.commit().map_err(|e| VotingError::Internal {
             message: format!("commit helper-share plan read transaction failed: {e}"),
@@ -148,7 +144,7 @@ pub(crate) fn prepare_share_delivery_plan(
             SharePlacementGuarantee::Strict
         },
     };
-    validate_share_delivery_plan(&plan, params.fleet.configured_server_urls(), payloads.len())?;
+    validate_share_delivery_plan(&plan, payloads.len())?;
     let fleet_json =
         serde_json::to_string(&plan.configured_server_urls).map_err(|e| VotingError::Internal {
             message: format!("serialize helper-share planning fleet failed: {e}"),
@@ -191,11 +187,7 @@ pub(crate) fn prepare_share_delivery_plan(
     .ok_or_else(|| VotingError::Internal {
         message: "newly persisted helper-share plan was not found".to_string(),
     })?;
-    validate_share_delivery_plan(
-        &persisted,
-        params.fleet.configured_server_urls(),
-        payloads.len(),
-    )?;
+    validate_share_delivery_plan(&persisted, payloads.len())?;
     validate_immediate_plan(&persisted, immediate_position)?;
     validate_round_immediate_plans(&tx, round_id, &wallet_id, immediate_key)?;
     tx.commit().map_err(|e| VotingError::Internal {
@@ -479,7 +471,8 @@ pub(crate) fn load_share_delivery_plan(
     .ok_or_else(|| VotingError::InvalidInput {
         message: "helper-share delivery must be prepared before submission".to_string(),
     })?;
-    validate_share_delivery_plan(&plan, current_fleet, payloads.len())?;
+    validate_current_helper_fleet(current_fleet)?;
+    validate_share_delivery_plan(&plan, payloads.len())?;
     let intents = load_ballot_intents_with_conn(&conn, round_id, scope.wallet_id())?;
     if !matches!(intents.get(&proposal_id), Some(Decision::Choice(_))) {
         return Err(VotingError::InvalidInput {
@@ -594,7 +587,6 @@ fn load_plan_with_conn(
 
 pub(crate) fn validate_share_delivery_plan(
     plan: &ShareDeliveryPlan,
-    configured_server_urls: &[String],
     share_count: usize,
 ) -> Result<Vec<String>, VotingError> {
     if plan.share_plans.len() != share_count {
@@ -605,23 +597,15 @@ pub(crate) fn validate_share_delivery_plan(
             ),
         });
     }
-    let configured = canonical_helper_url_list(configured_server_urls)?;
-    if configured.is_empty() || configured.len() != configured_server_urls.len() {
-        return Err(VotingError::InvalidInput {
-            message: "configured helper fleet must be nonempty and canonically distinct"
-                .to_string(),
-        });
-    }
     let planned_fleet = canonical_helper_url_list(&plan.configured_server_urls)?;
-    let same_fleet =
-        BTreeSet::from_iter(planned_fleet.iter()) == BTreeSet::from_iter(configured.iter());
-    if planned_fleet.len() != plan.configured_server_urls.len() || !same_fleet {
+    if planned_fleet.is_empty() || planned_fleet.len() != plan.configured_server_urls.len() {
         return Err(VotingError::InvalidInput {
-            message: "current helper fleet does not match the persisted helper-share plan"
-                .to_string(),
+            message:
+                "persisted helper-share planning fleet must be nonempty and canonically distinct"
+                    .to_string(),
         });
     }
-    let expected_target = share_submission_target_count(configured.len());
+    let expected_target = share_submission_target_count(planned_fleet.len());
     let mut assignments = BTreeMap::<String, usize>::new();
     for (share_index, share_plan) in plan.share_plans.iter().enumerate() {
         let targets = canonical_helper_url_list(&share_plan.target_servers)?;
@@ -634,10 +618,10 @@ pub(crate) fn validate_share_delivery_plan(
                 message: format!("helper-share plan {share_index} has an invalid target set"),
             });
         }
-        if let Some(url) = targets.iter().find(|url| !configured.contains(url)) {
+        if let Some(url) = targets.iter().find(|url| !planned_fleet.contains(url)) {
             return Err(VotingError::InvalidInput {
                 message: format!(
-                    "helper-share plan {share_index} targets helper removed from current configuration: {url}"
+                    "helper-share plan {share_index} targets helper outside its persisted planning fleet: {url}"
                 ),
             });
         }
@@ -645,7 +629,7 @@ pub(crate) fn validate_share_delivery_plan(
             *assignments.entry(url).or_default() += 1;
         }
     }
-    if share_count == VOTE_COMMITMENT_SHARE_COUNT && configured.len() >= 2 {
+    if share_count == VOTE_COMMITMENT_SHARE_COUNT && planned_fleet.len() >= 2 {
         if let Some((url, count)) = assignments
             .iter()
             .find(|(_, count)| **count > SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER)
@@ -657,7 +641,18 @@ pub(crate) fn validate_share_delivery_plan(
             });
         }
     }
-    Ok(configured)
+    Ok(planned_fleet)
+}
+
+fn validate_current_helper_fleet(configured_server_urls: &[String]) -> Result<(), VotingError> {
+    let configured = canonical_helper_url_list(configured_server_urls)?;
+    if configured.is_empty() || configured.len() != configured_server_urls.len() {
+        return Err(VotingError::InvalidInput {
+            message: "configured helper fleet must be nonempty and canonically distinct"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_immediate_plan(

@@ -424,24 +424,25 @@ pub(crate) async fn submit_committed_share_to_helpers(
     cancel: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<ShareSubmissionReport, VotingError> {
     let configured = ConfiguredHelperFleet::new(request.configured_server_urls)?;
+    let planning_fleet = ConfiguredHelperFleet::new(request.planning_server_urls)?;
     let planned = canonical_helper_url_list(&request.plan.target_servers)?;
     if planned.len() != request.plan.target_servers.len() {
         return Err(VotingError::InvalidInput {
             message: "plan target_servers must contain distinct canonical helpers".to_string(),
         });
     }
-    let expected_target = share_submission_target_count(configured.len());
+    let expected_target = share_submission_target_count(planning_fleet.len());
     let planned_target = usize::try_from(request.plan.target_count).unwrap_or(usize::MAX);
     if planned_target != expected_target || planned.len() != planned_target {
         return Err(VotingError::InvalidInput {
             message: format!(
-                "plan target_count and target_servers must match the configured fleet target {expected_target}"
+                "plan target_count and target_servers must match the persisted planning fleet target {expected_target}"
             ),
         });
     }
-    if let Some(server_url) = planned.iter().find(|url| !configured.contains(url)) {
+    if let Some(server_url) = planned.iter().find(|url| !planning_fleet.contains(url)) {
         return Err(VotingError::InvalidInput {
-            message: format!("planned helper is not in configured_server_urls: {server_url}"),
+            message: format!("planned helper is not in the persisted planning fleet: {server_url}"),
         });
     }
     let payload = payloads
@@ -511,7 +512,11 @@ pub(crate) async fn submit_committed_share_to_helpers(
     // value returned by persistence.
     let requested_share_wire_json =
         payload.to_wire_json(Some(vc_tree_position), request.plan.submit_at)?;
-    let mut candidates = planned;
+    let mut candidates = planned
+        .into_iter()
+        .filter(|url| configured.contains(url))
+        .collect::<Vec<_>>();
+    let eligible_planned_count = candidates.len();
     let fallback = configured
         .urls()
         .iter()
@@ -526,9 +531,9 @@ pub(crate) async fn submit_committed_share_to_helpers(
         share_index: request.share_index,
         share_wire_json: &requested_share_wire_json,
         #[cfg(test)]
-        planned_servers: &candidates[..planned_target],
+        planned_servers: &candidates[..eligible_planned_count],
         #[cfg(test)]
-        fallback_servers: &candidates[planned_target..],
+        fallback_servers: &candidates[eligible_planned_count..],
         target_count: planned_target,
         submit_at: request.plan.submit_at,
         now_seconds: request.now_seconds,
@@ -551,8 +556,8 @@ pub(crate) async fn submit_committed_share_to_helpers(
         scope,
         client,
         &durable_params,
-        &candidates[..planned_target],
-        &candidates[planned_target..],
+        &candidates[..eligible_planned_count],
+        &candidates[eligible_planned_count..],
         persisted_delivery,
         cancel,
     )

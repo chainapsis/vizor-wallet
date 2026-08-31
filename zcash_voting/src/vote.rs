@@ -372,7 +372,9 @@ impl CommittedVote {
     ///
     /// The complete plan and every helper payload are validated before the
     /// first POST. A process-wide semaphore enforces the SDK's exported helper
-    /// concurrency policy across simultaneous wallets and committed votes.
+    /// concurrency policy across simultaneous wallets and committed votes. The
+    /// plan retains its original target across fleet churn, but only helpers in
+    /// `params.configured_server_urls` are eligible for delivery.
     /// This handle must match the exact durable recovery snapshot; recover a
     /// fresh `CommittedVote` after confirmation synchronizes a pre-confirmation
     /// plan to its confirmed VC tree position.
@@ -442,6 +444,7 @@ impl CommittedVote {
         }
 
         let configured = params.configured_server_urls.to_vec();
+        let planning_fleet = plan.configured_server_urls.clone();
         let now_seconds = params.now_seconds;
         let work = self
             .commit
@@ -453,6 +456,7 @@ impl CommittedVote {
         let deliveries = stream::iter(work)
             .map(|(share_index, share_plan)| {
                 let configured = &configured;
+                let planning_fleet = &planning_fleet;
                 let plan_generation = &plan_generation;
                 let scope = &scope;
                 async move {
@@ -488,6 +492,7 @@ impl CommittedVote {
                             crate::share_tracking::CommittedShareSubmissionRequest {
                                 share_index,
                                 plan: &share_plan,
+                                planning_server_urls: planning_fleet,
                                 configured_server_urls: configured,
                                 now_seconds,
                             },

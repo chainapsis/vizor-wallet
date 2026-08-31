@@ -726,20 +726,26 @@ durable bundle set, uses SDK-owned entropy, plans every committed payload,
 validates the fleet, target sets, immediate designation, and aggregate quota,
 then writes one generation-bound `helper_share_plans` row. A repeat call,
 including after restart, loads and returns the exact stored plan instead of
-drawing a replacement. Existing round plans are checked so roster drift cannot
-create a second or conflicting immediate designation.
+drawing a replacement, even when the newly preflighted helper fleet has
+changed. The current preflight is used only when creating a plan; an existing
+plan validates against its own persisted planning fleet. Existing round plans
+are checked so roster drift cannot create a second or conflicting immediate
+designation.
 
 `CommittedVote::submit_prepared_shares` is the delivery boundary. It loads that
 plan, requires the plan's exact current committed-vote generation, binds the
-submitting handle to that generation, and requires a compatible complete
-current fleet. A handle must contain the exact current recovery snapshot, and
+submitting handle to that generation, validates the immutable plan against its
+persisted planning fleet, and separately validates the complete current fleet.
+A handle must contain the exact current recovery snapshot, and
 callers must recover a fresh handle after confirmation changes that snapshot.
 It reconstructs and validates every payload before the first POST, then
-executes all incomplete shares. Configured-fleet drift, removed targets,
-target-count drift, malformed payloads,
-aggregate-quota violations, a nonzero schedule on the designated immediate
-share, or a missing confirmed VC position fail before network I/O. The raw
-per-share executor is
+executes all incomplete shares. The original target remains durable across
+fleet churn. Planned targets still present in the current fleet are attempted
+first, followed by every other current helper; removed helpers are never
+contacted or counted. Target-count drift within the persisted plan, malformed
+payloads, aggregate-quota violations, a nonzero schedule on the designated
+immediate share, or a missing confirmed VC position fail before network I/O.
+The raw per-share executor is
 crate-private, and there is no public post-hoc delivery mutator.
 
 Up to 16 share tasks across all wallets and committed votes in the process may
@@ -857,8 +863,9 @@ are `stale_handle_cannot_prepare_same_commitment_replacement`,
 `preconfirmation_plan_survives_confirmation_restart_and_submission`,
 `preconfirmation_handle_is_stale_after_confirmation_transition`,
 `restart_reuses_the_plan_and_resumes_definite_delivery_deficits`,
-`fleet_churn_and_target_drift_fail_before_network`,
-`untargeted_helper_replacement_invalidates_persisted_fleet_before_network`,
+`restart_resumes_with_a_replaced_helper_without_contacting_the_removed_target`,
+`restart_after_fleet_expansion_preserves_the_original_target`,
+`restart_after_fleet_contraction_clamps_delivery_to_current_helpers`,
 `fleet_reordering_preserves_persisted_fleet_identity`,
 `one_helper_fleet_is_planned_and_submitted_by_the_sdk`,
 `every_payload_is_validated_before_the_first_post`,
@@ -1371,9 +1378,11 @@ host wallet:
    authenticated round configuration, and waits for chain confirmation when
    necessary. It then recovers a fresh `CommittedVote` and calls
    `submit_prepared_shares`. It supplies the complete current configured fleet
-   and cancellation signal. It does not select the immediate share, serialize
-   plans, select helpers, derive targets, expose share payloads, filter missing
-   shares, or replan after restart.
+   and cancellation signal. The SDK validates the stored plan against its
+   original planning fleet while limiting delivery to that current fleet. The
+   host does not select the immediate share, serialize plans, select helpers,
+   derive targets, expose share payloads, filter missing shares, or replan
+   after restart.
 6. **Helper-operator trust.** The protocol assumes that the authority supplying
    the wallet's helper configuration is trusted to choose independent operators
    and govern changes. URLs are endpoint identities, not authenticated operator

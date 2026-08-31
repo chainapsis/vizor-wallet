@@ -247,9 +247,11 @@ pub enum NextStep {
     /// Recover the `CommittedVote`, preflight the complete helper fleet, and
     /// call `CommittedVote::prepare_share_delivery` to create or reload its
     /// complete persisted plan. After confirmation, submit through
-    /// `CommittedVote::submit_prepared_shares` with the current fleet. The
-    /// typed method rebuilds payloads with the confirmed commitment-tree
-    /// position and journals each POST before dispatch.
+    /// `CommittedVote::submit_prepared_shares` with the current fleet. A
+    /// reloaded plan retains its original target while delivery excludes
+    /// helpers removed from the current fleet. The typed method rebuilds
+    /// payloads with the confirmed commitment-tree position and journals each
+    /// POST before dispatch.
     SubmitVote {
         bundle_index: u32,
         proposal_id: u32,
@@ -287,9 +289,11 @@ pub enum NextStep {
     /// FFI routing. The host should recover the `CommittedVote`, call
     /// `CommittedVote::prepare_share_delivery` to load or create the
     /// SDK-persisted complete plan, and then call
-    /// `CommittedVote::submit_prepared_shares`. Submission validates the whole
-    /// batch before network I/O, journals every attempt and outcome, and
-    /// resumes only the remaining definite-delivery deficits.
+    /// `CommittedVote::submit_prepared_shares` with the current helper fleet.
+    /// Submission validates the immutable plan against its persisted planning
+    /// fleet, contacts only current helpers, validates the whole batch before
+    /// network I/O, journals every attempt and outcome, and resumes only the
+    /// remaining definite-delivery deficits.
     SubmitShares {
         bundle_index: u32,
         proposal_id: u32,

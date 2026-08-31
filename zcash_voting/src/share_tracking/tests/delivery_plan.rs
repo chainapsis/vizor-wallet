@@ -648,32 +648,33 @@ async fn preconfirmation_handle_is_stale_after_confirmation_transition() {
 }
 
 #[tokio::test]
-async fn untargeted_helper_replacement_invalidates_persisted_fleet_before_network() {
+async fn restart_resumes_with_a_replaced_helper_without_contacting_the_removed_target() {
     let db = db_with_unique_recoverable_vote();
-    set_recovery_share_count(&db, 1);
     let committed = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
     let configured = helpers(3);
     let fleet = HelperFleetPreflight::from_readiness(&configured, &configured).unwrap();
     let plan = committed
         .prepare_share_delivery(&db, planning_params(&fleet))
         .unwrap();
-    let untargeted = configured
-        .iter()
-        .find(|url| !plan.share_plans[0].target_servers.contains(url))
-        .unwrap();
+    let removed = plan.share_plans[0].target_servers[0].clone();
     let drifted = configured
         .iter()
-        .map(|url| {
-            if url == untargeted {
-                helper(4)
-            } else {
-                url.clone()
-            }
-        })
+        .filter(|url| *url != &removed)
+        .cloned()
+        .chain(std::iter::once(helper(4)))
         .collect::<Vec<_>>();
+    let recovered = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
+    let drifted_fleet = HelperFleetPreflight::from_readiness(&drifted, &drifted).unwrap();
+    assert_eq!(
+        recovered
+            .prepare_share_delivery(&db, planning_params(&drifted_fleet))
+            .unwrap(),
+        plan
+    );
     let transport = Arc::new(MockTransport::default());
+    queue_successes(&transport, &drifted, plan.share_plans.len());
 
-    let error = committed
+    let report = recovered
         .submit_prepared_shares(
             &db,
             &client_with(transport.clone()),
@@ -681,12 +682,19 @@ async fn untargeted_helper_replacement_invalidates_persisted_fleet_before_networ
             &never_cancel(),
         )
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(error, VotingError::InvalidInput { .. }));
-    assert!(error.to_string().contains("persisted helper-share plan"));
-    assert!(transport.calls().is_empty());
-    assert!(share::list(&db, ROUND_ID).unwrap().is_empty());
+    assert_eq!(report.deliveries.len(), plan.share_plans.len());
+    assert!(report.deliveries.iter().all(|delivery| {
+        delivery.submission.target_count == plan.share_plans[0].target_count as usize
+            && delivery.submission.accepted_urls.len() == plan.share_plans[0].target_count as usize
+            && delivery
+                .submission
+                .accepted_urls
+                .iter()
+                .all(|url| drifted.contains(url))
+    }));
+    assert_eq!(transport.call_count(&removed), 0);
 }
 
 #[tokio::test]
@@ -721,43 +729,95 @@ async fn fleet_reordering_preserves_persisted_fleet_identity() {
 }
 
 #[tokio::test]
-async fn fleet_churn_and_target_drift_fail_before_network() {
+async fn restart_after_fleet_expansion_preserves_the_original_target() {
     let db = db_with_unique_recoverable_vote();
+    set_recovery_share_count(&db, 1);
     let committed = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
     let configured = helpers(3);
     let fleet = HelperFleetPreflight::from_readiness(&configured, &configured).unwrap();
-    committed
+    let plan = committed
         .prepare_share_delivery(&db, planning_params(&fleet))
         .unwrap();
-    let drifted = vec![helper(1), helper(2), helper(4)];
+    let expanded = helpers(5);
+    let recovered = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
+    let expanded_fleet = HelperFleetPreflight::from_readiness(&expanded, &expanded).unwrap();
+    assert_eq!(
+        recovered
+            .prepare_share_delivery(&db, planning_params(&expanded_fleet))
+            .unwrap(),
+        plan
+    );
     let transport = Arc::new(MockTransport::default());
+    queue_successes(&transport, &expanded, plan.share_plans.len());
 
-    let error = committed
+    let report = recovered
         .submit_prepared_shares(
             &db,
             &client_with(transport.clone()),
-            submission_params(&drifted),
+            submission_params(&expanded),
             &never_cancel(),
         )
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(error, VotingError::InvalidInput { .. }));
-    assert!(transport.calls().is_empty());
-    assert!(share::list(&db, ROUND_ID).unwrap().is_empty());
+    assert_eq!(
+        report.deliveries[0].submission.target_count,
+        plan.share_plans[0].target_count as usize
+    );
+    assert_eq!(
+        report.deliveries[0].submission.accepted_urls.len(),
+        plan.share_plans[0].target_count as usize
+    );
+}
 
-    let one_helper = vec![helper(1)];
-    let error = committed
+#[tokio::test]
+async fn restart_after_fleet_contraction_clamps_delivery_to_current_helpers() {
+    let db = db_with_unique_recoverable_vote();
+    set_recovery_share_count(&db, 1);
+    let committed = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
+    let configured = helpers(5);
+    let fleet = HelperFleetPreflight::from_readiness(&configured, &configured).unwrap();
+    let plan = committed
+        .prepare_share_delivery(&db, planning_params(&fleet))
+        .unwrap();
+    let contracted = helpers(2);
+    let recovered = crate::vote::CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
+    let contracted_fleet = HelperFleetPreflight::from_readiness(&contracted, &contracted).unwrap();
+    assert_eq!(
+        recovered
+            .prepare_share_delivery(&db, planning_params(&contracted_fleet))
+            .unwrap(),
+        plan
+    );
+    let transport = Arc::new(MockTransport::default());
+    queue_successes(&transport, &contracted, plan.share_plans.len());
+
+    let report = recovered
         .submit_prepared_shares(
             &db,
             &client_with(transport.clone()),
-            submission_params(&one_helper),
+            submission_params(&contracted),
             &never_cancel(),
         )
         .await
-        .unwrap_err();
-    assert!(matches!(error, VotingError::InvalidInput { .. }));
-    assert!(transport.calls().is_empty());
+        .unwrap();
+
+    assert_eq!(
+        report.deliveries[0].submission.target_count,
+        plan.share_plans[0].target_count as usize
+    );
+    assert_eq!(report.deliveries[0].submission.accepted_urls.len(), 2);
+    assert!(report.deliveries[0]
+        .submission
+        .accepted_urls
+        .iter()
+        .all(|url| contracted.contains(url)));
+    let stored = share::list(&db, ROUND_ID).unwrap();
+    assert_eq!(stored[0].target_count, plan.share_plans[0].target_count);
+    assert!(stored[0]
+        .sent_to_urls
+        .iter()
+        .all(|url| contracted.contains(url)));
 }
 
 #[tokio::test]

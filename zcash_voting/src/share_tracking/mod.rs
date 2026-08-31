@@ -226,6 +226,7 @@ pub enum SharePlacementGuarantee {
 /// Complete persisted initial-delivery plan for one committed vote.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShareDeliveryPlan {
+    /// Immutable fleet against which this plan and its original target are validated.
     pub configured_server_urls: Vec<String>,
     pub share_plans: Vec<ShareSubmissionPlan>,
     pub placement_guarantee: SharePlacementGuarantee,
@@ -246,6 +247,10 @@ pub struct ShareDeliveryPlanningParams<'a> {
 
 /// Inputs for executing a previously persisted complete plan.
 pub struct ShareDeliverySubmissionParams<'a> {
+    /// Complete current fleet eligible to receive helper-share requests.
+    ///
+    /// This may differ from the persisted planning fleet. Removed helpers are
+    /// not contacted, while added helpers are eligible as fallbacks.
     pub configured_server_urls: &'a [String],
     pub now_seconds: u64,
 }
@@ -271,6 +276,7 @@ pub struct ShareBatchDeliveryReport {
 pub(crate) struct CommittedShareSubmissionRequest<'a> {
     pub share_index: u32,
     pub plan: &'a ShareSubmissionPlan,
+    pub planning_server_urls: &'a [String],
     pub configured_server_urls: &'a [String],
     pub now_seconds: u64,
 }

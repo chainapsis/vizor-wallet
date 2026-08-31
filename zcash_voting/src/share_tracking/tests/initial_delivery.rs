@@ -586,6 +586,7 @@ async fn committed_vote_submission_keeps_degraded_planned_target_before_healthy_
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -642,6 +643,7 @@ async fn stale_committed_vote_submission_is_rejected_before_side_effects() {
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -753,6 +755,7 @@ async fn repeated_committed_submission_preserves_the_original_schedule() {
                 CommittedShareSubmissionRequest {
                     share_index: 0,
                     plan,
+                    planning_server_urls: &configured,
                     configured_server_urls: &configured,
                     now_seconds: SUBMIT_AT,
                 },
@@ -806,6 +809,7 @@ async fn repeated_partial_committed_submission_sends_original_schedule_to_new_he
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &first_plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -826,6 +830,7 @@ async fn repeated_partial_committed_submission_sends_original_schedule_to_new_he
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &second_plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -888,6 +893,7 @@ async fn repeated_committed_submission_does_not_resurrect_zero_schedule() {
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -923,6 +929,7 @@ async fn committed_vote_submission_rejects_mismatched_plan_before_side_effects()
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -957,6 +964,7 @@ async fn committed_submission_rejects_duplicate_spelling_fleet_before_effects() 
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
@@ -991,6 +999,7 @@ async fn committed_vote_submission_rejects_uncapped_large_fleet_target() {
             CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
+                planning_server_urls: &configured,
                 configured_server_urls: &configured,
                 now_seconds: SUBMIT_AT,
             },
