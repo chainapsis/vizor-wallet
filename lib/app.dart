@@ -923,6 +923,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
                 txKind: txKind,
                 initialTransaction: extra.initialTransaction,
                 initialDetail: extra.initialDetail,
+                giftCard: extra.giftCard,
               )
             : extra;
         return ActivityTransactionStatusScreen(args: args);

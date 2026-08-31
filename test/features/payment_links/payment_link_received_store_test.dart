@@ -50,6 +50,7 @@ void main() {
       expect(restored.single.claimLink, isNull);
       expect(restored.single.claimTxids, 'claim-txid');
       expect(restored.single.artworkId, 'ruby');
+      expect(restored.single.message, 'Enjoy your gift!');
       expect(restored.single.amountZatoshi, link.amountZatoshi);
       expect(storage.value, isNot(contains(link.mnemonic)));
     });
@@ -156,7 +157,10 @@ VizorPaymentLink _link() {
     birthdayHeight: 3_456_789,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
-    presentation: const PaymentLinkPresentation(artworkId: 'ruby'),
+    presentation: const PaymentLinkPresentation(
+      artworkId: 'ruby',
+      message: 'Enjoy your gift!',
+    ),
   );
 }
 

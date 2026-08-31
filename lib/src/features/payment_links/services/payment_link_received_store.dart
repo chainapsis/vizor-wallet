@@ -31,6 +31,7 @@ class PaymentLinkReceivedRecord {
     required this.destinationAccountUuid,
     required this.claimTxids,
     required this.updatedAt,
+    this.message,
   });
 
   factory PaymentLinkReceivedRecord.fromLink(
@@ -43,6 +44,7 @@ class PaymentLinkReceivedRecord {
       amountZatoshi: link.amountZatoshi,
       createdAt: link.createdAt.toUtc(),
       artworkId: link.presentation?.artworkId,
+      message: link.presentation?.message,
       status: PaymentLinkReceivedStatus.readyToClaim,
       claimLink: link,
       destinationAccountUuid: null,
@@ -56,6 +58,7 @@ class PaymentLinkReceivedRecord {
   final BigInt amountZatoshi;
   final DateTime createdAt;
   final String? artworkId;
+  final String? message;
   final PaymentLinkReceivedStatus status;
 
   /// The bearer secret is retained only while the Card can still require a
@@ -79,6 +82,7 @@ class PaymentLinkReceivedRecord {
       amountZatoshi: amountZatoshi,
       createdAt: createdAt,
       artworkId: artworkId,
+      message: message,
       status: status ?? this.status,
       claimLink: identical(claimLink, _fieldNotProvided)
           ? this.claimLink
@@ -163,6 +167,7 @@ class PaymentLinkReceivedStore {
         amountZatoshi: link.amountZatoshi,
         createdAt: link.createdAt.toUtc(),
         artworkId: link.presentation?.artworkId,
+        message: link.presentation?.message,
         status: existing?.status ?? PaymentLinkReceivedStatus.readyToClaim,
         claimLink: link,
         destinationAccountUuid: existing?.destinationAccountUuid,
@@ -206,6 +211,7 @@ class PaymentLinkReceivedStore {
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
+        message: existing.message,
         status: PaymentLinkReceivedStatus.receiving,
         claimLink: existing.claimLink,
         destinationAccountUuid: destinationAccountUuid.trim(),
@@ -230,6 +236,7 @@ class PaymentLinkReceivedStore {
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
+        message: existing.message,
         status: PaymentLinkReceivedStatus.received,
         claimLink: null,
         destinationAccountUuid: existing.destinationAccountUuid,
@@ -259,6 +266,7 @@ class PaymentLinkReceivedStore {
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
+        message: existing.message,
         status: PaymentLinkReceivedStatus.readyToClaim,
         claimLink: existing.claimLink,
         destinationAccountUuid: null,
@@ -368,6 +376,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'amountZatoshi': record.amountZatoshi.toString(),
     'createdAt': record.createdAt.toUtc().toIso8601String(),
     'artworkId': record.artworkId,
+    'message': record.message,
     'status': record.status.name,
     'claimLink': record.claimLink?.toUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
@@ -387,6 +396,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final amountRaw = value['amountZatoshi'];
   final createdAtRaw = value['createdAt'];
   final artworkId = value['artworkId'];
+  final message = value['message'];
   final statusRaw = value['status'];
   final claimLinkRaw = value['claimLink'];
   final destinationAccountUuid = value['destinationAccountUuid'];
@@ -399,6 +409,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       amountRaw is! String ||
       createdAtRaw is! String ||
       (artworkId != null && artworkId is! String) ||
+      (message != null && message is! String) ||
       statusRaw is! String ||
       (claimLinkRaw != null && claimLinkRaw is! String) ||
       (destinationAccountUuid != null && destinationAccountUuid is! String) ||
@@ -467,6 +478,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     amountZatoshi: amountZatoshi,
     createdAt: createdAt.toUtc(),
     artworkId: artworkId as String?,
+    message: message as String?,
     status: status,
     claimLink: claimLink,
     destinationAccountUuid: destinationAccountUuid as String?,

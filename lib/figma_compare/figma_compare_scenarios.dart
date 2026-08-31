@@ -144,6 +144,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildActivityPageUseCase,
   ),
   FigmaCompareScenario(
+    id: 'activity-gift-card-created-detail',
+    description: 'Desktop created Gift Card activity detail',
+    builder: buildCreatedGiftCardActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-gift-card-redeemed-detail',
+    description: 'Desktop redeemed Gift Card activity detail',
+    builder: buildRedeemedGiftCardActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-empty',
     description: 'Desktop Gift Cards empty state',
     builder: buildPaymentLinkEmptyUseCase,

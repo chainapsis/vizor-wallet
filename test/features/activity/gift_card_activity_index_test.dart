@@ -60,6 +60,16 @@ void main() {
       index.kindFor(_transaction(txidHex: createdTxid, txKind: 'received')),
       isNull,
     );
+    final createdMetadata = index.metadataFor(
+      _transaction(txidHex: createdTxid, txKind: 'sent'),
+    );
+    expect(createdMetadata?.kind, GiftCardActivityKind.created);
+    expect(createdMetadata?.artworkId, 'ruby');
+    expect(createdMetadata?.message, 'Happy birthday!');
+    final redeemedMetadata = index.metadataFor(
+      _transaction(txidHex: _reverseHexBytes(redeemedTxid), txKind: 'received'),
+    );
+    expect(redeemedMetadata?.kind, GiftCardActivityKind.redeemed);
   });
 }
 
@@ -73,6 +83,10 @@ VizorPaymentLink _link(String address) {
     birthdayHeight: 1,
     label: 'Gift Card',
     createdAt: DateTime.utc(2026, 8, 28),
+    presentation: const PaymentLinkPresentation(
+      artworkId: 'ruby',
+      message: 'Happy birthday!',
+    ),
   );
 }
 

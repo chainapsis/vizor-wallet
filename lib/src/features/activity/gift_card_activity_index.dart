@@ -7,12 +7,26 @@ import '../payment_links/services/payment_link_service.dart';
 
 enum GiftCardActivityKind { created, redeemed }
 
+class GiftCardActivityMetadata {
+  const GiftCardActivityMetadata({
+    required this.kind,
+    required this.artworkId,
+    required this.message,
+  });
+
+  final GiftCardActivityKind kind;
+  final String? artworkId;
+  final String? message;
+}
+
 /// Matches persisted Gift Card lifecycle records to the account's normal
 /// on-chain transaction history without changing the transaction-detail model.
 class GiftCardActivityIndex {
   const GiftCardActivityIndex({
     this.createdTxids = const <String>{},
     this.redeemedTxids = const <String>{},
+    this.createdMetadataByTxid = const <String, GiftCardActivityMetadata>{},
+    this.redeemedMetadataByTxid = const <String, GiftCardActivityMetadata>{},
   });
 
   factory GiftCardActivityIndex.forAccount({
@@ -20,17 +34,33 @@ class GiftCardActivityIndex {
     required List<PaymentLinkRecoveryRecord> createdRecords,
     required List<PaymentLinkReceivedRecord> receivedRecords,
   }) {
+    final createdMetadata = <String, GiftCardActivityMetadata>{};
+    final redeemedMetadata = <String, GiftCardActivityMetadata>{};
+    for (final record in createdRecords) {
+      if (record.sourceAccountUuid != accountUuid) continue;
+      for (final txid in _splitTxids(record.fundingTxids)) {
+        createdMetadata[txid] = GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          artworkId: record.link.presentation?.artworkId,
+          message: record.link.presentation?.message,
+        );
+      }
+    }
+    for (final record in receivedRecords) {
+      if (record.destinationAccountUuid != accountUuid) continue;
+      for (final txid in _splitTxids(record.claimTxids)) {
+        redeemedMetadata[txid] = GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.redeemed,
+          artworkId: record.artworkId,
+          message: record.message,
+        );
+      }
+    }
     return GiftCardActivityIndex(
-      createdTxids: {
-        for (final record in createdRecords)
-          if (record.sourceAccountUuid == accountUuid)
-            ..._splitTxids(record.fundingTxids),
-      },
-      redeemedTxids: {
-        for (final record in receivedRecords)
-          if (record.destinationAccountUuid == accountUuid)
-            ..._splitTxids(record.claimTxids),
-      },
+      createdTxids: createdMetadata.keys.toSet(),
+      redeemedTxids: redeemedMetadata.keys.toSet(),
+      createdMetadataByTxid: createdMetadata,
+      redeemedMetadataByTxid: redeemedMetadata,
     );
   }
 
@@ -38,6 +68,8 @@ class GiftCardActivityIndex {
 
   final Set<String> createdTxids;
   final Set<String> redeemedTxids;
+  final Map<String, GiftCardActivityMetadata> createdMetadataByTxid;
+  final Map<String, GiftCardActivityMetadata> redeemedMetadataByTxid;
 
   GiftCardActivityKind? kindFor(rust_sync.TransactionInfo transaction) {
     final kind = transaction.txKind;
@@ -49,6 +81,20 @@ class GiftCardActivityIndex {
       return GiftCardActivityKind.created;
     }
     return null;
+  }
+
+  GiftCardActivityMetadata? metadataFor(rust_sync.TransactionInfo transaction) {
+    final kind = kindFor(transaction);
+    if (kind == null) return null;
+    final metadata = kind == GiftCardActivityKind.created
+        ? createdMetadataByTxid
+        : redeemedMetadataByTxid;
+    for (final entry in metadata.entries) {
+      if (paymentLinkTxidsMatch(entry.key, transaction.txidHex)) {
+        return entry.value;
+      }
+    }
+    return GiftCardActivityMetadata(kind: kind, artworkId: null, message: null);
   }
 }
 

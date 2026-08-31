@@ -1566,6 +1566,19 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Gift Card detail',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Created',
+                      builder: buildCreatedGiftCardActivityDetailUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeemed',
+                      builder: buildRedeemedGiftCardActivityDetailUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
           ],
