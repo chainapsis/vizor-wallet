@@ -7228,6 +7228,37 @@ void main() {
     },
   );
 
+  test('helper preflight settles before vote proof work starts', () async {
+    final preflightGate = Completer<void>();
+    addTearDown(() {
+      if (!preflightGate.isCompleted) preflightGate.complete();
+    });
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      helperPreflightGate: preflightGate,
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    await rust.helperPreflightStarted.future.timeout(
+      const Duration(seconds: 1),
+    );
+    expect(rust.voteCommitmentStarted.isCompleted, isFalse);
+
+    preflightGate.complete();
+    await cast;
+
+    expect(rust.voteCommitmentStarted.isCompleted, isTrue);
+  });
+
   test('helper planning failure prevents vote broadcast', () async {
     final http = FakeVotingHttpClient(responses: votingHttpResponses());
     final rust = FakeVotingRustApi(
@@ -11345,6 +11376,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.shareResubmissionError,
     this.nextShareTrackingDelayGate,
     this.trackingPassPolicyGate,
+    this.helperPreflightGate,
     this.failingVoteShareWireIndexes = const {},
     this.failingRecordShareIndexes = const {},
     this.ambiguousShareServerUrls = const {},
@@ -11389,6 +11421,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Object? shareResubmissionError;
   final Completer<void>? nextShareTrackingDelayGate;
   final Completer<void>? trackingPassPolicyGate;
+  final Completer<void>? helperPreflightGate;
   final Set<int> failingVoteShareWireIndexes;
   final Set<int> failingRecordShareIndexes;
   final Set<String> ambiguousShareServerUrls;
@@ -11448,6 +11481,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputeFinished = Completer<void>();
   final nextShareTrackingDelayStarted = Completer<void>();
   final trackingPassPolicyStarted = Completer<void>();
+  final helperPreflightStarted = Completer<void>();
   final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
@@ -12528,6 +12562,10 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async {
     preflightDeliveryContexts.add(context);
     preflightConfiguredHelperUrls.add(List.of(configuredHelperUrls));
+    if (!helperPreflightStarted.isCompleted) {
+      helperPreflightStarted.complete();
+    }
+    await helperPreflightGate?.future;
     if (configuredHelperUrls.isEmpty ||
         configuredHelperUrls.toSet().length != configuredHelperUrls.length) {
       throw ArgumentError('configured helper URLs must be nonempty and unique');
