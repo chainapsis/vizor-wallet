@@ -43,11 +43,12 @@ pub fn snapshot_with_resume_plan(
 
 /// Loads round recovery data and planner steps in one wallet-facing call.
 ///
-/// Wallet code can persist this result and drive retries by iterating
-/// `context.plan.next_steps`. Recover singleton vote handles and helper-share
+/// Wallet code drives retries by iterating `context.plan.next_steps`. Recover
+/// singleton vote handles and helper-share
 /// identities with `recover_committed_vote_for_step`, and atomic batches with
 /// `recover_vote_batch_for_step`. Helper delivery must reuse the wallet's
-/// persisted complete plan through `example_vote::submit_committed_vote_shares`.
+/// SDK-persisted complete plan through
+/// `example_vote::submit_committed_vote_shares`.
 pub fn load_round_recovery_context(
     voting_db: &VotingDb,
     round_id: &str,

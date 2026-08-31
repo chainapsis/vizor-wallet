@@ -11,6 +11,8 @@ use crate::types::{Network, NoteInfo, VotingError, VotingRoundParams, WitnessDat
 
 mod share_delegations;
 
+#[cfg(any(test, feature = "test-fixtures"))]
+pub(crate) use share_delegations::record_share_delegation;
 #[cfg(test)]
 pub(crate) use share_delegations::record_share_delegation_with_after_read;
 pub use share_delegations::{
@@ -21,9 +23,9 @@ pub use share_delegations::{
 pub(crate) use share_delegations::{
     add_ambiguous_servers_for_generation, add_attempting_server_for_generation,
     add_sent_servers_for_generation, add_sent_servers_preserving_schedule_for_generation,
-    get_share_delegation, mark_share_confirmed, record_share_delegation,
-    record_share_delegation_for_vote_generation, remove_attempting_server_for_generation,
-    share_is_confirmed_for_generation, ShareAttemptReservation,
+    get_share_delegation, mark_share_confirmed, record_share_delegation_for_vote_generation,
+    remove_attempting_server_for_generation, share_is_confirmed_for_generation,
+    ShareAttemptReservation,
 };
 
 const NOTE_IDENTITY_HASH_BYTES: usize = 32;

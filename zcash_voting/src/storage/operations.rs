@@ -9,7 +9,7 @@ use orchard::{
 };
 use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
-use rusqlite::TransactionBehavior;
+use rusqlite::{OptionalExtension, TransactionBehavior};
 use voting_circuits::delegation::synthetic_padding_note_parts;
 use zcash_keys::keys::UnifiedFullViewingKey;
 
@@ -18,7 +18,8 @@ use crate::governance::BUNDLE_NOTE_SLOTS;
 use crate::note_bundling::{BundlePolicy, ChunkResult};
 use crate::storage::queries;
 use crate::storage::{
-    KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord, VotingDb,
+    KeystoneSignatureBatchResult, KeystoneSignatureInput, KeystoneSignatureRecord, RoundPhase,
+    RoundState, RoundSummary, VoteRecord, VotingDb,
 };
 use crate::types::{
     DelegationPirPrecomputeResult, DelegationProgressReporter, DelegationProofResult,
@@ -476,6 +477,42 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         queries::clear_round(&conn, round_id, &wallet_id)
+    }
+
+    /// Delete every durable voting row owned by the current wallet.
+    ///
+    /// Round-owned state is removed through the `rounds` cascade. The same
+    /// transaction also removes round-independent PIR proof-cache rows, so a
+    /// wallet deletion cannot leave browse-only warm-up material behind.
+    pub fn clear_wallet_state(&self) -> Result<u32, VotingError> {
+        let mut conn = self.conn();
+        let wallet_id = self.wallet_id();
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to begin wallet voting-state cleanup: {e}"),
+            })?;
+        let deleted_rounds = tx
+            .execute(
+                "DELETE FROM rounds WHERE wallet_id = :wallet_id",
+                rusqlite::named_params! { ":wallet_id": &wallet_id },
+            )
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to delete wallet voting rounds: {e}"),
+            })?;
+        tx.execute(
+            "DELETE FROM pir_proof_cache WHERE wallet_id = :wallet_id",
+            rusqlite::named_params! { ":wallet_id": &wallet_id },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to delete wallet PIR proof cache: {e}"),
+        })?;
+        tx.commit().map_err(|e| VotingError::Internal {
+            message: format!("failed to commit wallet voting-state cleanup: {e}"),
+        })?;
+        u32::try_from(deleted_rounds).map_err(|_| VotingError::Internal {
+            message: format!("deleted voting round count exceeds u32 range: {deleted_rounds}"),
+        })
     }
 
     // --- Bundles ---
@@ -1760,17 +1797,124 @@ impl VotingDb {
         sighash: &[u8],
         rk: &[u8],
     ) -> Result<(), VotingError> {
-        let conn = self.conn();
-        let wallet_id = self.wallet_id();
-        queries::store_keystone_signature(
-            &conn,
+        self.store_keystone_signatures_batch(
             round_id,
-            &wallet_id,
-            bundle_index,
-            sig,
-            sighash,
-            rk,
+            &[KeystoneSignatureInput {
+                bundle_index,
+                sig: sig.to_vec(),
+                sighash: sighash.to_vec(),
+                rk: rk.to_vec(),
+            }],
         )
+        .map(|_| ())
+    }
+
+    /// Atomically store a batch of Keystone delegation signatures.
+    ///
+    /// Replaying a tuple with the same sighash and randomized key is
+    /// idempotent even if the signature bytes differ. Reusing a bundle index
+    /// for a different signing context returns a typed conflict and rolls the
+    /// complete batch back.
+    pub fn store_keystone_signatures_batch(
+        &self,
+        round_id: &str,
+        signatures: &[KeystoneSignatureInput],
+    ) -> Result<KeystoneSignatureBatchResult, VotingError> {
+        const SIGNATURE_LEN: usize = 64;
+        const SIGHASH_LEN: usize = 32;
+        const RANDOMIZED_KEY_LEN: usize = 32;
+
+        for signature in signatures {
+            for (value, expected, label) in [
+                (signature.sig.as_slice(), SIGNATURE_LEN, "sig"),
+                (signature.sighash.as_slice(), SIGHASH_LEN, "sighash"),
+                (signature.rk.as_slice(), RANDOMIZED_KEY_LEN, "rk"),
+            ] {
+                if value.len() != expected {
+                    return Err(VotingError::InvalidInput {
+                        message: format!(
+                            "{label} must be exactly {expected} bytes, got {}",
+                            value.len()
+                        ),
+                    });
+                }
+            }
+        }
+
+        let mut conn = self.conn();
+        let wallet_id = self.wallet_id();
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to begin Keystone signature batch transaction: {e}"),
+            })?;
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to read Keystone signature timestamp: {e}"),
+            })?
+            .as_secs() as i64;
+        let mut inserted = 0u32;
+        let mut already_present = 0u32;
+
+        for signature in signatures {
+            let existing = tx
+                .query_row(
+                    "SELECT sighash, rk FROM keystone_signatures
+                     WHERE round_id = :round_id AND wallet_id = :wallet_id
+                       AND bundle_index = :bundle_index",
+                    rusqlite::named_params! {
+                        ":round_id": round_id,
+                        ":wallet_id": &wallet_id,
+                        ":bundle_index": signature.bundle_index as i64,
+                    },
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| VotingError::Internal {
+                    message: format!("failed to read existing Keystone signature: {e}"),
+                })?;
+
+            if let Some((sighash, rk)) = existing {
+                if sighash == signature.sighash && rk == signature.rk {
+                    already_present += 1;
+                    continue;
+                }
+                return Err(VotingError::KeystoneSignatureConflict {
+                    bundle_index: signature.bundle_index,
+                });
+            }
+
+            tx.execute(
+                "INSERT INTO keystone_signatures
+                 (round_id, wallet_id, bundle_index, sig, sighash, rk, created_at)
+                 VALUES (:round_id, :wallet_id, :bundle_index, :sig, :sighash, :rk, :created_at)",
+                rusqlite::named_params! {
+                    ":round_id": round_id,
+                    ":wallet_id": &wallet_id,
+                    ":bundle_index": signature.bundle_index as i64,
+                    ":sig": &signature.sig,
+                    ":sighash": &signature.sighash,
+                    ":rk": &signature.rk,
+                    ":created_at": created_at,
+                },
+            )
+            .map_err(|e| VotingError::Internal {
+                message: format!(
+                    "failed to store Keystone signature for bundle {}: {e}",
+                    signature.bundle_index
+                ),
+            })?;
+            inserted += 1;
+        }
+
+        tx.commit().map_err(|e| VotingError::Internal {
+            message: format!("failed to commit Keystone signature batch: {e}"),
+        })?;
+        Ok(KeystoneSignatureBatchResult {
+            inserted,
+            already_present,
+        })
     }
 
     pub fn get_keystone_signatures(
@@ -1811,7 +1955,7 @@ impl VotingDb {
     /// This raw storage helper is crate-internal because callers must provide a
     /// nullifier that matches the persisted vote recovery bundle. Wallet
     /// integrations should use
-    /// `CommittedVote::submit_share_to_helpers`, which derives the nullifier
+    /// `CommittedVote::submit_prepared_shares`, which derives the nullifier
     /// and owns journaled delivery.
     #[cfg(any(test, feature = "test-fixtures"))]
     pub(crate) fn record_share_delegation(
@@ -1872,6 +2016,7 @@ impl VotingDb {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(any(test, feature = "test-fixtures"))]
     pub(crate) fn record_share_delivery_for_wallet(
         &self,
         wallet_id: &str,
@@ -2965,6 +3110,127 @@ mod tests {
 
         db.clear_round(ROUND_ID).unwrap();
         assert!(db.list_rounds().unwrap().is_empty());
+    }
+
+    #[test]
+    fn clear_wallet_state_removes_rounds_and_round_independent_pir_cache_only_for_wallet() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        db.set_wallet_id("other-wallet");
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        {
+            let conn = db.conn();
+            for wallet_id in [W, "other-wallet"] {
+                conn.execute(
+                    "INSERT INTO pir_proof_cache
+                     (wallet_id, network, nullifier, root, nf_bounds, leaf_pos, path, created_at, updated_at)
+                     VALUES (?1, 'testnet', X'01', X'02', X'03', 0, X'04', 1, 1)",
+                    [wallet_id],
+                )
+                .unwrap();
+            }
+        }
+
+        db.set_wallet_id(W);
+        assert_eq!(db.clear_wallet_state().unwrap(), 1);
+        assert!(db.list_rounds().unwrap().is_empty());
+        let wallet_cache_count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM pir_proof_cache WHERE wallet_id = ?1",
+                [W],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(wallet_cache_count, 0);
+
+        db.set_wallet_id("other-wallet");
+        assert_eq!(db.list_rounds().unwrap().len(), 1);
+        let other_cache_count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM pir_proof_cache WHERE wallet_id = ?1",
+                ["other-wallet"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(other_cache_count, 1);
+    }
+
+    #[test]
+    fn keystone_signature_batch_is_atomic_idempotent_and_reports_typed_conflicts() {
+        let db = test_db();
+        db.init_round(Network::Testnet, &test_params(), None)
+            .unwrap();
+        db.ensure_bundles(ROUND_ID, &[identity_test_note()])
+            .unwrap();
+        queries::insert_bundle_notes(
+            &db.conn(),
+            ROUND_ID,
+            W,
+            1,
+            &[identity_note_with_position(8)],
+        )
+        .unwrap();
+        let signature = KeystoneSignatureInput {
+            bundle_index: 0,
+            sig: vec![0x11; 64],
+            sighash: vec![0x22; 32],
+            rk: vec![0x33; 32],
+        };
+
+        let inserted = db
+            .store_keystone_signatures_batch(ROUND_ID, std::slice::from_ref(&signature))
+            .unwrap();
+        assert_eq!(
+            inserted,
+            KeystoneSignatureBatchResult {
+                inserted: 1,
+                already_present: 0,
+            }
+        );
+        let replayed = db
+            .store_keystone_signatures_batch(
+                ROUND_ID,
+                &[KeystoneSignatureInput {
+                    sig: vec![0x44; 64],
+                    ..signature.clone()
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            replayed,
+            KeystoneSignatureBatchResult {
+                inserted: 0,
+                already_present: 1,
+            }
+        );
+
+        let error = db
+            .store_keystone_signatures_batch(
+                ROUND_ID,
+                &[
+                    KeystoneSignatureInput {
+                        bundle_index: 1,
+                        ..signature.clone()
+                    },
+                    KeystoneSignatureInput {
+                        bundle_index: 0,
+                        sighash: vec![0x55; 32],
+                        ..signature
+                    },
+                ],
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            VotingError::KeystoneSignatureConflict { bundle_index: 0 }
+        ));
+        let stored = db.get_keystone_signatures(ROUND_ID).unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].sig, vec![0x11; 64]);
     }
 
     #[test]

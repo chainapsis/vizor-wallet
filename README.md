@@ -67,10 +67,11 @@ stage-oriented API:
   hashes and tree positions atomically.
 - `vote::*` builds ZKP #2, signs cast-vote payloads, persists the canonical
   `VoteRecoveryBundle`, and reconstructs vote-chain submissions after a crash.
-- `share::*` recovers helper-share payloads, computes share nullifiers, and
-  applies share scheduling policy. `CommittedVote::submit_share_to_helpers`
-  owns journaled initial delivery, while `track_pending_shares` requires two
-  distinct configured helpers to agree before persisting confirmation.
+- `share::*` computes helper-share nullifiers and applies scheduling policy.
+  `HelperClient::preflight_fleet`, `CommittedVote::prepare_share_delivery`, and
+  `CommittedVote::submit_prepared_shares` own validated, journaled initial
+  delivery, while `track_pending_shares` requires two distinct configured
+  helpers to agree before persisting confirmation.
 - `session::*` records durable ballot intent and returns a round-level
   `RoundPlan` with ordered `NextStep`s for restart recovery. Wallets should
   write `Decision::Choice` with the proposal's declared option count before
@@ -85,14 +86,20 @@ stage-oriented API:
   that key to `vote::recover_atomic_vote_batch`, submit its canonical
   `batch_json` once, persist the shared tx hash with
   `vote::record_batch_submission`, and record its ordered event with
-  `confirmation::confirm_vote_batch_submission`. After confirmation, call
-  `vote::CommittedVote::recover`. Create and persist its complete helper-share
-  plan set if none exists, then call its typed `submit_share_to_helpers` method
-  with each stored plan and the complete current helper fleet. The crate
-  rebuilds each payload with the confirmed VC position and journals delivery
-  before dispatch. After restart, reuse the original complete helper plan;
-  never replan only the missing shares. Re-run `resume_plan` after each durable
-  action because later work may depend on on-chain confirmations.
+  `confirmation::confirm_vote_batch_submission`. Recover each
+  `vote::CommittedVote`, validate and rank the complete helper fleet with
+  `HelperClient::preflight_fleet`, then call
+  `CommittedVote::prepare_share_delivery` with the complete proposal id roster
+  from the authenticated round configuration. The SDK requires matching
+  terminal ballot intents and derives the round's single immediate share while
+  atomically creating or reloading the complete plan. After vote confirmation,
+  recover a fresh `CommittedVote`, then call
+  `CommittedVote::submit_prepared_shares` with the complete current fleet. The
+  crate validates every payload, rebuilds it with the confirmed VC position,
+  and journals delivery before dispatch. After restart, prepare again to load
+  the original plan; never replan only missing shares. Re-run `resume_plan`
+  after each durable action because later work may depend on on-chain
+  confirmations.
   `open_proposals` contains only proposals with no terminal decision yet.
 
 The Zcash-format transaction signed during delegation is specified separately
@@ -119,7 +126,7 @@ custody provider integrations.
   `VotingDb::{vote_phase, vote_phases, share_phase, share_phases}`.
 - Replace wallet-local "what comes next" recovery planning with
   `session::resume_plan`; fetch execution material through crate APIs such as
-  `vote::submission`, `vote::recover_commit`, `share::*`, and the tx hash
+  `vote::submission`, `vote::CommittedVote::recover`, `share::*`, and the tx hash
   accessors, then keep wallet-specific networking, proof execution, and UI
   routing at the wallet boundary.
 - Replace wallet-local delegation proof and signing orchestration with
@@ -136,10 +143,10 @@ custody provider integrations.
   `vote::commit_atomic_vote_batch` builds one atomic, ordered multi-question
   transaction. The distinct `SignedVoteCommitments` and `SignedVoteBatch`
   result types keep the singleton and atomic submission endpoints separate.
-  Use `vote::submission`, `vote::recover_commit`, `vote::record_submission`,
-  and `vote::record_vc_position` for the singleton lifecycle. Wallets should
-  not write recovery JSON, submission flags, or vote commitment positions
-  directly.
+  Use `vote::submission`, `vote::CommittedVote::recover`,
+  `vote::record_submission`, and `vote::record_vc_position` for the singleton
+  lifecycle. Wallets should not write recovery JSON, submission flags, or vote
+  commitment positions directly.
 
 Pre-launch wallet databases with older schema versions are reset when opened by
 this branch; callers that need to preserve test data should export it before

@@ -7,6 +7,13 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## Unreleased
 
 ### Added
+- `VotingDb::store_keystone_signatures_batch` now owns atomic, idempotent
+  Keystone signature persistence and reports signing-context conflicts through
+  a typed `VotingError` variant. `VotingDb::clear_wallet_state` atomically
+  removes both round-scoped rows and the wallet's round-independent PIR cache.
+- `RoundPlan` and `RoundPlanView` now expose `immediate_share_confirmed`, so
+  wallet orchestration does not need to reconstruct the immediate-share
+  confirmation decision from raw storage rows.
 - `HyperTransport::with_connector` and `with_http_connector` now let wallets
   inject fully configured or Rustls-wrapped Hyper connectors for proxies,
   custom DNS, and route-lifecycle enforcement while retaining the SDK's pooled
@@ -61,30 +68,66 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   quorum, health ordering, four-request concurrency limit, ten-second budget,
   cancellation, and generation-bound confirmation write without walking or
   resubmitting unrelated shares.
+- Added the SDK-owned complete-batch helper delivery lifecycle:
+  `HelperClient::preflight_fleet` canonicalizes and probes the configured
+  fleet, `CommittedVote::prepare_share_delivery` generates entropy and
+  atomically persists the complete commitment-wide plan, and
+  `CommittedVote::submit_prepared_shares` validates and submits that exact
+  plan. `ShareDeliveryPlan`, `ShareDeliveryPlanningParams`,
+  `ShareDeliverySubmissionParams`, and `ShareBatchDeliveryReport` expose the
+  stable client boundary without exposing individual encrypted helper
+  payloads. Prepared plans are generation-bound, reused after restart, submit
+  only definite-delivery deficits, return deterministic partial reports on
+  cancellation, and share a process-wide ceiling of 16 concurrent helper
+  POSTs across wallets and votes.
 
 ### Changed
 - Share confirmation polls now run at most four helper requests concurrently
   and spend at most ten seconds on one share before advancing, preventing a
   stalled helper set from starving later shares in the same tracking pass.
-- Helper-share integration guidance now distinguishes strict persisted-plan
-  recovery, which retains the complete-batch assignment bound across restart,
-  from best-effort missing-share replanning, which prioritizes liveness and
-  makes no per-helper share-count claim after interruption.
-- **Breaking:** `submit_share_to_helpers` and `track_pending_shares` now reject
-  helper URLs that fail canonicalization with `VotingError::InvalidInput`
-  before any network I/O, instead of silently dropping them — an
-  all-misconfigured fleet previously produced a permanent, error-free no-op.
+- Helper-share planning, persistence, and prepared-batch submission are now
+  authoritative SDK responsibilities. Hosts provide authenticated helper
+  configuration, round timing, transport, and cancellation, but no longer
+  generate planner entropy, persist or reconstruct plans, serialize helper
+  payloads, or independently enforce fleet-wide placement and quota rules.
+  `LegacyBestEffort` is retained only as metadata for delivery rows created
+  before complete-plan persistence; new plans use the strict placement
+  guarantee and retain it across restart.
+- **Breaking:** `HelperClient::preflight_fleet`, prepared-batch submission, and
+  `track_pending_shares` now reject helper URLs that fail canonicalization with
+  `VotingError::InvalidInput` before any network I/O, instead of silently
+  dropping them — an all-misconfigured fleet previously produced a permanent,
+  error-free no-op.
   `helper::url::canonicalize_helper_base_url` and `canonical_helper_url_list`
   are now public and define the URL contract that typed committed-share
   submission and tracking enforce;
   previous releases accepted some now-rejected spellings, so validate helper
   configuration before delivering over the network.
-- **Breaking:** initial helper delivery is now
-  `CommittedVote::submit_share_to_helpers(ShareSubmissionRequest)`. The public
-  request contains only a share index, planner-produced plan, configured fleet,
-  and health-ordering time; the crate derives the durable identity, confirmed
-  VC-tree position, wire payload, target, and schedule. Raw submission and
-  post-hoc delivery mutators are crate-private.
+- **Breaking:** initial helper delivery is now the two-step
+  `CommittedVote::prepare_share_delivery` and
+  `CommittedVote::submit_prepared_shares` lifecycle. The old public
+  per-share `CommittedVote::submit_share_to_helpers(ShareSubmissionRequest)`
+  entry point is removed. Callers preflight the whole fleet, prepare or load
+  one complete persisted plan, and submit it as a batch; the SDK derives the
+  durable identity, confirmed VC-tree position, payloads, targets, schedules,
+  journaling, and missing-share set.
+- **Breaking:** `ShareDeliveryPlanningParams` now accepts the authenticated
+  round's complete `proposal_ids` roster instead of a caller-selected immediate
+  share index. Planning requires an exact set of durable terminal ballot
+  intents and derives the sole round-immediate share internally. Submission
+  rechecks that designation against current durable intent before any POST.
+- Complete-plan aggregate quota validation now applies equally to `Strict` and
+  `LegacyBestEffort` plans. The legacy marker reports uncertainty about
+  pre-plan deliveries and does not weaken validation of the persisted plan.
+- Persisted plans now reject a designated immediate share with a nonzero
+  `submit_at` before any helper request is dispatched.
+- **Breaking:** `SignedVoteCommitmentView` and `VoteCommit` no longer expose
+  encrypted helper payloads, `vote::recover_commit` is crate-private, and the
+  prelude no longer exports `os_random_bytes`, `recover_vote_commit`, or the
+  raw per-share `ShareSubmissionRequest`. These were host-facing escape
+  hatches around the new persisted-plan lifecycle. Vote-chain submission still
+  receives the public `VoteCommitmentWire`; helper payload construction and
+  delivery remain internal to the recovered `CommittedVote`.
 - **Breaking:** helper confirmation now polls the complete current configured
   fleet and requires matching responses from two distinct helpers whenever at
   least two are configured. A one-helper fleet uses its only available
@@ -108,15 +151,36 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   non-idempotent submissions whose outcome is unknown. Successful submission
   responses with a missing or unusable status are also retained as ambiguous,
   because the helper may already have queued the share.
+- Schema version 17 adds `helper_share_plans`, keyed to the exact durable vote
+  generation with a foreign key to its vote row. The table stores the complete
+  configured fleet, all share assignments and schedules, the format version,
+  and the strict or legacy placement guarantee. New strict plans are committed
+  before the first helper POST; legacy metadata is used only when pre-v17
+  delivery rows already exist.
 
 ### Fixed
 - Wallet helper-share examples now expose vote-chain submission separately
-  from helper delivery, validate every persisted full-batch plan against the
-  complete current helper fleet before any POST, and route delivery only
-  through crate-owned durable journaling. Compatible fleet churn is accepted;
-  removed planned targets and target-count drift fail without remapping or
-  replanning missing shares, and malformed complete plans cannot exceed the
-  aggregate per-helper initial-assignment quota.
+  from helper delivery and use the SDK's preflight, complete-plan preparation,
+  and prepared-batch submission APIs. The SDK validates every payload and the
+  complete current fleet before any POST, rejects removed planned targets,
+  target-count drift, and aggregate quota violations, and resumes the
+  persisted plan without remapping missing shares.
+- Normal singleton and atomic-batch vote confirmation no longer invalidates a
+  prepared helper delivery plan. On the first `vc_tree_position` transition
+  from null to non-null, the v17 trigger atomically advances a plan bound to
+  the exact old `commitment_bundle_json` snapshot to the exact confirmed
+  snapshot. Vote replacement, recovery clearing, and unrelated recovery-data
+  mutations continue to delete the plan. Runtime loading requires the plan's
+  exact current generation; callers recover a fresh `CommittedVote` after the
+  confirmation transition before submitting the synchronized plan.
+- Prepared-batch submission now binds persisted plans to the complete helper
+  fleet identity, rejecting even an untargeted helper replacement before
+  network I/O while accepting harmless reordering of the same canonical fleet.
+- Prepared-batch submission now validates the whole plan and every helper
+  payload before the first network request, durably reserves each attempt
+  before POST, preserves deterministic report ordering, reports queued shares
+  as pending when cancelled, resumes definite-delivery deficits after restart,
+  and enforces the process-wide 16-POST concurrency ceiling.
 - The wallet planning example now derives single-share mode from the committed
   payload count, and rejects exact or canonically equivalent duplicate
   configured helpers instead of silently shrinking the fleet before placement
@@ -135,10 +199,16 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 - Status-budget expiry now drains tasks that completed at the boundary before
   degrading genuinely aborted requests, preventing one poll result from being
   scored twice.
-- Initial helper delivery now atomically binds durable share preparation to the
-  commitment-bundle generation validated for the `CommittedVote`, so a
-  concurrent vote replacement cannot pair an old in-memory payload with the
-  replacement's nullifier before dispatch.
+- Initial helper planning now binds the `CommittedVote` handle to its exact
+  recovery snapshot, prepared-plan loading revalidates that handle snapshot,
+  and prepared-batch submission carries the plan's exact generation through
+  every concurrent share task. Apart from the verified confirmation-only VC
+  position transition, a same-commitment recovery replacement before planning,
+  before plan loading, or after plan loading therefore fails before any helper
+  POST instead of pairing an old payload with replacement recovery material.
+- Prepared-batch submission now captures one wallet scope before loading its
+  plan and carries that scope through every concurrent share task, so a wallet
+  switch cannot redirect queued delivery effects into another wallet.
 - Initial helper submission now journals each target before dispatch and
   resolves it atomically to accepted, ambiguous, or definitely failed. A
   process interruption or failed outcome write leaves a distinct crash marker,

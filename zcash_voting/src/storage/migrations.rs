@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 16;
+const CURRENT_VERSION: u32 = 17;
 
 /// Schema version that `001_init.sql` produces, and the oldest version that can
 /// be upgraded in place.
@@ -55,11 +55,74 @@ DROP TABLE imt_proofs;",
 ALTER TABLE share_delegations ADD COLUMN attempting_urls TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE share_delegations ADD COLUMN target_count INTEGER NOT NULL DEFAULT 0;",
     ),
+    (
+        16,
+        "-- v3.1.0-rc.13 singleton recovery JSON predates atomic-batch metadata.
+-- Normalize those released rows before plans can bind to their exact bytes so
+-- confirmation reserialization changes only the VC tree position.
+UPDATE votes
+   SET commitment_bundle_json = json_set(
+           json_set(
+               json_set(commitment_bundle_json, '$.batch_digest', NULL),
+               '$.batch_index', NULL
+           ),
+           '$.batch_size', NULL
+       )
+ WHERE CASE
+           WHEN json_valid(commitment_bundle_json) THEN
+               json_extract(commitment_bundle_json, '$.format') = 'zcash_voting_vote_recovery_v1'
+               AND json_type(commitment_bundle_json, '$.batch_digest') IS NULL
+               AND json_type(commitment_bundle_json, '$.batch_index') IS NULL
+               AND json_type(commitment_bundle_json, '$.batch_size') IS NULL
+           ELSE 0
+       END;
+CREATE TABLE helper_share_plans (
+    round_id                    TEXT NOT NULL,
+    wallet_id                   TEXT NOT NULL DEFAULT '',
+    bundle_index                INTEGER NOT NULL,
+    proposal_id                 INTEGER NOT NULL,
+    commitment_bundle_json      TEXT NOT NULL,
+    configured_server_urls_json TEXT NOT NULL,
+    share_plans_json            TEXT NOT NULL,
+    format_version              INTEGER NOT NULL CHECK (format_version = 1),
+    placement_guarantee         TEXT NOT NULL CHECK (placement_guarantee IN ('strict','legacy_best_effort')),
+    created_at                  INTEGER NOT NULL,
+    PRIMARY KEY (round_id, wallet_id, bundle_index, proposal_id),
+    FOREIGN KEY (round_id, wallet_id, bundle_index, proposal_id)
+        REFERENCES votes(round_id, wallet_id, bundle_index, proposal_id) ON DELETE CASCADE
+);
+CREATE TRIGGER clear_helper_share_plan_on_vote_generation_change
+AFTER UPDATE OF commitment_bundle_json ON votes
+WHEN OLD.commitment_bundle_json IS NOT NEW.commitment_bundle_json
+BEGIN
+    -- Confirmation is the one non-generational recovery update: it fills the
+    -- VC tree position in both the vote column and the otherwise-identical
+    -- recovery JSON. Advance only a plan bound to the exact OLD snapshot and
+    -- only when replacing that one JSON field produces the exact NEW bytes.
+    UPDATE helper_share_plans
+       SET commitment_bundle_json = NEW.commitment_bundle_json
+     WHERE round_id = NEW.round_id AND wallet_id = NEW.wallet_id
+       AND bundle_index = NEW.bundle_index AND proposal_id = NEW.proposal_id
+       AND commitment_bundle_json = OLD.commitment_bundle_json
+       AND OLD.vc_tree_position IS NULL
+       AND NEW.vc_tree_position IS NOT NULL
+       AND json_set(
+               OLD.commitment_bundle_json,
+               '$.vc_tree_position',
+               NEW.vc_tree_position
+           ) = NEW.commitment_bundle_json;
+    DELETE FROM helper_share_plans
+     WHERE round_id = NEW.round_id AND wallet_id = NEW.wallet_id
+       AND bundle_index = NEW.bundle_index AND proposal_id = NEW.proposal_id
+       AND commitment_bundle_json IS NOT NEW.commitment_bundle_json;
+END;",
+    ),
 ];
 
 const RESET_SQL: &str = "DROP TABLE IF EXISTS pir_proof_cache;
 DROP TABLE IF EXISTS ballot_intent;
 DROP TABLE IF EXISTS imt_proofs;
+DROP TABLE IF EXISTS helper_share_plans;
 DROP TABLE IF EXISTS share_delegations;
 DROP TABLE IF EXISTS keystone_signatures;
 DROP TABLE IF EXISTS votes;
@@ -146,6 +209,7 @@ mod tests {
     use super::*;
     use crate::storage::queries;
     use crate::VotingRoundParams;
+    use rusqlite::OptionalExtension;
 
     fn pre_v8_schema() -> String {
         include_str!("migrations/001_init.sql").replace("    note_identity_hashes_blob BLOB,\n", "")
@@ -172,6 +236,25 @@ mod tests {
             .replace("    target_count    INTEGER NOT NULL DEFAULT 0,\n", "")
     }
 
+    /// Strips the helper plan table and trigger added at version 17.
+    fn without_helper_share_plans(schema: &str) -> String {
+        let start = schema
+            .find("CREATE TABLE helper_share_plans")
+            .expect("schema must contain the table added at version 17");
+        let next = schema[start..]
+            .find("CREATE TABLE share_delegations")
+            .expect("helper plan DDL must precede share delegations");
+        format!("{}{}", &schema[..start], &schema[start + next..])
+    }
+
+    fn v16_schema() -> String {
+        without_helper_share_plans(include_str!("migrations/001_init.sql"))
+    }
+
+    fn v15_schema() -> String {
+        without_durable_ambiguous_deliveries(&v16_schema())
+    }
+
     /// The bundle-scoped `imt_proofs` table that version 15 replaced with
     /// `pir_proof_cache`, exactly as `001_init.sql` created it through v14.
     const V14_IMT_PROOFS_SQL: &str = "CREATE TABLE imt_proofs (
@@ -190,7 +273,8 @@ mod tests {
 
     /// The version-14 schema: no `pir_proof_cache` yet, `imt_proofs` still present.
     fn v14_schema() -> String {
-        let schema = without_durable_ambiguous_deliveries(include_str!("migrations/001_init.sql"));
+        let v16 = v16_schema();
+        let schema = without_durable_ambiguous_deliveries(&v16);
         format!(
             "{}\n{}\n",
             without_pir_proof_cache(&schema),
@@ -368,6 +452,7 @@ mod tests {
             "rounds",
             "bundles",
             "votes",
+            "helper_share_plans",
             "share_delegations",
             "pir_proof_cache",
         ] {
@@ -377,6 +462,132 @@ mod tests {
                 "column mismatch in {table}"
             );
         }
+        assert_eq!(
+            schema_sql(
+                &migrated,
+                "trigger",
+                "clear_helper_share_plan_on_vote_generation_change"
+            ),
+            schema_sql(
+                &fresh,
+                "trigger",
+                "clear_helper_share_plan_on_vote_generation_change"
+            ),
+            "migrated and fresh schemas must install the same plan lifecycle trigger"
+        );
+    }
+
+    #[test]
+    fn migrate_v16_to_v17_installs_plan_lifecycle_invariants() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&v16_schema()).unwrap();
+        conn.pragma_update(None, "user_version", 16).unwrap();
+
+        migrate(&mut conn).unwrap();
+
+        assert_eq!(
+            conn.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+                .unwrap(),
+            CURRENT_VERSION
+        );
+        assert_helper_plan_lifecycle(&conn);
+    }
+
+    #[test]
+    fn migrate_v15_recovery_json_preserves_plan_only_through_confirmation() {
+        const ROUND_ID: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&v15_schema()).unwrap();
+        let mut params = test_params();
+        params.vote_round_id = ROUND_ID.to_string();
+        queries::insert_round(&conn, "wallet", crate::Network::Testnet, &params, None).unwrap();
+        queries::insert_bundle(&conn, ROUND_ID, "wallet", 0, &[1]).unwrap();
+        queries::store_vote(&conn, ROUND_ID, "wallet", 0, 1, 2, &[0xCA; 32]).unwrap();
+        queries::store_vote(&conn, ROUND_ID, "wallet", 0, 2, 1, &[0xCB; 32]).unwrap();
+
+        let released_json = released_singleton_recovery_json(ROUND_ID);
+        assert!(!released_json.contains("\"batch_digest\""));
+        let batch_json = r#"{"format":"zcash_voting_vote_batch_recovery_v1","batch_digest":[1],"batch_index":0,"batch_size":1}"#;
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = ?1
+             WHERE round_id = ?2 AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            rusqlite::params![released_json, ROUND_ID],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = ?1
+             WHERE round_id = ?2 AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 2",
+            rusqlite::params![batch_json, ROUND_ID],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 15).unwrap();
+
+        migrate(&mut conn).unwrap();
+
+        let normalized =
+            crate::vote::serialize_recovery(&crate::vote::parse_recovery(&released_json).unwrap())
+                .unwrap();
+        let stored: String = conn
+            .query_row(
+                "SELECT commitment_bundle_json FROM votes
+                 WHERE round_id = ?1 AND wallet_id = 'wallet'
+                   AND bundle_index = 0 AND proposal_id = 1",
+                [ROUND_ID],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, normalized);
+        assert!(stored.contains("\"batch_digest\":null"));
+        let stored_batch: String = conn
+            .query_row(
+                "SELECT commitment_bundle_json FROM votes
+                 WHERE round_id = ?1 AND wallet_id = 'wallet'
+                   AND bundle_index = 0 AND proposal_id = 2",
+                [ROUND_ID],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_batch, batch_json);
+        insert_helper_plan_for_round(&conn, ROUND_ID, &stored);
+
+        let mut confirmed =
+            crate::vote::parse_recovery(&stored).expect("normalized recovery must remain valid");
+        confirmed.vc_tree_position = 789;
+        let confirmed_json = crate::vote::serialize_recovery(&confirmed).unwrap();
+        conn.execute(
+            "UPDATE votes
+                SET commitment_bundle_json = ?1, vc_tree_position = 789
+              WHERE round_id = ?2 AND wallet_id = 'wallet'
+                AND bundle_index = 0 AND proposal_id = 1",
+            rusqlite::params![confirmed_json, ROUND_ID],
+        )
+        .unwrap();
+        assert_eq!(
+            stored_plan_snapshot_for_round(&conn, ROUND_ID).as_deref(),
+            Some(confirmed_json.as_str())
+        );
+
+        let replacement_json =
+            confirmed_json.replacen("\"vote_decision\":2", "\"vote_decision\":1", 1);
+        assert_ne!(replacement_json, confirmed_json);
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = ?1
+             WHERE round_id = ?2 AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            rusqlite::params![replacement_json, ROUND_ID],
+        )
+        .unwrap();
+        assert_eq!(stored_plan_snapshot_for_round(&conn, ROUND_ID), None);
+    }
+
+    #[test]
+    fn fresh_schema_enforces_plan_lifecycle_invariants() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+
+        assert_helper_plan_lifecycle(&conn);
     }
 
     #[test]
@@ -514,6 +725,7 @@ mod tests {
         // Replaced by pir_proof_cache at v15.
         assert!(!tables.contains(&"imt_proofs".to_string()));
         assert!(tables.contains(&"share_delegations".to_string()));
+        assert!(tables.contains(&"helper_share_plans".to_string()));
         assert!(tables.contains(&"keystone_signatures".to_string()));
         assert!(tables.contains(&"ballot_intent".to_string()));
         assert!(tables.contains(&"pir_proof_cache".to_string()));
@@ -586,5 +798,136 @@ mod tests {
             .unwrap()
             .collect::<Result<Vec<String>, _>>()
             .unwrap()
+    }
+
+    fn schema_sql(conn: &Connection, object_type: &str, name: &str) -> String {
+        conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type = ?1 AND name = ?2",
+            rusqlite::params![object_type, name],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn assert_helper_plan_lifecycle(conn: &Connection) {
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        queries::insert_round(
+            conn,
+            "wallet",
+            crate::Network::Testnet,
+            &test_params(),
+            None,
+        )
+        .unwrap();
+        queries::insert_bundle(conn, "test-round", "wallet", 0, &[1]).unwrap();
+        queries::store_vote(conn, "test-round", "wallet", 0, 1, 0, &[0xCA; 32]).unwrap();
+        let before = r#"{"vc_tree_position":0,"marker":"same"}"#;
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = ?1
+             WHERE round_id = 'test-round' AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            [before],
+        )
+        .unwrap();
+        insert_helper_plan(conn, before);
+
+        let confirmed = r#"{"vc_tree_position":7,"marker":"same"}"#;
+        conn.execute(
+            "UPDATE votes
+                SET commitment_bundle_json = ?1, vc_tree_position = 7
+              WHERE round_id = 'test-round' AND wallet_id = 'wallet'
+                AND bundle_index = 0 AND proposal_id = 1",
+            [confirmed],
+        )
+        .unwrap();
+        assert_eq!(stored_plan_snapshot(conn).as_deref(), Some(confirmed));
+
+        // A non-confirmation recovery-material change is a new generation,
+        // even when it retains the already-confirmed VC position.
+        let replacement = r#"{"vc_tree_position":7,"marker":"replacement"}"#;
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = ?1
+             WHERE round_id = 'test-round' AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            [replacement],
+        )
+        .unwrap();
+        assert_eq!(stored_plan_snapshot(conn), None);
+
+        insert_helper_plan(conn, replacement);
+        conn.execute(
+            "DELETE FROM votes
+             WHERE round_id = 'test-round' AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            [],
+        )
+        .unwrap();
+        assert_eq!(stored_plan_snapshot(conn), None);
+    }
+
+    fn insert_helper_plan(conn: &Connection, snapshot: &str) {
+        insert_helper_plan_for_round(conn, "test-round", snapshot);
+    }
+
+    fn insert_helper_plan_for_round(conn: &Connection, round_id: &str, snapshot: &str) {
+        conn.execute(
+            "INSERT INTO helper_share_plans
+             (round_id, wallet_id, bundle_index, proposal_id,
+              commitment_bundle_json, configured_server_urls_json,
+              share_plans_json, format_version, placement_guarantee, created_at)
+             VALUES (?1, 'wallet', 0, 1, ?2, '[\"https://helper.example\"]',
+                     '[]', 1, 'strict', 1)",
+            rusqlite::params![round_id, snapshot],
+        )
+        .unwrap();
+    }
+
+    fn released_singleton_recovery_json(round_id: &str) -> String {
+        let released_shape = serde_json::to_string(&serde_json::json!({
+            "format": "zcash_voting_vote_recovery_v1",
+            "vote_round_id": round_id,
+            "bundle_index": 0,
+            "proposal_id": 1,
+            "vote_decision": 2,
+            "anchor_height": 100,
+            "vc_tree_position": 0,
+            "single_share": false,
+            "num_options": 3,
+            "van_nullifier": vec![0x31_u8; 32],
+            "vote_authority_note_new": vec![0x32_u8; 32],
+            "vote_commitment": vec![0x33_u8; 32],
+            "proof": vec![0x34_u8; 8],
+            "shares_hash": vec![0x35_u8; 32],
+            "r_vpk": vec![0x36_u8; 32],
+            "alpha_v": vec![0x37_u8; 32],
+            "vote_auth_sig": vec![0x38_u8; 64],
+            "encrypted_shares": [],
+            "share_blinds": [],
+            "share_comms": [],
+        }))
+        .unwrap();
+        let canonical_with_batch_nulls =
+            crate::vote::serialize_recovery(&crate::vote::parse_recovery(&released_shape).unwrap())
+                .unwrap();
+        canonical_with_batch_nulls
+            .strip_suffix(",\"batch_digest\":null,\"batch_index\":null,\"batch_size\":null}")
+            .map(|prefix| format!("{prefix}}}"))
+            .expect("current singleton recovery must append nullable batch metadata")
+    }
+
+    fn stored_plan_snapshot(conn: &Connection) -> Option<String> {
+        stored_plan_snapshot_for_round(conn, "test-round")
+    }
+
+    fn stored_plan_snapshot_for_round(conn: &Connection, round_id: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT commitment_bundle_json FROM helper_share_plans
+             WHERE round_id = ?1 AND wallet_id = 'wallet'
+               AND bundle_index = 0 AND proposal_id = 1",
+            [round_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
     }
 }

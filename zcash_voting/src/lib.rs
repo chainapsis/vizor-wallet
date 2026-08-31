@@ -56,7 +56,8 @@ pub mod zkp1;
 pub mod zkp2;
 
 pub use helper::client::{
-    HelperClient, HelperClientConfig, HelperError, ShareStatus, ShareSubmissionStatus,
+    HelperClient, HelperClientConfig, HelperError, HelperFleetPreflight, ShareStatus,
+    ShareSubmissionStatus,
 };
 pub use helper::health::HelperHealth;
 pub use helper::transport::{

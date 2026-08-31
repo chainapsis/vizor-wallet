@@ -17,6 +17,10 @@ pub const SHARE_COUNT: usize = 16;
 pub const VC_TREE_POSITION: u64 = 789;
 
 pub fn db_with_confirmed_committed_vote() -> VotingDb {
+    db_with_confirmed_recovery(recovery_fixture())
+}
+
+fn db_with_confirmed_recovery(recovery: VoteRecoveryBundle) -> VotingDb {
     let db = VotingDb::open_in_memory().unwrap();
     db.set_wallet_id(WALLET_ID);
     db.create_round(
@@ -32,7 +36,24 @@ pub fn db_with_confirmed_committed_vote() -> VotingDb {
     )
     .unwrap();
     db.ensure_bundles(ROUND_ID, &[note()]).unwrap();
-    insert_recovery_fixture(&db, &recovery_fixture()).unwrap();
+    // Keep this adversarial fixture's committed vote delayed: a higher eligible
+    // bundle owns the round-immediate designation even though it is not yet
+    // committed in these transport-focused tests.
+    db.conn()
+        .execute(
+            "INSERT INTO bundles (round_id, wallet_id, bundle_index)
+             VALUES (?1, ?2, 1)",
+            rusqlite::params![ROUND_ID, WALLET_ID],
+        )
+        .unwrap();
+    db.set_ballot_intent(
+        ROUND_ID,
+        PROPOSAL_ID,
+        zcash_voting::session::Decision::Choice(recovery.vote_decision),
+        recovery.num_options,
+    )
+    .unwrap();
+    insert_recovery_fixture(&db, &recovery).unwrap();
     record_vc_position(&db, ROUND_ID, BUNDLE_INDEX, PROPOSAL_ID, VC_TREE_POSITION).unwrap();
     db
 }

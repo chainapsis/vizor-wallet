@@ -510,15 +510,9 @@ impl TryFrom<SignedVoteCommitment> for SignedVoteCommitmentView {
 
     fn try_from(commitment: SignedVoteCommitment) -> Result<Self, Self::Error> {
         let wire = VoteCommitmentWire::try_from(&commitment)?;
-        let shares = commitment
-            .share_payloads
-            .iter()
-            .map(|payload| VoteShareWire::from_payload(payload, None, 0))
-            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             proposal_id: commitment.proposal_id,
             wire,
-            shares,
         })
     }
 }
@@ -802,6 +796,7 @@ impl TryFrom<session::RoundPlan> for RoundPlanView {
                 .collect(),
             open_proposals: plan.open_proposals,
             immediate_share_key: plan.immediate_share_key,
+            immediate_share_confirmed: plan.immediate_share_confirmed,
             all_decided: plan.all_decided,
         })
     }
@@ -1172,7 +1167,6 @@ mod tests {
             vote_commitment: [0x13; 32],
             proof: vec![0x14; 8],
             encrypted_shares: vec![],
-            share_payloads: vec![],
             anchor_height: 123,
             shares_hash: [0x15; 32],
             share_comms: vec![],
@@ -1530,21 +1524,6 @@ mod tests {
                 c2: point_bytes(6),
                 share_index: 0,
             }],
-            share_payloads: vec![crate::SharePayload {
-                vote_round_id: "00".repeat(32),
-                shares_hash: field_bytes(7),
-                proposal_id: 2,
-                vote_decision: 1,
-                enc_share: crate::WireEncryptedShare {
-                    c1: point_bytes(5),
-                    c2: point_bytes(6),
-                    share_index: 0,
-                },
-                tree_position: 9,
-                all_enc_shares: vec![],
-                share_comms: full_share_comms(),
-                primary_blind: field_bytes(9),
-            }],
             anchor_height: 100,
             shares_hash: pallas::Base::from(7).to_repr(),
             share_comms: full_share_comm_arrays(),
@@ -1587,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_vote_commitments_view_preserves_singleton_wire_fields() {
+    fn signed_vote_commitments_view_excludes_helper_payloads() {
         let view = SignedVoteCommitmentsView::try_from(crate::vote::SignedVoteCommitments {
             bundle_index: 1,
             commitments: vec![signed_vote_commitment_fixture()],
@@ -1596,15 +1575,8 @@ mod tests {
         assert_eq!(view.bundle_index, 1);
         assert_eq!(view.commitments[0].proposal_id, 2);
         assert_eq!(view.commitments[0].wire.proposal_id, 2);
-        assert_eq!(view.commitments[0].shares[0].vote_round_id, "00".repeat(32));
-        assert_eq!(
-            view.commitments[0].shares[0].encrypted_share.c1,
-            point_bytes(5)
-        );
-        assert_eq!(
-            view.commitments[0].shares[0].primary_blind,
-            base64::engine::general_purpose::STANDARD.encode(field_bytes(9))
-        );
+        let encoded = serde_json::to_value(&view.commitments[0]).unwrap();
+        assert!(encoded.get("shares").is_none());
         assert_eq!(
             view.commitments[0].wire.vote_auth_sig,
             base64::engine::general_purpose::STANDARD.encode(vec![9; 64])
@@ -1804,6 +1776,7 @@ mod tests {
                 proposal_id: 11,
                 share_index: 0,
             }),
+            immediate_share_confirmed: false,
             all_decided: false,
         };
 

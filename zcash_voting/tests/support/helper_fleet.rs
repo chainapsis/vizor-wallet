@@ -7,7 +7,7 @@ use std::{
         Arc, Condvar, Mutex,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -236,18 +236,6 @@ impl HelperFleet {
 
     pub fn max_concurrent_status_requests(&self) -> usize {
         self.max_active_status.load(Ordering::SeqCst)
-    }
-
-    pub async fn wait_for_requests(&self, expected: usize) {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while self.requests().len() < expected {
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for {expected} helper requests; saw {}",
-                self.requests().len()
-            );
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
     }
 }
 

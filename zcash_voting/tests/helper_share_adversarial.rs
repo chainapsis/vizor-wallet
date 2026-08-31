@@ -12,18 +12,17 @@ use std::{
 };
 
 use helper_fleet::{Endpoint, HelperFleet, Response, ResponseGate};
-use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use vote_fixture::{
     committed_vote, db_with_confirmed_committed_vote, ROUND_ID, SHARE_COUNT, VC_TREE_POSITION,
 };
 use zcash_voting::{
     share,
-    share_policy::{
-        plan_share_submission, plan_share_submissions_with_preferred_servers,
-        share_submission_random_bytes_required, ShareSubmissionPlan, ShareTimingPolicy,
-        SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER,
+    share_policy::{ShareTimingPolicy, SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER},
+    share_tracking::{
+        track_pending_shares, ShareBatchDeliveryReport, ShareDeliveryPlan,
+        ShareDeliveryPlanningParams, ShareDeliverySubmissionParams, ShareTrackingParams,
     },
-    share_tracking::{track_pending_shares, ShareSubmissionRequest, ShareTrackingParams},
     HelperClient, HelperClientConfig, HelperError, HelperHealth, HyperTransport, VotingError,
 };
 
@@ -48,56 +47,76 @@ fn client() -> HelperClient {
     )
 }
 
-fn plan_one(urls: &[String], server_entropy: &[u8]) -> ShareSubmissionPlan {
-    let plan = plan_share_submission(
-        urls,
-        NOW,
-        VOTE_END,
-        Some(LAST_MOMENT_BUFFER),
-        false,
-        &u64::MAX.to_le_bytes(),
-        server_entropy,
-    )
-    .unwrap();
-    assert!(plan.submit_at > NOW);
-    assert_eq!(plan.target_count, 5);
-    plan
-}
-
 fn server_index(urls: &[String], url: &str) -> usize {
     urls.iter()
         .position(|candidate| candidate == url)
         .unwrap_or_else(|| panic!("unknown helper URL {url}"))
 }
 
-fn tracking_params<'a>(
-    urls: &'a [String],
-    now_seconds: u64,
-    random_bytes: &'a (dyn Fn(usize) -> Vec<u8> + Send + Sync),
-) -> ShareTrackingParams<'a> {
+fn tracking_params<'a>(urls: &'a [String], now_seconds: u64) -> ShareTrackingParams<'a> {
     ShareTrackingParams {
         round_id: ROUND_ID,
         configured_server_urls: urls,
         now_seconds,
         vote_end_time_seconds: Some(VOTE_END),
         policy: ShareTimingPolicy::default(),
-        random_bytes,
     }
+}
+
+async fn prepare(
+    db: &zcash_voting::round::VotingDb,
+    client: &HelperClient,
+    urls: &[String],
+) -> ShareDeliveryPlan {
+    let fleet = client.preflight_fleet(urls).await.unwrap();
+    committed_vote(db)
+        .prepare_share_delivery(
+            db,
+            ShareDeliveryPlanningParams {
+                fleet: &fleet,
+                now_seconds: NOW,
+                vote_end_time_seconds: VOTE_END,
+                last_moment_buffer_seconds: Some(LAST_MOMENT_BUFFER),
+                proposal_ids: &[1],
+            },
+        )
+        .unwrap()
+}
+
+async fn prepare_share_zero(
+    db: &zcash_voting::round::VotingDb,
+    client: &HelperClient,
+    urls: &[String],
+) -> ShareDeliveryPlan {
+    let plan = prepare(db, client, urls).await;
+    for (share_index, share_plan) in plan.share_plans.iter().enumerate().skip(1) {
+        share::record_delivery_fixture(
+            db,
+            ROUND_ID,
+            0,
+            1,
+            share_index as u32,
+            &share_plan.target_servers,
+            &[],
+            share_plan.target_count as usize,
+            share_plan.submit_at,
+        )
+        .unwrap();
+        share::confirm_fixture(db, ROUND_ID, 0, 1, share_index as u32).unwrap();
+    }
+    plan
 }
 
 async fn submit(
     db: &zcash_voting::round::VotingDb,
     client: &HelperClient,
     urls: &[String],
-    plan: &ShareSubmissionPlan,
-) -> zcash_voting::share_tracking::ShareSubmissionReport {
+) -> ShareBatchDeliveryReport {
     committed_vote(db)
-        .submit_share_to_helpers(
+        .submit_prepared_shares(
             db,
             client,
-            ShareSubmissionRequest {
-                share_index: 0,
-                plan,
+            ShareDeliverySubmissionParams {
                 configured_server_urls: urls,
                 now_seconds: NOW,
             },
@@ -105,6 +124,17 @@ async fn submit(
         )
         .await
         .unwrap()
+}
+
+fn share_zero(
+    report: &ShareBatchDeliveryReport,
+) -> &zcash_voting::share_tracking::ShareSubmissionReport {
+    &report
+        .deliveries
+        .iter()
+        .find(|delivery| delivery.share_index == 0)
+        .expect("share zero must be processed")
+        .submission
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -117,44 +147,23 @@ async fn ten_helper_planning_preflight_and_submission_obey_distribution_policy()
             Response::ok().delayed(Duration::from_millis(300)),
         );
     }
-    let readiness = client().preflight(&urls, 5).await;
-    let ready_count = readiness.iter().filter(|(_, ready)| *ready).count();
-    assert_eq!(ready_count, 5);
-    let ranked = readiness
-        .iter()
-        .filter(|(_, ready)| *ready)
-        .chain(readiness.iter().filter(|(_, ready)| !*ready))
-        .map(|(url, _)| url.clone())
-        .collect::<Vec<_>>();
-
-    let entropy = share_submission_random_bytes_required(
-        SHARE_COUNT,
-        ranked.len(),
-        NOW,
-        VOTE_END,
-        Some(LAST_MOMENT_BUFFER),
-        false,
-    );
-    let plans = plan_share_submissions_with_preferred_servers(
-        SHARE_COUNT,
-        &ranked,
-        ready_count,
-        NOW,
-        VOTE_END,
-        Some(LAST_MOMENT_BUFFER),
-        false,
-        None,
-        &vec![0xA5; entropy.submit_at_random_bytes],
-        &vec![0x5A; entropy.server_random_bytes],
-    )
-    .unwrap();
+    let db = db_with_confirmed_committed_vote();
+    let helper_client = client();
+    let plan = prepare(&db, &helper_client, &urls).await;
 
     let mut usage = HashMap::<String, usize>::new();
-    for plan in &plans {
-        assert_eq!(plan.target_count, 5);
-        assert_eq!(plan.target_servers.len(), 5);
-        assert_eq!(plan.target_servers.iter().collect::<HashSet<_>>().len(), 5);
-        for server in &plan.target_servers {
+    for share_plan in &plan.share_plans {
+        assert_eq!(share_plan.target_count, 5);
+        assert_eq!(share_plan.target_servers.len(), 5);
+        assert_eq!(
+            share_plan
+                .target_servers
+                .iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            5
+        );
+        for server in &share_plan.target_servers {
             *usage.entry(server.clone()).or_default() += 1;
         }
     }
@@ -167,19 +176,22 @@ async fn ten_helper_planning_preflight_and_submission_obey_distribution_policy()
         .values()
         .all(|count| *count <= SHARE_HELPER_MAX_INITIAL_SHARES_PER_SERVER));
 
-    let db = db_with_confirmed_committed_vote();
-    let report = submit(&db, &client(), &urls, &plans[0]).await;
-    assert_eq!(report.target_count, 5);
-    assert_eq!(report.accepted_urls.len(), 5);
-    assert!(report.ambiguous_urls.is_empty());
-    assert_eq!(fleet.post_requests().len(), 5);
+    let report = submit(&db, &helper_client, &urls).await;
+    assert_eq!(report.deliveries.len(), SHARE_COUNT);
+    assert!(report
+        .deliveries
+        .iter()
+        .all(|delivery| delivery.submission.target_count == 5
+            && delivery.submission.accepted_urls.len() == 5
+            && delivery.submission.ambiguous_urls.is_empty()));
+    assert_eq!(fleet.post_requests().len(), SHARE_COUNT * 5);
     for request in fleet.post_requests() {
         let body = request.json();
         assert_eq!(body["vote_round_id"], ROUND_ID);
         assert_eq!(body["proposal_id"], 1);
-        assert_eq!(body["share_index"], 0);
         assert_eq!(body["tree_position"], VC_TREE_POSITION);
-        assert_eq!(body["submit_at"], plans[0].submit_at);
+        let share_index = body["share_index"].as_u64().unwrap() as usize;
+        assert_eq!(body["submit_at"], plan.share_plans[share_index].submit_at);
         assert!(body.get("all_enc_shares").is_none());
     }
 }
@@ -188,7 +200,10 @@ async fn ten_helper_planning_preflight_and_submission_obey_distribution_policy()
 async fn mixed_initial_failures_follow_current_retry_and_durability_rules() {
     let fleet = HelperFleet::new(10);
     let urls = fleet.urls();
-    let plan = plan_one(&urls, &vec![0x31; 72]);
+    let db = db_with_confirmed_committed_vote();
+    let helper_client = client();
+    let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+    let plan = &delivery_plan.share_plans[0];
     let planned = &plan.target_servers;
 
     let throttled = server_index(&urls, &planned[0]);
@@ -212,8 +227,8 @@ async fn mixed_initial_failures_follow_current_retry_and_durability_rules() {
     let unavailable = server_index(&urls, &planned[3]);
     fleet.server(unavailable).stop();
 
-    let db = db_with_confirmed_committed_vote();
-    let report = submit(&db, &client(), &urls, &plan).await;
+    let batch = submit(&db, &helper_client, &urls).await;
+    let report = share_zero(&batch);
     assert_eq!(report.accepted_urls.len(), 5);
     assert_eq!(report.ambiguous_urls.len(), 2);
     assert_eq!(
@@ -243,7 +258,10 @@ async fn mixed_initial_failures_follow_current_retry_and_durability_rules() {
 async fn every_http_post_is_journaled_before_the_helper_can_answer() {
     let fleet = HelperFleet::new(10);
     let urls = fleet.urls();
-    let plan = plan_one(&urls, &vec![0x47; 72]);
+    let db = db_with_confirmed_committed_vote();
+    let helper_client = client();
+    let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+    let plan = &delivery_plan.share_plans[0];
     let first = server_index(&urls, &plan.target_servers[0]);
     let gate = Arc::new(ResponseGate::default());
     fleet.server(first).enqueue(
@@ -254,11 +272,11 @@ async fn every_http_post_is_journaled_before_the_helper_can_answer() {
             body: r#"{"status":"queued"}"#.to_string(),
         },
     );
-    let db = db_with_confirmed_committed_vote();
-    let helper_client = client();
-    let submission = submit(&db, &helper_client, &urls, &plan);
+    let submission = submit(&db, &helper_client, &urls);
     let observe_journal = async {
-        fleet.wait_for_requests(1).await;
+        while fleet.post_requests().is_empty() {
+            tokio::task::yield_now().await;
+        }
         let stored = &share::list(&db, ROUND_ID).unwrap()[0];
         assert_eq!(stored.attempting_urls, vec![plan.target_servers[0].clone()]);
         assert!(stored.sent_to_urls.is_empty());
@@ -266,7 +284,7 @@ async fn every_http_post_is_journaled_before_the_helper_can_answer() {
     };
 
     let (report, ()) = tokio::join!(submission, observe_journal);
-    assert_eq!(report.accepted_urls.len(), 5);
+    assert_eq!(share_zero(&report).accepted_urls.len(), 5);
     let stored = &share::list(&db, ROUND_ID).unwrap()[0];
     assert!(stored.attempting_urls.is_empty());
 }
@@ -275,7 +293,10 @@ async fn every_http_post_is_journaled_before_the_helper_can_answer() {
 async fn early_and_overdue_recovery_preserve_then_reset_the_schedule() {
     let fleet = HelperFleet::new(10);
     let urls = fleet.urls();
-    let plan = plan_one(&urls, &vec![0x59; 72]);
+    let db = db_with_confirmed_committed_vote();
+    let helper_client = client();
+    let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+    let plan = &delivery_plan.share_plans[0];
     let initially_accepted = plan
         .target_servers
         .iter()
@@ -292,16 +313,13 @@ async fn early_and_overdue_recovery_preserve_then_reset_the_schedule() {
             },
         );
     }
-    let db = db_with_confirmed_committed_vote();
-    let helper_client = client();
-    let initial = submit(&db, &helper_client, &urls, &plan).await;
-    assert_eq!(initial.accepted_urls.len(), 2);
+    let initial = submit(&db, &helper_client, &urls).await;
+    assert_eq!(share_zero(&initial).accepted_urls.len(), 2);
     let initial_posts = fleet.post_requests().len();
 
-    let zero_random = |len| vec![0; len];
     let early = track_pending_shares(
         &db,
-        &tracking_params(&urls, plan.submit_at - 1, &zero_random),
+        &tracking_params(&urls, plan.submit_at - 1),
         &helper_client,
         &|| false,
     )
@@ -318,7 +336,7 @@ async fn early_and_overdue_recovery_preserve_then_reset_the_schedule() {
     let before_overdue = fleet.post_requests().len();
     let overdue = track_pending_shares(
         &db,
-        &tracking_params(&urls, plan.submit_at + 3_601, &zero_random),
+        &tracking_params(&urls, plan.submit_at + 3_601),
         &helper_client,
         &|| false,
     )
@@ -335,10 +353,11 @@ async fn early_and_overdue_recovery_preserve_then_reset_the_schedule() {
 async fn mixed_status_latency_respects_concurrency_and_confirmation_quorum() {
     let fleet = HelperFleet::new(10);
     let urls = fleet.urls();
-    let plan = plan_one(&urls, &vec![0x61; 72]);
     let db = db_with_confirmed_committed_vote();
     let helper_client = client();
-    submit(&db, &helper_client, &urls, &plan).await;
+    let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+    let plan = &delivery_plan.share_plans[0];
+    submit(&db, &helper_client, &urls).await;
     let posts_before_poll = fleet.post_requests().len();
 
     fleet.server(0).enqueue(
@@ -361,10 +380,9 @@ async fn mixed_status_latency_respects_concurrency_and_confirmation_quorum() {
             Response::pending().delayed(Duration::from_millis(70)),
         );
     }
-    let zero_random = |len| vec![0; len];
     let report = track_pending_shares(
         &db,
-        &tracking_params(&urls, plan.submit_at + 11, &zero_random),
+        &tracking_params(&urls, plan.submit_at + 11),
         &helper_client,
         &|| false,
     )
@@ -382,7 +400,10 @@ async fn mixed_status_latency_respects_concurrency_and_confirmation_quorum() {
 async fn restart_keeps_ambiguous_delivery_poll_only_until_overdue() {
     let fleet = HelperFleet::new(10);
     let urls = fleet.urls();
-    let plan = plan_one(&urls, &vec![0x73; 72]);
+    let db = db_with_confirmed_committed_vote();
+    let helper_client = client();
+    let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+    let plan = &delivery_plan.share_plans[0];
     let ambiguous = server_index(&urls, &plan.target_servers[0]);
     fleet.server(ambiguous).enqueue(
         Endpoint::Submit,
@@ -397,8 +418,7 @@ async fn restart_keeps_ambiguous_delivery_poll_only_until_overdue() {
                 .enqueue(Endpoint::Submit, Response::status(400));
         }
     }
-    let db = db_with_confirmed_committed_vote();
-    submit(&db, &client(), &urls, &plan).await;
+    submit(&db, &helper_client, &urls).await;
     assert_eq!(fleet.server(ambiguous).request_count(Endpoint::Submit), 1);
 
     for index in 0..10 {
@@ -408,7 +428,7 @@ async fn restart_keeps_ambiguous_delivery_poll_only_until_overdue() {
                 .enqueue(Endpoint::Submit, Response::status(400));
         }
     }
-    submit(&db, &client(), &urls, &plan).await;
+    submit(&db, &client(), &urls).await;
     assert_eq!(
         fleet.server(ambiguous).request_count(Endpoint::Submit),
         1,
@@ -426,10 +446,9 @@ async fn restart_keeps_ambiguous_delivery_poll_only_until_overdue() {
                 .enqueue(Endpoint::Submit, Response::status(400));
         }
     }
-    let zero_random = |len| vec![0; len];
     let report = track_pending_shares(
         &db,
-        &tracking_params(&urls, plan.submit_at + 3_601, &zero_random),
+        &tracking_params(&urls, plan.submit_at + 3_601),
         &client(),
         &|| false,
     )
@@ -461,16 +480,15 @@ async fn current_boundary_rejects_schema_invalid_bodies_and_canonical_duplicates
     assert!(fleet.requests().is_empty());
 
     let db = db_with_confirmed_committed_vote();
-    let plan = plan_one(&urls, &vec![0x83; 72]);
+    let helper_client = client();
+    prepare(&db, &helper_client, &urls).await;
     let mut duplicated = urls.clone();
     duplicated[9] = format!("{}/", urls[0]);
     let result = committed_vote(&db)
-        .submit_share_to_helpers(
+        .submit_prepared_shares(
             &db,
-            &client(),
-            ShareSubmissionRequest {
-                share_index: 0,
-                plan: &plan,
+            &helper_client,
+            ShareDeliverySubmissionParams {
                 configured_server_urls: &duplicated,
                 now_seconds: NOW,
             },
@@ -479,7 +497,7 @@ async fn current_boundary_rejects_schema_invalid_bodies_and_canonical_duplicates
         .await;
     assert!(matches!(result, Err(VotingError::InvalidInput { .. })));
     assert!(share::list(&db, ROUND_ID).unwrap().is_empty());
-    assert!(fleet.requests().is_empty());
+    assert!(fleet.post_requests().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -488,9 +506,10 @@ async fn seeded_mixed_networks_preserve_safety_and_converge_after_healing() {
         let fleet = HelperFleet::new(10);
         let urls = fleet.urls();
         let mut rng = StdRng::seed_from_u64(seed);
-        let mut server_entropy = vec![0u8; 72];
-        rng.fill_bytes(&mut server_entropy);
-        let plan = plan_one(&urls, &server_entropy);
+        let db = db_with_confirmed_committed_vote();
+        let helper_client = client();
+        let delivery_plan = prepare_share_zero(&db, &helper_client, &urls).await;
+        let plan = &delivery_plan.share_plans[0];
         let mut modes = Vec::new();
         for index in 0..10 {
             let mode = rng.gen_range(0..5);
@@ -518,9 +537,8 @@ async fn seeded_mixed_networks_preserve_safety_and_converge_after_healing() {
             }
         }
 
-        let db = db_with_confirmed_committed_vote();
-        let helper_client = client();
-        let initial = submit(&db, &helper_client, &urls, &plan).await;
+        let initial_batch = submit(&db, &helper_client, &urls).await;
+        let initial = share_zero(&initial_batch);
         let initial_counts = (0..10)
             .map(|index| fleet.server(index).request_count(Endpoint::Submit))
             .collect::<Vec<_>>();
@@ -533,14 +551,9 @@ async fn seeded_mixed_networks_preserve_safety_and_converge_after_healing() {
         }
         let initial_ambiguous = initial.ambiguous_urls.clone();
 
-        let seeded_random = |len: usize| {
-            let mut bytes = vec![0u8; len];
-            StdRng::seed_from_u64(seed ^ len as u64).fill_bytes(&mut bytes);
-            bytes
-        };
         track_pending_shares(
             &db,
-            &tracking_params(&urls, plan.submit_at - 1, &seeded_random),
+            &tracking_params(&urls, plan.submit_at - 1),
             &helper_client,
             &|| false,
         )
@@ -557,7 +570,7 @@ async fn seeded_mixed_networks_preserve_safety_and_converge_after_healing() {
 
         track_pending_shares(
             &db,
-            &tracking_params(&urls, plan.submit_at + 3_601, &seeded_random),
+            &tracking_params(&urls, plan.submit_at + 3_601),
             &helper_client,
             &|| false,
         )
@@ -600,7 +613,7 @@ async fn seeded_mixed_networks_preserve_safety_and_converge_after_healing() {
             .saturating_add(11);
         let confirmation = track_pending_shares(
             &db,
-            &tracking_params(&urls, confirmation_now, &seeded_random),
+            &tracking_params(&urls, confirmation_now),
             &helper_client,
             &|| false,
         )

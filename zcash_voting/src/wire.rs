@@ -267,7 +267,6 @@ pub struct DraftVote {
 pub struct SignedVoteCommitmentView {
     pub proposal_id: u32,
     pub wire: VoteCommitmentWire,
-    pub shares: Vec<VoteShareWire>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -423,5 +422,6 @@ pub struct RoundPlanView {
     pub open_proposals: Vec<u32>,
     /// The round's single immediate helper-share submission, if designated.
     pub immediate_share_key: Option<ImmediateShareKey>,
+    pub immediate_share_confirmed: bool,
     pub all_decided: bool,
 }

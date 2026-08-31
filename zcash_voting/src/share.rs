@@ -221,6 +221,7 @@ impl ShareDeliveryState {
 }
 use pasta_curves::group::ff::PrimeField;
 use pasta_curves::pallas;
+#[cfg(any(test, feature = "test-fixtures"))]
 use rusqlite::TransactionBehavior;
 
 pub use crate::types::ShareDelegationRecord as ShareRecord;
@@ -354,7 +355,7 @@ fn record_impl(
 /// Records a helper-share submission for integration-test fixture setup.
 ///
 /// Production callers submit through
-/// [`crate::vote::CommittedVote::submit_share_to_helpers`], which owns the
+/// [`crate::vote::CommittedVote::submit_prepared_shares`], which owns the
 /// journal-before-dispatch lifecycle. This lower-level entry point exists only
 /// for the `test-fixtures` feature so integration tests can seed durable state
 /// without opening a network connection.
@@ -407,6 +408,7 @@ fn record_delivery_impl(
     record_delivery_for_scope(db, &scope, params).map(|(submit_at, _)| submit_at)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(crate) fn record_delivery_for_scope(
     db: &VotingDb,
     scope: &ShareOperationScope,
@@ -485,7 +487,7 @@ pub(crate) fn record_delivery(
 ///
 /// This bypasses network dispatch and is unavailable without the
 /// `test-fixtures` feature. Production callers must use
-/// [`crate::vote::CommittedVote::submit_share_to_helpers`].
+/// [`crate::vote::CommittedVote::submit_prepared_shares`].
 #[cfg(feature = "test-fixtures")]
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
@@ -517,6 +519,43 @@ pub fn record_delivery_fixture(
         },
     )
     .map(|_| ())
+}
+
+/// Marks a seeded helper-delivery row confirmed for integration-test fixtures.
+#[cfg(feature = "test-fixtures")]
+#[doc(hidden)]
+pub fn confirm_fixture(
+    db: &VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<(), VotingError> {
+    let record = list(db, round_id)?
+        .into_iter()
+        .find(|record| {
+            record.bundle_index == bundle_index
+                && record.proposal_id == proposal_id
+                && record.share_index == share_index
+        })
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "seeded helper-share row was not found".to_string(),
+        })?;
+    let updated = db.mark_share_confirmed_for_generation(
+        &db.wallet_id(),
+        round_id,
+        bundle_index,
+        proposal_id,
+        share_index,
+        Some(&record.nullifier),
+    )?;
+    if updated {
+        Ok(())
+    } else {
+        Err(VotingError::InvalidInput {
+            message: "seeded helper-share generation changed before confirmation".to_string(),
+        })
+    }
 }
 
 /// Writes an `attempting` marker before a helper POST may be dispatched.
@@ -665,17 +704,6 @@ pub(crate) fn resolve_delivery_attempt_for_generation(
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
-fn delivery_nullifier(
-    db: &VotingDb,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-) -> Result<[u8; 32], VotingError> {
-    let scope = ShareOperationScope::capture(db);
-    delivery_nullifier_for_scope(db, &scope, round_id, bundle_index, proposal_id, share_index)
-}
-
 fn delivery_nullifier_for_scope(
     db: &VotingDb,
     scope: &ShareOperationScope,

@@ -442,6 +442,8 @@ fn seed_recoverable_vote(db: &VotingDb) {
 
 fn seed_recoverable_vote_for_wallet(db: &VotingDb, wallet_id: &str) {
     seed_round_and_bundle(db);
+    db.set_ballot_intent(ROUND_ID, 1, crate::session::Decision::Choice(2), 3)
+        .unwrap();
     queries::store_vote(&db.conn(), ROUND_ID, wallet_id, 0, 1, 2, &[0xCA; 32]).unwrap();
     let json = serialize_recovery(&recovery_bundle_fixture()).unwrap();
     db.conn()
@@ -576,6 +578,7 @@ async fn submit_initial_share_to_candidates(
 }
 
 mod confirmation;
+mod delivery_plan;
 mod initial_delivery;
 mod recovery;
 mod timing_policy;

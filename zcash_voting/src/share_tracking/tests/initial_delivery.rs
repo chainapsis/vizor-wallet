@@ -580,10 +580,10 @@ async fn committed_vote_submission_keeps_degraded_planned_target_before_healthy_
     let client = HelperClient::new(transport.clone(), health);
 
     let report = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,
@@ -636,10 +636,10 @@ async fn stale_committed_vote_submission_is_rejected_before_side_effects() {
     let client = client_with(transport.clone());
 
     let error = stale_handle
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,
@@ -747,10 +747,10 @@ async fn repeated_committed_submission_preserves_the_original_schedule() {
 
     for plan in [&first_plan, &second_plan] {
         committed
-            .submit_share_to_helpers(
+            .submit_share_to_helpers_internal(
                 &db,
                 &client,
-                ShareSubmissionRequest {
+                CommittedShareSubmissionRequest {
                     share_index: 0,
                     plan,
                     configured_server_urls: &configured,
@@ -800,10 +800,10 @@ async fn repeated_partial_committed_submission_sends_original_schedule_to_new_he
     let client = HelperClient::with_config(transport.clone(), HelperHealth::default(), config);
 
     let first = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &first_plan,
                 configured_server_urls: &configured,
@@ -820,10 +820,10 @@ async fn repeated_partial_committed_submission_sends_original_schedule_to_new_he
     assert_eq!(transport.call_count(&helper(3)), 0);
 
     let second = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &second_plan,
                 configured_server_urls: &configured,
@@ -882,10 +882,10 @@ async fn repeated_committed_submission_does_not_resurrect_zero_schedule() {
     let client = client_with(transport.clone());
 
     let report = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,
@@ -917,10 +917,10 @@ async fn committed_vote_submission_rejects_mismatched_plan_before_side_effects()
     let client = client_with(transport.clone());
 
     let error = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,
@@ -951,10 +951,10 @@ async fn committed_submission_rejects_duplicate_spelling_fleet_before_effects() 
     let client = client_with(transport.clone());
 
     let error = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,
@@ -985,10 +985,10 @@ async fn committed_vote_submission_rejects_uncapped_large_fleet_target() {
     let client = client_with(transport.clone());
 
     let error = committed
-        .submit_share_to_helpers(
+        .submit_share_to_helpers_internal(
             &db,
             &client,
-            ShareSubmissionRequest {
+            CommittedShareSubmissionRequest {
                 share_index: 0,
                 plan: &plan,
                 configured_server_urls: &configured,

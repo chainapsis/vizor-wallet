@@ -56,7 +56,6 @@ mod tests {
             vote_commitment: [3; 32],
             proof: vec![4; 10],
             encrypted_shares: vec![],
-            share_payloads: vec![],
             anchor_height: 100,
             shares_hash: [5; 32],
             share_comms: vec![],

@@ -38,6 +38,8 @@ pub(crate) const REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = 10;
 pub enum VotingError {
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
+    #[error("Keystone signature conflict for bundle {bundle_index}")]
+    KeystoneSignatureConflict { bundle_index: u32 },
     #[error("Proof generation failed: {message}")]
     ProofFailed { message: String },
     #[error("Internal error: {message}")]

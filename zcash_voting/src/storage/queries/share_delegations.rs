@@ -434,13 +434,14 @@ pub(crate) fn remove_attempting_server_for_generation(
 ///
 /// This raw SQL helper is crate-internal because callers must provide a
 /// nullifier that matches the persisted vote recovery bundle. Wallet
-/// integrations should use `CommittedVote::submit_share_to_helpers`, which
+/// integrations should use `CommittedVote::submit_prepared_shares`, which
 /// derives that nullifier and owns journal-before-dispatch ordering.
 ///
 /// All reported helper URLs must canonicalize. Existing evidence is merged
 /// with definite acceptance taking precedence over outcome-unknown or
 /// in-flight state; a conflicting nullifier leaves the row unchanged.
 /// Returns the effective durable `submit_at`, which is write-once on conflict.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(crate) fn record_share_delegation(
     conn: &Connection,
     round_id: &str,

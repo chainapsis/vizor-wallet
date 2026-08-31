@@ -25,8 +25,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
-    helper::client::HelperClient,
+    helper::client::{HelperClient, HelperFleetPreflight},
     round::VotingDb,
     share,
     share_policy::{
@@ -193,8 +195,9 @@ pub struct ResubmittedShare {
 
 /// Results of an initial fan-out across helper servers.
 ///
-/// [`submit_share_to_helpers`] journals every attempt and outcome before this
-/// report is returned, so callers must not treat it as pending persistence.
+/// [`crate::vote::CommittedVote::submit_prepared_shares`] journals every
+/// attempt and outcome before this report is returned, so callers must not
+/// treat it as pending persistence.
 /// Outcome-unknown attempts do not count toward `target_count` because the
 /// current status endpoint reports confirmation evidence, not possession. A
 /// completed ambiguous attempt remains overdue-only; a process-interrupted
@@ -210,27 +213,65 @@ pub struct ShareSubmissionReport {
     pub target_count: usize,
 }
 
-/// A committed share and its previously computed placement plan.
-///
-/// The round, bundle, proposal, nullifier, wire payload, target count, and
-/// schedule are deliberately absent: [`crate::vote::CommittedVote`] derives
-/// them from its persisted commitment and the selected plan, preventing a
-/// caller from journaling one share while sending another.
-#[derive(Clone, Copy, Debug)]
-pub struct ShareSubmissionRequest<'a> {
-    /// Domain index of the committed share payload to submit.
-    pub share_index: u32,
-    /// Plan returned by the helper-share planner for this payload.
-    pub plan: &'a ShareSubmissionPlan,
-    /// Complete current helper fleet at delivery time.
+/// Strength of the initial helper-placement guarantee retained on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SharePlacementGuarantee {
+    /// The complete commitment-wide plan was persisted before its first POST.
+    Strict,
+    /// Delivery began under an older SDK that did not persist the full plan.
+    LegacyBestEffort,
+}
+
+/// Complete persisted initial-delivery plan for one committed vote.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareDeliveryPlan {
+    pub configured_server_urls: Vec<String>,
+    pub share_plans: Vec<ShareSubmissionPlan>,
+    pub placement_guarantee: SharePlacementGuarantee,
+}
+
+/// Inputs for preparing and durably storing a complete delivery plan.
+pub struct ShareDeliveryPlanningParams<'a> {
+    pub fleet: &'a HelperFleetPreflight,
+    pub now_seconds: u64,
+    pub vote_end_time_seconds: u64,
+    pub last_moment_buffer_seconds: Option<u64>,
+    /// Complete proposal roster from the authenticated round configuration.
     ///
-    /// The fleet must be nonempty, canonicalizable, and canonically distinct;
-    /// every planned target must belong to it and the plan's target count must
-    /// match the policy target derived from its size. It may differ from the
-    /// planning-time fleet only when the stored plan remains valid under those
-    /// rules.
+    /// Planning requires a durable terminal ballot intent for every entry and
+    /// derives the round's single immediate share internally.
+    pub proposal_ids: &'a [u32],
+}
+
+/// Inputs for executing a previously persisted complete plan.
+pub struct ShareDeliverySubmissionParams<'a> {
     pub configured_server_urls: &'a [String],
-    /// Current Unix time used only for process-local helper health ordering.
+    pub now_seconds: u64,
+}
+
+/// Durable outcome for one share processed by a batch submission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShareDeliveryOutcome {
+    pub share_index: u32,
+    pub submission: ShareSubmissionReport,
+}
+
+/// Results of one commitment-wide initial-delivery pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShareBatchDeliveryReport {
+    pub deliveries: Vec<ShareDeliveryOutcome>,
+    pub pending_share_indices: Vec<u32>,
+    pub cancelled: bool,
+    pub placement_guarantee: SharePlacementGuarantee,
+}
+
+/// Crate-internal per-share request used by the commitment-wide executor.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CommittedShareSubmissionRequest<'a> {
+    pub share_index: u32,
+    pub plan: &'a ShareSubmissionPlan,
+    pub configured_server_urls: &'a [String],
     pub now_seconds: u64,
 }
 
@@ -316,15 +357,12 @@ pub struct ShareTrackingParams<'a> {
     pub vote_end_time_seconds: Option<u64>,
     /// Timing thresholds used for polling, retry, and cutoff decisions.
     pub policy: ShareTimingPolicy,
-    /// Source of CSPRNG bytes for randomized resubmission order.
-    ///
-    /// Callers supply this so tests can be deterministic; production wallets
-    /// pass [`os_random_bytes`].
-    pub random_bytes: &'a (dyn Fn(usize) -> Vec<u8> + Send + Sync),
+    #[cfg(test)]
+    pub(crate) random_bytes: &'a (dyn Fn(usize) -> Vec<u8> + Send + Sync),
 }
 
 /// Fills `len` bytes from the operating system CSPRNG.
-pub fn os_random_bytes(len: usize) -> Vec<u8> {
+pub(crate) fn os_random_bytes(len: usize) -> Vec<u8> {
     use rand::RngCore as _;
 
     let mut bytes = vec![0u8; len];
@@ -334,8 +372,11 @@ pub fn os_random_bytes(len: usize) -> Vec<u8> {
 
 mod configured_fleet;
 mod confirmation;
+mod delivery_plan;
 mod initial_delivery;
 mod recovery;
+
+pub(crate) use delivery_plan::{load_share_delivery_plan, prepare_share_delivery_plan};
 
 use configured_fleet::ConfiguredHelperFleet;
 #[cfg(test)]
@@ -493,8 +534,8 @@ async fn poll_and_confirm_share(
 ///    confirmation. `pending` never proves helper possession, so ambiguous
 ///    attempts remain ambiguous.
 /// 3. When two distinct configured helpers report confirmation—or the only
-///    configured helper in a one-helper fleet does—persist it with
-///    [`share::confirm`] and move on.
+///    configured helper in a one-helper fleet does—persist the exact-generation
+///    confirmation and move on.
 /// 4. Before the vote-end cutoff, when overdue or below the desired placement,
 ///    walk a health-aware randomized resubmission order and durably retain each
 ///    attempt before contacting another helper. Early replenishment preserves

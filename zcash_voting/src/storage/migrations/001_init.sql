@@ -92,6 +92,48 @@ CREATE TABLE votes (
     FOREIGN KEY (round_id, wallet_id, bundle_index) REFERENCES bundles(round_id, wallet_id, bundle_index) ON DELETE CASCADE
 );
 
+CREATE TABLE helper_share_plans (
+    round_id                    TEXT NOT NULL,
+    wallet_id                   TEXT NOT NULL DEFAULT '',
+    bundle_index                INTEGER NOT NULL,
+    proposal_id                 INTEGER NOT NULL,
+    commitment_bundle_json      TEXT NOT NULL,
+    configured_server_urls_json TEXT NOT NULL,
+    share_plans_json            TEXT NOT NULL,
+    format_version              INTEGER NOT NULL CHECK (format_version = 1),
+    placement_guarantee         TEXT NOT NULL CHECK (placement_guarantee IN ('strict','legacy_best_effort')),
+    created_at                  INTEGER NOT NULL,
+    PRIMARY KEY (round_id, wallet_id, bundle_index, proposal_id),
+    FOREIGN KEY (round_id, wallet_id, bundle_index, proposal_id)
+        REFERENCES votes(round_id, wallet_id, bundle_index, proposal_id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER clear_helper_share_plan_on_vote_generation_change
+AFTER UPDATE OF commitment_bundle_json ON votes
+WHEN OLD.commitment_bundle_json IS NOT NEW.commitment_bundle_json
+BEGIN
+    -- Confirmation is the one non-generational recovery update: it fills the
+    -- VC tree position in both the vote column and the otherwise-identical
+    -- recovery JSON. Advance only a plan bound to the exact OLD snapshot and
+    -- only when replacing that one JSON field produces the exact NEW bytes.
+    UPDATE helper_share_plans
+       SET commitment_bundle_json = NEW.commitment_bundle_json
+     WHERE round_id = NEW.round_id AND wallet_id = NEW.wallet_id
+       AND bundle_index = NEW.bundle_index AND proposal_id = NEW.proposal_id
+       AND commitment_bundle_json = OLD.commitment_bundle_json
+       AND OLD.vc_tree_position IS NULL
+       AND NEW.vc_tree_position IS NOT NULL
+       AND json_set(
+               OLD.commitment_bundle_json,
+               '$.vc_tree_position',
+               NEW.vc_tree_position
+           ) = NEW.commitment_bundle_json;
+    DELETE FROM helper_share_plans
+     WHERE round_id = NEW.round_id AND wallet_id = NEW.wallet_id
+       AND bundle_index = NEW.bundle_index AND proposal_id = NEW.proposal_id
+       AND commitment_bundle_json IS NOT NEW.commitment_bundle_json;
+END;
+
 CREATE TABLE share_delegations (
     round_id        TEXT NOT NULL,
     wallet_id       TEXT NOT NULL DEFAULT '',

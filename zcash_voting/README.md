@@ -49,19 +49,23 @@ precompute → delegate → vote → share lifecycle:
    canonical `batch_json` once, persist the shared hash with
    `vote::record_batch_submission`, and confirm with
    `confirm_vote_batch_submission`. After confirmation, call
-   `vote::CommittedVote::recover` for each vote, create its full plan set with
-   `share::policy::plan_share_submissions`, and persist those `SharePlan`s
-   before submitting any share. Pass each share's stored plan to
-   `CommittedVote::submit_share_to_helpers`. The crate does not yet persist
-   planner output: after restart, reuse the original full plan set for that
-   vote rather than replanning only missing shares. Replanning a subset loses
-   commitment-wide balancing and quota context and can exceed the initial
-   per-helper quota. Pass the complete current helper fleet when submitting;
-   reject the stored plan before any POST if a planned target was removed or
-   the fleet now requires a different target count. Compatible fleet changes
-   may continue without replanning. The crate reconstructs each wire payload
-   with the durable confirmed VC position and journals every delivery attempt
-   before dispatch.
+   `vote::CommittedVote::recover` for each vote. Probe the configured fleet with
+   `HelperClient::preflight_fleet`, then call
+   `CommittedVote::prepare_share_delivery` with the complete proposal id roster
+   from the authenticated round configuration. The SDK owns entropy, requires
+   matching terminal ballot intents, derives the round's single immediate
+   share and readiness target, plans every committed share, validates the
+   aggregate quota, and atomically persists the complete generation-bound plan
+   before any POST. Planning may occur before confirmation; the confirmation transaction
+   advances an exactly matching plan snapshot when it fills the VC tree
+   position. The same call after restart returns that stored plan. Once the
+   vote is confirmed, recover a fresh `CommittedVote`, then call
+   `CommittedVote::submit_prepared_shares` with the complete current configured
+   fleet. The SDK validates the plan and every payload before network I/O,
+   enforces the process-wide 16-POST ceiling, reconstructs each wire payload
+   with the durable confirmed VC position, and journals every attempt before
+   dispatch. Removed targets and target-count drift fail instead of being
+   remapped or replanned.
    `track_pending_shares`
    polls the complete current fleet and requires two distinct confirmations
    when at least two helpers are configured; a one-helper fleet uses its only
@@ -446,11 +450,11 @@ boundary, so production builds should not enable this feature.
 - Use `session::resume_plan` instead of reconstructing what comes next from raw
   delegation, vote, and share phases in wallet code. Fetch step execution
   material through crate APIs such as `vote::submission`,
-  `vote::recover_commit`, `share::*`, and the tx hash accessors.
+  `vote::CommittedVote::recover`, `share::*`, and the tx hash accessors.
 - Use `vote::commit` for one singleton. The existing `vote::commit_batch`
   remains as a one-draft compatibility wrapper for singleton submission, while
   `vote::commit_atomic_vote_batch` builds one atomic, canonical multi-question
-  transaction. Use `vote::submission`, `vote::recover_commit`,
+  transaction. Use `vote::submission`, `vote::CommittedVote::recover`,
   `vote::record_submission`, and `vote::record_vc_position` for the cast-vote
   lifecycle. Wallets should not write recovery JSON, submission flags, or vote
   commitment positions directly.

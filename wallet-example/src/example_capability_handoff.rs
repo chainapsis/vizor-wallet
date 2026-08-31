@@ -23,12 +23,14 @@
 //!    bundle with its confirmed transaction event. Imported capability rounds
 //!    cannot create votes until every bundle has a public VAN position.
 //! 6. The voter calls [`voter_build_signed_vote`], submits the vote-chain
-//!    payload, records its confirmed tree position, then persists and submits
-//!    one complete helper-share plan through [`crate::example_vote`].
+//!    payload, asks the SDK to prepare the complete helper-share plan, records
+//!    its confirmed tree position, then submits the prepared plan through
+//!    [`crate::example_vote`].
 //!
 //! Authenticated transport, durable controller outbox storage, chain
-//! submission, event monitoring, helper transport routing, plan persistence,
-//! and tracking timers remain owned by the integrating applications.
+//! submission, event monitoring, helper transport routing, cancellation, and
+//! tracking timers remain owned by the integrating applications. Helper plan
+//! persistence is SDK-owned.
 
 use anyhow::{Context, Result};
 use zcash_voting::prelude::{
@@ -127,11 +129,12 @@ pub fn voter_confirm_delegation(
 /// Submit the chain payload from
 /// [`crate::example_vote::committed_vote_submission`], then persist its hash
 /// and confirmed tree position with
-/// [`crate::example_vote::record_committed_vote_execution`]. Create and persist
-/// one complete helper plan with
-/// [`crate::example_vote::plan_committed_vote_shares`] before calling
-/// [`crate::example_vote::submit_committed_vote_shares`]. Reuse that plan after
-/// restart and pass the complete current helper fleet to submission.
+/// [`crate::example_vote::record_committed_vote_execution`]. Ask the SDK to
+/// create and persist one complete helper plan with
+/// [`crate::example_vote::prepare_committed_vote_shares`] before calling
+/// [`crate::example_vote::submit_committed_vote_shares`]. After restart,
+/// recover the vote and call the same preparation API to load the exact plan;
+/// pass the complete current helper fleet to submission.
 pub fn voter_build_signed_vote(
     voting_db: &VotingDb,
     round_id: &str,

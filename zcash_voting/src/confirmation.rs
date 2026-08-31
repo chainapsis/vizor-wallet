@@ -854,6 +854,9 @@ mod tests {
             "encrypted_shares": [],
             "share_blinds": [],
             "share_comms": [],
+            "batch_digest": null,
+            "batch_index": null,
+            "batch_size": null,
         }))
         .unwrap()
     }
@@ -885,6 +888,65 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    fn store_helper_plan_bound_to_vote(
+        db: &VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+    ) -> String {
+        let snapshot: String = db
+            .conn()
+            .query_row(
+                "SELECT commitment_bundle_json FROM votes
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                    ":bundle_index": bundle_index as i64,
+                    ":proposal_id": proposal_id as i64,
+                },
+                |row| row.get(0),
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO helper_share_plans
+                 (round_id, wallet_id, bundle_index, proposal_id,
+                  commitment_bundle_json, configured_server_urls_json,
+                  share_plans_json, format_version, placement_guarantee, created_at)
+                 VALUES (:round_id, :wallet_id, :bundle_index, :proposal_id,
+                         :snapshot, '[\"https://helper.example\"]', '[]',
+                         1, 'strict', 1)",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                    ":bundle_index": bundle_index as i64,
+                    ":proposal_id": proposal_id as i64,
+                    ":snapshot": snapshot,
+                },
+            )
+            .unwrap();
+        snapshot
+    }
+
+    fn helper_plan_snapshot(db: &VotingDb, bundle_index: u32, proposal_id: u32) -> Option<String> {
+        db.conn()
+            .query_row(
+                "SELECT commitment_bundle_json FROM helper_share_plans
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                    ":bundle_index": bundle_index as i64,
+                    ":proposal_id": proposal_id as i64,
+                },
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap()
     }
 
     fn batch_recovery(proposal_id: u32, vote_decision: u32, marker: u8) -> VoteRecoveryBundle {
@@ -1363,7 +1425,12 @@ mod tests {
         let db = test_db();
         insert_bundle(&db, 0);
         insert_vote(&db, 0, 1);
-        store_recovery_json(&db, 0, 1, &valid_recovery_json(456));
+        let canonical_recovery = crate::vote::serialize_recovery(
+            &crate::vote::parse_recovery(&valid_recovery_json(456)).unwrap(),
+        )
+        .unwrap();
+        store_recovery_json(&db, 0, 1, &canonical_recovery);
+        let prepared_snapshot = store_helper_plan_bound_to_vote(&db, 0, 1);
         let confirmation = VoteConfirmation {
             tx_hash: "tx-1".to_string(),
             van_leaf_position: 7,
@@ -1409,6 +1476,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pos, Some(789));
+        let confirmed_snapshot = db
+            .conn()
+            .query_row(
+                "SELECT commitment_bundle_json FROM votes
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = 0 AND proposal_id = 1",
+                named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        assert_ne!(confirmed_snapshot, prepared_snapshot);
+        assert_eq!(helper_plan_snapshot(&db, 0, 1), Some(confirmed_snapshot));
         assert_eq!(
             crate::vote::recovery_bundle(&db, ROUND_ID, 0, 1)
                 .unwrap()
@@ -1423,6 +1505,10 @@ mod tests {
         let db = test_db();
         insert_bundle(&db, 0);
         let (digest, recoveries) = store_two_action_batch(&db);
+        let prepared_snapshots = [
+            store_helper_plan_bound_to_vote(&db, 0, 1),
+            store_helper_plan_bound_to_vote(&db, 0, 2),
+        ];
         let events = vote_batch_events(digest, &recoveries);
 
         let first =
@@ -1454,6 +1540,28 @@ mod tests {
                 .unwrap()
                 .iter()
                 .all(|payload| payload.tree_position == vc_tree_position));
+            let confirmed_snapshot = db
+                .conn()
+                .query_row(
+                    "SELECT commitment_bundle_json FROM votes
+                     WHERE round_id = :round_id AND wallet_id = :wallet_id
+                       AND bundle_index = 0 AND proposal_id = :proposal_id",
+                    named_params! {
+                        ":round_id": ROUND_ID,
+                        ":wallet_id": WALLET_ID,
+                        ":proposal_id": proposal_id as i64,
+                    },
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap();
+            assert_ne!(
+                confirmed_snapshot,
+                prepared_snapshots[(proposal_id - 1) as usize]
+            );
+            assert_eq!(
+                helper_plan_snapshot(&db, 0, proposal_id),
+                Some(confirmed_snapshot)
+            );
         }
     }
 

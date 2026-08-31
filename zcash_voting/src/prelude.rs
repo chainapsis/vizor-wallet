@@ -32,7 +32,8 @@ pub use crate::delegation_capability::{
 pub use crate::error::VotingError;
 pub use crate::governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
 pub use crate::helper::client::{
-    HelperClient, HelperClientConfig, HelperError, ShareStatus, ShareSubmissionStatus,
+    HelperClient, HelperClientConfig, HelperError, HelperFleetPreflight, ShareStatus,
+    ShareSubmissionStatus,
 };
 pub use crate::helper::health::{HelperHealth, HELPER_COOLDOWN_SECONDS, HELPER_FAILURE_THRESHOLD};
 pub use crate::helper::transport::{
@@ -84,10 +85,11 @@ pub use crate::share::{
     ShareTimingPolicy, ShareTrackingSummary,
 };
 pub use crate::share_tracking::{
-    confirm_pending_share, os_random_bytes, share_tracking_flags, track_pending_shares,
-    ResubmittedShare, ShareConfirmationParams, ShareConfirmationReport, ShareKey,
-    ShareSubmissionReport, ShareSubmissionRequest, ShareTrackingFlags, ShareTrackingParams,
-    ShareTrackingReport,
+    confirm_pending_share, share_tracking_flags, track_pending_shares, ResubmittedShare,
+    ShareBatchDeliveryReport, ShareConfirmationParams, ShareConfirmationReport,
+    ShareDeliveryOutcome, ShareDeliveryPlan, ShareDeliveryPlanningParams,
+    ShareDeliverySubmissionParams, ShareKey, SharePlacementGuarantee, ShareSubmissionReport,
+    ShareTrackingFlags, ShareTrackingParams, ShareTrackingReport,
 };
 pub use crate::types::{
     validate_proposal_id, validate_vote_decision, validate_vote_options, DelegationProgressBridge,
@@ -103,13 +105,12 @@ pub use crate::vote::{
     prepare_atomic_vote_batch, prepare_commit, prepare_commit_batch,
     record_batch_submission as record_vote_batch_submission,
     record_submission as record_vote_submission, record_vc_position, recover_atomic_vote_batch,
-    recover_commit as recover_vote_commit, recover_signed_commitments, recovery_bundle,
-    serialize_recovery, submission as vote_submission, validate_draft_vote, validate_draft_votes,
-    AtomicVoteBatch, CommittedVote, DraftVote, PreparedAtomicVoteBatch, PreparedVoteCommit,
-    PreparedVoteCommitments, SignedVoteBatch, SignedVoteCommitment, SignedVoteCommitments,
-    VanWitness, VoteBatchRecovery, VoteCommit, VoteCommitBatch, VoteCommitStage,
-    VoteRecoveryBundle, VoteSigner, VoteSubmission, DEFAULT_BATCH_PROOF_CONCURRENCY,
-    MAX_VOTE_BATCH_ACTIONS,
+    recover_signed_commitments, recovery_bundle, serialize_recovery, submission as vote_submission,
+    validate_draft_vote, validate_draft_votes, AtomicVoteBatch, CommittedVote, DraftVote,
+    PreparedAtomicVoteBatch, PreparedVoteCommit, PreparedVoteCommitments, SignedVoteBatch,
+    SignedVoteCommitment, SignedVoteCommitments, VanWitness, VoteBatchRecovery, VoteCommit,
+    VoteCommitBatch, VoteCommitStage, VoteRecoveryBundle, VoteSigner, VoteSubmission,
+    DEFAULT_BATCH_PROOF_CONCURRENCY, MAX_VOTE_BATCH_ACTIONS,
 };
 pub use crate::wire::{
     DelegationSubmissionWire, SignedVoteBatchView, VoteCommitmentBatchWire, VoteCommitmentWire,

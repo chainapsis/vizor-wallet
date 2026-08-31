@@ -66,6 +66,22 @@ pub struct RoundSummary {
 /// A Keystone bundle signature stored in the DB.
 pub use crate::wire::KeystoneSignatureRecord;
 
+/// One Keystone signature tuple to store as part of an atomic batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeystoneSignatureInput {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
+    pub sighash: Vec<u8>,
+    pub rk: Vec<u8>,
+}
+
+/// Counts from an idempotent atomic Keystone signature batch write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeystoneSignatureBatchResult {
+    pub inserted: u32,
+    pub already_present: u32,
+}
+
 /// Database handle for voting state. Wraps a SQLite connection and a
 /// wallet identifier that scopes all round data to a single wallet.
 pub struct VotingDb {
@@ -157,7 +173,7 @@ mod tests {
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
     }
 
     #[test]

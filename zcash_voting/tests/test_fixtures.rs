@@ -10,8 +10,8 @@ use zcash_voting::{
     storage::RoundPhase,
     types::{EncryptedShare, Network, NoteInfo},
     vote::{
-        insert_recovery_fixture, record_submission, record_vc_position, recover_commit,
-        recovery_bundle, serialize_recovery, VoteRecoveryBundle,
+        insert_recovery_fixture, record_submission, record_vc_position, recovery_bundle,
+        serialize_recovery, CommittedVote, VoteRecoveryBundle,
     },
     HelperClient, HelperFuture, HelperHealth, HelperResponse, HelperTransport,
     HelperTransportError, BALLOT_DIVISOR,
@@ -143,13 +143,9 @@ fn downstream_fixture_seeds_committed_state_and_uses_public_lifecycle() {
         serialize_recovery(&stored).unwrap(),
         serialize_recovery(&fixture).unwrap()
     );
-    assert_eq!(
-        recover_commit(&db, ROUND_ID, 0, 1)
-            .unwrap()
-            .share_payloads
-            .len(),
-        1
-    );
+    let committed = CommittedVote::recover(&db, ROUND_ID, 0, 1).unwrap();
+    assert_eq!(committed.proposal_id(), 1);
+    assert_eq!(stored.encrypted_shares.len(), 1);
 
     record_submission(&db, ROUND_ID, 0, 1, "vote-tx").unwrap();
     assert_eq!(db.vote_phase(ROUND_ID, 0, 1).unwrap(), VotePhase::Submitted);
@@ -262,7 +258,6 @@ async fn downstream_fixture_replacement_clears_stale_share_tracking() {
     .unwrap();
     let helper_url = "https://helper.example".to_string();
     let configured_helpers = [helper_url];
-    let random_bytes = |len| vec![0; len];
     let report = track_pending_shares(
         &db,
         &ShareTrackingParams {
@@ -271,7 +266,6 @@ async fn downstream_fixture_replacement_clears_stale_share_tracking() {
             now_seconds: u64::MAX,
             vote_end_time_seconds: None,
             policy: share::ShareTimingPolicy::default(),
-            random_bytes: &random_bytes,
         },
         &HelperClient::new(Arc::new(ConfirmedHelperTransport), HelperHealth::default()),
         &|| false,

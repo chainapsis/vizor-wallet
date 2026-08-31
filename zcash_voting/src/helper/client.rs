@@ -9,7 +9,7 @@
 //!
 //! | Call | Endpoint | Retries |
 //! |---|---|---|
-//! | [`HelperClient::preflight`] | `GET /status` | none |
+//! | [`HelperClient::preflight_fleet`] | `GET /status` | none |
 //! | [`HelperClient::share_status`] | `GET /share-status/{round_id}/{share_id}` | transient failures |
 //! | [`HelperClient::submit_share`] | `POST /shares` | transient failures, **never an ambiguous failure** |
 //! | [`HelperClient::resubmit_share`] | `POST /shares` | none |
@@ -33,12 +33,85 @@ use crate::{
         url::canonicalize_helper_base_url,
     },
     share_policy::{
-        SHARE_HELPER_POST_TIMEOUT_MILLISECONDS, SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
+        share_submission_target_count, SHARE_HELPER_POST_TIMEOUT_MILLISECONDS,
+        SHARE_HELPER_PREFLIGHT_HARD_TIMEOUT_MILLISECONDS,
         SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS,
     },
     types::{validate_vote_round_id_bytes, VotingError},
     wire::VoteShareWire,
 };
+
+/// Canonical helper fleet and readiness-ranked planning order.
+///
+/// Wallets may reuse one snapshot while preparing multiple committed votes.
+/// The SDK, rather than the wallet, derives the readiness target and constructs
+/// the ready-first order consumed by helper-share planning.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HelperFleetPreflight {
+    configured_server_urls: Vec<String>,
+    ranked_server_urls: Vec<String>,
+    ready_server_count: usize,
+}
+
+impl HelperFleetPreflight {
+    /// Reconstructs a validated snapshot from an FFI-safe readiness result.
+    ///
+    /// `ready_server_urls` must be a distinct canonical subset of the complete
+    /// configured fleet. Their order is retained as the preferred planning
+    /// prefix; every non-ready configured helper follows in configured order.
+    pub fn from_readiness(
+        configured_server_urls: &[String],
+        ready_server_urls: &[String],
+    ) -> Result<Self, VotingError> {
+        if configured_server_urls.is_empty() {
+            return Err(VotingError::InvalidInput {
+                message: "configured helper fleet must not be empty".to_string(),
+            });
+        }
+        let configured = crate::helper::url::canonical_helper_url_list(configured_server_urls)?;
+        if configured.len() != configured_server_urls.len() {
+            return Err(VotingError::InvalidInput {
+                message: "configured helper fleet contains duplicate canonical identities"
+                    .to_string(),
+            });
+        }
+        let ready = crate::helper::url::canonical_helper_url_list(ready_server_urls)?;
+        if ready.len() != ready_server_urls.len() {
+            return Err(VotingError::InvalidInput {
+                message: "ready helper fleet contains duplicate canonical identities".to_string(),
+            });
+        }
+        if let Some(url) = ready.iter().find(|url| !configured.contains(url)) {
+            return Err(VotingError::InvalidInput {
+                message: format!("ready helper is not in configured fleet: {url}"),
+            });
+        }
+        let mut ranked = ready.clone();
+        ranked.extend(
+            configured
+                .iter()
+                .filter(|url| !ready.contains(url))
+                .cloned(),
+        );
+        Ok(Self {
+            configured_server_urls: configured,
+            ranked_server_urls: ranked,
+            ready_server_count: ready.len(),
+        })
+    }
+
+    pub fn configured_server_urls(&self) -> &[String] {
+        &self.configured_server_urls
+    }
+
+    pub fn ranked_server_urls(&self) -> &[String] {
+        &self.ranked_server_urls
+    }
+
+    pub fn ready_server_count(&self) -> usize {
+        self.ready_server_count
+    }
+}
 
 /// Default per-request deadline for helper share-status calls.
 pub const HELPER_STATUS_TIMEOUT_SECONDS: u64 = 5;
@@ -279,6 +352,33 @@ pub struct HelperClient {
 }
 
 impl HelperClient {
+    /// Canonicalizes and probes a complete helper fleet for share planning.
+    pub async fn preflight_fleet(
+        &self,
+        server_urls: &[String],
+    ) -> Result<HelperFleetPreflight, VotingError> {
+        let canonical = crate::helper::url::canonical_helper_url_list(server_urls)?;
+        if canonical.is_empty() {
+            return Err(VotingError::InvalidInput {
+                message: "configured helper fleet must not be empty".to_string(),
+            });
+        }
+        if canonical.len() != server_urls.len() {
+            return Err(VotingError::InvalidInput {
+                message: "configured helper fleet contains duplicate canonical identities"
+                    .to_string(),
+            });
+        }
+        let target_count =
+            u32::try_from(share_submission_target_count(canonical.len())).unwrap_or(u32::MAX);
+        let readiness = self.preflight(&canonical, target_count).await;
+        let ready = readiness
+            .into_iter()
+            .filter_map(|(url, is_ready)| is_ready.then_some(url))
+            .collect::<Vec<_>>();
+        HelperFleetPreflight::from_readiness(&canonical, &ready)
+    }
+
     /// Creates a client with default timeouts and backoff.
     pub fn new(transport: Arc<dyn HelperTransport>, health: HelperHealth) -> Self {
         Self::with_config(transport, health, HelperClientConfig::default())
@@ -315,7 +415,7 @@ impl HelperClient {
     /// order and use canonical URLs for valid inputs; probes still pending when
     /// the race ends are reported as not ready. A zero target still
     /// canonicalizes the result list but never starts a probe.
-    pub async fn preflight(
+    pub(crate) async fn preflight(
         &self,
         server_urls: &[String],
         target_count: u32,

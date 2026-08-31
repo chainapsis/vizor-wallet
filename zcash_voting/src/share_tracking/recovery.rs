@@ -204,10 +204,14 @@ pub(super) async fn resubmit_to_next_helper(
         &eligible_servers,
         request.definite_acceptance_urls,
     );
+    #[cfg(test)]
+    let random_bytes = (params.random_bytes)(needed);
+    #[cfg(not(test))]
+    let random_bytes = super::os_random_bytes(needed);
     let randomized = resubmission_server_order(
         &eligible_servers,
         request.definite_acceptance_urls,
-        &(params.random_bytes)(needed),
+        &random_bytes,
     )?;
     let untried_count = randomized
         .iter()

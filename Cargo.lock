@@ -4283,6 +4283,7 @@ dependencies = [
  "blake2b_simd",
  "bytes",
  "ed25519-dalek",
+ "futures-util",
  "hex",
  "http",
  "http-body-util",
