@@ -2759,7 +2759,7 @@ mod tests {
     fn bundle_policy_happy_path_maps_optional_limit() {
         assert_eq!(
             bundle_policy(None).unwrap(),
-            BundlePolicy::from_optional_max_real_notes_per_bundle(None).unwrap()
+            zcash_voting::recoverable_bundle_policy_v1()
         );
         assert_eq!(
             bundle_policy(Some(2)).unwrap(),
