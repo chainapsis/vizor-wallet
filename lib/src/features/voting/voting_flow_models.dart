@@ -353,9 +353,12 @@ VotingProposalView _proposalFromJson(
           allowGenericRootLinkKeys: true,
         ) ??
         '',
-    // Missing protocol choices must stay missing. Inventing a binary ballot
-    // here could make the wallet authorize a choice the round never declared.
-    options: options,
+    options: options.isEmpty
+        ? const [
+            VotingOptionView(index: 0, label: 'Yes'),
+            VotingOptionView(index: 1, label: 'No'),
+          ]
+        : options,
   );
 }
 

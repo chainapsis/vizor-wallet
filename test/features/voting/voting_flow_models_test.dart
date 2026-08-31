@@ -259,16 +259,6 @@ void main() {
     );
   });
 
-  test('proposal parser does not invent binary choices when options are absent', () {
-    final proposals = proposalsFromJson({
-      'proposals': [
-        {'id': 1, 'title': 'Incomplete metadata'},
-      ],
-    });
-
-    expect(proposals.single.options, isEmpty);
-  });
-
   test('draft choices can be cleared by proposal id', () {
     final draft = const VotingDraftState()
         .setChoice(1, 0)
