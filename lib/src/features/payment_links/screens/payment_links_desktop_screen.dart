@@ -924,6 +924,22 @@ class _PaymentLinksDesktopScreenState
       showAppToast(context, 'Gift claim submitted');
       unawaited(_refreshReceivedClaims());
       if (mobile) context.go('/home');
+    } on PaymentLinkClaimDestinationChangedException {
+      if (mounted) {
+        setState(() {
+          _receivedClaimSession = null;
+          _receivedLink = null;
+          _setReceivedCardStatus(
+            link.address,
+            PaymentLinkReceivedStatus.readyToClaim,
+          );
+          _redeemState = PaymentLinkRedeemVisualState.paste;
+          _page = _PaymentLinksLocalPage.redeem;
+        });
+        _showError(
+          'Receiving account changed. Open the Gift Card again to continue.',
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(() {

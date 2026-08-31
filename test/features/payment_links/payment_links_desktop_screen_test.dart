@@ -1053,6 +1053,44 @@ void main() {
     expect(find.textContaining('Gift Card claim failed.'), findsOneWidget);
   });
 
+  testWidgets('reopens intake when the prepared destination changed', (
+    tester,
+  ) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump();
+
+    claimCompleter.completeError(
+      const PaymentLinkClaimDestinationChangedException(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paste card link'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Receiving account changed. Open the Gift Card again to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Gift Card claim failed.'), findsNothing);
+  });
+
   testWidgets('copies a persisted created link without reclaim controls', (
     tester,
   ) async {
