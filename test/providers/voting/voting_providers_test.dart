@@ -4156,6 +4156,63 @@ void main() {
     );
   });
 
+  test('share tracking drain awaits focused confirmation', () async {
+    final confirmationGate = Completer<void>();
+    addTearDown(() {
+      if (!confirmationGate.isCompleted) confirmationGate.complete();
+    });
+    final pendingShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List.fromList(List.filled(32, 9)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.one,
+    );
+    final rust = FakeVotingRustApi(
+      focusedShareConfirmationGate: confirmationGate,
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: _submittedDelegationWithShareRecoveryApi(
+        pendingShare,
+        designateImmediateShare: true,
+      ),
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final confirmation = notifier.refreshImmediateShareConfirmation();
+    await rust.focusedShareConfirmationStarted.future.timeout(
+      const Duration(seconds: 1),
+    );
+
+    var drained = false;
+    final drain = notifier.stopAndDrainShareTracking().then((_) {
+      drained = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(drained, isFalse);
+    expect(rust.shareTrackingPassHandles.single.isCancelled, isTrue);
+    expect(rust.helperDeliveryContexts.single.isDisposed, isFalse);
+
+    confirmationGate.complete();
+    await drain;
+    await confirmation;
+
+    expect(drained, isTrue);
+    expect(rust.shareTrackingPassHandles.single.isDisposed, isTrue);
+    expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
+  });
+
   test(
     'expiry confirms an immediate share with only outcome-unknown delivery',
     () async {
@@ -11377,6 +11434,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.nextShareTrackingDelayGate,
     this.trackingPassPolicyGate,
     this.helperPreflightGate,
+    this.focusedShareConfirmationGate,
     this.failingVoteShareWireIndexes = const {},
     this.failingRecordShareIndexes = const {},
     this.ambiguousShareServerUrls = const {},
@@ -11422,6 +11480,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Completer<void>? nextShareTrackingDelayGate;
   final Completer<void>? trackingPassPolicyGate;
   final Completer<void>? helperPreflightGate;
+  final Completer<void>? focusedShareConfirmationGate;
   final Set<int> failingVoteShareWireIndexes;
   final Set<int> failingRecordShareIndexes;
   final Set<String> ambiguousShareServerUrls;
@@ -11482,6 +11541,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final nextShareTrackingDelayStarted = Completer<void>();
   final trackingPassPolicyStarted = Completer<void>();
   final helperPreflightStarted = Completer<void>();
+  final focusedShareConfirmationStarted = Completer<void>();
   final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
@@ -12296,6 +12356,10 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async {
     final context = (passHandle as _FakeVotingShareTrackingPassHandle).context;
     focusedShareConfirmationCalls.add('$bundleIndex:$proposalId:$shareIndex');
+    if (!focusedShareConfirmationStarted.isCompleted) {
+      focusedShareConfirmationStarted.complete();
+    }
+    await focusedShareConfirmationGate?.future;
     if (passHandle.isCancelled) return false;
     final recovery = helperRecoveryApi;
     final transport = helperTransport;

@@ -2898,6 +2898,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           },
         );
         final bool helperConfirmed;
+        final focusedConfirmationDone = Completer<void>();
+        _activeShareTrackingPass = focusedConfirmationDone.future;
         try {
           final nowSeconds =
               DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
@@ -2915,6 +2917,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             _activeShareTrackingPassHandle = null;
           }
           passHandle.dispose();
+          if (!focusedConfirmationDone.isCompleted) {
+            focusedConfirmationDone.complete();
+          }
+          if (identical(
+            _activeShareTrackingPass,
+            focusedConfirmationDone.future,
+          )) {
+            _activeShareTrackingPass = null;
+          }
         }
         if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
           return;

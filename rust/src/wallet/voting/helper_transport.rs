@@ -15,7 +15,14 @@
 //! ([`network_privacy::DirectRouteLease`]) so that enabling Tor drains and then
 //! aborts them, exactly as it does for wallet sync.
 
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use bytes::Bytes;
 use http::{Method, Uri};
@@ -101,7 +108,13 @@ impl VotingHelperTransport {
             .map_err(|error| HelperTransportError::Transport(format!("invalid URL: {error}")))?;
         let has_body = !body.is_empty();
         let is_post = method == Method::POST;
+        let request_started = Arc::new(AtomicBool::new(false));
+        let request_started_in_headers = request_started.clone();
         let apply_headers = move |builder: http::request::Builder| {
+            // librustzcash invokes this only after the Tor stream and TLS
+            // handshake are ready, immediately before constructing the HTTP
+            // request. Until this flips, a timeout is definitely pre-dispatch.
+            request_started_in_headers.store(true, Ordering::Release);
             if has_body {
                 builder.header(http::header::CONTENT_TYPE, "application/json")
             } else {
@@ -111,7 +124,7 @@ impl VotingHelperTransport {
 
         // Retries are the SDK's decision, not the transport's: it distinguishes
         // an ambiguous submission from a safe read. Ask arti for none.
-        let response = with_timeout(timeout, async {
+        let response = tokio::time::timeout(timeout, async {
             match method {
                 Method::POST => {
                     tor.http_post(
@@ -130,7 +143,8 @@ impl VotingHelperTransport {
                 }
             }
         })
-        .await?
+        .await
+        .map_err(|_| classify_tor_outer_timeout(is_post, request_started.load(Ordering::Acquire)))?
         .map_err(|error| classify_tor_error(is_post, error))?;
 
         let status = response.status().as_u16();
@@ -144,6 +158,18 @@ impl VotingHelperTransport {
             response.into_body(),
             content_type,
         ))
+    }
+}
+
+/// Classifies Vizor's whole-request deadline when it beats librustzcash's
+/// phase-specific Tor deadlines.
+fn classify_tor_outer_timeout(is_post: bool, request_started: bool) -> HelperTransportError {
+    if is_post && !request_started {
+        HelperTransportError::Transport(
+            "Tor helper connection timed out before request dispatch".to_string(),
+        )
+    } else {
+        HelperTransportError::Timeout
     }
 }
 
@@ -202,16 +228,6 @@ fn classify_tor_error(
     } else {
         HelperTransportError::Ambiguous(message)
     }
-}
-
-/// Applies the caller's deadline, reporting expiry as an ambiguous timeout.
-async fn with_timeout<T>(
-    timeout: Duration,
-    future: impl std::future::Future<Output = T>,
-) -> Result<T, HelperTransportError> {
-    tokio::time::timeout(timeout, future)
-        .await
-        .map_err(|_| HelperTransportError::Timeout)
 }
 
 /// Reads a Tor response body under the shared size ceiling.
@@ -372,7 +388,7 @@ mod tests {
     use http::Method;
     use zcash_voting::HelperTransportError;
 
-    use super::{classify_tor_error, VotingHelperTransport};
+    use super::{classify_tor_error, classify_tor_outer_timeout, VotingHelperTransport};
 
     #[test]
     fn tor_post_classification_distinguishes_pre_dispatch_failures() {
@@ -420,6 +436,22 @@ mod tests {
         assert!(matches!(
             classify_tor_error(false, zcash_client_backend::tor::Error::MissingTorDirectory),
             HelperTransportError::Transport(_)
+        ));
+    }
+
+    #[test]
+    fn tor_outer_timeout_preserves_pre_dispatch_post_classification() {
+        assert!(matches!(
+            classify_tor_outer_timeout(true, false),
+            HelperTransportError::Transport(_)
+        ));
+        assert!(matches!(
+            classify_tor_outer_timeout(true, true),
+            HelperTransportError::Timeout
+        ));
+        assert!(matches!(
+            classify_tor_outer_timeout(false, false),
+            HelperTransportError::Timeout
         ));
     }
 
