@@ -2556,6 +2556,16 @@ pub fn retain_proposal_lock_until_expiry(
     wallet_sync::retain_proposal_lock_until_expiry(proposal_id, &send_flow_id)
 }
 
+/// Kick off process-lifetime Orchard proving-key warm-up for sends.
+///
+/// Safe to call repeatedly. The first call starts a background worker and
+/// returns immediately; proving blocks on the same shared cache if it catches
+/// up before warm-up completes.
+#[flutter_rust_bridge::frb(sync)]
+pub fn warm_orchard_proving_key_cache() {
+    wallet_sync::start_orchard_proving_key_warmup();
+}
+
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the wallet-owned proof PCZT that later receives compact signatures from
 /// the hardware wallet. Legacy transparent-input paths combine it with a full

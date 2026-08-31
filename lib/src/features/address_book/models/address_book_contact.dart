@@ -170,8 +170,7 @@ List<AddressBookContact> filterAddressBookContacts(
     for (final contact in contacts)
       if ((networks == null || networks.contains(contact.network)) &&
           (normalizedQuery.isEmpty ||
-              contact.label.toLowerCase().contains(normalizedQuery) ||
-              contact.address.toLowerCase().contains(normalizedQuery)))
+              contact.label.toLowerCase().contains(normalizedQuery)))
         contact,
   ];
 }

@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -38,6 +39,33 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+
+  testWidgets('starts Orchard proving-key warmup when send loads', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var calls = 0;
+
+    await tester.pumpWidget(_sendHarness(warmProvingKey: () => calls++));
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+    expect(find.byType(SendScreen), findsOneWidget);
+  });
+
+  testWidgets('keeps rendering if Orchard warmup cannot start', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        warmProvingKey: () => throw StateError('warmup unavailable'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SendScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('uses shell window backing behind the send sidebar and pane', (
     tester,
@@ -229,6 +257,36 @@ void main() {
       find.byKey(const ValueKey('send_contact_autocomplete_options')),
       findsNothing,
     );
+  });
+
+  testWidgets('typing a contact address does not autocomplete the contact', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'alice',
+            label: 'Alice',
+            network: AddressBookNetwork.zcash,
+            address: _shieldedAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_editableIn('send_address_field'));
+    await tester.enterText(_editableIn('send_address_field'), 'testshielded');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('send_contact_autocomplete_options')),
+      findsNothing,
+    );
+    expect(find.text('Alice'), findsNothing);
   });
 
   testWidgets('refreshes autocomplete when contacts finish loading', (
@@ -1150,6 +1208,7 @@ Widget _sendHarness({
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   _FakeSyncNotifier? syncNotifier,
+  void Function()? warmProvingKey,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1166,6 +1225,7 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      sendProvingKeyWarmupProvider.overrideWithValue(warmProvingKey ?? () {}),
       ironwoodHomeMigrationCtaProvider.overrideWithValue(
         AsyncValue.data(migrationCta),
       ),

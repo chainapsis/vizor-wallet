@@ -10,15 +10,15 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
-voting-crypto-deps = { version = "0.1.2", default-features = false, features = ["zakura"] }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "1.0.0-rc.3", default-features = false, features = ["circuit"] }
+voting-crypto-deps = { version = "=0.2.2" }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.0.0", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "1.0.0-rc.3" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=1.0.0" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "1.0.0-rc.3" }
-bls12_381 = { package = "zakura-bls12-381", version = "1.0.0-rc.3" }
+jubjub = { package = "zakura-jubjub", version = "=1.0.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0" }
 rand_core = "0.6"
 
 # Key generation
@@ -80,14 +80,14 @@ url = "2.5.8"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "1.0.0-rc.3"
+version = "=1.0.0"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "1.0.0-rc.3"
+version = "=1.0.0"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -99,7 +99,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "0.1.0-rc2"
+version = "=0.1.0-rc4"
 features = [
     "orchard",
     "transparent-inputs",
@@ -112,25 +112,25 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "0.1.0-rc2"
+version = "=0.1.0-rc4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=3.1.0-rc.12"
-default-features = false
-features = ["zakura"]
+git = "https://github.com/valargroup/zcash_voting"
+tag = "v3.1.0-rc.13"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "1.0.0-rc.3"
+version = "=1.0.0"
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "1.0.0-rc.3"
+version = "=1.0.0"
+features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "0.1.0-rc1"
+version = "=0.1.0-rc2"
 features = [
     "orchard",
     "io-finalizer",
@@ -163,7 +163,9 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.5.2"
+version = "=0.6.0"
+git = "https://github.com/valargroup/zcash_voting"
+tag = "v3.1.0-rc.13"
 default-features = false
 features = ["zakura"]
 

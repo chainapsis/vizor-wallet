@@ -941,6 +941,14 @@ Future<void> retainProposalLockUntilExpiry({
   sendFlowId: sendFlowId,
 );
 
+/// Kick off process-lifetime Orchard proving-key warm-up for sends.
+///
+/// Safe to call repeatedly. The first call starts a background worker and
+/// returns immediately; proving blocks on the same shared cache if it catches
+/// up before warm-up completes.
+void warmOrchardProvingKeyCache() =>
+    RustLib.instance.api.crateApiSyncWarmOrchardProvingKeyCache();
+
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the wallet-owned proof PCZT that later receives compact signatures from
 /// the hardware wallet. Legacy transparent-input paths combine it with a full
@@ -968,7 +976,8 @@ Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncRedactPcztForSigner(pcztBytes: pcztBytes);
 
 /// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
-/// input types that the signatures-only response cannot represent.
+/// input types that the signatures-only response cannot represent and signing
+/// sets above the device's 96-signature per-transaction limit.
 Future<KeystoneBatchPczt> preparePcztForKeystoneBatch({
   required List<int> pcztBytes,
 }) => RustLib.instance.api.crateApiSyncPreparePcztForKeystoneBatch(
