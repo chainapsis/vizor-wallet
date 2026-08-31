@@ -111,7 +111,7 @@ void main() {
       expect(field.keyboardType, TextInputType.multiline);
       expect(field.cursorOpacityAnimates, isTrue);
       expect(field.cursorWidth, greaterThan(0));
-      expect(field.decoration?.hintText, isNull);
+      expect(field.decoration?.hintText, 'Start typing...');
       expect(
         tester
             .widget<MouseRegion>(
@@ -134,9 +134,14 @@ void main() {
       );
 
       final cardRect = tester.getRect(find.byType(PaymentLinkGiftCard));
+      expect(
+        (tester.getCenter(editor).dy - cardRect.center.dy).abs(),
+        lessThan(1),
+      );
       await tester.tapAt(cardRect.topLeft + const Offset(12, 12));
       await tester.pump();
       expect(focusNode.hasFocus, isTrue);
+      expect(tester.widget<TextField>(editor).decoration?.hintText, isNull);
       expect(cardActivations, 1);
       expect(
         find.byKey(const ValueKey('payment_link_message_focus_ring')),
@@ -177,6 +182,14 @@ void main() {
       expect(caretRect.width, greaterThan(0));
       expect(caretRect.height, greaterThan(0));
       expect(tester.getRect(editor).overlaps(caretRect), isTrue);
+
+      controller.clear();
+      focusNode.unfocus();
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(editor).decoration?.hintText,
+        'Start typing...',
+      );
 
       controller.text = '👨‍👩‍👧‍👦';
       await tester.pump();

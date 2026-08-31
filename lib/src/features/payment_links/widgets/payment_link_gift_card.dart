@@ -904,11 +904,9 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
 
     return Stack(
       children: [
-        Positioned(
+        Positioned.fill(
           left: AppSpacing.lg,
           right: AppSpacing.lg,
-          top: AppSpacing.md,
-          height: 144,
           child: editing
               ? _PaymentLinkMessageTextField(
                   editorKey: messageEditorKey,
@@ -919,6 +917,7 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
                   maxMessageLength: maxMessageLength,
                   semanticLabel: semanticLabel,
                   cardTextColor: cardTextColor,
+                  hintText: emptyMessageLabel,
                 )
               : Center(
                   child: Text(
@@ -1005,6 +1004,7 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
     required this.maxMessageLength,
     required this.semanticLabel,
     required this.cardTextColor,
+    required this.hintText,
   });
 
   final Key? editorKey;
@@ -1015,6 +1015,7 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
   final int maxMessageLength;
   final String semanticLabel;
   final Color cardTextColor;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {
@@ -1044,7 +1045,10 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
               minLines: 1,
               maxLines: 7,
               textAlign: TextAlign.center,
-              decoration: const InputDecoration.collapsed(hintText: null),
+              decoration: InputDecoration.collapsed(
+                hintText: focusNode.hasFocus ? null : hintText,
+                hintStyle: style,
+              ),
               onChanged: onChanged,
             ),
           ),

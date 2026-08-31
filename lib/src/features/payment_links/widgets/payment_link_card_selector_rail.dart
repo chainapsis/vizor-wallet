@@ -22,6 +22,12 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
     this.artworkHeight = 44,
     this.itemGap = AppSpacing.xxs,
     this.selectionInset = const EdgeInsets.fromLTRB(1, 2, 0, 1),
+    this.selectionBorderWidth = 2,
+    this.selectionBorderRadius = 10,
+    this.selectedCheckSize = 20,
+    this.edgeMaskInset = 0,
+    this.edgeFadeFraction = 0.08,
+    this.inactiveOpacity = 0.5,
     super.key,
   }) : assert(artworks.length > 0),
        assert(
@@ -30,7 +36,13 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
        ),
        assert(itemWidth > 0),
        assert(itemHeight > 0),
-       assert(itemGap >= 0);
+       assert(itemGap >= 0),
+       assert(selectionBorderWidth > 0),
+       assert(selectionBorderRadius >= 0),
+       assert(selectedCheckSize > 0),
+       assert(edgeMaskInset >= 0 && edgeMaskInset < width / 2),
+       assert(edgeFadeFraction >= 0 && edgeFadeFraction < 0.5),
+       assert(inactiveOpacity >= 0 && inactiveOpacity <= 1);
 
   static const double defaultWidth = 396;
 
@@ -47,6 +59,12 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   final double artworkHeight;
   final double itemGap;
   final EdgeInsets selectionInset;
+  final double selectionBorderWidth;
+  final double selectionBorderRadius;
+  final double selectedCheckSize;
+  final double edgeMaskInset;
+  final double edgeFadeFraction;
+  final double inactiveOpacity;
 
   @override
   State<PaymentLinkCardSelectorRail> createState() =>
@@ -134,6 +152,13 @@ class _PaymentLinkCardSelectorRailState
       'artworks must not contain duplicates.',
     );
     final inheritedScrollBehavior = ScrollConfiguration.of(context);
+    final maskWidth = widget.width - (widget.edgeMaskInset * 2);
+    final fadeWidth = maskWidth * widget.edgeFadeFraction;
+    final maskStart = widget.edgeMaskInset / widget.width;
+    final opaqueStart = (widget.edgeMaskInset + fadeWidth) / widget.width;
+    final opaqueEnd =
+        (widget.width - widget.edgeMaskInset - fadeWidth) / widget.width;
+    final maskEnd = (widget.width - widget.edgeMaskInset) / widget.width;
     return SizedBox(
       key: const ValueKey('payment_link_card_selector_rail'),
       width: widget.width,
@@ -142,14 +167,16 @@ class _PaymentLinkCardSelectorRailState
         child: ShaderMask(
           key: const ValueKey('payment_link_card_selector_edge_fade'),
           blendMode: BlendMode.dstIn,
-          shaderCallback: (bounds) => const LinearGradient(
+          shaderCallback: (bounds) => LinearGradient(
             colors: [
-              Color(0x00FFFFFF),
-              Color(0xFFFFFFFF),
-              Color(0xFFFFFFFF),
-              Color(0x00FFFFFF),
+              const Color(0x00FFFFFF),
+              const Color(0x00FFFFFF),
+              const Color(0xFFFFFFFF),
+              const Color(0xFFFFFFFF),
+              const Color(0x00FFFFFF),
+              const Color(0x00FFFFFF),
             ],
-            stops: [0, 0.08, 0.92, 1],
+            stops: [0, maskStart, opaqueStart, opaqueEnd, maskEnd, 1],
           ).createShader(bounds),
           child: ScrollConfiguration(
             behavior: inheritedScrollBehavior.copyWith(
@@ -183,6 +210,10 @@ class _PaymentLinkCardSelectorRailState
                     artworkWidth: widget.artworkWidth,
                     artworkHeight: widget.artworkHeight,
                     selectionInset: widget.selectionInset,
+                    selectionBorderWidth: widget.selectionBorderWidth,
+                    selectionBorderRadius: widget.selectionBorderRadius,
+                    selectedCheckSize: widget.selectedCheckSize,
+                    inactiveOpacity: widget.inactiveOpacity,
                   ),
                 );
               },
