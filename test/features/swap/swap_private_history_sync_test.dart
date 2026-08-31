@@ -185,27 +185,39 @@ void main() {
     expect(metadata.value?.lastSlot, 2);
   });
 
-  test('same Activity ID is never republished for field differences', () async {
-    final remote = _record('shared', SwapIntentStatus.complete);
-    final local = remote.copyWith(
-      destinationChainTxHash: 'local-only-detail',
-      updatedAt: DateTime.utc(2026, 8, 26),
+  for (final kind in SwapPrivateHistoryKind.values) {
+    test(
+      '${kind.wireName} Activity ID is never republished for field differences',
+      () async {
+        final remote = _record(
+          'shared',
+          SwapIntentStatus.complete,
+          payMode: kind.payMode,
+        );
+        final local = remote.copyWith(
+          destinationChainTxHash: 'local-only-detail',
+          updatedAt: DateTime.utc(2026, 8, 26),
+        );
+        final repository = _MemoryRepository()
+          ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
+            kind: kind,
+            records: [remote],
+          ).encode();
+        final store = _MemoryActivityStore([local]);
+
+        await _sync(
+          repository: repository,
+          store: store,
+        ).synchronize(account: account, kind: kind);
+
+        expect(repository.createdKeys, isEmpty);
+        expect(
+          store.records.single.destinationChainTxHash,
+          'local-only-detail',
+        );
+      },
     );
-    final repository = _MemoryRepository()
-      ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
-        kind: SwapPrivateHistoryKind.swap,
-        records: [remote],
-      ).encode();
-    final store = _MemoryActivityStore([local]);
-
-    await _sync(
-      repository: repository,
-      store: store,
-    ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
-
-    expect(repository.createdKeys, isEmpty);
-    expect(store.records.single.destinationChainTxHash, 'local-only-detail');
-  });
+  }
 
   test('cached Activity IDs read only the following slot', () async {
     final archiveState = _document(['remote']);

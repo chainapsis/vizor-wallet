@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_recovery_service.dart';
 import '../../features/voting/voting_private_state_sync.dart';
-import '../../core/private_state_sync/private_state_models.dart';
 import '../../core/private_state_sync/private_state_crypto.dart';
 import '../../core/private_state_sync/private_state_object_repository.dart';
 import '../../core/config/rpc_endpoint_config.dart';
@@ -175,41 +173,27 @@ final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
 final votingPrivateStateSyncProvider = Provider<VotingPrivateStateSync?>((ref) {
   final remote = ref.watch(privateStateRemoteStoreProvider);
   if (remote == null) return null;
+  // Recreate the process-local plaintext cache when account ownership changes.
+  // This also prevents a removed or inactive account's voting choices from
+  // remaining reachable through the shared adapter.
+  ref.watch(
+    accountProvider.select((state) {
+      final value = state.value;
+      return (
+        activeAccountUuid: value?.activeAccountUuid,
+        accountUuids: value?.accounts
+            .map((account) => account.uuid)
+            .join('\u0000'),
+      );
+    }),
+  );
   return VotingPrivateStateSync(
     DefaultPrivateStateObjectRepository(
       crypto: const RustPrivateStateCrypto(),
       remote: remote,
     ),
-    onCompletionObserved: (account, record) {
-      ref
-          .read(votingPrivateCompletionRevisionProvider.notifier)
-          .observe(account: account, record: record);
-    },
   );
 });
-
-class VotingPrivateCompletionRevisionNotifier extends Notifier<int> {
-  final Map<String, String> _fingerprints = {};
-
-  @override
-  int build() => 0;
-
-  void observe({
-    required PrivateStateAccount account,
-    required VotingCompletionRecord record,
-  }) {
-    final scope = '${account.accountUuid}\u0000${record.roundId}';
-    final fingerprint = base64UrlEncode(record.encode());
-    if (_fingerprints[scope] == fingerprint) return;
-    _fingerprints[scope] = fingerprint;
-    state++;
-  }
-}
-
-final votingPrivateCompletionRevisionProvider =
-    NotifierProvider<VotingPrivateCompletionRevisionNotifier, int>(
-      VotingPrivateCompletionRevisionNotifier.new,
-    );
 
 /// Injectable wrapper around generated Rust voting bindings.
 final votingRustApiProvider = Provider<VotingRustApi>((ref) {

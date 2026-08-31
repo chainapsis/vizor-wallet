@@ -97,8 +97,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   Future<void>? _shareTrackingPass;
-  final Map<String, Future<void>> _completionPublishFutures = {};
-  final Set<String> _publishedCompletionScopes = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -130,7 +128,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   @override
   Future<VotingSessionState> build() async {
-    ref.watch(votingPrivateCompletionRevisionProvider);
     _reactivateForBuild();
     _registerSubmissionGuardListener();
     _registerDisposeHandler();
@@ -4014,15 +4011,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_wire.RoundPlanView? roundPlan,
   ) async {
-    final scope = [
-      context.dbPath,
-      context.network,
-      context.accountUuid,
-      context.round.roundId,
-    ].join('\u0000');
-    if (_publishedCompletionScopes.contains(scope)) return;
-    final inFlight = _completionPublishFutures[scope];
-    if (inFlight != null) return inFlight;
     final sync = ref.read(votingPrivateStateSyncProvider);
     final record = VotingCompletionRecord.fromRoundPlan(
       roundId: context.round.roundId,
@@ -4030,32 +4018,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
     if (sync == null || record == null) return;
 
-    late final Future<void> run;
-    run =
-        (() async {
-          try {
-            await sync.publishCompletion(
-              account: PrivateStateAccount(
-                dbPath: context.dbPath,
-                network: context.network,
-                accountUuid: context.accountUuid,
-              ),
-              record: record,
-            );
-            _publishedCompletionScopes.add(scope);
-          } catch (error) {
-            debugPrint(
-              '[zcash] Voting: private completion publish failed '
-              'round=${context.round.roundId}: $error',
-            );
-          }
-        })().whenComplete(() {
-          if (identical(_completionPublishFutures[scope], run)) {
-            _completionPublishFutures.remove(scope);
-          }
-        });
-    _completionPublishFutures[scope] = run;
-    await run;
+    try {
+      await sync.publishCompletion(
+        account: PrivateStateAccount(
+          dbPath: context.dbPath,
+          network: context.network,
+          accountUuid: context.accountUuid,
+        ),
+        record: record,
+      );
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: private completion publish failed '
+        'round=${context.round.roundId}: $error',
+      );
+    }
   }
 
   Future<void> _waitUntilWalletReadyForVoting(

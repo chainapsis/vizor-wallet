@@ -151,23 +151,20 @@ class VotingCompletionRecord {
 /// Immutable completion adapter. Local chain/recovery state remains the source
 /// of truth; this object only restores cross-installation presentation state.
 class VotingPrivateStateSync {
-  const VotingPrivateStateSync(
-    this._repository, {
-    void Function(PrivateStateAccount account, VotingCompletionRecord record)?
-    onCompletionObserved,
-  }) : _onCompletionObserved = onCompletionObserved;
+  VotingPrivateStateSync(this._repository);
 
   final PrivateStateObjectRepository _repository;
-  final void Function(
-    PrivateStateAccount account,
-    VotingCompletionRecord record,
-  )?
-  _onCompletionObserved;
+  final Map<String, VotingCompletionRecord> _knownCompletions = {};
+  final Map<String, Future<void>> _publicationFutures = {};
 
   Future<VotingCompletionRecord?> readCompletion({
     required PrivateStateAccount account,
     required String roundId,
   }) async {
+    final scope = _scope(account, roundId);
+    final known = _knownCompletions[scope];
+    if (known != null) return known;
+
     final result = await _repository.read(account: account, key: _key(roundId));
     final record = switch (result) {
       PrivateStateReadAbsent() => null,
@@ -180,16 +177,38 @@ class VotingPrivateStateSync {
       debugPrint('[private-state] voting completion absent round=$roundId');
     } else {
       debugPrint('[private-state] voting completion restored round=$roundId');
-      _onCompletionObserved?.call(account, record);
+      _knownCompletions[scope] = record;
     }
     return record;
   }
 
-  /// Publishes once. A concurrent winner is read and returned without merging
-  /// or overwriting immutable voting history.
-  Future<VotingCompletionRecord> publishCompletion({
+  /// Publishes once per app run. A conflict confirms that the immutable round
+  /// completion already exists; its payload does not need reconciliation.
+  Future<void> publishCompletion({
     required PrivateStateAccount account,
     required VotingCompletionRecord record,
+  }) {
+    final scope = _scope(account, record.roundId);
+    if (_knownCompletions.containsKey(scope)) return Future.value();
+    final inFlight = _publicationFutures[scope];
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> run;
+    run = _publish(account: account, record: record, scope: scope).whenComplete(
+      () {
+        if (identical(_publicationFutures[scope], run)) {
+          _publicationFutures.remove(scope);
+        }
+      },
+    );
+    _publicationFutures[scope] = run;
+    return run;
+  }
+
+  Future<void> _publish({
+    required PrivateStateAccount account,
+    required VotingCompletionRecord record,
+    required String scope,
   }) async {
     final result = await _repository.create(
       account: account,
@@ -200,22 +219,12 @@ class VotingPrivateStateSync {
       debugPrint(
         '[private-state] voting completion published round=${record.roundId}',
       );
-      _onCompletionObserved?.call(account, record);
-      return record;
-    }
-    debugPrint(
-      '[private-state] voting completion conflict round=${record.roundId}',
-    );
-    final existing = await readCompletion(
-      account: account,
-      roundId: record.roundId,
-    );
-    if (existing == null) {
-      throw const PrivateStateProtocolException(
-        'Voting completion conflicted but no remote object was found.',
+    } else {
+      debugPrint(
+        '[private-state] voting completion exists round=${record.roundId}',
       );
     }
-    return existing;
+    _knownCompletions[scope] = record;
   }
 
   PrivateStateObjectKey _key(String roundId) {
@@ -224,4 +233,8 @@ class VotingPrivateStateSync {
       itemKey: 'round-v1:$roundId',
     );
   }
+
+  String _scope(PrivateStateAccount account, String roundId) =>
+      '${account.dbPath}\u0000${account.network}\u0000'
+      '${account.accountUuid}\u0000$roundId';
 }

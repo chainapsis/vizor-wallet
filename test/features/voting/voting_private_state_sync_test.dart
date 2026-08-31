@@ -1,11 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_models.dart';
 import 'package:zcash_wallet/src/core/private_state_sync/private_state_object_repository.dart';
 import 'package:zcash_wallet/src/features/voting/voting_private_state_sync.dart';
-import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 
 void main() {
   const account = PrivateStateAccount(
@@ -47,31 +45,32 @@ void main() {
     );
   });
 
-  test('concurrent publish returns immutable remote winner', () async {
-    final repository = _ConflictRepository();
-    final sync = VotingPrivateStateSync(repository);
-    final candidate = VotingCompletionRecord(
-      roundId: 'round-42',
-      completedAtSeconds: 20,
-      choicesByProposalId: const {7: 1},
-    );
+  test(
+    'publish conflict confirms existence without a follow-up read',
+    () async {
+      final repository = _ConflictRepository();
+      final sync = VotingPrivateStateSync(repository);
+      final candidate = VotingCompletionRecord(
+        roundId: 'round-42',
+        completedAtSeconds: 20,
+        choicesByProposalId: const {7: 1},
+      );
 
-    final winner = await sync.publishCompletion(
-      account: account,
-      record: candidate,
-    );
+      await sync.publishCompletion(account: account, record: candidate);
+      await sync.publishCompletion(account: account, record: candidate);
+      expect(
+        await sync.readCompletion(account: account, roundId: 'round-42'),
+        same(candidate),
+      );
 
-    expect(winner.completedAtSeconds, 10);
-    expect(winner.choicesByProposalId, {7: 0});
-  });
+      expect(repository.createCalls, 1);
+      expect(repository.readCalls, 0);
+    },
+  );
 
-  test('reports remotely read and locally published completions', () async {
+  test('confirmed completion suppresses later reads and publishes', () async {
     final repository = _MemoryRepository();
-    final observed = <VotingCompletionRecord>[];
-    final sync = VotingPrivateStateSync(
-      repository,
-      onCompletionObserved: (_, record) => observed.add(record),
-    );
+    final sync = VotingPrivateStateSync(repository);
     final record = VotingCompletionRecord(
       roundId: 'round-42',
       completedAtSeconds: 20,
@@ -79,69 +78,102 @@ void main() {
     );
 
     await sync.publishCompletion(account: account, record: record);
-    await sync.readCompletion(account: account, roundId: 'round-42');
+    expect(
+      await sync.readCompletion(account: account, roundId: 'round-42'),
+      same(record),
+    );
+    await sync.publishCompletion(account: account, record: record);
 
-    expect(observed, [record, isA<VotingCompletionRecord>()]);
+    expect(repository.createCalls, 1);
+    expect(repository.readCalls, 0);
   });
 
-  test('completion revision changes only for new account-round content', () {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    final notifier = container.read(
-      votingPrivateCompletionRevisionProvider.notifier,
-    );
-    const revisionAccount = PrivateStateAccount(
-      dbPath: 'wallet.db',
-      network: 'main',
-      accountUuid: 'account-1',
-    );
-    final first = VotingCompletionRecord(
-      roundId: 'round-1',
-      completedAtSeconds: 1,
-      choicesByProposalId: const {7: 0},
+  test('concurrent publications share one create request', () async {
+    final repository = _MemoryRepository();
+    final sync = VotingPrivateStateSync(repository);
+    final record = VotingCompletionRecord(
+      roundId: 'round-42',
+      completedAtSeconds: 20,
+      choicesByProposalId: const {7: 1},
     );
 
-    notifier.observe(account: revisionAccount, record: first);
-    notifier.observe(account: revisionAccount, record: first);
-    expect(container.read(votingPrivateCompletionRevisionProvider), 1);
+    await Future.wait([
+      sync.publishCompletion(account: account, record: record),
+      sync.publishCompletion(account: account, record: record),
+    ]);
 
-    notifier.observe(
-      account: revisionAccount,
-      record: VotingCompletionRecord(
-        roundId: 'round-1',
-        completedAtSeconds: 2,
-        choicesByProposalId: const {7: 1},
-      ),
+    expect(repository.createCalls, 1);
+  });
+
+  test('found completion suppresses later reads', () async {
+    final repository = _MemoryRepository();
+    final sync = VotingPrivateStateSync(repository);
+    final record = VotingCompletionRecord(
+      roundId: 'round-42',
+      completedAtSeconds: 20,
+      choicesByProposalId: const {7: 1},
     );
-    expect(container.read(votingPrivateCompletionRevisionProvider), 2);
+    repository.plaintext = record.encode();
+
+    final first = await sync.readCompletion(
+      account: account,
+      roundId: 'round-42',
+    );
+    final second = await sync.readCompletion(
+      account: account,
+      roundId: 'round-42',
+    );
+
+    expect(first?.choicesByProposalId, {7: 1});
+    expect(second, same(first));
+    expect(repository.readCalls, 1);
+  });
+
+  test('absent completion is not cached', () async {
+    final repository = _MemoryRepository();
+    final sync = VotingPrivateStateSync(repository);
+
+    expect(
+      await sync.readCompletion(account: account, roundId: 'round-42'),
+      isNull,
+    );
+    expect(
+      await sync.readCompletion(account: account, roundId: 'round-42'),
+      isNull,
+    );
+
+    expect(repository.readCalls, 2);
   });
 }
 
 class _ConflictRepository implements PrivateStateObjectRepository {
-  final winner = VotingCompletionRecord(
-    roundId: 'round-42',
-    completedAtSeconds: 10,
-    choicesByProposalId: const {7: 0},
-  );
+  int createCalls = 0;
+  int readCalls = 0;
 
   @override
   Future<PrivateStateCreateResult> create({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
-  }) async => const PrivateStateCreateConflict();
+  }) async {
+    createCalls++;
+    return const PrivateStateCreateConflict();
+  }
 
   @override
   Future<PrivateStateReadResult> read({
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
   }) async {
-    return PrivateStateReadFound(plaintext: winner.encode());
+    readCalls++;
+    return const PrivateStateReadAbsent();
   }
 }
 
 class _MemoryRepository implements PrivateStateObjectRepository {
   Uint8List? plaintext;
+  int createCalls = 0;
+  int readCalls = 0;
 
   @override
   Future<PrivateStateCreateResult> create({
@@ -149,6 +181,7 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     required PrivateStateObjectKey key,
     required Uint8List plaintext,
   }) async {
+    createCalls++;
     this.plaintext = Uint8List.fromList(plaintext);
     return const PrivateStateCreated();
   }
@@ -158,6 +191,10 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
   }) async {
-    return PrivateStateReadFound(plaintext: Uint8List.fromList(plaintext!));
+    readCalls++;
+    final value = plaintext;
+    return value == null
+        ? const PrivateStateReadAbsent()
+        : PrivateStateReadFound(plaintext: Uint8List.fromList(value));
   }
 }
