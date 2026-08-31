@@ -102,9 +102,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
-  Future<void>? _activeShareTrackingPass;
+  Future<void>? _activeAutomaticShareTrackingPass;
+  final Set<Future<void>> _activeShareTrackingPasses = {};
   VotingHelperDeliveryContext? _helperDeliveryContext;
-  VotingShareTrackingPassHandle? _activeShareTrackingPassHandle;
+  final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -130,7 +131,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         current.roundId == context.round.roundId) {
       return current;
     }
-    if (_activeShareTrackingPassHandle != null) {
+    if (_activeShareTrackingPassHandles.isNotEmpty) {
       throw StateError(
         'Cannot replace a helper delivery context while tracking is active.',
       );
@@ -221,11 +222,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _snapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
-      final passHandle = _activeShareTrackingPassHandle;
-      if (passHandle != null) {
+      for (final passHandle in _activeShareTrackingPassHandles.toList()) {
         passHandle.cancel();
         passHandle.dispose();
       }
+      _activeShareTrackingPassHandles.clear();
       _releaseAutomaticShareTracking();
       if (context == null) return;
       if (ownsSubmission) {
@@ -2830,7 +2831,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> runShareTrackingPass() {
     if (_automaticShareTrackingStopped) return Future.value();
-    final inFlight = _activeShareTrackingPass;
+    final inFlight = _activeAutomaticShareTrackingPass;
     if (inFlight != null) return inFlight;
     if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
       return Future.value();
@@ -2838,11 +2839,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     late final Future<void> pass;
     pass = _runShareTrackingPass().whenComplete(() {
-      if (identical(_activeShareTrackingPass, pass)) {
-        _activeShareTrackingPass = null;
+      _activeShareTrackingPasses.remove(pass);
+      if (identical(_activeAutomaticShareTrackingPass, pass)) {
+        _activeAutomaticShareTrackingPass = null;
       }
     });
-    _activeShareTrackingPass = pass;
+    _activeAutomaticShareTrackingPass = pass;
+    _activeShareTrackingPasses.add(pass);
     return pass;
   }
 
@@ -2888,7 +2891,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final rust = ref.read(votingRustApiProvider);
         final helperContext = _helperDeliveryContextFor(rust, context);
         final passHandle = rust.beginShareTrackingPass(context: helperContext);
-        _activeShareTrackingPassHandle = passHandle;
+        _activeShareTrackingPassHandles.add(passHandle);
         final cancellationWatchdog = Timer.periodic(
           _shareTrackingCancellationPollInterval,
           (timer) {
@@ -2899,7 +2902,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         final bool helperConfirmed;
         final focusedConfirmationDone = Completer<void>();
-        _activeShareTrackingPass = focusedConfirmationDone.future;
+        final focusedConfirmation = focusedConfirmationDone.future;
+        _activeShareTrackingPasses.add(focusedConfirmation);
         try {
           final nowSeconds =
               DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
@@ -2913,19 +2917,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
         } finally {
           cancellationWatchdog.cancel();
-          if (identical(_activeShareTrackingPassHandle, passHandle)) {
-            _activeShareTrackingPassHandle = null;
-          }
+          _activeShareTrackingPassHandles.remove(passHandle);
           passHandle.dispose();
           if (!focusedConfirmationDone.isCompleted) {
             focusedConfirmationDone.complete();
           }
-          if (identical(
-            _activeShareTrackingPass,
-            focusedConfirmationDone.future,
-          )) {
-            _activeShareTrackingPass = null;
-          }
+          _activeShareTrackingPasses.remove(focusedConfirmation);
         }
         if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
           return;
@@ -3014,7 +3011,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // polled between them.
       final helperContext = _helperDeliveryContextFor(rust, context);
       final passHandle = rust.beginShareTrackingPass(context: helperContext);
-      _activeShareTrackingPassHandle = passHandle;
+      _activeShareTrackingPassHandles.add(passHandle);
       Timer? cancellationWatchdog;
       final rust_api.ApiShareTrackingReport report;
       try {
@@ -3032,9 +3029,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       } finally {
         cancellationWatchdog?.cancel();
-        if (identical(_activeShareTrackingPassHandle, passHandle)) {
-          _activeShareTrackingPassHandle = null;
-        }
+        _activeShareTrackingPassHandles.remove(passHandle);
         passHandle.dispose();
       }
 
@@ -3076,10 +3071,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _advanceSessionGeneration();
     // Stop the in-flight Rust pass now rather than waiting for the watchdog's
     // next tick: destructive wallet operations block on this draining.
-    _activeShareTrackingPassHandle?.cancel();
-    final pass = _activeShareTrackingPass;
+    for (final passHandle in _activeShareTrackingPassHandles.toList()) {
+      passHandle.cancel();
+    }
     try {
-      if (pass != null) await pass;
+      while (_activeShareTrackingPasses.isNotEmpty) {
+        await Future.wait(
+          _activeShareTrackingPasses.map(
+            (pass) => pass.then<void>((_) {}, onError: (_, _) {}),
+          ),
+        );
+      }
     } catch (_) {
       // The tracking action already logged its business error. Destructive
       // wallet operations require the pass to finish, not to succeed.
@@ -4179,7 +4181,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=$_roundId reason=$reason error=$e',
       );
     } finally {
-      if (_shareTrackingTimer == null && _activeShareTrackingPass == null) {
+      if (_shareTrackingTimer == null && _activeShareTrackingPasses.isEmpty) {
         _releaseAutomaticShareTracking();
       }
     }

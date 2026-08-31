@@ -4214,6 +4214,73 @@ void main() {
   });
 
   test(
+    'full and focused tracking serialize through destructive drain',
+    () async {
+      final fullTrackingGate = Completer<void>();
+      final focusedConfirmationGate = Completer<void>();
+      addTearDown(() {
+        if (!fullTrackingGate.isCompleted) fullTrackingGate.complete();
+        if (!focusedConfirmationGate.isCompleted) {
+          focusedConfirmationGate.complete();
+        }
+      });
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 9)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final rust = FakeVotingRustApi(
+        focusedShareConfirmationGate: focusedConfirmationGate,
+      )..trackPendingSharesGate = fullTrackingGate;
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(
+          pendingShare,
+          designateImmediateShare: true,
+        ),
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+      final notifier = container.read(
+        votingSubmissionSessionProvider(key).notifier,
+      );
+
+      await container.read(votingSubmissionSessionProvider(key).future);
+      final fullPass = notifier.runShareTrackingPass();
+      await rust.trackPendingSharesStarted.future.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => throw StateError('full tracking did not start'),
+      );
+      final focusedPass = notifier.refreshImmediateShareConfirmation();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.focusedShareConfirmationStarted.isCompleted, isFalse);
+      expect(rust.shareTrackingPassHandles, hasLength(1));
+
+      var drained = false;
+      final drain = notifier.stopAndDrainShareTracking().then((_) {
+        drained = true;
+      });
+      await Future.wait([fullPass, focusedPass, drain]);
+
+      expect(drained, isTrue);
+      expect(rust.focusedShareConfirmationStarted.isCompleted, isFalse);
+      expect(rust.shareTrackingPassHandles.single.isCancelled, isTrue);
+      expect(rust.shareTrackingPassHandles.single.isDisposed, isTrue);
+      expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
+    },
+  );
+
+  test(
     'expiry confirms an immediate share with only outcome-unknown delivery',
     () async {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
