@@ -55,9 +55,9 @@ class SwapPrivateHistoryDocument {
     return bytes;
   }
 
-  /// Builds a deterministic recovery snapshot containing only finalized
-  /// activities. The newest records are retained when the object reaches its
-  /// count or byte budget.
+  /// Builds a deterministic bounded document containing only finalized
+  /// activities. The newest records are retained when a local merged state or
+  /// one delta reaches its count or byte budget.
   static SwapPrivateHistoryDocument compact({
     required SwapPrivateHistoryKind kind,
     required Iterable<SwapIntentRecord> records,

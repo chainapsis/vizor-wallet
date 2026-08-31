@@ -18,15 +18,15 @@ void main() {
     accountUuid: 'account-a',
   );
 
-  test('metadata round-trips the cached immutable snapshot', () {
-    final snapshot = _document(['remote']);
+  test('metadata round-trips the merged archive state', () {
+    final archiveState = _document(['remote']);
     final decoded = FinalizedActivityArchiveMetadata.fromJson(
       jsonDecode(
         jsonEncode(
           FinalizedActivityArchiveMetadata(
             lastSlot: 1,
             hiddenRecordIds: const {'hidden'},
-            lastSnapshot: snapshot,
+            archiveState: archiveState,
           ).toJson(),
         ),
       ),
@@ -34,19 +34,17 @@ void main() {
 
     expect(decoded?.lastSlot, 1);
     expect(decoded?.hiddenRecordIds, {'hidden'});
-    expect(decoded?.lastSnapshot, snapshot);
+    expect(decoded?.archiveState, archiveState);
   });
 
-  test('metadata accepts schema two without a cached snapshot', () {
+  test('metadata rejects cumulative snapshot schema', () {
     final decoded = FinalizedActivityArchiveMetadata.fromJson({
       'schema': 2,
       'last_slot': 3,
       'hidden_record_ids': ['hidden'],
     });
 
-    expect(decoded?.lastSlot, 3);
-    expect(decoded?.hiddenRecordIds, {'hidden'});
-    expect(decoded?.lastSnapshot, isNull);
+    expect(decoded, isNull);
   });
 
   test('backfills only complete and refunded activity into slot one', () async {
@@ -67,9 +65,9 @@ void main() {
 
     expect(result.remoteWritten, isTrue);
     expect(result.lastSlot, 1);
-    expect(repository.createdKeys.single.itemKey, 'archive-v1:1');
+    expect(repository.createdKeys.single.itemKey, 'delta-v1:1');
     final document = SwapPrivateHistoryDocument.decode(
-      repository.objects['archive-v1:1']!,
+      repository.objects['delta-v1:1']!,
       expectedKind: SwapPrivateHistoryKind.swap,
     );
     expect(document.records.map((record) => record.id).toSet(), {
@@ -93,10 +91,37 @@ void main() {
       PrivateStateNamespace.payHistory,
     );
     final document = SwapPrivateHistoryDocument.decode(
-      repository.objects['archive-v1:1']!,
+      repository.objects['delta-v1:1']!,
       expectedKind: SwapPrivateHistoryKind.pay,
     );
     expect(document.records.map((record) => record.id), ['pay']);
+  });
+
+  test('later slots contain only new finalized records', () async {
+    final repository = _MemoryRepository();
+    final store = _MemoryActivityStore([
+      _record('first', SwapIntentStatus.complete),
+    ]);
+    final sync = _sync(repository: repository, store: store);
+
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+    store.records.add(_record('second', SwapIntentStatus.refunded));
+    final result = await sync.synchronize(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(result.lastSlot, 2);
+    final first = SwapPrivateHistoryDocument.decode(
+      repository.objects['delta-v1:1']!,
+      expectedKind: SwapPrivateHistoryKind.swap,
+    );
+    final second = SwapPrivateHistoryDocument.decode(
+      repository.objects['delta-v1:2']!,
+      expectedKind: SwapPrivateHistoryKind.swap,
+    );
+    expect(first.records.map((record) => record.id), ['first']);
+    expect(second.records.map((record) => record.id), ['second']);
   });
 
   test(
@@ -121,45 +146,72 @@ void main() {
     },
   );
 
+  test('fresh installation merges every contiguous delta', () async {
+    final repository = _MemoryRepository()
+      ..objects['delta-v1:1'] = _document(['remote-a'])
+      ..objects['delta-v1:2'] = _document(['remote-b']);
+    final store = _MemoryActivityStore(const []);
+    final metadata = _MemoryMetadataStore();
+    final sync = _sync(
+      repository: repository,
+      store: store,
+      metadata: metadata,
+    );
+
+    final result = await sync.synchronize(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(result.lastSlot, 2);
+    expect(result.remoteWritten, isFalse);
+    expect(store.records.map((record) => record.id).toSet(), {
+      'remote-a',
+      'remote-b',
+    });
+    expect(metadata.value?.lastSlot, 2);
+  });
+
   test(
-    'fresh installation scans contiguous slots and restores latest',
+    'later evidence for the same record is merged during recovery',
     () async {
+      final initial = _record('remote', SwapIntentStatus.complete);
+      final enriched = initial.copyWith(
+        destinationChainTxHash: 'destination-hash',
+        updatedAt: DateTime.utc(2026, 8, 26),
+      );
       final repository = _MemoryRepository()
-        ..objects['archive-v1:1'] = _document(['remote-a'])
-        ..objects['archive-v1:2'] = _document(['remote-a', 'remote-b']);
+        ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
+          kind: SwapPrivateHistoryKind.swap,
+          records: [initial],
+        ).encode()
+        ..objects['delta-v1:2'] = SwapPrivateHistoryDocument(
+          kind: SwapPrivateHistoryKind.swap,
+          records: [enriched],
+        ).encode();
       final store = _MemoryActivityStore(const []);
-      final metadata = _MemoryMetadataStore();
-      final sync = _sync(
+
+      await _sync(
         repository: repository,
         store: store,
-        metadata: metadata,
-      );
+      ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-      final result = await sync.synchronize(
-        account: account,
-        kind: SwapPrivateHistoryKind.swap,
-      );
-
-      expect(result.lastSlot, 2);
-      expect(result.remoteWritten, isFalse);
-      expect(store.records.map((record) => record.id).toSet(), {
-        'remote-a',
-        'remote-b',
-      });
-      expect(metadata.value?.lastSlot, 2);
+      expect(store.records, hasLength(1));
+      expect(store.records.single.destinationChainTxHash, 'destination-hash');
     },
   );
 
-  test('cached immutable slot reads only the following slot', () async {
-    final snapshot = _document(['remote']);
-    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+  test('cached merged state reads only the following slot', () async {
+    final archiveState = _document(['remote']);
+    final repository = _MemoryRepository()
+      ..objects['delta-v1:1'] = archiveState;
     final store = _MemoryActivityStore([
       _record('remote', SwapIntentStatus.complete),
     ]);
     final metadata = _MemoryMetadataStore(
       value: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
-        lastSnapshot: snapshot,
+        archiveState: archiveState,
       ),
     );
 
@@ -170,18 +222,19 @@ void main() {
     ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
     expect(result.remoteWritten, isFalse);
-    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
+    expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:2']);
     expect(repository.createdKeys, isEmpty);
   });
 
-  test('cached immutable slot restores a missing local replica', () async {
-    final snapshot = _document(['remote']);
-    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+  test('cached merged state restores a missing local replica', () async {
+    final archiveState = _document(['remote']);
+    final repository = _MemoryRepository()
+      ..objects['delta-v1:1'] = archiveState;
     final store = _MemoryActivityStore(const []);
     final metadata = _MemoryMetadataStore(
       value: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
-        lastSnapshot: snapshot,
+        archiveState: archiveState,
       ),
     );
 
@@ -192,12 +245,12 @@ void main() {
     ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
     expect(store.records.map((record) => record.id), ['remote']);
-    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
+    expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:2']);
   });
 
-  test('legacy metadata reads the known slot once and caches it', () async {
-    final snapshot = _document(['remote']);
-    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+  test('missing merged state replays deltas from slot one', () async {
+    final delta = _document(['remote']);
+    final repository = _MemoryRepository()..objects['delta-v1:1'] = delta;
     final metadata = _MemoryMetadataStore(
       value: const FinalizedActivityArchiveMetadata(lastSlot: 1),
     );
@@ -211,13 +264,13 @@ void main() {
     repository.readKeys.clear();
     await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
 
-    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
-    expect(metadata.value?.lastSnapshot, snapshot);
+    expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:2']);
+    expect(metadata.value?.archiveState, delta);
   });
 
   test('preserves a remote truncation marker without writing a slot', () async {
     final repository = _MemoryRepository()
-      ..objects['archive-v1:1'] = SwapPrivateHistoryDocument(
+      ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
         kind: SwapPrivateHistoryKind.swap,
         records: [_record('newest', SwapIntentStatus.complete)],
         truncated: true,
@@ -255,17 +308,14 @@ void main() {
 
       expect(result.lastSlot, 2);
       expect(repository.createdKeys.map((key) => key.itemKey), [
-        'archive-v1:1',
-        'archive-v1:2',
+        'delta-v1:1',
+        'delta-v1:2',
       ]);
       final latest = SwapPrivateHistoryDocument.decode(
-        repository.objects['archive-v1:2']!,
+        repository.objects['delta-v1:2']!,
         expectedKind: SwapPrivateHistoryKind.swap,
       );
-      expect(latest.records.map((record) => record.id).toSet(), {
-        'concurrent',
-        'local',
-      });
+      expect(latest.records.map((record) => record.id), ['local']);
     },
   );
 
@@ -274,7 +324,7 @@ void main() {
     () async {
       final remoteRecord = _record('remote', SwapIntentStatus.complete);
       final repository = _MemoryRepository()
-        ..objects['archive-v1:1'] = SwapPrivateHistoryDocument(
+        ..objects['delta-v1:1'] = SwapPrivateHistoryDocument(
           kind: SwapPrivateHistoryKind.swap,
           records: [remoteRecord],
         ).encode();
@@ -300,7 +350,7 @@ void main() {
 
       expect(result.remoteWritten, isFalse);
       expect(store.records, isEmpty);
-      expect(repository.objects.keys, ['archive-v1:1']);
+      expect(repository.objects.keys, ['delta-v1:1']);
       expect(metadata.value?.hiddenRecordIds, {'remote'});
     },
   );
@@ -427,7 +477,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
     value = FinalizedActivityArchiveMetadata(
       lastSlot: value?.lastSlot ?? 0,
       hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
-      lastSnapshot: value?.lastSnapshot,
+      archiveState: value?.archiveState,
     );
   }
 
@@ -449,7 +499,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
         ...?value?.hiddenRecordIds,
         ...metadata.hiddenRecordIds,
       },
-      lastSnapshot: metadata.lastSnapshot,
+      archiveState: metadata.archiveState,
     );
   }
 }

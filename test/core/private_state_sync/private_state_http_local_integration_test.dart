@@ -185,8 +185,8 @@ void main() {
         recoveryStore.records.any((record) => record.id == 'desktop-failed'),
         isFalse,
       );
-      final slotOne = recoveryRepository.references['archive-v1:1']!;
-      final slotTwo = recoveryRepository.references['archive-v1:2']!;
+      final slotOne = recoveryRepository.references['delta-v1:1']!;
+      final slotTwo = recoveryRepository.references['delta-v1:2']!;
       expect(slotOne.objectId, isNot(slotTwo.objectId));
       expect(slotOne.authPublicKeyBase64, isNot(slotTwo.authPublicKeyBase64));
     },
@@ -411,7 +411,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
     value = FinalizedActivityArchiveMetadata(
       lastSlot: value?.lastSlot ?? 0,
       hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
-      lastSnapshot: value?.lastSnapshot,
+      archiveState: value?.archiveState,
     );
   }
 

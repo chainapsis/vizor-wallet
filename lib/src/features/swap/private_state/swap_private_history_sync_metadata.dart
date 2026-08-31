@@ -5,8 +5,7 @@ import 'dart:typed_data';
 import '../../../core/storage/app_secure_store.dart';
 import 'swap_private_history_document.dart';
 
-const _metadataSchemaVersion = 3;
-const _legacyMetadataSchemaVersion = 2;
+const _metadataSchemaVersion = 4;
 const _metadataKeyPrefix = 'zcash_finalized_activity_archive_v2';
 const _maxLocallyHiddenRecords = 2048;
 
@@ -19,30 +18,37 @@ class FinalizedActivityArchiveMetadata {
   const FinalizedActivityArchiveMetadata({
     required this.lastSlot,
     this.hiddenRecordIds = const {},
-    this.lastSnapshot,
+    this.archiveState,
   });
 
   final int lastSlot;
   final Set<String> hiddenRecordIds;
-  final Uint8List? lastSnapshot;
+
+  /// Locally cached merge of every delta through [lastSlot].
+  ///
+  /// This is local progress metadata, not a copy of any individual remote
+  /// object. It lets later passes identify records that are new or have gained
+  /// finalized evidence without rereading immutable slots.
+  final Uint8List? archiveState;
 
   Map<String, Object?> toJson() => {
     'schema': _metadataSchemaVersion,
     'last_slot': lastSlot,
     'hidden_record_ids': hiddenRecordIds.toList()..sort(),
-    'last_snapshot': lastSnapshot == null ? null : base64Encode(lastSnapshot!),
+    'archive_state': archiveState == null ? null : base64Encode(archiveState!),
   };
 
   static FinalizedActivityArchiveMetadata? fromJson(Object? raw) {
     if (raw is! Map<String, dynamic>) {
       return null;
     }
-    final schema = raw['schema'];
-    final isLegacy = schema == _legacyMetadataSchemaVersion;
-    final expectedKeys = isLegacy
-        ? const {'schema', 'last_slot', 'hidden_record_ids'}
-        : const {'schema', 'last_slot', 'hidden_record_ids', 'last_snapshot'};
-    if (schema != _metadataSchemaVersion && !isLegacy ||
+    const expectedKeys = {
+      'schema',
+      'last_slot',
+      'hidden_record_ids',
+      'archive_state',
+    };
+    if (raw['schema'] != _metadataSchemaVersion ||
         raw.length != expectedKeys.length ||
         raw.keys.any((key) => !expectedKeys.contains(key))) {
       return null;
@@ -58,23 +64,21 @@ class FinalizedActivityArchiveMetadata {
     }
     final hiddenIds = hidden.cast<String>().toSet();
     if (hiddenIds.length != hidden.length) return null;
-    Uint8List? lastSnapshot;
-    if (!isLegacy) {
-      final encodedSnapshot = raw['last_snapshot'];
-      if (encodedSnapshot != null && encodedSnapshot is! String) return null;
-      if (encodedSnapshot is String) {
-        try {
-          lastSnapshot = base64Decode(encodedSnapshot);
-        } on FormatException {
-          return null;
-        }
+    Uint8List? archiveState;
+    final encodedState = raw['archive_state'];
+    if (encodedState != null && encodedState is! String) return null;
+    if (encodedState is String) {
+      try {
+        archiveState = base64Decode(encodedState);
+      } on FormatException {
+        return null;
       }
     }
-    if (lastSlot == 0 && lastSnapshot != null) return null;
+    if ((lastSlot == 0) != (archiveState == null)) return null;
     return FinalizedActivityArchiveMetadata(
       lastSlot: lastSlot,
       hiddenRecordIds: hiddenIds,
-      lastSnapshot: lastSnapshot,
+      archiveState: archiveState,
     );
   }
 }
@@ -142,9 +146,9 @@ class AppSecureStoreFinalizedActivityArchiveMetadataStore
             ? metadata.lastSlot
             : current!.lastSlot,
         hiddenRecordIds: hidden,
-        lastSnapshot: metadata.lastSlot >= (current?.lastSlot ?? 0)
-            ? metadata.lastSnapshot ?? current?.lastSnapshot
-            : current!.lastSnapshot,
+        archiveState: metadata.lastSlot >= (current?.lastSlot ?? 0)
+            ? metadata.archiveState ?? current?.archiveState
+            : current!.archiveState,
       );
       if (_metadataEquals(current, next)) return;
       await _write(key, next);
@@ -169,7 +173,7 @@ class AppSecureStoreFinalizedActivityArchiveMetadataStore
         FinalizedActivityArchiveMetadata(
           lastSlot: current?.lastSlot ?? 0,
           hiddenRecordIds: hidden,
-          lastSnapshot: current?.lastSnapshot,
+          archiveState: current?.archiveState,
         ),
       );
     });
@@ -223,16 +227,16 @@ bool _metadataEquals(
       !left.hiddenRecordIds.containsAll(right.hiddenRecordIds)) {
     return false;
   }
-  final leftSnapshot = left.lastSnapshot;
-  final rightSnapshot = right.lastSnapshot;
-  if (identical(leftSnapshot, rightSnapshot)) return true;
-  if (leftSnapshot == null ||
-      rightSnapshot == null ||
-      leftSnapshot.length != rightSnapshot.length) {
+  final leftState = left.archiveState;
+  final rightState = right.archiveState;
+  if (identical(leftState, rightState)) return true;
+  if (leftState == null ||
+      rightState == null ||
+      leftState.length != rightState.length) {
     return false;
   }
-  for (var index = 0; index < leftSnapshot.length; index++) {
-    if (leftSnapshot[index] != rightSnapshot[index]) return false;
+  for (var index = 0; index < leftState.length; index++) {
+    if (leftState[index] != rightState[index]) return false;
   }
   return true;
 }

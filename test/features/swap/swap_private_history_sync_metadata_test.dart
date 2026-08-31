@@ -14,7 +14,7 @@ void main() {
     final store = AppSecureStoreFinalizedActivityArchiveMetadataStore(
       AppSecureStore.testing(storage: storage),
     );
-    final snapshot = Uint8List.fromList([1, 2, 3]);
+    final archiveState = Uint8List.fromList([1, 2, 3]);
 
     await store.save(
       accountUuid: 'account-a',
@@ -22,7 +22,7 @@ void main() {
       metadata: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
         hiddenRecordIds: const {'hidden'},
-        lastSnapshot: snapshot,
+        archiveState: archiveState,
       ),
     );
     await store.save(
@@ -31,7 +31,7 @@ void main() {
       metadata: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
         hiddenRecordIds: const {'hidden'},
-        lastSnapshot: Uint8List.fromList(snapshot),
+        archiveState: Uint8List.fromList(archiveState),
       ),
     );
 

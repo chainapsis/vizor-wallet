@@ -10,7 +10,7 @@ import '../providers/swap_activity_replica.dart';
 import 'swap_private_history_document.dart';
 import 'swap_private_history_sync_metadata.dart';
 
-const _archiveSlotPrefix = 'archive-v1:';
+const _archiveSlotPrefix = 'delta-v1:';
 
 class FinalizedActivityArchiveSyncResult {
   FinalizedActivityArchiveSyncResult({
@@ -50,12 +50,13 @@ abstract interface class FinalizedActivityArchiveSynchronizer {
   });
 }
 
-/// Maintains a cumulative archive of only complete and refunded activities.
+/// Maintains an immutable delta archive of complete and refunded activities.
 ///
-/// Every generation is written to a newly derived create-only object. The
-/// server therefore never sees a stable activity object identifier. A create
-/// conflict means another device won that slot; its snapshot is read, merged,
-/// and the combined snapshot is attempted at the following slot.
+/// Each newly derived create-only object contains only records that are new or
+/// have gained finalized evidence since the preceding local pass. Recovery
+/// reads and merges every contiguous slot. A create conflict means another
+/// device won that slot; its delta is applied before remaining local changes
+/// are attempted at the following slot.
 class FinalizedActivityArchiveSync
     implements FinalizedActivityArchiveSynchronizer {
   FinalizedActivityArchiveSync({
@@ -117,27 +118,18 @@ class FinalizedActivityArchiveSync
         ) ??
         const FinalizedActivityArchiveMetadata(lastSlot: 0);
     var lastSlot = metadata.lastSlot;
-    var remote = _decodeCachedSnapshot(
-      metadata.lastSnapshot,
+    var archive = _decodeArchiveState(
+      metadata.archiveState,
       expectedKind: kind,
     );
 
-    // Immutable snapshots are cached locally after they are applied. Legacy or
-    // corrupt metadata falls back to one remote read, then repairs the cache.
-    if (lastSlot > 0 && remote == null) {
-      final known = await _readSlot(
-        account: account,
-        kind: kind,
-        slot: lastSlot,
-      );
-      if (known == null) {
-        lastSlot = 0;
-      } else {
-        remote = known;
-      }
+    // A delta slot cannot reconstruct preceding slots. If local archive state
+    // is missing or corrupt, discard only local progress and replay from one.
+    if (lastSlot > 0 && archive == null) {
+      lastSlot = 0;
     }
 
-    // Discover generations created by another installation. Contiguous,
+    // Discover deltas created by another installation. Contiguous,
     // create-only slots make the first absent object the end marker.
     while (true) {
       final next = await _readSlot(
@@ -146,15 +138,15 @@ class FinalizedActivityArchiveSync
         slot: lastSlot + 1,
       );
       if (next == null) break;
-      remote = next;
+      archive = _mergeArchiveDocuments(archive, next, kind: kind);
       lastSlot++;
     }
 
     final hidden = metadata.hiddenRecordIds;
-    if (remote != null && remote.records.isNotEmpty) {
+    if (archive != null && archive.records.isNotEmpty) {
       await _replica.reconcileRemoteRecords(
         accountUuid: account.accountUuid,
-        remoteRecords: remote.records.where(
+        remoteRecords: archive.records.where(
           (record) => !hidden.contains(record.id),
         ),
         mergeConflict: mergeSwapPrivateHistoryRecord,
@@ -166,86 +158,72 @@ class FinalizedActivityArchiveSync
         accountUuid: account.accountUuid,
       );
       final combined = _mergeFinalizedRecords(
-        remote?.records ?? const [],
-        local,
+        archive?.records ?? const [],
+        local.where((record) => !hidden.contains(record.id)),
         kind: kind,
       );
-      var document = SwapPrivateHistoryDocument.compact(
+      var desired = SwapPrivateHistoryDocument.compact(
         kind: kind,
         records: combined,
       );
-      if (remote?.truncated == true && !document.truncated) {
-        document = SwapPrivateHistoryDocument(
+      if (archive?.truncated == true && !desired.truncated) {
+        desired = SwapPrivateHistoryDocument(
           kind: kind,
-          records: document.records,
+          records: desired.records,
           truncated: true,
         );
       }
-      final plaintext = document.encode();
-      if (document.records.isEmpty && remote == null) {
+      final pending = _changedRecords(archive, desired, kind: kind);
+      if (pending.isEmpty) {
         await _saveMetadata(
           account: account,
           kind: kind,
           lastSlot: lastSlot,
           hidden: hidden,
-          lastSnapshot: remote?.encode(),
+          archiveState: archive?.encode(),
         );
         return _complete(
-          outcome: 'empty',
-          archiveRecords: document.records.length,
+          outcome: archive == null ? 'empty' : 'unchanged',
+          archiveRecords: archive?.records.length ?? 0,
           result: FinalizedActivityArchiveSyncResult(
             records: local,
             kind: kind,
             lastSlot: lastSlot,
             remoteWritten: false,
-            truncated: false,
-          ),
-        );
-      }
-      if (remote != null && _bytesEqual(remote.encode(), plaintext)) {
-        await _saveMetadata(
-          account: account,
-          kind: kind,
-          lastSlot: lastSlot,
-          hidden: hidden,
-          lastSnapshot: remote.encode(),
-        );
-        return _complete(
-          outcome: 'unchanged',
-          archiveRecords: document.records.length,
-          result: FinalizedActivityArchiveSyncResult(
-            records: local,
-            kind: kind,
-            lastSlot: lastSlot,
-            remoteWritten: false,
-            truncated: document.truncated,
+            truncated: desired.truncated,
           ),
         );
       }
 
       final nextSlot = lastSlot + 1;
+      final delta = SwapPrivateHistoryDocument(
+        kind: kind,
+        records: pending,
+        truncated: desired.truncated,
+      );
       final write = await _repository.create(
         account: account,
         key: _key(kind, nextSlot),
-        plaintext: plaintext,
+        plaintext: delta.encode(),
       );
       if (write is PrivateStateCreated) {
+        archive = _mergeArchiveDocuments(archive, delta, kind: kind);
         await _saveMetadata(
           account: account,
           kind: kind,
           lastSlot: nextSlot,
           hidden: hidden,
-          lastSnapshot: plaintext,
+          archiveState: archive.encode(),
         );
         return _complete(
           outcome: 'written',
-          archiveRecords: document.records.length,
+          archiveRecords: archive.records.length,
           result: FinalizedActivityArchiveSyncResult(
             records: local,
             kind: kind,
             lastSlot: nextSlot,
             remoteWritten: true,
-            truncated: document.truncated,
+            truncated: archive.truncated,
           ),
         );
       }
@@ -256,7 +234,7 @@ class FinalizedActivityArchiveSync
         slot: nextSlot,
       );
       if (winner == null) continue;
-      remote = winner;
+      archive = _mergeArchiveDocuments(archive, winner, kind: kind);
       lastSlot = nextSlot;
       await _replica.reconcileRemoteRecords(
         accountUuid: account.accountUuid,
@@ -303,14 +281,14 @@ class FinalizedActivityArchiveSync
     required SwapPrivateHistoryKind kind,
     required int lastSlot,
     required Set<String> hidden,
-    required Uint8List? lastSnapshot,
+    required Uint8List? archiveState,
   }) => _metadataStore.save(
     accountUuid: account.accountUuid,
     kind: kind,
     metadata: FinalizedActivityArchiveMetadata(
       lastSlot: lastSlot,
       hiddenRecordIds: hidden,
-      lastSnapshot: lastSnapshot,
+      archiveState: archiveState,
     ),
   );
 
@@ -348,20 +326,69 @@ class FinalizedActivityArchiveSync
   }
 }
 
-SwapPrivateHistoryDocument? _decodeCachedSnapshot(
-  Uint8List? snapshot, {
+SwapPrivateHistoryDocument? _decodeArchiveState(
+  Uint8List? state, {
   required SwapPrivateHistoryKind expectedKind,
 }) {
-  if (snapshot == null) return null;
+  if (state == null) return null;
   try {
-    return SwapPrivateHistoryDocument.decode(
-      snapshot,
-      expectedKind: expectedKind,
-    );
+    return SwapPrivateHistoryDocument.decode(state, expectedKind: expectedKind);
   } on Object {
     return null;
   }
 }
+
+SwapPrivateHistoryDocument _mergeArchiveDocuments(
+  SwapPrivateHistoryDocument? archive,
+  SwapPrivateHistoryDocument delta, {
+  required SwapPrivateHistoryKind kind,
+}) {
+  var merged = SwapPrivateHistoryDocument.compact(
+    kind: kind,
+    records: _mergeFinalizedRecords(
+      archive?.records ?? const [],
+      delta.records,
+      kind: kind,
+    ),
+  );
+  if ((archive?.truncated == true || delta.truncated) && !merged.truncated) {
+    merged = SwapPrivateHistoryDocument(
+      kind: kind,
+      records: merged.records,
+      truncated: true,
+    );
+  }
+  return merged;
+}
+
+List<SwapIntentRecord> _changedRecords(
+  SwapPrivateHistoryDocument? archive,
+  SwapPrivateHistoryDocument desired, {
+  required SwapPrivateHistoryKind kind,
+}) {
+  final archivedById = {
+    for (final record in archive?.records ?? const <SwapIntentRecord>[])
+      record.id: record,
+  };
+  final changed = <SwapIntentRecord>[];
+  for (final record in desired.records) {
+    final archived = archivedById[record.id];
+    if (archived == null ||
+        !_recordsHaveSameWireState(archived, record, kind: kind)) {
+      changed.add(record);
+    }
+  }
+  return changed;
+}
+
+bool _recordsHaveSameWireState(
+  SwapIntentRecord left,
+  SwapIntentRecord right, {
+  required SwapPrivateHistoryKind kind,
+}) => _bytesEqual(
+  SwapPrivateHistoryDocument(kind: kind, records: [left]).encode(),
+  SwapPrivateHistoryDocument(kind: kind, records: [right]).encode(),
+);
 
 List<SwapIntentRecord> _mergeFinalizedRecords(
   Iterable<SwapIntentRecord> remote,
