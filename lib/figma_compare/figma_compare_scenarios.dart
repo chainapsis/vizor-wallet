@@ -330,6 +330,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-payment-link-ready-celebrating',
+    description: 'Mobile Gift Card deposited celebration state',
+    builder: buildMobilePaymentLinkReadyCelebratingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-ready-waiting',
+    description: 'Mobile Gift Card confirmation waiting state',
+    builder: buildMobilePaymentLinkReadyWaitingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-ready-shareable',
+    description: 'Mobile Gift Card shareable state',
+    builder: buildMobilePaymentLinkReadyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-payment-link-redeem-paste',
     description: 'Mobile Gift Card redeem paste state',
     builder: buildMobilePaymentLinkRedeemPasteUseCase,

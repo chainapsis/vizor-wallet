@@ -5,9 +5,49 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_mobile_use_cases.dart';
 
 void main() {
+  testWidgets('home help icon opens the Gift Card explanation sheet', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobilePaymentLinkHomeEmptyUseCase);
+
+    expect(find.text('How Gift Cards work'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_help_action')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('How Gift Cards work'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_help_close_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('received Gift Card flips to its message', (tester) async {
+    await _pumpUseCase(tester, buildMobilePaymentLinkReceivedUseCase);
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+    await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.duration);
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_back')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Hey there! Welcome to the Shielded World ;)'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('interactive preview accepts amount and message input', (
     tester,
   ) async {
@@ -50,7 +90,10 @@ void main() {
     );
     await tester.pump();
     expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
-    expect(find.text('Start typing...'), findsNothing);
+    expect(
+      tester.widget<TextField>(messageEditor).decoration?.hintText,
+      isNull,
+    );
 
     await tester.enterText(messageEditor, 'Congratulations!');
     await tester.pump();
@@ -61,11 +104,29 @@ void main() {
     await tester.tap(messageContinue);
     await tester.pump();
 
-    expect(find.text('Review Gift Card'), findsOneWidget);
+    expect(find.text('Review a Card'), findsOneWidget);
     expect(find.text('Card amount'), findsOneWidget);
     expect(find.text('4.49 ZEC'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
+  tester.view
+    ..physicalSize = const Size(393, 852)
+    ..devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Builder(builder: builder),
+      ),
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _pumpInteractivePreview(WidgetTester tester) async {

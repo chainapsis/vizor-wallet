@@ -7,9 +7,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -105,10 +107,11 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkReviewMobileView(
       card: PaymentLinkGiftCard(
-        artwork: _fixtureArtwork,
+        artwork: PaymentLinkCardArtwork.knightMagic,
         cardWidth: _cardWidth,
         cardHeight: _cardHeight,
         amountText: _fixtureAmount,
+        supportingText: r'$142.23',
         showCaret: false,
       ),
       onBack: _noop,
@@ -119,6 +122,45 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
       onFeeHelp: _noop,
     ),
   );
+}
+
+Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.waiting,
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      onHome: _noop,
+      decoration: PaymentLinkConfetti(),
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReadyWaitingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.soon,
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      onHome: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReadyUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _MobileReadyFixture());
 }
 
 Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
@@ -152,23 +194,7 @@ Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
 }
 
 Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(
-    child: PaymentLinkReceivedMobileView(
-      card: PaymentLinkGiftCard(
-        artwork: PaymentLinkCardArtwork.knightMagic,
-        cardWidth: kPaymentLinkMobileCardWidth,
-        cardHeight: kPaymentLinkMobileCardHeight,
-        amountText: _fixtureAmount,
-        supportingText: r'$142.23',
-        showCaret: false,
-      ),
-      hasMessage: true,
-      onClose: _noop,
-      onClaim: _noop,
-      onRevealMessage: _noop,
-      decoration: PaymentLinkConfetti(),
-    ),
-  );
+  return const _MobilePaymentLinkFrame(child: _MobileReceivedFixture());
 }
 
 Widget buildMobilePaymentLinkInteractiveUseCase(BuildContext context) {
@@ -188,6 +214,12 @@ Widget _artworkSelector(PaymentLinkCardArtwork selected) {
     artworkHeight: 56,
     itemGap: AppSpacing.xs,
     selectionInset: EdgeInsets.zero,
+    selectionBorderWidth: 2.5,
+    selectionBorderRadius: 15,
+    selectedCheckSize: 24,
+    edgeMaskInset: AppSpacing.sm,
+    edgeFadeFraction: 0.3,
+    inactiveOpacity: 1,
     onSelected: _ignoreArtwork,
   );
 }
@@ -204,9 +236,94 @@ class _PaymentLinkHomeFixture extends StatelessWidget {
         excludeFromSemantics: true,
       ),
       onBack: _noop,
-      onShowHelp: _noop,
+      onShowHelp: () => showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => PaymentLinkHowItWorksMobileSheet(
+          onClose: () => Navigator.of(sheetContext).pop(),
+        ),
+      ),
       onCreate: _noop,
       onRedeem: _noop,
+    );
+  }
+}
+
+class _MobileReadyFixture extends StatefulWidget {
+  const _MobileReadyFixture();
+
+  @override
+  State<_MobileReadyFixture> createState() => _MobileReadyFixtureState();
+}
+
+class _MobileReadyFixtureState extends State<_MobileReadyFixture> {
+  var _showBack = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.ready,
+      card: PaymentLinkCardFlip(
+        showBack: _showBack,
+        front: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        back: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          showBack: true,
+          message: _fixtureMessage,
+        ),
+      ),
+      onHome: _noop,
+      onCopy: _noop,
+      onCardTap: () => setState(() => _showBack = !_showBack),
+      decoration: const PaymentLinkConfetti(),
+    );
+  }
+}
+
+class _MobileReceivedFixture extends StatefulWidget {
+  const _MobileReceivedFixture();
+
+  @override
+  State<_MobileReceivedFixture> createState() => _MobileReceivedFixtureState();
+}
+
+class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
+  var _showBack = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkReceivedMobileView(
+      card: PaymentLinkCardFlip(
+        showBack: _showBack,
+        front: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        back: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          showBack: true,
+          message: _fixtureMessage,
+        ),
+      ),
+      hasMessage: true,
+      onClose: _noop,
+      onClaim: _noop,
+      decoration: const PaymentLinkConfetti(),
+      onRevealMessage: () => setState(() => _showBack = !_showBack),
     );
   }
 }
@@ -315,7 +432,7 @@ class _FocusedMessageFixtureState extends State<_FocusedMessageFixture> {
               cardWidth: _cardWidth,
               cardHeight: _cardHeight,
               showBack: true,
-              emptyMessageLabel: '|',
+              emptyMessageLabel: '',
             )
           : PaymentLinkGiftCard(
               artwork: _fixtureArtwork,
@@ -481,6 +598,12 @@ class _MobilePaymentLinkInteractivePreviewState
           artworkHeight: 56,
           itemGap: AppSpacing.xs,
           selectionInset: EdgeInsets.zero,
+          selectionBorderWidth: 2.5,
+          selectionBorderRadius: 15,
+          selectedCheckSize: 24,
+          edgeMaskInset: AppSpacing.sm,
+          edgeFadeFraction: 0.3,
+          inactiveOpacity: 1,
           onSelected: (artwork) => setState(() => _artwork = artwork),
         ),
         onBack: _noop,
