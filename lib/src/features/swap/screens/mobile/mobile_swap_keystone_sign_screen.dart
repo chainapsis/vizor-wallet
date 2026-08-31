@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../../send/screens/mobile/mobile_send_screen.dart'
     show MobileSaplingParamsSheet;
@@ -95,7 +96,10 @@ class _MobileSwapKeystoneSignScreenState
       onSigned: _handleSignedPczt,
       friendlyError: _friendlyError,
       onCancel: _handleCancel,
-      signedPcztDecoder: widget.signedPcztDecoder,
+      signedPcztDecoder: widget.signedPcztDecoder ?? _decodeSigningResponse,
+      expectedSignedUrType: 'zcash-batch-sig-result',
+      unexpectedUrMessage:
+          'Open the signature result QR on Keystone, then scan again.',
       scannerBuilder: widget.scannerBuilder,
       forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
       keyPrefix: 'mobile_swap_keystone_sign',
@@ -171,6 +175,20 @@ class _MobileSwapKeystoneSignScreenState
       builder: (_) => const MobileSaplingParamsSheet(),
     );
     return confirmed == true;
+  }
+
+  Future<Uint8List> _decodeSigningResponse(List<int> responseCbor) async {
+    final service = _signingService;
+    final draft = _draft;
+    if (service == null || draft == null) {
+      throw StateError('Keystone signing could not be prepared.');
+    }
+    return Uint8List.fromList(
+      await service.decodeSigningResponse(
+        draft: draft,
+        responseCbor: responseCbor,
+      ),
+    );
   }
 
   Future<void> _handleSignedPczt(
@@ -335,6 +353,11 @@ class _MobileSwapKeystoneSignScreenState
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';
     }
+    final batchError = keystoneBatchSigningFriendlyError(
+      error,
+      subject: 'deposit',
+    );
+    if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }

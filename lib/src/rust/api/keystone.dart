@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../wallet/keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `action_sig_to_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`
+// These functions are ignored because they are not marked as `pub`: `action_sig_from_api`, `action_sig_to_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`
 
 /// Encode PCZT bytes to a UR string for QR code display.
 Future<String> encodePcztToUr({required List<int> pcztBytes}) =>
@@ -66,6 +66,12 @@ Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
   required List<int> cbor,
 }) =>
     RustLib.instance.api.crateApiKeystoneDecodeZcashSignResultCbor(cbor: cbor);
+
+/// Encode one message's decoded Keystone signatures into the compact blob used
+/// by the wallet's batch-signing completion path.
+Future<Uint8List> encodeKeystoneActionSigs({
+  required List<KeystoneActionSig> sigs,
+}) => RustLib.instance.api.crateApiKeystoneEncodeKeystoneActionSigs(sigs: sigs);
 
 /// Decode the CBOR payload returned from a compact `zcash-batch-sig-result` UR
 /// into flat FRB structs. The echoed request id is checked before the ordered

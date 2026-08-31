@@ -1,11 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../models/swap_models.dart';
 
 final swapHardwareSigningServiceProvider = Provider<SwapHardwareSigningService>(
@@ -20,6 +22,11 @@ abstract interface class SwapHardwareSigningService {
 
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
+  });
+
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
   });
 
   Future<List<int>> addProofsForSigning({
@@ -153,13 +160,37 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
   }) async {
-    final redactedPczt = await rust_sync.redactPcztForSigner(
+    final request = await buildKeystoneBatchSigningRequest(
+      requestId: _swapKeystoneRequestId(draft),
+      pczts: [
+        KeystoneBatchPcztSource(
+          id: _swapKeystoneMessageId,
+          pcztBytes: draft.pcztBytes,
+        ),
+      ],
+    );
+    return request.urParts;
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) async {
+    final prepared = await rust_sync.preparePcztForKeystoneBatch(
       pcztBytes: draft.pcztBytes,
     );
-    return rust_keystone.encodePcztUrParts(
-      pcztBytes: redactedPczt,
-      maxFragmentLen: BigInt.from(140),
+    final request = KeystoneBatchSigningRequest(
+      requestId: _swapKeystoneRequestId(draft),
+      messageIds: const [_swapKeystoneMessageId],
+      expectedSignatureCounts: [prepared.expectedSignatureCount],
+      urParts: const [],
     );
+    final signatureBlobs = await request.decodeResponse(responseCbor);
+    if (signatureBlobs.length != 1) {
+      throw StateError('Keystone returned an invalid swap signature count.');
+    }
+    return signatureBlobs.single;
   }
 
   @override
@@ -207,26 +238,6 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     );
   }
 
-  Future<void> _retainPcztDraftLockUntilExpiry({
-    required SwapHardwarePcztDraft draft,
-  }) async {
-    try {
-      await rust_sync.retainProposalLockUntilExpiry(
-        proposalId: draft.proposalId,
-        sendFlowId: draft.sendFlowId,
-      );
-      log(
-        'SwapHardwareSigning: retained deposit input lock until expiry '
-        'flow=${draft.sendFlowId} proposal=${draft.proposalId}',
-      );
-    } catch (e) {
-      log(
-        'SwapHardwareSigning: retain deposit proposal lock failed '
-        'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$e',
-      );
-    }
-  }
-
   @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
     required SwapHardwarePcztDraft draft,
@@ -235,29 +246,28 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    late final rust_sync.ExtractAndBroadcastPcztResult result;
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-      result = await rust_sync.extractAndBroadcastPczt(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        pcztWithProofsBytes: pcztWithProofsBytes,
-        pcztWithSignaturesBytes: pcztWithSignaturesBytes,
-        spendParamsPath: spendParamsPath,
-        outputParamsPath: outputParamsPath,
-      );
-    } catch (_) {
-      await discardPcztDraft(draft: draft);
-      rethrow;
-    }
-    if (result.status == 'broadcast_unknown' ||
-        result.status == 'broadcasted_storage_failed') {
-      await _retainPcztDraftLockUntilExpiry(draft: draft);
-    } else {
-      await discardPcztDraft(draft: draft);
-    }
+    final dbPath = await getWalletDbPath();
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final stored = await rust_sync
+        .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          proposalId: draft.proposalId,
+          sendFlowId: draft.sendFlowId,
+          pcztWithProofs: [Uint8List.fromList(pcztWithProofsBytes)],
+          signatureBlobs: [Uint8List.fromList(pcztWithSignaturesBytes)],
+          spendParamsPath: spendParamsPath,
+          outputParamsPath: outputParamsPath,
+        );
+    final result = rust_sync.ExtractAndBroadcastPcztResult(
+      txid: stored.txids
+          .split(',')
+          .map((txid) => txid.trim())
+          .firstWhere((txid) => txid.isNotEmpty, orElse: () => ''),
+      status: stored.status,
+      message: stored.message,
+    );
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (e) {
@@ -266,6 +276,11 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     return result;
   }
 }
+
+const _swapKeystoneMessageId = 'swap-deposit';
+
+String _swapKeystoneRequestId(SwapHardwarePcztDraft draft) =>
+    'vizor-${draft.sendFlowId}';
 
 Future<void> _rejectTexDepositForKeystone(String address) async {
   final validation = await rust_sync.validateAddress(address: address);

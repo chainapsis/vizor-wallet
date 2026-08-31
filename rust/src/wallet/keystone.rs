@@ -88,6 +88,11 @@ pub(crate) fn decode_compact_action_sigs(bytes: &[u8]) -> Result<Vec<SpendAuthSi
     }
     let count = usize::try_from(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
         .map_err(|_| "Compact signature count exceeds usize".to_string())?;
+    if count > ZCASH_SIGN_BATCH_MAX_SIGNATURES {
+        return Err(format!(
+            "Compact signature blob exceeds the {ZCASH_SIGN_BATCH_MAX_SIGNATURES}-signature limit"
+        ));
+    }
     let body = &bytes[4..];
     let expected = count
         .checked_mul(COMPACT_ACTION_SIG_LEN)
@@ -1571,5 +1576,13 @@ mod tests {
     fn decode_compact_action_sigs_rejects_short_header() {
         let err = decode_compact_action_sigs(&[0, 0]).expect_err("short header should fail");
         assert!(err.contains("count header"));
+    }
+
+    #[test]
+    fn decode_compact_action_sigs_rejects_signature_count_over_limit() {
+        let count = u32::try_from(ZCASH_SIGN_BATCH_MAX_SIGNATURES + 1).unwrap();
+        let err = decode_compact_action_sigs(&count.to_le_bytes())
+            .expect_err("oversized signature count should fail before allocation");
+        assert!(err.contains("signature limit"));
     }
 }

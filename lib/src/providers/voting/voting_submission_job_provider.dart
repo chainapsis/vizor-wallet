@@ -5,13 +5,13 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
-import '../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../account_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
@@ -263,17 +263,12 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
 
 class _VotingKeystoneSigningRound {
   const _VotingKeystoneSigningRound({
-    required this.requestId,
+    required this.batchRequest,
     required this.requests,
   });
 
-  final String requestId;
+  final KeystoneBatchSigningRequest batchRequest;
   final List<rust_delegate.KeystoneSigningRequest> requests;
-
-  List<String> get messageIds => [
-    for (final request in requests)
-      _votingKeystoneMessageId(request.bundleIndex),
-  ];
 }
 
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
@@ -354,10 +349,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     );
     late final List<VotingKeystoneBatchSignature> batchSignatures;
     try {
-      final decoded = await rust_keystone.decodeZcashBatchSignResponse(
-        cbor: responseCbor,
-        expectedRequestId: signingRound.requestId,
-        messageIds: signingRound.messageIds,
+      final decoded = await signingRound.batchRequest.decodeTypedResponse(
+        responseCbor,
       );
       if (!_isCurrentJob(key: key, generation: generation)) return;
       if (decoded.results.length != signingRound.requests.length) {
@@ -777,7 +770,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final allMessages = _votingKeystoneBatchMessages(requests);
       final roundCounts = await rust_keystone.zcashSignBatchRoundMessageCounts(
         requestId: baseRequestId,
-        messages: allMessages,
+        messages: keystoneBatchMessageInputs(allMessages),
         maxMessages: _votingKeystoneBatchMaxMessages,
       );
       if (roundCounts.isEmpty || roundCounts.first <= 0) {
@@ -788,19 +781,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         throw StateError('Keystone voting batch plan exceeds the request.');
       }
       final roundRequests = requests.sublist(0, messageCount);
-      final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
+      final batchRequest = await buildPreparedKeystoneBatchSigningRequest(
         requestId: baseRequestId,
         messages: _votingKeystoneBatchMessages(roundRequests),
-        maxFragmentLen: BigInt.from(200),
+        maxFragmentLength: _votingKeystoneQrFragmentLength,
       );
       if (!_isCurrentJob(key: key, generation: generation)) return;
       _keystoneSigningRound = _VotingKeystoneSigningRound(
-        requestId: baseRequestId,
+        batchRequest: batchRequest,
         requests: roundRequests,
       );
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForKeystone,
-        keystoneUrParts: urParts,
+        keystoneUrParts: batchRequest.urParts,
         keystoneBatchMemos: [
           for (final request in roundRequests)
             VotingKeystoneBatchMemo(
@@ -1509,6 +1502,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 }
 
 const _votingKeystoneBatchMaxMessages = 40;
+const _votingKeystoneQrFragmentLength = 200;
 
 String _votingKeystoneMessageId(int bundleIndex) =>
     'voting-bundle-$bundleIndex';
@@ -1534,13 +1528,13 @@ String _votingKeystoneRequestId(
   return 'vizor-vote-${sha256.convert(material)}';
 }
 
-List<rust_keystone_wallet.ZcashBatchMessageInput> _votingKeystoneBatchMessages(
+List<KeystonePreparedBatchMessage> _votingKeystoneBatchMessages(
   List<rust_delegate.KeystoneSigningRequest> requests,
 ) => [
   for (final request in requests)
-    rust_keystone_wallet.ZcashBatchMessageInput(
+    KeystonePreparedBatchMessage(
       id: _votingKeystoneMessageId(request.bundleIndex),
-      pcztBytes: request.redactedPcztBytes,
+      redactedPczt: request.redactedPcztBytes,
       expectedSignatureCount: 1,
     ),
 ];

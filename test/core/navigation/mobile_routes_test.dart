@@ -539,7 +539,15 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
   }) async {
-    return const ['ur:zcash-pczt/route-test'];
+    return const ['ur:zcash-sign-batch/route-test'];
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) async {
+    return const [7, 8, 9];
   }
 
   @override

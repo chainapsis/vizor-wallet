@@ -538,7 +538,9 @@ void main() {
       await tester.tap(find.text('Next step'));
       await tester.pump();
 
-      completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1, 2, 3]));
+      completeScan!(
+        const ScanResult(urType: 'zcash-batch-sig-result', data: [1, 2, 3]),
+      );
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
@@ -746,7 +748,9 @@ void main() {
       await tester.tap(find.text('Next step'));
       await tester.pump();
 
-      completeScan!(const ScanResult(urType: 'zcash-pczt', data: [1, 2, 3]));
+      completeScan!(
+        const ScanResult(urType: 'zcash-batch-sig-result', data: [1, 2, 3]),
+      );
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
@@ -1113,7 +1117,15 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
   }) async {
-    return const ['ur:zcash-pczt/test'];
+    return const ['ur:zcash-sign-batch/test'];
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) async {
+    return const [10, 11];
   }
 
   @override

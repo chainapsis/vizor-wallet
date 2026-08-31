@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
@@ -31,8 +32,13 @@ import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
-import 'package:zcash_wallet/src/rust/api/sync.dart' show TexPcztPairResult;
+import 'package:zcash_wallet/src/rust/api/keystone.dart'
+    show KeystoneActionSig, KeystoneMsgSig, KeystoneSigResult;
+import 'package:zcash_wallet/src/rust/api/sync.dart'
+    show KeystoneBatchPczt, TexPcztPairResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
+    show ZcashBatchMessageInput;
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -367,6 +373,7 @@ void main() {
     tester,
   ) async {
     final statusExtras = <Object?>[];
+    final scanExtras = <Object?>[];
 
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
@@ -374,6 +381,7 @@ void main() {
         _reviewArgs(addressType: 'unified'),
         bootstrap: _bootstrap(isHardware: true),
         statusExtras: statusExtras,
+        scanExtras: scanExtras,
       ),
     );
     await tester.pumpAndSettle();
@@ -398,12 +406,47 @@ void main() {
     expect(find.text('Scanning issues?'), findsOneWidget);
     expect(find.text('status-route'), findsNothing);
     expect(rustApi.createPcztCalls, 1);
+    expect(rustApi.prepareBatchCalls, 1);
+    expect(rustApi.encodeBatchCalls, 1);
+    expect(rustApi.encodeFullPcztCalls, 0);
+  });
+
+  testWidgets('Keystone signature limit fails before showing a QR', (
+    tester,
+  ) async {
+    rustApi.prepareBatchError = StateError(
+      'Keystone batch signing supports at most 96 spend signatures per '
+      'transaction; this transaction requires 97',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+
+    expect(
+      find.text(
+        'This transaction uses too many inputs for Keystone batch signing. '
+        'Try a smaller amount.',
+      ),
+      findsWidgets,
+    );
+    expect(rustApi.prepareBatchCalls, 1);
+    expect(rustApi.encodeBatchCalls, 0);
   });
 
   testWidgets('Keystone handoff carries proofs and signatures to status', (
     tester,
   ) async {
     final statusExtras = <Object?>[];
+    final scanExtras = <Object?>[];
 
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
@@ -411,6 +454,7 @@ void main() {
         _reviewArgs(addressType: 'unified'),
         bootstrap: _bootstrap(isHardware: true),
         statusExtras: statusExtras,
+        scanExtras: scanExtras,
       ),
     );
     await tester.pumpAndSettle();
@@ -421,6 +465,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('keystone-scan-route'), findsOneWidget);
+    final scanArgs = scanExtras.single as KeystoneSendScanArgs;
+    expect(scanArgs.expectedUrType, 'zcash-batch-sig-result');
+    expect(scanArgs.decodePcztResponse, isFalse);
     await tester.tap(find.text('keystone-scan-route'));
     await tester.pumpAndSettle();
 
@@ -431,6 +478,7 @@ void main() {
     expect(keystoneArgs.pcztWithProofs.single, _fakeProofsBytes);
     expect(keystoneArgs.pcztWithSignatures.single, _fakeSignatureBytes);
     expect(keystoneArgs.reviewArgs.proposalId, BigInt.one);
+    expect(rustApi.decodeBatchCalls, 1);
 
     // The proposal was consumed by createPcztFromProposal; the handoff must
     // not discard it.
@@ -472,6 +520,9 @@ void main() {
     final handoff = statusExtras.single as KeystoneBroadcastArgs;
     expect(handoff.pcztWithProofs, hasLength(2));
     expect(handoff.pcztWithSignatures, hasLength(2));
+    expect(rustApi.prepareBatchCalls, 0);
+    expect(rustApi.encodeBatchCalls, 0);
+    expect(rustApi.encodeFullPcztCalls, 2);
   });
 
   testWidgets('Keystone status survives a router refresh after handoff', (
@@ -723,6 +774,7 @@ Widget _harness(
   AppBootstrapState? bootstrap,
   AddressBookRepository? addressBookRepository,
   List<Object?>? statusExtras,
+  List<Object?>? scanExtras,
   Listenable? routerRefresh,
 }) {
   final router = GoRouter(
@@ -736,10 +788,13 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/keystone/scan',
-        builder: (context, _) => GestureDetector(
-          onTap: () => context.pop(Uint8List.fromList(_fakeSignatureBytes)),
-          child: const Text('keystone-scan-route'),
-        ),
+        builder: (context, state) {
+          scanExtras?.add(state.extra);
+          return GestureDetector(
+            onTap: () => context.pop(Uint8List.fromList(_fakeSignatureBytes)),
+            child: const Text('keystone-scan-route'),
+          );
+        },
       ),
       GoRoute(
         path: '/send/status',
@@ -913,14 +968,24 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   int createPcztCalls = 0;
+  int prepareBatchCalls = 0;
+  int encodeBatchCalls = 0;
+  int encodeFullPcztCalls = 0;
+  int decodeBatchCalls = 0;
   int previousTransactionCount = 0;
+  Object? prepareBatchError;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
   void reset() {
     discardCalls.clear();
     createPcztCalls = 0;
+    prepareBatchCalls = 0;
+    encodeBatchCalls = 0;
+    encodeFullPcztCalls = 0;
+    decodeBatchCalls = 0;
     previousTransactionCount = 0;
+    prepareBatchError = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -1012,11 +1077,71 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<KeystoneBatchPczt> crateApiSyncPreparePcztForKeystoneBatch({
+    required List<int> pcztBytes,
+  }) async {
+    prepareBatchCalls++;
+    final error = prepareBatchError;
+    if (error != null) throw error;
+    return KeystoneBatchPczt(
+      redactedPczt: Uint8List.fromList([4, 5, 6]),
+      expectedSignatureCount: 1,
+    );
+  }
+
+  @override
   Future<List<String>> crateApiKeystoneEncodePcztUrParts({
     required List<int> pcztBytes,
     required BigInt maxFragmentLen,
   }) async {
+    encodeFullPcztCalls++;
     return const ['UR:ZCASH-PCZT/TESTPART'];
+  }
+
+  @override
+  Future<List<String>> crateApiKeystoneEncodeZcashSignBatchUrParts({
+    required String requestId,
+    required List<ZcashBatchMessageInput> messages,
+    required BigInt maxFragmentLen,
+  }) async {
+    encodeBatchCalls++;
+    return const ['UR:ZCASH-SIGN-BATCH/TESTPART'];
+  }
+
+  @override
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) async {
+    decodeBatchCalls++;
+    return KeystoneSigResult(
+      firmwareVersion: Uint8List.fromList([1, 0, 0]),
+      requestId: Uint8List.fromList(expectedRequestId.codeUnits),
+      results: [
+        for (final id in messageIds)
+          KeystoneMsgSig(
+            messageId: Uint8List.fromList(id.codeUnits),
+            sigs: [
+              KeystoneActionSig(pool: 0, actionIndex: 0, sig: Uint8List(64)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  @override
+  Future<Uint8List> crateApiKeystoneEncodeKeystoneActionSigs({
+    required List<KeystoneActionSig> sigs,
+  }) async {
+    return Uint8List.fromList(_fakeSignatureBytes);
+  }
+
+  @override
+  Future<Uint8List> crateApiKeystoneDecodePcztFromCbor({
+    required List<int> cbor,
+  }) async {
+    return Uint8List.fromList(_fakeSignatureBytes);
   }
 
   @override

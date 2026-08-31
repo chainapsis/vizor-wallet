@@ -11,6 +11,7 @@ import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
+import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
@@ -65,6 +66,7 @@ class _MobileKeystoneSignScreenState
   bool _proposalOwnershipTransferred = false;
   late final MobileKeystoneSigningRounds _rounds;
   List<MobileKeystonePcztSigningPayload>? _payloads;
+  List<KeystoneBatchSigningRequest?>? _batchRequests;
 
   @override
   void initState() {
@@ -97,6 +99,10 @@ class _MobileKeystoneSignScreenState
                 'Follow the steps on your device.',
       preparePczt: _preparePczt,
       onSigned: _handleSignedPczt,
+      signedPcztDecoder: _decodeKeystoneResponse,
+      expectedSignedUrType: widget.args.addressType == 'tex'
+          ? 'zcash-pczt'
+          : 'zcash-batch-sig-result',
       friendlyError: _friendlyError,
       keyPrefix: 'mobile_keystone_sign',
       scanCaption: 'Scan the QR code on your Keystone to finish sending',
@@ -161,18 +167,34 @@ class _MobileKeystoneSignScreenState
           ),
         ];
     final payloads = <MobileKeystonePcztSigningPayload>[];
+    final batchRequests = <KeystoneBatchSigningRequest?>[];
     final signerPczts = texPczts?.signerPczts;
     for (var index = 0; index < pczts.length; index++) {
       final pczt = pczts[index];
-      final redacted =
-          signerPczts?[index] ??
-          await rust_sync.redactPcztForSigner(pcztBytes: pczt);
+      final KeystoneBatchSigningRequest? batchRequest;
+      final List<String> urParts;
+      if (widget.args.addressType == 'tex') {
+        batchRequest = null;
+        urParts = await rust_keystone.encodePcztUrParts(
+          pcztBytes: signerPczts![index],
+          maxFragmentLen: BigInt.from(140),
+        );
+      } else {
+        batchRequest = await buildKeystoneBatchSigningRequest(
+          requestId:
+              'vizor-send-${widget.args.sendFlowId}-transaction-${index + 1}',
+          pczts: [
+            KeystoneBatchPcztSource(
+              id: 'send-transaction-${index + 1}',
+              pcztBytes: pczt,
+            ),
+          ],
+        );
+        urParts = batchRequest.urParts;
+      }
       payloads.add(
         MobileKeystonePcztSigningPayload(
-          urParts: await rust_keystone.encodePcztUrParts(
-            pcztBytes: redacted,
-            maxFragmentLen: BigInt.from(140),
-          ),
+          urParts: urParts,
           pcztWithProofs: rust_sync.addProofsToPczt(
             pcztBytes: pczt,
             spendParamsPath: widget.args.needsSaplingParams
@@ -184,9 +206,25 @@ class _MobileKeystoneSignScreenState
           ),
         ),
       );
+      batchRequests.add(batchRequest);
     }
     _payloads = payloads;
+    _batchRequests = batchRequests;
     return payloads[_rounds.index];
+  }
+
+  Future<Uint8List> _decodeKeystoneResponse(List<int> cbor) async {
+    final batchRequest = _batchRequests?[_rounds.index];
+    if (batchRequest == null) {
+      return Uint8List.fromList(
+        await rust_keystone.decodePcztFromCbor(cbor: cbor),
+      );
+    }
+    final signatureBlobs = await batchRequest.decodeResponse(cbor);
+    if (signatureBlobs.length != 1) {
+      throw StateError('Keystone returned an invalid send signature count.');
+    }
+    return Uint8List.fromList(signatureBlobs.single);
   }
 
   Future<bool> _confirmSaplingParamsDownload(BuildContext context) async {
@@ -220,6 +258,8 @@ class _MobileKeystoneSignScreenState
         lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be signed.';
     }
+    final batchError = keystoneBatchSigningFriendlyError(error);
+    if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
     }

@@ -50,8 +50,10 @@ class SendReviewArgs {
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
 }
 
-/// Hardware-wallet handoff payload: the phone-side proof clone plus the
-/// device-signed clone, combined by `extract_and_broadcast_pczt`.
+/// Hardware-wallet handoff payload: the phone-side proof PCZT plus the compact
+/// Orchard/Ironwood signatures returned by Keystone's batch protocol. TEX is
+/// the compatibility exception and carries the legacy full signer PCZT because the
+/// batch response cannot represent its transparent-input signature.
 class KeystoneBroadcastArgs {
   const KeystoneBroadcastArgs({
     required this.reviewArgs,
@@ -473,25 +475,49 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       // The Rust orchestration owns proposal-lock cleanup on every outcome
       // from this point onward, including validation and atomic-store errors.
       proposalReleased = true;
-      final result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        proposalId: args.proposalId,
-        sendFlowId: args.sendFlowId,
-        pcztWithProofs: keystone.pcztWithProofs
-            .map(Uint8List.fromList)
-            .toList(),
-        pcztWithSignatures: keystone.pcztWithSignatures
-            .map(Uint8List.fromList)
-            .toList(),
-        spendParamsPath: args.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: args.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      );
+      final rust_sync.StoreAndBroadcastPcztsResult result;
+      if (args.addressType == 'tex') {
+        result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          pcztWithProofs: keystone.pcztWithProofs
+              .map(Uint8List.fromList)
+              .toList(),
+          pcztWithSignatures: keystone.pcztWithSignatures
+              .map(Uint8List.fromList)
+              .toList(),
+          spendParamsPath: args.needsSaplingParams
+              ? saplingParams.spendPath
+              : null,
+          outputParamsPath: args.needsSaplingParams
+              ? saplingParams.outputPath
+              : null,
+        );
+      } else {
+        result = await rust_sync
+            .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+              pcztWithProofs: keystone.pcztWithProofs
+                  .map(Uint8List.fromList)
+                  .toList(),
+              signatureBlobs: keystone.pcztWithSignatures
+                  .map(Uint8List.fromList)
+                  .toList(),
+              spendParamsPath: args.needsSaplingParams
+                  ? saplingParams.spendPath
+                  : null,
+              outputParamsPath: args.needsSaplingParams
+                  ? saplingParams.outputPath
+                  : null,
+            );
+      }
       txids = result.txids;
       broadcastComplete = result.status == 'broadcasted';
       broadcastExpired = result.status == 'expired';

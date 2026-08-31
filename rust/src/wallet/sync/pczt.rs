@@ -1,28 +1,33 @@
 //! Hardware-wallet PCZT pipeline.
 //!
 //! Software sends are handled by `sync/send.rs`. This module owns the
-//! PCZT pipeline used by Keystone signing. A proposal is IO-finalized, proved
-//! locally, redacted for the signer, and returned with device signatures.
+//! PCZT pipeline used by Keystone signing. A proposal is IO-finalized and
+//! proved locally. Normal sends carry a batch-redacted signer view to Keystone
+//! and receive only compact Orchard/Ironwood signatures in return.
 //!
 //! ```text
 //!   1. create_pczt_from_proposal                      → base PCZT (phone)
 //!      (IO-finalized, no proofs, no signatures)
 //!         │
 //!         ├── 2a. add_proofs_to_pczt(base, params?)   → pcztWithProofs   (phone, CPU)
-//!         │       (Orchard proof always; Sapling output proofs if
+//!         │       (Orchard or Ironwood proof; Sapling output proofs if
 //!         │        the proposal has a non-empty Sapling bundle)
 //!         │
-//!         └── 2b. redact_pczt_for_signer(base)        → redactedPczt     (phone)
-//!                 → Keystone device (animated QR)
-//!                 → device signs Orchard spend_auth_sig
-//!                 → signed PCZT back to phone          → pcztWithSignatures
-//!                                                            │
-//!   3. store_and_broadcast_signed_pczts_for_proposal(          │
-//!        [pcztWithProofs...], [pcztWithSignatures...],         │
+//!         └── 2b. prepare_pczt_for_keystone_batch(base) → compact signer PCZT
+//!                 → zcash-sign-batch QR
+//!                 → device signs Orchard/Ironwood spend_auth_sig
+//!                 → zcash-batch-sig-result QR           → signatures only
+//!                                                             │
+//!   3. store_and_broadcast_pczts_with_compact_signatures_for_proposal(
+//!        [pcztWithProofs...], [signatures...],                   │
 //!      )                                               → validate/finalize all
 //!                                                        + ordered broadcast
 //!                                                        + atomic prefix store ◄┘
 //! ```
+//!
+//! The batch response cannot carry transparent-input or Sapling spend
+//! signatures. TEX and transparent shielding therefore retain the full-PCZT
+//! compatibility path until the batch protocol can represent those signatures.
 //!
 //! ## Critical invariants (each of these was a real regression at some point)
 //!
@@ -93,6 +98,12 @@ pub struct ExtractAndBroadcastPcztResult {
 pub struct TexPcztPair {
     pub pczts: Vec<Vec<u8>>,
     pub signer_pczts: Vec<Vec<u8>>,
+}
+
+#[derive(Debug)]
+pub struct KeystoneBatchPczt {
+    pub redacted_pczt: Vec<u8>,
+    pub expected_signature_count: u32,
 }
 
 pub struct StoreAndBroadcastPcztsResult {
@@ -759,7 +770,8 @@ pub fn retain_proposal_lock_until_expiry(
 
 /// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.
 /// Returns a PCZT-with-proofs, which must later be combined with the
-/// signed PCZT returned by the hardware signer.
+/// compact signatures returned by the hardware signer. The legacy TEX and
+/// transparent-shielding paths combine it with a full signed PCZT instead.
 ///
 /// Sapling params paths are only required when the PCZT contains a
 /// non-empty Sapling bundle (e.g. the recipient is a Sapling-only
@@ -819,25 +831,65 @@ pub fn add_proofs_to_pczt(
         .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
 }
 
-/// Redact information from a PCZT that the signer role doesn't need
-/// (witnesses, proprietary metadata). Produces the bytes to send to
-/// the hardware wallet for signing.
+/// Legacy full-PCZT redaction for transparent-input transactions that the
+/// signatures-only batch response cannot represent.
 pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, false)
 }
 
-/// Redact a PCZT for a Keystone **migration batch** request.
+/// Redact a PCZT for a Keystone batch-signing request.
 ///
 /// The v6 path uses librustzcash's batch signer policy, including its checked
 /// compaction of regenerable Orchard and Ironwood fields. Keystone requires an
 /// entirely unsigned batch request, so this additionally removes signatures
 /// retained on preauthorized padding spends. The wallet keeps the unredacted
 /// PCZT for proof and signature combination.
-///
-/// Only use this for the migration batch flow; the single-transaction hardware
-/// send keeps [`redact_pczt_for_signer`].
 pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     redact_pczt_for_signer_inner(pczt_bytes, true)
+}
+
+/// Enforce Keystone's per-round signature cap before displaying the request QR.
+fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
+    if count == 0 {
+        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".to_string());
+    }
+    if count > crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES {
+        return Err(format!(
+            "Keystone batch signing supports at most {} spend signatures per transaction; \
+             this transaction requires {count}",
+            crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+        ));
+    }
+    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".to_string())
+}
+
+/// Prepare one PCZT for Keystone's signatures-only batch protocol.
+///
+/// The compact response can carry only Orchard and Ironwood spend
+/// authorization signatures and at most 96 signatures for one transaction.
+/// Reject unsupported inputs and oversized signing sets before the QR is
+/// displayed so callers cannot start a round the device cannot complete.
+pub fn prepare_pczt_for_keystone_batch(pczt_bytes: &[u8]) -> Result<KeystoneBatchPczt, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse PCZT for Keystone batch signing: {e:?}"))?;
+    if !pczt.transparent().inputs().is_empty() {
+        return Err(
+            "Keystone batch signing does not support transparent transaction inputs".to_string(),
+        );
+    }
+    if !pczt.sapling().spends().is_empty() {
+        return Err(
+            "Keystone batch signing does not support Sapling transaction inputs".to_string(),
+        );
+    }
+
+    let expected_signature_count =
+        checked_keystone_batch_signature_count(unsigned_orchard_action_locations(&pczt).len())?;
+
+    Ok(KeystoneBatchPczt {
+        redacted_pczt: serialize_signer_view(apply_signer_redaction(pczt, true))?,
+        expected_signature_count,
+    })
 }
 
 /// Applies the standard signer policy, plus Keystone's additional migration
@@ -845,8 +897,8 @@ pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String
 fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     use pczt::roles::redactor::Redactor;
 
-    // The compact signer view requires PCZT v2, while legacy v5 signing uses
-    // v1 on the wire. Keep the existing local policy for v5 and ordinary sends.
+    // The compact signer view requires PCZT v2, while v5 signing uses v1 on
+    // the wire. Keep the existing local redaction policy for v5 batches.
     let compact =
         for_batch && *pczt.global().tx_version() == zcash_protocol::constants::V6_TX_VERSION;
     let pczt = if compact {
@@ -855,11 +907,14 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
         pczt
     };
 
-    fn redact_bundle(r: &mut pczt::roles::redactor::orchard::OrchardRedactor<'_>, compact: bool) {
+    fn redact_bundle(
+        r: &mut pczt::roles::redactor::orchard::OrchardRedactor<'_>,
+        clear_signatures: bool,
+    ) {
         r.redact_actions(|mut ar| {
             ar.clear_spend_witness();
             ar.redact_output_proprietary("zcash_client_backend:output_info");
-            if compact {
+            if clear_signatures {
                 // librustzcash retains signatures for preauthorized protocol
                 // padding spends. Keystone's batch protocol rejects any
                 // request containing a spend-authorization signature; the
@@ -872,11 +927,11 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     let mut redactor = Redactor::new(pczt)
         .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
         .redact_orchard_with(|mut r| {
-            redact_bundle(&mut r, compact);
+            redact_bundle(&mut r, for_batch);
         });
 
     redactor = redactor.redact_ironwood_with(|mut r| {
-        redact_bundle(&mut r, compact);
+        redact_bundle(&mut r, for_batch);
     });
 
     redactor
@@ -1265,7 +1320,58 @@ fn prepare_signed_pczts(
     Ok(prepared)
 }
 
-/// Validates every signed PCZT, broadcasts it in dependency order, and then
+fn prepare_compact_signed_pczts(
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<pczt::roles::signer::SpendAuthSignature>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<Vec<PreparedSignedPczt>, String> {
+    if proofs.is_empty() || proofs.len() != signatures.len() {
+        return Err("Invalid Keystone signature batch message count".to_string());
+    }
+    ensure_tex_pczt_dependency(proofs)?;
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+    let mut seen = std::collections::HashSet::new();
+    let prepared = proofs
+        .iter()
+        .zip(signatures)
+        .enumerate()
+        .map(|(index, (proof, signatures))| {
+            preflight_orchard_spend_auth_signatures(proof, signatures).map_err(|error| {
+                format!(
+                    "Validate Keystone signature batch message {}: {error}",
+                    index + 1
+                )
+            })?;
+            let pczt = pczt::Pczt::parse(proof)
+                .map_err(|error| format!("Parse PCZT with proofs: {error:?}"))?;
+            let combined = apply_compact_orchard_spend_auth_signatures(pczt, signatures)?;
+            let extracted =
+                finalize_and_extract(combined.clone(), sapling_vks.as_ref()).map_err(|error| {
+                    format!(
+                        "Finalize Keystone signature batch message {}: {error}",
+                        index + 1
+                    )
+                })?;
+            if !seen.insert(extracted.txid) {
+                return Err("Duplicate signed PCZT transaction".to_string());
+            }
+            Ok(PreparedSignedPczt {
+                combined,
+                extracted,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(prepared)
+}
+
+enum PcztSignatures<'a> {
+    Full(&'a [Vec<u8>]),
+    Compact(&'a [Vec<pczt::roles::signer::SpendAuthSignature>]),
+}
+
+/// Legacy full-PCZT completion for transparent-input transactions. It
+/// validates every signed PCZT, broadcasts it in dependency order, and then
 /// atomically persists only the accepted-or-ambiguous prefix. Definite
 /// rejections are never written to the wallet DB. The outer SQLite transaction
 /// makes each PCZT-aware store participate in the same commit, so a later store
@@ -1278,6 +1384,59 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
     send_flow_id: &str,
     proofs: &[Vec<u8>],
     signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    store_and_broadcast_pczts_for_proposal(
+        db_path,
+        lightwalletd_url,
+        network,
+        proposal_id,
+        send_flow_id,
+        proofs,
+        PcztSignatures::Full(signatures),
+        spend_params_path,
+        output_params_path,
+    )
+    .await
+}
+
+/// Validate a signatures-only Keystone response, broadcast the corresponding
+/// wallet-owned proof PCZTs in dependency order, and atomically persist the
+/// accepted-or-ambiguous prefix.
+pub async fn store_and_broadcast_pczts_with_compact_signatures_for_proposal(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proposal_id: u64,
+    send_flow_id: &str,
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<pczt::roles::signer::SpendAuthSignature>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    store_and_broadcast_pczts_for_proposal(
+        db_path,
+        lightwalletd_url,
+        network,
+        proposal_id,
+        send_flow_id,
+        proofs,
+        PcztSignatures::Compact(signatures),
+        spend_params_path,
+        output_params_path,
+    )
+    .await
+}
+
+async fn store_and_broadcast_pczts_for_proposal(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proposal_id: u64,
+    send_flow_id: &str,
+    proofs: &[Vec<u8>],
+    signatures: PcztSignatures<'_>,
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<StoreAndBroadcastPcztsResult, String> {
@@ -1301,13 +1460,20 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
 
     // This performs all correlation, dependency, signature, proof, and
     // finalization checks before either the DB or the network is touched.
-    let prepared =
-        match prepare_signed_pczts(proofs, signatures, spend_params_path, output_params_path) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
-            }
-        };
+    let prepared = match signatures {
+        PcztSignatures::Full(signatures) => {
+            prepare_signed_pczts(proofs, signatures, spend_params_path, output_params_path)
+        }
+        PcztSignatures::Compact(signatures) => {
+            prepare_compact_signed_pczts(proofs, signatures, spend_params_path, output_params_path)
+        }
+    };
+    let prepared = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+        }
+    };
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
 
     let txids = prepared
@@ -2379,6 +2545,18 @@ mod tests {
         assert!(err.contains("current chain height 500"));
     }
 
+    #[test]
+    fn keystone_batch_signature_limit_accepts_96_and_rejects_97() {
+        let limit = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
+
+        assert_eq!(checked_keystone_batch_signature_count(limit), Ok(96));
+        assert_eq!(
+            checked_keystone_batch_signature_count(limit + 1).unwrap_err(),
+            "Keystone batch signing supports at most 96 spend signatures per transaction; \
+             this transaction requires 97"
+        );
+    }
+
     // The headline correctness gate for the "signatures-only" round-trip: for a
     // real migration-shaped PCZT (Orchard spend -> Ironwood output), producing
     // the extracted transaction via the compact `apply_sigs_and_extract` path
@@ -2399,7 +2577,8 @@ mod tests {
             apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
             extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
             ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
-            redact_pczt_for_signer, set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
+            prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
+            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -2775,6 +2954,10 @@ mod tests {
                 Err(error) => error,
             };
             assert!(error.contains("Finalize transparent spends"));
+
+            let error = prepare_pczt_for_keystone_batch(&unsigned)
+                .expect_err("the compact response cannot carry transparent signatures");
+            assert!(error.contains("does not support transparent transaction inputs"));
         }
 
         #[test]
@@ -2901,6 +3084,14 @@ mod tests {
             )];
             let new = apply_sigs_and_extract(&proofs_bytes, &sigs, None, None)
                 .expect("compact apply_sigs_and_extract path should succeed");
+            let prepared = prepare_compact_signed_pczts(
+                std::slice::from_ref(&proofs_bytes),
+                std::slice::from_ref(&sigs),
+                None,
+                None,
+            )
+            .expect("send orchestration should accept the same compact signatures");
+            assert_eq!(prepared[0].extracted.txid, new.txid);
 
             // The software migration path applies the FULL extracted set
             // (dummy-spend signatures included) onto a proofs base that already
@@ -2978,7 +3169,9 @@ mod tests {
         // retains the unredacted PCZT for proof/extraction.
         #[test]
         fn batch_redaction_elides_verified_fields_and_signs_identically() {
-            use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
+            use crate::wallet::sync::pczt::{
+                prepare_pczt_for_keystone_batch, redact_pczt_for_batch_signer,
+            };
             use orchard::primitives::redpallas::{Signature, SpendAuth, VerificationKey};
             use pczt::roles::redactor::Redactor;
 
@@ -3001,6 +3194,9 @@ mod tests {
             assert_eq!(ironwood_preauthorized.len(), 1);
 
             let batch = redact_pczt_for_batch_signer(&base_bytes).unwrap();
+            let prepared = prepare_pczt_for_keystone_batch(&base_bytes).unwrap();
+            assert_eq!(prepared.expected_signature_count, 1);
+            assert_eq!(prepared.redacted_pczt, batch);
             // The point of the compact format: a migration child small enough
             // for a short device QR carousel. The retained bytes are dominated
             // by the still-required `out_ciphertext`s and the

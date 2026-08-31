@@ -116,6 +116,44 @@ fn action_sig_to_api(
     })
 }
 
+pub(crate) fn action_sig_from_api(
+    action: KeystoneActionSig,
+    message_label: &str,
+) -> Result<pczt::roles::signer::SpendAuthSignature, String> {
+    let signature_label = if message_label.is_empty() {
+        "Keystone signature".to_string()
+    } else {
+        format!("Keystone signature for {message_label}")
+    };
+    let sig_len = action.sig.len();
+    let sig: [u8; 64] = action
+        .sig
+        .try_into()
+        .map_err(|_| format!("{signature_label} must be 64 bytes, got {sig_len}"))?;
+    let value_pool = match action.pool {
+        0 => orchard::ValuePool::Orchard,
+        1 => orchard::ValuePool::Ironwood,
+        other => return Err(format!("{signature_label} has unsupported pool {other}")),
+    };
+    let action_index = usize::try_from(action.action_index)
+        .map_err(|_| "Keystone signature action index exceeds usize".to_string())?;
+    Ok(pczt::roles::signer::SpendAuthSignature::from_parts(
+        value_pool,
+        action_index,
+        sig,
+    ))
+}
+
+/// Encode one message's decoded Keystone signatures into the compact blob used
+/// by the wallet's batch-signing completion path.
+pub fn encode_keystone_action_sigs(sigs: Vec<KeystoneActionSig>) -> Result<Vec<u8>, String> {
+    let sigs = sigs
+        .into_iter()
+        .map(|action| action_sig_from_api(action, ""))
+        .collect::<Result<Vec<_>, String>>()?;
+    keystone::encode_compact_action_sigs(&sigs)
+}
+
 /// Reshape an upstream PCZT batch signing response into the flat FRB structs
 /// Dart consumes.
 fn sig_result_to_api(
@@ -430,6 +468,22 @@ mod tests {
             error,
             "Keystone firmware version must be 3 bytes [major, minor, build]"
         );
+    }
+
+    #[test]
+    fn action_signatures_round_trip_through_compact_wallet_blob() {
+        let blob = encode_keystone_action_sigs(vec![KeystoneActionSig {
+            pool: 0,
+            action_index: 2,
+            sig: vec![0x5a; 64],
+        }])
+        .unwrap();
+        let decoded = keystone::decode_compact_action_sigs(&blob).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].value_pool(), orchard::ValuePool::Orchard);
+        assert_eq!(decoded[0].action_index(), 2);
+        assert_eq!(decoded[0].signature(), &[0x5a; 64]);
     }
 
     fn test_pczt_with_firmware_version(firmware_version: Option<&[u8]>) -> pczt::Pczt {

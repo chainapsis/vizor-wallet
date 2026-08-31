@@ -448,7 +448,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   String? _accountUuid;
   List<String> _urParts = const [];
   List<List<rust_sync.KeystoneMigrationMessage>> _signingRounds = const [];
-  List<List<String>> _signingRoundUrParts = const [];
+  List<KeystoneBatchSigningRequest> _signingBatchRequests = const [];
   List<rust_sync.KeystoneSignedMigrationMessage> _signedPriorRounds = const [];
   int _signingRoundIndex = 0;
   String? _error;
@@ -488,9 +488,23 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         previewRequest.messages,
         previewRequest.signingBatchLimit,
       );
-      _signingRoundUrParts = [
+      _signingBatchRequests = [
         for (var index = 0; index < _signingRounds.length; index++)
-          index == 0 ? widget.previewUrParts : const <String>[],
+          KeystoneBatchSigningRequest(
+            requestId: _keystoneSigningRoundRequestId(
+              previewRequest.requestId,
+              index,
+              _signingRounds.length,
+            ),
+            messageIds: [
+              for (final message in _signingRounds[index]) message.id,
+            ],
+            expectedSignatureCounts: [
+              for (final message in _signingRounds[index])
+                message.expectedSignatureCount,
+            ],
+            urParts: index == 0 ? widget.previewUrParts : const <String>[],
+          ),
       ];
       _urParts = widget.previewUrParts;
       _stage = widget.previewStartScanning
@@ -544,7 +558,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _accountUuid = null;
       _urParts = const [];
       _signingRounds = const [];
-      _signingRoundUrParts = const [];
+      _signingBatchRequests = const [];
       _signedPriorRounds = const [];
       _signingRoundIndex = 0;
       _error = null;
@@ -595,7 +609,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               request.messages,
               await rust_keystone.zcashSignBatchRoundMessageCounts(
                 requestId: request.requestId,
-                messages: _zcashBatchMessageInputs(request.messages),
+                messages: keystoneBatchMessageInputs(
+                  _preparedKeystoneBatchMessages(request.messages),
+                ),
                 maxMessages: request.signingBatchLimit,
               ),
             );
@@ -610,25 +626,25 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       }
       _startProofPolling(request.requestId);
 
-      final signingRoundUrParts = <List<String>>[];
+      final signingBatchRequests = <KeystoneBatchSigningRequest>[];
       for (var index = 0; index < signingRounds.length; index++) {
-        signingRoundUrParts.add(
-          await rust_keystone.encodeZcashSignBatchUrParts(
+        signingBatchRequests.add(
+          await buildPreparedKeystoneBatchSigningRequest(
             requestId: _keystoneSigningRoundRequestId(
               request.requestId,
               index,
               signingRounds.length,
             ),
-            messages: _zcashBatchMessageInputs(signingRounds[index]),
-            maxFragmentLen: BigInt.from(_keystoneMigrationQrMaxFragmentLen),
+            messages: _preparedKeystoneBatchMessages(signingRounds[index]),
+            maxFragmentLength: _keystoneMigrationQrMaxFragmentLen,
           ),
         );
       }
       if (!mounted) return;
       setState(() {
         _stage = _KeystoneDenominationSignStage.showQr;
-        _signingRoundUrParts = signingRoundUrParts;
-        _urParts = signingRoundUrParts.first;
+        _signingBatchRequests = signingBatchRequests;
+        _urParts = signingBatchRequests.first.urParts;
       });
     } catch (e, st) {
       log(
@@ -642,7 +658,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _proofStatus = null;
       _pendingSignedMessages = null;
       _signingRounds = const [];
-      _signingRoundUrParts = const [];
+      _signingBatchRequests = const [];
       _signedPriorRounds = const [];
       _signingRoundIndex = 0;
       if (requestId != null && requestAccountUuid != null) {
@@ -661,6 +677,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       return null;
     }
     return _signingRounds[_signingRoundIndex];
+  }
+
+  KeystoneBatchSigningRequest? get _currentSigningBatchRequest {
+    if (_signingRoundIndex < 0 ||
+        _signingRoundIndex >= _signingBatchRequests.length) {
+      return null;
+    }
+    return _signingBatchRequests[_signingRoundIndex];
   }
 
   String? get _signingRoundLabel => _signingRounds.length <= 1
@@ -711,7 +735,13 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     final request = _request;
     final accountUuid = _accountUuid;
     final signingRound = _currentSigningRound;
-    if (request == null || accountUuid == null || signingRound == null) return;
+    final signingBatchRequest = _currentSigningBatchRequest;
+    if (request == null ||
+        accountUuid == null ||
+        signingRound == null ||
+        signingBatchRequest == null) {
+      return;
+    }
     final signingRoundIndex = _signingRoundIndex;
 
     setState(() {
@@ -721,14 +751,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     });
 
     try {
-      final decoded = await rust_keystone.decodeZcashBatchSignResponse(
-        cbor: result.data,
-        expectedRequestId: _keystoneSigningRoundRequestId(
-          request.requestId,
-          signingRoundIndex,
-          _signingRounds.length,
-        ),
-        messageIds: signingRound.map((message) => message.id).toList(),
+      final decoded = await signingBatchRequest.decodeTypedResponse(
+        result.data,
       );
       final signedMessages = [
         ..._signedPriorRounds,
@@ -748,7 +772,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         setState(() {
           _signedPriorRounds = signedMessages;
           _signingRoundIndex = signingRoundIndex + 1;
-          _urParts = _signingRoundUrParts[_signingRoundIndex];
+          _urParts = _signingBatchRequests[_signingRoundIndex].urParts;
           _stage = _KeystoneDenominationSignStage.showQr;
           _scannerControls = null;
           _decoding = false;
@@ -2009,13 +2033,13 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
   return rounds;
 }
 
-List<rust_keystone_wallet.ZcashBatchMessageInput> _zcashBatchMessageInputs(
+List<KeystonePreparedBatchMessage> _preparedKeystoneBatchMessages(
   List<rust_sync.KeystoneMigrationMessage> messages,
 ) => [
   for (final message in messages)
-    rust_keystone_wallet.ZcashBatchMessageInput(
+    KeystonePreparedBatchMessage(
       id: message.id,
-      pcztBytes: message.redactedPczt,
+      redactedPczt: message.redactedPczt,
       expectedSignatureCount: message.expectedSignatureCount,
     ),
 ];
