@@ -1,12 +1,16 @@
-use std::{future::Future, sync::OnceLock, time::Duration};
+use std::{future::Future, pin::Pin, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http::{Method, Request};
 use http_body_util::{BodyExt, Full, Limited};
+use hyper::{body::Incoming, Response};
 use hyper_rustls::HttpsConnector;
 use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
+    client::legacy::{
+        connect::{Connect, HttpConnector},
+        Client, Error as HyperClientError,
+    },
     rt::TokioExecutor,
 };
 
@@ -15,7 +19,24 @@ use crate::helper::transport::{
 };
 
 type RequestBody = Full<Bytes>;
-type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
+type HyperRequestFuture<'a> = Pin<
+    Box<dyn Future<Output = std::result::Result<Response<Incoming>, HyperClientError>> + Send + 'a>,
+>;
+
+/// Type-erased request boundary that keeps connector types out of the public
+/// `HyperTransport` type while retaining Hyper's pooled client.
+trait HyperRequestClient: Send + Sync {
+    fn request<'a>(&'a self, request: Request<RequestBody>) -> HyperRequestFuture<'a>;
+}
+
+impl<C> HyperRequestClient for Client<C, RequestBody>
+where
+    C: Connect + Clone + Send + Sync + 'static,
+{
+    fn request<'a>(&'a self, request: Request<RequestBody>) -> HyperRequestFuture<'a> {
+        Box::pin(Client::request(self, request))
+    }
+}
 
 // PIR responses are normally below 1 MiB after layout validation. Keep a
 // generous fixed ceiling in the built-in transport so a server cannot force an
@@ -38,31 +59,68 @@ struct HyperResponse {
     body: Vec<u8>,
 }
 
-/// Direct Hyper/Rustls HTTP transport for client-side network requests.
+/// Hyper HTTP transport for client-side network requests.
 ///
 /// `zcash_voting` keeps PIR and tree-sync fetching behind small transport
-/// traits, and includes this adapter for consumers that want direct
-/// cleartext/HTTPS traffic without providing their own transport.
+/// traits, and includes this adapter for consumers that want pooled HTTP
+/// traffic without implementing those protocol transports. [`Self::new`]
+/// uses direct HTTP/HTTPS; hosts can instead inject a connector for proxies,
+/// custom DNS, or route-lifecycle enforcement.
 pub struct HyperTransport {
-    client: HyperClient,
+    client: Box<dyn HyperRequestClient>,
     runtime: BlockingRuntime,
 }
 
 impl HyperTransport {
+    /// Creates the default direct HTTP/HTTPS transport.
     pub fn new() -> Self {
-        ensure_rustls_provider();
-        let runtime = BlockingRuntime::new();
         let mut connector = HttpConnector::new();
         connector.enforce_http(false);
+        Self::with_http_connector(connector)
+    }
+
+    /// Creates a transport by applying the SDK's standard Rustls configuration
+    /// to a caller-supplied raw HTTP connector.
+    ///
+    /// This preserves WebPKI roots, HTTP/1 and HTTP/2 support, and cleartext
+    /// HTTP compatibility while letting the host control how sockets are
+    /// opened. In particular, a wallet can wrap returned I/O with its own
+    /// proxy or route-lifecycle guard without reimplementing request handling.
+    ///
+    /// Hyper pools connections. A host whose route can change must ensure that
+    /// already-open I/O is closed or made unusable when the old route is no
+    /// longer permitted; selecting a route only when this connector is called
+    /// is not sufficient for idle pooled connections.
+    pub fn with_http_connector<C>(connector: C) -> Self
+    where
+        HttpsConnector<C>: Connect + Clone + Send + Sync + 'static,
+    {
+        ensure_rustls_provider();
         let https = hyper_rustls::HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_or_http()
             .enable_http1()
             .enable_http2()
             .wrap_connector(connector);
-        let client = Client::builder(TokioExecutor::new()).build(https);
+        Self::with_connector(https)
+    }
 
-        Self { client, runtime }
+    /// Creates a transport from a fully configured Hyper connector.
+    ///
+    /// Unlike [`Self::with_http_connector`], this does not add TLS or install a
+    /// Rustls crypto provider. The caller owns all scheme, TLS, trust-root, and
+    /// routing behavior supplied by the connector. Helper request deadlines,
+    /// response limits, response metadata, and ambiguous-outcome
+    /// classification remain enforced by this transport and `HelperClient`.
+    pub fn with_connector<C>(connector: C) -> Self
+    where
+        C: Connect + Clone + Send + Sync + 'static,
+    {
+        let client = Client::builder(TokioExecutor::new()).build(connector);
+        Self {
+            client: Box::new(client),
+            runtime: BlockingRuntime::new(),
+        }
     }
 
     async fn request(
@@ -299,18 +357,49 @@ impl HelperTransport for HyperTransport {
 #[cfg(test)]
 mod tests {
     use std::{
+        future::Future,
         io::{Read, Write},
         net::{TcpListener, TcpStream},
+        pin::Pin,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        task::{Context, Poll},
         thread,
         time::Duration,
     };
 
-    use http::Method;
+    use http::{Method, Uri};
+    use hyper_util::client::legacy::connect::HttpConnector;
+    use tower_service::Service;
 
     use super::{
         BlockingRuntime, HelperTransport, HelperTransportError, HyperTransport,
         MAX_HELPER_RESPONSE_BYTES,
     };
+
+    #[derive(Clone)]
+    struct ObservedConnector {
+        inner: HttpConnector,
+        called: Arc<AtomicBool>,
+    }
+
+    impl Service<Uri> for ObservedConnector {
+        type Response = <HttpConnector as Service<Uri>>::Response;
+        type Error = <HttpConnector as Service<Uri>>::Error;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Service::poll_ready(&mut self.inner, cx)
+        }
+
+        fn call(&mut self, uri: Uri) -> Self::Future {
+            self.called.store(true, Ordering::Release);
+            Box::pin(Service::call(&mut self.inner, uri))
+        }
+    }
 
     fn read_request_headers(stream: &mut TcpStream) -> String {
         let mut request = Vec::new();
@@ -321,6 +410,56 @@ mod tests {
             request.extend_from_slice(&chunk[..bytes_read]);
         }
         String::from_utf8_lossy(&request).into_owned()
+    }
+
+    #[tokio::test]
+    async fn helper_transport_uses_injected_http_connector() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_request_headers(&mut stream);
+            assert!(request.starts_with("GET "));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+                )
+                .unwrap();
+        });
+
+        let called = Arc::new(AtomicBool::new(false));
+        let mut inner = HttpConnector::new();
+        inner.enforce_http(false);
+        let transport = HyperTransport::with_http_connector(ObservedConnector {
+            inner,
+            called: called.clone(),
+        });
+        let response = transport
+            .get(&format!("http://{address}"), Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        assert!(called.load(Ordering::Acquire));
+        assert_eq!(response.body(), b"{}");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn helper_refused_connection_is_definite() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+
+        let transport = HyperTransport::new();
+        let result = transport
+            .post_json(
+                &format!("http://{address}"),
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_secs(1),
+            )
+            .await;
+
+        assert!(matches!(result, Err(HelperTransportError::Transport(_))));
     }
 
     #[tokio::test]

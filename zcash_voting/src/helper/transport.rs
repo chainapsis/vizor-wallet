@@ -8,8 +8,12 @@
 //!
 //! Hosts that want plain HTTPS with no extra work can use the bundled
 //! [`HyperTransport`](crate::HyperTransport), which implements this trait.
-//! Hosts that route voting traffic over Tor implement [`HelperTransport`] on
-//! their own client and pass it in; nothing in this module dials a socket.
+//! Hosts with a custom Hyper connector can inject it through
+//! [`HyperTransport::with_http_connector`](crate::HyperTransport::with_http_connector)
+//! and keep the SDK's request, timeout, body-limit, and error-classification
+//! behavior. Hosts using a non-Hyper HTTP stack, such as an application-owned
+//! Tor client, implement [`HelperTransport`] on their own client and pass it
+//! in; nothing in this module chooses a network route.
 //!
 //! # Why this is not [`crate::Transport`]
 //!

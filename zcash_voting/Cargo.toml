@@ -96,6 +96,7 @@ serde_json = "1"
 sha2 = "0.10"
 secrecy = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
+tower-service = "0.3"
 zcash_note_encryption = "0.4.2"
 
 # Smoke-only CLI invoked by tests/pir-smoke.sh / `make pir-smoke`.

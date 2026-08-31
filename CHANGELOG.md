@@ -7,6 +7,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 ## Unreleased
 
 ### Added
+- `HyperTransport::with_connector` and `with_http_connector` now let wallets
+  inject fully configured or Rustls-wrapped Hyper connectors for proxies,
+  custom DNS, and route-lifecycle enforcement while retaining the SDK's pooled
+  request, timeout, response-limit, metadata, and helper-error behavior.
 - Added a typed `HelperClient` for readiness checks, share submission, and
   status polling. It validates canonical round IDs, protocol fields,
   ciphertext points, complete 16-share reveal inputs, and JSON responses;

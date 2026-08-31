@@ -581,7 +581,12 @@ headers, and the complete response body. `HelperClient` wraps every transport
 future in that deadline and rejects responses larger than 256 KiB, so these
 limits also hold when a custom transport ignores the supplied timeout or
 buffers an oversized response. `HyperTransport` additionally enforces both
-while streaming. Successful responses MUST carry `application/json` (optional
+while streaming. Its `with_http_connector` constructor lets a host supply
+socket, proxy, DNS, or route-lifecycle behavior without reimplementing these
+HTTP semantics; because Hyper pools connections, the supplied connector and
+its returned I/O MUST also prevent an old pooled connection from surviving a
+route change that forbids it. Successful responses MUST carry
+`application/json` (optional
 parameters such as `charset` are accepted); the client validates the content
 type metadata returned by every transport. Non-2xx bodies are size-checked
 before diagnostic string conversion while retaining their HTTP status for
@@ -1257,7 +1262,10 @@ The crate cannot enforce the following properties without cooperation from the
 host wallet:
 
 1. **Network route.** The host owns `HelperTransport`. A Tor or proxy transport
-   MUST fail closed and MUST NOT fall back to a direct connection.
+   MUST fail closed and MUST NOT fall back to a direct connection. A host can
+   inject route-aware I/O into `HyperTransport::with_http_connector`, but it
+   remains responsible for invalidating pooled connections when their route is
+   no longer allowed.
 2. **Transport contract.** A custom transport MUST preserve route policy,
    classify definitely pre-dispatch failures separately from ambiguous
    failures, and return response content-type metadata. The client enforces
