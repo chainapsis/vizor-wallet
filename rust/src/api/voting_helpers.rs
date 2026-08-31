@@ -7,7 +7,7 @@ use crate::wallet::{keys, voting::network::voting_network};
 ///
 /// The normal `None` path selects the frozen policy used to reconstruct v1
 /// bundles after voting sidecar loss. Explicit test or development overrides
-/// retain their requested bundle capacity.
+/// select a custom policy outside that recovery contract.
 pub(super) fn bundle_policy(
     max_real_notes_per_bundle: Option<u32>,
 ) -> Result<zcash_voting::BundlePolicy, String> {
