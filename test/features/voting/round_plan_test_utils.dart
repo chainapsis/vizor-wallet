@@ -23,6 +23,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   List<rust_wire.DelegationRecoveryWorkView>? recoveredDelegationWork,
   List<rust_wire.VoteRecoveryWorkView>? recoveredVoteWork,
   rust_share_policy.ImmediateShareKey? immediateShareKey,
+  bool immediateShareConfirmed = false,
 }) {
   final resolvedDelegationWork =
       recoveredDelegationWork ?? _delegationRecoveryWork(nextSteps);
@@ -66,6 +67,7 @@ rust_wire.RoundPlanView apiRoundPlan({
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
     immediateShareKey: immediateShareKey,
+    immediateShareConfirmed: immediateShareConfirmed,
     allDecided: allDecided,
   );
 }

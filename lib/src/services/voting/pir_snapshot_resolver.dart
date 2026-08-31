@@ -70,6 +70,17 @@ class PirSnapshotNoMatchingEndpoint implements Exception {
       '$expectedSnapshotHeight, diagnostics: ${diagnostics.length})';
 }
 
+/// Chooses an exact-height endpoint from completed probe diagnostics.
+///
+/// The SDK owns this protocol policy. The resolver retains HTTP probing so it
+/// can use the wallet's routed client and expose transport diagnostics.
+typedef PirSnapshotEndpointSelector =
+    Uri? Function({
+      required List<PirSnapshotEndpointDiagnostic> diagnostics,
+      required int expectedSnapshotHeight,
+      required int matchIndex,
+    });
+
 /// Resolves a PIR endpoint whose snapshot root is exactly the expected height.
 ///
 /// Exact matching is deliberate. A behind endpoint cannot answer for the round's
@@ -80,11 +91,13 @@ class PirSnapshotNoMatchingEndpoint implements Exception {
 class PirSnapshotResolver {
   PirSnapshotResolver({
     required VotingHttpClient httpClient,
+    required PirSnapshotEndpointSelector selectEndpoint,
     math.Random? random,
     Duration timeout = const Duration(seconds: 10),
     VotingRetryPolicy? retryPolicy,
     Future<void> Function(Duration delay)? delay,
   }) : _httpClient = httpClient,
+       _selectEndpoint = selectEndpoint,
        _random = random ?? math.Random.secure(),
        _timeout = timeout,
        _retryPolicy =
@@ -96,6 +109,7 @@ class PirSnapshotResolver {
        _delay = delay ?? Future<void>.delayed;
 
   final VotingHttpClient _httpClient;
+  final PirSnapshotEndpointSelector _selectEndpoint;
   final math.Random _random;
   final Duration _timeout;
   final VotingRetryPolicy _retryPolicy;
@@ -121,21 +135,19 @@ class PirSnapshotResolver {
         ),
       ),
     );
-    final matches = diagnostics
-        .where((diagnostic) => diagnostic.matched)
-        .map((diagnostic) => diagnostic.endpoint)
-        .toList(growable: false);
-    if (matches.isEmpty) {
+    final endpoint = _selectEndpoint(
+      diagnostics: diagnostics,
+      expectedSnapshotHeight: expectedSnapshotHeight,
+      matchIndex: _random.nextInt(1 << 32),
+    );
+    if (endpoint == null) {
       throw PirSnapshotNoMatchingEndpoint(
         expectedSnapshotHeight: expectedSnapshotHeight,
         diagnostics: diagnostics,
       );
     }
 
-    return PirSnapshotResolution(
-      endpoint: matches[_random.nextInt(matches.length)],
-      diagnostics: diagnostics,
-    );
+    return PirSnapshotResolution(endpoint: endpoint, diagnostics: diagnostics);
   }
 
   Future<PirSnapshotEndpointDiagnostic> _probeEndpoint({

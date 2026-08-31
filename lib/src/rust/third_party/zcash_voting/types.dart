@@ -6,7 +6,11 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-/// Wire-safe encrypted share — contains only the public ciphertext components.
+/// Wire-safe encrypted share containing only public ciphertext components.
+///
+/// Before protocol use, `c1` and `c2` are validated as canonical compressed,
+/// non-identity Pallas points by [`validate_encrypted_shares`].
+///
 /// Secrets (`plaintext_value`, `randomness`) are kept inside Rust and never cross the FFI boundary.
 class WireEncryptedShare {
   final Uint8List c1;

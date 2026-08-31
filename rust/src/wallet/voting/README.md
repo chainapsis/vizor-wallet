@@ -27,6 +27,7 @@ This document focuses on what Vizor's integration is responsible for.
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
 | `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) and refuses to proceed when Tor is selected but unusable, so PIR cache warm-up does not dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. PIR HTTP still uses the crate's `HyperTransport`. |
+| `helper_transport.rs` | Implements both the SDK helper and vote-chain HTTP transport traits over Vizor's current Tor/direct route. Tor fails closed, and direct-route leases prevent pooled connections from surviving a privacy-policy switch. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
 
@@ -110,14 +111,20 @@ directly. The mapping from FRB functions to crate APIs:
 | Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
 | Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
 | Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
-| Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
+| Delegation submit/reconcile | `submit_chain_delegation`, `reconcile_chain_delegation` | `ChainSubmissionLifecycle::{submit_delegation_wire,reconcile}` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
-| Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
-| Share submit/confirm | `record_share_delegation`, `mark_share_confirmed`, `add_sent_servers` | `vote::CommittedVote::{record_share, confirm_share}`, `share::add_sent_servers` |
+| Vote submit/reconcile | `submit_chain_vote`, `reconcile_chain_vote` | `ChainSubmissionLifecycle::{submit_vote,reconcile}` |
+| Share plan/submit/confirm | `preflight_voting_helpers`, `prepare_committed_share_delivery`, `submit_prepared_shares_to_helpers`, `confirm_share_with_helpers`, `track_pending_shares` | `HelperFleetPreflight`, `CommittedVote::{prepare_share_delivery, submit_prepared_shares}`, `share_tracking::{confirm_pending_share, track_pending_shares}` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
 
-The `confirmation::*` APIs parse chain `tx` events and atomically record tx
-hashes, VAN positions, and VC positions. Restart recovery is driven by
+The chain lifecycle owns canonical mutation serialization, durable
+reservation-before-POST attempts, bounded replay, server-hash validation,
+spent-nullifier reconciliation, transaction lookup, and confirmation. Vizor
+supplies only the configured endpoints and its route-aware transport; Dart
+does not serialize mutation bodies, predict hashes, parse nullifier logs, or
+apply chain events. CheckTx acceptance remains in the SDK attempt journal until
+a committed-success lookup lets `confirmation::*` atomically record the chain
+hash, VAN position, and VC position. Restart recovery is driven by
 `session::resume_plan`, which returns the ordered remaining `NextStep`s and the
 proposals still open. Vizor's Dart recovery code consumes the crate's phase
 strings; it does not derive its own phases.
@@ -127,19 +134,19 @@ stateDiagram-v2
     state "Delegation Bundle" as Delegation {
         [*] --> Prepared
         Prepared --> Signed: prove + sign
-        Signed --> Submitted: mark_delegation_submitted
-        Submitted --> Confirmed: confirm_delegation_submission
+        Signed --> Submitted: submit_chain_delegation
+        Submitted --> Confirmed: reconcile_chain_delegation
         Confirmed --> [*]
     }
     state "Vote Commitment" as Vote {
         [*] --> Committed
-        Committed --> Submitted2: mark_vote_submitted
-        Submitted2 --> Confirmed2: confirm_vote_submission
+        Committed --> Submitted2: submit_chain_vote
+        Submitted2 --> Confirmed2: reconcile_chain_vote
         Confirmed2 --> [*]
     }
     state "Helper Share" as Share {
         [*] --> SubmittedShare
-        SubmittedShare --> ConfirmedShare: confirm_share
+        SubmittedShare --> ConfirmedShare: two configured helpers confirm
         ConfirmedShare --> [*]
     }
 ```
@@ -147,7 +154,10 @@ stateDiagram-v2
 ### Helper Share Scheduling
 
 Helper-share `submit_at` (the Unix-second reveal time sent to the helper server)
-is computed in Dart from round timing before calling `record_share_delegation`:
+is planned and durably persisted by `zcash_voting`'s complete-batch delivery
+API. Vizor supplies authenticated round timing, the configured fleet, and the
+round's immediate-share key; the SDK owns entropy, readiness-derived targets,
+placement, generation binding, and restart reuse:
 
 - The last-moment buffer is 40% of the round duration from `ceremony_phase_start`
   to `vote_end_time`, capped at six hours.
@@ -157,24 +167,65 @@ is computed in Dart from round timing before calling `record_share_delegation`:
   `submit_at = 0` (immediate submission).
 - If round timing is missing or invalid, Vizor uses `submit_at = 0`.
 
-Retry/resubmission paths submit immediately (`submit_at = 0`); the original
-scheduled value remains part of the durable record for the first accepted
-submission. The canonical scheduling/retry/polling policy lives in the crate's
-`share_policy` module; Dart mirrors it via the `plan_share_submissions`,
-`share_tracking_flags`, and `next_share_tracking_delay_seconds` helpers exposed
-through `api/voting.rs`.
+Overdue recovery submits immediately (`submit_at = 0`), while early
+under-placement replenishment preserves the original schedule in both the
+helper payload and durable record. The canonical scheduling, delivery,
+retry, and polling policy lives in the SDK. Dart calls the batch-oriented
+adapter in `api/voting.rs`; it neither materializes plans nor submits
+individual helper payloads. The SDK also enforces the process-wide ceiling of
+16 concurrent helper POSTs.
 
-Accepted shares remain tracked after the vote screen closes. On launch, unlock,
-and resume, Vizor asks `zcash_voting::share::pending_rounds` for durable
+Definite acceptances, outcome-unknown deliveries, and in-flight markers left by
+an interrupted process remain tracked after the vote screen closes. An
+outcome-unknown helper is polled for global on-chain confirmation but never
+counts toward the intended placement target because a `pending` response does
+not prove possession. Early replenishment uses other eligible helpers without
+waiting for the overdue threshold. Overdue recovery first tries untried
+helpers, then may duplicate-safely re-POST an outcome-unknown helper once in
+that pass.
+Configured helpers are trusted global chain-status oracles, but one helper
+cannot finalize a share by itself. The crate requires matching `confirmed`
+responses from two distinct helpers in the current configuration and binds the
+confirmation write to the exact stored nullifier generation. Vizor uses the
+crate's focused `confirm_pending_share` API for the designated immediate share
+and the full `track_pending_shares` pass for background recovery. It does not
+expose helper observations or implement a second polling path.
+
+Fresh commitments use a strict, SDK-persisted complete plan. The SDK reuses
+that exact plan after restart and submits only definite-delivery deficits, so
+fleet compatibility, aggregate quota, and target guarantees remain bound to
+the original commitment generation. The Rust boundary separates preparation
+after durable vote commitment creation from submission after confirmation
+persistence, so the host cannot conflate those lifecycle steps. Normal vote
+confirmation advances a matching plan from the exact pre-confirmation recovery
+snapshot to the exact confirmed snapshot; replacement, clearing, and unrelated
+recovery-material changes invalidate it. `LegacyBestEffort` is metadata only
+for old durable state that predates complete-plan persistence. Vizor surfaces
+that state but does not implement a second replanning policy.
+
+Initial submission and recovery share one account/round/database-bound Rust
+helper delivery context. Before a fresh helper POST, the crate commits an
+in-flight (`attempting`) marker; it then promotes that marker to definite
+acceptance or outcome-unknown, or removes it after a definite pre-dispatch
+failure. A crash or failed outcome write therefore leaves the helper poll-only
+during early replenishment. Once overdue, duplicate-safe recovery can retry it
+after untried helpers without mistaking it for a fresh target.
+Tor connection, TLS, connect-timeout, URL, and request-construction failures
+are definite and remain retryable; request/response-phase failures are
+ambiguous.
+
+On launch, unlock, and resume, Vizor asks
+`zcash_voting::share::pending_rounds` for durable
 unconfirmed rounds and rejects expired or unauthenticated entries before
 restoring a session. A restored session checks only helpers still present in
 the current config and retains itself while work remains. Overdue shares use
-the crate's randomized resubmission order and stop after the first helper
-acknowledges or the round ends. An unacknowledged POST remains eligible for a
-later retry, and recovery may continue to another helper even when the
-transport outcome is ambiguous. This deliberately trades possible duplicate
-encrypted-share delivery and additional helper metadata exposure for liveness
-when an overdue share might otherwise never reach the chain. Lock, account
+the crate's randomized, health-aware recovery order and continue until the
+complete definite-placement deficit is filled, candidates are exhausted, or
+the round cutoff is reached. An outcome-unknown POST remains eligible for
+status polling, and recovery may continue to another helper when a transport
+outcome is ambiguous. This deliberately trades possible duplicate encrypted-
+share delivery and additional helper metadata exposure for liveness when a
+share might otherwise never reach the chain. Lock, account
 deletion, and wallet reset stop and drain discovery plus active checks before
 protected state changes. If a mutation aborts while wallet state remains,
 Vizor requests fresh discovery after leaving the mutation boundary.
