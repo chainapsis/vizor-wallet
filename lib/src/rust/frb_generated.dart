@@ -134,7 +134,6 @@ abstract class RustLibApi extends BaseApi {
     required String namespace,
     required String itemKey,
     required String method,
-    required String challengeBase64,
     required String audience,
     required BigInt expiresAtSeconds,
     ApiPrivateStateEnvelope? envelope,
@@ -1534,7 +1533,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String namespace,
     required String itemKey,
     required String method,
-    required String challengeBase64,
     required String audience,
     required BigInt expiresAtSeconds,
     ApiPrivateStateEnvelope? envelope,
@@ -1549,7 +1547,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(namespace, serializer);
           sse_encode_String(itemKey, serializer);
           sse_encode_String(method, serializer);
-          sse_encode_String(challengeBase64, serializer);
           sse_encode_String(audience, serializer);
           sse_encode_u_64(expiresAtSeconds, serializer);
           sse_encode_opt_box_autoadd_api_private_state_envelope(
@@ -1576,7 +1573,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           namespace,
           itemKey,
           method,
-          challengeBase64,
           audience,
           expiresAtSeconds,
           envelope,
@@ -1597,7 +1593,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "namespace",
           "itemKey",
           "method",
-          "challengeBase64",
           "audience",
           "expiresAtSeconds",
           "envelope",
@@ -9584,7 +9579,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       objectId: dco_decode_String(arr[1]),
       authPublicKeyBase64: dco_decode_String(arr[2]),
       method: dco_decode_String(arr[3]),
-      challengeBase64: dco_decode_String(arr[4]),
+      nonceBase64: dco_decode_String(arr[4]),
       audience: dco_decode_String(arr[5]),
       expiresAtSeconds: dco_decode_u_64(arr[6]),
       contentHashBase64: dco_decode_String(arr[7]),
@@ -12201,7 +12196,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_objectId = sse_decode_String(deserializer);
     var var_authPublicKeyBase64 = sse_decode_String(deserializer);
     var var_method = sse_decode_String(deserializer);
-    var var_challengeBase64 = sse_decode_String(deserializer);
+    var var_nonceBase64 = sse_decode_String(deserializer);
     var var_audience = sse_decode_String(deserializer);
     var var_expiresAtSeconds = sse_decode_u_64(deserializer);
     var var_contentHashBase64 = sse_decode_String(deserializer);
@@ -12211,7 +12206,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       objectId: var_objectId,
       authPublicKeyBase64: var_authPublicKeyBase64,
       method: var_method,
-      challengeBase64: var_challengeBase64,
+      nonceBase64: var_nonceBase64,
       audience: var_audience,
       expiresAtSeconds: var_expiresAtSeconds,
       contentHashBase64: var_contentHashBase64,
@@ -15579,7 +15574,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.objectId, serializer);
     sse_encode_String(self.authPublicKeyBase64, serializer);
     sse_encode_String(self.method, serializer);
-    sse_encode_String(self.challengeBase64, serializer);
+    sse_encode_String(self.nonceBase64, serializer);
     sse_encode_String(self.audience, serializer);
     sse_encode_u_64(self.expiresAtSeconds, serializer);
     sse_encode_String(self.contentHashBase64, serializer);

@@ -265,7 +265,6 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
        _audience = signingAudience ?? baseUri.toString(),
        _transport = transport;
 
-  static const _maximumChallengeResponseBytes = 4096;
   static const _maximumObjectResponseBytes = 384 * 1024;
 
   final Uri _baseUri;
@@ -275,62 +274,6 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
 
   @override
   String get audience => _audience;
-
-  @override
-  Future<PrivateStateServerChallenge> createChallenge({
-    required PrivateStateObjectReference object,
-  }) async {
-    final response = await _transport.request(
-      'POST',
-      _objectUri(object.objectId, suffix: 'challenge'),
-      headers: _jsonHeaders,
-      bodyBytes: _jsonBytes({
-        'protocol_version': object.protocolVersion,
-        'auth_public_key_base64': object.authPublicKeyBase64,
-      }),
-      timeout: timeout,
-    );
-    if (response.statusCode != 201) {
-      throw PrivateStateHttpStatusException(
-        'create challenge',
-        response.statusCode,
-      );
-    }
-    final body = _decodeJsonObject(
-      response.bodyBytes,
-      maximumBytes: _maximumChallengeResponseBytes,
-    );
-    _requireOnlyKeys(body, const {
-      'challenge_base64',
-      'expires_at_seconds',
-      'audience',
-    });
-    final challenge = body['challenge_base64'];
-    final expiresAtSeconds = body['expires_at_seconds'];
-    final returnedAudience = body['audience'];
-    if (challenge is! String ||
-        challenge.isEmpty ||
-        expiresAtSeconds is! int ||
-        expiresAtSeconds <= 0 ||
-        returnedAudience != audience) {
-      throw const PrivateStateProtocolException(
-        'Remote store returned an invalid challenge response.',
-      );
-    }
-    try {
-      return PrivateStateServerChallenge(
-        valueBase64: challenge,
-        expiresAt: DateTime.fromMillisecondsSinceEpoch(
-          expiresAtSeconds * 1000,
-          isUtc: true,
-        ),
-      );
-    } on RangeError {
-      throw const PrivateStateProtocolException(
-        'Remote store returned an invalid challenge expiry.',
-      );
-    }
-  }
 
   @override
   Future<PrivateStateRemoteReadResult> get({
@@ -348,6 +291,7 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       headers: _authorizationHeaders(authorization),
       timeout: timeout,
     );
+    _throwClockSkew(response);
     if (response.statusCode == 404) return const PrivateStateRemoteAbsent();
     if (response.statusCode != 200) {
       throw PrivateStateHttpStatusException('get object', response.statusCode);
@@ -384,6 +328,7 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       bodyBytes: _jsonBytes(_envelopeJson(envelope)),
       timeout: timeout,
     );
+    _throwClockSkew(response);
     if (response.statusCode == 204) return const PrivateStateRemoteCreated();
     if (response.statusCode == 409) return const PrivateStateRemoteConflict();
     throw PrivateStateHttpStatusException('put object', response.statusCode);
@@ -407,7 +352,7 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       HttpHeaders.acceptHeader: 'application/json',
       'x-vizor-protocol-version': authorization.protocolVersion.toString(),
       'x-vizor-auth-public-key': authorization.authPublicKeyBase64,
-      'x-vizor-challenge': authorization.challengeBase64,
+      'x-vizor-nonce': authorization.nonceBase64,
       'x-vizor-audience': authorization.audience,
       'x-vizor-expires-at':
           (authorization.expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000)
@@ -415,6 +360,29 @@ class HttpPrivateStateRemoteStore implements PrivateStateRemoteStore {
       'x-vizor-content-hash': authorization.contentHashBase64,
       'x-vizor-signature': authorization.signatureBase64,
     };
+  }
+
+  void _throwClockSkew(NetworkHttpResponse response) {
+    if (response.statusCode != 401 ||
+        response.header('x-vizor-auth-error') != 'clock-skew') {
+      return;
+    }
+    final rawServerTime = response.header('x-vizor-server-time');
+    final seconds = rawServerTime == null ? null : int.tryParse(rawServerTime);
+    if (seconds == null || seconds <= 0) {
+      throw const PrivateStateProtocolException(
+        'Remote store returned an invalid clock-skew response.',
+      );
+    }
+    try {
+      throw PrivateStateClockSkewException(
+        DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true),
+      );
+    } on RangeError {
+      throw const PrivateStateProtocolException(
+        'Remote store returned an invalid server time.',
+      );
+    }
   }
 
   void _requireAuthorizationMatches(

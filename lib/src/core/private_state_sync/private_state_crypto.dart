@@ -30,8 +30,8 @@ abstract interface class PrivateStateCrypto {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required PrivateStateRequestMethod method,
-    required PrivateStateServerChallenge challenge,
     required String audience,
+    required DateTime expiresAt,
     PrivateStateEnvelope? envelope,
   });
 }
@@ -96,8 +96,8 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required PrivateStateRequestMethod method,
-    required PrivateStateServerChallenge challenge,
     required String audience,
+    required DateTime expiresAt,
     PrivateStateEnvelope? envelope,
   }) async {
     final authorization = await rust.authorizePrivateStateRequest(
@@ -107,10 +107,9 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
       namespace: key.namespace.wireName,
       itemKey: key.itemKey,
       method: method.wireName,
-      challengeBase64: challenge.valueBase64,
       audience: audience,
       expiresAtSeconds: BigInt.from(
-        challenge.expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000,
+        expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000,
       ),
       envelope: envelope == null ? null : privateStateEnvelopeToRust(envelope),
     );
@@ -119,7 +118,7 @@ class RustPrivateStateCrypto implements PrivateStateCrypto {
       objectId: authorization.objectId,
       authPublicKeyBase64: authorization.authPublicKeyBase64,
       method: method,
-      challengeBase64: authorization.challengeBase64,
+      nonceBase64: authorization.nonceBase64,
       audience: authorization.audience,
       expiresAt: DateTime.fromMillisecondsSinceEpoch(
         authorization.expiresAtSeconds.toInt() * 1000,

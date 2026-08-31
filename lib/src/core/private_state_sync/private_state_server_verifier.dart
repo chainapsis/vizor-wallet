@@ -59,7 +59,7 @@ rust.ApiPrivateStateRequestAuthorization privateStateAuthorizationToRust(
     objectId: authorization.objectId,
     authPublicKeyBase64: authorization.authPublicKeyBase64,
     method: authorization.method.wireName,
-    challengeBase64: authorization.challengeBase64,
+    nonceBase64: authorization.nonceBase64,
     audience: authorization.audience,
     expiresAtSeconds: BigInt.from(
       authorization.expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000,

@@ -63,7 +63,6 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
   required String namespace,
   required String itemKey,
   required String method,
-  required String challengeBase64,
   required String audience,
   required BigInt expiresAtSeconds,
   ApiPrivateStateEnvelope? envelope,
@@ -74,7 +73,6 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
   namespace: namespace,
   itemKey: itemKey,
   method: method,
-  challengeBase64: challengeBase64,
   audience: audience,
   expiresAtSeconds: expiresAtSeconds,
   envelope: envelope,
@@ -82,8 +80,8 @@ Future<ApiPrivateStateRequestAuthorization> authorizePrivateStateRequest({
 
 /// Verifies an opaque request authorization without access to a wallet UFVK.
 ///
-/// Deployments must additionally check the challenge's server-side lifetime,
-/// single-use state, and expected audience before accepting the request.
+/// Deployments must additionally check request nonce single-use, expiry, and
+/// the expected audience before accepting the request.
 Future<void> verifyPrivateStateRequestAuthorization({
   required ApiPrivateStateRequestAuthorization authorization,
 }) => RustLib.instance.api
@@ -92,7 +90,7 @@ Future<void> verifyPrivateStateRequestAuthorization({
     );
 
 /// Verifies that an opaque object reference is self-certifying before a
-/// server allocates challenge state for it.
+/// accepting an authorization for it.
 Future<void> verifyPrivateStateObjectReference({
   required ApiPrivateStateObjectReference reference,
 }) => RustLib.instance.api
@@ -181,7 +179,7 @@ class ApiPrivateStateRequestAuthorization {
   final String objectId;
   final String authPublicKeyBase64;
   final String method;
-  final String challengeBase64;
+  final String nonceBase64;
   final String audience;
   final BigInt expiresAtSeconds;
   final String contentHashBase64;
@@ -192,7 +190,7 @@ class ApiPrivateStateRequestAuthorization {
     required this.objectId,
     required this.authPublicKeyBase64,
     required this.method,
-    required this.challengeBase64,
+    required this.nonceBase64,
     required this.audience,
     required this.expiresAtSeconds,
     required this.contentHashBase64,
@@ -205,7 +203,7 @@ class ApiPrivateStateRequestAuthorization {
       objectId.hashCode ^
       authPublicKeyBase64.hashCode ^
       method.hashCode ^
-      challengeBase64.hashCode ^
+      nonceBase64.hashCode ^
       audience.hashCode ^
       expiresAtSeconds.hashCode ^
       contentHashBase64.hashCode ^
@@ -220,7 +218,7 @@ class ApiPrivateStateRequestAuthorization {
           objectId == other.objectId &&
           authPublicKeyBase64 == other.authPublicKeyBase64 &&
           method == other.method &&
-          challengeBase64 == other.challengeBase64 &&
+          nonceBase64 == other.nonceBase64 &&
           audience == other.audience &&
           expiresAtSeconds == other.expiresAtSeconds &&
           contentHashBase64 == other.contentHashBase64 &&

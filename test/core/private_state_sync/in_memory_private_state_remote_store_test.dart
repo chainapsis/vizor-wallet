@@ -165,11 +165,10 @@ void main() {
     },
   );
 
-  test('challenge is single-use even for repeated authorized reads', () async {
-    final challenge = await remote.createChallenge(object: _reference);
+  test('request nonce is single-use even for repeated reads', () async {
     final authorization = _authorization(
-      challenge: challenge,
       method: PrivateStateRequestMethod.get,
+      expiresAt: now.add(const Duration(minutes: 1)),
     );
 
     expect(
@@ -212,10 +211,9 @@ void main() {
   });
 
   test('authorization cannot be moved to another object', () async {
-    final challenge = await remote.createChallenge(object: _reference);
     final authorization = _authorization(
-      challenge: challenge,
       method: PrivateStateRequestMethod.get,
+      expiresAt: now.add(const Duration(minutes: 1)),
     );
     const other = PrivateStateObjectReference(
       protocolVersion: 1,
@@ -229,7 +227,7 @@ void main() {
     );
   });
 
-  test('invalid self-certifying reference is rejected before allocation', () {
+  test('invalid self-certifying reference is rejected before nonce claim', () {
     const invalid = PrivateStateObjectReference(
       protocolVersion: 1,
       objectId: 'unrelated-object-id',
@@ -237,17 +235,23 @@ void main() {
     );
 
     expect(
-      remote.createChallenge(object: invalid),
+      remote.get(
+        object: invalid,
+        authorization: _authorization(
+          method: PrivateStateRequestMethod.get,
+          expiresAt: now.add(const Duration(minutes: 1)),
+        ),
+      ),
       throwsA(isA<PrivateStateProtocolException>()),
     );
   });
 
-  test('challenge lifetime must survive whole-second normalization', () {
+  test('authorization lifetime must survive whole-second normalization', () {
     expect(
       () => InMemoryPrivateStateRemoteStore(
         audience: 'https://sync.vizor.example/v1',
         verifier: verifier,
-        challengeLifetime: const Duration(milliseconds: 999),
+        maximumAuthorizationLifetime: const Duration(milliseconds: 999),
       ),
       throwsArgumentError,
     );
@@ -261,8 +265,8 @@ const _reference = PrivateStateObjectReference(
 );
 
 PrivateStateRequestAuthorization _authorization({
-  required PrivateStateServerChallenge challenge,
   required PrivateStateRequestMethod method,
+  required DateTime expiresAt,
   String contentHashBase64 = '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU',
 }) {
   return PrivateStateRequestAuthorization(
@@ -270,9 +274,9 @@ PrivateStateRequestAuthorization _authorization({
     objectId: _reference.objectId,
     authPublicKeyBase64: _reference.authPublicKeyBase64,
     method: method,
-    challengeBase64: challenge.valueBase64,
+    nonceBase64: 'request-nonce-with-exactly-32-bytes',
     audience: 'https://sync.vizor.example/v1',
-    expiresAt: challenge.expiresAt,
+    expiresAt: expiresAt,
     contentHashBase64: contentHashBase64,
     signatureBase64: 'request-signature',
   );
@@ -286,8 +290,8 @@ class _FakeCrypto implements PrivateStateCrypto {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required PrivateStateRequestMethod method,
-    required PrivateStateServerChallenge challenge,
     required String audience,
+    required DateTime expiresAt,
     PrivateStateEnvelope? envelope,
   }) async {
     final reference = _referenceForKey(key);
@@ -296,9 +300,9 @@ class _FakeCrypto implements PrivateStateCrypto {
       objectId: reference.objectId,
       authPublicKeyBase64: reference.authPublicKeyBase64,
       method: method,
-      challengeBase64: challenge.valueBase64,
+      nonceBase64: 'request-nonce-${DateTime.now().microsecondsSinceEpoch}',
       audience: audience,
-      expiresAt: challenge.expiresAt,
+      expiresAt: expiresAt,
       contentHashBase64: envelope == null
           ? '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU'
           : 'signed-envelope-content-hash',

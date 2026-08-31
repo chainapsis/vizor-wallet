@@ -249,7 +249,6 @@ fn wire__crate__api__private_state_sync__authorize_private_state_request_impl(
             let api_namespace = <String>::sse_decode(&mut deserializer);
             let api_item_key = <String>::sse_decode(&mut deserializer);
             let api_method = <String>::sse_decode(&mut deserializer);
-            let api_challenge_base64 = <String>::sse_decode(&mut deserializer);
             let api_audience = <String>::sse_decode(&mut deserializer);
             let api_expires_at_seconds = <u64>::sse_decode(&mut deserializer);
             let api_envelope =
@@ -267,7 +266,6 @@ fn wire__crate__api__private_state_sync__authorize_private_state_request_impl(
                             api_namespace,
                             api_item_key,
                             api_method,
-                            api_challenge_base64,
                             api_audience,
                             api_expires_at_seconds,
                             api_envelope,
@@ -8136,7 +8134,7 @@ impl SseDecode for crate::api::private_state_sync::ApiPrivateStateRequestAuthori
         let mut var_objectId = <String>::sse_decode(deserializer);
         let mut var_authPublicKeyBase64 = <String>::sse_decode(deserializer);
         let mut var_method = <String>::sse_decode(deserializer);
-        let mut var_challengeBase64 = <String>::sse_decode(deserializer);
+        let mut var_nonceBase64 = <String>::sse_decode(deserializer);
         let mut var_audience = <String>::sse_decode(deserializer);
         let mut var_expiresAtSeconds = <u64>::sse_decode(deserializer);
         let mut var_contentHashBase64 = <String>::sse_decode(deserializer);
@@ -8146,7 +8144,7 @@ impl SseDecode for crate::api::private_state_sync::ApiPrivateStateRequestAuthori
             object_id: var_objectId,
             auth_public_key_base64: var_authPublicKeyBase64,
             method: var_method,
-            challenge_base64: var_challengeBase64,
+            nonce_base64: var_nonceBase64,
             audience: var_audience,
             expires_at_seconds: var_expiresAtSeconds,
             content_hash_base64: var_contentHashBase64,
@@ -11620,7 +11618,7 @@ impl flutter_rust_bridge::IntoDart
             self.object_id.into_into_dart().into_dart(),
             self.auth_public_key_base64.into_into_dart().into_dart(),
             self.method.into_into_dart().into_dart(),
-            self.challenge_base64.into_into_dart().into_dart(),
+            self.nonce_base64.into_into_dart().into_dart(),
             self.audience.into_into_dart().into_dart(),
             self.expires_at_seconds.into_into_dart().into_dart(),
             self.content_hash_base64.into_into_dart().into_dart(),
@@ -14391,7 +14389,7 @@ impl SseEncode for crate::api::private_state_sync::ApiPrivateStateRequestAuthori
         <String>::sse_encode(self.object_id, serializer);
         <String>::sse_encode(self.auth_public_key_base64, serializer);
         <String>::sse_encode(self.method, serializer);
-        <String>::sse_encode(self.challenge_base64, serializer);
+        <String>::sse_encode(self.nonce_base64, serializer);
         <String>::sse_encode(self.audience, serializer);
         <u64>::sse_encode(self.expires_at_seconds, serializer);
         <String>::sse_encode(self.content_hash_base64, serializer);

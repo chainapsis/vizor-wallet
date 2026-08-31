@@ -49,10 +49,8 @@ void main() {
       addTearDown(() => writerTransport.close(force: true));
 
       final envelope = await fixture.envelope();
-      final putChallenge = await writer.createChallenge(object: fixture.object);
       final putAuthorization = await fixture.authorization(
         method: PrivateStateRequestMethod.put,
-        challenge: putChallenge,
         audience: writer.audience,
         envelope: envelope,
       );
@@ -77,10 +75,8 @@ void main() {
         transport: readerTransport,
       );
       addTearDown(() => readerTransport.close(force: true));
-      final getChallenge = await reader.createChallenge(object: fixture.object);
       final getAuthorization = await fixture.authorization(
         method: PrivateStateRequestMethod.get,
-        challenge: getChallenge,
         audience: reader.audience,
       );
       final result = await reader.get(
@@ -263,11 +259,17 @@ class _WireFixture {
 
   Future<PrivateStateRequestAuthorization> authorization({
     required PrivateStateRequestMethod method,
-    required PrivateStateServerChallenge challenge,
     required String audience,
     PrivateStateEnvelope? envelope,
   }) async {
-    final expiry = challenge.expiresAt.toUtc();
+    final expiry = DateTime.fromMillisecondsSinceEpoch(
+      (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000 + 60) * 1000,
+      isUtc: true,
+    );
+    final random = Random.secure();
+    final nonce = Uint8List.fromList(
+      List<int>.generate(32, (_) => random.nextInt(256)),
+    );
     final contentHashBase64 = envelope == null
         ? _emptyContentHash
         : _contentHash(envelope);
@@ -276,7 +278,7 @@ class _WireFixture {
       _u32(_protocolVersion),
       _bytes(utf8.encode(method.wireName)),
       _bytes(utf8.encode(object.objectId)),
-      _bytes(_decodeBase64Url(challenge.valueBase64)),
+      _bytes(nonce),
       _bytes(utf8.encode(audience)),
       _u64(BigInt.from(expiry.millisecondsSinceEpoch ~/ 1000)),
       _bytes(_decodeBase64Url(contentHashBase64)),
@@ -290,7 +292,7 @@ class _WireFixture {
       objectId: object.objectId,
       authPublicKeyBase64: object.authPublicKeyBase64,
       method: method,
-      challengeBase64: challenge.valueBase64,
+      nonceBase64: _encodeBase64Url(nonce),
       audience: audience,
       expiresAt: expiry,
       contentHashBase64: contentHashBase64,
@@ -324,10 +326,8 @@ class _WireRepository implements PrivateStateObjectRepository {
     required PrivateStateObjectKey key,
   }) async {
     final fixture = await _fixture(key);
-    final challenge = await _remote.createChallenge(object: fixture.object);
     final authorization = await fixture.authorization(
       method: PrivateStateRequestMethod.get,
-      challenge: challenge,
       audience: _remote.audience,
     );
     final result = await _remote.get(
@@ -350,10 +350,8 @@ class _WireRepository implements PrivateStateObjectRepository {
   }) async {
     final fixture = await _fixture(key);
     final envelope = await fixture.envelope(plaintext);
-    final challenge = await _remote.createChallenge(object: fixture.object);
     final authorization = await fixture.authorization(
       method: PrivateStateRequestMethod.put,
-      challenge: challenge,
       audience: _remote.audience,
       envelope: envelope,
     );

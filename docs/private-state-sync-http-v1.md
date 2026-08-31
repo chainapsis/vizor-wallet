@@ -10,7 +10,6 @@ JSON integers are unsigned and JSON byte strings use unpadded base64url.
 as produced by the client protocol. It is the only stable server-side object
 identifier.
 
-- `POST /api/private-state/v1/objects/{object_id}/challenge`
 - `GET /api/private-state/v1/objects/{object_id}`
 - `PUT /api/private-state/v1/objects/{object_id}`
 - `POST /api/private-state/v1/objects/{object_id}/put` (transport alias for
@@ -26,26 +25,6 @@ same handler as PUT and authorization is still signed and verified with the
 canonical method `PUT`; the transport method does not weaken or alter the
 signed operation.
 
-## Challenge
-
-The challenge request contains `protocol_version` and
-`auth_public_key_base64`. The server verifies that the public key hashes to the
-path object ID, then returns:
-
-```json
-{
-  "challenge_base64": "...",
-  "expires_at_seconds": 1787565600,
-  "audience": "https://sync.vizor.example/v1"
-}
-```
-
-Challenges contain at least 128 bits from a CSPRNG, expire within two minutes,
-are bound to the full object reference, and are consumed atomically on the
-first request attempt whether verification succeeds or fails. Deployments cap
-outstanding challenges and rate-limit by coarse abuse controls that are not
-persisted as wallet identity.
-
 ## Authorization
 
 GET and PUT send these headers (or an equivalent structured authorization
@@ -53,7 +32,7 @@ object):
 
 - `X-Vizor-Protocol-Version`
 - `X-Vizor-Auth-Public-Key`
-- `X-Vizor-Challenge`
+- `X-Vizor-Nonce`
 - `X-Vizor-Audience`
 - `X-Vizor-Expires-At`
 - `X-Vizor-Content-Hash`
@@ -65,10 +44,20 @@ domain-separated SHA-256 digest computed from the canonical signed envelope.
 That digest exists only in the authorization header; it is not stored as part
 of the envelope.
 
-The server rejects requests unless the challenge exists, is unused, is bound
-to the same object, the signed expiry is after the server clock and no later
-than challenge expiry, the audience is exact, the object ID is self-certifying,
-and the signature is valid.
+The client generates a fresh 256-bit request nonce for every logical GET or
+PUT and includes it in the canonical signature. The server first verifies the
+self-certifying object ID, signature, content digest, method, audience, and
+expiry. It then claims `SHA-256(nonce)` with a conditional DynamoDB write. A
+nonce can succeed exactly once under concurrent requests and remains in the
+table for a two-minute TTL; no request-nonce plaintext or object binding is
+stored. Invalid requests do not claim their nonce.
+
+The signed expiry must be after the server clock and no more than two minutes
+in the future. The app normally signs for one minute. On a time-window failure,
+the server returns `401` with `X-Vizor-Auth-Error: clock-skew` and
+`X-Vizor-Server-Time`; the client keeps an in-memory offset and retries once
+with a fresh nonce and signature. The server clock remains authoritative, so a
+manually changed client clock does not weaken replay protection.
 
 ## GET
 
@@ -93,9 +82,9 @@ The body is the encrypted envelope itself:
 
 The server:
 
-1. consumes and verifies the request authorization;
-2. verifies the self-certifying object reference, envelope signature, size
-   limits, and the authorization's envelope content digest;
+1. verifies the self-certifying object reference, request signature, envelope
+   signature, size limits, and the authorization's envelope content digest;
+2. atomically claims the verified request nonce;
 3. atomically inserts the object only when `object_id` does not exist;
 4. returns `204` for the winner or `409` without changing storage when the
    object already exists.
@@ -143,7 +132,7 @@ metadata; Tor routing and minimal request logging remain separate controls.
 
 The protocol primitive limits plaintext to 256 KiB, which bounds ciphertext
 to plaintext plus the AEAD tag. Servers apply the encoded limits before base64
-decoding, cap total objects and outstanding challenges, and use generic
+decoding, cap total objects and rate-limit object routes, and use generic
 `400`, `401`, `404`, `409`, `413`, and `429` responses without echoing opaque
 payloads or cryptographic material into logs.
 
@@ -166,7 +155,7 @@ fvm flutter run \
 ```
 
 Private state sync is a user opt-in and defaults to off. While it is off the
-app does not create a private-state transport and sends no challenge, GET, or
+app does not create a private-state transport and sends no GET or
 PUT requests. Turning it off prevents every additional request while allowing
 an HTTP request already handed to the client to finish.
 

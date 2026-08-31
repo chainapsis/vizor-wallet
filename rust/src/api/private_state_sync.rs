@@ -28,7 +28,7 @@ pub struct ApiPrivateStateRequestAuthorization {
     pub object_id: String,
     pub auth_public_key_base64: String,
     pub method: String,
-    pub challenge_base64: String,
+    pub nonce_base64: String,
     pub audience: String,
     pub expires_at_seconds: u64,
     pub content_hash_base64: String,
@@ -117,7 +117,6 @@ pub fn authorize_private_state_request(
     namespace: String,
     item_key: String,
     method: String,
-    challenge_base64: String,
     audience: String,
     expires_at_seconds: u64,
     envelope: Option<ApiPrivateStateEnvelope>,
@@ -131,7 +130,6 @@ pub fn authorize_private_state_request(
             &namespace,
             &item_key,
             &method,
-            &challenge_base64,
             &audience,
             expires_at_seconds,
             envelope.as_ref(),
@@ -142,8 +140,8 @@ pub fn authorize_private_state_request(
 
 /// Verifies an opaque request authorization without access to a wallet UFVK.
 ///
-/// Deployments must additionally check the challenge's server-side lifetime,
-/// single-use state, and expected audience before accepting the request.
+/// Deployments must additionally check request nonce single-use, expiry, and
+/// the expected audience before accepting the request.
 pub fn verify_private_state_request_authorization(
     authorization: ApiPrivateStateRequestAuthorization,
 ) -> Result<(), String> {
@@ -155,7 +153,7 @@ pub fn verify_private_state_request_authorization(
 }
 
 /// Verifies that an opaque object reference is self-certifying before a
-/// server allocates challenge state for it.
+/// accepting an authorization for it.
 pub fn verify_private_state_object_reference(
     reference: ApiPrivateStateObjectReference,
 ) -> Result<(), String> {
@@ -231,7 +229,7 @@ impl From<private_state_sync::RequestAuthorization> for ApiPrivateStateRequestAu
             object_id: value.object_id,
             auth_public_key_base64: value.auth_public_key_base64,
             method: value.method,
-            challenge_base64: value.challenge_base64,
+            nonce_base64: value.nonce_base64,
             audience: value.audience,
             expires_at_seconds: value.expires_at_seconds,
             content_hash_base64: value.content_hash_base64,
@@ -247,7 +245,7 @@ impl From<ApiPrivateStateRequestAuthorization> for private_state_sync::RequestAu
             object_id: value.object_id,
             auth_public_key_base64: value.auth_public_key_base64,
             method: value.method,
-            challenge_base64: value.challenge_base64,
+            nonce_base64: value.nonce_base64,
             audience: value.audience,
             expires_at_seconds: value.expires_at_seconds,
             content_hash_base64: value.content_hash_base64,

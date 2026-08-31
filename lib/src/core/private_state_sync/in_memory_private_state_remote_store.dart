@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
 
 import 'private_state_models.dart';
 import 'private_state_remote_store.dart';
@@ -9,30 +7,36 @@ import 'private_state_server_verifier.dart';
 /// Executable reference for the opaque server contract.
 ///
 /// This implementation is intentionally process-local and is not selected by
-/// production providers. It models the challenge, signature, and atomic
-/// create-once requirements that an HTTP service must preserve.
+/// production providers. It models request nonce single-use, signature,
+/// expiry, and atomic create-once requirements that an HTTP service preserves.
 class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
   InMemoryPrivateStateRemoteStore({
     required this.audience,
     required PrivateStateServerVerifier verifier,
     DateTime Function()? now,
-    Random? random,
-    this.challengeLifetime = const Duration(minutes: 2),
-    this.maxOutstandingChallenges = 1024,
+    this.maximumAuthorizationLifetime = const Duration(minutes: 2),
+    this.nonceRetention = const Duration(minutes: 2),
+    this.maxRetainedNonces = 1024,
   }) : _verifier = verifier,
-       _now = now ?? DateTime.now,
-       _random = random ?? Random.secure() {
-    if (challengeLifetime < const Duration(seconds: 1)) {
+       _now = now ?? DateTime.now {
+    if (maximumAuthorizationLifetime < const Duration(seconds: 1)) {
       throw ArgumentError.value(
-        challengeLifetime,
-        'challengeLifetime',
+        maximumAuthorizationLifetime,
+        'maximumAuthorizationLifetime',
         'Must be at least one second.',
       );
     }
-    if (maxOutstandingChallenges <= 0) {
+    if (nonceRetention < maximumAuthorizationLifetime) {
       throw ArgumentError.value(
-        maxOutstandingChallenges,
-        'maxOutstandingChallenges',
+        nonceRetention,
+        'nonceRetention',
+        'Must cover the maximum authorization lifetime.',
+      );
+    }
+    if (maxRetainedNonces <= 0) {
+      throw ArgumentError.value(
+        maxRetainedNonces,
+        'maxRetainedNonces',
         'Must be positive.',
       );
     }
@@ -42,49 +46,13 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
   final String audience;
   final PrivateStateServerVerifier _verifier;
   final DateTime Function() _now;
-  final Random _random;
-  final Duration challengeLifetime;
-  final int maxOutstandingChallenges;
+  final Duration maximumAuthorizationLifetime;
+  final Duration nonceRetention;
+  final int maxRetainedNonces;
 
-  final Map<String, _StoredChallenge> _challenges = {};
+  final Map<String, DateTime> _usedNonces = {};
   final Map<String, PrivateStateEnvelope> _objects = {};
   Future<void> _operationTail = Future.value();
-
-  @override
-  Future<PrivateStateServerChallenge> createChallenge({
-    required PrivateStateObjectReference object,
-  }) {
-    return _exclusive(() async {
-      await _verifier.verifyObjectReference(object);
-      final now = _now().toUtc();
-      _challenges.removeWhere(
-        (_, challenge) => !challenge.expiresAt.isAfter(now),
-      );
-      if (_challenges.length >= maxOutstandingChallenges) {
-        throw const PrivateStateProtocolException(
-          'Reference store challenge capacity exceeded.',
-        );
-      }
-      late String value;
-      do {
-        value = base64Url
-            .encode(List<int>.generate(32, (_) => _random.nextInt(256)))
-            .replaceAll('=', '');
-      } while (_challenges.containsKey(value));
-      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
-        now.add(challengeLifetime).millisecondsSinceEpoch ~/ 1000 * 1000,
-        isUtc: true,
-      );
-      _challenges[value] = _StoredChallenge(
-        object: object,
-        expiresAt: expiresAt,
-      );
-      return PrivateStateServerChallenge(
-        valueBase64: value,
-        expiresAt: expiresAt,
-      );
-    });
-  }
 
   @override
   Future<PrivateStateRemoteReadResult> get({
@@ -92,7 +60,7 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
     required PrivateStateRequestAuthorization authorization,
   }) {
     return _exclusive(() async {
-      await _consumeAndVerify(
+      await _verifyAndClaim(
         object: object,
         authorization: authorization,
         method: PrivateStateRequestMethod.get,
@@ -111,14 +79,11 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
     required PrivateStateRequestAuthorization authorization,
   }) {
     return _exclusive(() async {
-      await _consumeAndVerify(
+      await _verifyAndClaim(
         object: object,
         authorization: authorization,
         method: PrivateStateRequestMethod.put,
-      );
-      await _verifier.verifyPutContent(
         envelope: envelope,
-        authorization: authorization,
       );
       if (_objects.containsKey(object.objectId)) {
         return const PrivateStateRemoteConflict();
@@ -128,41 +93,47 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
     });
   }
 
-  Future<void> _consumeAndVerify({
+  Future<void> _verifyAndClaim({
     required PrivateStateObjectReference object,
     required PrivateStateRequestAuthorization authorization,
     required PrivateStateRequestMethod method,
+    PrivateStateEnvelope? envelope,
   }) async {
-    final challenge = _challenges.remove(authorization.challengeBase64);
     final now = _now().toUtc();
-    if (challenge == null ||
-        !challenge.expiresAt.isAfter(now) ||
-        !authorization.expiresAt.toUtc().isAfter(now) ||
-        authorization.expiresAt.toUtc().isAfter(challenge.expiresAt)) {
-      throw const PrivateStateProtocolException(
-        'Challenge is missing, expired, reused, or has an invalid lifetime.',
-      );
-    }
-    if (!_sameObject(challenge.object, object) ||
-        authorization.protocolVersion != object.protocolVersion ||
+    await _verifier.verifyObjectReference(object);
+    if (authorization.protocolVersion != object.protocolVersion ||
         authorization.objectId != object.objectId ||
         authorization.authPublicKeyBase64 != object.authPublicKeyBase64 ||
         authorization.method != method ||
         authorization.audience != audience) {
       throw const PrivateStateProtocolException(
-        'Authorization does not match the challenged request.',
+        'Authorization does not match the request.',
       );
     }
     await _verifier.verifyAuthorization(authorization);
-  }
-
-  bool _sameObject(
-    PrivateStateObjectReference left,
-    PrivateStateObjectReference right,
-  ) {
-    return left.protocolVersion == right.protocolVersion &&
-        left.objectId == right.objectId &&
-        left.authPublicKeyBase64 == right.authPublicKeyBase64;
+    if (envelope != null) {
+      await _verifier.verifyPutContent(
+        envelope: envelope,
+        authorization: authorization,
+      );
+    }
+    final expiresAt = authorization.expiresAt.toUtc();
+    if (!expiresAt.isAfter(now) ||
+        expiresAt.isAfter(now.add(maximumAuthorizationLifetime))) {
+      throw PrivateStateClockSkewException(now);
+    }
+    _usedNonces.removeWhere((_, retainedUntil) => !retainedUntil.isAfter(now));
+    if (_usedNonces.containsKey(authorization.nonceBase64)) {
+      throw const PrivateStateProtocolException(
+        'Request nonce has already been used.',
+      );
+    }
+    if (_usedNonces.length >= maxRetainedNonces) {
+      throw const PrivateStateProtocolException(
+        'Reference store nonce capacity exceeded.',
+      );
+    }
+    _usedNonces[authorization.nonceBase64] = now.add(nonceRetention);
   }
 
   Future<T> _exclusive<T>(Future<T> Function() operation) {
@@ -176,11 +147,4 @@ class InMemoryPrivateStateRemoteStore implements PrivateStateRemoteStore {
     });
     return result.future;
   }
-}
-
-class _StoredChallenge {
-  const _StoredChallenge({required this.object, required this.expiresAt});
-
-  final PrivateStateObjectReference object;
-  final DateTime expiresAt;
 }

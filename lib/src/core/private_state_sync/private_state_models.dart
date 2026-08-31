@@ -84,7 +84,7 @@ class PrivateStateRequestAuthorization {
     required this.objectId,
     required this.authPublicKeyBase64,
     required this.method,
-    required this.challengeBase64,
+    required this.nonceBase64,
     required this.audience,
     required this.expiresAt,
     required this.contentHashBase64,
@@ -95,21 +95,11 @@ class PrivateStateRequestAuthorization {
   final String objectId;
   final String authPublicKeyBase64;
   final PrivateStateRequestMethod method;
-  final String challengeBase64;
+  final String nonceBase64;
   final String audience;
   final DateTime expiresAt;
   final String contentHashBase64;
   final String signatureBase64;
-}
-
-class PrivateStateServerChallenge {
-  const PrivateStateServerChallenge({
-    required this.valueBase64,
-    required this.expiresAt,
-  });
-
-  final String valueBase64;
-  final DateTime expiresAt;
 }
 
 sealed class PrivateStateRemoteReadResult {
@@ -172,4 +162,17 @@ class PrivateStateProtocolException implements Exception {
 
   @override
   String toString() => 'PrivateStateProtocolException: $message';
+}
+
+/// A validly signed request used a wall-clock value outside the server's
+/// short authorization window. Callers may update an in-memory server offset
+/// and retry once with a fresh nonce and signature.
+class PrivateStateClockSkewException implements Exception {
+  const PrivateStateClockSkewException(this.serverTime);
+
+  final DateTime serverTime;
+
+  @override
+  String toString() =>
+      'PrivateStateClockSkewException: serverTime=${serverTime.toUtc().toIso8601String()}';
 }

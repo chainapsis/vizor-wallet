@@ -12,6 +12,7 @@ use aes_gcm::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
+use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -26,8 +27,7 @@ const SERVICE_REALM: &str = "vizor-private-state-sync";
 const MAX_ITEM_KEY_BYTES: usize = 512;
 const MAX_AUDIENCE_BYTES: usize = 512;
 const MAX_PLAINTEXT_BYTES: usize = 256 * 1024;
-const MIN_CHALLENGE_BYTES: usize = 16;
-const MAX_CHALLENGE_BYTES: usize = 128;
+const REQUEST_NONCE_LEN: usize = 32;
 const SHA256_LEN: usize = 32;
 const AES_NONCE_LEN: usize = 12;
 const AES_GCM_TAG_LEN: usize = 16;
@@ -57,7 +57,7 @@ pub struct RequestAuthorization {
     pub object_id: String,
     pub auth_public_key_base64: String,
     pub method: String,
-    pub challenge_base64: String,
+    pub nonce_base64: String,
     pub audience: String,
     pub expires_at_seconds: u64,
     /// Hash of the canonical request content. For PUT this is derived from the
@@ -225,8 +225,8 @@ pub fn verify_encrypted_object(envelope: &EncryptedObject) -> Result<(), String>
 }
 
 /// Verifies that a PUT authorization is bound to this exact signed envelope.
-/// The caller must separately verify the request signature, challenge,
-/// freshness, single-use, expiry, and expected audience.
+/// The caller must separately verify request freshness, nonce single-use,
+/// expiry, and the expected audience.
 pub fn verify_put_authorization_content(
     envelope: &EncryptedObject,
     authorization: &RequestAuthorization,
@@ -303,7 +303,6 @@ pub fn authorize_request(
     namespace: &str,
     item_key: &str,
     method: &str,
-    challenge_base64: &str,
     audience: &str,
     expires_at_seconds: u64,
     envelope: Option<&EncryptedObject>,
@@ -313,12 +312,8 @@ pub fn authorize_request(
     if expires_at_seconds == 0 {
         return Err("Private-state request expiry must be nonzero".to_string());
     }
-    let challenge = decode_bounded(challenge_base64, MAX_CHALLENGE_BYTES, "challenge")?;
-    if challenge.len() < MIN_CHALLENGE_BYTES {
-        return Err(format!(
-            "Private-state challenge must be at least {MIN_CHALLENGE_BYTES} bytes"
-        ));
-    }
+    let mut request_nonce = [0u8; REQUEST_NONCE_LEN];
+    OsRng.fill_bytes(&mut request_nonce);
     let content_hash = match (method, envelope) {
         ("PUT", Some(envelope)) => {
             let verified = verify_encrypted_object_inner(envelope)?;
@@ -345,7 +340,7 @@ pub fn authorize_request(
     let signed = canonical_request(
         &reference,
         method,
-        &challenge,
+        &request_nonce,
         audience,
         expires_at_seconds,
         &content_hash,
@@ -356,7 +351,7 @@ pub fn authorize_request(
         object_id: reference.object_id,
         auth_public_key_base64: reference.auth_public_key_base64,
         method: method.to_string(),
-        challenge_base64: URL_SAFE_NO_PAD.encode(challenge),
+        nonce_base64: URL_SAFE_NO_PAD.encode(request_nonce),
         audience: audience.to_string(),
         expires_at_seconds,
         content_hash_base64: URL_SAFE_NO_PAD.encode(content_hash),
@@ -389,14 +384,11 @@ pub fn verify_request_authorization(authorization: &RequestAuthorization) -> Res
     if authorization.object_id != expected_reference.object_id {
         return Err("Private-state object ID does not match public key".to_string());
     }
-    let challenge = decode_bounded(
-        &authorization.challenge_base64,
-        MAX_CHALLENGE_BYTES,
-        "challenge",
+    let request_nonce = decode_exact(
+        &authorization.nonce_base64,
+        REQUEST_NONCE_LEN,
+        "request nonce",
     )?;
-    if challenge.len() < MIN_CHALLENGE_BYTES {
-        return Err("Private-state challenge is too short".to_string());
-    }
     let content_hash = decode_exact(
         &authorization.content_hash_base64,
         SHA256_LEN,
@@ -412,7 +404,7 @@ pub fn verify_request_authorization(authorization: &RequestAuthorization) -> Res
     let signed = canonical_request(
         &expected_reference,
         method,
-        &challenge,
+        &request_nonce,
         &authorization.audience,
         authorization.expires_at_seconds,
         &content_hash,
@@ -520,7 +512,7 @@ fn hash_signed_envelope(unsigned: &[u8], signature: &[u8]) -> [u8; SHA256_LEN] {
 fn canonical_request(
     reference: &ObjectReference,
     method: &str,
-    challenge: &[u8],
+    request_nonce: &[u8],
     audience: &str,
     expires_at_seconds: u64,
     content_hash: &[u8],
@@ -530,7 +522,7 @@ fn canonical_request(
     push_u32(&mut encoded, PROTOCOL_VERSION);
     push_string(&mut encoded, method).expect("method length is bounded");
     push_string(&mut encoded, &reference.object_id).expect("object ID length is bounded");
-    push_bytes(&mut encoded, challenge).expect("challenge length is bounded");
+    push_bytes(&mut encoded, request_nonce).expect("request nonce length is fixed");
     push_string(&mut encoded, audience).expect("audience length was validated");
     push_u64(&mut encoded, expires_at_seconds);
     push_bytes(&mut encoded, content_hash).expect("content hash length is bounded");
@@ -698,7 +690,6 @@ mod tests {
             NAMESPACE,
             ITEM,
             "PUT",
-            &URL_SAFE_NO_PAD.encode([9u8; 32]),
             "https://sync.vizor.example/v1",
             1_800_000_000,
             Some(&envelope),
@@ -741,7 +732,6 @@ mod tests {
             NAMESPACE,
             ITEM,
             "PUT",
-            &URL_SAFE_NO_PAD.encode([9u8; 32]),
             "https://sync.vizor.example/v1",
             1_800_000_000,
             Some(&first),
@@ -754,14 +744,12 @@ mod tests {
 
     #[test]
     fn request_authorization_is_self_certifying_and_binds_fields() {
-        let challenge = URL_SAFE_NO_PAD.encode([9u8; 32]);
         let authorization = authorize_request(
             UFVK,
             NETWORK,
             NAMESPACE,
             ITEM,
             "PUT",
-            &challenge,
             "https://sync.vizor.example/v1",
             1_800_000_000,
             Some(
@@ -789,14 +777,12 @@ mod tests {
 
     #[test]
     fn request_authorization_requires_the_expected_envelope_shape() {
-        let challenge = URL_SAFE_NO_PAD.encode([9u8; 32]);
         assert!(authorize_request(
             UFVK,
             NETWORK,
             NAMESPACE,
             ITEM,
             "PUT",
-            &challenge,
             "https://sync.vizor.example/v1",
             1_800_000_000,
             None,
@@ -808,7 +794,6 @@ mod tests {
             NAMESPACE,
             ITEM,
             "GET",
-            &challenge,
             "https://sync.vizor.example/v1",
             1_800_000_000,
             Some(
@@ -823,6 +808,38 @@ mod tests {
             ),
         )
         .is_err());
+    }
+
+    #[test]
+    fn request_authorization_generates_a_fresh_fixed_length_nonce() {
+        let first = authorize_request(
+            UFVK,
+            NETWORK,
+            NAMESPACE,
+            ITEM,
+            "GET",
+            "https://sync.vizor.example/v1",
+            1_800_000_000,
+            None,
+        )
+        .unwrap();
+        let second = authorize_request(
+            UFVK,
+            NETWORK,
+            NAMESPACE,
+            ITEM,
+            "GET",
+            "https://sync.vizor.example/v1",
+            1_800_000_000,
+            None,
+        )
+        .unwrap();
+
+        assert_ne!(first.nonce_base64, second.nonce_base64);
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(first.nonce_base64).unwrap().len(),
+            REQUEST_NONCE_LEN
+        );
     }
 
     #[test]

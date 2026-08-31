@@ -180,7 +180,7 @@ final privateStateRemoteStoreProvider = Provider<PrivateStateRemoteStore?>((
   final transport = privateStateHttpTransportForBuild();
   final gate = ref.read(privateStateSyncRequestGateProvider);
   // Graceful close lets a request already handed to the HTTP client finish.
-  // The shared gate still rejects every subsequent challenge/GET/upload step.
+  // The shared gate still rejects every subsequent GET/upload step.
   ref.onDispose(transport.close);
   return HttpPrivateStateRemoteStore(
     baseUri: ref.watch(privateStateBaseUriProvider),

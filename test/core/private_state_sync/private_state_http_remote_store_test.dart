@@ -18,73 +18,15 @@ void main() {
     );
   });
 
-  test('creates a challenge and requires the configured audience', () async {
-    transport.responses.add(
-      _jsonResponse(201, {
-        'challenge_base64': _challenge,
-        'expires_at_seconds': 1790000120,
-        'audience': _audience,
-      }),
+  test('supports a signing audience distinct from transport', () {
+    final aliasedStore = HttpPrivateStateRemoteStore(
+      baseUri: Uri.parse('http://10.0.2.2:3000/api/private-state/v1'),
+      signingAudience: _audience,
+      transport: _FakeTransport(),
     );
 
-    final challenge = await store.createChallenge(object: _object);
-
-    expect(challenge.valueBase64, _challenge);
-    expect(
-      challenge.expiresAt,
-      DateTime.fromMillisecondsSinceEpoch(1790000120000, isUtc: true),
-    );
-    final request = transport.requests.single;
-    expect(request.method, 'POST');
-    expect(
-      request.uri.toString(),
-      'https://functions.vizor.cash/api/private-state/v1/objects/'
-      '$_objectId/challenge',
-    );
-    expect(jsonDecode(utf8.decode(request.bodyBytes)), {
-      'protocol_version': 1,
-      'auth_public_key_base64': _publicKey,
-    });
+    expect(aliasedStore.audience, _audience);
   });
-
-  test('rejects a challenge audience selected by the server', () async {
-    transport.responses.add(
-      _jsonResponse(201, {
-        'challenge_base64': _challenge,
-        'expires_at_seconds': 1790000120,
-        'audience': 'https://attacker.example/v1',
-      }),
-    );
-
-    await expectLater(
-      store.createChallenge(object: _object),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
-  });
-
-  test(
-    'accepts a configured signing audience distinct from transport',
-    () async {
-      final aliasedTransport = _FakeTransport();
-      final aliasedStore = HttpPrivateStateRemoteStore(
-        baseUri: Uri.parse('http://10.0.2.2:3000/api/private-state/v1'),
-        signingAudience: _audience,
-        transport: aliasedTransport,
-      );
-      aliasedTransport.responses.add(
-        _jsonResponse(201, {
-          'challenge_base64': 'challenge',
-          'expires_at_seconds': 1800000000,
-          'audience': _audience,
-        }),
-      );
-
-      await aliasedStore.createChallenge(object: _object);
-
-      expect(aliasedStore.audience, _audience);
-      expect(aliasedTransport.requests.single.uri.host, '10.0.2.2');
-    },
-  );
 
   test('authenticated GET maps absence and parses an envelope', () async {
     transport.responses
@@ -104,6 +46,7 @@ void main() {
     final envelope = (found as PrivateStateRemoteFound).envelope;
     expect(envelope.ciphertextBase64, 'ciphertext');
     expect(transport.requests.last.headers['x-vizor-signature'], _signature);
+    expect(transport.requests.last.headers['x-vizor-nonce'], _nonce);
   });
 
   test('rejects obsolete mutable-envelope fields', () async {
@@ -167,7 +110,7 @@ void main() {
       objectId: _objectId,
       authPublicKeyBase64: _publicKey,
       method: PrivateStateRequestMethod.get,
-      challengeBase64: _challenge,
+      nonceBase64: _nonce,
       audience: 'https://other.example/v1',
       expiresAt: _expiry,
       contentHashBase64: _emptyHash,
@@ -179,6 +122,30 @@ void main() {
       throwsA(isA<PrivateStateProtocolException>()),
     );
     expect(transport.requests, isEmpty);
+  });
+
+  test('maps a server clock response to a clock-skew exception', () async {
+    transport.responses.add(
+      NetworkHttpResponse(
+        statusCode: 401,
+        headers: const {
+          'x-vizor-auth-error': ['clock-skew'],
+          'x-vizor-server-time': ['1790000000'],
+        },
+        bodyBytes: Uint8List(0),
+      ),
+    );
+
+    await expectLater(
+      store.get(object: _object, authorization: _getAuthorization),
+      throwsA(
+        isA<PrivateStateClockSkewException>().having(
+          (error) => error.serverTime.millisecondsSinceEpoch,
+          'serverTime',
+          1790000000000,
+        ),
+      ),
+    );
   });
 }
 
@@ -230,7 +197,7 @@ NetworkHttpResponse _jsonResponse(int statusCode, Map<String, Object?> body) {
 const _audience = 'https://functions.vizor.cash/api/private-state/v1';
 const _objectId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const _publicKey = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
-const _challenge = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+const _nonce = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
 const _signature =
     'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
 const _emptyHash = '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU';
@@ -247,7 +214,7 @@ final _getAuthorization = PrivateStateRequestAuthorization(
   objectId: _objectId,
   authPublicKeyBase64: _publicKey,
   method: PrivateStateRequestMethod.get,
-  challengeBase64: _challenge,
+  nonceBase64: _nonce,
   audience: _audience,
   expiresAt: _expiry,
   contentHashBase64: _emptyHash,
@@ -259,7 +226,7 @@ final _putAuthorization = PrivateStateRequestAuthorization(
   objectId: _objectId,
   authPublicKeyBase64: _publicKey,
   method: PrivateStateRequestMethod.put,
-  challengeBase64: _challenge,
+  nonceBase64: _nonce,
   audience: _audience,
   expiresAt: _expiry,
   contentHashBase64: 'envelope-hash',

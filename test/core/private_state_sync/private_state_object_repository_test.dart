@@ -99,31 +99,51 @@ void main() {
     },
   );
 
-  test('expired challenge is rejected before signing', () async {
+  test('server clock skew retries once with a fresh authorization', () async {
     final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(
-      now: now,
-      challengeExpiresAt: now.subtract(const Duration(seconds: 1)),
-    );
+    final serverNow = now.add(const Duration(hours: 3));
+    final remote = _FakeRemoteStore(now: serverNow)..clockSkewFailures = 1;
     final repository = DefaultPrivateStateObjectRepository(
       crypto: crypto,
       remote: remote,
       now: () => now,
     );
 
-    await expectLater(
-      repository.read(account: account, key: key),
-      throwsA(isA<PrivateStateProtocolException>()),
+    expect(
+      await repository.read(account: account, key: key),
+      isA<PrivateStateReadAbsent>(),
     );
-    expect(crypto.authorizations, isEmpty);
+    expect(remote.getCalls, 2);
+    expect(crypto.authorizations, hasLength(2));
+    expect(
+      crypto.authorizations.first.nonceBase64,
+      isNot(crypto.authorizations.last.nonceBase64),
+    );
+    expect(
+      crypto.authorizations.last.expiresAt,
+      serverNow.add(DefaultPrivateStateObjectRepository.authorizationLifetime),
+    );
   });
 
-  test('authorization lifetime is capped independently of server', () async {
-    final crypto = _FakeCrypto();
-    final remote = _FakeRemoteStore(
-      now: now,
-      challengeExpiresAt: now.add(const Duration(days: 365)),
+  test('server clock skew is retried no more than once', () async {
+    final serverNow = now.add(const Duration(hours: 3));
+    final remote = _FakeRemoteStore(now: serverNow)..clockSkewFailures = 2;
+    final repository = DefaultPrivateStateObjectRepository(
+      crypto: _FakeCrypto(),
+      remote: remote,
+      now: () => now,
     );
+
+    await expectLater(
+      repository.read(account: account, key: key),
+      throwsA(isA<PrivateStateClockSkewException>()),
+    );
+    expect(remote.getCalls, 2);
+  });
+
+  test('authorization uses the short client lifetime', () async {
+    final crypto = _FakeCrypto();
+    final remote = _FakeRemoteStore(now: now);
     final repository = DefaultPrivateStateObjectRepository(
       crypto: crypto,
       remote: remote,
@@ -134,7 +154,7 @@ void main() {
 
     expect(
       crypto.authorizations.single.expiresAt,
-      now.add(DefaultPrivateStateObjectRepository.maxAuthorizationLifetime),
+      now.add(DefaultPrivateStateObjectRepository.authorizationLifetime),
     );
   });
 }
@@ -157,11 +177,13 @@ const _envelope = PrivateStateEnvelope(
 class _AuthorizationCall {
   const _AuthorizationCall({
     required this.method,
+    required this.nonceBase64,
     required this.expiresAt,
     required this.envelope,
   });
 
   final PrivateStateRequestMethod method;
+  final String nonceBase64;
   final DateTime expiresAt;
   final PrivateStateEnvelope? envelope;
 }
@@ -175,14 +197,16 @@ class _FakeCrypto implements PrivateStateCrypto {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
     required PrivateStateRequestMethod method,
-    required PrivateStateServerChallenge challenge,
     required String audience,
+    required DateTime expiresAt,
     PrivateStateEnvelope? envelope,
   }) async {
+    final nonceBase64 = 'request-nonce-${authorizations.length + 1}';
     authorizations.add(
       _AuthorizationCall(
         method: method,
-        expiresAt: challenge.expiresAt,
+        nonceBase64: nonceBase64,
+        expiresAt: expiresAt,
         envelope: envelope,
       ),
     );
@@ -191,9 +215,9 @@ class _FakeCrypto implements PrivateStateCrypto {
       objectId: _reference.objectId,
       authPublicKeyBase64: _reference.authPublicKeyBase64,
       method: method,
-      challengeBase64: challenge.valueBase64,
+      nonceBase64: nonceBase64,
       audience: audience,
-      expiresAt: challenge.expiresAt,
+      expiresAt: expiresAt,
       contentHashBase64: envelope == null
           ? '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU'
           : 'signed-envelope-content-hash',
@@ -226,12 +250,10 @@ class _FakeCrypto implements PrivateStateCrypto {
 }
 
 class _FakeRemoteStore implements PrivateStateRemoteStore {
-  _FakeRemoteStore({required this.now, DateTime? challengeExpiresAt})
-    : challengeExpiresAt =
-          challengeExpiresAt ?? now.add(const Duration(minutes: 2));
+  _FakeRemoteStore({required this.now});
 
   final DateTime now;
-  final DateTime challengeExpiresAt;
+  int clockSkewFailures = 0;
   PrivateStateRemoteReadResult nextRead = const PrivateStateRemoteAbsent();
   PrivateStateRemoteCreateResult nextCreate = const PrivateStateRemoteCreated();
   int getCalls = 0;
@@ -241,19 +263,15 @@ class _FakeRemoteStore implements PrivateStateRemoteStore {
   String get audience => 'https://sync.vizor.example/v1';
 
   @override
-  Future<PrivateStateServerChallenge> createChallenge({
-    required PrivateStateObjectReference object,
-  }) async => PrivateStateServerChallenge(
-    valueBase64: 'challenge-with-at-least-16-bytes',
-    expiresAt: challengeExpiresAt,
-  );
-
-  @override
   Future<PrivateStateRemoteReadResult> get({
     required PrivateStateObjectReference object,
     required PrivateStateRequestAuthorization authorization,
   }) async {
     getCalls++;
+    if (clockSkewFailures > 0) {
+      clockSkewFailures--;
+      throw PrivateStateClockSkewException(now);
+    }
     return nextRead;
   }
 
