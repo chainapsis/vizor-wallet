@@ -53,9 +53,6 @@ http = "1"
 http-body-util = "0.1"
 hyper = "1"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
-# Direct-route TLS for voting helper HTTP. The connector is wrapped so the
-# direct-route lease still governs the socket.
-hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
 tower-service = "0.3"
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
@@ -120,7 +117,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "2f0ccaf8facbdcf94a7dfe9dbf36478473e92358"
+rev = "b965c5d917492eec388ff974556b3e4a2e8e809d"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -168,13 +165,13 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "2f0ccaf8facbdcf94a7dfe9dbf36478473e92358"
+rev = "b965c5d917492eec388ff974556b3e4a2e8e809d"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.0"
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "2f0ccaf8facbdcf94a7dfe9dbf36478473e92358"
+rev = "b965c5d917492eec388ff974556b3e4a2e8e809d"
 default-features = false
 features = ["zakura"]
 

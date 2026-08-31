@@ -52,6 +52,21 @@ const kE2eStaticVotingConfigSource = String.fromEnvironment(
   kE2eStaticVotingConfigSourceEnvKey,
 );
 
+/// Hash-pinned logical source injected by the local stage share harness.
+///
+/// This override is accepted only by debug testnet builds. The endpoint mapper
+/// separately requires an explicit loopback gateway before the logical HTTPS
+/// source can reach local HTTP.
+const kStageVotingHarnessStaticConfigSourceEnvKey =
+    'ZCASH_STAGE_VOTING_STATIC_CONFIG_URL';
+const kStageVotingHarnessStaticConfigSource = String.fromEnvironment(
+  kStageVotingHarnessStaticConfigSourceEnvKey,
+);
+const kStageVotingHarnessConfigEnabled =
+    kDebugMode &&
+    kZcashDefaultNetworkRaw == 'test' &&
+    kStageVotingHarnessStaticConfigSource != '';
+
 /// Ordered production trust-anchor mirrors, canonical origin first.
 ///
 /// Every entry carries the same `?checksum=sha256:` pin, so whichever origin
@@ -72,6 +87,8 @@ const kStageStaticVotingConfigMirrors = <String>[
 const kDefaultStaticVotingConfigSource =
     kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
     ? kE2eStaticVotingConfigSource
+    : kStageVotingHarnessConfigEnabled
+    ? kStageVotingHarnessStaticConfigSource
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigSource
     : kProductionStaticVotingConfigSource;
@@ -80,6 +97,8 @@ const kDefaultStaticVotingConfigSource =
 const kDefaultStaticVotingConfigMirrors =
     kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
     ? <String>[kE2eStaticVotingConfigSource]
+    : kStageVotingHarnessConfigEnabled
+    ? <String>[kStageVotingHarnessStaticConfigSource]
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigMirrors
     : kProductionStaticVotingConfigMirrors;

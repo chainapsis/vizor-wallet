@@ -120,6 +120,10 @@ final votingConfigSourceStoreProvider = Provider<VotingConfigSourceStore>((
   return AppSecureStoreVotingConfigSourceStore(AppSecureStore.instance);
 });
 
+final votingStageHarnessConfigEnabledProvider = Provider<bool>((ref) {
+  return kStageVotingHarnessConfigEnabled;
+});
+
 class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
   const AppSecureStoreVotingConfigSourceStore(this._store);
 
@@ -165,6 +169,14 @@ class VotingConfigSourceNotifier
     final savedSources = _decodeSavedSources(
       await store.readSavedSourcesJson(),
     );
+    // A stage harness build must use its generated hash-pinned source even
+    // when the preserved testnet wallet last selected a custom source. Keep
+    // that stored choice untouched so the next normal build restores it.
+    if (ref.read(votingStageHarnessConfigEnabledProvider)) {
+      return VotingConfigSourceState.defaultSource().copyWith(
+        savedSources: savedSources,
+      );
+    }
     final trimmed = stored?.trim();
     if (trimmed == null || trimmed.isEmpty) {
       return VotingConfigSourceState.defaultSource().copyWith(

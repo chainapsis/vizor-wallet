@@ -37,8 +37,6 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
-    as rust_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
     as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -1809,6 +1807,25 @@ void main() {
             'https://pir.example/root': {'height': 123},
           },
         ),
+        selectEndpoint:
+            ({
+              required diagnostics,
+              required expectedSnapshotHeight,
+              required matchIndex,
+            }) {
+              final matches = diagnostics
+                  .where(
+                    (diagnostic) =>
+                        diagnostic.status ==
+                            PirSnapshotEndpointStatus.matched &&
+                        diagnostic.reportedHeight == expectedSnapshotHeight,
+                  )
+                  .map((diagnostic) => diagnostic.endpoint)
+                  .toList(growable: false);
+              return matches.isEmpty
+                  ? null
+                  : matches[matchIndex % matches.length];
+            },
       );
       final container = _sessionContainer(rust: rust, pirResolver: pir);
       addTearDown(container.dispose);
@@ -1911,6 +1928,51 @@ void main() {
     expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
     expect(rust.storedVanPositions, ['0:0']);
   });
+
+  test(
+    'account switch during delegation serialization stops dispatch',
+    () async {
+      final delegationWireJsonGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        delegationWireJsonGate: delegationWireJsonGate,
+      );
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        activeAccountUuidListenable: activeAccountProvider,
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final delegate = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      await rust.delegationWireJsonStarted.future;
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      await Future<void>.delayed(Duration.zero);
+      delegationWireJsonGate.complete();
+      await delegate;
+
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(rust.storedDelegationTxHashes, isEmpty);
+      final reloaded = await container.read(
+        votingSessionProvider(kRoundId).future,
+      );
+      expect(reloaded.accountUuid, 'account-2');
+      expect(container.read(votingSessionProvider(kRoundId)).hasError, isFalse);
+    },
+  );
 
   test('spent delegation nullifier uses bounded recovery polling', () async {
     final responses = votingHttpResponses();
@@ -4916,6 +4978,111 @@ void main() {
     expect(rust.storedVoteTxHashes, isEmpty);
   });
 
+  test('account switch stops vote broadcasts waiting for the permit', () async {
+    final http = _GatedFirstVotePostHttpClient(
+      responses: votingHttpResponses(),
+    );
+    final rust = FakeVotingRustApi(emitCommitments: true, bundleCount: 3);
+    final activeAccountProvider =
+        NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 3,
+        delegationTxHashes: [
+          for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: bundleIndex,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-$bundleIndex',
+              vanLeafPosition: null,
+            ),
+        ],
+        votes: [
+          for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+            vote(bundleIndex: bundleIndex, proposalId: 7),
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      activeAccountUuidListenable: activeAccountProvider,
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    await http.firstVotePostStarted.future;
+    await _waitForPlannedShareCount(rust, 3);
+
+    container.read(activeAccountProvider.notifier).set('account-2');
+    await Future<void>.delayed(Duration.zero);
+    http.releaseFirstVotePost.complete();
+    await cast;
+
+    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+    expect(rust.storedVoteTxHashes, ['0:7:vote-tx-0']);
+    final reloaded = await container.read(
+      votingSessionProvider(kRoundId).future,
+    );
+    expect(reloaded.accountUuid, 'account-2');
+    expect(container.read(votingSessionProvider(kRoundId)).hasError, isFalse);
+  });
+
+  test('account switch during vote serialization stops dispatch', () async {
+    final voteWireJsonGate = Completer<void>();
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      voteWireJsonGate: voteWireJsonGate,
+    );
+    final activeAccountProvider =
+        NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+      activeAccountUuidListenable: activeAccountProvider,
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final cast = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+    await rust.voteWireJsonStarted.future;
+
+    container.read(activeAccountProvider.notifier).set('account-2');
+    await Future<void>.delayed(Duration.zero);
+    voteWireJsonGate.complete();
+    await cast;
+
+    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
+    expect(rust.storedVoteTxHashes, isEmpty);
+    final reloaded = await container.read(
+      votingSessionProvider(kRoundId).future,
+    );
+    expect(reloaded.accountUuid, 'account-2');
+    expect(container.read(votingSessionProvider(kRoundId)).hasError, isFalse);
+  });
+
   test(
     'spent nullifier rejection resumes when its tx already landed',
     () async {
@@ -5995,10 +6162,12 @@ void main() {
 
       expect(rust.recoveredVoteCommitmentKeys, ['1:7']);
       expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
-      expect(rust.operationLog.take(5).toList(), [
+      expect(rust.operationLog.take(7).toList(), [
         'recover_vote:1:7',
+        'prepare_share_delivery:1:7',
         'mark_vote_submitted:1:7',
         'mark_vote_confirmed:1:7',
+        'submit_prepared_shares:1:7',
         'record_share:1:7:0',
         'build_vote:0:8',
       ]);
@@ -6127,9 +6296,13 @@ void main() {
     );
     expect(rust.storedVoteTxHashes, isNot(contains('1:7:vote-tx')));
     expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
-    expect(rust.planImmediateShareIndexes, everyElement(isNull));
-    expect(rust.operationLog.take(3).toList(), [
+    // Dart supplies only the complete round roster; the SDK derives any
+    // immediate share from its durable ballot intent and bundle state.
+    expect(rust.planImmediateShareIndexes, [null, null, null]);
+    expect(rust.operationLog.take(5).toList(), [
       'recover_vote:1:7',
+      'prepare_share_delivery:1:7',
+      'submit_prepared_shares:1:7',
       'record_share:1:7:1',
       'build_vote:0:8',
     ]);
@@ -6141,7 +6314,7 @@ void main() {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final rust = FakeVotingRustApi(
         commitmentShareCount: 3,
-        recoveredShareOrder: const [2, 0, 1],
+        recoveredShareOrder: const [2, 0],
       );
       final recoveryApi = FakeVotingRecoveryApi(
         roundPlan: apiRoundPlan(
@@ -6213,7 +6386,7 @@ void main() {
           .read(votingSessionProvider(kRoundId).notifier)
           .castVotes(draftVotes: const []);
 
-      expect(rust.planImmediateShareIndexes, [1]);
+      expect(rust.planImmediateShareIndexes, [null]);
       final recoveredShares = rust.recordedShares.where(
         (share) => share.bundleIndex == 0 && share.proposalId == 7,
       );
@@ -6223,7 +6396,7 @@ void main() {
       );
       expect(
         recoveredShares.singleWhere((share) => share.shareIndex == 0).submitAt,
-        BigInt.zero,
+        greaterThan(BigInt.zero),
       );
       expect(
         recoveredShares.singleWhere((share) => share.shareIndex == 2).submitAt,
@@ -6407,9 +6580,11 @@ void main() {
         [0, 1],
       );
       expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
-      expect(rust.operationLog.take(5).toList(), [
+      expect(rust.operationLog.take(7).toList(), [
         'mark_vote_confirmed:1:7',
         'recover_vote:1:7',
+        'prepare_share_delivery:1:7',
+        'submit_prepared_shares:1:7',
         'record_share:1:7:0',
         'record_share:1:7:1',
         'build_vote:0:8',
@@ -6881,20 +7056,21 @@ void main() {
             allProposalIds: const [7],
           );
 
-      expect(rust.planImmediateShareIndexes, [0]);
+      expect(rust.planImmediateShareIndexes, [null]);
       final sharesByIndex = {
         for (final share in rust.recordedShares) share.shareIndex: share,
       };
-      expect(sharesByIndex[0]!.submitAt, BigInt.zero);
+      expect(sharesByIndex[0]!.submitAt, greaterThan(BigInt.zero));
       expect(sharesByIndex[1]!.submitAt, greaterThan(BigInt.zero));
       expect(sharesByIndex[2]!.submitAt, greaterThan(BigInt.zero));
     },
   );
 
-  test('recovery subset does not move an absent immediate share', () async {
+  test('recovery keeps immediate share identity outside its subset', () async {
     final rust = FakeVotingRustApi(
       emitCommitments: true,
       commitmentShareCount: 2,
+      recoveredShareOrder: const [1],
     );
     final recoveryApi = FakeVotingRecoveryApi(
       roundPlan: apiRoundPlan(
@@ -6948,6 +7124,14 @@ void main() {
 
     expect(rust.planImmediateShareIndexes, [null]);
     expect(rust.recordedShares.single.shareIndex, 1);
+    expect(
+      rust.operationLog.where(
+        (entry) =>
+            entry == 'prepare_share_delivery:0:7' ||
+            entry == 'submit_prepared_shares:0:7',
+      ),
+      ['prepare_share_delivery:0:7', 'submit_prepared_shares:0:7'],
+    );
   });
 
   test(
@@ -7006,7 +7190,7 @@ void main() {
       expect(rust.preflightDeliveryContexts, [
         same(rust.helperDeliveryContexts.single),
       ]);
-      expect(rust.initialDeliveryContexts, hasLength(3));
+      expect(rust.initialDeliveryContexts, hasLength(1));
       expect(
         rust.initialDeliveryContexts,
         everyElement(same(rust.helperDeliveryContexts.single)),
@@ -7018,6 +7202,14 @@ void main() {
           same(rust.plannedSharePlans[index]),
         );
       }
+      expect(
+        rust.operationLog.indexOf('prepare_share_delivery:0:7'),
+        lessThan(rust.operationLog.indexOf('mark_vote_submitted:0:7')),
+      );
+      expect(
+        rust.operationLog.indexOf('mark_vote_confirmed:0:7'),
+        lessThan(rust.operationLog.indexOf('submit_prepared_shares:0:7')),
+      );
       await _waitForRecordedShareCount(rust, 2);
       expect(rust.recordedShares.map((share) => share.shareIndex).toSet(), {
         0,
@@ -7035,6 +7227,38 @@ void main() {
       expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
     },
   );
+
+  test('helper planning failure prevents vote broadcast', () async {
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      prepareCommittedShareDeliveryError: StateError('planning failed'),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: _singleVoteRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(draftVotes: _singleProposalDrafts());
+
+    expect(
+      http.requests.where(
+        (request) =>
+            request.method == 'POST' && request.uri.path.endsWith('/cast-vote'),
+      ),
+      isEmpty,
+    );
+    expect(rust.storedVoteTxHashes, isEmpty);
+    expect(rust.submittedSharePlans, isEmpty);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('helper-share planning'));
+  });
 
   test('helper fan-out honors the shared concurrent post cap', () async {
     final http = _GatedSharePostVotingHttpClient(
@@ -7511,7 +7735,10 @@ void main() {
           ),
         ),
       );
-      final rust = FakeVotingRustApi(emitCommitments: true);
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        commitmentShareCount: 3,
+      );
       final recoveryApi = FakeVotingRecoveryApi(
         state: recoveryState(
           bundleCount: 1,
@@ -7548,13 +7775,22 @@ void main() {
             ],
           );
 
-      final submitAt = _postBody(http, '/shielded-vote/v1/shares')['submit_at'];
+      final submitAt = http.requests
+          .firstWhere(
+            (request) =>
+                request.method == 'POST' &&
+                request.uri.path == '/shielded-vote/v1/shares',
+          )
+          .body!['submit_at'];
       expect(submitAt, isA<int>());
       expect(submitAt as int, greaterThanOrEqualTo(nowSeconds));
       expect(submitAt, lessThan(deadline));
       expect(rust.planLastMomentBufferSeconds, [BigInt.from(lastMomentBuffer)]);
       expect(rust.planSingleShareValues, [false]);
-      expect(rust.recordedShares.single.submitAt, BigInt.from(submitAt));
+      expect(
+        rust.recordedShares.map((share) => share.submitAt),
+        everyElement(BigInt.from(submitAt)),
+      );
     },
   );
 
@@ -7631,12 +7867,12 @@ void main() {
             ],
           );
 
-      expect(rust.planImmediateShareIndexes, [0]);
+      expect(rust.planImmediateShareIndexes, [null]);
       final submitAtByShare = {
         for (final share in rust.recordedShares)
           share.shareIndex: share.submitAt,
       };
-      expect(submitAtByShare[0], BigInt.zero);
+      expect(submitAtByShare[0], greaterThan(BigInt.zero));
       expect(submitAtByShare[1], greaterThan(BigInt.zero));
       expect(submitAtByShare[2], greaterThan(BigInt.zero));
     },
@@ -7709,7 +7945,7 @@ void main() {
 
       expect(rust.draftSingleShareValues, [true]);
       expect(rust.planSingleShareValues, [true]);
-      expect(rust.planImmediateShareIndexes, [0]);
+      expect(rust.planImmediateShareIndexes, [null]);
       expect(
         http.requests
             .where(
@@ -9308,6 +9544,20 @@ Future<void> _waitForRecordedShareCount(
   );
 }
 
+Future<void> _waitForPlannedShareCount(
+  FakeVotingRustApi rust,
+  int expectedCount,
+) async {
+  for (var i = 0; i < 100; i++) {
+    if (rust.plannedSharePlans.length >= expectedCount) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail(
+    'Timed out waiting for $expectedCount planned shares. '
+    'Saw ${rust.plannedSharePlans.length}.',
+  );
+}
+
 class _CountingVotingRoundsNotifier extends VotingRoundsNotifier {
   int reloadCount = 0;
 
@@ -10354,18 +10604,34 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   }) async {
     roundPlanProposalIds.add(List<int>.from(proposalIds));
     final sequence = roundPlanSequence;
+    late final rust_wire.RoundPlanView plan;
     if (sequence != null && sequence.isNotEmpty) {
       var index = _roundPlanCallCount;
       _roundPlanCallCount++;
       if (index >= sequence.length) index = sequence.length - 1;
-      return sequence[index];
+      plan = sequence[index];
+    } else {
+      plan =
+          roundPlan ??
+          apiRoundPlanFromRecoveryState(
+            state: state,
+            roundId: roundId,
+            proposalIds: proposalIds,
+          );
     }
-    return roundPlan ??
-        apiRoundPlanFromRecoveryState(
-          state: state,
-          roundId: roundId,
-          proposalIds: proposalIds,
+    final immediate = plan.immediateShareKey;
+    final confirmed =
+        immediate != null &&
+        state.shareDelegations.any(
+          (share) =>
+              share.bundleIndex == immediate.bundleIndex &&
+              share.proposalId == immediate.proposalId &&
+              share.shareIndex == immediate.shareIndex &&
+              share.confirmed,
         );
+    return confirmed && !plan.immediateShareConfirmed
+        ? _withImmediateShareConfirmed(plan)
+        : plan;
   }
 
   @override
@@ -10384,6 +10650,31 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     }
     ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
   }
+}
+
+rust_wire.RoundPlanView _withImmediateShareConfirmed(
+  rust_wire.RoundPlanView plan,
+) {
+  return rust_wire.RoundPlanView(
+    roundId: plan.roundId,
+    pendingRecovery: plan.pendingRecovery,
+    blockingRecovery: plan.blockingRecovery,
+    blockingShareWork: plan.blockingShareWork,
+    hotkeyBound: plan.hotkeyBound,
+    completedVoteArtifact: plan.completedVoteArtifact,
+    completedForDisplay: plan.completedForDisplay,
+    completedVoteDisplay: plan.completedVoteDisplay,
+    needsDraftSetup: plan.needsDraftSetup,
+    primaryAction: plan.primaryAction,
+    nextSteps: plan.nextSteps,
+    delegationStatuses: plan.delegationStatuses,
+    recoveredDelegationWork: plan.recoveredDelegationWork,
+    recoveredVoteWork: plan.recoveredVoteWork,
+    openProposals: plan.openProposals,
+    immediateShareKey: plan.immediateShareKey,
+    immediateShareConfirmed: true,
+    allDecided: plan.allDecided,
+  );
 }
 
 class FakeVotingDraftPersistence implements VotingDraftPersistence {
@@ -10797,6 +11088,34 @@ class _UniqueVoteTxHttpClient extends FakeVotingHttpClient {
   }
 }
 
+class _GatedFirstVotePostHttpClient extends _UniqueVoteTxHttpClient {
+  _GatedFirstVotePostHttpClient({required super.responses});
+
+  final Completer<void> firstVotePostStarted = Completer<void>();
+  final Completer<void> releaseFirstVotePost = Completer<void>();
+
+  @override
+  Future<VotingHttpResponse> postJson(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
+    if (!uri.path.endsWith('/cast-vote') || _votePostCount != 0) {
+      return super.postJson(uri, body, timeout: timeout);
+    }
+    requests.add(
+      FakeVotingHttpRequest('POST', uri, body: body, timeout: timeout),
+    );
+    firstVotePostStarted.complete();
+    await releaseFirstVotePost.future;
+    return jsonResponse({
+      'tx_hash': 'vote-tx-${_votePostCount++}',
+      'code': 0,
+      'log': '',
+    });
+  }
+}
+
 class _GatedVoteConfirmationHttpClient extends _UniqueVoteTxHttpClient {
   _GatedVoteConfirmationHttpClient({required super.responses});
 
@@ -11014,7 +11333,9 @@ class FakeVotingRustApi implements VotingRustApi {
     this.onDelegationConfirmed,
     this.delegationProofGate,
     this.keystoneDelegationProofGate,
+    this.delegationWireJsonGate,
     this.voteCommitmentGate,
+    this.voteWireJsonGate,
     this.voteCommitmentErrorsByKey = const {},
     this.failingVoteConfirmationKeys = const {},
     this.onDeleteSkippedBundles,
@@ -11028,6 +11349,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.failingRecordShareIndexes = const {},
     this.ambiguousShareServerUrls = const {},
     this.initialShareSubmissionReport,
+    this.prepareCommittedShareDeliveryError,
     this.onShareConfirmed,
     this.recoveredShareOrder,
     this.helperPostTimeoutMilliseconds = 30000,
@@ -11055,7 +11377,9 @@ class FakeVotingRustApi implements VotingRustApi {
   onDelegationConfirmed;
   final Completer<void>? delegationProofGate;
   final Completer<void>? keystoneDelegationProofGate;
+  final Completer<void>? delegationWireJsonGate;
   final Completer<void>? voteCommitmentGate;
+  final Completer<void>? voteWireJsonGate;
   final Map<String, Object> voteCommitmentErrorsByKey;
   final Set<String> failingVoteConfirmationKeys;
   final void Function(int keepCount)? onDeleteSkippedBundles;
@@ -11069,6 +11393,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Set<int> failingRecordShareIndexes;
   final Set<String> ambiguousShareServerUrls;
   final rust_api.ApiShareSubmissionReport? initialShareSubmissionReport;
+  final Object? prepareCommittedShareDeliveryError;
   final void Function(int bundleIndex, int proposalId, int shareIndex)?
   onShareConfirmed;
   final List<int>? recoveredShareOrder;
@@ -11093,8 +11418,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedDelegationTxHashes = <String>[];
   final storedVoteTxHashes = <String>[];
   final storedCommitmentBundles = <String>[];
-  final Map<String, rust_wire.VoteShareWire> _committedShares = {};
   final Map<String, BigInt> _confirmedVotePositions = {};
+  final Map<String, int> _committedShareCounts = {};
   final storedVanPositions = <String>[];
   final operationLog = <String>[];
   final recordedShares = <_RecordedShare>[];
@@ -11115,7 +11440,9 @@ class FakeVotingRustApi implements VotingRustApi {
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
+  final delegationWireJsonStarted = Completer<void>();
   final voteCommitmentStarted = Completer<void>();
+  final voteWireJsonStarted = Completer<void>();
   final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
@@ -11127,8 +11454,10 @@ class FakeVotingRustApi implements VotingRustApi {
   final planLastMomentBufferSeconds = <BigInt?>[];
   final planSingleShareValues = <bool>[];
   final planImmediateShareIndexes = <int?>[];
-  final plannedSharePlans = <rust_share_policy.ShareSubmissionPlan>[];
-  final submittedSharePlans = <rust_share_policy.ShareSubmissionPlan>[];
+  final planProposalIdRosters = <List<int>>[];
+  final plannedSharePlans = <_FakeSharePlan>[];
+  final submittedSharePlans = <_FakeSharePlan>[];
+  final _preparedShareDeliveries = <String, _FakePreparedShareDelivery>{};
   final accountUuids = <String>[];
   final confirmedShares = <String>[];
   final eligibilityAccountUuids = <String>[];
@@ -11145,6 +11474,26 @@ class FakeVotingRustApi implements VotingRustApi {
   BigInt privacyTrimDroppedValueZatoshi = BigInt.zero;
   int generateVotingHotkeyCalls = 0;
   int extractSpendAuthSignatureCalls = 0;
+
+  @override
+  String? selectPirSnapshotEndpoint({
+    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
+    required BigInt expectedSnapshotHeight,
+    required BigInt matchIndex,
+  }) {
+    final matches = diagnostics
+        .where(
+          (diagnostic) =>
+              diagnostic.status ==
+                  rust_api.ApiPirSnapshotEndpointStatus.matched &&
+              diagnostic.reportedHeight == expectedSnapshotHeight,
+        )
+        .map((diagnostic) => diagnostic.endpoint)
+        .toList(growable: false);
+    return matches.isEmpty
+        ? null
+        : matches[matchIndex.toInt() % matches.length];
+  }
 
   // --- Vote authority note (VAN) model -------------------------------------
   //
@@ -11385,8 +11734,10 @@ class FakeVotingRustApi implements VotingRustApi {
       if (existing != null) {
         if (!listEquals(existing.sighash, signature.sighash) ||
             !listEquals(existing.rk, signature.rk)) {
-          throw StateError(
-            'Keystone signature conflict for bundle ${signature.bundleIndex}',
+          return rust_api.ApiKeystoneSignatureBatchResult(
+            inserted: 0,
+            alreadyPresent: 0,
+            conflictingBundleIndex: signature.bundleIndex,
           );
         }
         alreadyPresent++;
@@ -11406,6 +11757,7 @@ class FakeVotingRustApi implements VotingRustApi {
     return rust_api.ApiKeystoneSignatureBatchResult(
       inserted: inserted,
       alreadyPresent: alreadyPresent,
+      conflictingBundleIndex: null,
     );
   }
 
@@ -11509,6 +11861,13 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<String> delegationSubmissionWireJson({
     required rust_wire.SignedDelegationPayloadView submission,
   }) async {
+    final gate = delegationWireJsonGate;
+    if (gate != null) {
+      if (!delegationWireJsonStarted.isCompleted) {
+        delegationWireJsonStarted.complete();
+      }
+      await gate.future;
+    }
     final wire = submission.submission;
     return jsonEncode({
       'rk': wire.rk,
@@ -11767,21 +12126,19 @@ class FakeVotingRustApi implements VotingRustApi {
         voteCommitmentKeys.add(key);
         operationLog.add('build_vote:$key');
         draftSingleShareValues.add(draft.singleShare);
+        final committedShareCount = draft.singleShare
+            ? 1
+            : commitmentShareCount;
+        _committedShareCounts[key] = committedShareCount;
         final commitments = emitCommitments
             ? _commitments(
                 roundId: roundId,
                 bundleIndex: bundleIndex,
                 proposalId: draft.proposalId,
                 choice: draft.choice,
-                shareCount: commitmentShareCount,
+                shareCount: committedShareCount,
               )
             : null;
-        for (final share
-            in commitments?.commitments.single.shares ??
-                const <rust_wire.VoteShareWire>[]) {
-          _committedShares['$bundleIndex:${draft.proposalId}:${share.shareIndex}'] =
-              share;
-        }
         yield rust_api.ApiVoteCommitEvent(
           phase: 'result',
           proposalId: draft.proposalId,
@@ -11813,9 +12170,7 @@ class FakeVotingRustApi implements VotingRustApi {
       shareCount: commitmentShareCount,
       shareOrder: recoveredShareOrder,
     );
-    for (final share in commitments.commitments.single.shares) {
-      _committedShares['$bundleIndex:$proposalId:${share.shareIndex}'] = share;
-    }
+    _committedShareCounts['$bundleIndex:$proposalId'] = commitmentShareCount;
     return commitments;
   }
 
@@ -11823,6 +12178,11 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<String> voteCommitmentWireJson({
     required rust_wire.VoteCommitmentWire commitment,
   }) async {
+    final gate = voteWireJsonGate;
+    if (gate != null) {
+      if (!voteWireJsonStarted.isCompleted) voteWireJsonStarted.complete();
+      await gate.future;
+    }
     return jsonEncode({
       'van_nullifier': commitment.vanNullifier,
       'vote_authority_note_new': commitment.voteAuthorityNoteNew,
@@ -11834,102 +12194,6 @@ class FakeVotingRustApi implements VotingRustApi {
       'r_vpk': commitment.rVpk,
       'vote_auth_sig': commitment.voteAuthSig,
     });
-  }
-
-  @override
-  Future<String> voteShareWireJson({
-    required rust_wire.VoteShareWire share,
-    BigInt? vcTreePosition,
-    required BigInt submitAt,
-  }) async {
-    if (failingVoteShareWireIndexes.contains(share.shareIndex)) {
-      throw FormatException('invalid vote share ${share.shareIndex}');
-    }
-    return jsonEncode({
-      'vote_round_id': share.voteRoundId,
-      'shares_hash': share.sharesHash,
-      'proposal_id': share.proposalId,
-      'vote_decision': share.voteDecision,
-      'enc_share': {
-        'c1': base64Encode(share.encryptedShare.c1),
-        'c2': base64Encode(share.encryptedShare.c2),
-        'share_index': share.encryptedShare.shareIndex,
-      },
-      'share_index': share.shareIndex,
-      'tree_position': (vcTreePosition ?? share.vcTreePosition).toInt(),
-      'share_comms': share.shareComms,
-      'primary_blind': share.primaryBlind,
-      'submit_at': submitAt.toInt(),
-    });
-  }
-
-  @override
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
-    required List<String> helperUrls,
-    required int preferredHelperCount,
-    required BigInt nowSeconds,
-    required BigInt voteEndTimeSeconds,
-    BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
-    int? immediateShareIndex,
-  }) async {
-    planLastMomentBufferSeconds.add(lastMomentBufferSeconds);
-    planSingleShareValues.add(singleShare);
-    planImmediateShareIndexes.add(immediateShareIndex);
-    final targetCount = _fakeShareTargetCount(helperUrls.length);
-    final planningHelperCount =
-        (preferredHelperCount < targetCount
-                ? targetCount
-                : preferredHelperCount)
-            .clamp(0, helperUrls.length);
-    final now = nowSeconds.toInt();
-    final voteEnd = voteEndTimeSeconds.toInt();
-    final buffer = lastMomentBufferSeconds?.toInt();
-    final deadline = buffer == null ? now : voteEnd - buffer;
-    final submitAt = singleShare || buffer == null || deadline <= now
-        ? BigInt.zero
-        : BigInt.from(now + 1);
-    final plans = [
-      for (var i = 0; i < shareCount; i++)
-        rust_share_policy.ShareSubmissionPlan(
-          immediate: immediateShareIndex == i,
-          submitAt: immediateShareIndex == i ? BigInt.zero : submitAt,
-          targetCount: targetCount,
-          targetServers: [
-            for (var offset = 0; offset < targetCount; offset++)
-              helperUrls[(i * targetCount + offset) % planningHelperCount],
-          ],
-        ),
-    ];
-    plannedSharePlans.addAll(plans);
-    return plans;
-  }
-
-  @override
-  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
-    required int helperCount,
-  }) {
-    final targetCount = _fakeShareTargetCount(helperCount);
-    final assignmentCount = 16 * targetCount;
-    final maxSharesPerServer = helperCount == 0
-        ? 0
-        : (assignmentCount + helperCount - 1) ~/ helperCount;
-    final minServerCount = maxSharesPerServer == 0
-        ? 0
-        : (assignmentCount + maxSharesPerServer - 1) ~/ maxSharesPerServer;
-    return rust_share_policy.ShareServerSelectionPolicy(
-      targetCount: targetCount,
-      maxSharesPerServer: maxSharesPerServer,
-      minServerCount: minServerCount,
-      preflightSoftTimeoutMilliseconds: BigInt.zero,
-      preflightHardTimeoutMilliseconds: BigInt.one,
-      postTimeoutMilliseconds: BigInt.from(helperPostTimeoutMilliseconds),
-      initialDeliveryTimeoutMilliseconds: BigInt.from(
-        initialDeliveryTimeoutMilliseconds,
-      ),
-      maxConcurrentPosts: maxConcurrentHelperPosts,
-    );
   }
 
   @override
@@ -12261,7 +12525,6 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
     required VotingHelperDeliveryContext context,
     required List<String> configuredHelperUrls,
-    required int targetCount,
   }) async {
     preflightDeliveryContexts.add(context);
     preflightConfiguredHelperUrls.add(List.of(configuredHelperUrls));
@@ -12301,99 +12564,248 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiShareSubmissionReport> submitCommittedShareToHelpers({
+  Future<void> prepareCommittedShareDelivery({
     required VotingHelperDeliveryContext context,
     required int bundleIndex,
     required int proposalId,
-    required int shareIndex,
-    required rust_share_policy.ShareSubmissionPlan plan,
+    required rust_api.ApiVotingHelperPreflight preflight,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    required List<int> proposalIds,
+    BigInt? lastMomentBufferSeconds,
+  }) async {
+    initialDeliveryContexts.add(context);
+    final injectedError = prepareCommittedShareDeliveryError;
+    if (injectedError != null) throw injectedError;
+    final deliveryKey = '$bundleIndex:$proposalId';
+    if (_preparedShareDeliveries.containsKey(deliveryKey)) return;
+    planLastMomentBufferSeconds.add(lastMomentBufferSeconds);
+    final shareCount =
+        _committedShareCounts['$bundleIndex:$proposalId'] ??
+        commitmentShareCount;
+    final singleShare = shareCount == 1;
+    planSingleShareValues.add(singleShare);
+    planProposalIdRosters.add(List<int>.of(proposalIds));
+    final immediateShareIndex =
+        proposalIds.isNotEmpty &&
+            proposalId ==
+                proposalIds.reduce(
+                  (left, right) => left < right ? left : right,
+                ) &&
+            bundleIndex == bundleCount - 1
+        ? 0
+        : null;
+    planImmediateShareIndexes.add(immediateShareIndex);
+
+    final ready = preflight.readyHelperUrls;
+    final configured = preflight.configuredHelperUrls;
+    final ranked = <String>[
+      ...ready,
+      for (final helper in configured)
+        if (!ready.contains(helper)) helper,
+    ];
+    final targetCount = _fakeShareTargetCount(configured.length);
+    final planningHelperCount =
+        (ready.length < targetCount ? targetCount : ready.length).clamp(
+          0,
+          ranked.length,
+        );
+    final now = nowSeconds.toInt();
+    final voteEnd = voteEndTimeSeconds.toInt();
+    final buffer = lastMomentBufferSeconds?.toInt();
+    final deadline = buffer == null ? now : voteEnd - buffer;
+    final delayedSubmitAt = singleShare || buffer == null || deadline <= now
+        ? BigInt.zero
+        : BigInt.from(now + 1);
+    final shareIndexes =
+        recoveredShareOrder ?? List<int>.generate(shareCount, (index) => index);
+    if (shareIndexes.any(failingVoteShareWireIndexes.contains)) {
+      throw FormatException(
+        "invalid vote share ${shareIndexes.firstWhere(failingVoteShareWireIndexes.contains)}",
+      );
+    }
+    final plans = [
+      for (final shareIndex in shareIndexes)
+        _FakeSharePlan(
+          immediate: immediateShareIndex == shareIndex,
+          submitAt: immediateShareIndex == shareIndex
+              ? BigInt.zero
+              : delayedSubmitAt,
+          targetCount: targetCount,
+          targetServers: [
+            for (var offset = 0; offset < targetCount; offset++)
+              ranked[(shareIndex * targetCount + offset) % planningHelperCount],
+          ],
+        ),
+    ];
+    plannedSharePlans.addAll(plans);
+    _preparedShareDeliveries[deliveryKey] = _FakePreparedShareDelivery(
+      configuredHelperUrls: List<String>.of(configured),
+      shareIndexes: List<int>.of(shareIndexes),
+      plans: plans,
+      legacyBestEffort: recoveredShareOrder != null,
+    );
+    operationLog.add('prepare_share_delivery:$bundleIndex:$proposalId');
+  }
+
+  @override
+  Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
+    required VotingHelperDeliveryContext context,
+    required int bundleIndex,
+    required int proposalId,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
   }) async {
-    initialDeliveryContexts.add(context);
-    submittedSharePlans.add(plan);
-    final candidateServers = <String>{
-      ...plan.targetServers,
-      ...configuredHelperUrls,
-    }.toList(growable: false);
-    final targetCount = plan.targetCount;
-    final submitAt = plan.submitAt;
-    final configuredReport = initialShareSubmissionReport;
-    late final rust_api.ApiShareSubmissionReport report;
-    if (configuredReport != null) {
-      report = configuredReport;
-    } else {
-      final transport = helperTransport;
-      if (transport == null) {
-        report = rust_api.ApiShareSubmissionReport(
-          acceptedUrls: candidateServers
-              .take(targetCount)
-              .toList(growable: false),
-          ambiguousUrls: const [],
-          targetCount: targetCount,
-        );
-      } else {
-        final share = _committedShares['$bundleIndex:$proposalId:$shareIndex'];
-        if (share == null) {
-          throw StateError(
-            'No committed share for $bundleIndex:$proposalId:$shareIndex',
-          );
-        }
-        BigInt? confirmedPosition =
-            _confirmedVotePositions['$bundleIndex:$proposalId'];
-        if (confirmedPosition == null) {
-          for (final vote in helperRecoveryApi?.state.votes ?? const []) {
-            if (vote.bundleIndex == bundleIndex &&
-                vote.proposalId == proposalId) {
-              confirmedPosition = vote.vcTreePosition;
-              break;
-            }
-          }
-        }
-        final body =
-            jsonDecode(
-                  await voteShareWireJson(
-                    share: share,
-                    vcTreePosition: confirmedPosition ?? share.vcTreePosition,
-                    submitAt: submitAt,
-                  ),
-                )
-                as Map<String, dynamic>;
-        final accepted = <String>[];
-        final ambiguous = <String>[];
-        for (final serverUrl in candidateServers) {
-          if (accepted.length >= targetCount) break;
-          try {
-            await transport.postJson(
-              Uri.parse('$serverUrl/shielded-vote/v1/shares'),
-              body,
-              timeout: Duration(milliseconds: helperPostTimeoutMilliseconds),
-            );
-            accepted.add(serverUrl);
-          } catch (_) {
-            if (ambiguousShareServerUrls.contains(serverUrl)) {
-              ambiguous.add(serverUrl);
-            }
-            // The crate moves to the next helper; a refusal is not fatal.
-          }
-        }
-        report = rust_api.ApiShareSubmissionReport(
-          acceptedUrls: accepted,
-          ambiguousUrls: ambiguous,
-          targetCount: targetCount,
+    final prepared = _preparedShareDeliveries['$bundleIndex:$proposalId'];
+    if (prepared == null) {
+      throw StateError(
+        'missing prepared share delivery for $bundleIndex:$proposalId',
+      );
+    }
+    if (!_sameStringList(prepared.configuredHelperUrls, configuredHelperUrls)) {
+      throw StateError('configured helper fleet changed after planning');
+    }
+    final configured = prepared.configuredHelperUrls;
+    final shareIndexes = prepared.shareIndexes;
+    final plans = prepared.plans;
+    final shareCount =
+        _committedShareCounts['$bundleIndex:$proposalId'] ??
+        commitmentShareCount;
+    submittedSharePlans.addAll(plans);
+    operationLog.add('submit_prepared_shares:$bundleIndex:$proposalId');
+
+    Future<rust_api.ApiShareDeliveryOutcome> deliver(
+      int shareIndex,
+      _FakeSharePlan plan,
+    ) async {
+      final existing = helperRecoveryApi?.state.shareDelegations
+          .where(
+            (share) =>
+                share.bundleIndex == bundleIndex &&
+                share.proposalId == proposalId &&
+                share.shareIndex == shareIndex,
+          )
+          .firstOrNull;
+      if (existing?.confirmed ?? false) {
+        return rust_api.ApiShareDeliveryOutcome(
+          shareIndex: shareIndex,
+          submission: rust_api.ApiShareSubmissionReport(
+            acceptedUrls: existing!.sentToUrls,
+            ambiguousUrls: existing.ambiguousUrls,
+            targetCount: existing.targetCount,
+          ),
         );
       }
+      final candidateServers = <String>{
+        ...plan.targetServers,
+        ...configured,
+      }.toList(growable: false);
+      final configuredReport = initialShareSubmissionReport;
+      late final rust_api.ApiShareSubmissionReport submission;
+      if (configuredReport != null) {
+        submission = configuredReport;
+      } else {
+        final transport = helperTransport;
+        if (transport == null) {
+          submission = rust_api.ApiShareSubmissionReport(
+            acceptedUrls: candidateServers
+                .take(plan.targetCount)
+                .toList(growable: false),
+            ambiguousUrls: const [],
+            targetCount: plan.targetCount,
+          );
+        } else {
+          BigInt? confirmedPosition =
+              _confirmedVotePositions["$bundleIndex:$proposalId"];
+          if (confirmedPosition == null) {
+            for (final vote in helperRecoveryApi?.state.votes ?? const []) {
+              if (vote.bundleIndex == bundleIndex &&
+                  vote.proposalId == proposalId) {
+                confirmedPosition = vote.vcTreePosition;
+                break;
+              }
+            }
+          }
+          final body = <String, dynamic>{
+            "vote_round_id": context.roundId,
+            "shares_hash": base64Encode(Uint8List.fromList(List.filled(32, 7))),
+            "proposal_id": proposalId,
+            "vote_decision": 1,
+            "enc_share": {
+              "c1": base64Encode(Uint8List.fromList([8 + shareIndex])),
+              "c2": base64Encode(Uint8List.fromList([9 + shareIndex])),
+              "share_index": shareIndex,
+            },
+            "share_index": shareIndex,
+            "tree_position": (confirmedPosition ?? BigInt.from(9)).toInt(),
+            "share_comms": [
+              for (var i = 0; i < shareCount; i++)
+                base64Encode(Uint8List.fromList(List.filled(32, 10 + i))),
+            ],
+            "primary_blind": base64Encode(
+              Uint8List.fromList(List.filled(32, 11 + shareIndex)),
+            ),
+            "submit_at": plan.submitAt.toInt(),
+          };
+          final accepted = <String>[];
+          final ambiguous = <String>[];
+          for (final serverUrl in candidateServers) {
+            if (accepted.length >= plan.targetCount) break;
+            try {
+              await transport.postJson(
+                Uri.parse("$serverUrl/shielded-vote/v1/shares"),
+                body,
+                timeout: Duration(milliseconds: helperPostTimeoutMilliseconds),
+              );
+              accepted.add(serverUrl);
+            } catch (_) {
+              if (ambiguousShareServerUrls.contains(serverUrl)) {
+                ambiguous.add(serverUrl);
+              }
+            }
+          }
+          submission = rust_api.ApiShareSubmissionReport(
+            acceptedUrls: accepted,
+            ambiguousUrls: ambiguous,
+            targetCount: plan.targetCount,
+          );
+        }
+      }
+      await _persistShareDelivery(
+        bundleIndex: bundleIndex,
+        proposalId: proposalId,
+        shareIndex: shareIndex,
+        submitAt: plan.submitAt,
+        acceptedUrls: submission.acceptedUrls,
+        ambiguousUrls: submission.ambiguousUrls,
+        targetCount: submission.targetCount,
+      );
+      return rust_api.ApiShareDeliveryOutcome(
+        shareIndex: shareIndex,
+        submission: submission,
+      );
     }
-    await _persistShareDelivery(
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      shareIndex: shareIndex,
-      submitAt: submitAt,
-      acceptedUrls: report.acceptedUrls,
-      ambiguousUrls: report.ambiguousUrls,
-      targetCount: report.targetCount,
+
+    final deliveries = <rust_api.ApiShareDeliveryOutcome>[];
+    for (
+      var offset = 0;
+      offset < plans.length;
+      offset += maxConcurrentHelperPosts
+    ) {
+      final end = (offset + maxConcurrentHelperPosts).clamp(0, plans.length);
+      deliveries.addAll(
+        await Future.wait([
+          for (var index = offset; index < end; index++)
+            deliver(shareIndexes[index], plans[index]),
+        ]),
+      );
+    }
+    return rust_api.ApiShareBatchDeliveryReport(
+      deliveries: deliveries,
+      pendingShareIndices: Uint32List(0),
+      cancelled: false,
+      legacyBestEffort: prepared.legacyBestEffort,
     );
-    return report;
   }
 
   Future<int> _trackingFlags({
@@ -12598,6 +13010,42 @@ void _addUnique<T>(List<T> values, T value) {
   }
 }
 
+class _FakeSharePlan {
+  const _FakeSharePlan({
+    required this.immediate,
+    required this.submitAt,
+    required this.targetCount,
+    required this.targetServers,
+  });
+
+  final bool immediate;
+  final BigInt submitAt;
+  final int targetCount;
+  final List<String> targetServers;
+}
+
+class _FakePreparedShareDelivery {
+  const _FakePreparedShareDelivery({
+    required this.configuredHelperUrls,
+    required this.shareIndexes,
+    required this.plans,
+    required this.legacyBestEffort,
+  });
+
+  final List<String> configuredHelperUrls;
+  final List<int> shareIndexes;
+  final List<_FakeSharePlan> plans;
+  final bool legacyBestEffort;
+}
+
+bool _sameStringList(List<String> left, List<String> right) {
+  if (left.length != right.length) return false;
+  for (var index = 0; index < left.length; index++) {
+    if (left[index] != right[index]) return false;
+  }
+  return true;
+}
+
 class _RecordedShare {
   const _RecordedShare({
     required this.bundleIndex,
@@ -12735,36 +13183,6 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   int shareCount = 1,
   List<int>? shareOrder,
 }) {
-  final orderedShareIndexes =
-      shareOrder ?? List<int>.generate(shareCount, (index) => index);
-  final wireShares = [
-    for (final shareIndex in orderedShareIndexes)
-      rust_types.WireEncryptedShare(
-        c1: Uint8List.fromList(shareCount == 1 ? [8] : [8, shareIndex]),
-        c2: Uint8List.fromList(shareCount == 1 ? [9] : [9, shareIndex]),
-        shareIndex: shareIndex,
-      ),
-  ];
-  final shares = [
-    for (final wireShare in wireShares)
-      rust_wire.VoteShareWire(
-        voteRoundId: roundId,
-        sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
-        proposalId: proposalId,
-        voteDecision: choice,
-        encryptedShare: wireShare,
-        shareIndex: wireShare.shareIndex,
-        vcTreePosition: BigInt.from(9),
-        shareComms: [
-          for (var i = 0; i < shareCount; i++)
-            base64Encode(Uint8List.fromList(List.filled(32, 10 + i))),
-        ],
-        primaryBlind: base64Encode(
-          Uint8List.fromList(List.filled(32, 11 + wireShare.shareIndex)),
-        ),
-        submitAt: BigInt.zero,
-      ),
-  ];
   return rust_wire.SignedVoteCommitmentsView(
     bundleIndex: bundleIndex,
     commitments: [
@@ -12783,7 +13201,6 @@ rust_wire.SignedVoteCommitmentsView _commitments({
           rVpk: base64Encode(Uint8List.fromList(List.filled(32, 13))),
           voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
         ),
-        shares: shares,
       ),
     ],
   );

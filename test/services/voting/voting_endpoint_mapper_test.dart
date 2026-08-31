@@ -1,11 +1,23 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 
 void main() {
   group('VotingEndpointMapper', () {
+    test('build mapper enables only the selected harness', () {
+      final mapper = VotingEndpointMapper.forBuild();
+      final expected =
+          (kZcashDefaultNetworkRaw == 'regtest' &&
+              kE2eVotingGatewayUrl.isNotEmpty) ||
+          (kZcashDefaultNetworkRaw == 'test' &&
+              kDebugMode &&
+              kStageVotingGatewayUrl.isNotEmpty);
+
+      expect(mapper.isEnabled, expected);
+    });
+
     test('is identity outside regtest', () {
       final mapper = VotingEndpointMapper(
         isRegtest: false,
@@ -17,6 +29,52 @@ void main() {
 
       expect(mapper.isEnabled, isFalse);
       expect(mapper.map(logical), logical);
+    });
+
+    test('stage gateway requires both testnet and debug build', () {
+      const gateway = 'http://127.0.0.1:18080';
+      final logical = Uri.parse('https://mock-1.vizor-vote.invalid/status');
+
+      for (final mapper in [
+        VotingEndpointMapper(
+          isRegtest: false,
+          isTestnet: false,
+          isDebugBuild: true,
+          stageGatewayUrl: gateway,
+        ),
+        VotingEndpointMapper(
+          isRegtest: false,
+          isTestnet: true,
+          isDebugBuild: false,
+          stageGatewayUrl: gateway,
+        ),
+      ]) {
+        expect(mapper.isEnabled, isFalse);
+        expect(mapper.map(logical), logical);
+      }
+
+      final enabled = VotingEndpointMapper(
+        isRegtest: false,
+        isTestnet: true,
+        isDebugBuild: true,
+        stageGatewayUrl: gateway,
+      );
+      expect(enabled.isEnabled, isTrue);
+      expect(
+        enabled.map(logical),
+        Uri.parse('http://127.0.0.1:18080/mock-1.vizor-vote.invalid/status'),
+      );
+    });
+
+    test('regtest never falls through to the stage gateway', () {
+      final mapper = VotingEndpointMapper(
+        isRegtest: true,
+        isTestnet: true,
+        isDebugBuild: true,
+        stageGatewayUrl: 'http://127.0.0.1:18081',
+      );
+
+      expect(mapper.isEnabled, isFalse);
     });
 
     test('maps only reserved HTTPS identities through loopback', () {
@@ -54,6 +112,15 @@ void main() {
         () => VotingEndpointMapper(
           isRegtest: true,
           gatewayUrl: 'https://127.0.0.1:18080',
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => VotingEndpointMapper(
+          isRegtest: false,
+          isTestnet: true,
+          isDebugBuild: true,
+          stageGatewayUrl: 'http://example.com:18080',
         ),
         throwsStateError,
       );

@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_config_api;
@@ -50,12 +50,27 @@ void main() {
   });
 
   test('default static config follows the launch network', () {
+    final expected =
+        kZcashDefaultNetworkRaw == 'regtest' &&
+            kE2eStaticVotingConfigSource.isNotEmpty
+        ? kE2eStaticVotingConfigSource
+        : kStageVotingHarnessConfigEnabled
+        ? kStageVotingHarnessStaticConfigSource
+        : kZcashDefaultNetworkRaw == 'test'
+        ? kStageStaticVotingConfigSource
+        : kProductionStaticVotingConfigSource;
+    expect(kDefaultStaticVotingConfigSource, expected);
     expect(
-      kDefaultStaticVotingConfigSource,
-      kZcashDefaultNetworkRaw == 'test'
-          ? kStageStaticVotingConfigSource
-          : kProductionStaticVotingConfigSource,
+      kStageVotingHarnessConfigEnabled,
+      kDebugMode &&
+          kZcashDefaultNetworkRaw == 'test' &&
+          kStageVotingHarnessStaticConfigSource.isNotEmpty,
     );
+    if (kStageVotingHarnessConfigEnabled) {
+      expect(kDefaultStaticVotingConfigMirrors, [
+        kStageVotingHarnessStaticConfigSource,
+      ]);
+    }
   });
 
   test('parses static config source and strips sha256 checksum', () {

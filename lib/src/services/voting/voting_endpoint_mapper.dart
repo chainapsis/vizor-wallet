@@ -1,8 +1,14 @@
+import 'package:flutter/foundation.dart';
+
 import '../../core/config/network_config.dart';
 import 'voting_http.dart';
 
 const kE2eVotingGatewayUrlEnvKey = 'ZCASH_E2E_VOTING_GATEWAY_URL';
 const kE2eVotingGatewayUrl = String.fromEnvironment(kE2eVotingGatewayUrlEnvKey);
+const kStageVotingGatewayUrlEnvKey = 'ZCASH_STAGE_VOTING_GATEWAY_URL';
+const kStageVotingGatewayUrl = String.fromEnvironment(
+  kStageVotingGatewayUrlEnvKey,
+);
 
 /// Reserved logical DNS suffix used by the regtest voting harness.
 ///
@@ -16,13 +22,27 @@ const kE2eVotingLogicalHostSuffix = '.vizor-vote.invalid';
 /// mapping is intentionally narrow: the configured gateway must be loopback,
 /// and only HTTPS hosts below [kE2eVotingLogicalHostSuffix] are rewritten.
 class VotingEndpointMapper {
-  VotingEndpointMapper({required bool isRegtest, String gatewayUrl = ''})
-    : _gateway = _parseGateway(isRegtest: isRegtest, raw: gatewayUrl);
+  VotingEndpointMapper({
+    required bool isRegtest,
+    bool isTestnet = false,
+    bool isDebugBuild = false,
+    String gatewayUrl = '',
+    String stageGatewayUrl = '',
+  }) : _gateway = _parseGateway(
+         enabled: isRegtest || (isTestnet && isDebugBuild),
+         raw: isRegtest ? gatewayUrl : stageGatewayUrl,
+         envKey: isRegtest
+             ? kE2eVotingGatewayUrlEnvKey
+             : kStageVotingGatewayUrlEnvKey,
+       );
 
   factory VotingEndpointMapper.forBuild() {
     return VotingEndpointMapper(
       isRegtest: kZcashDefaultNetworkRaw == 'regtest',
+      isTestnet: kZcashDefaultNetworkRaw == 'test',
+      isDebugBuild: kDebugMode,
       gatewayUrl: kE2eVotingGatewayUrl,
+      stageGatewayUrl: kStageVotingGatewayUrl,
     );
   }
 
@@ -49,9 +69,13 @@ class VotingEndpointMapper {
 
   String mapUrl(String logicalUrl) => map(Uri.parse(logicalUrl)).toString();
 
-  static Uri? _parseGateway({required bool isRegtest, required String raw}) {
+  static Uri? _parseGateway({
+    required bool enabled,
+    required String raw,
+    required String envKey,
+  }) {
     final trimmed = raw.trim();
-    if (!isRegtest || trimmed.isEmpty) return null;
+    if (!enabled || trimmed.isEmpty) return null;
 
     final gateway = Uri.tryParse(trimmed);
     if (gateway == null ||
@@ -61,7 +85,7 @@ class VotingEndpointMapper {
         gateway.hasQuery ||
         gateway.hasFragment) {
       throw StateError(
-        '$kE2eVotingGatewayUrlEnvKey must be a loopback HTTP URL in regtest.',
+        '$envKey must be a loopback HTTP URL for its test harness.',
       );
     }
     return gateway;

@@ -37,6 +37,30 @@ void main() {
   });
 
   test(
+    'stage harness temporarily overrides a preserved custom source',
+    () async {
+      final store = FakeVotingConfigSourceStore(
+        sourceUrl: sourceA,
+        savedSourcesJson:
+            '''
+        [
+          {"id":"a","name":"Alpha","sourceUrl":"$sourceA"}
+        ]
+      ''',
+      );
+      final container = _container(store, stageHarnessEnabled: true);
+      addTearDown(container.dispose);
+
+      final state = await container.read(votingConfigSourceProvider.future);
+
+      expect(state.sourceUrl, kDefaultStaticVotingConfigSource);
+      expect(state.isDefault, isTrue);
+      expect(state.savedSources.single.id, 'a');
+      expect(store.sourceUrl, sourceA);
+    },
+  );
+
+  test(
     'invalid stored source falls back to default and clears override',
     () async {
       final store = FakeVotingConfigSourceStore(
@@ -180,9 +204,17 @@ void main() {
   });
 }
 
-ProviderContainer _container(FakeVotingConfigSourceStore store) {
+ProviderContainer _container(
+  FakeVotingConfigSourceStore store, {
+  bool stageHarnessEnabled = false,
+}) {
   return ProviderContainer(
-    overrides: [votingConfigSourceStoreProvider.overrideWithValue(store)],
+    overrides: [
+      votingConfigSourceStoreProvider.overrideWithValue(store),
+      votingStageHarnessConfigEnabledProvider.overrideWithValue(
+        stageHarnessEnabled,
+      ),
+    ],
   );
 }
 
