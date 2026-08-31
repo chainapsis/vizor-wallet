@@ -12,7 +12,7 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `canonical_configured_helper_urls`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_session_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `canonical_configured_helper_urls`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
@@ -202,6 +202,30 @@ Future<ApiShareTrackingReport> trackPendingShares({
   configuredHelperUrls: configuredHelperUrls,
   nowSeconds: nowSeconds,
   voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Checks confirmation quorum for one known share without walking the round.
+///
+/// Foreground submission completion depends only on the designated immediate
+/// share. Using the full recovery pass for that gate makes completion latency
+/// scale with every proposal's delayed shares. This focused check polls at most
+/// four configured helpers concurrently, persists confirmation after two
+/// distinct helpers agree (or the sole helper in a one-helper fleet), and does
+/// not resubmit or otherwise mutate unrelated shares.
+Future<bool> confirmShareWithHelpers({
+  required VotingShareTrackingPassHandle passHandle,
+  required List<String> configuredHelperUrls,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingConfirmShareWithHelpers(
+  passHandle: passHandle,
+  configuredHelperUrls: configuredHelperUrls,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+  nowSeconds: nowSeconds,
 );
 
 /// Submits one committed share according to its planner-produced placement.

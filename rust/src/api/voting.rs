@@ -19,6 +19,7 @@ use crate::wallet::{
     keys,
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
+use futures::StreamExt;
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::OptionalExtension;
 use secrecy::ExposeSecret;
@@ -712,6 +713,134 @@ pub async fn track_pending_shares(
         cancelled: report.cancelled,
         next_delay_seconds: report.next_delay_seconds,
     })
+}
+
+/// Checks confirmation quorum for one known share without walking the round.
+///
+/// Foreground submission completion depends only on the designated immediate
+/// share. Using the full recovery pass for that gate makes completion latency
+/// scale with every proposal's delayed shares. This focused check polls at most
+/// four configured helpers concurrently, persists confirmation after two
+/// distinct helpers agree (or the sole helper in a one-helper fleet), and does
+/// not resubmit or otherwise mutate unrelated shares.
+pub async fn confirm_share_with_helpers(
+    pass_handle: &VotingShareTrackingPassHandle,
+    configured_helper_urls: Vec<String>,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    now_seconds: u64,
+) -> Result<bool, String> {
+    let configured_helper_urls = canonical_configured_helper_urls(&configured_helper_urls)?;
+    let db = helper_delivery_db(
+        &pass_handle.db_path,
+        &pass_handle.account_uuid,
+        &pass_handle.database,
+    )?;
+    let wallet_id = db.wallet_id();
+    let share = {
+        let conn = db.conn();
+        zcash_voting::storage::queries::get_share_delegations(
+            &conn,
+            &pass_handle.round_id,
+            &wallet_id,
+        )
+        .map_err(|e| format!("list helper shares failed: {e}"))?
+        .into_iter()
+        .find(|share| {
+            share.bundle_index == bundle_index
+                && share.proposal_id == proposal_id
+                && share.share_index == share_index
+        })
+        .ok_or_else(|| {
+            format!(
+                "helper share not found for bundle={bundle_index}, \
+                 proposal={proposal_id}, share={share_index}"
+            )
+        })?
+    };
+    if share.confirmed {
+        return Ok(true);
+    }
+    if pass_handle.is_cancelled() {
+        return Ok(false);
+    }
+
+    let quorum = configured_helper_urls.len().min(2);
+    let share_id = hex::encode(share.nullifier);
+    let client = helper_client(&pass_handle.health);
+    let mut polls = futures::stream::iter(configured_helper_urls)
+        .map(|server_url| {
+            let client = client.clone();
+            let round_id = pass_handle.round_id.clone();
+            let share_id = share_id.clone();
+            async move {
+                client
+                    .share_status(&server_url, &round_id, &share_id, now_seconds, &|| {
+                        pass_handle.is_cancelled()
+                    })
+                    .await
+            }
+        })
+        .buffer_unordered(4);
+
+    let mut confirmations = 0usize;
+    while let Some(result) = polls.next().await {
+        if pass_handle.is_cancelled() {
+            return Ok(false);
+        }
+        if matches!(
+            result,
+            Ok(zcash_voting::helper::client::ShareStatus::Confirmed)
+        ) {
+            confirmations += 1;
+            if confirmations >= quorum {
+                drop(polls);
+                let conn = db.conn();
+                // `zcash_voting` keeps its focused confirmation write private.
+                // Validate through its public query immediately before the
+                // equivalent update so this adapter retains the SDK's ballot-
+                // intent and durable-identity checks.
+                if zcash_voting::storage::queries::share_is_confirmed(
+                    &conn,
+                    &pass_handle.round_id,
+                    &wallet_id,
+                    bundle_index,
+                    proposal_id,
+                    share_index,
+                )
+                .map_err(|e| format!("validate helper share failed: {e}"))?
+                {
+                    return Ok(true);
+                }
+                let updated = conn
+                    .execute(
+                        "UPDATE share_delegations SET confirmed = 1 \
+                         WHERE round_id = :round_id AND wallet_id = :wallet_id \
+                           AND bundle_index = :bundle_index \
+                           AND proposal_id = :proposal_id \
+                           AND share_index = :share_index",
+                        rusqlite::named_params! {
+                            ":round_id": &pass_handle.round_id,
+                            ":wallet_id": &wallet_id,
+                            ":bundle_index": bundle_index,
+                            ":proposal_id": proposal_id,
+                            ":share_index": share_index,
+                        },
+                    )
+                    .map_err(|e| format!("confirm helper share failed: {e}"))?;
+                if updated != 1 {
+                    return Err(format!(
+                        "helper share disappeared before confirmation for \
+                         bundle={bundle_index}, proposal={proposal_id}, \
+                         share={share_index}"
+                    ));
+                }
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Submits one committed share according to its planner-produced placement.
@@ -2464,6 +2593,86 @@ mod tests {
         ])
         .is_err());
         assert!(canonical_configured_helper_urls(&["file:///tmp/helper".to_string()]).is_err());
+    }
+
+    #[tokio::test]
+    async fn focused_share_confirmation_persists_quorum_without_walking_round() {
+        let first_helper = start_share_status_server();
+        let second_helper = start_share_status_server();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
+        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 8, 1, 89);
+        zcash_voting::share::record_delivery_fixture(
+            &db,
+            ROUND_ID,
+            0,
+            7,
+            0,
+            &[first_helper.clone(), second_helper.clone()],
+            &[],
+            2,
+            0,
+        )
+        .unwrap();
+        zcash_voting::share::record_delivery_fixture(
+            &db,
+            ROUND_ID,
+            0,
+            8,
+            0,
+            &[first_helper.clone(), second_helper.clone()],
+            &[],
+            2,
+            0,
+        )
+        .unwrap();
+        drop(db);
+
+        let context = create_voting_helper_delivery_context(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+        );
+        let handle = begin_share_tracking_pass(&context);
+        assert!(confirm_share_with_helpers(
+            &handle,
+            vec![first_helper, second_helper],
+            0,
+            7,
+            0,
+            100,
+        )
+        .await
+        .unwrap());
+
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        assert!(zcash_voting::storage::queries::share_is_confirmed(
+            &db.conn(),
+            ROUND_ID,
+            TEST_ACCOUNT_UUID,
+            0,
+            7,
+            0,
+        )
+        .unwrap());
+        assert!(!zcash_voting::storage::queries::share_is_confirmed(
+            &db.conn(),
+            ROUND_ID,
+            TEST_ACCOUNT_UUID,
+            0,
+            8,
+            0,
+        )
+        .unwrap());
     }
 
     #[test]
@@ -4244,6 +4453,29 @@ mod tests {
                 );
                 stream.write_all(response.as_bytes()).unwrap();
             }
+        });
+        url
+    }
+
+    fn start_share_status_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 2048];
+            let len = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..len]);
+            assert!(request
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("/shielded-vote/v1/share-status/")));
+            let body = r#"{"status":"confirmed"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
         });
         url
     }

@@ -279,6 +279,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   ProviderSubscription<AsyncValue<VotingSessionState>>? _sessionSubscription;
   VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
+  Future<void>? _immediateConfirmationCheck;
   Future<void>? _expiryConfirmationCheck;
   _VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
@@ -949,7 +950,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _completeJob(key: key, generation: generation);
       return;
     }
-    await sessionNotifier.runShareTrackingPass();
+    if (done != null && _hasRemainingVoteOrShareWork(done)) {
+      // Shares with no definite placement are still foreground recovery work.
+      // Once all shares are placed, finalization depends only on the designated
+      // immediate share and must not wait for a round-wide tracking pass.
+      await sessionNotifier.runShareTrackingPass();
+    } else {
+      await sessionNotifier.refreshImmediateShareConfirmation();
+    }
     if (!_isCurrentJob(key: key, generation: generation)) return;
     done = _sessionForJob(key);
     if (done?.phase == VotingSessionPhase.error) {
@@ -1168,15 +1176,60 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (_hasExpiredUnconfirmedImmediateShare(session)) {
         _startExpiryConfirmationCheck(key: key, generation: generation);
+        return;
       }
+      _startImmediateConfirmationCheck(key: key, generation: generation);
     });
+  }
+
+  void _startImmediateConfirmationCheck({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    if (_immediateConfirmationCheck != null) return;
+    late final Future<void> check;
+    check =
+        _refreshImmediateShareForCompletion(
+          key: key,
+          generation: generation,
+        ).whenComplete(() {
+          if (identical(_immediateConfirmationCheck, check)) {
+            _immediateConfirmationCheck = null;
+          }
+        });
+    _immediateConfirmationCheck = check;
+    unawaited(check);
+  }
+
+  Future<void> _refreshImmediateShareForCompletion({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    try {
+      await ref
+          .read(votingSubmissionSessionProvider(key).notifier)
+          .refreshImmediateShareConfirmation();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: immediate-share confirmation check failed: '
+        '$error\n$stackTrace',
+      );
+    }
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final session = _sessionForJob(key);
+    if (_canCompleteSubmission(session)) {
+      _completeJob(key: key, generation: generation);
+    }
   }
 
   void _startExpiryConfirmationCheck({
     required VotingSessionKey key,
     required int generation,
   }) {
-    if (_expiryConfirmationCheck != null) return;
+    if (_expiryConfirmationCheck != null ||
+        _immediateConfirmationCheck != null) {
+      return;
+    }
     _cancelCompletionPoll();
     late final Future<void> check;
     check =
