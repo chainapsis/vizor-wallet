@@ -410,7 +410,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
     value = FinalizedActivityArchiveMetadata(
       lastSlot: value?.lastSlot ?? 0,
       hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
-      archiveState: value?.archiveState,
+      archivedRecordIds: value?.archivedRecordIds ?? const {},
     );
   }
 

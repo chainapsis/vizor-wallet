@@ -56,12 +56,6 @@ final swapActivityReplicaProvider = Provider<SwapActivityReplica>((ref) {
   );
 });
 
-typedef SwapActivityRecordMerger =
-    SwapIntentRecord Function(
-      SwapIntentRecord local,
-      SwapIntentRecord incoming,
-    );
-
 /// Serializes all local history mutations for an account.
 ///
 /// The durable store remains compatible with the legacy v1 envelope. This
@@ -159,13 +153,14 @@ class SwapActivityReplica {
     });
   }
 
-  /// Adds remote-only records and delegates same-ID conflicts to the feature
-  /// merger. Absence from a remote snapshot never deletes a local record;
-  /// deletion is installation-local and is filtered before reconciliation.
+  /// Adds records whose immutable Activity ID does not exist locally.
+  ///
+  /// Absence from a remote archive never deletes a local record. A same-ID
+  /// record is already the same logical Activity and is therefore left alone.
+  /// Deletion is installation-local and is filtered before reconciliation.
   Future<List<SwapIntentRecord>> reconcileRemoteRecords({
     required String accountUuid,
     required Iterable<SwapIntentRecord> remoteRecords,
-    required SwapActivityRecordMerger mergeConflict,
   }) {
     final incoming = List<SwapIntentRecord>.of(remoteRecords);
     if (incoming.isEmpty) return loadRecords(accountUuid: accountUuid);
@@ -180,11 +175,6 @@ class SwapActivityReplica {
           final index = merged.indexWhere((item) => item.id == remote.id);
           if (index < 0) {
             merged.add(scopedRemote);
-          } else {
-            merged[index] = mergeConflict(
-              merged[index],
-              scopedRemote,
-            ).copyWith(accountUuid: accountUuid);
           }
         }
         return merged;

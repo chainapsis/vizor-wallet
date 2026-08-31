@@ -6464,7 +6464,6 @@ void main() {
           .reconcileRemoteRecords(
             accountUuid: 'account-1',
             remoteRecords: [remoteRecord],
-            mergeConflict: (_, incoming) => incoming,
           );
       await remoteSaveStarted.future;
 

@@ -48,8 +48,8 @@ class SwapPrivateHistoryDocument {
   }
 
   /// Builds a deterministic bounded document containing only finalized
-  /// activities. The newest records are retained when a local merged state or
-  /// one delta reaches its count or byte budget.
+  /// activities. The newest records are retained when a candidate delta
+  /// reaches its count or byte budget.
   static SwapPrivateHistoryDocument compact({
     required SwapPrivateHistoryKind kind,
     required Iterable<SwapIntentRecord> records,
@@ -163,143 +163,6 @@ class SwapPrivateHistoryDocument {
   }
 }
 
-SwapIntentRecord mergeSwapPrivateHistoryRecord(
-  SwapIntentRecord local,
-  SwapIntentRecord remote,
-) {
-  if (_recordIdentity(local) != _recordIdentity(remote) ||
-      local.payMode != remote.payMode) {
-    throw const PrivateStateProtocolException(
-      'Cannot merge different swap history identities.',
-    );
-  }
-  _requireCompatible('provider', local.providerLabel, remote.providerLabel);
-  _requireCompatible(
-    'direction',
-    local.direction?.name,
-    remote.direction?.name,
-  );
-  _requireCompatible(
-    'external asset',
-    _assetIdentity(local.externalAsset),
-    _assetIdentity(remote.externalAsset),
-  );
-  _requireCompatible('pair', local.pairText, remote.pairText);
-  _requireCompatible(
-    'sell amount',
-    local.sellAmountBaseUnits?.toString() ?? local.sellAmountText,
-    remote.sellAmountBaseUnits?.toString() ?? remote.sellAmountText,
-  );
-  _requireCompatible(
-    'deposit address',
-    local.depositAddress,
-    remote.depositAddress,
-  );
-  _requireCompatible('deposit memo', local.depositMemo, remote.depositMemo);
-  _requireCompatible(
-    'provider quote',
-    local.providerQuoteId,
-    remote.providerQuoteId,
-  );
-  _requireCompatible(
-    'deposit transaction',
-    local.depositTxHash,
-    remote.depositTxHash,
-  );
-  _requireCompatible(
-    'origin transaction',
-    local.originChainTxHash,
-    remote.originChainTxHash,
-  );
-  _requireCompatible(
-    'destination transaction',
-    local.destinationChainTxHash,
-    remote.destinationChainTxHash,
-  );
-  _requireCompatible(
-    'NEAR intent',
-    local.nearIntentHash,
-    remote.nearIntentHash,
-  );
-  _requireCompatible(
-    'recipient',
-    local.oneClickRecipient,
-    remote.oneClickRecipient,
-  );
-  _requireCompatible(
-    'refund address',
-    local.oneClickRefundTo,
-    remote.oneClickRefundTo,
-  );
-  _requireCompatible(
-    'deposit deadline',
-    _date(local.depositDeadline),
-    _date(remote.depositDeadline),
-  );
-
-  if (local.status != remote.status &&
-      _isStrongTerminal(local.status) &&
-      _isStrongTerminal(remote.status)) {
-    throw const PrivateStateProtocolException(
-      'Swap history has contradictory terminal provider states.',
-    );
-  }
-  final preferred = _compareRecordEvidence(local, remote) >= 0 ? local : remote;
-  final other = identical(preferred, local) ? remote : local;
-  final mergedRefund =
-      other.providerRefundInfo?.merge(preferred.providerRefundInfo) ??
-      preferred.providerRefundInfo;
-  final mergedFiat = _newerFiat(local.fiatValueBasis, remote.fiatValueBasis);
-
-  return preferred.copyWith(
-    pairText: _preferText(preferred.pairText, other.pairText),
-    sellAmountText: _preferText(preferred.sellAmountText, other.sellAmountText),
-    receiveEstimateText: _preferText(
-      preferred.receiveEstimateText,
-      other.receiveEstimateText,
-    ),
-    sellAmountBaseUnits:
-        preferred.sellAmountBaseUnits ?? other.sellAmountBaseUnits,
-    direction: preferred.direction ?? other.direction,
-    externalAsset: preferred.externalAsset ?? other.externalAsset,
-    depositAddress: preferred.depositAddress ?? other.depositAddress,
-    depositMemo: preferred.depositMemo ?? other.depositMemo,
-    depositTxHash: preferred.depositTxHash ?? other.depositTxHash,
-    providerQuoteId: preferred.providerQuoteId ?? other.providerQuoteId,
-    swapFeeText: preferred.swapFeeText ?? other.swapFeeText,
-    totalFeesText: preferred.totalFeesText ?? other.totalFeesText,
-    realisedSlippageText:
-        preferred.realisedSlippageText ?? other.realisedSlippageText,
-    slippageToleranceText:
-        preferred.slippageToleranceText ?? other.slippageToleranceText,
-    minimumReceiveText:
-        preferred.minimumReceiveText ?? other.minimumReceiveText,
-    providerStatusRaw: preferred.providerStatusRaw ?? other.providerStatusRaw,
-    nearIntentHash: preferred.nearIntentHash ?? other.nearIntentHash,
-    originChainTxHash: preferred.originChainTxHash ?? other.originChainTxHash,
-    destinationChainTxHash:
-        preferred.destinationChainTxHash ?? other.destinationChainTxHash,
-    providerRefundInfo: mergedRefund,
-    fiatValueBasis: mergedFiat,
-    lastStatusCheckedAt: _later(
-      local.lastStatusCheckedAt,
-      remote.lastStatusCheckedAt,
-    ),
-    statusError: local.statusError,
-    broadcastNotice: local.broadcastNotice,
-    broadcastStatus: preferred.broadcastStatus ?? other.broadcastStatus,
-    oneClickRecipient: preferred.oneClickRecipient ?? other.oneClickRecipient,
-    oneClickRefundTo: preferred.oneClickRefundTo ?? other.oneClickRefundTo,
-    userExternalContactId: local.userExternalContactId,
-    depositDeadline: _later(local.depositDeadline, remote.depositDeadline),
-    accountUuid: local.accountUuid,
-    createdAt: _earlier(local.createdAt, remote.createdAt),
-    updatedAt: _later(local.updatedAt, remote.updatedAt),
-    completedAt: _later(local.completedAt, remote.completedAt),
-    depositClaimedAt: _later(local.depositClaimedAt, remote.depositClaimedAt),
-  );
-}
-
 Map<String, Object?> _recordToJson(SwapIntentRecord record) {
   String requiredText(
     String name,
@@ -399,48 +262,6 @@ SwapIntentRecord _recordFromJson(
   Map<String, dynamic> json, {
   required SwapPrivateHistoryKind expectedKind,
 }) {
-  const allowed = {
-    'id',
-    'provider',
-    'pair',
-    'sell_amount',
-    'receive_estimate',
-    'status',
-    'next_action',
-    'sell_amount_base_units',
-    'direction',
-    'external_asset',
-    'deposit_address',
-    'deposit_memo',
-    'deposit_tx_hash',
-    'provider_quote_id',
-    'swap_fee',
-    'total_fees',
-    'realised_slippage',
-    'slippage_tolerance',
-    'minimum_receive',
-    'provider_status_raw',
-    'near_intent_hash',
-    'origin_chain_tx_hash',
-    'destination_chain_tx_hash',
-    'provider_refund',
-    'fiat_basis',
-    'last_status_checked_at',
-    'broadcast_status',
-    'recipient',
-    'refund_to',
-    'deposit_deadline',
-    'created_at',
-    'updated_at',
-    'completed_at',
-    'deposit_claimed_at',
-  };
-  if (json.length != allowed.length ||
-      json.keys.any((key) => !allowed.contains(key))) {
-    throw const PrivateStateProtocolException(
-      'Swap history record has unknown or missing fields.',
-    );
-  }
   final status = _enumValue(SwapIntentStatus.values, json['status']);
   final direction = _optionalEnumValue(SwapDirection.values, json['direction']);
   final asset = SwapAsset.fromPersistedJson(json['external_asset']);
@@ -536,17 +357,7 @@ Map<String, Object?>? _refundToJson(
 
 SwapProviderRefundInfo? _refundFromJson(Object? raw) {
   if (raw == null) return null;
-  if (raw is! Map<String, dynamic> || raw.length != 5) {
-    throw const PrivateStateProtocolException('Invalid provider refund data.');
-  }
-  const keys = {
-    'minimum_deposit',
-    'refund_fee',
-    'deposited_amount',
-    'refunded_amount',
-    'refund_reason',
-  };
-  if (raw.keys.any((key) => !keys.contains(key))) {
+  if (raw is! Map<String, dynamic>) {
     throw const PrivateStateProtocolException('Invalid provider refund data.');
   }
   final info = SwapProviderRefundInfo(
@@ -586,11 +397,7 @@ Map<String, Object?>? _fiatToJson(SwapFiatValueBasis? basis) {
 
 SwapFiatValueBasis? _fiatFromJson(Object? raw) {
   if (raw == null) return null;
-  if (raw is! Map<String, dynamic> || raw.length != 3) {
-    throw const PrivateStateProtocolException('Invalid fiat basis data.');
-  }
-  const keys = {'sell_usd_unit_price', 'receive_usd_unit_price', 'captured_at'};
-  if (raw.keys.any((key) => !keys.contains(key))) {
+  if (raw is! Map<String, dynamic>) {
     throw const PrivateStateProtocolException('Invalid fiat basis data.');
   }
   final basis = SwapFiatValueBasis(
@@ -613,80 +420,6 @@ DateTime _recordTimestamp(SwapIntentRecord record) =>
     record.updatedAt ??
     record.createdAt ??
     DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-
-bool _hasDepositEvidence(SwapIntentRecord record) =>
-    swapHasProviderObservedDepositEvidence(
-      status: record.status,
-      originChainTxHash: record.originChainTxHash,
-      depositedAmountText: record.providerRefundInfo?.depositedAmountText,
-    ) ||
-    swapHasConfirmedDepositEvidence(
-      originChainTxHash: record.originChainTxHash,
-      depositTxHash: record.depositTxHash,
-      broadcastStatus: record.broadcastStatus,
-    );
-
-int _compareRecordEvidence(SwapIntentRecord left, SwapIntentRecord right) {
-  final score = _statusScore(left).compareTo(_statusScore(right));
-  if (score != 0) return score;
-  return _recordTimestamp(left).compareTo(_recordTimestamp(right));
-}
-
-int _statusScore(SwapIntentRecord record) {
-  final evidenceBonus = _hasDepositEvidence(record) ? 40 : 0;
-  return evidenceBonus +
-      switch (record.status) {
-        SwapIntentStatus.complete => 100,
-        SwapIntentStatus.refunded => 95,
-        SwapIntentStatus.processing => 80,
-        SwapIntentStatus.incompleteDeposit => 75,
-        SwapIntentStatus.depositObserved => 70,
-        SwapIntentStatus.providerStatusUnknown => 50,
-        SwapIntentStatus.awaitingDeposit ||
-        SwapIntentStatus.awaitingExternalDeposit => 20,
-        SwapIntentStatus.expired || SwapIntentStatus.failed => 10,
-      };
-}
-
-bool _isStrongTerminal(SwapIntentStatus status) =>
-    status == SwapIntentStatus.complete || status == SwapIntentStatus.refunded;
-
-void _requireCompatible(String field, String? left, String? right) {
-  final a = left?.trim();
-  final b = right?.trim();
-  if (a != null && a.isNotEmpty && b != null && b.isNotEmpty && a != b) {
-    throw PrivateStateProtocolException(
-      'Swap history has contradictory $field evidence.',
-    );
-  }
-}
-
-String? _assetIdentity(SwapAsset? asset) =>
-    asset == null ? null : jsonEncode(asset.toPersistedJson());
-
-String _preferText(String preferred, String other) =>
-    preferred.trim().isNotEmpty ? preferred : other;
-
-SwapFiatValueBasis? _newerFiat(
-  SwapFiatValueBasis? left,
-  SwapFiatValueBasis? right,
-) {
-  if (left == null) return right;
-  if (right == null) return left;
-  return left.capturedAt.isAfter(right.capturedAt) ? left : right;
-}
-
-DateTime? _later(DateTime? left, DateTime? right) {
-  if (left == null) return right;
-  if (right == null) return left;
-  return left.isAfter(right) ? left : right;
-}
-
-DateTime? _earlier(DateTime? left, DateTime? right) {
-  if (left == null) return right;
-  if (right == null) return left;
-  return left.isBefore(right) ? left : right;
-}
 
 String? _date(DateTime? value) {
   if (value == null) return null;

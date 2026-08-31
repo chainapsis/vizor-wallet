@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -9,20 +7,18 @@ import 'package:zcash_wallet/src/features/swap/private_state/swap_private_histor
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('does not rewrite byte-identical archive metadata', () async {
+  test('does not rewrite equivalent archived Activity IDs', () async {
     final storage = _CountingStorage();
     final store = AppSecureStoreFinalizedActivityArchiveMetadataStore(
       AppSecureStore.testing(storage: storage),
     );
-    final archiveState = Uint8List.fromList([1, 2, 3]);
-
     await store.save(
       accountUuid: 'account-a',
       kind: SwapPrivateHistoryKind.swap,
       metadata: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
         hiddenRecordIds: const {'hidden'},
-        archiveState: archiveState,
+        archivedRecordIds: const {'activity-a', 'activity-b'},
       ),
     );
     await store.save(
@@ -31,7 +27,7 @@ void main() {
       metadata: FinalizedActivityArchiveMetadata(
         lastSlot: 1,
         hiddenRecordIds: const {'hidden'},
-        archiveState: Uint8List.fromList(archiveState),
+        archivedRecordIds: const {'activity-b', 'activity-a'},
       ),
     );
 

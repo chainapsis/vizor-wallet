@@ -113,17 +113,22 @@ the Rust recovery database and chain remain authoritative.
 Swap and Pay share one finalized activity archive implementation but use
 separate namespaces. Only `complete` and `refunded` records are eligible.
 Pending, failed, and expired activity never leaves the installation. Each
-UFVK-derived slot contains only records that are new or have gained finalized
-evidence since the preceding local pass (`delta-v1:1`, `delta-v1:2`, ...); a
-later slot does not contain earlier slots. Recovery reads and merges every
-contiguous delta from slot one. Afterward, local secure metadata caches the
-merged state and last processed slot so later passes start with the following
-slot instead of rereading successful objects.
+UFVK-derived slot contains only finalized Activity IDs that do not already
+exist in the namespace archive (`delta-v1:1`, `delta-v1:2`, ...); a later slot
+does not contain earlier slots. An Activity is immutable once finalized, so
+field or encoding differences for an existing ID never create another delta.
+Recovery accepts fields known to the running client, ignores extension fields,
+and restores the first record encountered for each ID.
 
-A create conflict is resolved by reading the winning slot, merging it locally,
-and creating the remaining delta in the following slot. Consequently each slot
-has an unrelated public key and object ID at rest, and existing slot objects
-cannot be updated.
+Recovery processes every contiguous delta through the first absent slot. Local
+secure metadata caches the last processed slot and its Activity ID set so later
+passes start with the following slot instead of rereading successful objects.
+On a create conflict the client returns to the same discovery loop, consumes
+all now-contiguous slots, and derives missing IDs again from current local
+state. It does not maintain or merge a separate conflict snapshot.
+
+Consequently each slot has an unrelated public key and object ID at rest, and
+existing slot objects cannot be updated.
 
 Activity deletion is installation-local. Deleted IDs are suppressed only in
 local secure metadata, never uploaded as tombstones, and never remove a remote

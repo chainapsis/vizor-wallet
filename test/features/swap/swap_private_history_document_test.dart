@@ -67,7 +67,7 @@ void main() {
   });
 
   test('round-trips the minimal record shape', () {
-    final source = _record('legacy');
+    final source = _record('minimal');
     final minimal = SwapIntentRecord(
       id: source.id,
       providerLabel: source.providerLabel,
@@ -94,80 +94,37 @@ void main() {
     expect(decoded.providerQuoteId, isNull);
   });
 
-  test('evidence-bearing progress defeats local deadline expiry', () {
-    final local = _record('swap-a', status: SwapIntentStatus.expired).copyWith(
-      accountUuid: 'account-1',
-      userExternalContactId: 'contact-1',
-      updatedAt: DateTime.utc(2026, 8, 25, 12),
-    );
-    final remote = _record('swap-a', status: SwapIntentStatus.processing)
-        .copyWith(
-          originChainTxHash: 'origin-tx',
-          updatedAt: DateTime.utc(2026, 8, 25, 11),
-        );
+  test('ignores fields added by a newer Activity document version', () {
+    final encoded = SwapPrivateHistoryDocument(
+      kind: SwapPrivateHistoryKind.swap,
+      records: [_record('swap-a')],
+    ).encode();
+    final raw = jsonDecode(utf8.decode(encoded)) as List<dynamic>;
+    final record = raw.single as Map<String, dynamic>;
+    record['future_record_field'] = {'nested': true};
+    record['provider_refund'] = {
+      'minimum_deposit': null,
+      'refund_fee': null,
+      'deposited_amount': '1 ZEC',
+      'refunded_amount': null,
+      'refund_reason': null,
+      'future_refund_field': 1,
+    };
+    record['fiat_basis'] = {
+      'sell_usd_unit_price': 70,
+      'receive_usd_unit_price': null,
+      'captured_at': '2026-08-25T10:00:00.000Z',
+      'future_fiat_field': 'ignored',
+    };
 
-    final merged = mergeSwapPrivateHistoryRecord(local, remote);
+    final decoded = SwapPrivateHistoryDocument.decode(
+      Uint8List.fromList(utf8.encode(jsonEncode(raw))),
+      expectedKind: SwapPrivateHistoryKind.swap,
+    ).records.single;
 
-    expect(merged.status, SwapIntentStatus.processing);
-    expect(merged.originChainTxHash, 'origin-tx');
-    expect(merged.userExternalContactId, 'contact-1');
-    expect(merged.accountUuid, 'account-1');
-  });
-
-  test('rejects contradictory immutable or terminal evidence', () {
-    final local = _record('swap-a', status: SwapIntentStatus.complete);
-
-    expect(
-      () => mergeSwapPrivateHistoryRecord(
-        local,
-        _record(
-          'swap-a',
-          status: SwapIntentStatus.complete,
-        ).copyWith(depositTxHash: 'different-deposit-tx'),
-      ),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
-    expect(
-      () => mergeSwapPrivateHistoryRecord(
-        local,
-        _record('swap-a', status: SwapIntentStatus.refunded),
-      ),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
-    expect(
-      () => mergeSwapPrivateHistoryRecord(
-        local,
-        _record(
-          'swap-a',
-          status: SwapIntentStatus.complete,
-        ).copyWith(sellAmountBaseUnits: BigInt.two),
-      ),
-      throwsA(isA<PrivateStateProtocolException>()),
-    );
-  });
-
-  test('evidence winner also owns conflicting mutable evidence metadata', () {
-    final local = _record('swap-a', status: SwapIntentStatus.awaitingDeposit)
-        .copyWith(
-          broadcastStatus: 'pending_broadcast',
-          providerRefundInfo: const SwapProviderRefundInfo(
-            depositedAmountText: '0.5 ZEC',
-          ),
-          updatedAt: DateTime.utc(2026, 8, 25, 12),
-        );
-    final remote = _record('swap-a', status: SwapIntentStatus.processing)
-        .copyWith(
-          broadcastStatus: 'broadcasted',
-          providerRefundInfo: const SwapProviderRefundInfo(
-            depositedAmountText: '1 ZEC',
-          ),
-          updatedAt: DateTime.utc(2026, 8, 25, 11),
-        );
-
-    final merged = mergeSwapPrivateHistoryRecord(local, remote);
-
-    expect(merged.broadcastStatus, 'broadcasted');
-    expect(merged.providerRefundInfo?.depositedAmountText, '1 ZEC');
+    expect(decoded.id, 'swap-a');
+    expect(decoded.providerRefundInfo?.depositedAmountText, '1 ZEC');
+    expect(decoded.fiatValueBasis?.sellUsdUnitPrice, 70);
   });
 
   test('rejects timezone-less or out-of-range dates', () {

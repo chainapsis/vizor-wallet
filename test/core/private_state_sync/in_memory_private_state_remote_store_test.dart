@@ -445,7 +445,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
     values[key] = FinalizedActivityArchiveMetadata(
       lastSlot: current?.lastSlot ?? 0,
       hiddenRecordIds: {...?current?.hiddenRecordIds, ...recordIds},
-      archiveState: current?.archiveState,
+      archivedRecordIds: current?.archivedRecordIds ?? const {},
     );
   }
 
@@ -469,7 +469,10 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
         ...?current?.hiddenRecordIds,
         ...metadata.hiddenRecordIds,
       },
-      archiveState: metadata.archiveState,
+      archivedRecordIds: {
+        ...?current?.archivedRecordIds,
+        ...metadata.archivedRecordIds,
+      },
     );
   }
 

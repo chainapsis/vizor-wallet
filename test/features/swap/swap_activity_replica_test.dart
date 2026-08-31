@@ -47,7 +47,6 @@ void main() {
       final remote = replica.reconcileRemoteRecords(
         accountUuid: 'account-1',
         remoteRecords: [_record('remote')],
-        mergeConflict: (_, incoming) => incoming,
       );
       releaseFirstSave.complete();
 
@@ -78,30 +77,26 @@ void main() {
     expect(store.records, isEmpty);
   });
 
-  test('remote reconcile keeps local order and delegates conflicts', () async {
-    final store = _MemorySwapActivityStore([
-      _record('local'),
-      _record('shared', status: SwapIntentStatus.processing),
-    ]);
-    final replica = SwapActivityReplica(activityStore: store);
-    var conflictCount = 0;
+  test(
+    'remote reconcile keeps local order and existing same-ID state',
+    () async {
+      final store = _MemorySwapActivityStore([
+        _record('local'),
+        _record('shared', status: SwapIntentStatus.processing),
+      ]);
+      final replica = SwapActivityReplica(activityStore: store);
+      final result = await replica.reconcileRemoteRecords(
+        accountUuid: 'account-1',
+        remoteRecords: [
+          _record('shared', status: SwapIntentStatus.complete),
+          _record('remote'),
+        ],
+      );
 
-    final result = await replica.reconcileRemoteRecords(
-      accountUuid: 'account-1',
-      remoteRecords: [
-        _record('shared', status: SwapIntentStatus.complete),
-        _record('remote'),
-      ],
-      mergeConflict: (local, remote) {
-        conflictCount++;
-        return remote;
-      },
-    );
-
-    expect(conflictCount, 1);
-    expect(result.map((record) => record.id), ['local', 'shared', 'remote']);
-    expect(result[1].status, SwapIntentStatus.complete);
-  });
+      expect(result.map((record) => record.id), ['local', 'shared', 'remote']);
+      expect(result[1].status, SwapIntentStatus.processing);
+    },
+  );
 
   test('a failed mutation does not poison the account queue', () async {
     final store = _MemorySwapActivityStore([_record('legacy')])

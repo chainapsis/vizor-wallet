@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import '../../../core/storage/app_secure_store.dart';
 import 'swap_private_history_document.dart';
 
-const _metadataSchemaVersion = 1;
+const _metadataSchemaVersion = 2;
 const _metadataKeyPrefix = 'zcash_finalized_activity_delta_v1';
 const _maxLocallyHiddenRecords = 2048;
+const _maxArchivedRecords = 65536;
 
 /// Local-only progress for the append-only finalized activity archive.
 ///
@@ -18,24 +18,23 @@ class FinalizedActivityArchiveMetadata {
   const FinalizedActivityArchiveMetadata({
     required this.lastSlot,
     this.hiddenRecordIds = const {},
-    this.archiveState,
+    this.archivedRecordIds = const {},
   });
 
   final int lastSlot;
   final Set<String> hiddenRecordIds;
 
-  /// Locally cached merge of every delta through [lastSlot].
+  /// Immutable Activity IDs observed through [lastSlot].
   ///
-  /// This is local progress metadata, not a copy of any individual remote
-  /// object. It lets later passes identify records that are new or have gained
-  /// finalized evidence without rereading immutable slots.
-  final Uint8List? archiveState;
+  /// Full records live in the activity store. Only IDs are needed here to
+  /// avoid rereading successful objects or republishing an existing Activity.
+  final Set<String> archivedRecordIds;
 
   Map<String, Object?> toJson() => {
     'schema': _metadataSchemaVersion,
     'last_slot': lastSlot,
     'hidden_record_ids': hiddenRecordIds.toList()..sort(),
-    'archive_state': archiveState == null ? null : base64Encode(archiveState!),
+    'archived_record_ids': archivedRecordIds.toList()..sort(),
   };
 
   static FinalizedActivityArchiveMetadata? fromJson(Object? raw) {
@@ -46,7 +45,7 @@ class FinalizedActivityArchiveMetadata {
       'schema',
       'last_slot',
       'hidden_record_ids',
-      'archive_state',
+      'archived_record_ids',
     };
     if (raw['schema'] != _metadataSchemaVersion ||
         raw.length != expectedKeys.length ||
@@ -55,30 +54,28 @@ class FinalizedActivityArchiveMetadata {
     }
     final lastSlot = raw['last_slot'];
     final hidden = raw['hidden_record_ids'];
+    final archived = raw['archived_record_ids'];
     if (lastSlot is! int ||
         lastSlot < 0 ||
         hidden is! List ||
         hidden.length > _maxLocallyHiddenRecords ||
-        hidden.any((value) => value is! String || value.trim().isEmpty)) {
+        !_validIds(hidden) ||
+        archived is! List ||
+        archived.length > _maxArchivedRecords ||
+        !_validIds(archived)) {
       return null;
     }
     final hiddenIds = hidden.cast<String>().toSet();
-    if (hiddenIds.length != hidden.length) return null;
-    Uint8List? archiveState;
-    final encodedState = raw['archive_state'];
-    if (encodedState != null && encodedState is! String) return null;
-    if (encodedState is String) {
-      try {
-        archiveState = base64Decode(encodedState);
-      } on FormatException {
-        return null;
-      }
+    final archivedIds = archived.cast<String>().toSet();
+    if (hiddenIds.length != hidden.length ||
+        archivedIds.length != archived.length ||
+        (lastSlot == 0 && archivedIds.isNotEmpty)) {
+      return null;
     }
-    if ((lastSlot == 0) != (archiveState == null)) return null;
     return FinalizedActivityArchiveMetadata(
       lastSlot: lastSlot,
       hiddenRecordIds: hiddenIds,
-      archiveState: archiveState,
+      archivedRecordIds: archivedIds,
     );
   }
 }
@@ -140,15 +137,18 @@ class AppSecureStoreFinalizedActivityArchiveMetadataStore
         ...?current?.hiddenRecordIds,
         ...metadata.hiddenRecordIds,
       };
+      final archived = {
+        ...?current?.archivedRecordIds,
+        ...metadata.archivedRecordIds,
+      };
       _validateHiddenCount(hidden);
+      _validateArchivedCount(archived);
       final next = FinalizedActivityArchiveMetadata(
         lastSlot: metadata.lastSlot >= (current?.lastSlot ?? 0)
             ? metadata.lastSlot
             : current!.lastSlot,
         hiddenRecordIds: hidden,
-        archiveState: metadata.lastSlot >= (current?.lastSlot ?? 0)
-            ? metadata.archiveState ?? current?.archiveState
-            : current!.archiveState,
+        archivedRecordIds: archived,
       );
       if (_metadataEquals(current, next)) return;
       await _write(key, next);
@@ -173,7 +173,7 @@ class AppSecureStoreFinalizedActivityArchiveMetadataStore
         FinalizedActivityArchiveMetadata(
           lastSlot: current?.lastSlot ?? 0,
           hiddenRecordIds: hidden,
-          archiveState: current?.archiveState,
+          archivedRecordIds: current?.archivedRecordIds ?? const {},
         ),
       );
     });
@@ -218,6 +218,19 @@ void _validateHiddenCount(Set<String> hidden) {
   }
 }
 
+void _validateArchivedCount(Set<String> archived) {
+  if (archived.length > _maxArchivedRecords) {
+    throw StateError('Archived activity limit exceeded.');
+  }
+}
+
+bool _validIds(List<Object?> values) => values.every(
+  (value) =>
+      value is String &&
+      value.trim().isNotEmpty &&
+      utf8.encode(value).length <= 512,
+);
+
 bool _metadataEquals(
   FinalizedActivityArchiveMetadata? left,
   FinalizedActivityArchiveMetadata right,
@@ -227,16 +240,6 @@ bool _metadataEquals(
       !left.hiddenRecordIds.containsAll(right.hiddenRecordIds)) {
     return false;
   }
-  final leftState = left.archiveState;
-  final rightState = right.archiveState;
-  if (identical(leftState, rightState)) return true;
-  if (leftState == null ||
-      rightState == null ||
-      leftState.length != rightState.length) {
-    return false;
-  }
-  for (var index = 0; index < leftState.length; index++) {
-    if (leftState[index] != rightState[index]) return false;
-  }
-  return true;
+  return left.archivedRecordIds.length == right.archivedRecordIds.length &&
+      left.archivedRecordIds.containsAll(right.archivedRecordIds);
 }
