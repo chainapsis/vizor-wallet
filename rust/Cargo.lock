@@ -4356,6 +4356,7 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-util",
  "incrementalmerkletree",
  "log",

@@ -15,7 +15,14 @@
 //! ([`network_privacy::DirectRouteLease`]) so that enabling Tor drains and then
 //! aborts them, exactly as it does for wallet sync.
 
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use bytes::Bytes;
 use http::{Method, Uri};
@@ -27,6 +34,12 @@ use zcash_voting::{
 };
 
 use crate::network_privacy;
+
+tokio::task_local! {
+    /// The complete request deadline, reused by the direct connector so a
+    /// TCP or TLS timeout remains a definite pre-dispatch failure.
+    static DIRECT_REQUEST_DEADLINE: Option<tokio::time::Instant>;
+}
 
 // The response ceiling is part of the helper protocol, so it comes from the
 // SDK's transport contract rather than being chosen again here. Picking our own
@@ -45,8 +58,15 @@ impl Default for VotingHelperTransport {
 
 impl VotingHelperTransport {
     pub fn new() -> Self {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_http1()
+            .enable_http2()
+            .wrap_connector(DirectRouteConnector::new());
         Self {
-            direct: HyperTransport::with_http_connector(DirectRouteConnector::new()),
+            direct: HyperTransport::with_connector(ConnectDeadlineConnector::new(https)),
         }
     }
 
@@ -71,8 +91,7 @@ impl VotingHelperTransport {
                 self.request_over_tor(&tor, method, url, body, timeout)
                     .await
             }
-            None if method == Method::POST => self.direct.post_json(url, body, timeout).await,
-            None => self.direct.get(url, timeout).await,
+            None => request_direct(&self.direct, method, url, body, timeout).await,
         }
     }
 
@@ -89,7 +108,13 @@ impl VotingHelperTransport {
             .map_err(|error| HelperTransportError::Transport(format!("invalid URL: {error}")))?;
         let has_body = !body.is_empty();
         let is_post = method == Method::POST;
+        let request_started = Arc::new(AtomicBool::new(false));
+        let request_started_in_headers = request_started.clone();
         let apply_headers = move |builder: http::request::Builder| {
+            // librustzcash invokes this only after the Tor stream and TLS
+            // handshake are ready, immediately before constructing the HTTP
+            // request. Until this flips, a timeout is definitely pre-dispatch.
+            request_started_in_headers.store(true, Ordering::Release);
             if has_body {
                 builder.header(http::header::CONTENT_TYPE, "application/json")
             } else {
@@ -99,7 +124,7 @@ impl VotingHelperTransport {
 
         // Retries are the SDK's decision, not the transport's: it distinguishes
         // an ambiguous submission from a safe read. Ask arti for none.
-        let response = with_timeout(timeout, async {
+        let response = tokio::time::timeout(timeout, async {
             match method {
                 Method::POST => {
                     tor.http_post(
@@ -118,7 +143,8 @@ impl VotingHelperTransport {
                 }
             }
         })
-        .await?
+        .await
+        .map_err(|_| classify_tor_outer_timeout(is_post, request_started.load(Ordering::Acquire)))?
         .map_err(|error| classify_tor_error(is_post, error))?;
 
         let status = response.status().as_u16();
@@ -133,6 +159,41 @@ impl VotingHelperTransport {
             content_type,
         ))
     }
+}
+
+/// Classifies Vizor's whole-request deadline when it beats librustzcash's
+/// phase-specific Tor deadlines.
+fn classify_tor_outer_timeout(is_post: bool, request_started: bool) -> HelperTransportError {
+    if is_post && !request_started {
+        HelperTransportError::Transport(
+            "Tor helper connection timed out before request dispatch".to_string(),
+        )
+    } else {
+        HelperTransportError::Timeout
+    }
+}
+
+/// Runs a direct request and exposes its one absolute deadline to connection
+/// setup. The connector's deadline starts just before the SDK's whole-request
+/// timer, so an establishment timeout is returned through Hyper as a connect
+/// error instead of racing the outer ambiguous timeout.
+async fn request_direct(
+    transport: &HyperTransport,
+    method: Method,
+    url: &str,
+    body: Vec<u8>,
+    timeout: Duration,
+) -> Result<HelperResponse, HelperTransportError> {
+    let deadline = tokio::time::Instant::now().checked_add(timeout);
+    DIRECT_REQUEST_DEADLINE
+        .scope(deadline, async move {
+            if method == Method::POST {
+                transport.post_json(url, body, timeout).await
+            } else {
+                transport.get(url, timeout).await
+            }
+        })
+        .await
 }
 
 /// Separates Tor failures that prove a POST was never dispatched from failures
@@ -167,16 +228,6 @@ fn classify_tor_error(
     } else {
         HelperTransportError::Ambiguous(message)
     }
-}
-
-/// Applies the caller's deadline, reporting expiry as an ambiguous timeout.
-async fn with_timeout<T>(
-    timeout: Duration,
-    future: impl std::future::Future<Output = T>,
-) -> Result<T, HelperTransportError> {
-    tokio::time::timeout(timeout, future)
-        .await
-        .map_err(|_| HelperTransportError::Timeout)
 }
 
 /// Reads a Tor response body under the shared size ceiling.
@@ -267,6 +318,64 @@ impl tower_service::Service<Uri> for DirectRouteConnector {
     }
 }
 
+/// Applies the request's absolute deadline to the complete TCP+TLS connector.
+///
+/// Wrapping the HTTPS connector, rather than only [`DirectRouteConnector`], is
+/// important: a stalled TLS handshake is still known not to have dispatched
+/// an HTTP request and must therefore remain safe for helper fallback.
+#[derive(Clone)]
+struct ConnectDeadlineConnector<C> {
+    inner: C,
+}
+
+impl<C> ConnectDeadlineConnector<C> {
+    fn new(inner: C) -> Self {
+        Self { inner }
+    }
+}
+
+impl<C, T, E> tower_service::Service<Uri> for ConnectDeadlineConnector<C>
+where
+    C: tower_service::Service<Uri, Response = T, Error = E> + Send,
+    C::Future: Send + 'static,
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    type Response = T;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Future =
+        std::pin::Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        tower_service::Service::poll_ready(&mut self.inner, cx)
+            .map(|result| result.map_err(Into::into))
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        let future = tower_service::Service::call(&mut self.inner, uri);
+        let deadline = DIRECT_REQUEST_DEADLINE
+            .try_with(|deadline| *deadline)
+            .ok()
+            .flatten();
+        Box::pin(async move {
+            match deadline {
+                Some(deadline) => tokio::time::timeout_at(deadline, future)
+                    .await
+                    .map_err(|_| {
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "direct helper connection timed out before request dispatch",
+                        )) as Self::Error
+                    })?
+                    .map_err(Into::into),
+                None => future.await.map_err(Into::into),
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -279,7 +388,7 @@ mod tests {
     use http::Method;
     use zcash_voting::HelperTransportError;
 
-    use super::{classify_tor_error, VotingHelperTransport};
+    use super::{classify_tor_error, classify_tor_outer_timeout, VotingHelperTransport};
 
     #[test]
     fn tor_post_classification_distinguishes_pre_dispatch_failures() {
@@ -330,6 +439,22 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn tor_outer_timeout_preserves_pre_dispatch_post_classification() {
+        assert!(matches!(
+            classify_tor_outer_timeout(true, false),
+            HelperTransportError::Transport(_)
+        ));
+        assert!(matches!(
+            classify_tor_outer_timeout(true, true),
+            HelperTransportError::Timeout
+        ));
+        assert!(matches!(
+            classify_tor_outer_timeout(false, false),
+            HelperTransportError::Timeout
+        ));
+    }
+
     #[tokio::test]
     async fn selected_direct_route_uses_sdk_hyper_transport() {
         let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -361,6 +486,32 @@ mod tests {
         assert_eq!(response.status(), 201);
         assert_eq!(response.body(), b"{}");
         assert_eq!(response.content_type(), Some("application/json"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_tls_timeout_is_definitely_pre_dispatch() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (_stream, _) = listener.accept().unwrap();
+            // Accept TCP but never complete TLS. No HTTP bytes can have been
+            // dispatched when the connector deadline expires.
+            thread::sleep(Duration::from_millis(100));
+        });
+        let transport = VotingHelperTransport::new();
+
+        let result = transport
+            .request(
+                Method::POST,
+                &format!("https://{address}/shielded-vote/v1/shares"),
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_millis(20),
+            )
+            .await;
+
+        assert!(matches!(result, Err(HelperTransportError::Transport(_))));
         server.join().unwrap();
     }
 }

@@ -52,6 +52,7 @@ bytes = "1"
 http = "1"
 http-body-util = "0.1"
 hyper = "1"
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "tls12", "webpki-roots"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
 tower-service = "0.3"
 time = "0.3"
