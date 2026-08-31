@@ -8615,6 +8615,59 @@ void main() {
     ]);
   });
 
+  test('completed snapshot bundle precompute is not repeated', () async {
+    final rust = FakeVotingRustApi();
+    final hotkeyStore = FakeVotingHotkeyStore(null);
+    final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+
+    expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
+    expect(rust.backgroundDelegationProofCalls, [0]);
+  });
+
+  test('failed snapshot bundle precompute remains retryable', () async {
+    final rust = FakeVotingRustApi(failPrecompute: true);
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+
+    expect(rust.snapshotBundlePrecomputeAccounts, ['account-1', 'account-1']);
+    expect(rust.backgroundDelegationProofCalls, isEmpty);
+  });
+
+  test('failed background ZKP1 remains retryable', () async {
+    final rust = FakeVotingRustApi(
+      backgroundDelegationProofErrorsByBundle: {
+        0: StateError('background proof failed'),
+      },
+    );
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+
+    expect(rust.snapshotBundlePrecomputeAccounts, ['account-1', 'account-1']);
+    expect(rust.backgroundDelegationProofCalls, [0, 0]);
+  });
+
   test('snapshot bundle precompute skips after account switch', () async {
     final rust = FakeVotingRustApi();
     final activeAccountProvider =
