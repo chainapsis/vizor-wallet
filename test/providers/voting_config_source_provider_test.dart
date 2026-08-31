@@ -37,58 +37,6 @@ void main() {
   });
 
   test(
-    'stage harness temporarily overrides a preserved custom source',
-    () async {
-      final store = FakeVotingConfigSourceStore(
-        sourceUrl: sourceA,
-        savedSourcesJson:
-            '''
-        [
-          {"id":"a","name":"Alpha","sourceUrl":"$sourceA"}
-        ]
-      ''',
-      );
-      final container = _container(store, stageHarnessEnabled: true);
-      addTearDown(container.dispose);
-
-      final state = await container.read(votingConfigSourceProvider.future);
-
-      expect(state.sourceUrl, kDefaultStaticVotingConfigSource);
-      expect(state.isDefault, isTrue);
-      expect(state.savedSources.single.id, 'a');
-      expect(store.sourceUrl, sourceA);
-    },
-  );
-
-  test('stage harness keeps its source pinned across mutations', () async {
-    final store = FakeVotingConfigSourceStore(
-      sourceUrl: sourceA,
-      savedSourcesJson:
-          '''
-        [
-          {"id":"a","name":"Alpha","sourceUrl":"$sourceA"}
-        ]
-      ''',
-    );
-    final container = _container(store, stageHarnessEnabled: true);
-    addTearDown(container.dispose);
-    await container.read(votingConfigSourceProvider.future);
-
-    final notifier = container.read(votingConfigSourceProvider.notifier);
-    await notifier.setCustom(sourceB);
-    await notifier.resetDefault();
-    await notifier.saveSource(name: 'Beta', sourceUrl: sourceB);
-    await notifier.deleteSavedSource('a');
-
-    final state = container.read(votingConfigSourceProvider).value!;
-    expect(state.sourceUrl, kDefaultStaticVotingConfigSource);
-    expect(state.isDefault, isTrue);
-    expect(state.savedSources.map((source) => source.id), ['a']);
-    expect(store.sourceUrl, sourceA);
-    expect(store.savedSourcesJson, contains('"id":"a"'));
-  });
-
-  test(
     'invalid stored source falls back to default and clears override',
     () async {
       final store = FakeVotingConfigSourceStore(
@@ -232,17 +180,9 @@ void main() {
   });
 }
 
-ProviderContainer _container(
-  FakeVotingConfigSourceStore store, {
-  bool stageHarnessEnabled = false,
-}) {
+ProviderContainer _container(FakeVotingConfigSourceStore store) {
   return ProviderContainer(
-    overrides: [
-      votingConfigSourceStoreProvider.overrideWithValue(store),
-      votingStageHarnessConfigEnabledProvider.overrideWithValue(
-        stageHarnessEnabled,
-      ),
-    ],
+    overrides: [votingConfigSourceStoreProvider.overrideWithValue(store)],
   );
 }
 

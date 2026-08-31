@@ -120,10 +120,6 @@ final votingConfigSourceStoreProvider = Provider<VotingConfigSourceStore>((
   return AppSecureStoreVotingConfigSourceStore(AppSecureStore.instance);
 });
 
-final votingStageHarnessConfigEnabledProvider = Provider<bool>((ref) {
-  return kStageVotingHarnessConfigEnabled;
-});
-
 class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
   const AppSecureStoreVotingConfigSourceStore(this._store);
 
@@ -162,9 +158,6 @@ class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
 /// source URL the loader should use.
 class VotingConfigSourceNotifier
     extends AsyncNotifier<VotingConfigSourceState> {
-  bool get _stageHarnessSourcePinned =>
-      ref.read(votingStageHarnessConfigEnabledProvider);
-
   @override
   Future<VotingConfigSourceState> build() async {
     final store = ref.read(votingConfigSourceStoreProvider);
@@ -172,14 +165,6 @@ class VotingConfigSourceNotifier
     final savedSources = _decodeSavedSources(
       await store.readSavedSourcesJson(),
     );
-    // A stage harness build must use its generated hash-pinned source even
-    // when the preserved testnet wallet last selected a custom source. Keep
-    // that stored choice untouched so the next normal build restores it.
-    if (ref.read(votingStageHarnessConfigEnabledProvider)) {
-      return VotingConfigSourceState.defaultSource().copyWith(
-        savedSources: savedSources,
-      );
-    }
     final trimmed = stored?.trim();
     if (trimmed == null || trimmed.isEmpty) {
       return VotingConfigSourceState.defaultSource().copyWith(
@@ -203,7 +188,6 @@ class VotingConfigSourceNotifier
 
   /// Selects a custom source URL without adding it to saved sources.
   Future<void> setCustom(String sourceUrl) async {
-    if (_stageHarnessSourcePinned) return;
     final normalized = parseStaticVotingConfigSource(sourceUrl).raw;
     await ref.read(votingConfigSourceStoreProvider).writeSourceUrl(normalized);
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
@@ -214,7 +198,6 @@ class VotingConfigSourceNotifier
 
   /// Uses the bundled default source while preserving saved custom sources.
   Future<void> resetDefault() async {
-    if (_stageHarnessSourcePinned) return;
     await ref.read(votingConfigSourceStoreProvider).resetSourceUrl();
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
     state = AsyncData(
@@ -230,7 +213,6 @@ class VotingConfigSourceNotifier
     required String name,
     required String sourceUrl,
   }) async {
-    if (_stageHarnessSourcePinned) return;
     final normalizedUrl = parseStaticVotingConfigSource(sourceUrl).raw;
     final trimmedName = _normalizeSavedSourceName(name);
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
@@ -281,7 +263,6 @@ class VotingConfigSourceNotifier
   /// the bundled default so the provider never points at an unsaved custom entry
   /// that the user just removed.
   Future<void> deleteSavedSource(String id) async {
-    if (_stageHarnessSourcePinned) return;
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
     SavedVotingConfigSource? target;
     for (final source in previous.savedSources) {
