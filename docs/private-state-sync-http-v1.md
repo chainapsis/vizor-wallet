@@ -113,11 +113,17 @@ the Rust recovery database and chain remain authoritative.
 Swap and Pay share one finalized activity archive implementation but use
 separate namespaces. Only `complete` and `refunded` records are eligible.
 Pending, failed, and expired activity never leaves the installation. Each
-archive generation is a cumulative snapshot written to a new UFVK-derived slot
-(`archive-v1:1`, `archive-v1:2`, ...); existing slot objects cannot be updated.
+UFVK-derived slot contains only records that are new or have gained finalized
+evidence since the preceding local pass (`delta-v1:1`, `delta-v1:2`, ...); a
+later slot does not contain earlier slots. Recovery reads and merges every
+contiguous delta from slot one. Afterward, local secure metadata caches the
+merged state and last processed slot so later passes start with the following
+slot instead of rereading successful objects.
+
 A create conflict is resolved by reading the winning slot, merging it locally,
-and creating the following slot. Consequently each slot has an unrelated
-public key and object ID at rest.
+and creating the remaining delta in the following slot. Consequently each slot
+has an unrelated public key and object ID at rest, and existing slot objects
+cannot be updated.
 
 Activity deletion is installation-local. Deleted IDs are suppressed only in
 local secure metadata, never uploaded as tombstones, and never remove a remote
@@ -154,6 +160,11 @@ fvm flutter run \
   --dart-define=VIZOR_PRIVATE_STATE_ALLOW_INSECURE_HTTP=true
 ```
 
+Private state sync is a user opt-in and defaults to off. While it is off the
+app does not create a private-state transport and sends no challenge, GET, or
+PUT requests. Turning it off prevents every additional request while allowing
+an HTTP request already handed to the client to finish.
+
 Private-state transport is selected by Flutter build mode:
 
 - Plain `fvm flutter run` is a Debug build and sends private-state requests
@@ -174,8 +185,9 @@ address. Mobile commands must also include the repository's required
 ## Local app-server contract test
 
 The cross-repository HTTP contract test is tagged `external-service` and is
-skipped by default. With the Lambda server's memory-backed development mode
-running on port 3000, invoke it explicitly:
+skipped by default. With the Lambda repository's persistent local mode running
+on port 3000 (`npm run dev:local`, backed by DynamoDB Local and MinIO), invoke
+it explicitly:
 
 ```bash
 fvm flutter test \
