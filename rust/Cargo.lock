@@ -4356,6 +4356,7 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-util",
  "incrementalmerkletree",
  "log",
@@ -6811,7 +6812,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vote-commitment-tree"
 version = "0.6.0"
-source = "git+https://github.com/valargroup/zcash_voting?tag=v3.1.0-rc.13#81a42f1716a5b7360c5f82a3aaf31a8f1e76f0df"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=f47a0c6efca242d51e180d066e48535825272466#f47a0c6efca242d51e180d066e48535825272466"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -6825,7 +6826,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/zcash_voting?tag=v3.1.0-rc.13#81a42f1716a5b7360c5f82a3aaf31a8f1e76f0df"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=f47a0c6efca242d51e180d066e48535825272466#f47a0c6efca242d51e180d066e48535825272466"
 dependencies = [
  "base64",
  "hex",
@@ -8026,7 +8027,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "3.1.0-rc.13"
-source = "git+https://github.com/valargroup/zcash_voting?tag=v3.1.0-rc.13#81a42f1716a5b7360c5f82a3aaf31a8f1e76f0df"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=f47a0c6efca242d51e180d066e48535825272466#f47a0c6efca242d51e180d066e48535825272466"
 dependencies = [
  "anyhow",
  "base64",

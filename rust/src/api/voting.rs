@@ -1,4 +1,12 @@
-use std::{panic, path::Path, sync::Arc, time::Instant};
+use std::{
+    panic,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Instant,
+};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -69,9 +77,6 @@ const KEYSTONE_SIG_LEN: usize = 64;
 const KEYSTONE_SIGHASH_LEN: usize = 32;
 const KEYSTONE_RK_LEN: usize = 32;
 
-// Bit flags attached to share-tracking status records.
-const SHARE_TRACKING_FLAG_READY: u32 = 1;
-const SHARE_TRACKING_FLAG_OVERDUE: u32 = 1 << 1;
 #[cfg(test)]
 const MAX_SAFE_JSON_INTEGER: u64 = 0x1f_ffff_ffff_ffff;
 
@@ -343,29 +348,6 @@ pub fn share_server_selection_policy(
     zcash_voting::share_policy::share_server_selection_policy(server_count as usize)
 }
 
-/// Return the crate-owned randomized helper order for one share retry.
-pub fn share_resubmission_server_order(
-    configured_server_urls: Vec<String>,
-    sent_to_urls: Vec<String>,
-) -> Result<Vec<String>, String> {
-    catch(|| {
-        let required = zcash_voting::share_policy::resubmission_server_order_random_bytes_required(
-            &configured_server_urls,
-            &sent_to_urls,
-        );
-        let mut random_bytes = vec![0u8; required];
-        OsRng
-            .try_fill_bytes(&mut random_bytes)
-            .map_err(|e| format!("failed to draw share-resubmission entropy: {e}"))?;
-        zcash_voting::share_policy::resubmission_server_order(
-            &configured_server_urls,
-            &sent_to_urls,
-            &random_bytes,
-        )
-        .map_err(|e| e.to_string())
-    })
-}
-
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
 /// Trust model for the per-round parameters:
@@ -415,6 +397,9 @@ fn share_record(
         proposal_id: share.proposal_id,
         share_index: share.share_index,
         sent_to_urls: share.sent_to_urls,
+        ambiguous_urls: share.ambiguous_urls,
+        attempting_urls: Vec::new(),
+        target_count: share.target_count,
         nullifier: share.nullifier,
         confirmed: share.confirmed,
         submit_at: share.submit_at,
@@ -422,43 +407,363 @@ fn share_record(
     }
 }
 
-/// Return share-tracking action flags using `zcash_voting::share_policy`.
+/// One helper share identified within its round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiShareKey {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub share_index: u32,
+}
+
+/// One share that reached a new helper during a tracking pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiResubmittedShare {
+    pub share: ApiShareKey,
+    pub server_url: String,
+}
+
+/// Definite and outcome-unknown results from one initial helper fan-out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiShareSubmissionReport {
+    /// Helpers that definitively accepted the share.
+    pub accepted_urls: Vec<String>,
+    /// Helpers that may have accepted the share before the response failed.
+    pub ambiguous_urls: Vec<String>,
+    /// Desired number of definite helper placements.
+    pub target_count: u32,
+}
+
+impl TryFrom<zcash_voting::share_tracking::ShareSubmissionReport> for ApiShareSubmissionReport {
+    type Error = String;
+
+    fn try_from(
+        report: zcash_voting::share_tracking::ShareSubmissionReport,
+    ) -> Result<Self, Self::Error> {
+        Ok(Self {
+            accepted_urls: report.accepted_urls,
+            ambiguous_urls: report.ambiguous_urls,
+            target_count: u32::try_from(report.target_count).map_err(|_| {
+                format!(
+                    "share target count {} does not fit u32",
+                    report.target_count
+                )
+            })?,
+        })
+    }
+}
+
+/// What one helper share-tracking pass did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiShareTrackingReport {
+    /// Shares durably confirmed by the crate's two-helper quorum.
+    pub confirmed: Vec<ApiShareKey>,
+    /// Shares that reached an additional helper during this pass.
+    pub resubmitted: Vec<ApiResubmittedShare>,
+    /// Outcome-unknown attempts retained durably during this pass.
+    pub ambiguous: Vec<ApiResubmittedShare>,
+    /// Shares whose recovery material is missing, so no retry can help.
+    pub unrecoverable: Vec<ApiShareKey>,
+    /// True when the pass stopped early because Dart cancelled it.
+    pub cancelled: bool,
+    /// Seconds until the next pass, or `None` when nothing is pending.
+    pub next_delay_seconds: Option<u64>,
+}
+
+/// Canonical helper fleet and readiness-ranked prefix for initial planning.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVotingHelperPreflight {
+    /// Complete configured helper fleet in canonical caller order.
+    pub configured_helper_urls: Vec<String>,
+    /// Ready helpers in the same relative order as the configured fleet.
+    pub ready_helper_urls: Vec<String>,
+}
+
+impl From<zcash_voting::share_tracking::ShareKey> for ApiShareKey {
+    fn from(key: zcash_voting::share_tracking::ShareKey) -> Self {
+        Self {
+            bundle_index: key.bundle_index,
+            proposal_id: key.proposal_id,
+            share_index: key.share_index,
+        }
+    }
+}
+
+/// Account-and-round-bound helper state shared by submission and recovery.
 ///
-/// [`SHARE_TRACKING_FLAG_READY`] means the share is ready for status polling.
-/// [`SHARE_TRACKING_FLAG_OVERDUE`] means it is overdue and should be retried
-/// against helpers that missed the initial submission.
-pub fn share_tracking_flags(
-    share: zcash_voting::wire::ShareDelegationRecordView,
+/// Health scores are local ordering hints for this voting workflow. Keeping
+/// them here prevents failures in one account or round from influencing
+/// another while still letting initial fan-out and later recovery share the
+/// same recent view of helper availability.
+#[flutter_rust_bridge::frb(opaque)]
+pub struct VotingHelperDeliveryContext {
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    health: zcash_voting::HelperHealth,
+    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
+}
+
+/// One account-and-round-bound cancellation handle for helper-share tracking.
+///
+/// Dart creates the opaque handle synchronously before dispatching the async
+/// pass. FRB retains the same handle while the call is queued or running, so an
+/// immediate destructive drain can cancel that exact pass without a
+/// process-wide operation registry.
+#[flutter_rust_bridge::frb(opaque)]
+pub struct VotingShareTrackingPassHandle {
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    health: zcash_voting::HelperHealth,
+    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
+    cancelled: AtomicBool,
+}
+
+impl VotingShareTrackingPassHandle {
+    /// Stops this tracking pass at its next cancellation check.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+/// Process-wide helper transport, so connections and TLS sessions are reused.
+static HELPER_TRANSPORT: std::sync::OnceLock<
+    Arc<crate::wallet::voting::helper_transport::VotingHelperTransport>,
+> = std::sync::OnceLock::new();
+
+fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
+    let transport = HELPER_TRANSPORT
+        .get_or_init(|| {
+            Arc::new(crate::wallet::voting::helper_transport::VotingHelperTransport::new())
+        })
+        .clone();
+    zcash_voting::HelperClient::new(transport, health.clone())
+}
+
+/// Creates helper delivery state for one account-and-round voting workflow.
+#[flutter_rust_bridge::frb(sync)]
+pub fn create_voting_helper_delivery_context(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+) -> VotingHelperDeliveryContext {
+    VotingHelperDeliveryContext {
+        db_path,
+        account_uuid,
+        round_id,
+        health: zcash_voting::HelperHealth::default(),
+        database: Arc::new(Mutex::new(None)),
+    }
+}
+
+/// Creates one cancellable tracking-pass handle bound to its delivery context.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_share_tracking_pass(
+    context: &VotingHelperDeliveryContext,
+) -> VotingShareTrackingPassHandle {
+    VotingShareTrackingPassHandle {
+        db_path: context.db_path.clone(),
+        account_uuid: context.account_uuid.clone(),
+        round_id: context.round_id.clone(),
+        health: context.health.clone(),
+        database: context.database.clone(),
+        cancelled: AtomicBool::new(false),
+    }
+}
+
+fn canonical_configured_helper_urls(
+    configured_helper_urls: &[String],
+) -> Result<Vec<String>, String> {
+    if configured_helper_urls.is_empty() {
+        return Err("configured helper fleet must not be empty".to_string());
+    }
+    let canonical = zcash_voting::helper::url::canonical_helper_url_list(configured_helper_urls)
+        .map_err(|e| e.to_string())?;
+    if canonical.len() != configured_helper_urls.len() {
+        return Err("configured helper fleet contains duplicate canonical identities".to_string());
+    }
+    Ok(canonical)
+}
+
+/// Canonicalizes and probes the complete configured helper fleet.
+///
+/// Validation happens before any request. The crate-owned helper client then
+/// enforces canonical identity, response bounds, JSON content type, and the
+/// progressive soft/hard readiness windows.
+pub async fn preflight_voting_helpers(
+    context: &VotingHelperDeliveryContext,
+    configured_helper_urls: Vec<String>,
+    target_count: u32,
+) -> Result<ApiVotingHelperPreflight, String> {
+    let configured_helper_urls = canonical_configured_helper_urls(&configured_helper_urls)?;
+    let client = helper_client(&context.health);
+    let readiness = client
+        .preflight(&configured_helper_urls, target_count)
+        .await;
+    let ready_helper_urls = readiness
+        .into_iter()
+        .filter_map(|(helper_url, ready)| ready.then_some(helper_url))
+        .collect();
+    Ok(ApiVotingHelperPreflight {
+        configured_helper_urls,
+        ready_helper_urls,
+    })
+}
+
+fn helper_session_db(
+    db_path: &str,
+    account_uuid: &str,
+    database: &Mutex<Option<Arc<zcash_voting::round::VotingDb>>>,
+) -> Result<Arc<zcash_voting::round::VotingDb>, String> {
+    let mut database = database
+        .lock()
+        .map_err(|_| "voting helper database lock poisoned".to_string())?;
+    if let Some(db) = database.as_ref() {
+        return Ok(db.clone());
+    }
+    let opened =
+        db::with_voting_sidecar_write_lock(db_path, || db::open_voting_db(db_path, account_uuid))?;
+    let opened = Arc::new(opened);
+    *database = Some(opened.clone());
+    Ok(opened)
+}
+
+/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
+///
+/// This is the whole helper-facing workflow: the crate polls helpers, requires
+/// matching confirmation responses from two distinct configured helpers,
+/// persists confirmed shares, retries overdue shares against helpers that
+/// missed them, and persists delivery outcomes. Dart owns only the timer and
+/// cancellation triggers.
+///
+/// The sidecar write lock is held for the open (which may migrate) and then
+/// released. Holding it across the pass would block user-initiated voting
+/// writes for as long as helper polling takes; the writes this pass makes are
+/// short and self-contained, and the sidecar runs in WAL mode with a busy
+/// timeout.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or a share record cannot be
+/// read or updated. Helper failures are not errors: they are scored and
+/// reported through the returned pass result.
+pub async fn track_pending_shares(
+    pass_handle: &VotingShareTrackingPassHandle,
+    configured_helper_urls: Vec<String>,
     now_seconds: u64,
     vote_end_time_seconds: Option<u64>,
-) -> Result<u32, String> {
-    catch(|| {
-        let share = share_record(share);
-        let policy = zcash_voting::share::ShareTimingPolicy::default();
-        let mut flags = 0u32;
+) -> Result<ApiShareTrackingReport, String> {
+    let cancel = || pass_handle.is_cancelled();
 
-        // Flag shares that are ready for helper status checks.
-        if zcash_voting::share::policy::is_share_ready_for_status_check(&share, now_seconds, policy)
-        {
-            flags |= SHARE_TRACKING_FLAG_READY;
-        }
+    // Open under the sidecar lock so a concurrent opener cannot race schema
+    // migration, then run the network pass without holding it.
+    let db = helper_session_db(
+        &pass_handle.db_path,
+        &pass_handle.account_uuid,
+        &pass_handle.database,
+    )?;
 
-        // Flag shares that are overdue and should be retried.
-        if vote_end_time_seconds
-            .map(|vote_end_time_seconds| {
-                zcash_voting::share::policy::should_resubmit_share(
-                    &share,
-                    now_seconds,
-                    vote_end_time_seconds,
-                    policy,
-                )
+    let client = helper_client(&pass_handle.health);
+    let params = zcash_voting::share_tracking::ShareTrackingParams {
+        round_id: &pass_handle.round_id,
+        configured_server_urls: &configured_helper_urls,
+        now_seconds,
+        vote_end_time_seconds,
+        policy: zcash_voting::share::ShareTimingPolicy::default(),
+        random_bytes: &zcash_voting::share_tracking::os_random_bytes,
+    };
+
+    let report = zcash_voting::share_tracking::track_pending_shares(&db, &params, &client, &cancel)
+        .await
+        .map_err(|e| format!("track_pending_shares failed: {e}"))?;
+
+    Ok(ApiShareTrackingReport {
+        confirmed: report
+            .confirmed
+            .into_iter()
+            .map(ApiShareKey::from)
+            .collect(),
+        resubmitted: report
+            .resubmitted
+            .into_iter()
+            .map(|entry| ApiResubmittedShare {
+                share: entry.share.into(),
+                server_url: entry.server_url,
             })
-            .unwrap_or(false)
-        {
-            flags |= SHARE_TRACKING_FLAG_OVERDUE;
-        }
-        Ok(flags)
+            .collect(),
+        ambiguous: report
+            .ambiguous
+            .into_iter()
+            .map(|entry| ApiResubmittedShare {
+                share: entry.share.into(),
+                server_url: entry.server_url,
+            })
+            .collect(),
+        unrecoverable: report
+            .unrecoverable
+            .into_iter()
+            .map(ApiShareKey::from)
+            .collect(),
+        cancelled: report.cancelled,
+        next_delay_seconds: report.next_delay_seconds,
     })
+}
+
+/// Submits one committed share according to its planner-produced placement.
+///
+/// Helper choice, health ordering, and the per-attempt retry rules live in the
+/// crate. Accepting fewer helpers than requested is a normal outcome and is
+/// reported in a delivery report. Rust journals each attempt before dispatch
+/// and persists its outcome before returning to Dart.
+///
+/// # Errors
+///
+/// Returns an error if the plan or durable identity is invalid, the DB cannot
+/// be opened or updated, or an attempt outcome cannot be persisted.
+/// Helper refusals are scored, not raised.
+pub async fn submit_committed_share_to_helpers(
+    context: &VotingHelperDeliveryContext,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    plan: zcash_voting::share_policy::ShareSubmissionPlan,
+    configured_helper_urls: Vec<String>,
+    now_seconds: u64,
+) -> Result<ApiShareSubmissionReport, String> {
+    // Initial submission is foreground cast work, not a tracking pass.
+    // Its lifecycle is owned by the submission action and must not be cancelled
+    // when an unrelated account drains background tracking.
+    let cancel = || false;
+
+    let client = helper_client(&context.health);
+    let db = helper_session_db(&context.db_path, &context.account_uuid, &context.database)?;
+    let committed = zcash_voting::vote::CommittedVote::recover(
+        &db,
+        &context.round_id,
+        bundle_index,
+        proposal_id,
+    )
+    .map_err(|e| format!("recover committed vote failed: {e}"))?;
+    committed
+        .submit_share_to_helpers(
+            &db,
+            &client,
+            zcash_voting::share_tracking::ShareSubmissionRequest {
+                share_index,
+                plan: &plan,
+                configured_server_urls: &configured_helper_urls,
+                now_seconds,
+            },
+            &cancel,
+        )
+        .await
+        .map_err(|e| format!("submit_share_to_helpers failed: {e}"))?
+        .try_into()
 }
 
 /// Return the next share-tracking delay in seconds using crate policy.
@@ -474,30 +779,6 @@ pub fn next_share_tracking_delay_seconds(
             now_seconds,
             zcash_voting::share::ShareTimingPolicy::default(),
         ))
-    })
-}
-
-/// Extract and validate one helper-share payload from stored recovery JSON.
-///
-/// The stored recovery blob is hex-encoded and also contains local-only
-/// recovery material. This helper emits only the public wire fields that
-/// helper servers accept.
-pub fn recovered_vote_share_wire_json(
-    commitment_bundle_json: String,
-    proposal_id: u32,
-    share_index: u32,
-    vc_tree_position: u64,
-    submit_at: u64,
-) -> Result<String, String> {
-    catch(|| {
-        zcash_voting::share::recover_wire_json(
-            &commitment_bundle_json,
-            proposal_id,
-            share_index,
-            vc_tree_position,
-            submit_at,
-        )
-        .map_err(|e| e.to_string())
     })
 }
 
@@ -1820,93 +2101,6 @@ fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::
     Ok(events)
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Record helper-server submission state for one encrypted vote share.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote cannot be
-/// recovered, or the share record cannot be persisted.
-pub fn record_share_delegation(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    sent_to_urls: Vec<String>,
-    submit_at: u64,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            // Recover vote context first, then persist helper submission metadata.
-            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-                .map_err(|e| format!("recover committed vote failed: {e}"))?
-                .record_share(&db, share_index, &sent_to_urls, submit_at)
-                .map_err(|e| format!("record_share_delegation failed: {e}"))
-        })
-    })
-}
-
-/// Mark one delegated share as confirmed on-chain.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote cannot be
-/// recovered, or share confirmation cannot be persisted.
-pub fn mark_share_confirmed(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            // Recover vote context first, then mark the specific share as confirmed.
-            zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
-                .map_err(|e| format!("recover committed vote failed: {e}"))?
-                .confirm_share(&db, share_index)
-                .map_err(|e| format!("mark_share_confirmed failed: {e}"))
-        })
-    })
-}
-
-/// Merge additional helper-server URLs into one share delegation record.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails or the share record cannot
-/// be updated.
-pub fn add_sent_servers(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    new_urls: Vec<String>,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Merge additional helper URLs into persisted share delivery state.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::share::add_sent_servers(
-                &db,
-                &round_id,
-                bundle_index,
-                proposal_id,
-                share_index,
-                &new_urls,
-            )
-            .map_err(|e| format!("add_sent_servers failed: {e}"))
-        })
-    })
-}
-
 /// Clear vote/delegation recovery columns and share-tracking rows for a round.
 ///
 /// This is an explicit reset for finalized or abandoned rounds, not a normal
@@ -2092,6 +2286,8 @@ mod tests {
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };
     use base64::Engine as _;
+    use ff::PrimeField;
+    use pasta_curves::group::{Group, GroupEncoding};
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -2103,6 +2299,18 @@ mod tests {
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    fn point_bytes(multiplier: u64) -> Vec<u8> {
+        (pasta_curves::pallas::Point::generator() * pasta_curves::pallas::Scalar::from(multiplier))
+            .to_bytes()
+            .to_vec()
+    }
+
+    fn full_share_comms() -> Vec<[u8; 32]> {
+        (0..16)
+            .map(|index| pasta_curves::pallas::Base::from(index + 10).to_repr())
+            .collect()
     }
 
     fn test_tx1_effects() -> Vec<u8> {
@@ -2187,6 +2395,75 @@ mod tests {
     fn warm_voting_proving_caches_is_idempotent() {
         warm_voting_proving_caches();
         warm_voting_proving_caches();
+    }
+
+    #[test]
+    fn share_tracking_cancellation_is_scoped_and_bound_before_async_start() {
+        let first_context = create_voting_helper_delivery_context(
+            "db-1".to_string(),
+            "account-1".to_string(),
+            "round-1".to_string(),
+        );
+        let second_context = create_voting_helper_delivery_context(
+            "db-2".to_string(),
+            "account-2".to_string(),
+            "round-2".to_string(),
+        );
+        let first = begin_share_tracking_pass(&first_context);
+        let second = begin_share_tracking_pass(&second_context);
+
+        first.cancel();
+
+        assert!(first.is_cancelled());
+        assert!(!second.is_cancelled());
+        assert_eq!(first.account_uuid, "account-1");
+        assert_eq!(first.round_id, "round-1");
+        assert_eq!(second.account_uuid, "account-2");
+        assert_eq!(second.round_id, "round-2");
+    }
+
+    #[test]
+    fn helper_health_is_shared_within_a_context_and_isolated_between_contexts() {
+        let first_context = create_voting_helper_delivery_context(
+            "db-1".to_string(),
+            "account-1".to_string(),
+            "round-1".to_string(),
+        );
+        let second_context = create_voting_helper_delivery_context(
+            "db-2".to_string(),
+            "account-2".to_string(),
+            "round-2".to_string(),
+        );
+        let helper_url = "https://helper.example";
+
+        first_context.health.record_failure(helper_url, 100);
+        let first_handle = begin_share_tracking_pass(&first_context);
+        let second_handle = begin_share_tracking_pass(&second_context);
+
+        assert_eq!(first_handle.health.failure_count(helper_url), 1);
+        assert_eq!(second_handle.health.failure_count(helper_url), 0);
+    }
+
+    #[test]
+    fn configured_helper_fleet_is_canonical_and_distinct_before_preflight() {
+        assert_eq!(
+            canonical_configured_helper_urls(&[
+                " HTTPS://Helper.Example:443/ ".to_string(),
+                "https://other.example".to_string(),
+            ])
+            .unwrap(),
+            vec![
+                "https://helper.example".to_string(),
+                "https://other.example".to_string(),
+            ]
+        );
+        assert!(canonical_configured_helper_urls(&[]).is_err());
+        assert!(canonical_configured_helper_urls(&[
+            "https://helper.example".to_string(),
+            "HTTPS://HELPER.EXAMPLE:443/".to_string(),
+        ])
+        .is_err());
+        assert!(canonical_configured_helper_urls(&["file:///tmp/helper".to_string()]).is_err());
     }
 
     #[test]
@@ -2401,22 +2678,24 @@ mod tests {
     }
 
     #[test]
-    fn share_wire_json_matches_helper_shape_for_live_and_recovery_payloads() {
+    fn share_wire_json_matches_helper_shape() {
+        let c1 = point_bytes(3);
+        let c2 = point_bytes(4);
         let live = vote_share_wire_json(
             zcash_voting::wire::VoteShareWire {
                 vote_round_id: "00".repeat(32),
-                shares_hash: "AQ==".to_string(),
+                shares_hash: b64([1; 32]),
                 proposal_id: 7,
                 vote_decision: 2,
                 encrypted_share: zcash_voting::wire::WireEncryptedShare {
-                    c1: vec![3],
-                    c2: vec![4],
+                    c1: c1.clone(),
+                    c2,
                     share_index: 1,
                 },
                 share_index: 1,
                 vc_tree_position: 55,
-                share_comms: vec!["Bw==".to_string(), "CA==".to_string()],
-                primary_blind: "CQ==".to_string(),
+                share_comms: full_share_comms().into_iter().map(b64).collect(),
+                primary_blind: b64(pasta_curves::pallas::Base::from(9).to_repr()),
                 submit_at: 0,
             },
             Some(99),
@@ -2425,85 +2704,18 @@ mod tests {
         .unwrap();
         let expected = serde_json::json!({
             "vote_round_id":"00".repeat(32),
-            "enc_share": {"c1":"Aw==","c2":"BA==","share_index":1},
-            "primary_blind":"CQ==",
+            "enc_share": {"c1":b64(&c1),"c2":b64(point_bytes(4)),"share_index":1},
+            "primary_blind":b64(pasta_curves::pallas::Base::from(9).to_repr()),
             "proposal_id":7,
-            "share_comms":["Bw==","CA=="],
+            "share_comms":full_share_comms().into_iter().map(b64).collect::<Vec<_>>(),
             "share_index":1,
-            "shares_hash":"AQ==",
+            "shares_hash":b64([1; 32]),
             "submit_at":123,
             "tree_position":99,
             "vote_decision":2
         });
         let live: serde_json::Value = serde_json::from_str(&live).unwrap();
         assert_eq!(live, expected);
-
-        let recovery_json =
-            zcash_voting::vote::serialize_recovery(&zcash_voting::vote::VoteRecoveryBundle {
-                vote_round_id: "00".repeat(32),
-                bundle_index: 0,
-                proposal_id: 7,
-                vote_decision: 2,
-                anchor_height: 10,
-                vc_tree_position: 55,
-                single_share: false,
-                num_options: 3,
-                van_nullifier: [0; 32],
-                vote_authority_note_new: [0; 32],
-                vote_commitment: [0; 32],
-                proof: vec![0],
-                shares_hash: [1; 32],
-                r_vpk: [0; 32],
-                alpha_v: [0; 32],
-                vote_auth_sig: [0; 64],
-                encrypted_shares: vec![
-                    zcash_voting::EncryptedShare {
-                        c1: vec![3],
-                        c2: vec![4],
-                        share_index: 1,
-                        plaintext_value: 1,
-                        randomness: vec![0],
-                    },
-                    zcash_voting::EncryptedShare {
-                        c1: vec![5],
-                        c2: vec![6],
-                        share_index: 2,
-                        plaintext_value: 2,
-                        randomness: vec![0],
-                    },
-                ],
-                share_blinds: vec![[9; 32], [10; 32]],
-                share_comms: vec![[7; 32], [8; 32]],
-            })
-            .unwrap();
-        let recovered = recovered_vote_share_wire_json(recovery_json, 7, 1, 99, 0).unwrap();
-        let recovered: serde_json::Value = serde_json::from_str(&recovered).unwrap();
-        assert_eq!(recovered["proposal_id"], 7);
-        assert_eq!(recovered["vote_decision"], 2);
-        assert_eq!(recovered["share_index"], 1);
-        assert_eq!(recovered["tree_position"], 99);
-        assert_eq!(recovered["submit_at"], 0);
-        assert_eq!(recovered["vote_round_id"], "00".repeat(32));
-        assert_eq!(recovered["enc_share"]["c1"], "Aw==");
-        assert!(recovered.get("all_enc_shares").is_none());
-        assert_eq!(
-            base64::engine::general_purpose::STANDARD
-                .decode(recovered["shares_hash"].as_str().unwrap())
-                .unwrap(),
-            vec![1; 32]
-        );
-        assert_eq!(
-            base64::engine::general_purpose::STANDARD
-                .decode(recovered["primary_blind"].as_str().unwrap())
-                .unwrap(),
-            vec![9; 32]
-        );
-        assert_eq!(
-            base64::engine::general_purpose::STANDARD
-                .decode(recovered["share_comms"][0].as_str().unwrap())
-                .unwrap(),
-            vec![7; 32]
-        );
     }
 
     #[test]
@@ -2539,32 +2751,6 @@ mod tests {
     }
 
     #[test]
-    fn share_tracking_flags_use_crate_policy() {
-        let share = zcash_voting::wire::ShareDelegationRecordView {
-            round_id: ROUND_ID.to_string(),
-            bundle_index: 0,
-            proposal_id: 7,
-            share_index: 0,
-            sent_to_urls: vec!["https://helper.example".to_string()],
-            nullifier: vec![1; 32],
-            phase: "submitted_share".to_string(),
-            confirmed: false,
-            submit_at: 100,
-            created_at: 50,
-        };
-
-        assert_eq!(
-            share_tracking_flags(share.clone(), 109, Some(500)).unwrap(),
-            0
-        );
-        assert_eq!(
-            share_tracking_flags(share.clone(), 110, Some(500)).unwrap(),
-            1
-        );
-        assert_eq!(share_tracking_flags(share, 200, Some(500)).unwrap(), 3);
-    }
-
-    #[test]
     fn next_share_tracking_delay_uses_crate_ready_interval() {
         let ready = zcash_voting::wire::ShareDelegationRecordView {
             round_id: ROUND_ID.to_string(),
@@ -2572,6 +2758,8 @@ mod tests {
             proposal_id: 7,
             share_index: 0,
             sent_to_urls: vec!["https://helper.example".to_string()],
+            ambiguous_urls: vec![],
+            target_count: 1,
             nullifier: vec![1; 32],
             phase: "submitted_share".to_string(),
             confirmed: false,
@@ -2659,8 +2847,8 @@ mod tests {
     fn helper_selection_wrappers_expose_crate_policy() {
         let policy = share_server_selection_policy(6);
         assert_eq!(policy.target_count, 3);
-        assert_eq!(policy.max_shares_per_server, 8);
-        assert_eq!(policy.min_server_count, 6);
+        assert_eq!(policy.max_shares_per_server, 12);
+        assert_eq!(policy.min_server_count, 4);
         assert_eq!(policy.preflight_soft_timeout_milliseconds, 2_000);
         assert_eq!(policy.preflight_hard_timeout_milliseconds, 30_000);
         assert_eq!(policy.post_timeout_milliseconds, 30_000);
@@ -2679,26 +2867,7 @@ mod tests {
                 *usage.entry(server).or_default() += 1;
             }
         }
-        assert!(usage.values().all(|count| *count <= 8));
-    }
-
-    #[test]
-    fn share_resubmission_order_uses_crate_policy() {
-        let configured = vec![
-            "https://helper-a.example".to_string(),
-            "https://helper-b.example".to_string(),
-            "https://helper-c.example".to_string(),
-        ];
-        let sent = vec!["https://helper-a.example".to_string()];
-        let order = share_resubmission_server_order(configured.clone(), sent.clone()).unwrap();
-
-        let mut sorted_order = order.clone();
-        sorted_order.sort();
-        let mut sorted_configured = configured;
-        sorted_configured.sort();
-        assert_eq!(sorted_order, sorted_configured);
-        assert!(!sent.contains(&order[0]));
-        assert_eq!(order.last(), sent.first());
+        assert!(usage.values().all(|count| *count <= 12));
     }
 
     #[test]
@@ -2815,8 +2984,8 @@ mod tests {
                     vote_commitment: [3; 32],
                     proof: vec![4; 10],
                     encrypted_shares: vec![zcash_voting::WireEncryptedShare {
-                        c1: vec![5; 32],
-                        c2: vec![6; 32],
+                        c1: point_bytes(5),
+                        c2: point_bytes(6),
                         share_index: 0,
                     }],
                     share_payloads: vec![zcash_voting::SharePayload {
@@ -2825,18 +2994,21 @@ mod tests {
                         proposal_id: 2,
                         vote_decision: 1,
                         enc_share: zcash_voting::WireEncryptedShare {
-                            c1: vec![5; 32],
-                            c2: vec![6; 32],
+                            c1: point_bytes(5),
+                            c2: point_bytes(6),
                             share_index: 0,
                         },
                         tree_position: 9,
                         all_enc_shares: vec![],
-                        share_comms: vec![vec![8; 32]],
+                        share_comms: full_share_comms()
+                            .into_iter()
+                            .map(|commitment| commitment.to_vec())
+                            .collect(),
                         primary_blind: vec![9; 32],
                     }],
                     anchor_height: 100,
                     shares_hash: [7; 32],
-                    share_comms: vec![[8; 32]],
+                    share_comms: full_share_comms(),
                     r_vpk: [10; 32],
                     vote_auth_sig: [9; 64],
                     commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
@@ -2848,7 +3020,10 @@ mod tests {
         assert_eq!(api.bundle_index, 1);
         assert_eq!(api.commitments[0].proposal_id, 2);
         assert_eq!(api.commitments[0].wire.proposal_id, 2);
-        assert_eq!(api.commitments[0].shares[0].encrypted_share.c1, vec![5; 32]);
+        assert_eq!(
+            api.commitments[0].shares[0].encrypted_share.c1,
+            point_bytes(5)
+        );
         assert_eq!(api.commitments[0].shares[0].primary_blind, b64(vec![9; 32]));
         assert_eq!(api.commitments[0].wire.vote_auth_sig, b64(vec![9; 64]));
     }
@@ -3210,14 +3385,15 @@ mod tests {
             )
             .unwrap();
         }
-        record_share_delegation(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
+        zcash_voting::share::record_delivery_fixture(
+            &db,
+            ROUND_ID,
             1,
             2,
             0,
-            vec!["https://helper.example".to_string()],
+            &["https://helper.example".to_string()],
+            &["https://helper-unknown.example".to_string()],
+            2,
             123,
         )
         .unwrap();
@@ -3238,17 +3414,30 @@ mod tests {
         assert_eq!(state.votes[0].tx_hash.as_deref(), Some("vote-tx-1-2"));
         assert_eq!(state.commitment_bundles[0].vc_tree_position, 99);
         assert_eq!(state.share_delegations[0].sent_to_urls.len(), 1);
+        assert_eq!(
+            state.share_delegations[0].ambiguous_urls,
+            vec!["https://helper-unknown.example"]
+        );
+        assert_eq!(state.share_delegations[0].target_count, 2);
         assert_eq!(state.unconfirmed_share_delegations.len(), 1);
 
-        mark_share_confirmed(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            2,
-            0,
-        )
-        .unwrap();
+        let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE share_delegations SET confirmed = 1
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = :bundle_index
+                   AND proposal_id = :proposal_id
+                   AND share_index = :share_index",
+                rusqlite::named_params! {
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": account_uuid,
+                    ":bundle_index": 1i64,
+                    ":proposal_id": 2i64,
+                    ":share_index": 0i64,
+                },
+            )
+            .unwrap();
         let confirmed_state = get_round_recovery_state(
             db_path.to_str().unwrap().to_string(),
             account_uuid.to_string(),
@@ -3373,18 +3562,19 @@ mod tests {
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
-        drop(db);
-        record_share_delegation(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
+        zcash_voting::share::record_delivery_fixture(
+            &db,
+            ROUND_ID,
             0,
             7,
             0,
-            vec!["https://helper.example".to_string()],
+            &["https://helper.example".to_string()],
+            &[],
+            1,
             123,
         )
         .unwrap();
+        drop(db);
 
         assert_eq!(
             list_pending_share_rounds(
@@ -3906,14 +4096,15 @@ mod tests {
             alpha_v: [7u8; 32],
             vote_auth_sig: [8u8; 64],
             encrypted_shares: vec![zcash_voting::EncryptedShare {
-                c1: vec![9u8; 32],
-                c2: vec![10u8; 32],
+                c1: point_bytes(9),
+                c2: point_bytes(10),
                 share_index: 0,
                 plaintext_value: 1,
                 randomness: vec![11u8; 32],
             }],
             share_blinds: vec![[12u8; 32]],
-            share_comms: vec![[13u8; 32]],
+            share_comms: full_share_comms(),
+            batch: None,
         })
         .unwrap()
     }

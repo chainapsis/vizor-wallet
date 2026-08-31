@@ -12,8 +12,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `canonical_configured_helper_urls`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_session_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -102,15 +102,6 @@ ShareServerSelectionPolicy shareServerSelectionPolicy({
   serverCount: serverCount,
 );
 
-/// Return the crate-owned randomized helper order for one share retry.
-Future<List<String>> shareResubmissionServerOrder({
-  required List<String> configuredServerUrls,
-  required List<String> sentToUrls,
-}) => RustLib.instance.api.crateApiVotingShareResubmissionServerOrder(
-  configuredServerUrls: configuredServerUrls,
-  sentToUrls: sentToUrls,
-);
-
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
 /// Trust model for the per-round parameters:
@@ -150,19 +141,97 @@ Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
   nullifierImtRoot: nullifierImtRoot,
 );
 
-/// Return share-tracking action flags using `zcash_voting::share_policy`.
+/// Creates helper delivery state for one account-and-round voting workflow.
+VotingHelperDeliveryContext createVotingHelperDeliveryContext({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingCreateVotingHelperDeliveryContext(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+);
+
+/// Creates one cancellable tracking-pass handle bound to its delivery context.
+VotingShareTrackingPassHandle beginShareTrackingPass({
+  required VotingHelperDeliveryContext context,
+}) =>
+    RustLib.instance.api.crateApiVotingBeginShareTrackingPass(context: context);
+
+/// Canonicalizes and probes the complete configured helper fleet.
 ///
-/// [`SHARE_TRACKING_FLAG_READY`] means the share is ready for status polling.
-/// [`SHARE_TRACKING_FLAG_OVERDUE`] means it is overdue and should be retried
-/// against helpers that missed the initial submission.
-Future<int> shareTrackingFlags({
-  required ShareDelegationRecordView share,
+/// Validation happens before any request. The crate-owned helper client then
+/// enforces canonical identity, response bounds, JSON content type, and the
+/// progressive soft/hard readiness windows.
+Future<ApiVotingHelperPreflight> preflightVotingHelpers({
+  required VotingHelperDeliveryContext context,
+  required List<String> configuredHelperUrls,
+  required int targetCount,
+}) => RustLib.instance.api.crateApiVotingPreflightVotingHelpers(
+  context: context,
+  configuredHelperUrls: configuredHelperUrls,
+  targetCount: targetCount,
+);
+
+/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
+///
+/// This is the whole helper-facing workflow: the crate polls helpers, requires
+/// matching confirmation responses from two distinct configured helpers,
+/// persists confirmed shares, retries overdue shares against helpers that
+/// missed them, and persists delivery outcomes. Dart owns only the timer and
+/// cancellation triggers.
+///
+/// The sidecar write lock is held for the open (which may migrate) and then
+/// released. Holding it across the pass would block user-initiated voting
+/// writes for as long as helper polling takes; the writes this pass makes are
+/// short and self-contained, and the sidecar runs in WAL mode with a busy
+/// timeout.
+///
+/// # Errors
+///
+/// Returns an error if opening the voting DB fails or a share record cannot be
+/// read or updated. Helper failures are not errors: they are scored and
+/// reported through the returned pass result.
+Future<ApiShareTrackingReport> trackPendingShares({
+  required VotingShareTrackingPassHandle passHandle,
+  required List<String> configuredHelperUrls,
   required BigInt nowSeconds,
   BigInt? voteEndTimeSeconds,
-}) => RustLib.instance.api.crateApiVotingShareTrackingFlags(
-  share: share,
+}) => RustLib.instance.api.crateApiVotingTrackPendingShares(
+  passHandle: passHandle,
+  configuredHelperUrls: configuredHelperUrls,
   nowSeconds: nowSeconds,
   voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Submits one committed share according to its planner-produced placement.
+///
+/// Helper choice, health ordering, and the per-attempt retry rules live in the
+/// crate. Accepting fewer helpers than requested is a normal outcome and is
+/// reported in a delivery report. Rust journals each attempt before dispatch
+/// and persists its outcome before returning to Dart.
+///
+/// # Errors
+///
+/// Returns an error if the plan or durable identity is invalid, the DB cannot
+/// be opened or updated, or an attempt outcome cannot be persisted.
+/// Helper refusals are scored, not raised.
+Future<ApiShareSubmissionReport> submitCommittedShareToHelpers({
+  required VotingHelperDeliveryContext context,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+  required ShareSubmissionPlan plan,
+  required List<String> configuredHelperUrls,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingSubmitCommittedShareToHelpers(
+  context: context,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+  plan: plan,
+  configuredHelperUrls: configuredHelperUrls,
+  nowSeconds: nowSeconds,
 );
 
 /// Return the next share-tracking delay in seconds using crate policy.
@@ -172,25 +241,6 @@ Future<BigInt?> nextShareTrackingDelaySeconds({
 }) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
   shares: shares,
   nowSeconds: nowSeconds,
-);
-
-/// Extract and validate one helper-share payload from stored recovery JSON.
-///
-/// The stored recovery blob is hex-encoded and also contains local-only
-/// recovery material. This helper emits only the public wire fields that
-/// helper servers accept.
-Future<String> recoveredVoteShareWireJson({
-  required String commitmentBundleJson,
-  required int proposalId,
-  required int shareIndex,
-  required BigInt vcTreePosition,
-  required BigInt submitAt,
-}) => RustLib.instance.api.crateApiVotingRecoveredVoteShareWireJson(
-  commitmentBundleJson: commitmentBundleJson,
-  proposalId: proposalId,
-  shareIndex: shareIndex,
-  vcTreePosition: vcTreePosition,
-  submitAt: submitAt,
 );
 
 /// Generate opaque voting hotkey bytes for a local voting account.
@@ -710,78 +760,6 @@ Future<VoteConfirmation> confirmVoteSubmission({
   eventsJson: eventsJson,
 );
 
-/// Record helper-server submission state for one encrypted vote share.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote cannot be
-/// recovered, or the share record cannot be persisted.
-Future<void> recordShareDelegation({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required int shareIndex,
-  required List<String> sentToUrls,
-  required BigInt submitAt,
-}) => RustLib.instance.api.crateApiVotingRecordShareDelegation(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  shareIndex: shareIndex,
-  sentToUrls: sentToUrls,
-  submitAt: submitAt,
-);
-
-/// Mark one delegated share as confirmed on-chain.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote cannot be
-/// recovered, or share confirmation cannot be persisted.
-Future<void> markShareConfirmed({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required int shareIndex,
-}) => RustLib.instance.api.crateApiVotingMarkShareConfirmed(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  shareIndex: shareIndex,
-);
-
-/// Merge additional helper-server URLs into one share delegation record.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails or the share record cannot
-/// be updated.
-Future<void> addSentServers({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required int shareIndex,
-  required List<String> newUrls,
-}) => RustLib.instance.api.crateApiVotingAddSentServers(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  shareIndex: shareIndex,
-  newUrls: newUrls,
-);
-
 /// Clear vote/delegation recovery columns and share-tracking rows for a round.
 ///
 /// This is an explicit reset for finalized or abandoned rounds, not a normal
@@ -877,6 +855,15 @@ Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
   attempts: attempts,
   previous: previous,
 );
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingHelperDeliveryContext>>
+abstract class VotingHelperDeliveryContext implements RustOpaqueInterface {}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>>
+abstract class VotingShareTrackingPassHandle implements RustOpaqueInterface {
+  /// Stops this tracking pass at its next cancellation check.
+  void cancel();
+}
 
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
 ///
@@ -1127,6 +1114,133 @@ class ApiPirCacheWarmupResult {
           prunedCount == other.prunedCount;
 }
 
+/// One share that reached a new helper during a tracking pass.
+class ApiResubmittedShare {
+  final ApiShareKey share;
+  final String serverUrl;
+
+  const ApiResubmittedShare({required this.share, required this.serverUrl});
+
+  @override
+  int get hashCode => share.hashCode ^ serverUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiResubmittedShare &&
+          runtimeType == other.runtimeType &&
+          share == other.share &&
+          serverUrl == other.serverUrl;
+}
+
+/// One helper share identified within its round.
+class ApiShareKey {
+  final int bundleIndex;
+  final int proposalId;
+  final int shareIndex;
+
+  const ApiShareKey({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareKey &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
+}
+
+/// Definite and outcome-unknown results from one initial helper fan-out.
+class ApiShareSubmissionReport {
+  /// Helpers that definitively accepted the share.
+  final List<String> acceptedUrls;
+
+  /// Helpers that may have accepted the share before the response failed.
+  final List<String> ambiguousUrls;
+
+  /// Desired number of definite helper placements.
+  final int targetCount;
+
+  const ApiShareSubmissionReport({
+    required this.acceptedUrls,
+    required this.ambiguousUrls,
+    required this.targetCount,
+  });
+
+  @override
+  int get hashCode =>
+      acceptedUrls.hashCode ^ ambiguousUrls.hashCode ^ targetCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareSubmissionReport &&
+          runtimeType == other.runtimeType &&
+          acceptedUrls == other.acceptedUrls &&
+          ambiguousUrls == other.ambiguousUrls &&
+          targetCount == other.targetCount;
+}
+
+/// What one helper share-tracking pass did.
+class ApiShareTrackingReport {
+  /// Shares durably confirmed by the crate's two-helper quorum.
+  final List<ApiShareKey> confirmed;
+
+  /// Shares that reached an additional helper during this pass.
+  final List<ApiResubmittedShare> resubmitted;
+
+  /// Outcome-unknown attempts retained durably during this pass.
+  final List<ApiResubmittedShare> ambiguous;
+
+  /// Shares whose recovery material is missing, so no retry can help.
+  final List<ApiShareKey> unrecoverable;
+
+  /// True when the pass stopped early because Dart cancelled it.
+  final bool cancelled;
+
+  /// Seconds until the next pass, or `None` when nothing is pending.
+  final BigInt? nextDelaySeconds;
+
+  const ApiShareTrackingReport({
+    required this.confirmed,
+    required this.resubmitted,
+    required this.ambiguous,
+    required this.unrecoverable,
+    required this.cancelled,
+    this.nextDelaySeconds,
+  });
+
+  @override
+  int get hashCode =>
+      confirmed.hashCode ^
+      resubmitted.hashCode ^
+      ambiguous.hashCode ^
+      unrecoverable.hashCode ^
+      cancelled.hashCode ^
+      nextDelaySeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareTrackingReport &&
+          runtimeType == other.runtimeType &&
+          confirmed == other.confirmed &&
+          resubmitted == other.resubmitted &&
+          ambiguous == other.ambiguous &&
+          unrecoverable == other.unrecoverable &&
+          cancelled == other.cancelled &&
+          nextDelaySeconds == other.nextDelaySeconds;
+}
+
 /// PIR cache result for one snapshot-precomputed delegation bundle.
 class ApiSnapshotBundlePirResult {
   final int cachedCount;
@@ -1267,6 +1381,31 @@ class ApiVotingEligibility {
           eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
           privacyTrimDroppedValueZatoshi ==
               other.privacyTrimDroppedValueZatoshi;
+}
+
+/// Canonical helper fleet and readiness-ranked prefix for initial planning.
+class ApiVotingHelperPreflight {
+  /// Complete configured helper fleet in canonical caller order.
+  final List<String> configuredHelperUrls;
+
+  /// Ready helpers in the same relative order as the configured fleet.
+  final List<String> readyHelperUrls;
+
+  const ApiVotingHelperPreflight({
+    required this.configuredHelperUrls,
+    required this.readyHelperUrls,
+  });
+
+  @override
+  int get hashCode => configuredHelperUrls.hashCode ^ readyHelperUrls.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVotingHelperPreflight &&
+          runtimeType == other.runtimeType &&
+          configuredHelperUrls == other.configuredHelperUrls &&
+          readyHelperUrls == other.readyHelperUrls;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

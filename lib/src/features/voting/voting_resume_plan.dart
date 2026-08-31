@@ -27,7 +27,7 @@ bool hasCompletedVoteForDisplay(rust_wire.RoundPlanView? roundPlan) {
 ///
 /// Delayed shares intentionally remain background work, but the submission
 /// confirmation screen must not advance until this one round-level share has
-/// been observed by at least one helper that accepted it.
+/// been durably confirmed by the crate's configured-helper quorum.
 bool hasConfirmedImmediateShare(
   rust_wire.RoundPlanView? roundPlan,
   VotingResumePlan? resumePlan,

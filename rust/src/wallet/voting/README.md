@@ -113,7 +113,7 @@ directly. The mapping from FRB functions to crate APIs:
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
 | Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
-| Share submit/confirm | `record_share_delegation`, `mark_share_confirmed`, `add_sent_servers` | `vote::CommittedVote::{record_share, confirm_share}`, `share::add_sent_servers` |
+| Share submit/confirm | `submit_share_to_helpers`, `track_pending_shares` | `CommittedVote::submit_share_to_helpers`, `share_tracking::track_pending_shares` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
 
 The `confirmation::*` APIs parse chain `tx` events and atomically record tx
@@ -139,7 +139,7 @@ stateDiagram-v2
     }
     state "Helper Share" as Share {
         [*] --> SubmittedShare
-        SubmittedShare --> ConfirmedShare: confirm_share
+        SubmittedShare --> ConfirmedShare: two configured helpers confirm
         ConfirmedShare --> [*]
     }
 ```
@@ -147,7 +147,7 @@ stateDiagram-v2
 ### Helper Share Scheduling
 
 Helper-share `submit_at` (the Unix-second reveal time sent to the helper server)
-is computed in Dart from round timing before calling `record_share_delegation`:
+is planned through the crate's policy before calling `submit_share_to_helpers`:
 
 - The last-moment buffer is 40% of the round duration from `ceremony_phase_start`
   to `vote_end_time`, capped at six hours.
@@ -157,24 +157,50 @@ is computed in Dart from round timing before calling `record_share_delegation`:
   `submit_at = 0` (immediate submission).
 - If round timing is missing or invalid, Vizor uses `submit_at = 0`.
 
-Retry/resubmission paths submit immediately (`submit_at = 0`); the original
-scheduled value remains part of the durable record for the first accepted
-submission. The canonical scheduling/retry/polling policy lives in the crate's
-`share_policy` module; Dart mirrors it via the `plan_share_submissions`,
-`share_tracking_flags`, and `next_share_tracking_delay_seconds` helpers exposed
-through `api/voting.rs`.
+Overdue recovery submits immediately (`submit_at = 0`), while early
+under-placement replenishment preserves the original schedule in both the
+helper payload and durable record. The canonical scheduling/retry/polling policy lives in the crate's
+`share_policy` module; Dart consumes only initial plans and the next-pass delay
+through `api/voting.rs`. The crate-owned tracker decides polling,
+replenishment, and overdue recovery.
 
-Accepted shares remain tracked after the vote screen closes. On launch, unlock,
-and resume, Vizor asks `zcash_voting::share::pending_rounds` for durable
+Definite acceptances, outcome-unknown deliveries, and in-flight markers left by
+an interrupted process remain tracked after the vote screen closes. An
+outcome-unknown helper is polled for global on-chain confirmation but never
+counts toward the intended placement target because a `pending` response does
+not prove possession. Early replenishment uses other eligible helpers without
+waiting for the overdue threshold. Overdue recovery first tries untried
+helpers, then may duplicate-safely re-POST an outcome-unknown helper once in
+that pass.
+Configured helpers are trusted global chain-status oracles, but one helper
+cannot finalize a share by itself. The crate requires matching `confirmed`
+responses from two distinct helpers in the current configuration and persists
+the result internally. Vizor does not expose helper observations, implement a
+second polling pass, or call a separate confirmation API.
+
+Initial submission and recovery share one account/round/database-bound Rust
+helper delivery context. Before a fresh helper POST, the crate commits an
+in-flight (`attempting`) marker; it then promotes that marker to definite
+acceptance or outcome-unknown, or removes it after a definite pre-dispatch
+failure. A crash or failed outcome write therefore leaves the helper poll-only
+during early replenishment. Once overdue, duplicate-safe recovery can retry it
+after untried helpers without mistaking it for a fresh target.
+Tor connection, TLS, connect-timeout, URL, and request-construction failures
+are definite and remain retryable; request/response-phase failures are
+ambiguous.
+
+On launch, unlock, and resume, Vizor asks
+`zcash_voting::share::pending_rounds` for durable
 unconfirmed rounds and rejects expired or unauthenticated entries before
 restoring a session. A restored session checks only helpers still present in
 the current config and retains itself while work remains. Overdue shares use
-the crate's randomized resubmission order and stop after the first helper
-acknowledges or the round ends. An unacknowledged POST remains eligible for a
-later retry, and recovery may continue to another helper even when the
-transport outcome is ambiguous. This deliberately trades possible duplicate
-encrypted-share delivery and additional helper metadata exposure for liveness
-when an overdue share might otherwise never reach the chain. Lock, account
+the crate's randomized, health-aware recovery order and continue until the
+complete definite-placement deficit is filled, candidates are exhausted, or
+the round cutoff is reached. An outcome-unknown POST remains eligible for
+status polling, and recovery may continue to another helper when a transport
+outcome is ambiguous. This deliberately trades possible duplicate encrypted-
+share delivery and additional helper metadata exposure for liveness when a
+share might otherwise never reach the chain. Lock, account
 deletion, and wallet reset stop and drain discovery plus active checks before
 protected state changes. If a mutation aborts while wallet state remains,
 Vizor requests fresh discovery after leaving the mutation boundary.

@@ -352,32 +352,6 @@ void main() {
       expect(plan.hasBlockingShareWork, isTrue);
     },
   );
-
-  test(
-    'addSentServersForShare forwards exact share key and new URLs',
-    () async {
-      final api = FakeVotingRecoveryApi(state: recoveryState());
-      final service = VotingRecoveryService(api: api);
-      final record = share(bundleIndex: 2, proposalId: 3, shareIndex: 4);
-
-      await service.addSentServersForShare(
-        dbPath: 'wallet.db',
-        accountUuid: 'wallet-1',
-        share: record,
-        newUrls: ['https://helper-b.example'],
-      );
-
-      expect(api.addSentServersCalls, [
-        const AddSentServersCall(
-          roundId: 'round-1',
-          bundleIndex: 2,
-          proposalId: 3,
-          shareIndex: 4,
-          newUrls: ['https://helper-b.example'],
-        ),
-      ]);
-    },
-  );
 }
 
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
@@ -385,7 +359,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
 
   rust_frb_types.RoundRecoveryStateView state;
   final clearCalls = <String>[];
-  final addSentServersCalls = <AddSentServersCall>[];
 
   @override
   Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
@@ -394,27 +367,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
   }) async {
     return state;
-  }
-
-  @override
-  Future<void> addSentServers({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required int shareIndex,
-    required List<String> newUrls,
-  }) async {
-    addSentServersCalls.add(
-      AddSentServersCall(
-        roundId: roundId,
-        bundleIndex: bundleIndex,
-        proposalId: proposalId,
-        shareIndex: shareIndex,
-        newUrls: newUrls,
-      ),
-    );
   }
 
   @override
@@ -452,42 +404,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   }) async {
     clearCalls.add(roundId);
   }
-}
-
-class AddSentServersCall {
-  final String roundId;
-  final int bundleIndex;
-  final int proposalId;
-  final int shareIndex;
-  final List<String> newUrls;
-
-  const AddSentServersCall({
-    required this.roundId,
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.shareIndex,
-    required this.newUrls,
-  });
-
-  @override
-  int get hashCode => Object.hash(
-    roundId,
-    bundleIndex,
-    proposalId,
-    shareIndex,
-    Object.hashAll(newUrls),
-  );
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AddSentServersCall &&
-          runtimeType == other.runtimeType &&
-          roundId == other.roundId &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          shareIndex == other.shareIndex &&
-          _listEquals(newUrls, other.newUrls);
 }
 
 rust_frb_types.RoundRecoveryStateView recoveryState({
@@ -650,6 +566,8 @@ rust_frb_types.ShareDelegationRecordView share({
     proposalId: proposalId,
     shareIndex: shareIndex,
     sentToUrls: sentToUrls,
+    ambiguousUrls: const [],
+    targetCount: sentToUrls.length,
     nullifier: Uint8List.fromList(List.filled(32, shareIndex)),
     phase: confirmed
         ? VotingWorkflowPhase.confirmed
@@ -658,12 +576,4 @@ rust_frb_types.ShareDelegationRecordView share({
     submitAt: BigInt.zero,
     createdAt: BigInt.one,
   );
-}
-
-bool _listEquals<T>(List<T> a, List<T> b) {
-  if (a.length != b.length) return false;
-  for (var index = 0; index < a.length; index++) {
-    if (a[index] != b[index]) return false;
-  }
-  return true;
 }

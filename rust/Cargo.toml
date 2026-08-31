@@ -53,6 +53,9 @@ http = "1"
 http-body-util = "0.1"
 hyper = "1"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+# Direct-route TLS for voting helper HTTP. The connector is wrapped so the
+# direct-route lease still governs the socket.
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "webpki-roots"] }
 tower-service = "0.3"
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
@@ -116,8 +119,8 @@ version = "=0.1.0-rc4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting"
-tag = "v3.1.0-rc.13"
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "f47a0c6efca242d51e180d066e48535825272466"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -154,6 +157,7 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
+
 # Integration tests inject/inspect scan_queue rows directly to exercise the
 # VZR-89 rescue path. Keep this version aligned with the [dependencies] entry.
 rusqlite = "0.37"
@@ -162,10 +166,15 @@ rusqlite = "0.37"
 # Already in the dependency graph via zcash_client_backend.
 zcash_note_encryption = "0.4"
 
+[dev-dependencies.zcash_voting]
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "f47a0c6efca242d51e180d066e48535825272466"
+features = ["test-fixtures"]
+
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.0"
-git = "https://github.com/valargroup/zcash_voting"
-tag = "v3.1.0-rc.13"
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "f47a0c6efca242d51e180d066e48535825272466"
 default-features = false
 features = ["zakura"]
 
