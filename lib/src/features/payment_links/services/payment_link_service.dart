@@ -28,8 +28,8 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   );
 });
 
-const kPaymentLinkMaxClaimLookbackBlocks = 100000;
 const kPaymentLinkShareConfirmationTarget = 6;
+const kPaymentLinkClaimConfirmationTarget = 6;
 
 /// The ZIP-317 fee for the payment link's expected one-input, one-output
 /// shielded claim transaction.
@@ -75,6 +75,7 @@ bool paymentLinkTxidsMatch(String first, String second) {
 PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   required String claimTxids,
   required List<rust_sync.TransactionInfo> transactions,
+  required BigInt chainTipHeight,
 }) {
   final expectedTxids = claimTxids
       .split(',')
@@ -95,12 +96,16 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
     );
   }
 
-  final allMined = everyTxidMatches(
+  final allConfirmed = everyTxidMatches(
     (transaction) =>
         transaction.txKind == 'received' &&
-        transaction.minedHeight > BigInt.zero,
+        paymentLinkConfirmationCount(
+              minedHeight: transaction.minedHeight,
+              chainTipHeight: chainTipHeight,
+            ) >=
+            kPaymentLinkClaimConfirmationTarget,
   );
-  if (allMined) return PaymentLinkReceivedStatus.received;
+  if (allConfirmed) return PaymentLinkReceivedStatus.received;
 
   final allExpired = everyTxidMatches(
     (transaction) => transaction.expiredUnmined,
@@ -288,21 +293,33 @@ int validatePaymentLinkClaimBirthday({
   if (currentTipHeight <= 0) {
     throw StateError('Current chain tip is unavailable.');
   }
+  if (advertisedBirthdayHeight <= 0) {
+    throw const FormatException('Payment link birthday must be positive.');
+  }
   if (advertisedBirthdayHeight > currentTipHeight) {
     throw const FormatException(
       'Payment link birthday is ahead of the current chain tip.',
     );
   }
-  final earliestSupportedHeight = max(
-    1,
-    currentTipHeight - kPaymentLinkMaxClaimLookbackBlocks,
-  );
-  if (advertisedBirthdayHeight < earliestSupportedHeight) {
-    throw const FormatException(
-      'Payment link birthday is outside the supported claim window.',
-    );
-  }
   return advertisedBirthdayHeight;
+}
+
+class PaymentLinkClaimDestinationChangedException implements Exception {
+  const PaymentLinkClaimDestinationChangedException();
+
+  @override
+  String toString() =>
+      'The Gift Card receiving account or address changed before claim.';
+}
+
+@visibleForTesting
+void requireMatchingPaymentLinkClaimDestination({
+  required String preparedAddress,
+  required String currentAddress,
+}) {
+  if (preparedAddress != currentAddress) {
+    throw const PaymentLinkClaimDestinationChangedException();
+  }
 }
 
 /// Claim databases are cached by the fields that determine the recovered
@@ -634,12 +651,19 @@ class PaymentLinkService implements PaymentLinkOperations {
             limit: null,
           );
     }
+    final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
+    final chainTipHeight = cachedTip > 0
+        ? BigInt.from(cachedTip)
+        : await _ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .getLatestBlockHeight();
 
     for (final record in currentNetworkRecords) {
       final status = paymentLinkReceivedStatusForTransactions(
         claimTxids: record.claimTxids!,
         transactions:
             transactionsByAccount[record.destinationAccountUuid!] ?? const [],
+        chainTipHeight: chainTipHeight,
       );
       switch (status) {
         case PaymentLinkReceivedStatus.readyToClaim:
@@ -927,6 +951,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       amountZatoshi: session.link.amountZatoshi,
       memo: null,
       mnemonic: session.link.mnemonic,
+      beforeExecute: () => _revalidateClaimDestination(session),
     );
     final claimResult = PaymentLinkClaimResult(
       txids: sendResult.txids,
@@ -937,6 +962,27 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
     unawaited(_refreshMainWalletAfterSend());
     return claimResult;
+  }
+
+  Future<void> _revalidateClaimDestination(
+    PaymentLinkClaimSession session,
+  ) async {
+    try {
+      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+      final currentAddress = await rust_wallet.getUnifiedAddress(
+        dbPath: await getWalletDbPath(),
+        network: endpoint.networkName,
+        accountUuid: session.destinationAccountUuid,
+      );
+      requireMatchingPaymentLinkClaimDestination(
+        preparedAddress: session.destinationAddress,
+        currentAddress: currentAddress,
+      );
+    } on PaymentLinkClaimDestinationChangedException {
+      rethrow;
+    } catch (_) {
+      throw const PaymentLinkClaimDestinationChangedException();
+    }
   }
 
   @override
@@ -967,6 +1013,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     String? memo,
     String? mnemonic,
+    Future<void> Function()? beforeExecute,
   }) async {
     await _requireShieldedAddress(toAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -1008,6 +1055,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         sendFlowId: sendFlowId,
         needsSaplingParams: proposal.needsSaplingParams,
         mnemonic: mnemonic,
+        beforeExecute: beforeExecute,
       );
       paymentLinkClaimBroadcastStatusFromWire(result.status);
       return result;
@@ -1032,6 +1080,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required String sendFlowId,
     required bool needsSaplingParams,
     String? mnemonic,
+    Future<void> Function()? beforeExecute,
   }) async {
     var saplingParams = await loadSaplingParamsStatus();
     if (needsSaplingParams && !saplingParams.complete) {
@@ -1042,6 +1091,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       saplingParams = await loadSaplingParamsStatus();
     }
 
+    await beforeExecute?.call();
     _requireWalletUnlocked();
 
     if (Platform.isMacOS && mnemonic == null) {

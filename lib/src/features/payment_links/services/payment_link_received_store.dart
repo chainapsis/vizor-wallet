@@ -59,8 +59,8 @@ class PaymentLinkReceivedRecord {
   final PaymentLinkReceivedStatus status;
 
   /// The bearer secret is retained only while the Card can still require a
-  /// retry. It is removed as soon as the receiver's mined history proves the
-  /// claim completed.
+  /// retry. It is removed only after the receiver's history proves the claim
+  /// reached the required confirmation target.
   final VizorPaymentLink? claimLink;
   final String? destinationAccountUuid;
   final String? claimTxids;

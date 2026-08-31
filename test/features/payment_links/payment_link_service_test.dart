@@ -101,28 +101,44 @@ void main() {
     expect(paymentLinkTxidsMatch(broadcastTxid, 'not-a-txid'), isFalse);
   });
 
-  test('claim remains Receiving until every transaction is mined', () {
-    expect(
-      paymentLinkReceivedStatusForTransactions(
-        claimTxids: 'claim-a,claim-b',
-        transactions: [
-          _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
-          _transaction(txid: 'claim-b', txKind: 'receiving'),
-        ],
-      ),
-      PaymentLinkReceivedStatus.receiving,
-    );
-    expect(
-      paymentLinkReceivedStatusForTransactions(
-        claimTxids: 'claim-a,claim-b',
-        transactions: [
-          _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
-          _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
-        ],
-      ),
-      PaymentLinkReceivedStatus.received,
-    );
-  });
+  test(
+    'claim remains Receiving until every transaction has six confirmations',
+    () {
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'receiving'),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 14),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.received,
+      );
+    },
+  );
 
   test('expired unmined claim becomes actionable again', () {
     expect(
@@ -135,6 +151,7 @@ void main() {
             expiredUnmined: true,
           ),
         ],
+        chainTipHeight: BigInt.from(18),
       ),
       PaymentLinkReceivedStatus.readyToClaim,
     );
@@ -233,20 +250,35 @@ void main() {
     );
   });
 
-  test('bounds claim birthdays to a recent chain-tip window', () {
+  test('claim destination must still resolve to the prepared address', () {
+    expect(
+      () => requireMatchingPaymentLinkClaimDestination(
+        preparedAddress: 'u1prepared',
+        currentAddress: 'u1prepared',
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => requireMatchingPaymentLinkClaimDestination(
+        preparedAddress: 'u1prepared',
+        currentAddress: 'u1changed',
+      ),
+      throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+    );
+  });
+
+  test('accepts any past claim birthday and rejects invalid heights', () {
     const currentTip = 3500000;
     expect(
       validatePaymentLinkClaimBirthday(
-        advertisedBirthdayHeight:
-            currentTip - kPaymentLinkMaxClaimLookbackBlocks,
+        advertisedBirthdayHeight: 1,
         currentTipHeight: currentTip,
       ),
-      currentTip - kPaymentLinkMaxClaimLookbackBlocks,
+      1,
     );
     expect(
       () => validatePaymentLinkClaimBirthday(
-        advertisedBirthdayHeight:
-            currentTip - kPaymentLinkMaxClaimLookbackBlocks - 1,
+        advertisedBirthdayHeight: 0,
         currentTipHeight: currentTip,
       ),
       throwsFormatException,
