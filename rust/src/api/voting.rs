@@ -307,6 +307,86 @@ pub struct ApiPendingShareRound {
     pub session_json: Option<String>,
 }
 
+/// FFI-safe result of one SDK-owned chain submission or reconciliation pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainSubmissionOutcome {
+    /// `accepted`, `confirmed`, `pending`, `rejected`,
+    /// `already_spent_unresolved`, `outcome_unknown`, or `cancelled`.
+    pub status: String,
+    pub tx_hash: Option<String>,
+    pub known_tx_hashes: Vec<String>,
+    pub code: Option<u32>,
+    pub message: Option<String>,
+    pub van_leaf_position: Option<u32>,
+    pub vc_tree_position: Option<u64>,
+}
+
+impl From<zcash_voting::ChainLifecycleOutcome> for ApiChainSubmissionOutcome {
+    fn from(outcome: zcash_voting::ChainLifecycleOutcome) -> Self {
+        use zcash_voting::{ChainConfirmation, ChainLifecycleOutcome};
+        let empty = |status: &str| Self {
+            status: status.to_string(),
+            tx_hash: None,
+            known_tx_hashes: Vec::new(),
+            code: None,
+            message: None,
+            van_leaf_position: None,
+            vc_tree_position: None,
+        };
+        match outcome {
+            ChainLifecycleOutcome::Accepted { tx_hash } => Self {
+                tx_hash: Some(tx_hash),
+                ..empty("accepted")
+            },
+            ChainLifecycleOutcome::Confirmed {
+                tx_hash,
+                confirmation,
+                ..
+            } => {
+                let (van_leaf_position, vc_tree_position) = match confirmation {
+                    ChainConfirmation::Delegation(value) => (Some(value.van_leaf_position), None),
+                    ChainConfirmation::Vote(value) => {
+                        (Some(value.van_leaf_position), Some(value.vc_tree_position))
+                    }
+                    ChainConfirmation::VoteBatch(value) => (Some(value.van_leaf_position), None),
+                };
+                Self {
+                    tx_hash: Some(tx_hash),
+                    van_leaf_position,
+                    vc_tree_position,
+                    ..empty("confirmed")
+                }
+            }
+            ChainLifecycleOutcome::Pending { known_tx_hashes } => Self {
+                known_tx_hashes,
+                ..empty("pending")
+            },
+            ChainLifecycleOutcome::Rejected { code, log } => Self {
+                code: Some(code),
+                message: Some(log),
+                ..empty("rejected")
+            },
+            ChainLifecycleOutcome::AlreadySpentUnresolved {
+                known_tx_hashes,
+                log,
+            } => Self {
+                known_tx_hashes,
+                message: Some(log),
+                ..empty("already_spent_unresolved")
+            },
+            ChainLifecycleOutcome::OutcomeUnknown {
+                known_tx_hashes,
+                message,
+            } => Self {
+                known_tx_hashes,
+                message: Some(message),
+                ..empty("outcome_unknown")
+            },
+            ChainLifecycleOutcome::Cancelled => empty("cancelled"),
+        }
+    }
+}
+
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
 /// Binary fields are base64-encoded here so Dart does not duplicate protocol
@@ -328,6 +408,119 @@ pub fn vote_commitment_wire_json(
         // Serialize validated cast-vote commitment into chain wire JSON.
         commitment.to_json().map_err(|e| e.to_string())
     })
+}
+
+fn chain_client(api_server_urls: &[String]) -> Result<zcash_voting::ChainClient, String> {
+    let endpoints =
+        zcash_voting::ChainEndpointSet::new(api_server_urls).map_err(|error| error.to_string())?;
+    Ok(zcash_voting::ChainClient::new(
+        routed_voting_transport(),
+        endpoints,
+    ))
+}
+
+fn open_chain_voting_db(
+    db_path: &str,
+    account_uuid: &str,
+) -> Result<zcash_voting::storage::VotingDb, String> {
+    db::with_open_voting_db_write(db_path, account_uuid, |_| Ok(())).map(|(database, ())| database)
+}
+
+/// Submit one delegation through the SDK-owned durable chain lifecycle.
+pub async fn submit_chain_delegation(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    submission: zcash_voting::wire::SignedDelegationPayloadView,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiChainSubmissionOutcome, String> {
+    let database = open_chain_voting_db(&db_path, &account_uuid)?;
+    let client = chain_client(&api_server_urls)?;
+    zcash_voting::ChainSubmissionLifecycle::new(&database, &client)
+        .submit_delegation_wire(&round_id, bundle_index, &submission.submission, &|| {
+            chain_operation_cancelled(operation_epoch)
+        })
+        .await
+        .map(Into::into)
+        .map_err(|error| error.to_string())
+}
+
+/// Submit one persisted singleton vote through the durable chain lifecycle.
+pub async fn submit_chain_vote(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiChainSubmissionOutcome, String> {
+    let database = open_chain_voting_db(&db_path, &account_uuid)?;
+    let client = chain_client(&api_server_urls)?;
+    zcash_voting::ChainSubmissionLifecycle::new(&database, &client)
+        .submit_vote(&round_id, bundle_index, proposal_id, &|| {
+            chain_operation_cancelled(operation_epoch)
+        })
+        .await
+        .map(Into::into)
+        .map_err(|error| error.to_string())
+}
+
+/// Reconcile a previously submitted delegation without broadcasting.
+pub async fn reconcile_chain_delegation(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiChainSubmissionOutcome, String> {
+    reconcile_chain_submission(
+        db_path,
+        account_uuid,
+        zcash_voting::ChainSubmissionIdentity::delegation(round_id, bundle_index),
+        api_server_urls,
+        operation_epoch,
+    )
+    .await
+}
+
+/// Reconcile a previously submitted singleton vote without broadcasting.
+pub async fn reconcile_chain_vote(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiChainSubmissionOutcome, String> {
+    reconcile_chain_submission(
+        db_path,
+        account_uuid,
+        zcash_voting::ChainSubmissionIdentity::vote(round_id, bundle_index, proposal_id),
+        api_server_urls,
+        operation_epoch,
+    )
+    .await
+}
+
+async fn reconcile_chain_submission(
+    db_path: String,
+    account_uuid: String,
+    identity: zcash_voting::ChainSubmissionIdentity,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiChainSubmissionOutcome, String> {
+    let database = open_chain_voting_db(&db_path, &account_uuid)?;
+    let client = chain_client(&api_server_urls)?;
+    zcash_voting::ChainSubmissionLifecycle::new(&database, &client)
+        .reconcile(&identity, &|| chain_operation_cancelled(operation_epoch))
+        .await
+        .map(Into::into)
+        .map_err(|error| error.to_string())
 }
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -533,13 +726,35 @@ impl VotingShareTrackingPassHandle {
 static HELPER_TRANSPORT: std::sync::OnceLock<
     Arc<crate::wallet::voting::helper_transport::VotingHelperTransport>,
 > = std::sync::OnceLock::new();
+static CHAIN_OPERATION_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
-    let transport = HELPER_TRANSPORT
+/// Captures the cancellation epoch for a new vote-chain operation.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_voting_chain_operation() -> u64 {
+    CHAIN_OPERATION_EPOCH.load(Ordering::Acquire)
+}
+
+/// Cancels all in-flight vote-chain operations at their next SDK check.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel_voting_chain_operations() {
+    CHAIN_OPERATION_EPOCH.fetch_add(1, Ordering::AcqRel);
+}
+
+fn chain_operation_cancelled(epoch: u64) -> bool {
+    CHAIN_OPERATION_EPOCH.load(Ordering::Acquire) != epoch
+}
+
+fn routed_voting_transport() -> Arc<crate::wallet::voting::helper_transport::VotingHelperTransport>
+{
+    HELPER_TRANSPORT
         .get_or_init(|| {
             Arc::new(crate::wallet::voting::helper_transport::VotingHelperTransport::new())
         })
-        .clone();
+        .clone()
+}
+
+fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
+    let transport = routed_voting_transport();
     zcash_voting::HelperClient::new(transport, health.clone())
 }
 

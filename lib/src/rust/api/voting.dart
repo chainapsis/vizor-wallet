@@ -11,8 +11,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `chain_client`, `chain_operation_cancelled`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `open_chain_voting_db`, `parse_tx_events_json`, `reconcile_chain_submission`, `routed_voting_transport`, `share_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -65,6 +65,80 @@ Future<String> voteCommitmentWireJson({
   commitment: commitment,
 );
 
+/// Submit one delegation through the SDK-owned durable chain lifecycle.
+Future<ApiChainSubmissionOutcome> submitChainDelegation({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required SignedDelegationPayloadView submission,
+  required List<String> apiServerUrls,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingSubmitChainDelegation(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  submission: submission,
+  apiServerUrls: apiServerUrls,
+  operationEpoch: operationEpoch,
+);
+
+/// Submit one persisted singleton vote through the durable chain lifecycle.
+Future<ApiChainSubmissionOutcome> submitChainVote({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required List<String> apiServerUrls,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingSubmitChainVote(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  apiServerUrls: apiServerUrls,
+  operationEpoch: operationEpoch,
+);
+
+/// Reconcile a previously submitted delegation without broadcasting.
+Future<ApiChainSubmissionOutcome> reconcileChainDelegation({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required List<String> apiServerUrls,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingReconcileChainDelegation(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  apiServerUrls: apiServerUrls,
+  operationEpoch: operationEpoch,
+);
+
+/// Reconcile a previously submitted singleton vote without broadcasting.
+Future<ApiChainSubmissionOutcome> reconcileChainVote({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required List<String> apiServerUrls,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingReconcileChainVote(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  apiServerUrls: apiServerUrls,
+  operationEpoch: operationEpoch,
+);
+
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
 /// Trust model for the per-round parameters:
@@ -103,6 +177,14 @@ Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
   ncRoot: ncRoot,
   nullifierImtRoot: nullifierImtRoot,
 );
+
+/// Captures the cancellation epoch for a new vote-chain operation.
+BigInt beginVotingChainOperation() =>
+    RustLib.instance.api.crateApiVotingBeginVotingChainOperation();
+
+/// Cancels all in-flight vote-chain operations at their next SDK check.
+void cancelVotingChainOperations() =>
+    RustLib.instance.api.crateApiVotingCancelVotingChainOperations();
 
 /// Creates helper delivery state for one account-and-round voting workflow.
 VotingHelperDeliveryContext createVotingHelperDeliveryContext({
@@ -919,6 +1001,52 @@ class ApiBundleLayout {
           privacyTrimDroppedNotes == other.privacyTrimDroppedNotes &&
           privacyTrimDroppedValueZatoshi ==
               other.privacyTrimDroppedValueZatoshi;
+}
+
+/// FFI-safe result of one SDK-owned chain submission or reconciliation pass.
+class ApiChainSubmissionOutcome {
+  /// `accepted`, `confirmed`, `pending`, `rejected`,
+  /// `already_spent_unresolved`, `outcome_unknown`, or `cancelled`.
+  final String status;
+  final String? txHash;
+  final List<String> knownTxHashes;
+  final int? code;
+  final String? message;
+  final int? vanLeafPosition;
+  final BigInt? vcTreePosition;
+
+  const ApiChainSubmissionOutcome({
+    required this.status,
+    this.txHash,
+    required this.knownTxHashes,
+    this.code,
+    this.message,
+    this.vanLeafPosition,
+    this.vcTreePosition,
+  });
+
+  @override
+  int get hashCode =>
+      status.hashCode ^
+      txHash.hashCode ^
+      knownTxHashes.hashCode ^
+      code.hashCode ^
+      message.hashCode ^
+      vanLeafPosition.hashCode ^
+      vcTreePosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainSubmissionOutcome &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          txHash == other.txHash &&
+          knownTxHashes == other.knownTxHashes &&
+          code == other.code &&
+          message == other.message &&
+          vanLeafPosition == other.vanLeafPosition &&
+          vcTreePosition == other.vcTreePosition;
 }
 
 /// Progress event emitted while building, proving, and signing a delegation payload.

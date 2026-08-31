@@ -27,6 +27,7 @@ This document focuses on what Vizor's integration is responsible for.
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
 | `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) and refuses to proceed when Tor is selected but unusable, so PIR cache warm-up does not dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. PIR HTTP still uses the crate's `HyperTransport`. |
+| `helper_transport.rs` | Implements both the SDK helper and vote-chain HTTP transport traits over Vizor's current Tor/direct route. Tor fails closed, and direct-route leases prevent pooled connections from surviving a privacy-policy switch. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
 
@@ -110,14 +111,20 @@ directly. The mapping from FRB functions to crate APIs:
 | Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
 | Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
 | Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
-| Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
+| Delegation submit/reconcile | `submit_chain_delegation`, `reconcile_chain_delegation` | `ChainSubmissionLifecycle::{submit_delegation_wire,reconcile}` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
-| Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
+| Vote submit/reconcile | `submit_chain_vote`, `reconcile_chain_vote` | `ChainSubmissionLifecycle::{submit_vote,reconcile}` |
 | Share plan/submit/confirm | `preflight_voting_helpers`, `prepare_committed_share_delivery`, `submit_prepared_shares_to_helpers`, `confirm_share_with_helpers`, `track_pending_shares` | `HelperFleetPreflight`, `CommittedVote::{prepare_share_delivery, submit_prepared_shares}`, `share_tracking::{confirm_pending_share, track_pending_shares}` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
 
-The `confirmation::*` APIs parse chain `tx` events and atomically record tx
-hashes, VAN positions, and VC positions. Restart recovery is driven by
+The chain lifecycle owns canonical mutation serialization, durable
+reservation-before-POST attempts, bounded replay, server-hash validation,
+spent-nullifier reconciliation, transaction lookup, and confirmation. Vizor
+supplies only the configured endpoints and its route-aware transport; Dart
+does not serialize mutation bodies, predict hashes, parse nullifier logs, or
+apply chain events. CheckTx acceptance remains in the SDK attempt journal until
+a committed-success lookup lets `confirmation::*` atomically record the chain
+hash, VAN position, and VC position. Restart recovery is driven by
 `session::resume_plan`, which returns the ordered remaining `NextStep`s and the
 proposals still open. Vizor's Dart recovery code consumes the crate's phase
 strings; it does not derive its own phases.
@@ -127,14 +134,14 @@ stateDiagram-v2
     state "Delegation Bundle" as Delegation {
         [*] --> Prepared
         Prepared --> Signed: prove + sign
-        Signed --> Submitted: mark_delegation_submitted
-        Submitted --> Confirmed: confirm_delegation_submission
+        Signed --> Submitted: submit_chain_delegation
+        Submitted --> Confirmed: reconcile_chain_delegation
         Confirmed --> [*]
     }
     state "Vote Commitment" as Vote {
         [*] --> Committed
-        Committed --> Submitted2: mark_vote_submitted
-        Submitted2 --> Confirmed2: confirm_vote_submission
+        Committed --> Submitted2: submit_chain_vote
+        Submitted2 --> Confirmed2: reconcile_chain_vote
         Confirmed2 --> [*]
     }
     state "Helper Share" as Share {

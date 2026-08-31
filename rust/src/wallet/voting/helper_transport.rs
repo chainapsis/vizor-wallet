@@ -29,8 +29,8 @@ use http::{Method, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use zcash_voting::{
-    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, HyperTransport,
-    MAX_HELPER_RESPONSE_BYTES,
+    ChainFuture, ChainTransport, HelperFuture, HelperResponse, HelperTransport,
+    HelperTransportError, HyperTransport, MAX_HELPER_RESPONSE_BYTES,
 };
 
 use crate::network_privacy;
@@ -188,9 +188,9 @@ async fn request_direct(
     DIRECT_REQUEST_DEADLINE
         .scope(deadline, async move {
             if method == Method::POST {
-                transport.post_json(url, body, timeout).await
+                HelperTransport::post_json(transport, url, body, timeout).await
             } else {
-                transport.get(url, timeout).await
+                HelperTransport::get(transport, url, timeout).await
             }
         })
         .await
@@ -261,6 +261,16 @@ impl HelperTransport for VotingHelperTransport {
     }
 
     fn post_json<'a>(&'a self, url: &'a str, body: Vec<u8>, timeout: Duration) -> HelperFuture<'a> {
+        Box::pin(async move { self.request(Method::POST, url, body, timeout).await })
+    }
+}
+
+impl ChainTransport for VotingHelperTransport {
+    fn get<'a>(&'a self, url: &'a str, timeout: Duration) -> ChainFuture<'a> {
+        Box::pin(async move { self.request(Method::GET, url, Vec::new(), timeout).await })
+    }
+
+    fn post_json<'a>(&'a self, url: &'a str, body: Vec<u8>, timeout: Duration) -> ChainFuture<'a> {
         Box::pin(async move { self.request(Method::POST, url, body, timeout).await })
     }
 }

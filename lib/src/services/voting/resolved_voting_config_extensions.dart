@@ -12,6 +12,9 @@ class VotingApiServerSet {
 
   List<Uri> get all => [primary, ...failovers];
 
+  List<String> get endpointUrls =>
+      all.map((endpoint) => endpoint.toString()).toList(growable: false);
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

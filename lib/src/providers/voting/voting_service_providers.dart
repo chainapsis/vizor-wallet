@@ -399,6 +399,10 @@ abstract interface class VotingShareTrackingPassHandle {
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  BigInt beginVotingChainOperation();
+
+  void cancelVotingChainOperations();
+
   /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
   String? selectPirSnapshotEndpoint({
     required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
@@ -498,6 +502,45 @@ abstract interface class VotingRustApi {
 
   Future<String> delegationSubmissionWireJson({
     required rust_voting.SignedDelegationPayloadView submission,
+  });
+
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required rust_voting.SignedDelegationPayloadView submission,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  });
+
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  });
+
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  });
+
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
   });
 
   Future<void> markDelegationSubmitted({
@@ -756,6 +799,12 @@ final class _FrbVotingShareTrackingPassHandle
 
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
+  @override
+  BigInt beginVotingChainOperation() => rust_api.beginVotingChainOperation();
+
+  @override
+  void cancelVotingChainOperations() => rust_api.cancelVotingChainOperations();
+
   const FrbVotingRustApi();
 
   @override
@@ -949,6 +998,80 @@ class FrbVotingRustApi implements VotingRustApi {
   }) {
     return rust_api.delegationSubmissionWireJson(submission: submission);
   }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required rust_voting.SignedDelegationPayloadView submission,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) => rust_api.submitChainDelegation(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    bundleIndex: bundleIndex,
+    submission: submission,
+    apiServerUrls: apiServerUrls,
+    operationEpoch: operationEpoch,
+  );
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) => rust_api.submitChainVote(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    bundleIndex: bundleIndex,
+    proposalId: proposalId,
+    apiServerUrls: apiServerUrls,
+    operationEpoch: operationEpoch,
+  );
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) => rust_api.reconcileChainDelegation(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    bundleIndex: bundleIndex,
+    apiServerUrls: apiServerUrls,
+    operationEpoch: operationEpoch,
+  );
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) => rust_api.reconcileChainVote(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    bundleIndex: bundleIndex,
+    proposalId: proposalId,
+    apiServerUrls: apiServerUrls,
+    operationEpoch: operationEpoch,
+  );
 
   @override
   Future<void> markDelegationSubmitted({

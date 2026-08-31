@@ -113,6 +113,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw);
 
   @protected
+  ApiChainSubmissionOutcome dco_decode_api_chain_submission_outcome(
+    dynamic raw,
+  );
+
+  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
@@ -1010,6 +1015,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer);
+
+  @protected
+  ApiChainSubmissionOutcome sse_decode_api_chain_submission_outcome(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
@@ -2134,6 +2144,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_bundle_layout(
     ApiBundleLayout self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_chain_submission_outcome(
+    ApiChainSubmissionOutcome self,
     SseSerializer serializer,
   );
 

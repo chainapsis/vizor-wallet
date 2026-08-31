@@ -11465,6 +11465,52 @@ class _WitnessHandoffVotingRustApi extends FakeVotingRustApi {
 
 int _fakeShareTargetCount(int serverCount) => (serverCount + 1) ~/ 2;
 
+rust_api.ApiChainSubmissionOutcome _acceptedChainOutcome(String txHash) =>
+    rust_api.ApiChainSubmissionOutcome(
+      status: 'accepted',
+      txHash: txHash,
+      knownTxHashes: [txHash],
+      code: 0,
+      message: null,
+      vanLeafPosition: null,
+      vcTreePosition: null,
+    );
+
+rust_api.ApiChainSubmissionOutcome _pendingChainOutcome(String txHash) =>
+    rust_api.ApiChainSubmissionOutcome(
+      status: 'pending',
+      txHash: null,
+      knownTxHashes: [txHash],
+      code: null,
+      message: null,
+      vanLeafPosition: null,
+      vcTreePosition: null,
+    );
+
+rust_api.ApiChainSubmissionOutcome _rejectedChainOutcome(
+  int code,
+  String message,
+) => rust_api.ApiChainSubmissionOutcome(
+  status: 'rejected',
+  txHash: null,
+  knownTxHashes: const [],
+  code: code,
+  message: message,
+  vanLeafPosition: null,
+  vcTreePosition: null,
+);
+
+rust_api.ApiChainSubmissionOutcome _cancelledChainOutcome() =>
+    const rust_api.ApiChainSubmissionOutcome(
+      status: 'cancelled',
+      txHash: null,
+      knownTxHashes: [],
+      code: null,
+      message: null,
+      vanLeafPosition: null,
+      vcTreePosition: null,
+    );
+
 class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
@@ -11559,6 +11605,18 @@ class FakeVotingRustApi implements VotingRustApi {
   final int helperPostTimeoutMilliseconds;
   final int initialDeliveryTimeoutMilliseconds;
   final int maxConcurrentHelperPosts;
+  var _chainOperationEpoch = 1;
+  final Map<int, String> _delegationAttemptHashes = {};
+  final Map<String, String> _voteAttemptHashes = {};
+
+  @override
+  BigInt beginVotingChainOperation() => BigInt.from(_chainOperationEpoch);
+
+  @override
+  void cancelVotingChainOperations() => _chainOperationEpoch++;
+
+  bool _chainOperationCancelled(BigInt epoch) =>
+      epoch != BigInt.from(_chainOperationEpoch);
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -12044,6 +12102,109 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required rust_wire.SignedDelegationPayloadView submission,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final body =
+        jsonDecode(await delegationSubmissionWireJson(submission: submission))
+            as Map<String, dynamic>;
+    if (_chainOperationCancelled(operationEpoch)) {
+      return _cancelledChainOutcome();
+    }
+    final response = await helperTransport!.postJson(
+      Uri.parse('${apiServerUrls.first}/shielded-vote/v1/delegate-vote'),
+      body,
+    );
+    final result = VotingTxResult.fromJson(
+      jsonDecode(response.bodyText) as Map<String, dynamic>,
+    );
+    if (result.code != 0) {
+      if (result.txHash.isNotEmpty) {
+        _delegationAttemptHashes[bundleIndex] = result.txHash;
+      }
+      return rust_api.ApiChainSubmissionOutcome(
+        status: result.log.toLowerCase().contains('nullifier already spent:')
+            ? 'already_spent_unresolved'
+            : 'rejected',
+        txHash: null,
+        knownTxHashes: result.txHash.isEmpty ? const [] : [result.txHash],
+        code: result.code,
+        message: result.log,
+        vanLeafPosition: null,
+        vcTreePosition: null,
+      );
+    }
+    await markDelegationSubmitted(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      txHash: result.txHash,
+    );
+    return _acceptedChainOutcome(result.txHash);
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final prefix = '$bundleIndex:';
+    final stored = storedDelegationTxHashes
+        .where((value) => value.startsWith(prefix))
+        .lastOrNull;
+    final txHash =
+        stored?.substring(prefix.length) ??
+        _delegationAttemptHashes[bundleIndex] ??
+        helperRecoveryApi?.state.delegation
+            .where((value) => value.bundleIndex == bundleIndex)
+            .map((value) => value.txHash)
+            .nonNulls
+            .lastOrNull;
+    if (txHash == null) return _pendingChainOutcome('');
+    final response = await helperTransport!.get(
+      Uri.parse('${apiServerUrls.first}/shielded-vote/v1/tx/$txHash'),
+    );
+    if (_chainOperationCancelled(operationEpoch)) {
+      return _cancelledChainOutcome();
+    }
+    if (response.statusCode == 404) return _pendingChainOutcome(txHash);
+    final confirmation = VotingTxConfirmation.fromJson(
+      jsonDecode(response.bodyText) as Map<String, dynamic>,
+    );
+    if (confirmation.code != 0) {
+      return _rejectedChainOutcome(confirmation.code, confirmation.log);
+    }
+    final recorded = await confirmDelegationSubmission(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      txHash: txHash,
+      eventsJson: confirmation.eventsJson,
+    );
+    return rust_api.ApiChainSubmissionOutcome(
+      status: 'confirmed',
+      txHash: txHash,
+      knownTxHashes: [txHash],
+      code: 0,
+      message: null,
+      vanLeafPosition: recorded.vanLeafPosition,
+      vcTreePosition: null,
+    );
+  }
+
+  @override
   Future<rust_api.ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
@@ -12136,7 +12297,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required int vanLeafPosition,
   }) {
     _addUnique(storedDelegationTxHashes, '$bundleIndex:$txHash');
-    storedVanPositions.add('$bundleIndex:$vanLeafPosition');
+    _addUnique(storedVanPositions, '$bundleIndex:$vanLeafPosition');
   }
 
   @override
@@ -12154,12 +12315,17 @@ class FakeVotingRustApi implements VotingRustApi {
       roundId,
       'leaf_index',
     );
+    final alreadyConfirmed = storedVanPositions.contains(
+      '$bundleIndex:$vanLeafPosition',
+    );
     _recordDelegationConfirmed(
       bundleIndex: bundleIndex,
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
     );
-    onDelegationConfirmed?.call(bundleIndex, txHash, vanLeafPosition);
+    if (!alreadyConfirmed) {
+      onDelegationConfirmed?.call(bundleIndex, txHash, vanLeafPosition);
+    }
     return rust_wire.DelegationConfirmation(
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
@@ -12355,6 +12521,123 @@ class FakeVotingRustApi implements VotingRustApi {
       'r_vpk': commitment.rVpk,
       'vote_auth_sig': commitment.voteAuthSig,
     });
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final wire = _commitments(
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      choice: 1,
+      shareCount: commitmentShareCount,
+    ).commitments.single.wire;
+    final body =
+        jsonDecode(await voteCommitmentWireJson(commitment: wire))
+            as Map<String, dynamic>;
+    if (_chainOperationCancelled(operationEpoch)) {
+      return _cancelledChainOutcome();
+    }
+    final response = await helperTransport!.postJson(
+      Uri.parse('${apiServerUrls.first}/shielded-vote/v1/cast-vote'),
+      body,
+    );
+    final result = VotingTxResult.fromJson(
+      jsonDecode(response.bodyText) as Map<String, dynamic>,
+    );
+    if (result.code != 0) {
+      if (result.txHash.isNotEmpty) {
+        _voteAttemptHashes['$bundleIndex:$proposalId'] = result.txHash;
+      }
+      return rust_api.ApiChainSubmissionOutcome(
+        status: result.log.toLowerCase().contains('nullifier already spent:')
+            ? 'already_spent_unresolved'
+            : 'rejected',
+        txHash: null,
+        knownTxHashes: result.txHash.isEmpty ? const [] : [result.txHash],
+        code: result.code,
+        message: result.log,
+        vanLeafPosition: null,
+        vcTreePosition: null,
+      );
+    }
+    await markVoteSubmitted(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: result.txHash,
+    );
+    return _acceptedChainOutcome(result.txHash);
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final prefix = '$bundleIndex:$proposalId:';
+    final stored = storedVoteTxHashes
+        .where((value) => value.startsWith(prefix))
+        .lastOrNull;
+    final txHash =
+        stored?.substring(prefix.length) ??
+        _voteAttemptHashes['$bundleIndex:$proposalId'] ??
+        helperRecoveryApi?.state.votes
+            .where(
+              (value) =>
+                  value.bundleIndex == bundleIndex &&
+                  value.proposalId == proposalId,
+            )
+            .map((value) => value.txHash)
+            .nonNulls
+            .lastOrNull;
+    if (txHash == null) return _pendingChainOutcome('');
+    final response = await helperTransport!.get(
+      Uri.parse('${apiServerUrls.first}/shielded-vote/v1/tx/$txHash'),
+    );
+    if (_chainOperationCancelled(operationEpoch)) {
+      return _cancelledChainOutcome();
+    }
+    if (response.statusCode == 404) return _pendingChainOutcome(txHash);
+    final confirmation = VotingTxConfirmation.fromJson(
+      jsonDecode(response.bodyText) as Map<String, dynamic>,
+    );
+    if (confirmation.code != 0) {
+      return _rejectedChainOutcome(confirmation.code, confirmation.log);
+    }
+    final recorded = await confirmVoteSubmission(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: txHash,
+      eventsJson: confirmation.eventsJson,
+    );
+    return rust_api.ApiChainSubmissionOutcome(
+      status: 'confirmed',
+      txHash: txHash,
+      knownTxHashes: [txHash],
+      code: 0,
+      message: null,
+      vanLeafPosition: recorded.vanLeafPosition,
+      vcTreePosition: recorded.vcTreePosition,
+    );
   }
 
   @override

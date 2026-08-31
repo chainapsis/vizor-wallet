@@ -16,8 +16,6 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
-import '../../services/voting/voting_api_client.dart';
-import '../../services/voting/voting_models.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
@@ -31,11 +29,6 @@ const _votingAlreadyStartedMessage =
     "Voting has already started for these funds, but Vizor couldn't recover "
     'the submission status. If you used another wallet, return to it to see '
     'the status.';
-
-final _nullifierAlreadySpentPattern = RegExp(
-  r'nullifier already spent:\s*\S+',
-  caseSensitive: false,
-);
 const _spentNullifierRecoveryMaxAttempts = 3;
 const _spentNullifierRecoveryMaxDelay = Duration(seconds: 1);
 
@@ -118,6 +111,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Completer<void> _sessionInvalidated = Completer<void>();
   int? _runningActionGeneration;
   bool _isDisposed = false;
+  late VotingRustApi _chainRustApi;
 
   VotingHelperDeliveryContext _helperDeliveryContextFor(
     VotingRustApi rust,
@@ -170,6 +164,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   @override
   Future<VotingSessionState> build() async {
+    _chainRustApi = ref.read(votingRustApiProvider);
     _reactivateForBuild();
     _registerSubmissionGuardListener();
     _registerDisposeHandler();
@@ -995,7 +990,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
       final effectiveDraftVotes = draftVotes;
       final draftVotesByProposal = {
@@ -1056,10 +1050,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               'bundle ${key.bundleIndex}, proposal ${key.proposalId}.',
             );
           }
-          final confirmation = await _awaitTxConfirmation(
-            api,
-            txHash,
+          final confirmation = await _awaitChainConfirmation(
             context: context,
+            txHash: txHash,
+            reconcile: () => rust.reconcileChainVote(
+              dbPath: context.dbPath,
+              accountUuid: context.accountUuid,
+              roundId: context.round.roundId,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              apiServerUrls: context.config.apiServers.endpointUrls,
+              operationEpoch: rust.beginVotingChainOperation(),
+            ),
           );
           if (confirmation == null) {
             throw _VoteConfirmationTimeout(key: key, txHash: txHash);
@@ -1090,43 +1092,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final polled = outcome.value!;
         final key = polled.key;
         final txHash = polled.txHash;
-        final confirmation = polled.confirmation;
-        if (confirmation.code != 0) {
-          voteRecoveryFailures.add(
-            _VoteWaveFailure(
-              bundleIndex: key.bundleIndex,
-              proposalId: key.proposalId,
-              stage: 'recovery confirmation',
-              error: StateError(
-                confirmation.log.isEmpty
-                    ? 'Vote commitment transaction failed.'
-                    : confirmation.log,
-              ),
-            ),
-          );
-          continue;
-        }
-        try {
-          await rust.confirmVoteSubmission(
-            dbPath: context.dbPath,
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-            txHash: txHash,
-            eventsJson: confirmation.eventsJson,
-          );
-        } catch (error) {
-          voteRecoveryFailures.add(
-            _VoteWaveFailure(
-              bundleIndex: key.bundleIndex,
-              proposalId: key.proposalId,
-              stage: 'recovery confirmation persistence',
-              error: error,
-            ),
-          );
-          continue;
-        }
         progress[key] = VotingSessionProgress(
           phase: 'confirmed',
           bundleIndex: key.bundleIndex,
@@ -2036,72 +2001,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             return;
           }
 
-          final confirmations = <int, VotingTxConfirmation>{};
           try {
             final confirmTimer = Stopwatch()..start();
-            final api = ref.read(
-              votingApiClientProvider(context.config.apiServers),
+            await _reconcileVoteConfirmations(
+              context,
+              bundleIndex: bundleIndex,
+              txHashes: txHashes,
             );
-            for (final entry in txHashes.entries) {
-              final confirmation = await _awaitTxConfirmation(
-                api,
-                entry.value,
-                context: context,
-              );
-              if (confirmation == null) {
-                throw StateError(
-                  'Transaction ${entry.value} was not confirmed in time.',
-                );
-              }
-              if (confirmation.code != 0) {
-                throw StateError(
-                  confirmation.log.isEmpty
-                      ? 'Vote commitment transaction failed.'
-                      : confirmation.log,
-                );
-              }
-              confirmations[entry.key] = confirmation;
-            }
             _logVoteTiming(
               'bundle=$bundleIndex proposal=${key.proposalId} '
-              'confirm-wait elapsed=${formatElapsedSeconds(confirmTimer.elapsed)}',
+              'confirm-and-persist elapsed=${formatElapsedSeconds(confirmTimer.elapsed)}',
             );
           } catch (error) {
             recordFailure(key: key, stage: 'confirmation', error: error);
             return;
           }
 
-          try {
-            // Advances this bundle's stored VAN position, which is what unblocks
-            // the next proposal in this chain.
-            final persistTimer = Stopwatch()..start();
-            await _persistVoteConfirmations(
-              context,
+          publish(
+            VotingSessionProgress(
+              phase: 'confirmed',
               bundleIndex: bundleIndex,
-              txHashes: txHashes,
-              confirmations: confirmations,
-            );
-            _logVoteTiming(
-              'bundle=$bundleIndex proposal=${key.proposalId} '
-              'confirm-persist elapsed=${formatElapsedSeconds(persistTimer.elapsed)}',
-            );
-            publish(
-              VotingSessionProgress(
-                phase: 'confirmed',
-                bundleIndex: bundleIndex,
-                proposalId: key.proposalId,
-                proofProgress: 1,
-                message: txHashes[key.proposalId],
-              ),
-            );
-          } catch (error) {
-            recordFailure(
-              key: key,
-              stage: 'confirmation persistence',
-              error: error,
-            );
-            return;
-          }
+              proposalId: key.proposalId,
+              proofProgress: 1,
+              message: txHashes[key.proposalId],
+            ),
+          );
 
           // Shares are off the chain: the VAN advance is durable, so the next
           // proposal does not wait on helper-server delivery.
@@ -2227,63 +2151,68 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments,
   ) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
     final txHashes = <int, String>{};
     for (final commitment in commitments.commitments) {
-      final result = await api.submitVoteCommitment(
-        commitment: await _voteCommitmentRequestBody(
-          context,
-          rust,
-          commitment.wire,
-        ),
-      );
-      await _requireAcceptedVotingTransaction(
-        result,
-        waitForConfirmation: (txHash) => _awaitTxConfirmation(
-          api,
-          txHash,
-          context: context,
-          spentNullifierRecovery: true,
-        ),
-        rejectionMessage: 'Vote commitment transaction was rejected.',
-      );
-      if (result.txHash.isEmpty) {
-        throw StateError('Vote commitment response did not include tx_hash.');
-      }
-      await rust.markVoteSubmitted(
+      _throwIfContextStale(context, 'vote-chain-submit-dispatch');
+      final result = await rust.submitChainVote(
         dbPath: context.dbPath,
         accountUuid: context.accountUuid,
         roundId: context.round.roundId,
         bundleIndex: commitments.bundleIndex,
         proposalId: commitment.proposalId,
-        txHash: result.txHash,
+        apiServerUrls: context.config.apiServers.endpointUrls,
+        operationEpoch: rust.beginVotingChainOperation(),
       );
-      txHashes[commitment.proposalId] = result.txHash;
+      _throwIfContextStale(context, 'vote-chain-submit-response');
+      final resolved = await _recoverSpentChainSubmission(
+        context: context,
+        outcome: result,
+        reconcile: () => rust.reconcileChainVote(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: commitments.bundleIndex,
+          proposalId: commitment.proposalId,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
+        ),
+      );
+      txHashes[commitment.proposalId] = _requireChainAccepted(
+        resolved,
+        rejectionMessage: 'Vote commitment transaction was rejected.',
+      );
     }
     return txHashes;
   }
 
-  Future<Map<int, BigInt>> _persistVoteConfirmations(
+  Future<Map<int, BigInt>> _reconcileVoteConfirmations(
     _VotingSessionContext context, {
     required int bundleIndex,
     required Map<int, String> txHashes,
-    required Map<int, VotingTxConfirmation> confirmations,
   }) async {
     final rust = ref.read(votingRustApiProvider);
     final vcTreePositions = <int, BigInt>{};
     for (final entry in txHashes.entries) {
-      final confirmation = confirmations[entry.key]!;
-      final result = await rust.confirmVoteSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: bundleIndex,
-        proposalId: entry.key,
+      final result = await _awaitChainConfirmation(
+        context: context,
         txHash: entry.value,
-        eventsJson: confirmation.eventsJson,
+        reconcile: () => rust.reconcileChainVote(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: bundleIndex,
+          proposalId: entry.key,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
+        ),
       );
-      vcTreePositions[entry.key] = result.vcTreePosition;
+      if (result == null) {
+        throw StateError(
+          'Transaction ${entry.value} was not confirmed in time.',
+        );
+      }
+      vcTreePositions[entry.key] = result.vcTreePosition!;
     }
     return vcTreePositions;
   }
@@ -2292,7 +2221,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments,
   ) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
     final vcTreePositions = <int, BigInt>{};
     for (final commitment in commitments.commitments) {
@@ -2301,89 +2229,62 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=${context.round.roundId} bundle=${commitments.bundleIndex} '
         'proposal=${commitment.proposalId}',
       );
-      final result = await api.submitVoteCommitment(
-        commitment: await _voteCommitmentRequestBody(
-          context,
-          rust,
-          commitment.wire,
-        ),
+      _throwIfContextStale(context, 'vote-chain-submit-dispatch');
+      final result = await rust.submitChainVote(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: commitments.bundleIndex,
+        proposalId: commitment.proposalId,
+        apiServerUrls: context.config.apiServers.endpointUrls,
+        operationEpoch: rust.beginVotingChainOperation(),
       );
       debugPrint(
         '[zcash] Voting: cast-vote response '
         'proposal=${commitment.proposalId} txHash=${result.txHash} '
-        'code=${result.code} log=${result.log}',
+        'status=${result.status} message=${result.message}',
       );
-      await _requireAcceptedVotingTransaction(
-        result,
-        waitForConfirmation: (txHash) => _awaitTxConfirmation(
-          api,
-          txHash,
-          context: context,
-          spentNullifierRecovery: true,
+      final resolved = await _recoverSpentChainSubmission(
+        context: context,
+        outcome: result,
+        reconcile: () => rust.reconcileChainVote(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: commitments.bundleIndex,
+          proposalId: commitment.proposalId,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
         ),
+      );
+      final txHash = _requireChainAccepted(
+        resolved,
         rejectionMessage: 'Vote commitment transaction was rejected.',
       );
-      if (result.txHash.isEmpty) {
-        throw StateError('Vote commitment response did not include tx_hash.');
-      }
-      await rust.markVoteSubmitted(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        txHash: result.txHash,
-      );
-
-      final confirmation = await _awaitTxConfirmation(
-        api,
-        result.txHash,
+      final confirmation = await _awaitChainConfirmation(
         context: context,
+        txHash: txHash,
+        reconcile: () => rust.reconcileChainVote(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: commitments.bundleIndex,
+          proposalId: commitment.proposalId,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
+        ),
       );
       if (confirmation == null) {
-        throw StateError(
-          'Transaction ${result.txHash} was not confirmed in time.',
-        );
+        throw StateError('Transaction $txHash was not confirmed in time.');
       }
-      if (confirmation.code != 0) {
-        throw StateError(
-          confirmation.log.isEmpty
-              ? 'Vote commitment transaction failed.'
-              : confirmation.log,
-        );
-      }
-
-      final voteConfirmation = await rust.confirmVoteSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        txHash: result.txHash,
-        eventsJson: confirmation.eventsJson,
-      );
       debugPrint(
         '[zcash] Voting: cast-vote confirmed '
-        'proposal=${commitment.proposalId} vanPosition=${voteConfirmation.vanLeafPosition} '
-        'vcTreePosition=${voteConfirmation.vcTreePosition}',
+        'proposal=${commitment.proposalId} vanPosition=${confirmation.vanLeafPosition} '
+        'vcTreePosition=${confirmation.vcTreePosition}',
       );
-      vcTreePositions[commitment.proposalId] = voteConfirmation.vcTreePosition;
+      vcTreePositions[commitment.proposalId] = confirmation.vcTreePosition!;
     }
     return vcTreePositions;
-  }
-
-  Future<Map<String, dynamic>> _voteCommitmentRequestBody(
-    _VotingSessionContext context,
-    VotingRustApi rust,
-    rust_wire.VoteCommitmentWire commitment,
-  ) async {
-    final body = await _wireJsonMap(
-      rust.voteCommitmentWireJson(commitment: commitment),
-    );
-    // Serialization crosses the FFI boundary and may yield after the caller's
-    // earlier check. This is the final safe point before the irreversible POST.
-    _throwIfContextStale(context, 'vote-chain-submit-dispatch');
-    return body;
   }
 
   Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadKeystoneSignatures(
@@ -2405,7 +2306,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_wire.RoundPlanView? roundPlan,
     required Map<int, VotingSessionProgress> progress,
   }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
     final completedBundleIndexes = <int>{};
     final submittedDelegationsByBundle = <int, String>{};
@@ -2428,10 +2328,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final entry in submittedDelegationsByBundle.entries) {
       final bundleIndex = entry.key;
       final txHash = entry.value;
-      final confirmation = await _awaitTxConfirmation(
-        api,
-        txHash,
+      final confirmation = await _awaitChainConfirmation(
         context: context,
+        txHash: txHash,
+        reconcile: () => rust.reconcileChainDelegation(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          bundleIndex: bundleIndex,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
+        ),
       );
       if (confirmation == null) {
         _setError(
@@ -2442,21 +2349,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return null;
       }
-      if (confirmation.code != 0) {
-        throw StateError(
-          confirmation.log.isEmpty
-              ? 'Delegation transaction failed.'
-              : confirmation.log,
-        );
-      }
-      await rust.confirmDelegationSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: bundleIndex,
-        txHash: txHash,
-        eventsJson: confirmation.eventsJson,
-      );
       completedBundleIndexes.add(bundleIndex);
       progress[bundleIndex] = VotingSessionProgress(
         phase: 'confirmed',
@@ -2694,57 +2586,46 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int bundleIndex,
     required rust_wire.SignedDelegationPayloadView submission,
   }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
     final submitTimer = Stopwatch()..start();
     debugPrint(
       '[zcash] Voting: submitting delegation '
       'round=${context.round.roundId} bundle=$bundleIndex',
     );
-    final result = await api.submitDelegation(
-      submission: await _delegationRequestBody(context, rust, submission),
-    );
-    debugPrint(
-      '[zcash] Voting: delegation submit response '
-      'round=${context.round.roundId} bundle=$bundleIndex '
-      'txHash=${result.txHash} code=${result.code} '
-      'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
-    );
-    await _requireAcceptedVotingTransaction(
-      result,
-      waitForConfirmation: (txHash) => _awaitTxConfirmation(
-        api,
-        txHash,
-        context: context,
-        spentNullifierRecovery: true,
-      ),
-      rejectionMessage: 'Delegation transaction was rejected.',
-    );
-    await rust.markDelegationSubmitted(
+    _throwIfContextStale(context, 'delegation-submit-dispatch');
+    final result = await rust.submitChainDelegation(
       dbPath: context.dbPath,
       accountUuid: context.accountUuid,
       roundId: context.round.roundId,
       bundleIndex: bundleIndex,
-      txHash: result.txHash,
+      submission: submission,
+      apiServerUrls: context.config.apiServers.endpointUrls,
+      operationEpoch: rust.beginVotingChainOperation(),
+    );
+    _throwIfContextStale(context, 'delegation-submit-response');
+    final resolved = await _recoverSpentChainSubmission(
+      context: context,
+      outcome: result,
+      reconcile: () => rust.reconcileChainDelegation(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: bundleIndex,
+        apiServerUrls: context.config.apiServers.endpointUrls,
+        operationEpoch: rust.beginVotingChainOperation(),
+      ),
+    );
+    final txHash = _requireChainAccepted(
+      resolved,
+      rejectionMessage: 'Delegation transaction was rejected.',
     );
     debugPrint(
-      '[zcash] Voting: delegation tx hash stored '
+      '[zcash] Voting: delegation submit response '
       'round=${context.round.roundId} bundle=$bundleIndex '
-      'txHash=${result.txHash}',
+      'txHash=$txHash status=${result.status} '
+      'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
-    return result.txHash;
-  }
-
-  Future<Map<String, dynamic>> _delegationRequestBody(
-    _VotingSessionContext context,
-    VotingRustApi rust,
-    rust_wire.SignedDelegationPayloadView submission,
-  ) async {
-    final body = await _wireJsonMap(
-      rust.delegationSubmissionWireJson(submission: submission),
-    );
-    _throwIfContextStale(context, 'delegation-submit-dispatch');
-    return body;
+    return txHash;
   }
 
   Future<({String txHash, int leafIndex})> _confirmDelegation({
@@ -2752,81 +2633,102 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int bundleIndex,
     required String txHash,
   }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
     final rust = ref.read(votingRustApiProvider);
-    final confirmation = await _awaitTxConfirmation(
-      api,
-      txHash,
+    final confirmation = await _awaitChainConfirmation(
       context: context,
+      txHash: txHash,
+      reconcile: () => rust.reconcileChainDelegation(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: bundleIndex,
+        apiServerUrls: context.config.apiServers.endpointUrls,
+        operationEpoch: rust.beginVotingChainOperation(),
+      ),
     );
     if (confirmation == null) {
       throw StateError('Transaction $txHash was not confirmed in time.');
     }
-    if (confirmation.code != 0) {
-      throw StateError(
-        confirmation.log.isEmpty
-            ? 'Delegation transaction failed.'
-            : confirmation.log,
-      );
-    }
-    final delegationConfirmation = await rust.confirmDelegationSubmission(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-      bundleIndex: bundleIndex,
-      txHash: txHash,
-      eventsJson: confirmation.eventsJson,
+    return (
+      txHash: confirmation.txHash ?? txHash,
+      leafIndex: confirmation.vanLeafPosition!,
     );
-    return (txHash: txHash, leafIndex: delegationConfirmation.vanLeafPosition);
   }
 
-  Future<VotingTxConfirmation?> _awaitTxConfirmation(
-    VotingApiClient api,
-    String txHash, {
+  Future<rust_api.ApiChainSubmissionOutcome?> _awaitChainConfirmation({
     required _VotingSessionContext context,
-    bool spentNullifierRecovery = false,
+    required String txHash,
+    required Future<rust_api.ApiChainSubmissionOutcome> Function() reconcile,
+    int? maxAttempts,
+    Duration? maxDelay,
   }) async {
     final settings = ref.read(votingTxConfirmationPollingProvider);
-    final attempts =
-        spentNullifierRecovery &&
-            settings.attempts > _spentNullifierRecoveryMaxAttempts
-        ? _spentNullifierRecoveryMaxAttempts
-        : settings.attempts;
-    final delay =
-        spentNullifierRecovery &&
-            settings.delay > _spentNullifierRecoveryMaxDelay
-        ? _spentNullifierRecoveryMaxDelay
-        : settings.delay;
+    final attempts = maxAttempts == null
+        ? settings.attempts
+        : settings.attempts.clamp(1, maxAttempts);
+    final delay = maxDelay == null || settings.delay <= maxDelay
+        ? settings.delay
+        : maxDelay;
     final timer = Stopwatch()..start();
-    _logVoteTiming('tx confirmation wait start txHash=$txHash');
+    _logVoteTiming('SDK chain confirmation wait start txHash=$txHash');
     for (var attempt = 0; attempt < attempts; attempt++) {
-      _throwIfContextStale(context, 'tx-confirmation');
-      final confirmation = await api.getTxConfirmation(txHash);
-      _throwIfContextStale(context, 'tx-confirmation-response');
-      if (confirmation != null) {
-        _logVoteTiming(
-          'tx confirmation found txHash=$txHash '
-          'attempt=${attempt + 1} code=${confirmation.code} '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
-        );
-        return confirmation;
+      _throwIfContextStale(context, 'sdk-chain-confirmation');
+      final outcome = await reconcile();
+      _throwIfContextStale(context, 'sdk-chain-confirmation-response');
+      switch (outcome.status) {
+        case 'confirmed':
+          _logVoteTiming(
+            'SDK chain confirmation found txHash=${outcome.txHash ?? txHash} '
+            'attempt=${attempt + 1} elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          );
+          return outcome;
+        case 'pending':
+        case 'accepted':
+        case 'outcome_unknown':
+          break;
+        case 'already_spent_unresolved':
+          throw const _VotingAlreadyStarted();
+        case 'rejected':
+          throw StateError(
+            outcome.message?.isNotEmpty == true
+                ? outcome.message!
+                : 'Voting transaction failed.',
+          );
+        case 'cancelled':
+          throw StateError('Voting transaction confirmation was cancelled.');
+        default:
+          throw StateError('Unknown chain lifecycle status: ${outcome.status}');
       }
       if (attempt + 1 < attempts) {
-        if (attempt == 0 || (attempt + 1) % 5 == 0) {
-          debugPrint(
-            '[zcash] Voting: waiting for tx confirmation '
-            'txHash=$txHash attempt=${attempt + 1}/$attempts',
-          );
-        }
         await Future<void>.delayed(delay);
-        _throwIfContextStale(context, 'tx-confirmation-delay');
       }
     }
     _logVoteTiming(
-      'tx confirmation wait timed out txHash=$txHash '
+      'SDK chain confirmation wait timed out txHash=$txHash '
       'elapsed=${formatElapsedSeconds(timer.elapsed)}',
     );
     return null;
+  }
+
+  Future<rust_api.ApiChainSubmissionOutcome> _recoverSpentChainSubmission({
+    required _VotingSessionContext context,
+    required rust_api.ApiChainSubmissionOutcome outcome,
+    required Future<rust_api.ApiChainSubmissionOutcome> Function() reconcile,
+  }) async {
+    if (outcome.status != 'already_spent_unresolved') return outcome;
+    final hashes = outcome.knownTxHashes;
+    if (hashes.isEmpty) {
+      throw StateError(outcome.message ?? _votingAlreadyStartedMessage);
+    }
+    final recovered = await _awaitChainConfirmation(
+      context: context,
+      txHash: hashes.first,
+      reconcile: reconcile,
+      maxAttempts: _spentNullifierRecoveryMaxAttempts,
+      maxDelay: _spentNullifierRecoveryMaxDelay,
+    );
+    if (recovered == null) throw const _VotingAlreadyStarted();
+    return recovered;
   }
 
   Future<void> runShareTrackingPass() {
@@ -4128,6 +4030,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   void _advanceSessionGeneration() {
+    _chainRustApi.cancelVotingChainOperations();
     _sessionGeneration++;
     if (!_sessionInvalidated.isCompleted) {
       _sessionInvalidated.complete();
@@ -4367,14 +4270,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return false;
     }
     return !plan.voteTxHashesByKey.containsKey(key);
-  }
-
-  static Future<Map<String, dynamic>> _wireJsonMap(
-    Future<String> wireJson,
-  ) async {
-    final decoded = jsonDecode(await wireJson);
-    if (decoded is Map<String, dynamic>) return decoded;
-    throw const FormatException('Rust voting wire JSON is not an object.');
   }
 
   static void _verifyKeystoneDelegationSignature({
@@ -4707,20 +4602,24 @@ class _VotingAlreadyStarted implements Exception {
 /// A spent-nullifier rejection means voting has started, but it does not prove
 /// which wallet submitted the accepted transaction. If the rejected response's
 /// hash resolves to a successful transaction, normal recovery continues.
-Future<void> _requireAcceptedVotingTransaction(
-  VotingTxResult result, {
-  required Future<VotingTxConfirmation?> Function(String txHash)
-  waitForConfirmation,
+String _requireChainAccepted(
+  rust_api.ApiChainSubmissionOutcome result, {
   required String rejectionMessage,
-}) async {
-  if (result.code == 0) return;
-  if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
-      result.txHash.isNotEmpty) {
-    final confirmation = await waitForConfirmation(result.txHash);
-    if (confirmation?.code == 0) return;
-    throw const _VotingAlreadyStarted();
+}) {
+  if (result.status == 'accepted' || result.status == 'confirmed') {
+    final txHash = result.txHash;
+    if (txHash == null || txHash.isEmpty) {
+      throw StateError('Accepted voting transaction did not include tx_hash.');
+    }
+    return txHash;
   }
-  throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
+  if (result.status == 'already_spent_unresolved') {
+    throw StateError(result.message ?? _votingAlreadyStartedMessage);
+  }
+  final detail = result.message;
+  throw StateError(
+    detail == null || detail.isEmpty ? rejectionMessage : detail,
+  );
 }
 
 class _VoteWaveBatchException implements Exception {
@@ -4751,7 +4650,7 @@ class _PolledVoteRecovery {
 
   final VotingVoteKey key;
   final String txHash;
-  final VotingTxConfirmation confirmation;
+  final rust_api.ApiChainSubmissionOutcome confirmation;
 }
 
 class _VoteConfirmationTimeout implements Exception {

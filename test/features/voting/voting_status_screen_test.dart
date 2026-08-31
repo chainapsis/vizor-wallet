@@ -4953,6 +4953,12 @@ class _BlockingVotingRoundsNotifier extends VotingRoundsNotifier {
 
 class _NoopVotingRustApi implements VotingRustApi {
   @override
+  BigInt beginVotingChainOperation() => BigInt.one;
+
+  @override
+  void cancelVotingChainOperations() {}
+
+  @override
   String? selectPirSnapshotEndpoint({
     required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
     required BigInt expectedSnapshotHeight,
@@ -5282,7 +5288,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   BigInt privacyTrimDroppedValueZatoshi = BigInt.zero;
   int keystoneDelegationRequestCalls = 0;
   int voteCommitmentCalls = 0;
+  int chainDelegationSubmitCalls = 0;
+  int chainVoteSubmitCalls = 0;
   final _preparedHelperUrls = <String, List<String>>{};
+  final _delegationHashes = <int, String>{};
+  final _voteHashes = <(int, int), String>{};
 
   @override
   Future<rust_api.ApiBundleLayout> setupDelegationBundles({
@@ -5536,6 +5546,96 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     });
   }
 
+  Uri _chainUri(List<String> apiServerUrls, String path) {
+    return Uri.parse(apiServerUrls.first).resolve('/shielded-vote/v1/$path');
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required rust_wire.SignedDelegationPayloadView submission,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    chainDelegationSubmitCalls++;
+    final response = await helperTransport!.postJson(
+      _chainUri(apiServerUrls, 'delegate-vote'),
+      const {},
+    );
+    final json = response.decodeJsonObject();
+    final code = (json['code'] as num?)?.toInt() ?? 0;
+    final txHash = json['tx_hash'] as String?;
+    if (txHash != null) _delegationHashes[bundleIndex] = txHash;
+    return rust_api.ApiChainSubmissionOutcome(
+      status: code == 0 ? 'accepted' : 'rejected',
+      txHash: txHash,
+      knownTxHashes: txHash == null ? const [] : [txHash],
+      code: code == 0 ? null : code,
+      message: json['log'] as String?,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainDelegation({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final recovered = recoveryApi.state.delegation
+        .where((item) => item.bundleIndex == bundleIndex)
+        .firstOrNull;
+    final txHash = _delegationHashes[bundleIndex] ?? recovered?.txHash;
+    if (txHash == null) {
+      return const rust_api.ApiChainSubmissionOutcome(
+        status: 'pending',
+        knownTxHashes: [],
+      );
+    }
+    final response = await helperTransport!.get(
+      _chainUri(apiServerUrls, 'tx/$txHash'),
+    );
+    if (response.statusCode == 404) {
+      return rust_api.ApiChainSubmissionOutcome(
+        status: 'pending',
+        knownTxHashes: [txHash],
+      );
+    }
+    final json = response.decodeJsonObject();
+    final code = (json['code'] as num?)?.toInt() ?? 0;
+    if (code != 0) {
+      return rust_api.ApiChainSubmissionOutcome(
+        status: 'rejected',
+        txHash: txHash,
+        knownTxHashes: [txHash],
+        code: code,
+        message: json['log'] as String?,
+      );
+    }
+    final vanLeafPosition = eventIntFromTxEventsJson(
+      jsonEncode(json['events']),
+      'delegate_vote',
+      roundId,
+      'leaf_index',
+    );
+    _recordDelegationConfirmed(
+      bundleIndex: bundleIndex,
+      txHash: txHash,
+      vanLeafPosition: vanLeafPosition,
+    );
+    return rust_api.ApiChainSubmissionOutcome(
+      status: 'confirmed',
+      txHash: txHash,
+      knownTxHashes: [txHash],
+      vanLeafPosition: vanLeafPosition,
+    );
+  }
+
   @override
   Future<void> markDelegationSubmitted({
     required String dbPath,
@@ -5657,6 +5757,97 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'r_vpk': commitment.rVpk,
       'vote_auth_sig': commitment.voteAuthSig,
     });
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> submitChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    chainVoteSubmitCalls++;
+    final response = await helperTransport!.postJson(
+      _chainUri(apiServerUrls, 'cast-vote'),
+      const {},
+    );
+    final json = response.decodeJsonObject();
+    final code = (json['code'] as num?)?.toInt() ?? 0;
+    final txHash = json['tx_hash'] as String?;
+    if (txHash != null) _voteHashes[(bundleIndex, proposalId)] = txHash;
+    return rust_api.ApiChainSubmissionOutcome(
+      status: code == 0 ? 'accepted' : 'rejected',
+      txHash: txHash,
+      knownTxHashes: txHash == null ? const [] : [txHash],
+      code: code == 0 ? null : code,
+      message: json['log'] as String?,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionOutcome> reconcileChainVote({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    final recovered = recoveryApi.state.votes
+        .where(
+          (item) =>
+              item.bundleIndex == bundleIndex && item.proposalId == proposalId,
+        )
+        .firstOrNull;
+    final txHash = _voteHashes[(bundleIndex, proposalId)] ?? recovered?.txHash;
+    if (txHash == null) {
+      return const rust_api.ApiChainSubmissionOutcome(
+        status: 'pending',
+        knownTxHashes: [],
+      );
+    }
+    final response = await helperTransport!.get(
+      _chainUri(apiServerUrls, 'tx/$txHash'),
+    );
+    if (response.statusCode == 404) {
+      return rust_api.ApiChainSubmissionOutcome(
+        status: 'pending',
+        knownTxHashes: [txHash],
+      );
+    }
+    final json = response.decodeJsonObject();
+    final code = (json['code'] as num?)?.toInt() ?? 0;
+    if (code != 0) {
+      return rust_api.ApiChainSubmissionOutcome(
+        status: 'rejected',
+        txHash: txHash,
+        knownTxHashes: [txHash],
+        code: code,
+        message: json['log'] as String?,
+      );
+    }
+    final positions = castVoteLeafPositionsFromTxEventsJson(
+      jsonEncode(json['events']),
+      roundId,
+    );
+    _recordVoteConfirmed(
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: txHash,
+      vanPosition: positions.vanPosition,
+      vcTreePosition: positions.vcTreePosition,
+    );
+    return rust_api.ApiChainSubmissionOutcome(
+      status: 'confirmed',
+      txHash: txHash,
+      knownTxHashes: [txHash],
+      vanLeafPosition: positions.vanPosition,
+      vcTreePosition: positions.vcTreePosition,
+    );
   }
 
   @override
