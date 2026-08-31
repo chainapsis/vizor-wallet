@@ -4,283 +4,95 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v3.1.0-rc.14
 
 ### Added
-- `VotingDb::store_keystone_signatures_batch` now owns atomic, idempotent
-  Keystone signature persistence and reports signing-context conflicts through
-  a typed `VotingError` variant. `VotingDb::clear_wallet_state` atomically
-  removes both round-scoped rows and the wallet's round-independent PIR cache.
-- `RoundPlan` and `RoundPlanView` now expose `immediate_share_confirmed`, so
-  wallet orchestration does not need to reconstruct the immediate-share
-  confirmation decision from raw storage rows.
-- `HyperTransport::with_connector` and `with_http_connector` now let wallets
-  inject fully configured or Rustls-wrapped Hyper connectors for proxies,
-  custom DNS, and route-lifecycle enforcement while retaining the SDK's pooled
-  request, timeout, response-limit, metadata, and helper-error behavior.
-- Added a typed `HelperClient` for readiness checks, share submission, and
-  status polling. It validates canonical round IDs, protocol fields,
-  ciphertext points, complete 16-share reveal inputs, and JSON responses;
-  reports locally invalid routes and payloads as unscored `InvalidRequest`s;
-  keeps slow readiness probes alive through the shared hard window; caps every
-  retry to its remaining delivery budget; and updates process-local helper
-  health without retrying outcome-unknown share submissions.
-- Helper health now uses canonical helper URL identities across equivalent
-  configuration spellings.
-- Cast-vote batches now build an ordered vote-authority chain, prove up to three
-  ZKP #2 actions concurrently by default, sign every action over one
-  domain-separated batch digest, and persist the whole recovery set atomically.
-  The explicit `commit_atomic_vote_batch`, `prepare_atomic_vote_batch`, and
-  `recover_atomic_vote_batch` APIs return `SignedVoteBatch`, whose canonical
-  `batch_json` belongs on the chain's `cast-vote-batch` endpoint. The existing
-  `commit_batch`, `prepare_commit_batch`, `persist_prepared_commit_batch`, and
-  `SignedVoteCommitments` APIs remain one-draft singleton compatibility
-  wrappers for current wallet integrations; multi-proposal callers must use the
-  atomic APIs so one witness cannot produce competing singleton spends.
-  `confirmation::confirm_vote_batch_submission` atomically records the shared
-  transaction hash, ordered vote-commitment positions, and final VAN position.
-  Restart planning groups committed or submitted batch members into one
-  `SubmitVoteBatch` or `PollVoteBatch` step, whose recovery anchor reconstructs
-  the complete canonical request and shared digest without duplicate submits.
-  Fresh vote preparation waits for an existing authority chain to confirm for
-  the same bundle, preventing competing spends of its current VAN.
-  Changing or skipping an unsubmitted choice clears its obsolete recovery
-  chain before new work is planned.
-  Submitted batches defer helper-share retry work for every member until the
-  atomic confirmation records all commitment-tree positions.
-  Batches keep choices, note membership, and voting keys hidden as before, but
-  intentionally reveal that their included proposal actions came from one
-  transaction.
-- Added a helper-server client and host-owned `HelperTransport` abstraction for
-  readiness checks, share submission, and status polling. The client applies
-  endpoint-specific timeout and retry rules, bounds response bodies, and uses
-  process-local helper health scoring to deprioritize repeatedly failing
-  servers without blocking recovery. `HyperTransport` provides the default
-  direct HTTP implementation, while wallets can supply Tor or proxy-backed
-  transports without fallback to a different route.
-- Added `track_pending_shares` and related share-tracking APIs to confirm
-  persisted shares, resubmit overdue or under-placed shares to randomized
-  helpers, durably record progress, support cancellation between requests, and
-  report confirmations, resubmissions, unrecoverable shares, and the next
-  polling delay.
-- Added `confirm_pending_share` for foreground flows that must check exactly
-  one durable helper share. It shares the full tracker's configured-helper
-  quorum, health ordering, four-request concurrency limit, ten-second budget,
-  cancellation, and generation-bound confirmation write without walking or
-  resubmitting unrelated shares.
-- Added the SDK-owned complete-batch helper delivery lifecycle:
-  `HelperClient::preflight_fleet` canonicalizes and probes the configured
-  fleet, `CommittedVote::prepare_share_delivery` generates entropy and
-  atomically persists the complete commitment-wide plan, and
-  `CommittedVote::submit_prepared_shares` validates and submits that exact
-  plan. `ShareDeliveryPlan`, `ShareDeliveryPlanningParams`,
-  `ShareDeliverySubmissionParams`, and `ShareBatchDeliveryReport` expose the
-  stable client boundary without exposing individual encrypted helper
-  payloads. Prepared plans are generation-bound, reused after restart, submit
-  only definite-delivery deficits, return deterministic partial reports on
-  cancellation, and share a process-wide ceiling of 16 concurrent helper
-  POSTs across wallets and votes.
+- `VotingDb::store_keystone_signatures_batch` now provides atomic, idempotent
+  Keystone signature persistence, and `VotingDb::clear_wallet_state` also
+  removes the wallet's round-independent PIR cache.
+- `RoundPlan` and `RoundPlanView` now expose `immediate_share_confirmed`.
+- Added atomic multi-proposal vote batches through
+  `commit_atomic_vote_batch`, `prepare_atomic_vote_batch`, and
+  `recover_atomic_vote_batch`. `SignedVoteBatch` provides the canonical
+  `cast-vote-batch` request, while restart planning and confirmation preserve
+  the batch as one recoverable authority chain. Existing batch APIs remain
+  singleton compatibility wrappers.
+- Added a typed `HelperClient` and host-owned `HelperTransport` for readiness,
+  share submission, and status polling. The client validates protocol data,
+  bounds requests and responses, applies endpoint-specific retry rules, and
+  tracks helper health. `HyperTransport` remains the default direct transport;
+  wallets can inject custom, proxy, or Rustls-wrapped Hyper connectors.
+- Added `track_pending_shares` for durable confirmation and recovery of pending
+  helper shares, plus `confirm_pending_share` for checking one share with the
+  same quorum, timeout, cancellation, and health-ordering rules.
+- Added the SDK-owned helper delivery lifecycle:
+  `HelperClient::preflight_fleet`,
+  `CommittedVote::prepare_share_delivery`, and
+  `CommittedVote::submit_prepared_shares`. It persists and resumes one
+  generation-bound plan for the complete commitment before submitting shares,
+  without exposing encrypted helper payloads to the host.
 
 ### Changed
-- Share confirmation polls now run at most four helper requests concurrently
-  and spend at most ten seconds on one share before advancing, preventing a
-  stalled helper set from starving later shares in the same tracking pass.
-- Helper-share planning, persistence, and prepared-batch submission are now
+- Helper-share planning, persistence, submission, and recovery are now
   authoritative SDK responsibilities. Hosts provide authenticated helper
-  configuration, round timing, transport, and cancellation, but no longer
-  generate planner entropy, persist or reconstruct plans, serialize helper
-  payloads, or independently enforce fleet-wide placement and quota rules.
-  `LegacyBestEffort` is retained only as metadata for delivery rows created
-  before complete-plan persistence; new plans use the strict placement
-  guarantee and retain it across restart.
-- **Breaking:** `HelperClient::preflight_fleet`, prepared-batch submission, and
-  `track_pending_shares` now reject helper URLs that fail canonicalization with
-  `VotingError::InvalidInput` before any network I/O, instead of silently
-  dropping them — an all-misconfigured fleet previously produced a permanent,
-  error-free no-op.
-  `helper::url::canonicalize_helper_base_url` and `canonical_helper_url_list`
-  are now public and define the URL contract that typed committed-share
-  submission and tracking enforce;
-  previous releases accepted some now-rejected spellings, so validate helper
-  configuration before delivering over the network.
-- **Breaking:** initial helper delivery is now the two-step
-  `CommittedVote::prepare_share_delivery` and
-  `CommittedVote::submit_prepared_shares` lifecycle. The old public
-  per-share `CommittedVote::submit_share_to_helpers(ShareSubmissionRequest)`
-  entry point is removed. Callers preflight the whole fleet, prepare or load
-  one complete persisted plan, and submit it as a batch; the SDK derives the
-  durable identity, confirmed VC-tree position, payloads, targets, schedules,
-  journaling, and missing-share set.
+  configuration, round timing, transport, and cancellation.
+- **Breaking:** invalid helper URLs now fail with
+  `VotingError::InvalidInput` before network I/O instead of being silently
+  dropped. `helper::url::canonicalize_helper_base_url` and
+  `canonical_helper_url_list` are public so hosts can validate configuration.
+- **Breaking:** initial helper delivery now uses
+  `CommittedVote::prepare_share_delivery` followed by
+  `CommittedVote::submit_prepared_shares`; the per-share
+  `submit_share_to_helpers(ShareSubmissionRequest)` API was removed.
 - **Breaking:** `ShareDeliveryPlanningParams` now accepts the authenticated
-  round's complete `proposal_ids` roster instead of a caller-selected immediate
-  share index. Planning requires an exact set of durable terminal ballot
-  intents and derives the sole round-immediate share internally. Submission
-  rechecks that designation against current durable intent before any POST.
-- Complete-plan aggregate quota validation now applies equally to `Strict` and
-  `LegacyBestEffort` plans. The legacy marker reports uncertainty about
-  pre-plan deliveries and does not weaken validation of the persisted plan.
-- Persisted plans now reject a designated immediate share with a nonzero
-  `submit_at` before any helper request is dispatched.
-- **Breaking:** `SignedVoteCommitmentView` and `VoteCommit` no longer expose
-  encrypted helper payloads, `vote::recover_commit` is crate-private, and the
-  prelude no longer exports `os_random_bytes`, `recover_vote_commit`, or the
-  raw per-share `ShareSubmissionRequest`. These were host-facing escape
-  hatches around the new persisted-plan lifecycle. Vote-chain submission still
-  receives the public `VoteCommitmentWire`; helper payload construction and
-  delivery remain internal to the recovered `CommittedVote`.
-- **Breaking:** helper confirmation now polls the complete current configured
-  fleet and requires matching responses from two distinct helpers whenever at
-  least two are configured. A one-helper fleet uses its only available
-  confirmation. `track_pending_shares` encapsulates that quorum and persists
-  confirmation before returning it in `confirmed`; hosts no longer implement
-  confirmation polling or persistence separately. The direct
-  `share::confirm`, prelude `confirm_share`,
-  `CommittedVote::confirm_share`, `VotingDb::mark_share_confirmed`, and raw
-  query mutation are no longer public, so supported callers cannot bypass the
-  quorum.
-- `HelperClientConfig` now uses validated builders for nonzero deadlines and at
-  most two nonzero retry delays.
-- **Breaking:** removed `HELPER_PREFLIGHT_TIMEOUT_SECONDS`; the client's
-  preflight timeout is now derived from
+  round's complete `proposal_ids` roster and derives the immediate share from
+  durable ballot intent.
+- **Breaking:** encrypted helper payloads and their low-level construction and
+  recovery APIs are no longer public. Vote-chain submission continues to use
+  the public `VoteCommitmentWire`.
+- **Breaking:** helper confirmation polls the complete configured fleet and
+  requires agreement from two distinct helpers when at least two are
+  configured. Direct confirmation and confirmation-persistence APIs were
+  removed in favor of `track_pending_shares` and `confirm_pending_share`.
+- **Breaking:** removed `HELPER_PREFLIGHT_TIMEOUT_SECONDS`; preflight timing is
+  now derived from
   `share_policy::SHARE_HELPER_PREFLIGHT_SOFT_TIMEOUT_MILLISECONDS`.
-- Helper share delivery records now distinguish definite acceptances from
-  outcome-unknown attempts and persist the intended placement target. Schema
-  version 16 preserves existing records while adding this state, allowing the
-  tracker to replenish under-placed shares without discarding their delayed
-  reveal schedule, keep ambiguous helpers poll-only, and avoid retrying
-  non-idempotent submissions whose outcome is unknown. Successful submission
-  responses with a missing or unusable status are also retained as ambiguous,
-  because the helper may already have queued the share.
-- Schema version 17 adds `helper_share_plans`, keyed to the exact durable vote
-  generation with a foreign key to its vote row. The table stores the complete
-  configured fleet, all share assignments and schedules, the format version,
-  and the strict or legacy placement guarantee. New strict plans are committed
-  before the first helper POST; legacy metadata is used only when pre-v17
-  delivery rows already exist.
+- `HelperClientConfig` now validates nonzero deadlines and permits at most two
+  nonzero retry delays. Confirmation polling is limited to four concurrent
+  requests and ten seconds per share.
+- Schema versions 16 and 17 persist definite, ambiguous, and interrupted
+  delivery outcomes together with complete generation-bound helper plans.
+  Legacy rows remain readable but do not weaken placement or quota validation.
 
 ### Fixed
-- Wallet helper-share examples now expose vote-chain submission separately
-  from helper delivery and use the SDK's preflight, complete-plan preparation,
-  and prepared-batch submission APIs. The SDK validates every payload and the
-  complete current fleet before any POST, rejects removed planned targets,
-  target-count drift, and aggregate quota violations, and resumes the
-  persisted plan without remapping missing shares.
-- Normal singleton and atomic-batch vote confirmation no longer invalidates a
-  prepared helper delivery plan. On the first `vc_tree_position` transition
-  from null to non-null, the v17 trigger atomically advances a plan bound to
-  the exact old `commitment_bundle_json` snapshot to the exact confirmed
-  snapshot. Vote replacement, recovery clearing, and unrelated recovery-data
-  mutations continue to delete the plan. Runtime loading requires the plan's
-  exact current generation; callers recover a fresh `CommittedVote` after the
-  confirmation transition before submitting the synchronized plan.
-- Prepared-batch submission now binds persisted plans to the complete helper
-  fleet identity, rejecting even an untargeted helper replacement before
-  network I/O while accepting harmless reordering of the same canonical fleet.
-- Prepared-batch submission now validates the whole plan and every helper
-  payload before the first network request, durably reserves each attempt
-  before POST, preserves deterministic report ordering, reports queued shares
-  as pending when cancelled, resumes definite-delivery deficits after restart,
-  and enforces the process-wide 16-POST concurrency ceiling.
-- The wallet planning example now derives single-share mode from the committed
-  payload count, and rejects exact or canonically equivalent duplicate
-  configured helpers instead of silently shrinking the fleet before placement
-  targets are computed.
-- Initial delivery and tracking are serialized per durable share identity and
-  validate the exact generation after acquiring the lock. Waiting callers
-  continue to observe cancellation. Initial attempt reservations atomically
-  account for accepted plus live placements, so overlapping fan-outs can no
-  longer advance through disjoint fallback helpers and exceed the target.
-- Tracking now reconciles configured interrupted attempts even after definite
-  placement is satisfied, without contacting additional untried helpers or
-  requiring vote-end timing.
-- Recovery now reports a parseable but persistently nullifier-inconsistent
-  commitment bundle as unrecoverable while continuing to treat a concurrently
-  replaced share row as stale.
-- Status-budget expiry now drains tasks that completed at the boundary before
-  degrading genuinely aborted requests, preventing one poll result from being
-  scored twice.
-- Initial helper planning now binds the `CommittedVote` handle to its exact
-  recovery snapshot, prepared-plan loading revalidates that handle snapshot,
-  and prepared-batch submission carries the plan's exact generation through
-  every concurrent share task. Apart from the verified confirmation-only VC
-  position transition, a same-commitment recovery replacement before planning,
-  before plan loading, or after plan loading therefore fails before any helper
-  POST instead of pairing an old payload with replacement recovery material.
-- Prepared-batch submission now captures one wallet scope before loading its
-  plan and carries that scope through every concurrent share task, so a wallet
-  switch cannot redirect queued delivery effects into another wallet.
-- Initial helper submission now journals each target before dispatch and
-  resolves it atomically to accepted, ambiguous, or definitely failed. A
-  process interruption or failed outcome write leaves a distinct crash marker,
-  reports that helper as outcome-unknown to callers, and reconciles it once per
-  pass through the duplicate-safe endpoint after untried helpers. A completed
-  non-acceptance consumes the crash marker into explicit ambiguity, preventing
-  repeated early replay.
-- Helper-share recovery now preserves delayed schedules during early
-  replenishment, persists ambiguous attempts before contacting another helper,
-  fills the complete placement deficit in one pass, and rechecks the vote-end
-  cutoff and durable confirmation state before every recovery POST. A helper
-  that definitely fails is tried at most once per pass, even while a
-  multi-helper deficit is being filled, and early replenishment never re-POSTs
-  to a helper that already accepted.
-- Overdue recovery now reaches its documented previously accepted fallback
-  after untried and outcome-unknown helpers fail, using the existing durable
-  acceptance as its journal entry before the duplicate-safe immediate re-POST.
-- Repeated initial submission preserves the first durable `submit_at`, so a
-  newly recomputed planner result cannot replace the schedule already sent to
-  a helper. Newly contacted helpers receive that same durable schedule, an
-  existing zero schedule cannot be resurrected, and only overdue recovery
-  resets a delayed schedule to zero.
-- Helper tracking now keeps outcome-unknown deliveries ambiguous unless the
-  share is confirmed on-chain, uses the shared 30-second POST deadline,
-  canonicalizes helper identities, preserves delivery history and desired
-  placement across resumed fan-out, and waits for a confirmed VC-tree position
-  before recovery POSTs. Legacy delivery records retain the canonical-target
-  sentinel instead of deriving a smaller target from partial success; legacy
-  helper identities that no longer canonicalize are kept out of delivery and
-  polling but preserved verbatim across rewrites instead of being silently
-  erased or making a round unreadable.
-- An outcome-unknown (ambiguous) helper is no longer permanently excluded from
-  delivery of its share: overdue recovery re-POSTs it after untried helpers
-  and before already-accepted ones, converging via helper-side duplicate
-  detection, so one transient 5xx across a small fleet can no longer lock a
-  share out for the round. Early replenishment keeps ambiguous helpers
-  poll-only.
-- Initial fan-out now observes its shared 60-second deadline, clamps the last
-  request to the remaining budget, and treats post-dispatch helper 5xx
-  responses as outcome-unknown rather than retrying a non-idempotent POST. A
-  retry backoff that would cross the delivery deadline returns its held
-  definite error instead of letting cancellation mark the helper
-  outcome-unknown, and no attempt starts with less than one second of budget.
-- Helper clients now enforce deadlines, response-size limits, and JSON content
-  types around custom transports, including transports that ignore their
-  supplied timeout. Successful responses expose content-type metadata through
-  `HelperResponse`; oversized non-2xx bodies are rejected before diagnostic
-  string conversion without losing HTTP retry or ambiguity classification.
-- Initial delivery keeps planned and fallback helpers in separate health-ranked
-  groups, so a healthy fallback cannot bypass a degraded planned assignment.
-- Cancellation before a pending retry or single-attempt recovery POST returns
-  cancellation without scoring a helper failure. A definitely unsent fresh
-  recovery reservation is cleared so it remains retryable, while cancellation
-  of an interrupted, ambiguous, or accepted retry preserves its existing
-  durable evidence. Once a request completes, its final or non-retryable result
-  is preserved despite late cancellation.
-- In fleets with at least two helpers, one confirmation claim can no longer
-  suppress durable recovery; two distinct currently configured helpers must
-  agree before the crate persists confirmation.
-- Initial helper payloads use the durably confirmed VC-tree position, not the
-  draft position retained in the committed share payload. Submission also
-  rejects a stale `CommittedVote` handle whose commitment no longer matches the
-  current durable recovery bundle before storage or network side effects.
-
-### Fixed
+- Wallet examples now separate vote-chain submission from helper delivery and
+  use the preflight, persisted-plan, and prepared-batch APIs.
+- Helper plans remain valid across normal vote confirmation while staying
+  bound to the exact vote generation, wallet scope, configured fleet, durable
+  VC-tree position, and complete payload set. Stale or inconsistent plans fail
+  before network or storage side effects.
+- Whole-plan validation now rejects duplicate helpers, fleet drift, invalid
+  schedules, target-count drift, and aggregate quota violations before the
+  first POST. Concurrent submissions share a process-wide 16-request limit and
+  cannot overfill placement targets.
+- Helper attempts are journaled before dispatch and retain accepted,
+  ambiguous, interrupted, or definite-failure outcomes across cancellation and
+  restart. Outcome-unknown POSTs are never retried as definitely unsent;
+  overdue recovery uses duplicate-safe reconciliation.
+- Recovery preserves durable reveal schedules and placement history, waits for
+  vote confirmation, replenishes complete deficits, and rechecks confirmation
+  and vote-end state before each POST. Legacy or malformed helper identities
+  remain readable without participating in delivery.
+- Helper requests now enforce shared deadlines, bounded JSON responses, and
+  content types even for custom transports. Boundary completions,
+  cancellation, retry backoff, and helper-health scoring no longer lose or
+  double-count completed outcomes.
+- Nullifier-inconsistent recovery bundles are reported as unrecoverable, and
+  delayed network results cannot mutate a replacement share generation.
 - SQLite operations that validate durable voting state before updating it now
   use immediate transactions, preventing concurrent WAL writers from causing
   stale-snapshot `database is locked` failures during submission and
-  confirmation recording, including direct VC-position and helper-share
-  writes. Helper confirmation and sent-server updates additionally require the
-  exact submitted share nullifier, so delayed network results cannot mutate a
-  replacement share generation.
+  confirmation recording.
 
 ## v3.1.0-rc.13
 
