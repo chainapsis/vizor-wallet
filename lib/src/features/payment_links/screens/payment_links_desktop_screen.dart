@@ -58,6 +58,7 @@ class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
 
 class _PaymentLinksDesktopScreenState
     extends ConsumerState<PaymentLinksDesktopScreen> {
+  static const _estimatedBlockTimeSeconds = 75;
   static const _linkAvailableSoonRemainingConfirmations = 3;
   static const _syncingFeeEstimateMessage =
       'Card fee will be estimated when wallet sync completes.';
@@ -76,6 +77,15 @@ class _PaymentLinksDesktopScreenState
     'November',
     'December',
   ];
+
+  static String _estimatedLinkWaitLabel(PaymentLinkFundingProgress progress) {
+    final unconfirmed = progress.confirmationTarget - progress.confirmationCount;
+    final remaining = unconfirmed > 0 ? unconfirmed : 0;
+    final totalSeconds = remaining * _estimatedBlockTimeSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return 'Wait $minutes:$seconds to get the link';
+  }
 
   static final _amountFormatter = TextInputFormatter.withFunction((
     oldValue,
@@ -1245,9 +1255,7 @@ class _PaymentLinksDesktopScreenState
       onCardTap: ready && message.isNotEmpty
           ? () => setState(() => _readyShowsBack = !_readyShowsBack)
           : null,
-      waitingStatusLabel: soon
-          ? 'Your link will be ready soon'
-          : 'Your link will be here',
+      waitingStatusLabel: _estimatedLinkWaitLabel(progress),
       copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
     );
   }
@@ -1570,14 +1578,6 @@ class _PaymentLinksDesktopScreenState
         _fundingProgressByAddress[link.address] ??
         const PaymentLinkFundingProgress(confirmationCount: 0);
     final readyToShare = fundingProgress.isReady;
-    final confirmationsRemaining =
-        fundingProgress.confirmationTarget - fundingProgress.confirmationCount;
-    final linkAvailableSoon =
-        fundingProgress.confirmationCount > 0 &&
-        confirmationsRemaining <= _linkAvailableSoonRemainingConfirmations;
-    final waitingStatusLabel = linkAvailableSoon
-        ? 'Link will be available soon'
-        : 'Your link will be here';
     final card = hasMessage
         ? PaymentLinkCardFlip(
             showBack: _readyShowsBack,
@@ -1602,7 +1602,7 @@ class _PaymentLinksDesktopScreenState
           ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
-      decoration: readyToShare ? const PaymentLinkConfetti() : null,
+      decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress
           ? null
@@ -1611,7 +1611,7 @@ class _PaymentLinksDesktopScreenState
           ? () => setState(() => _readyShowsBack = !_readyShowsBack)
           : null,
       onReturnHome: () => _showPage(_PaymentLinksLocalPage.home),
-      waitingStatusLabel: waitingStatusLabel,
+      waitingStatusLabel: _estimatedLinkWaitLabel(fundingProgress),
       copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
     );
   }
@@ -1651,7 +1651,7 @@ class _PaymentLinksDesktopScreenState
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim my gift',
+      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the Gift Card',
     );
   }
 

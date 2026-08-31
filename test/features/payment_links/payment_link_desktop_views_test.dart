@@ -234,7 +234,7 @@ void main() {
     expect(gap, greaterThanOrEqualTo(30));
   });
 
-  testWidgets('review exposes the fee tooltip, divider, and 44px CTA', (
+  testWidgets('review exposes the total tooltip without a divider', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -244,18 +244,20 @@ void main() {
       const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.review),
     );
 
-    final feeHelp = find.bySemanticsLabel('About the Gift Card fee');
-    expect(feeHelp, findsOneWidget);
+    final totalHelp = find.bySemanticsLabel('About the total Gift Card amount');
+    expect(totalHelp, findsOneWidget);
     final helpIcon = find.descendant(
-      of: feeHelp,
+      of: totalHelp,
       matching: find.byWidgetPredicate(
         (widget) => widget is AppIcon && widget.name == AppIcons.help,
       ),
     );
     expect(tester.getSize(helpIcon), const Size(16, 16));
 
-    final divider = find.byKey(const ValueKey('payment_link_review_divider'));
-    expect(tester.getSize(divider), const Size(320, 1));
+    expect(
+      find.byKey(const ValueKey('payment_link_review_divider')),
+      findsNothing,
+    );
 
     final create = find.widgetWithText(AppButton, 'Create card');
     expect(tester.getSize(create), const Size(196, 44));
@@ -264,7 +266,7 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer();
-    await mouse.moveTo(tester.getCenter(feeHelp));
+    await mouse.moveTo(tester.getCenter(totalHelp));
     await tester.pump(const Duration(milliseconds: 400));
     expect(
       find.text(
@@ -318,7 +320,10 @@ void main() {
       'assets/icons/gift_card.svg',
     );
     expect(giftCardSvg, contains('viewBox="0 0 24 24"'));
-    expect(giftCardSvg, contains('translate(1 2.21826)'));
+    expect(
+      giftCardSvg,
+      contains('transform="translate(1.5 4.125) scale(1.2)"'),
+    );
     for (final icon in const [
       AppIcons.giftCard,
       AppIcons.link,
@@ -355,7 +360,7 @@ void main() {
     );
 
     final modal = find.byType(AppModalCard);
-    expect(tester.getSize(modal), const Size(312, 441));
+    expect(tester.getSize(modal), const Size(312, 420));
     final innerHighlight = find.byKey(
       const ValueKey('app_modal_inner_highlight'),
     );
@@ -374,7 +379,7 @@ void main() {
     final modalTopLeft = tester.getTopLeft(modal);
     expect(
       tester.getTopLeft(closeButtonFinder) - modalTopLeft,
-      const Offset(16, 381),
+      const Offset(16, 360),
     );
 
     final closeTextFinder = find.text('Close');
@@ -384,7 +389,7 @@ void main() {
     ).style.merge(closeText.style);
     expect(
       tester.getCenter(closeTextFinder) - modalTopLeft,
-      const Offset(156, 399),
+      const Offset(156, 378),
     );
     expect(closeTextStyle.fontFamily, 'Geist');
     expect(closeTextStyle.fontWeight, FontWeight.w500);
@@ -402,9 +407,8 @@ void main() {
     );
     expect(
       find.text(
-        'After the card is created, you will get a uniquely generated Link. '
-        'The Link contains its claim secret and is not encrypted, so send it '
-        'only to the intended recipient.',
+        'After the card is created, you will get a unique Link containing its '
+        'claim secret. Send it only to the intended recipient.',
       ),
       findsOneWidget,
     );
@@ -634,6 +638,14 @@ void main() {
         find.text('This message is too large. Try using fewer complex emoji.'),
         findsOneWidget,
       );
+      final messageError = find.byKey(
+        const ValueKey('payment_link_message_error_text'),
+      );
+      final cardRect = tester.getRect(find.byType(PaymentLinkCardFlip));
+      final errorRect = tester.getRect(messageError);
+      final skipRect = tester.getRect(find.text('Skip message'));
+      expect(errorRect.top, cardRect.bottom + AppSpacing.xs);
+      expect(errorRect.bottom, lessThan(skipRect.top));
       expect(
         tester
             .widget<AppButton>(
@@ -920,6 +932,41 @@ void main() {
     expect(find.bySemanticsLabel('Reveal gift card message'), findsNothing);
   });
 
+  testWidgets('received message block follows the Figma icon and text metrics', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.receivedMessage,
+      ),
+    );
+
+    final block = find.byKey(
+      const ValueKey('payment_link_received_message_block'),
+    );
+    final icon = find.byKey(
+      const ValueKey('payment_link_received_message_icon'),
+    );
+    final title = find.text('Message attached.');
+    final hint = find.text('Click on the card to reveal');
+
+    expect(tester.getSize(block).width, 165);
+    expect(tester.getSize(icon).width, moreOrLessEquals(20, epsilon: 0.001));
+    expect(tester.getSize(icon).height, moreOrLessEquals(16, epsilon: 0.001));
+    expect(tester.getTopLeft(title).dy - tester.getTopLeft(block).dy, 32);
+    expect(tester.getTopLeft(hint).dy - tester.getBottomLeft(title).dy, 8);
+
+    final titleText = tester.widget<Text>(title);
+    final hintText = tester.widget<Text>(hint);
+    expect(titleText.style?.fontSize, AppTypography.bodyMediumStrong.fontSize);
+    expect(titleText.style?.height, AppTypography.bodyMediumStrong.height);
+    expect(hintText.style?.fontSize, AppTypography.bodyMedium.fontSize);
+    expect(hintText.style?.height, AppTypography.bodyMedium.height);
+  });
+
   testWidgets('card flip keeps a visible edge at the face swap', (
     tester,
   ) async {
@@ -974,7 +1021,7 @@ void main() {
     );
   });
 
-  testWidgets('waiting fixtures expose both confirmation-stage labels', (
+  testWidgets('waiting fixtures expose the estimated wait status', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -986,10 +1033,10 @@ void main() {
         state: PaymentLinkPreviewState.readyWaiting,
       ),
     );
-    expect(find.text('Your link will be here'), findsOneWidget);
-    expect(find.byType(PaymentLinkConfetti), findsNothing);
+    expect(find.text('Wait 7:30 to get the link'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
     final initialPill = find.ancestor(
-      of: find.text('Your link will be here'),
+      of: find.text('Wait 7:30 to get the link'),
       matching: find.byType(CustomPaint),
     );
     expect(tester.getSize(initialPill.first).height, 36);
@@ -998,10 +1045,9 @@ void main() {
       tester,
       const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.readySoon),
     );
-    expect(find.text('Link will be available soon'), findsOneWidget);
-    expect(find.text('Your link will be here'), findsNothing);
-    expect(find.byType(PaymentLinkConfetti), findsNothing);
-    expect(find.textContaining('after 6 confirmations.'), findsOneWidget);
+    expect(find.text('Wait 3:45 to get the link'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
+    expect(find.textContaining('about 7 min 30 sec.'), findsOneWidget);
   });
 
   testWidgets('cards list fades only where more content exists', (
@@ -1195,7 +1241,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('contains its claim secret'), findsOneWidget);
+    expect(find.textContaining('containing its claim secret'), findsOneWidget);
     expect(find.textContaining('encrypted and safe to share'), findsNothing);
   });
 

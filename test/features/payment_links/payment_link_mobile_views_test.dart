@@ -7,11 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 const _feeHelpText =
     'Includes the fee to fund the Gift Card and the fee reserved for '
     'the recipient to claim it.';
 
 void main() {
+  setUpAll(loadFigmaCompareFonts);
+
   testWidgets('review defaults describe review and card creation', (
     tester,
   ) async {
@@ -119,6 +123,37 @@ void main() {
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
     expect(find.text('The link doesn’t look legit.'), findsOneWidget);
     expect(find.text('Clear clipboard'), findsOneWidget);
+  });
+
+  testWidgets('ready waiting copy reflects six confirmations', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 773));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, navigator) =>
+            AppTheme(data: AppThemeData.light, child: navigator!),
+        home: Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 393,
+            height: 773,
+            child: PaymentLinkReadyMobileView(
+              state: PaymentLinkReadyMobileState.waiting,
+              card: const SizedBox(
+                width: kPaymentLinkMobileCardWidth,
+                height: kPaymentLinkMobileCardHeight,
+              ),
+              onHome: _noop,
+              onCopy: null,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('after 6 confirmations.'), findsOneWidget);
+    expect(find.textContaining('about 7 min 30 sec.'), findsOneWidget);
+    expect(find.text('Wait 7:30 to get the link'), findsOneWidget);
   });
 
   testWidgets('received card exposes Figma claim copy and action', (

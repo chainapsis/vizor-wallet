@@ -157,10 +157,8 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
         'Enter amount to gift, pick a design, add a message (optional) '
         'and create your Card with a single click.',
     this.shareDescription =
-        'After the card is created, you will get a uniquely generated Link. '
-        'The Link contains its claim secret and is not encrypted, so send it '
-        'only to the '
-        'intended recipient.',
+        'After the card is created, you will get a unique Link containing its '
+        'claim secret. Send it only to the intended recipient.',
     this.redeemDescription =
         'Recipient can redeem the Card in their Vizor wallet using the Link. '
         'The sender covers the deposit and redeem fees, so the recipient '
@@ -187,59 +185,42 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
         AppPaneModalOverlay(
           onDismiss: onClose,
           child: AppModalCard(
-            child: SizedBox(
-              height: 393,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            title,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: context.colors.text.accent,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            subtitle,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: context.colors.text.secondary,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          _HelpStep(
-                            icon: AppIcons.giftCard,
-                            text: createDescription,
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          _HelpStep(
-                            icon: AppIcons.link,
-                            text: shareDescription,
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          _HelpStep(
-                            icon: AppIcons.arrowDownCircle,
-                            text: redeemDescription,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                        ],
-                      ),
-                    ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.accent,
                   ),
-                  AppButton(
-                    key: const ValueKey('payment_link_help_close_button'),
-                    onPressed: onClose,
-                    variant: AppButtonVariant.ghost,
-                    size: AppButtonSize.mediumLarge,
-                    expand: true,
-                    child: Text(closeLabel),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  subtitle,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.secondary,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _HelpStep(icon: AppIcons.giftCard, text: createDescription),
+                const SizedBox(height: AppSpacing.xs),
+                _HelpStep(icon: AppIcons.link, text: shareDescription),
+                const SizedBox(height: AppSpacing.xs),
+                _HelpStep(
+                  icon: AppIcons.arrowDownCircle,
+                  text: redeemDescription,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
+                  key: const ValueKey('payment_link_help_close_button'),
+                  onPressed: onClose,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.mediumLarge,
+                  expand: true,
+                  child: Text(closeLabel),
+                ),
+              ],
             ),
           ),
         ),
@@ -390,17 +371,6 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
         children: [
           _TextAction(label: skipLabel, onTap: onSkip),
           const SizedBox(height: AppSpacing.sm),
-          if (errorText case final message?) ...[
-            Text(
-              message,
-              key: const ValueKey('payment_link_message_error_text'),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
           AppButton(
             key: const ValueKey('payment_link_message_continue_button'),
             onPressed: state == PaymentLinkMessageVisualState.filled
@@ -417,7 +387,23 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
           ),
         ],
       ),
-      child: card,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          card,
+          if (errorText case final message?) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              message,
+              key: const ValueKey('payment_link_message_error_text'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -472,20 +458,13 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                 _ReviewAmountRow(
                   label: 'Card fee (deposit + redeem)',
                   value: cardFeeText,
-                  showHelp: true,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                SizedBox(
-                  key: const ValueKey('payment_link_review_divider'),
-                  width: double.infinity,
-                  height: 1,
-                  child: ColoredBox(color: context.colors.border.regular),
-                ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.xs),
                 _ReviewAmountRow(
                   label: 'Total amount deducted',
                   value: totalAmountText,
                   emphasized: true,
+                  showHelp: true,
                 ),
               ],
             ),
@@ -549,7 +528,7 @@ class _ReviewAmountRow extends StatelessWidget {
                 'for the recipient to claim it.',
             preferBelow: true,
             child: Semantics(
-              label: 'About the Gift Card fee',
+              label: 'About the total Gift Card amount',
               child: AppIcon(
                 AppIcons.help,
                 size: 16,
@@ -573,7 +552,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     this.onCardTap,
     this.onReturnHome,
     this.backLabel = 'Home',
-    this.waitingStatusLabel = 'Your link will be here',
+    this.waitingStatusLabel = 'Wait 7:30 to get the link',
     this.copyLabel = 'Copy link',
     this.returnLabel = 'Return home',
     super.key,
@@ -648,18 +627,31 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                 right: 0,
                 child: Column(
                   children: [
-                    Text(
-                      waiting
-                          ? 'The Gift Card takes time to be deposited.\n'
-                                'You can return later. The link will be available\n'
-                                'after 6 confirmations.'
-                          : 'Share this link with the intended recipient so they\n'
-                                'can claim the Card using their Vizor app.',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.secondary,
+                    if (waiting) ...[
+                      Text(
+                        'The link becomes shareable after 6 confirmations.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: context.colors.text.accent,
+                        ),
                       ),
-                    ),
+                      Text(
+                        'This usually takes about 7 min 30 sec. We will let you '
+                        'know\nwhen the card is ready to be shared.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.secondary,
+                        ),
+                      ),
+                    ] else
+                      Text(
+                        'Share this link with the intended recipient so they\n'
+                        'can claim the Card using their Vizor app.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.secondary,
+                        ),
+                      ),
                     const SizedBox(height: AppSpacing.lg),
                     if (waiting)
                       _DashedStatusPill(label: waitingStatusLabel)
@@ -697,10 +689,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
     this.onRevealMessage,
     this.decoration,
     this.backLabel = 'Cards',
-    this.title = 'You’ve received a gift!',
+    this.title = 'You’ve received\na gift card!',
     this.messageTitle = 'Message attached.',
     this.messageHint = 'Click on the card to reveal',
-    this.claimLabel = 'Claim my gift',
+    this.claimLabel = 'Claim the Gift Card',
     this.cardActionLabel = 'Reveal gift card message',
     super.key,
   });
@@ -737,27 +729,19 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
             children: [
               if (decoration != null) Positioned.fill(child: decoration!),
               Positioned(
-                top: 68,
+                top: 42.5,
                 left: 0,
                 right: 0,
-                child: Center(
-                  child: SizedBox(
-                    width: AppSpacing.base,
-                    height: AppSpacing.base,
-                    child: Center(
-                      child: SvgPicture.asset(
-                        'assets/illustrations/payment_links/'
-                        'payment_link_envelope.svg',
-                        width: 27,
-                        height: 22,
-                        semanticsLabel: 'Gift message',
-                      ),
-                    ),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displayLarge.copyWith(
+                    color: context.colors.text.accent,
                   ),
                 ),
               ),
               Positioned(
-                top: 143.5,
+                top: 186.5,
                 left: 0,
                 right: 0,
                 child: Center(
@@ -778,39 +762,59 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 364,
+                top: 440,
                 left: 0,
                 right: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: context.colors.text.accent,
-                      ),
+                child: Center(
+                  child: SizedBox(
+                    key: const ValueKey(
+                      'payment_link_received_message_block',
                     ),
-                    if (onRevealMessage != null) ...[
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        messageTitle,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: context.colors.text.brandCrimson,
-                        ),
-                      ),
-                      Text(
-                        messageHint,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: context.colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                  ],
+                    width: 165,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onRevealMessage != null) ...[
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Center(
+                              child: SvgPicture.asset(
+                                'assets/illustrations/payment_links/'
+                                'payment_link_envelope.svg',
+                                key: const ValueKey(
+                                  'payment_link_received_message_icon',
+                                ),
+                                width: 20,
+                                height: 16,
+                                semanticsLabel: 'Gift message',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            messageTitle,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: context.colors.text.brandCrimson,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            messageHint,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.secondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
               Positioned(
-                top: 524.5,
+                top: 558,
                 left: 0,
                 right: 0,
                 child: Center(
@@ -1553,7 +1557,7 @@ class _DashedStatusPill extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppIcon(
-                  AppIcons.link,
+                  AppIcons.time,
                   size: 16,
                   color: context.colors.icon.muted,
                 ),

@@ -519,7 +519,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.onCopy,
     this.onCardTap,
     this.decoration,
-    this.waitingStatusLabel = 'Your link will be ready soon',
+    this.waitingStatusLabel = 'Wait 7:30 to get the link',
     this.copyLabel = 'Copy link',
     this.homeLabel = 'Go home',
     super.key,
@@ -605,8 +605,8 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                       ready
                           ? 'Share this link with the intended recipient so '
                                 'they can claim the Card using their Vizor app.'
-                          : 'The Gift Card takes time to be deposited.\nThis '
-                                'will take about 15 min. We will let you know '
+                          : 'The link becomes shareable after 6 confirmations.\n'
+                                'This usually takes about 7 min 30 sec. We will let you know '
                                 'when the card is ready to be shared.',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(

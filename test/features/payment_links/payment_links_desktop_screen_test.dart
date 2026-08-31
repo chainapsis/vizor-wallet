@@ -77,7 +77,7 @@ void main() {
     );
 
     final modalRect = tester.getRect(find.byType(AppModalCard));
-    expect(modalRect.size, const Size(312, 441));
+    expect(modalRect.size, const Size(312, 420));
     final closeRect = tester.getRect(
       find.byKey(const ValueKey('payment_link_help_close_button')),
     );
@@ -510,7 +510,7 @@ void main() {
     expect(find.text('Copy link'), findsOneWidget);
   });
 
-  testWidgets('changes the waiting label for the final three confirmations', (
+  testWidgets('updates the estimated wait for six confirmations', (
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(fundingConfirmationCount: 0);
@@ -533,21 +533,20 @@ void main() {
     await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Your link will be here'), findsOneWidget);
-    expect(find.byType(PaymentLinkConfetti), findsNothing);
+    expect(find.text('Wait 7:30 to get the link'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
 
     operations.fundingConfirmationCount = 3;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
-    expect(find.text('Link will be available soon'), findsOneWidget);
-    expect(find.text('Your link will be here'), findsNothing);
-    expect(find.byType(PaymentLinkConfetti), findsNothing);
+    expect(find.text('Wait 3:45 to get the link'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
 
     operations.fundingConfirmationCount = 6;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
     expect(find.text('Copy link'), findsOneWidget);
-    expect(find.text('Link will be available soon'), findsNothing);
+    expect(find.text('Wait 3:45 to get the link'), findsNothing);
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
   });
 
@@ -833,7 +832,7 @@ void main() {
     await tester.tap(find.text('Paste card link'));
     await tester.pumpAndSettle();
 
-    expect(find.text('You’ve received a gift!'), findsOneWidget);
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
     expect(find.text('4.45'), findsOneWidget);
     expect(find.text('Message attached.'), findsOneWidget);
     expect(find.text('Congratulations!'), findsNothing);
@@ -862,10 +861,10 @@ void main() {
         .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
-    expect(find.text('You’ve received a gift!'), findsOneWidget);
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
     expect(find.text('4.45'), findsOneWidget);
 
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.claimedLinks.map((link) => link.toUri().toString()), [
@@ -903,12 +902,12 @@ void main() {
       PaymentLinkCardArtwork.ruby,
     );
 
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     expect(find.text('Receiving...'), findsOneWidget);
     expect(find.text('Received'), findsWidgets);
-    expect(find.text('You’ve received a gift!'), findsNothing);
+    expect(find.text('You’ve received\na gift card!'), findsNothing);
     final receivedRow = find.byKey(
       const ValueKey('payment_link_received_u1paymentlinkaddress'),
     );
@@ -971,7 +970,7 @@ void main() {
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.receivedRecords.single.claimTxids, 'claim-txid');
@@ -1008,7 +1007,7 @@ void main() {
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     claimCompleter.complete(
@@ -1048,7 +1047,7 @@ void main() {
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     expect(find.text('Receiving...'), findsOneWidget);
@@ -1080,7 +1079,7 @@ void main() {
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Claim my gift'));
+    await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     claimCompleter.completeError(

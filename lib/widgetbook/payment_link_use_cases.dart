@@ -320,15 +320,17 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.readyWaiting => PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
+        decoration: const PaymentLinkConfetti(),
         onBack: _noop,
         onCopy: null,
       ),
       PaymentLinkPreviewState.readySoon => PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
+        decoration: const PaymentLinkConfetti(),
         onBack: _noop,
         onCopy: null,
-        waitingStatusLabel: 'Link will be available soon',
+        waitingStatusLabel: 'Wait 3:45 to get the link',
       ),
       PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
       PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(

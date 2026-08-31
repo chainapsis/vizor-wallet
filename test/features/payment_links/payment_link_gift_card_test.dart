@@ -76,6 +76,8 @@ void main() {
   testWidgets(
     'message editor keeps native text behavior, count, and delete action',
     (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final semantics = tester.ensureSemantics();
       final controller = TextEditingController(text: 'Hi');
       final focusNode = FocusNode();
@@ -112,6 +114,13 @@ void main() {
       expect(field.cursorOpacityAnimates, isTrue);
       expect(field.cursorWidth, greaterThan(0));
       expect(field.decoration?.hintText, 'Start typing...');
+      expect(
+        find.descendant(
+          of: find.byType(PaymentLinkGiftCard),
+          matching: find.byType(RawScrollbar),
+        ),
+        findsNothing,
+      );
       expect(
         tester
             .widget<MouseRegion>(
@@ -199,6 +208,7 @@ void main() {
       await tester.pump();
       expect(deletionCount, 1);
       expect(cardActivations, 1);
+      debugDefaultTargetPlatformOverride = null;
       semantics.dispose();
     },
   );
