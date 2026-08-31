@@ -9,6 +9,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -1027,13 +1028,18 @@ class _PaymentLinksDesktopScreenState
 
   Widget _buildMobileScreen() {
     final page = switch (_page) {
-      _PaymentLinksLocalPage.received => _buildMobileReceived(),
-      _ => PaymentLinkRedeemMobileView(
+      _PaymentLinksLocalPage.home => _buildMobileHome(),
+      _PaymentLinksLocalPage.amount => _buildMobileAmount(),
+      _PaymentLinksLocalPage.message => _buildMobileMessage(),
+      _PaymentLinksLocalPage.review => _buildMobileReview(),
+      _PaymentLinksLocalPage.ready => _buildMobileReady(),
+      _PaymentLinksLocalPage.redeem => PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.values.byName(_redeemState.name),
-        onBack: _leaveMobilePaymentLinks,
+        onBack: () => _showPage(_PaymentLinksLocalPage.home),
         onPaste: _operationInProgress ? null : _pastePaymentLink,
         onClearClipboard: _operationInProgress ? null : _clearClipboard,
       ),
+      _PaymentLinksLocalPage.received => _buildMobileReceived(),
     };
 
     return Scaffold(
@@ -1052,6 +1058,199 @@ class _PaymentLinksDesktopScreenState
   }
 
   void _returnHomeFromReceivedGift() => context.go('/home');
+
+  Widget _buildMobileHome() {
+    return PaymentLinksHomeMobileView(
+      illustration: Image.asset(
+        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        fit: BoxFit.contain,
+        semanticLabel: 'Gift box',
+      ),
+      onBack: _leaveMobilePaymentLinks,
+      onShowHelp: _showMobileHelpSheet,
+      onCreate: _startCreate,
+      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
+    );
+  }
+
+  void _showMobileHelpSheet() {
+    showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) => PaymentLinkHowItWorksMobileSheet(
+        onClose: () => Navigator.of(sheetContext).pop(),
+      ),
+    );
+  }
+
+  Widget _buildMobileAmount() {
+    final maxAmountText = _maxAmountText;
+    return PaymentLinkAmountMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: _selectedArtwork,
+        cardWidth: kPaymentLinkMobileCardWidth,
+        cardHeight: kPaymentLinkMobileCardHeight,
+        amountController: _amountController,
+        amountFocusNode: _amountFocusNode,
+        amountEditorKey: const ValueKey('payment_link_amount_editor'),
+        amountInputFormatters: [_amountFormatter],
+        onAmountChanged: _handleAmountChanged,
+        maxAmountText: maxAmountText,
+        onUseMax: maxAmountText == null ? null : _useMaxAmount,
+        semanticLabel: 'Gift card amount input',
+      ),
+      cardSelector: PaymentLinkCardSelectorRail(
+        artworks: PaymentLinkCardArtwork.values,
+        selected: _selectedArtwork,
+        width: 393,
+        itemWidth: 80,
+        itemHeight: 60,
+        artworkWidth: 76,
+        artworkHeight: 56,
+        itemGap: AppSpacing.xs,
+        selectionInset: EdgeInsets.zero,
+        edgeMaskInset: AppSpacing.sm,
+        edgeFadeFraction: 0.3,
+        inactiveOpacity: 1,
+        onSelected: (artwork) => setState(() => _selectedArtwork = artwork),
+      ),
+      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onContinue: _canContinueAmount
+          ? () => _showPage(_PaymentLinksLocalPage.message)
+          : null,
+      supportingText: _amountSupportingText,
+      supportingTextIsError: _amountSupportingTextIsError,
+    );
+  }
+
+  Widget _buildMobileMessage() {
+    return PaymentLinkMessageMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: _selectedArtwork,
+        cardWidth: kPaymentLinkMobileCardWidth,
+        cardHeight: kPaymentLinkMobileCardHeight,
+        showBack: true,
+        messageController: _messageController,
+        messageFocusNode: _messageFocusNode,
+        messageEditorKey: const ValueKey('payment_link_message_editor'),
+        messageInputFormatters: [
+          LengthLimitingTextInputFormatter(
+            PaymentLinkPresentation.maxMessageCharacters,
+          ),
+        ],
+        onMessageChanged: _handleMessageChanged,
+        onDeleteMessage: _hasMessage ? _clearMessage : null,
+        semanticLabel: 'Gift card message input',
+      ),
+      onBack: () => _showPage(_PaymentLinksLocalPage.amount),
+      onSkip: _skipMessage,
+      onContinue: _hasMessage && !_messageExceedsByteLimit
+          ? () => _showPage(_PaymentLinksLocalPage.review)
+          : null,
+      errorText: _messageExceedsByteLimit
+          ? kPaymentLinkMessageTooLargeText
+          : null,
+    );
+  }
+
+  Widget _buildMobileReview() {
+    final quote = _fundingQuote!;
+    final message = _messageController.text.trim();
+    final front = PaymentLinkGiftCard(
+      artwork: _selectedArtwork,
+      cardWidth: kPaymentLinkMobileCardWidth,
+      cardHeight: kPaymentLinkMobileCardHeight,
+      amountText: _amountController.text,
+      showCaret: false,
+      onTap: message.isEmpty
+          ? null
+          : () => setState(() => _reviewShowsBack = true),
+      semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
+    );
+    final card = message.isEmpty
+        ? front
+        : PaymentLinkCardFlip(
+            showBack: _reviewShowsBack,
+            front: front,
+            back: PaymentLinkGiftCard(
+              artwork: _selectedArtwork,
+              cardWidth: kPaymentLinkMobileCardWidth,
+              cardHeight: kPaymentLinkMobileCardHeight,
+              showBack: true,
+              message: message,
+              onTap: () => setState(() => _reviewShowsBack = false),
+              semanticLabel: 'Show gift card front',
+            ),
+          );
+    return PaymentLinkReviewMobileView(
+      card: card,
+      onBack: () => _showPage(_PaymentLinksLocalPage.message),
+      cardAmountText: '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC',
+      cardFeeText: '${formatZecAmount(quote.cardFeeZatoshi)} ZEC',
+      totalAmountText: '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC',
+      onContinue: _operationInProgress ? null : _createFundedLink,
+      onFeeHelp: () {},
+      continueLabel: _operationInProgress ? 'Creating...' : 'Approve & create',
+    );
+  }
+
+  Widget _buildMobileReady() {
+    final link = _readyLink;
+    if (link == null) return _buildMobileHome();
+    final artwork = PaymentLinkCardArtwork.fromProtocolId(
+      link.presentation?.artworkId,
+    );
+    final message = link.presentation?.message ?? '';
+    final progress =
+        _fundingProgressByAddress[link.address] ??
+        const PaymentLinkFundingProgress(confirmationCount: 0);
+    final remaining = progress.confirmationTarget - progress.confirmationCount;
+    final ready = progress.isReady;
+    final soon =
+        progress.confirmationCount > 0 &&
+        remaining <= _linkAvailableSoonRemainingConfirmations;
+    final front = PaymentLinkGiftCard(
+      artwork: artwork,
+      cardWidth: kPaymentLinkMobileCardWidth,
+      cardHeight: kPaymentLinkMobileCardHeight,
+      amountText: formatZecAmount(link.amountZatoshi),
+      showCaret: false,
+    );
+    final card = message.isEmpty
+        ? front
+        : PaymentLinkCardFlip(
+            showBack: _readyShowsBack,
+            front: front,
+            back: PaymentLinkGiftCard(
+              artwork: artwork,
+              cardWidth: kPaymentLinkMobileCardWidth,
+              cardHeight: kPaymentLinkMobileCardHeight,
+              showBack: true,
+              message: message,
+            ),
+          );
+    return PaymentLinkReadyMobileView(
+      state: ready
+          ? PaymentLinkReadyMobileState.ready
+          : soon
+          ? PaymentLinkReadyMobileState.soon
+          : PaymentLinkReadyMobileState.waiting,
+      card: card,
+      decoration: ready || progress.confirmationCount == 0
+          ? const PaymentLinkConfetti()
+          : null,
+      onHome: () => _showPage(_PaymentLinksLocalPage.home),
+      onCopy: ready && !_operationInProgress
+          ? () => _copyPaymentLink(link)
+          : null,
+      onCardTap: ready && message.isNotEmpty
+          ? () => setState(() => _readyShowsBack = !_readyShowsBack)
+          : null,
+      waitingStatusLabel: soon
+          ? 'Your link will be ready soon'
+          : 'Your link will be here',
+      copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
+    );
+  }
 
   Widget _buildMobileReceived() {
     final link = _receivedLink;

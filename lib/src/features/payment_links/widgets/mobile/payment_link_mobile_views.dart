@@ -6,6 +6,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
+import '../payment_link_action.dart';
+import '../payment_link_card_motion.dart';
 import '../payment_link_skeleton.dart';
 
 const _referenceContentHeight = 773.0;
@@ -26,6 +28,118 @@ const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
 
 enum PaymentLinkRedeemMobileState { paste, loading, invalid, unavailable }
+
+enum PaymentLinkReadyMobileState { waiting, soon, ready }
+
+class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
+  const PaymentLinkHowItWorksMobileSheet({
+    required this.onClose,
+    this.title = 'How Gift Cards work',
+    this.subtitle = 'A great way to celebrate anything.',
+    super.key,
+  });
+
+  final VoidCallback onClose;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            subtitle,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const _MobileHelpStep(
+            icon: AppIcons.giftCard,
+            text:
+                'Enter an amount, pick a design, and add an optional message.',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _MobileHelpStep(
+            icon: AppIcons.link,
+            text:
+                'After 6 confirmations, copy the unique link and send it only '
+                'to the intended recipient.',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _MobileHelpStep(
+            icon: AppIcons.arrowDownCircle,
+            text:
+                'The recipient opens the link in Vizor and claims the full '
+                'card amount. The sender covers both fees.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('payment_link_mobile_help_close_button'),
+            onPressed: onClose,
+            variant: AppButtonVariant.secondary,
+            size: AppButtonSize.large,
+            expand: true,
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileHelpStep extends StatelessWidget {
+  const _MobileHelpStep({required this.icon, required this.text});
+
+  final String icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 32,
+          height: 24,
+          child: Center(
+            child: AppIcon(
+              icon,
+              size: AppIconSize.medium,
+              color: context.colors.icon.accent,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.primary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Empty Gift Cards landing view for the mobile form factor.
 class PaymentLinksHomeMobileView extends StatelessWidget {
@@ -59,66 +173,100 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
     return _MobilePaymentLinkFrame(
       title: screenTitle,
       onBack: onBack,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned(
-            top: 207,
-            left: _sideInset,
-            right: _sideInset,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 340,
-                  height: 220,
-                  child: Center(
-                    child: SizedBox(
-                      key: const ValueKey(
-                        'payment_links_mobile_empty_illustration',
+      body: Padding(
+        padding: const EdgeInsets.only(
+          top: _topInset + _navHeight,
+          left: _sideInset,
+          right: _sideInset,
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 340,
+                        height: 220,
+                        child: Center(
+                          child: SizedBox(
+                            key: const ValueKey(
+                              'payment_links_mobile_empty_illustration',
+                            ),
+                            width: 300,
+                            height: 200,
+                            child: illustration,
+                          ),
+                        ),
                       ),
-                      width: 300,
-                      height: 200,
-                      child: illustration,
-                    ),
+                      const SizedBox(height: AppSpacing.base),
+                      Text(
+                        title,
+                        key: const ValueKey('payment_links_mobile_empty_title'),
+                        textAlign: TextAlign.center,
+                        style: AppTypography.headlineLarge.copyWith(
+                          color: context.colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.s),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              helpLabel,
+                              key: const ValueKey(
+                                'payment_links_mobile_help_label',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: context.colors.text.secondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          SizedBox(
+                            width: 20,
+                            height: 36,
+                            child: PaymentLinkAction(
+                              key: const ValueKey(
+                                'payment_links_mobile_help_action',
+                              ),
+                              onPressed: onShowHelp,
+                              semanticLabel: 'Show how Gift Cards work',
+                              builder: (context, _, focused) => Center(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: focused
+                                        ? Border.all(
+                                            color:
+                                                context.colors.state.focusRing,
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: AppIcon(
+                                    AppIcons.help,
+                                    size: 16,
+                                    color: context.colors.icon.regular,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.base),
-                Text(
-                  title,
-                  key: const ValueKey('payment_links_mobile_empty_title'),
-                  textAlign: TextAlign.center,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  key: const ValueKey('payment_links_mobile_help_action'),
-                  onPressed: onShowHelp,
-                  variant: AppButtonVariant.ghost,
-                  size: AppButtonSize.mediumLarge,
-                  height: 36,
-                  constrainContent: true,
-                  trailing: AppIcon(
-                    AppIcons.help,
-                    size: 16,
-                    color: context.colors.icon.regular,
-                  ),
-                  child: Text(
-                    helpLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          Positioned(
-            left: _sideInset,
-            right: _sideInset,
-            bottom: 0,
-            child: Column(
+            Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -146,8 +294,8 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -257,9 +405,9 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
     required this.totalAmountText,
     this.onContinue,
     this.onFeeHelp,
-    this.title = 'Review Gift Card',
-    this.subtitle = 'Review amount and fees.',
-    this.continueLabel = 'Create card',
+    this.title = 'Review a Card',
+    this.subtitle = 'Attach a short encrypted memo (optional).',
+    this.continueLabel = 'Approve & create',
     super.key,
   });
 
@@ -338,7 +486,6 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                   _MobileReviewRow(
                     label: 'Total amount deducted',
                     value: totalAmountText,
-                    emphasized: true,
                   ),
                 ],
               ),
@@ -355,6 +502,149 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
               height: _buttonHeight,
               expand: true,
               child: Text(continueLabel),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Mobile deposited-card state from Figma `7828:69021` / `7828:70405`.
+class PaymentLinkReadyMobileView extends StatelessWidget {
+  const PaymentLinkReadyMobileView({
+    required this.state,
+    required this.card,
+    required this.onHome,
+    this.onCopy,
+    this.onCardTap,
+    this.decoration,
+    this.waitingStatusLabel = 'Your link will be ready soon',
+    this.copyLabel = 'Copy link',
+    this.homeLabel = 'Go home',
+    super.key,
+  });
+
+  final PaymentLinkReadyMobileState state;
+  final Widget card;
+  final VoidCallback onHome;
+  final VoidCallback? onCopy;
+  final VoidCallback? onCardTap;
+  final Widget? decoration;
+  final String waitingStatusLabel;
+  final String copyLabel;
+  final String homeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = state == PaymentLinkReadyMobileState.ready;
+    final canFlip = ready && onCardTap != null;
+    final motionCard = ready
+        ? PaymentLinkCardMotion(
+            celebrate: true,
+            child: canFlip ? IgnorePointer(child: card) : card,
+          )
+        : card;
+    final cardContent = canFlip
+        ? PaymentLinkAction(
+            onPressed: onCardTap,
+            semanticLabel: 'Flip gift card',
+            builder: (context, _, focused) => DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadii.large),
+                border: focused
+                    ? Border.all(
+                        color: context.colors.state.focusRing,
+                        width: 2,
+                      )
+                    : null,
+              ),
+              child: ExcludeSemantics(child: motionCard),
+            ),
+          )
+        : motionCard;
+
+    return SizedBox.expand(
+      key: const ValueKey('payment_link_mobile_ready_view'),
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          if (decoration != null) Positioned.fill(child: decoration!),
+          Positioned(
+            top: 12,
+            left: 40,
+            right: 40,
+            child: Text(
+              ready
+                  ? 'Your Gift Card\nis ready!'
+                  : 'Gift Card is\nalmost ready!',
+              textAlign: TextAlign.center,
+              style: AppTypography.displayLarge.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 190,
+            left: _sideInset,
+            right: _sideInset,
+            child: _MobileCardSlot(card: cardContent),
+          ),
+          Positioned(
+            top: 474,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 328),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      ready
+                          ? 'Share this link with the intended recipient so '
+                                'they can claim the Card using their Vizor app.'
+                          : 'The Gift Card takes time to be deposited.\nThis '
+                                'will take about 15 min. We will let you know '
+                                'when the card is ready to be shared.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.primary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (ready)
+                      AppButton(
+                        key: const ValueKey('payment_link_mobile_copy_button'),
+                        onPressed: onCopy,
+                        size: AppButtonSize.mediumLarge,
+                        leading: const AppIcon(AppIcons.copy),
+                        child: Text(copyLabel),
+                      )
+                    else
+                      _MobileDashedStatusPill(
+                        label: waitingStatusLabel,
+                        icon: state == PaymentLinkReadyMobileState.soon
+                            ? AppIcons.link
+                            : AppIcons.giftCard,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: _sideInset,
+            right: _sideInset,
+            bottom: _bottomInset,
+            child: AppButton(
+              key: const ValueKey('payment_link_mobile_ready_home_button'),
+              onPressed: onHome,
+              size: AppButtonSize.large,
+              height: _buttonHeight,
+              expand: true,
+              child: Text(homeLabel),
             ),
           ),
         ],
@@ -528,6 +818,12 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final motionCard = PaymentLinkCardMotion(
+      celebrate: true,
+      child: hasMessage && onRevealMessage != null
+          ? IgnorePointer(child: card)
+          : card,
+    );
     return SizedBox(
       key: const ValueKey('payment_link_mobile_received_view'),
       width: double.infinity,
@@ -568,6 +864,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
                     messageTitle,
                     style: AppTypography.labelLarge.copyWith(
                       color: context.colors.text.brandCrimson,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -579,16 +876,23 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
             right: _sideInset,
             child: _MobileCardSlot(
               card: hasMessage && onRevealMessage != null
-                  ? Semantics(
-                      button: true,
-                      label: 'Reveal gift card message',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onRevealMessage,
-                        child: ExcludeSemantics(child: card),
+                  ? PaymentLinkAction(
+                      onPressed: onRevealMessage,
+                      semanticLabel: 'Reveal gift card message',
+                      builder: (context, _, focused) => DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(AppRadii.large),
+                          border: focused
+                              ? Border.all(
+                                  color: context.colors.state.focusRing,
+                                  width: 2,
+                                )
+                              : null,
+                        ),
+                        child: ExcludeSemantics(child: motionCard),
                       ),
                     )
-                  : card,
+                  : motionCard,
             ),
           ),
           Positioned(
@@ -680,17 +984,22 @@ class _PaymentLinkMobileDropZone extends StatelessWidget {
 }
 
 class _MobileDashedBorderPainter extends CustomPainter {
-  const _MobileDashedBorderPainter({required this.color, required this.radius});
+  const _MobileDashedBorderPainter({
+    required this.color,
+    required this.radius,
+    this.strokeWidth = 3,
+  });
 
   final Color color;
   final double radius;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
+      ..strokeWidth = strokeWidth;
     final path = Path()
       ..addRRect(
         RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
@@ -706,7 +1015,9 @@ class _MobileDashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MobileDashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.radius != radius;
+      oldDelegate.color != color ||
+      oldDelegate.radius != radius ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
 
 class _PaymentLinkLoadingMobileCard extends StatelessWidget {
@@ -714,6 +1025,7 @@ class _PaymentLinkLoadingMobileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skeletonColor = context.colors.text.secondary;
     return Container(
       key: const ValueKey('payment_link_mobile_loading_card'),
       width: _cardWidth,
@@ -722,21 +1034,76 @@ class _PaymentLinkLoadingMobileCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        gradient: const LinearGradient(
-          colors: [Color(0x0D141818), Color(0x334D5252), Color(0x0D141818)],
-          stops: [0, 0.5, 1],
+        gradient: LinearGradient(
+          colors: [
+            skeletonColor.withValues(alpha: 0.08),
+            skeletonColor.withValues(alpha: 0.35),
+            skeletonColor.withValues(alpha: 0.08),
+          ],
+          stops: const [0, 0.5, 1],
         ),
       ),
-      child: const Align(
+      child: Align(
         alignment: Alignment.bottomLeft,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            PaymentLinkSkeletonBar(width: 60, height: 12),
-            SizedBox(height: AppSpacing.s),
-            PaymentLinkSkeletonBar(width: 130, height: 31),
+            PaymentLinkSkeletonBar(
+              width: 60,
+              height: 12,
+              colors: [
+                skeletonColor.withValues(alpha: 0.08),
+                skeletonColor.withValues(alpha: 0.55),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.s),
+            PaymentLinkSkeletonBar(
+              width: 130,
+              height: 31,
+              colors: [
+                skeletonColor.withValues(alpha: 0.08),
+                skeletonColor.withValues(alpha: 0.55),
+              ],
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileDashedStatusPill extends StatelessWidget {
+  const _MobileDashedStatusPill({required this.label, required this.icon});
+
+  final String label;
+  final String icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _MobileDashedBorderPainter(
+        color: context.colors.border.medium,
+        radius: AppRadii.full,
+        strokeWidth: 2,
+      ),
+      child: SizedBox(
+        height: 36,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(icon, size: 20, color: context.colors.text.primary),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(
+                  color: context.colors.text.primary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -899,19 +1266,14 @@ class _MobileReviewRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.onHelp,
-    this.emphasized = false,
   });
 
   final String label;
   final String value;
   final VoidCallback? onHelp;
-  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = emphasized
-        ? AppTypography.bodyMediumStrong
-        : AppTypography.bodyMedium;
     final help = AppTooltip(
       message:
           'Includes the fee to fund the Gift Card and the fee reserved for '
@@ -924,7 +1286,7 @@ class _MobileReviewRow extends StatelessWidget {
         onTap: onHelp,
         child: AppIcon(
           AppIcons.help,
-          size: 16,
+          size: AppIconSize.medium,
           color: context.colors.icon.muted,
         ),
       ),
@@ -935,34 +1297,43 @@ class _MobileReviewRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xxs),
+              child: Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xs,
+              AppSpacing.xxs,
+              AppSpacing.xxs,
+              AppSpacing.xxs,
+            ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    style: labelStyle.copyWith(
-                      color: context.colors.text.secondary,
-                    ),
+                Text(
+                  value,
+                  key: ValueKey('payment_link_mobile_review_value_$label'),
+                  textAlign: TextAlign.right,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.primary,
                   ),
                 ),
-                if (label.startsWith('Card fee')) ...[
+                if (onHelp != null) ...[
                   const SizedBox(width: AppSpacing.xxs),
                   Listener(
                     key: const ValueKey('payment_link_mobile_fee_help'),
-                    onPointerUp: onHelp == null ? null : (_) => onHelp!(),
+                    onPointerUp: (_) => onHelp!(),
                     child: help,
                   ),
                 ],
               ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            value,
-            key: ValueKey('payment_link_mobile_review_value_$label'),
-            textAlign: TextAlign.right,
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: context.colors.text.primary,
             ),
           ),
         ],

@@ -17,9 +17,12 @@ void main() {
   ) async {
     await _pumpReview(tester);
 
-    expect(find.text('Review Gift Card'), findsOneWidget);
-    expect(find.text('Review amount and fees.'), findsOneWidget);
-    expect(find.text('Create card'), findsOneWidget);
+    expect(find.text('Review a Card'), findsOneWidget);
+    expect(
+      find.text('Attach a short encrypted memo (optional).'),
+      findsOneWidget,
+    );
+    expect(find.text('Approve & create'), findsOneWidget);
     expect(find.text('Enter a message'), findsNothing);
   });
 

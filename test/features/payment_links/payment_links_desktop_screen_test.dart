@@ -252,14 +252,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(messageEditor, findsOneWidget);
-    expect(find.text('Start typing...'), findsNothing);
     expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
+    expect(
+      tester.widget<TextField>(messageEditor).decoration?.hintText,
+      isNull,
+    );
 
     await tester.enterText(messageEditor, 'For you');
     await tester.pump();
 
     expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
     expect(find.text('For you'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(messageEditor).decoration?.hintText,
+      isNull,
+    );
     expect(find.text('121/128'), findsOneWidget);
 
     var continueButton = tester.widget<AppButton>(
