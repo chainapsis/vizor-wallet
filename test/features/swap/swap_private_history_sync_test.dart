@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,37 @@ void main() {
     network: 'main',
     accountUuid: 'account-a',
   );
+
+  test('metadata round-trips the cached immutable snapshot', () {
+    final snapshot = _document(['remote']);
+    final decoded = FinalizedActivityArchiveMetadata.fromJson(
+      jsonDecode(
+        jsonEncode(
+          FinalizedActivityArchiveMetadata(
+            lastSlot: 1,
+            hiddenRecordIds: const {'hidden'},
+            lastSnapshot: snapshot,
+          ).toJson(),
+        ),
+      ),
+    );
+
+    expect(decoded?.lastSlot, 1);
+    expect(decoded?.hiddenRecordIds, {'hidden'});
+    expect(decoded?.lastSnapshot, snapshot);
+  });
+
+  test('metadata accepts schema two without a cached snapshot', () {
+    final decoded = FinalizedActivityArchiveMetadata.fromJson({
+      'schema': 2,
+      'last_slot': 3,
+      'hidden_record_ids': ['hidden'],
+    });
+
+    expect(decoded?.lastSlot, 3);
+    expect(decoded?.hiddenRecordIds, {'hidden'});
+    expect(decoded?.lastSnapshot, isNull);
+  });
 
   test('backfills only complete and refunded activity into slot one', () async {
     final repository = _MemoryRepository();
@@ -117,6 +149,71 @@ void main() {
       expect(metadata.value?.lastSlot, 2);
     },
   );
+
+  test('cached immutable slot reads only the following slot', () async {
+    final snapshot = _document(['remote']);
+    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+    final store = _MemoryActivityStore([
+      _record('remote', SwapIntentStatus.complete),
+    ]);
+    final metadata = _MemoryMetadataStore(
+      value: FinalizedActivityArchiveMetadata(
+        lastSlot: 1,
+        lastSnapshot: snapshot,
+      ),
+    );
+
+    final result = await _sync(
+      repository: repository,
+      store: store,
+      metadata: metadata,
+    ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+
+    expect(result.remoteWritten, isFalse);
+    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
+    expect(repository.createdKeys, isEmpty);
+  });
+
+  test('cached immutable slot restores a missing local replica', () async {
+    final snapshot = _document(['remote']);
+    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+    final store = _MemoryActivityStore(const []);
+    final metadata = _MemoryMetadataStore(
+      value: FinalizedActivityArchiveMetadata(
+        lastSlot: 1,
+        lastSnapshot: snapshot,
+      ),
+    );
+
+    await _sync(
+      repository: repository,
+      store: store,
+      metadata: metadata,
+    ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+
+    expect(store.records.map((record) => record.id), ['remote']);
+    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
+  });
+
+  test('legacy metadata reads the known slot once and caches it', () async {
+    final snapshot = _document(['remote']);
+    final repository = _MemoryRepository()..objects['archive-v1:1'] = snapshot;
+    final metadata = _MemoryMetadataStore(
+      value: const FinalizedActivityArchiveMetadata(lastSlot: 1),
+    );
+    final sync = _sync(
+      repository: repository,
+      store: _MemoryActivityStore(const []),
+      metadata: metadata,
+    );
+
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+    repository.readKeys.clear();
+    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+
+    expect(repository.readKeys.map((key) => key.itemKey), ['archive-v1:2']);
+    expect(metadata.value?.lastSnapshot, snapshot);
+  });
 
   test('preserves a remote truncation marker without writing a slot', () async {
     final repository = _MemoryRepository()
@@ -248,6 +345,7 @@ SwapIntentRecord _record(
 
 class _MemoryRepository implements PrivateStateObjectRepository {
   final Map<String, Uint8List> objects = {};
+  final List<PrivateStateObjectKey> readKeys = [];
   final List<PrivateStateObjectKey> createdKeys = [];
   int? conflictSlot;
   Uint8List? conflictWinner;
@@ -257,6 +355,7 @@ class _MemoryRepository implements PrivateStateObjectRepository {
     required PrivateStateAccount account,
     required PrivateStateObjectKey key,
   }) async {
+    readKeys.add(key);
     final plaintext = objects[key.itemKey];
     return plaintext == null
         ? const PrivateStateReadAbsent()
@@ -328,6 +427,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
     value = FinalizedActivityArchiveMetadata(
       lastSlot: value?.lastSlot ?? 0,
       hiddenRecordIds: {...?value?.hiddenRecordIds, ...recordIds},
+      lastSnapshot: value?.lastSnapshot,
     );
   }
 
@@ -349,6 +449,7 @@ class _MemoryMetadataStore implements FinalizedActivityArchiveMetadataStore {
         ...?value?.hiddenRecordIds,
         ...metadata.hiddenRecordIds,
       },
+      lastSnapshot: metadata.lastSnapshot,
     );
   }
 }

@@ -117,11 +117,14 @@ class FinalizedActivityArchiveSync
         ) ??
         const FinalizedActivityArchiveMetadata(lastSlot: 0);
     var lastSlot = metadata.lastSlot;
-    SwapPrivateHistoryDocument? remote;
+    var remote = _decodeCachedSnapshot(
+      metadata.lastSnapshot,
+      expectedKind: kind,
+    );
 
-    // Reload the latest known snapshot so a local-only deletion never removes
-    // that record from a later cumulative remote generation.
-    if (lastSlot > 0) {
+    // Immutable snapshots are cached locally after they are applied. Legacy or
+    // corrupt metadata falls back to one remote read, then repairs the cache.
+    if (lastSlot > 0 && remote == null) {
       final known = await _readSlot(
         account: account,
         kind: kind,
@@ -185,6 +188,7 @@ class FinalizedActivityArchiveSync
           kind: kind,
           lastSlot: lastSlot,
           hidden: hidden,
+          lastSnapshot: remote?.encode(),
         );
         return _complete(
           outcome: 'empty',
@@ -204,6 +208,7 @@ class FinalizedActivityArchiveSync
           kind: kind,
           lastSlot: lastSlot,
           hidden: hidden,
+          lastSnapshot: remote.encode(),
         );
         return _complete(
           outcome: 'unchanged',
@@ -230,6 +235,7 @@ class FinalizedActivityArchiveSync
           kind: kind,
           lastSlot: nextSlot,
           hidden: hidden,
+          lastSnapshot: plaintext,
         );
         return _complete(
           outcome: 'written',
@@ -297,12 +303,14 @@ class FinalizedActivityArchiveSync
     required SwapPrivateHistoryKind kind,
     required int lastSlot,
     required Set<String> hidden,
+    required Uint8List? lastSnapshot,
   }) => _metadataStore.save(
     accountUuid: account.accountUuid,
     kind: kind,
     metadata: FinalizedActivityArchiveMetadata(
       lastSlot: lastSlot,
       hiddenRecordIds: hidden,
+      lastSnapshot: lastSnapshot,
     ),
   );
 
@@ -337,6 +345,21 @@ class FinalizedActivityArchiveSync
         _syncTails.remove(scope);
       }
     }
+  }
+}
+
+SwapPrivateHistoryDocument? _decodeCachedSnapshot(
+  Uint8List? snapshot, {
+  required SwapPrivateHistoryKind expectedKind,
+}) {
+  if (snapshot == null) return null;
+  try {
+    return SwapPrivateHistoryDocument.decode(
+      snapshot,
+      expectedKind: expectedKind,
+    );
+  } on Object {
+    return null;
   }
 }
 
