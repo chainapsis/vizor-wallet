@@ -224,6 +224,78 @@ fn is_reusable_delegation_setup_error(error: &str) -> bool {
         || error.contains("refusing to overwrite tx1_effects")
 }
 
+fn phase_has_persisted_delegation_proof(phase: zcash_voting::delegate::DelegationPhase) -> bool {
+    matches!(
+        phase,
+        zcash_voting::delegate::DelegationPhase::Proved
+            | zcash_voting::delegate::DelegationPhase::Submitted
+            | zcash_voting::delegate::DelegationPhase::Confirmed
+    )
+}
+
+fn has_persisted_delegation_proof(
+    db_path: &str,
+    account_uuid: &str,
+    round_id: &str,
+    bundle_index: u32,
+) -> Result<bool, String> {
+    with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+        let phases = voting_db
+            .delegation_phases(round_id)
+            .map_err(|e| format!("load delegation phases failed: {e}"))?;
+        Ok(phases.into_iter().any(|(index, phase)| {
+            index == bundle_index && phase_has_persisted_delegation_proof(phase)
+        }))
+    })
+    .map(|(_, persisted)| persisted)
+}
+
+fn prepare_delegation_setup(
+    db_path: &str,
+    prepare_params: PrepareDelegationBundleParams<'_>,
+    setup_stages: &dyn zcash_voting::DelegationProgressReporter,
+) -> Result<(VotingDb, PreparedDelegationBundle, Vec<u8>, bool), String> {
+    let account_uuid = prepare_params.account_uuid;
+    let wallet_db = open_wallet_db_for_read(
+        db_path,
+        wallet_network(prepare_params.voting_hotkey.network()),
+    )?;
+    let prepare_params = prepare_params_with_whale_protection(prepare_params);
+    let (voting_db, (prepared_bundle, delegation_pczt_bytes, proof_persisted)) =
+        with_open_voting_db_write(db_path, account_uuid, |voting_db| {
+            let prepared_bundle = zcash_voting::delegate::prepare_delegation_bundle(
+                voting_db,
+                &wallet_db,
+                prepare_params,
+            )
+            .map_err(|e| e.to_string())?;
+            let phase = voting_db
+                .delegation_phase(&prepared_bundle.round_id, prepared_bundle.bundle_index)
+                .map_err(|e| format!("load delegation phase failed: {e}"))?;
+            let proof_persisted = phase_has_persisted_delegation_proof(phase);
+            let delegation_pczt_bytes = if proof_persisted {
+                Vec::new()
+            } else {
+                match prepared_bundle.setup(voting_db, setup_stages) {
+                    Ok(setup) => setup.pczt_bytes,
+                    Err(error) if is_reusable_delegation_setup_error(&error.to_string()) => {
+                        // Setup is write-once. A prior attempt may have persisted
+                        // everything needed for proof generation and signing.
+                        Vec::new()
+                    }
+                    Err(error) => return Err(format!("delegate::setup failed: {error}")),
+                }
+            };
+            Ok((prepared_bundle, delegation_pczt_bytes, proof_persisted))
+        })?;
+    Ok((
+        voting_db,
+        prepared_bundle,
+        delegation_pczt_bytes,
+        proof_persisted,
+    ))
+}
+
 /// Completes the proof phase for a previously prepared delegation bundle.
 ///
 /// Opens the voting database for `account_uuid`, joins the first in-flight PIR
@@ -765,6 +837,64 @@ pub async fn warm_pir_proof_cache(
     .map_err(|e| format!("PIR proof cache warm-up task failed: {e}"))?
 }
 
+/// Prepare and persist ZKP1 for one software delegation bundle without signing.
+///
+/// This is safe to retry. A bundle already in the proved, submitted, or
+/// confirmed phase returns `false` without reconnecting to PIR or regenerating
+/// the proof. A newly persisted proof returns `true`.
+///
+/// # Errors
+///
+/// Returns an error if note/bundle validation, witness generation, PCZT setup,
+/// PIR access, or proof generation fails.
+pub async fn precompute_delegation_proof(
+    db_path: &str,
+    pir_server_urls: &[String],
+    pir_layout: PirLayout,
+    prepare_params: PrepareDelegationBundleParams<'_>,
+) -> Result<bool, String> {
+    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
+    let account_uuid = prepare_params.account_uuid;
+    let round_id = prepare_params.lwd.round_params.vote_round_id.clone();
+    let bundle_index = prepare_params.bundle_index;
+
+    zcash_voting::validate_round_params(&prepare_params.lwd.round_params)
+        .map_err(|e| format!("Invalid voting round params: {e}"))?;
+
+    if has_persisted_delegation_proof(db_path, account_uuid, &round_id, bundle_index)? {
+        return Ok(false);
+    }
+
+    start_proving_cache_warmup();
+    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let setup_stages = zcash_voting::NoopProgressReporter;
+    let preparation = prepare_delegation_setup(db_path, prepare_params, &setup_stages);
+    let (_voting_db, prepared_bundle, _pczt_bytes, proof_persisted) = match preparation {
+        Ok(value) => value,
+        Err(error) => {
+            drain_pir_connect_after_error(pir_connect).await;
+            return Err(error);
+        }
+    };
+    if proof_persisted {
+        drain_pir_connect_after_error(pir_connect).await;
+        return Ok(false);
+    }
+
+    let noop_progress = Arc::new(|_: DelegationProgress| {});
+    prove_delegation_bundle(
+        db_path,
+        &pir_server_urls,
+        pir_layout,
+        account_uuid,
+        &prepared_bundle,
+        pir_connect,
+        noop_progress,
+    )
+    .await?;
+    Ok(true)
+}
+
 /// Build, prove, and sign one delegation payload.
 ///
 /// Emits progress phases through `on_progress`. The returned value is a signed
@@ -794,60 +924,58 @@ where
     zcash_voting::validate_round_params(&prepare_params.lwd.round_params)
         .map_err(|e| format!("Invalid voting round params: {e}"))?;
 
-    // Overlap independent warm-ups with local preparation/PCZT setup.
+    let proof_prechecked = has_persisted_delegation_proof(
+        db_path,
+        account_uuid,
+        &prepare_params.lwd.round_params.vote_round_id,
+        prepare_params.bundle_index,
+    )?;
+
+    // Overlap independent warm-ups with local preparation/PCZT setup when the
+    // proof is still missing. A background-completed proof needs no PIR client.
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let pir_connect = if proof_prechecked {
+        None
+    } else {
+        Some(spawn_pir_connect(&pir_server_urls[0], pir_layout)?)
+    };
 
     on_progress(DelegationProgress::SelectingNotes);
-    let preparation = (|| {
-        let wallet_db = open_wallet_db_for_read(
-            db_path,
-            wallet_network(prepare_params.voting_hotkey.network()),
-        )?;
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
-        let pczt_progress = on_progress.clone();
-        let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
-            pczt_progress(progress);
-        });
-        with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-            let prepared_bundle = zcash_voting::delegate::prepare_delegation_bundle(
-                voting_db,
-                &wallet_db,
-                prepare_params,
-            )
-            .map_err(|e| e.to_string())?;
-            let delegation_pczt_bytes = match prepared_bundle.setup(voting_db, &setup_stages) {
-                Ok(setup) => setup.pczt_bytes,
-                Err(error) if is_reusable_delegation_setup_error(&error.to_string()) => {
-                    // A prior software attempt may have completed setup/proving
-                    // but failed before its transaction hash was recorded. The
-                    // persisted setup is write-once and contains everything
-                    // needed to prove and sign again; an empty PCZT is valid for
-                    // submission reconstruction from those stored fields.
-                    Vec::new()
-                }
-                Err(error) => return Err(format!("delegate::setup failed: {error}")),
-            };
-            Ok((prepared_bundle, delegation_pczt_bytes))
-        })
-    })();
-    let (voting_db, (prepared_bundle, delegation_pczt_bytes)) = match preparation {
+    let pczt_progress = on_progress.clone();
+    let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
+        pczt_progress(progress);
+    });
+    let preparation = prepare_delegation_setup(db_path, prepare_params, &setup_stages);
+    let (voting_db, prepared_bundle, delegation_pczt_bytes, proof_persisted) = match preparation {
         Ok(value) => value,
         Err(error) => {
-            drain_pir_connect_after_error(pir_connect).await;
+            if let Some(pir_connect) = pir_connect {
+                drain_pir_connect_after_error(pir_connect).await;
+            }
             return Err(error);
         }
     };
-    prove_delegation_bundle(
-        db_path,
-        &pir_server_urls,
-        pir_layout,
-        account_uuid,
-        &prepared_bundle,
-        pir_connect,
-        on_progress.clone(),
-    )
-    .await?;
+    if proof_persisted {
+        if let Some(pir_connect) = pir_connect {
+            drain_pir_connect_after_error(pir_connect).await;
+        }
+        on_progress(DelegationProgress::ProofComplete);
+    } else {
+        let pir_connect = match pir_connect {
+            Some(pir_connect) => pir_connect,
+            None => spawn_pir_connect(&pir_server_urls[0], pir_layout)?,
+        };
+        prove_delegation_bundle(
+            db_path,
+            &pir_server_urls,
+            pir_layout,
+            account_uuid,
+            &prepared_bundle,
+            pir_connect,
+            on_progress.clone(),
+        )
+        .await?;
+    }
 
     on_progress(DelegationProgress::SigningPayload);
     let signing_request = prepared_bundle
@@ -1147,6 +1275,27 @@ mod tests {
         );
         assert!(normalize_pir_server_urls(&[]).is_err());
         assert!(normalize_pir_server_urls(&[" ".to_string()]).is_err());
+    }
+
+    #[test]
+    fn only_proved_or_later_delegation_phases_reuse_zkp1() {
+        use zcash_voting::delegate::DelegationPhase;
+
+        assert!(!phase_has_persisted_delegation_proof(
+            DelegationPhase::Prepared
+        ));
+        assert!(!phase_has_persisted_delegation_proof(
+            DelegationPhase::PcztBuilt
+        ));
+        assert!(phase_has_persisted_delegation_proof(
+            DelegationPhase::Proved
+        ));
+        assert!(phase_has_persisted_delegation_proof(
+            DelegationPhase::Submitted
+        ));
+        assert!(phase_has_persisted_delegation_proof(
+            DelegationPhase::Confirmed
+        ));
     }
 
     #[test]

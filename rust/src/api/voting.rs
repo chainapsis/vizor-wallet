@@ -883,6 +883,53 @@ pub async fn precompute_delegation_pir(
     .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
 }
 
+/// Generate and persist ZKP1 for one software delegation bundle without signing.
+///
+/// This is the account-bound continuation of snapshot PIR precompute. It uses
+/// the stored app hotkey to prepare the bundle and persists the proof, but it
+/// never receives the wallet mnemonic and cannot sign or submit a delegation.
+/// Repeated calls reuse an existing proved, submitted, or confirmed bundle and
+/// return `false`; a newly generated proof returns `true`.
+///
+/// # Errors
+///
+/// Returns an error if round inputs, hotkey validation, bundle preparation, PIR
+/// access, or ZKP1 generation fails.
+pub async fn precompute_delegation_proof(
+    ctx: ApiVotingRoundContext,
+    pir_server_urls: Vec<String>,
+    stored_hotkey_secret: Vec<u8>,
+    bundle_index: u32,
+) -> Result<bool, String> {
+    let (voting_network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
+    let lwd = resolve_delegation_lwd_inputs(
+        &ctx.lightwalletd_url,
+        ctx.round_params,
+        &ctx.round_name,
+        voting_network,
+    )
+    .await?;
+    let prepare_params = prepare_delegation_bundle_params(
+        lwd,
+        ctx.session_json.as_deref(),
+        &ctx.account_uuid,
+        &voting_hotkey,
+        bundle_index,
+        bundle_policy,
+    );
+
+    delegation::precompute_delegation_proof(
+        &ctx.db_path,
+        &pir_server_urls,
+        ctx.pir_layout,
+        prepare_params,
+    )
+    .await
+}
+
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
 ///
 /// Safe to call repeatedly; only the first call starts work. Returns
@@ -3781,6 +3828,40 @@ mod tests {
             .block_on(precompute_delegation_pir(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
+                vec![9; 1],
+                0,
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("Voting hotkey reconstruction failed"));
+    }
+
+    #[test]
+    fn precompute_delegation_proof_rejects_invalid_network_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_delegation_proof(
+                test_round_context(&db_path, "bogus", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
+                vec![9; 64],
+                0,
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("Unknown network"));
+    }
+
+    #[test]
+    fn precompute_delegation_proof_rejects_invalid_hotkey_before_network_io() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(precompute_delegation_proof(
+                test_round_context(&db_path, "regtest", "wallet-1"),
+                vec!["http://127.0.0.1:2".to_string()],
                 vec![9; 1],
                 0,
             ))

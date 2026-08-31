@@ -3620,6 +3620,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'cached=$cached fetched=$fetched '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
+      await _runBackgroundDelegationProofPrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+        bundleCount: result.bundleCount,
+      );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute failed '
@@ -3627,6 +3632,70 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
       );
+    }
+  }
+
+  Future<void> _runBackgroundDelegationProofPrecompute({
+    required _VotingSessionContext context,
+    required Uri pirEndpoint,
+    required int bundleCount,
+  }) async {
+    // Keystone must retain the original PCZT bytes for its QR signing request.
+    // The software path can persist ZKP1 now and reconstruct its signed payload
+    // from the stored setup fields later without retaining those bytes in Dart.
+    if (context.isHardwareAccount || bundleCount == 0) return;
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) return;
+
+    final rust = ref.read(votingRustApiProvider);
+    late final List<int> storedHotkeySecret;
+    try {
+      storedHotkeySecret = await _ensureHotkey(context);
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: background delegation proof skipped '
+        'round=${context.round.roundId} reason=hotkey-unavailable error=$e',
+      );
+      return;
+    }
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) return;
+
+    final current = state.value;
+    if (current == null) return;
+    final pirServerUrls = List<String>.from(
+      _delegationPirTransportUrls(current),
+    );
+    if (pirServerUrls.isEmpty) {
+      pirServerUrls.add(_transportUrl(pirEndpoint));
+    }
+
+    for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++) {
+      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) return;
+      final timer = Stopwatch()..start();
+      debugPrint(
+        '[zcash] Voting: background delegation proof start '
+        'round=${context.round.roundId} bundle=$bundleIndex',
+      );
+      try {
+        final generated = await rust.precomputeDelegationProof(
+          ctx: _apiRoundContext(context),
+          pirServerUrls: pirServerUrls,
+          storedHotkeySecret: storedHotkeySecret,
+          bundleIndex: bundleIndex,
+        );
+        debugPrint(
+          '[zcash] Voting: background delegation proof completed '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'result=${generated ? 'generated' : 'reused'} '
+          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+        );
+      } catch (e) {
+        debugPrint(
+          '[zcash] Voting: background delegation proof failed '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
+          'reason=foreground-fallback',
+        );
+      }
     }
   }
 
