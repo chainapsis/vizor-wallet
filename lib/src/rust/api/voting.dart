@@ -7,13 +7,26 @@ import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/share_policy.dart';
-import '../third_party/zcash_voting/types.dart';
 import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `canonical_configured_helper_urls`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `share_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+
+/// Select an exact-height PIR endpoint using the SDK's snapshot policy.
+///
+/// Dart owns probing and diagnostics because it owns the routed HTTP client.
+/// The protocol decision about which diagnostics are eligible remains here.
+String? selectPirSnapshotEndpoint({
+  required List<ApiPirSnapshotEndpointDiagnostic> diagnostics,
+  required BigInt expectedSnapshotHeight,
+  required BigInt matchIndex,
+}) => RustLib.instance.api.crateApiVotingSelectPirSnapshotEndpoint(
+  diagnostics: diagnostics,
+  expectedSnapshotHeight: expectedSnapshotHeight,
+  matchIndex: matchIndex,
+);
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 BigInt? lastMomentBufferSeconds({
@@ -50,56 +63,6 @@ Future<String> voteCommitmentWireJson({
   required VoteCommitmentWire commitment,
 }) => RustLib.instance.api.crateApiVotingVoteCommitmentWireJson(
   commitment: commitment,
-);
-
-/// Returns the helper-server encrypted-share submission body as wire JSON.
-Future<String> voteShareWireJson({
-  required VoteShareWire share,
-  BigInt? vcTreePosition,
-  required BigInt submitAt,
-}) => RustLib.instance.api.crateApiVotingVoteShareWireJson(
-  share: share,
-  vcTreePosition: vcTreePosition,
-  submitAt: submitAt,
-);
-
-/// Plan independent helper-share timing and randomized helper targets.
-///
-/// This mirrors the zcash-swift-wallet-sdk wrapper around
-/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
-/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
-/// `immediate_share_index` is the position of the round's designated immediate
-/// share in this batch, after any caller-side filtering or reordering.
-///
-/// # Errors
-///
-/// Returns an error if `share_count` does not fit `usize`, entropy generation
-/// fails, or crate policy rejects the supplied timing/server inputs.
-Future<List<ShareSubmissionPlan>> planShareSubmissions({
-  required int shareCount,
-  required List<String> serverUrls,
-  required int preferredServerCount,
-  required BigInt nowSeconds,
-  required BigInt voteEndTimeSeconds,
-  BigInt? lastMomentBufferSeconds,
-  required bool singleShare,
-  int? immediateShareIndex,
-}) => RustLib.instance.api.crateApiVotingPlanShareSubmissions(
-  shareCount: shareCount,
-  serverUrls: serverUrls,
-  preferredServerCount: preferredServerCount,
-  nowSeconds: nowSeconds,
-  voteEndTimeSeconds: voteEndTimeSeconds,
-  lastMomentBufferSeconds: lastMomentBufferSeconds,
-  singleShare: singleShare,
-  immediateShareIndex: immediateShareIndex,
-);
-
-/// Return the crate-owned progressive helper probe and privacy policy.
-ShareServerSelectionPolicy shareServerSelectionPolicy({
-  required int serverCount,
-}) => RustLib.instance.api.crateApiVotingShareServerSelectionPolicy(
-  serverCount: serverCount,
 );
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -166,11 +129,9 @@ VotingShareTrackingPassHandle beginShareTrackingPass({
 Future<ApiVotingHelperPreflight> preflightVotingHelpers({
   required VotingHelperDeliveryContext context,
   required List<String> configuredHelperUrls,
-  required int targetCount,
 }) => RustLib.instance.api.crateApiVotingPreflightVotingHelpers(
   context: context,
   configuredHelperUrls: configuredHelperUrls,
-  targetCount: targetCount,
 );
 
 /// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
@@ -228,32 +189,59 @@ Future<bool> confirmShareWithHelpers({
   nowSeconds: nowSeconds,
 );
 
-/// Submits one committed share according to its planner-produced placement.
+/// Prepares and durably persists every helper-share placement for one vote.
 ///
-/// Helper choice, health ordering, and the per-attempt retry rules live in the
-/// crate. Accepting fewer helpers than requested is a normal outcome and is
-/// reported in a delivery report. Rust journals each attempt before dispatch
-/// and persists its outcome before returning to Dart.
+/// Call this after the commitment has been persisted and before broadcasting
+/// it to the vote chain. Repeating the call after restart reuses the exact plan;
+/// it never starts helper network delivery.
 ///
 /// # Errors
 ///
-/// Returns an error if the plan or durable identity is invalid, the DB cannot
-/// be opened or updated, or an attempt outcome cannot be persisted.
-/// Helper refusals are scored, not raised.
-Future<ApiShareSubmissionReport> submitCommittedShareToHelpers({
+/// Returns an error without persisting a new plan if the helper fleet, proposal
+/// roster, ballot intent, or committed-vote generation is invalid, or if the
+/// database cannot be opened or updated.
+Future<void> prepareCommittedShareDelivery({
   required VotingHelperDeliveryContext context,
   required int bundleIndex,
   required int proposalId,
-  required int shareIndex,
-  required ShareSubmissionPlan plan,
-  required List<String> configuredHelperUrls,
+  required ApiVotingHelperPreflight preflight,
   required BigInt nowSeconds,
-}) => RustLib.instance.api.crateApiVotingSubmitCommittedShareToHelpers(
+  required BigInt voteEndTimeSeconds,
+  BigInt? lastMomentBufferSeconds,
+  required List<int> proposalIds,
+}) => RustLib.instance.api.crateApiVotingPrepareCommittedShareDelivery(
   context: context,
   bundleIndex: bundleIndex,
   proposalId: proposalId,
-  shareIndex: shareIndex,
-  plan: plan,
+  preflight: preflight,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+  lastMomentBufferSeconds: lastMomentBufferSeconds,
+  proposalIds: proposalIds,
+);
+
+/// Submits every incomplete share from an existing durable delivery plan.
+///
+/// Call this only after chain confirmation has been persisted. The SDK rebuilds
+/// and validates every payload against the confirmed committed-vote generation
+/// before the first POST, enforces its process-wide concurrency ceiling, and
+/// journals each attempt before dispatch.
+///
+/// # Errors
+///
+/// Returns an error before network I/O if the plan is missing or incompatible,
+/// the confirmed committed-vote generation is invalid, or the configured fleet
+/// differs from the persisted plan. Helper refusals are scored and reported.
+Future<ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
+  required VotingHelperDeliveryContext context,
+  required int bundleIndex,
+  required int proposalId,
+  required List<String> configuredHelperUrls,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingSubmitPreparedSharesToHelpers(
+  context: context,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
   configuredHelperUrls: configuredHelperUrls,
   nowSeconds: nowSeconds,
 );
@@ -1017,14 +1005,19 @@ class ApiDynamicConfigMirrorFailure {
 class ApiKeystoneSignatureBatchResult {
   final int inserted;
   final int alreadyPresent;
+  final int? conflictingBundleIndex;
 
   const ApiKeystoneSignatureBatchResult({
     required this.inserted,
     required this.alreadyPresent,
+    this.conflictingBundleIndex,
   });
 
   @override
-  int get hashCode => inserted.hashCode ^ alreadyPresent.hashCode;
+  int get hashCode =>
+      inserted.hashCode ^
+      alreadyPresent.hashCode ^
+      conflictingBundleIndex.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1032,7 +1025,8 @@ class ApiKeystoneSignatureBatchResult {
       other is ApiKeystoneSignatureBatchResult &&
           runtimeType == other.runtimeType &&
           inserted == other.inserted &&
-          alreadyPresent == other.alreadyPresent;
+          alreadyPresent == other.alreadyPresent &&
+          conflictingBundleIndex == other.conflictingBundleIndex;
 }
 
 /// One Keystone delegation signature tuple to persist atomically.
@@ -1138,6 +1132,51 @@ class ApiPirCacheWarmupResult {
           prunedCount == other.prunedCount;
 }
 
+class ApiPirSnapshotEndpointDiagnostic {
+  final String endpoint;
+  final ApiPirSnapshotEndpointStatus status;
+  final BigInt? reportedHeight;
+  final int? httpStatusCode;
+  final String? message;
+
+  const ApiPirSnapshotEndpointDiagnostic({
+    required this.endpoint,
+    required this.status,
+    this.reportedHeight,
+    this.httpStatusCode,
+    this.message,
+  });
+
+  @override
+  int get hashCode =>
+      endpoint.hashCode ^
+      status.hashCode ^
+      reportedHeight.hashCode ^
+      httpStatusCode.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiPirSnapshotEndpointDiagnostic &&
+          runtimeType == other.runtimeType &&
+          endpoint == other.endpoint &&
+          status == other.status &&
+          reportedHeight == other.reportedHeight &&
+          httpStatusCode == other.httpStatusCode &&
+          message == other.message;
+}
+
+enum ApiPirSnapshotEndpointStatus {
+  matched,
+  behind,
+  ahead,
+  missingHeight,
+  malformedJson,
+  nonSuccessStatus,
+  timeoutOrNetworkError,
+}
+
 /// One share that reached a new helper during a tracking pass.
 class ApiResubmittedShare {
   final ApiShareKey share;
@@ -1155,6 +1194,60 @@ class ApiResubmittedShare {
           runtimeType == other.runtimeType &&
           share == other.share &&
           serverUrl == other.serverUrl;
+}
+
+/// Commitment-wide helper delivery result.
+class ApiShareBatchDeliveryReport {
+  final List<ApiShareDeliveryOutcome> deliveries;
+  final Uint32List pendingShareIndices;
+  final bool cancelled;
+  final bool legacyBestEffort;
+
+  const ApiShareBatchDeliveryReport({
+    required this.deliveries,
+    required this.pendingShareIndices,
+    required this.cancelled,
+    required this.legacyBestEffort,
+  });
+
+  @override
+  int get hashCode =>
+      deliveries.hashCode ^
+      pendingShareIndices.hashCode ^
+      cancelled.hashCode ^
+      legacyBestEffort.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareBatchDeliveryReport &&
+          runtimeType == other.runtimeType &&
+          deliveries == other.deliveries &&
+          pendingShareIndices == other.pendingShareIndices &&
+          cancelled == other.cancelled &&
+          legacyBestEffort == other.legacyBestEffort;
+}
+
+/// One share processed by commitment-wide initial delivery.
+class ApiShareDeliveryOutcome {
+  final int shareIndex;
+  final ApiShareSubmissionReport submission;
+
+  const ApiShareDeliveryOutcome({
+    required this.shareIndex,
+    required this.submission,
+  });
+
+  @override
+  int get hashCode => shareIndex.hashCode ^ submission.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareDeliveryOutcome &&
+          runtimeType == other.runtimeType &&
+          shareIndex == other.shareIndex &&
+          submission == other.submission;
 }
 
 /// One helper share identified within its round.

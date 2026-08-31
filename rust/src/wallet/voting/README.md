@@ -113,7 +113,7 @@ directly. The mapping from FRB functions to crate APIs:
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
 | Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
-| Share submit/confirm | `submit_share_to_helpers`, `track_pending_shares` | `CommittedVote::submit_share_to_helpers`, `share_tracking::track_pending_shares` |
+| Share plan/submit/confirm | `preflight_voting_helpers`, `prepare_committed_share_delivery`, `submit_prepared_shares_to_helpers`, `confirm_share_with_helpers`, `track_pending_shares` | `HelperFleetPreflight`, `CommittedVote::{prepare_share_delivery, submit_prepared_shares}`, `share_tracking::{confirm_pending_share, track_pending_shares}` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
 
 The `confirmation::*` APIs parse chain `tx` events and atomically record tx
@@ -147,7 +147,10 @@ stateDiagram-v2
 ### Helper Share Scheduling
 
 Helper-share `submit_at` (the Unix-second reveal time sent to the helper server)
-is planned through the crate's policy before calling `submit_share_to_helpers`:
+is planned and durably persisted by `zcash_voting`'s complete-batch delivery
+API. Vizor supplies authenticated round timing, the configured fleet, and the
+round's immediate-share key; the SDK owns entropy, readiness-derived targets,
+placement, generation binding, and restart reuse:
 
 - The last-moment buffer is 40% of the round duration from `ceremony_phase_start`
   to `vote_end_time`, capped at six hours.
@@ -159,10 +162,11 @@ is planned through the crate's policy before calling `submit_share_to_helpers`:
 
 Overdue recovery submits immediately (`submit_at = 0`), while early
 under-placement replenishment preserves the original schedule in both the
-helper payload and durable record. The canonical scheduling/retry/polling policy lives in the crate's
-`share_policy` module; Dart consumes only initial plans and the next-pass delay
-through `api/voting.rs`. The crate-owned tracker decides polling,
-replenishment, and overdue recovery.
+helper payload and durable record. The canonical scheduling, delivery,
+retry, and polling policy lives in the SDK. Dart calls the batch-oriented
+adapter in `api/voting.rs`; it neither materializes plans nor submits
+individual helper payloads. The SDK also enforces the process-wide ceiling of
+16 concurrent helper POSTs.
 
 Definite acceptances, outcome-unknown deliveries, and in-flight markers left by
 an interrupted process remain tracked after the vote screen closes. An
@@ -174,9 +178,23 @@ helpers, then may duplicate-safely re-POST an outcome-unknown helper once in
 that pass.
 Configured helpers are trusted global chain-status oracles, but one helper
 cannot finalize a share by itself. The crate requires matching `confirmed`
-responses from two distinct helpers in the current configuration and persists
-the result internally. Vizor does not expose helper observations, implement a
-second polling pass, or call a separate confirmation API.
+responses from two distinct helpers in the current configuration and binds the
+confirmation write to the exact stored nullifier generation. Vizor uses the
+crate's focused `confirm_pending_share` API for the designated immediate share
+and the full `track_pending_shares` pass for background recovery. It does not
+expose helper observations or implement a second polling path.
+
+Fresh commitments use a strict, SDK-persisted complete plan. The SDK reuses
+that exact plan after restart and submits only definite-delivery deficits, so
+fleet compatibility, aggregate quota, and target guarantees remain bound to
+the original commitment generation. The Rust boundary separates preparation
+after durable vote commitment creation from submission after confirmation
+persistence, so the host cannot conflate those lifecycle steps. Normal vote
+confirmation advances a matching plan from the exact pre-confirmation recovery
+snapshot to the exact confirmed snapshot; replacement, clearing, and unrelated
+recovery-material changes invalidate it. `LegacyBestEffort` is metadata only
+for old durable state that predates complete-plan persistence. Vizor surfaces
+that state but does not implement a second replanning policy.
 
 Initial submission and recovery share one account/round/database-bound Rust
 helper delivery context. Before a fresh helper POST, the crate commits an

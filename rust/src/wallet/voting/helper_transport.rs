@@ -18,14 +18,12 @@
 use std::{future::Future, time::Duration};
 
 use bytes::Bytes;
-use http::{Method, Request, Uri};
-use http_body_util::{BodyExt, Full, Limited};
-use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
-    rt::TokioExecutor,
-};
+use http::{Method, Uri};
+use http_body_util::{BodyExt, Full};
+use hyper_util::client::legacy::connect::HttpConnector;
 use zcash_voting::{
-    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, MAX_HELPER_RESPONSE_BYTES,
+    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, HyperTransport,
+    MAX_HELPER_RESPONSE_BYTES,
 };
 
 use crate::network_privacy;
@@ -34,12 +32,9 @@ use crate::network_privacy;
 // SDK's transport contract rather than being chosen again here. Picking our own
 // value would let the two drift silently.
 
-type DirectBody = Full<Bytes>;
-type DirectClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, DirectBody>;
-
 /// Helper transport that follows the app's current network route.
 pub struct VotingHelperTransport {
-    direct: DirectClient,
+    direct: HyperTransport,
 }
 
 impl Default for VotingHelperTransport {
@@ -50,17 +45,8 @@ impl Default for VotingHelperTransport {
 
 impl VotingHelperTransport {
     pub fn new() -> Self {
-        // Tests and background recovery can construct the helper transport
-        // before the app's normal initialization entrypoint runs.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_webpki_roots()
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()
-            .wrap_connector(DirectRouteConnector::new());
         Self {
-            direct: Client::builder(TokioExecutor::new()).build(https),
+            direct: HyperTransport::with_http_connector(DirectRouteConnector::new()),
         }
     }
 
@@ -85,7 +71,8 @@ impl VotingHelperTransport {
                 self.request_over_tor(&tor, method, url, body, timeout)
                     .await
             }
-            None => self.request_direct(method, url, body, timeout).await,
+            None if method == Method::POST => self.direct.post_json(url, body, timeout).await,
+            None => self.direct.get(url, timeout).await,
         }
     }
 
@@ -146,60 +133,6 @@ impl VotingHelperTransport {
             content_type,
         ))
     }
-
-    async fn request_direct(
-        &self,
-        method: Method,
-        url: &str,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) -> Result<HelperResponse, HelperTransportError> {
-        let has_body = !body.is_empty();
-        let builder = Request::builder().method(method).uri(url);
-        let builder = if has_body {
-            builder.header(http::header::CONTENT_TYPE, "application/json")
-        } else {
-            builder
-        };
-        let request = builder
-            .body(Full::new(Bytes::from(body)))
-            .map_err(|error| {
-                HelperTransportError::Transport(format!("build helper request: {error}"))
-            })?;
-
-        let response = with_timeout(timeout, self.direct.request(request))
-            .await?
-            .map_err(|error| {
-                let message = format!("send helper request: {error}");
-                if error.is_connect() {
-                    HelperTransportError::Transport(message)
-                } else {
-                    // Once Hyper progressed past connection setup, it cannot
-                    // prove that the helper did not receive a POST body.
-                    HelperTransportError::Ambiguous(message)
-                }
-            })?;
-        let status = response.status().as_u16();
-        let content_type = response
-            .headers()
-            .get(http::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        let body = with_timeout(
-            timeout,
-            Limited::new(response.into_body(), MAX_HELPER_RESPONSE_BYTES).collect(),
-        )
-        .await?
-        .map_err(|error| {
-            HelperTransportError::Response(format!(
-                "read helper response body (limit {MAX_HELPER_RESPONSE_BYTES} bytes): {error}"
-            ))
-        })?
-        .to_bytes()
-        .to_vec();
-
-        Ok(HelperResponse::new(status, body, content_type))
-    }
 }
 
 /// Separates Tor failures that prove a POST was never dispatched from failures
@@ -217,17 +150,18 @@ fn classify_tor_error(
     if !is_post {
         return HelperTransportError::Transport(message);
     }
-    let definitely_pre_dispatch = match &error {
-        Error::MissingTorDirectory | Error::Tor(_) => true,
-        Error::Http(
-            HttpError::NonHttpUrl
-            | HttpError::Http(_)
-            | HttpError::Spawn(_)
-            | HttpError::Tls(_)
-            | HttpError::Timeout(TimeoutPhase::Connect),
-        ) => true,
-        _ => false,
-    };
+    let definitely_pre_dispatch = matches!(
+        &error,
+        Error::MissingTorDirectory
+            | Error::Tor(_)
+            | Error::Http(
+                HttpError::NonHttpUrl
+                    | HttpError::Http(_)
+                    | HttpError::Spawn(_)
+                    | HttpError::Tls(_)
+                    | HttpError::Timeout(TimeoutPhase::Connect),
+            )
+    );
     if definitely_pre_dispatch {
         HelperTransportError::Transport(message)
     } else {
@@ -335,7 +269,12 @@ impl tower_service::Service<Uri> for DirectRouteConnector {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, net::TcpListener, thread, time::Duration};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+        time::Duration,
+    };
 
     use http::Method;
     use zcash_voting::HelperTransportError;
@@ -392,7 +331,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_closed_after_receipt_is_ambiguous() {
+    async fn selected_direct_route_uses_sdk_hyper_transport() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
@@ -400,39 +340,27 @@ mod tests {
             let mut request = [0u8; 2048];
             let bytes_read = stream.read(&mut request).unwrap();
             assert!(request[..bytes_read].starts_with(b"POST "));
-            // Drop the connection after receipt without response headers.
+            stream
+                .write_all(
+                    b"HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+                )
+                .unwrap();
         });
 
         let transport = VotingHelperTransport::new();
-        let result = transport
-            .request_direct(
+        let response = transport
+            .request(
                 Method::POST,
                 &format!("http://{address}/shielded-vote/v1/shares"),
                 br#"{"share_index":0}"#.to_vec(),
                 Duration::from_secs(1),
             )
-            .await;
+            .await
+            .unwrap();
 
-        assert!(matches!(result, Err(HelperTransportError::Ambiguous(_))));
+        assert_eq!(response.status(), 201);
+        assert_eq!(response.body(), b"{}");
+        assert_eq!(response.content_type(), Some("application/json"));
         server.join().unwrap();
-    }
-
-    #[tokio::test]
-    async fn refused_connection_is_definite() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
-
-        let transport = VotingHelperTransport::new();
-        let result = transport
-            .request_direct(
-                Method::POST,
-                &format!("http://{address}/shielded-vote/v1/shares"),
-                br#"{"share_index":0}"#.to_vec(),
-                Duration::from_secs(1),
-            )
-            .await;
-
-        assert!(matches!(result, Err(HelperTransportError::Transport(_))));
     }
 }

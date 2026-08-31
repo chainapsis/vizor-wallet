@@ -1436,7 +1436,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (roundPlan != null) {
       for (final step in roundPlan.nextSteps) {
         if (step.kind == 'confirm_share') {
-          if (session.resumePlan?.hasBlockingShareWork ?? true) return true;
+          if (roundPlan.blockingShareWork) return true;
           continue;
         }
         if (_stepCanRecoverWithoutDraft(step)) return true;

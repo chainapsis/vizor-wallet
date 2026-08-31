@@ -3,9 +3,28 @@ import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 
 import 'fake_voting_http.dart';
 
+Uri? selectExactHeightEndpoint({
+  required List<PirSnapshotEndpointDiagnostic> diagnostics,
+  required int expectedSnapshotHeight,
+  required int matchIndex,
+}) {
+  final matches = diagnostics
+      .where(
+        (diagnostic) =>
+            diagnostic.status == PirSnapshotEndpointStatus.matched &&
+            diagnostic.reportedHeight == expectedSnapshotHeight,
+      )
+      .map((diagnostic) => diagnostic.endpoint)
+      .toList(growable: false);
+  return matches.isEmpty ? null : matches[matchIndex % matches.length];
+}
+
 void main() {
   test('empty endpoint list throws typed no-endpoints error', () async {
-    final resolver = PirSnapshotResolver(httpClient: FakeVotingHttpClient());
+    final resolver = PirSnapshotResolver(
+      httpClient: FakeVotingHttpClient(),
+      selectEndpoint: selectExactHeightEndpoint,
+    );
 
     expect(
       resolver.resolve(endpoints: const [], expectedSnapshotHeight: 100),
@@ -21,6 +40,7 @@ void main() {
           'https://pir.example/snapshot/root': {'height': 100},
         },
       ),
+      selectEndpoint: selectExactHeightEndpoint,
     );
 
     final result = await resolver.resolve(
@@ -45,6 +65,7 @@ void main() {
           },
         },
       ),
+      selectEndpoint: selectExactHeightEndpoint,
     );
 
     try {
@@ -72,6 +93,7 @@ void main() {
           },
         },
       ),
+      selectEndpoint: selectExactHeightEndpoint,
     );
 
     final result = await resolver.resolve(
@@ -99,6 +121,7 @@ void main() {
           },
         },
       ),
+      selectEndpoint: selectExactHeightEndpoint,
     );
 
     try {
@@ -140,6 +163,7 @@ void main() {
             'https://pir.example/match/root': {'height': 100},
           },
         ),
+        selectEndpoint: selectExactHeightEndpoint,
       );
 
       final result = await resolver.resolve(
@@ -172,6 +196,7 @@ void main() {
           'https://pir.example/ahead/root': {'height': 101},
         },
       ),
+      selectEndpoint: selectExactHeightEndpoint,
     );
 
     try {

@@ -6,9 +6,8 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
-import 'types.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `SignedVoteBatchView`, `VoteBatchConfirmation`, `VoteCommitmentBatchWire`, `VoteRecord`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `SignedVoteBatchView`, `VoteBatchConfirmation`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
@@ -387,6 +386,7 @@ class RoundPlanView {
 
   /// The round's single immediate helper-share submission, if designated.
   final ImmediateShareKey? immediateShareKey;
+  final bool immediateShareConfirmed;
   final bool allDecided;
 
   const RoundPlanView({
@@ -406,6 +406,7 @@ class RoundPlanView {
     required this.recoveredVoteWork,
     required this.openProposals,
     this.immediateShareKey,
+    required this.immediateShareConfirmed,
     required this.allDecided,
   });
 
@@ -427,6 +428,7 @@ class RoundPlanView {
       recoveredVoteWork.hashCode ^
       openProposals.hashCode ^
       immediateShareKey.hashCode ^
+      immediateShareConfirmed.hashCode ^
       allDecided.hashCode;
 
   @override
@@ -450,6 +452,7 @@ class RoundPlanView {
           recoveredVoteWork == other.recoveredVoteWork &&
           openProposals == other.openProposals &&
           immediateShareKey == other.immediateShareKey &&
+          immediateShareConfirmed == other.immediateShareConfirmed &&
           allDecided == other.allDecided;
 }
 
@@ -644,16 +647,14 @@ class SignedDelegationPayloadView {
 class SignedVoteCommitmentView {
   final int proposalId;
   final VoteCommitmentWire wire;
-  final List<VoteShareWire> shares;
 
   const SignedVoteCommitmentView({
     required this.proposalId,
     required this.wire,
-    required this.shares,
   });
 
   @override
-  int get hashCode => proposalId.hashCode ^ wire.hashCode ^ shares.hashCode;
+  int get hashCode => proposalId.hashCode ^ wire.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -661,8 +662,7 @@ class SignedVoteCommitmentView {
       other is SignedVoteCommitmentView &&
           runtimeType == other.runtimeType &&
           proposalId == other.proposalId &&
-          wire == other.wire &&
-          shares == other.shares;
+          wire == other.wire;
 }
 
 class SignedVoteCommitmentsView {
@@ -848,66 +848,6 @@ class VoteRecoveryWorkView {
           txHash == other.txHash &&
           vcTreePosition == other.vcTreePosition &&
           shareIndexes == other.shareIndexes;
-}
-
-class VoteShareWire {
-  /// Voting round ID as 32 bytes encoded in lowercase hex.
-  final String voteRoundId;
-
-  /// Poseidon output encoded as a canonical Pallas base-field element.
-  final String sharesHash;
-  final int proposalId;
-  final int voteDecision;
-  final WireEncryptedShare encryptedShare;
-  final int shareIndex;
-  final BigInt vcTreePosition;
-
-  /// All 16 per-share commitments as canonical Pallas base-field elements.
-  final List<String> shareComms;
-  final String primaryBlind;
-  final BigInt submitAt;
-
-  const VoteShareWire({
-    required this.voteRoundId,
-    required this.sharesHash,
-    required this.proposalId,
-    required this.voteDecision,
-    required this.encryptedShare,
-    required this.shareIndex,
-    required this.vcTreePosition,
-    required this.shareComms,
-    required this.primaryBlind,
-    required this.submitAt,
-  });
-
-  @override
-  int get hashCode =>
-      voteRoundId.hashCode ^
-      sharesHash.hashCode ^
-      proposalId.hashCode ^
-      voteDecision.hashCode ^
-      encryptedShare.hashCode ^
-      shareIndex.hashCode ^
-      vcTreePosition.hashCode ^
-      shareComms.hashCode ^
-      primaryBlind.hashCode ^
-      submitAt.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VoteShareWire &&
-          runtimeType == other.runtimeType &&
-          voteRoundId == other.voteRoundId &&
-          sharesHash == other.sharesHash &&
-          proposalId == other.proposalId &&
-          voteDecision == other.voteDecision &&
-          encryptedShare == other.encryptedShare &&
-          shareIndex == other.shareIndex &&
-          vcTreePosition == other.vcTreePosition &&
-          shareComms == other.shareComms &&
-          primaryBlind == other.primaryBlind &&
-          submitAt == other.submitAt;
 }
 
 /// Parameters for a voting round, sourced from vote chain.

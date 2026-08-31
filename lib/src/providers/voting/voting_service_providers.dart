@@ -14,8 +14,6 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
-import '../../rust/third_party/zcash_voting/share_policy.dart'
-    as rust_share_policy;
 import '../../rust/third_party/zcash_voting/vote.dart' as rust_vote;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -125,12 +123,58 @@ final votingApiClientProvider =
 
 /// Resolves PIR endpoints before proof generation.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
+  final rust = ref.watch(votingRustApiProvider);
   return PirSnapshotResolver(
     httpClient: ref.watch(votingHttpClientProvider),
+    selectEndpoint:
+        ({
+          required diagnostics,
+          required expectedSnapshotHeight,
+          required matchIndex,
+        }) {
+          final endpoint = rust.selectPirSnapshotEndpoint(
+            diagnostics: [
+              for (final diagnostic in diagnostics)
+                rust_api.ApiPirSnapshotEndpointDiagnostic(
+                  endpoint: diagnostic.endpoint.toString(),
+                  status: _apiPirSnapshotStatus(diagnostic.status),
+                  reportedHeight: diagnostic.reportedHeight == null
+                      ? null
+                      : BigInt.from(diagnostic.reportedHeight!),
+                  httpStatusCode: diagnostic.httpStatusCode,
+                  message: diagnostic.message,
+                ),
+            ],
+            expectedSnapshotHeight: BigInt.from(expectedSnapshotHeight),
+            matchIndex: BigInt.from(matchIndex),
+          );
+          return endpoint == null ? null : Uri.parse(endpoint);
+        },
     timeout: ref.watch(votingPirProbeTimeoutProvider),
     retryPolicy: ref.watch(votingPirProbeRetryPolicyProvider),
   );
 });
+
+rust_api.ApiPirSnapshotEndpointStatus _apiPirSnapshotStatus(
+  PirSnapshotEndpointStatus status,
+) {
+  return switch (status) {
+    PirSnapshotEndpointStatus.matched =>
+      rust_api.ApiPirSnapshotEndpointStatus.matched,
+    PirSnapshotEndpointStatus.behind =>
+      rust_api.ApiPirSnapshotEndpointStatus.behind,
+    PirSnapshotEndpointStatus.ahead =>
+      rust_api.ApiPirSnapshotEndpointStatus.ahead,
+    PirSnapshotEndpointStatus.missingHeight =>
+      rust_api.ApiPirSnapshotEndpointStatus.missingHeight,
+    PirSnapshotEndpointStatus.malformedJson =>
+      rust_api.ApiPirSnapshotEndpointStatus.malformedJson,
+    PirSnapshotEndpointStatus.nonSuccessStatus =>
+      rust_api.ApiPirSnapshotEndpointStatus.nonSuccessStatus,
+    PirSnapshotEndpointStatus.timeoutOrNetworkError =>
+      rust_api.ApiPirSnapshotEndpointStatus.timeoutOrNetworkError,
+  };
+}
 
 /// Adapter over durable Rust recovery/share-tracking state.
 final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
@@ -355,6 +399,13 @@ abstract interface class VotingShareTrackingPassHandle {
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
+  String? selectPirSnapshotEndpoint({
+    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
+    required BigInt expectedSnapshotHeight,
+    required BigInt matchIndex,
+  });
+
   Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
     required rust_config.ResolvedVotingConfig config,
     required String roundId,
@@ -525,27 +576,6 @@ abstract interface class VotingRustApi {
     required rust_voting.VoteCommitmentWire commitment,
   });
 
-  Future<String> voteShareWireJson({
-    required rust_voting.VoteShareWire share,
-    BigInt? vcTreePosition,
-    required BigInt submitAt,
-  });
-
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
-    required List<String> helperUrls,
-    required int preferredHelperCount,
-    required BigInt nowSeconds,
-    required BigInt voteEndTimeSeconds,
-    BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
-    int? immediateShareIndex,
-  });
-
-  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
-    required int helperCount,
-  });
-
   BigInt? lastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -595,19 +625,25 @@ abstract interface class VotingRustApi {
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
     required VotingHelperDeliveryContext context,
     required List<String> configuredHelperUrls,
-    required int targetCount,
   });
 
-  /// Fans one freshly built share out to helpers until enough accept it.
-  ///
-  /// Returns definite and outcome-unknown attempts plus the placement target.
-  /// A short definite list is normal: later tracking replenishes it.
-  Future<rust_api.ApiShareSubmissionReport> submitCommittedShareToHelpers({
+  /// Plans and durably persists every helper share before vote broadcast.
+  Future<void> prepareCommittedShareDelivery({
     required VotingHelperDeliveryContext context,
     required int bundleIndex,
     required int proposalId,
-    required int shareIndex,
-    required rust_share_policy.ShareSubmissionPlan plan,
+    required rust_api.ApiVotingHelperPreflight preflight,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    required List<int> proposalIds,
+    BigInt? lastMomentBufferSeconds,
+  });
+
+  /// Submits every incomplete share from an existing durable delivery plan.
+  Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
+    required VotingHelperDeliveryContext context,
+    required int bundleIndex,
+    required int proposalId,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
   });
@@ -721,6 +757,19 @@ final class _FrbVotingShareTrackingPassHandle
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
+
+  @override
+  String? selectPirSnapshotEndpoint({
+    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
+    required BigInt expectedSnapshotHeight,
+    required BigInt matchIndex,
+  }) {
+    return rust_api.selectPirSnapshotEndpoint(
+      diagnostics: diagnostics,
+      expectedSnapshotHeight: expectedSnapshotHeight,
+      matchIndex: matchIndex,
+    );
+  }
 
   @override
   Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
@@ -1043,49 +1092,6 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<String> voteShareWireJson({
-    required rust_voting.VoteShareWire share,
-    BigInt? vcTreePosition,
-    required BigInt submitAt,
-  }) {
-    return rust_api.voteShareWireJson(
-      share: share,
-      vcTreePosition: vcTreePosition,
-      submitAt: submitAt,
-    );
-  }
-
-  @override
-  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
-    required int shareCount,
-    required List<String> helperUrls,
-    required int preferredHelperCount,
-    required BigInt nowSeconds,
-    required BigInt voteEndTimeSeconds,
-    BigInt? lastMomentBufferSeconds,
-    required bool singleShare,
-    int? immediateShareIndex,
-  }) {
-    return rust_api.planShareSubmissions(
-      shareCount: shareCount,
-      serverUrls: helperUrls,
-      preferredServerCount: preferredHelperCount,
-      nowSeconds: nowSeconds,
-      voteEndTimeSeconds: voteEndTimeSeconds,
-      lastMomentBufferSeconds: lastMomentBufferSeconds,
-      singleShare: singleShare,
-      immediateShareIndex: immediateShareIndex,
-    );
-  }
-
-  @override
-  rust_share_policy.ShareServerSelectionPolicy shareServerSelectionPolicy({
-    required int helperCount,
-  }) {
-    return rust_api.shareServerSelectionPolicy(serverCount: helperCount);
-  }
-
-  @override
   BigInt? lastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -1195,7 +1201,6 @@ class FrbVotingRustApi implements VotingRustApi {
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
     required VotingHelperDeliveryContext context,
     required List<String> configuredHelperUrls,
-    required int targetCount,
   }) {
     if (context is! _FrbVotingHelperDeliveryContext) {
       throw ArgumentError.value(
@@ -1207,17 +1212,44 @@ class FrbVotingRustApi implements VotingRustApi {
     return rust_api.preflightVotingHelpers(
       context: context.inner,
       configuredHelperUrls: configuredHelperUrls,
-      targetCount: targetCount,
     );
   }
 
   @override
-  Future<rust_api.ApiShareSubmissionReport> submitCommittedShareToHelpers({
+  Future<void> prepareCommittedShareDelivery({
     required VotingHelperDeliveryContext context,
     required int bundleIndex,
     required int proposalId,
-    required int shareIndex,
-    required rust_share_policy.ShareSubmissionPlan plan,
+    required rust_api.ApiVotingHelperPreflight preflight,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    required List<int> proposalIds,
+    BigInt? lastMomentBufferSeconds,
+  }) {
+    if (context is! _FrbVotingHelperDeliveryContext) {
+      throw ArgumentError.value(
+        context,
+        'context',
+        'Expected an FRB voting helper delivery context',
+      );
+    }
+    return rust_api.prepareCommittedShareDelivery(
+      context: context.inner,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      preflight: preflight,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+      proposalIds: proposalIds,
+      lastMomentBufferSeconds: lastMomentBufferSeconds,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
+    required VotingHelperDeliveryContext context,
+    required int bundleIndex,
+    required int proposalId,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
   }) {
@@ -1228,12 +1260,10 @@ class FrbVotingRustApi implements VotingRustApi {
         'Expected an FRB voting helper delivery context',
       );
     }
-    return rust_api.submitCommittedShareToHelpers(
+    return rust_api.submitPreparedSharesToHelpers(
       context: context.inner,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
-      shareIndex: shareIndex,
-      plan: plan,
       configuredHelperUrls: configuredHelperUrls,
       nowSeconds: nowSeconds,
     );
