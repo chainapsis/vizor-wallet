@@ -186,6 +186,7 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | parked longer than [kPaymentUriParkTtl]      | drop silently             |
 /// | blocking storage failure / wallet error      | drop + unavailable msg    |
 /// | wallet still loading                         | wait                      |
+/// | `/welcome`, no wallet                        | drop + no-wallet msg      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | other in-progress surface                    | drop + busy msg           |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
@@ -237,9 +238,13 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // phrase, a freshly generated mnemonic, an in-flight account creation), so
   // never navigate out of them — with or without an existing wallet.
   if (isOnboardingLocation(matchedLocation)) {
-    return const PaymentUriDrainDecision(
+    // On the welcome screen with no wallet nothing has been started yet, so
+    // the plain no-wallet wording fits better than "finish setting up".
+    return PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
-      message: kPaymentUriOnboardingMessage,
+      message: matchedLocation == '/welcome' && !hasWallet
+          ? kPaymentUriNoWalletMessage
+          : kPaymentUriOnboardingMessage,
     );
   }
 

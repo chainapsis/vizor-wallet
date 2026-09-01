@@ -120,9 +120,13 @@ void main() {
             PaymentUriDrainAction.dropWithMessage,
             reason: location,
           );
+          // The welcome screen has not started anything yet, so it keeps the
+          // plain no-wallet wording; every other setup step says "finish".
           expect(
             decision.message,
-            kPaymentUriOnboardingMessage,
+            location == '/welcome'
+                ? kPaymentUriNoWalletMessage
+                : kPaymentUriOnboardingMessage,
             reason: location,
           );
         }
