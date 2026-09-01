@@ -8484,6 +8484,34 @@ void main() {
     expect(loadCount, 2);
   });
 
+  test(
+    'blocked restore request does not swallow post-resume discovery',
+    () async {
+      var loadCount = 0;
+      final container = _sessionContainer(
+        pendingShareRoundLoader:
+            ({required dbPath, required accountUuids}) async {
+              loadCount++;
+              return const [];
+            },
+      );
+      addTearDown(container.dispose);
+
+      final restorer = container.read(votingShareTrackingRestorerProvider);
+      await restorer.restore();
+      expect(loadCount, 1);
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      await registry.quiesceAndDrain(accountUuid: 'account-1');
+      registry.requestRestore();
+      registry.resume(accountUuid: 'account-1');
+      registry.requestRestore();
+      await restorer.restore();
+
+      expect(loadCount, 2);
+    },
+  );
+
   test('unlock resumes discovery after a tracking drain fails', () async {
     final container = _sessionContainer(
       pendingShareRoundLoader:
