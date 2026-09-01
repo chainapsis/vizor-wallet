@@ -464,7 +464,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     } on _StaleVotingSessionAction {
       return;
-    } on _VotingBackgroundWorkQuiesced {
+    } on _VotingBackgroundWorkQuiesced catch (e) {
+      final readiness = e.readiness;
+      if (readiness != null) {
+        _setWalletSyncReadinessState(
+          context: context,
+          readiness: readiness,
+          waiting: false,
+        );
+      }
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-mutation-in-progress',
@@ -4075,12 +4083,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context, {
     bool stopIfVotingBackgroundWorkQuiesced = false,
   }) async {
+    VotingWalletSyncReadiness? lastReadiness;
     void throwIfBackgroundWorkQuiesced() {
       if (stopIfVotingBackgroundWorkQuiesced &&
           ref
               .read(votingShareTrackingRegistryProvider)
               .isQuiesced(context.accountUuid)) {
-        throw const _VotingBackgroundWorkQuiesced();
+        throw _VotingBackgroundWorkQuiesced(readiness: lastReadiness);
       }
     }
 
@@ -4098,6 +4107,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             network: context.network,
             snapshotHeight: context.round.snapshotHeight,
           );
+      lastReadiness = readiness;
       throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-readiness');
       if (readiness.isReady) {
@@ -4940,7 +4950,9 @@ class _StaleVotingSessionAction implements Exception {
 }
 
 class _VotingBackgroundWorkQuiesced implements Exception {
-  const _VotingBackgroundWorkQuiesced();
+  const _VotingBackgroundWorkQuiesced({this.readiness});
+
+  final VotingWalletSyncReadiness? readiness;
 }
 
 class _VotingWalletSyncTimeout implements Exception {

@@ -9153,7 +9153,7 @@ void main() {
   test(
     'destructive drain stops waiting precompute before it restarts sync',
     () async {
-      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+      final readiness = _VotingWalletSyncDrainRaceReadinessChecker();
       final firstSyncStart = Completer<void>();
       final syncStartDuringDrain = Completer<void>();
       var drainStarted = false;
@@ -9175,15 +9175,16 @@ void main() {
       await container.read(votingSessionProvider(kRoundId).future);
       final notifier = container.read(votingSessionProvider(kRoundId).notifier);
       await notifier.refreshEligibleWeight();
-      readiness.ready = false;
       final precompute = notifier.precomputeSnapshotBundles(
         accountUuid: 'account-1',
       );
       await firstSyncStart.future;
+      await readiness.racedCheckStarted.future;
 
       final registry = container.read(votingShareTrackingRegistryProvider);
       drainStarted = true;
       final drain = registry.quiesceAndDrain(accountUuid: 'account-1');
+      readiness.releaseRacedCheck();
 
       try {
         final firstResult = await Future.any<String>([
@@ -9192,13 +9193,17 @@ void main() {
         ]);
         expect(firstResult, 'drained');
       } finally {
-        readiness.ready = true;
+        readiness.releaseRacedCheck();
         await Future.wait([precompute, drain]);
         registry.resume(accountUuid: 'account-1');
       }
 
       expect(syncStartDuringDrain.isCompleted, isFalse);
       expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.idle,
+      );
     },
   );
 
@@ -11431,6 +11436,36 @@ class _MutableVotingWalletSyncReadinessChecker
     required String network,
     required int snapshotHeight,
   }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
+class _VotingWalletSyncDrainRaceReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  final racedCheckStarted = Completer<void>();
+  final _releaseRacedCheck = Completer<void>();
+  var _calls = 0;
+
+  void releaseRacedCheck() {
+    if (!_releaseRacedCheck.isCompleted) _releaseRacedCheck.complete();
+  }
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    _calls++;
+    if (_calls == 3) {
+      racedCheckStarted.complete();
+      await _releaseRacedCheck.future;
+    }
+    final ready = _calls == 1 || _calls >= 4;
     return VotingWalletSyncReadiness(
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
