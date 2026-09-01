@@ -35,6 +35,9 @@ const LEDGER_TAG: u8 = 0x05;
 const HID_WRITE_SIZE: usize = 65;
 const HID_READ_SIZE: usize = 64;
 const HID_POLL_MILLIS: u64 = 100;
+const REVIEW_BUSY_STATUS: u16 = 0x6901;
+const REVIEW_BUSY_MAX_ATTEMPTS: usize = 3;
+const REVIEW_BUSY_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[cfg(debug_assertions)]
 const SPECULOS_UFVK_API_URL: &str = "VIZOR_LEDGER_SPECULOS_UFVK_API_URL";
@@ -240,7 +243,15 @@ impl LedgerTransport {
         data: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
         let command = build_command(cla, ins, p1, p2, data)?;
-        let response = self.exchange_hid(&command)?;
+        let response = retry_review_busy(
+            || self.exchange_hid(&command),
+            |response| response.retcode(),
+            || {
+                self.operation.check()?;
+                std::thread::sleep(REVIEW_BUSY_RETRY_DELAY);
+                self.operation.check()
+            },
+        )?;
         if response.retcode() != RESPONSE_OK {
             return Err(map_status_word(response.retcode()));
         }
@@ -387,6 +398,23 @@ impl LedgerTransport {
                 .ok_or_else(|| "Ledger HID response requires too many packets".to_string())?;
         }
     }
+}
+
+/// SDK 1.37.0 can return 0x6901 before the Zcash app receives the first
+/// display APDU. Replaying only that rejected APDU is therefore safe.
+fn retry_review_busy<T>(
+    mut exchange: impl FnMut() -> Result<T, String>,
+    status: impl Fn(&T) -> u16,
+    mut wait: impl FnMut() -> Result<(), String>,
+) -> Result<T, String> {
+    for attempt in 0..REVIEW_BUSY_MAX_ATTEMPTS {
+        let response = exchange()?;
+        if status(&response) != REVIEW_BUSY_STATUS || attempt + 1 == REVIEW_BUSY_MAX_ATTEMPTS {
+            return Ok(response);
+        }
+        wait()?;
+    }
+    unreachable!("the bounded Ledger review retry loop always returns")
 }
 
 #[cfg(debug_assertions)]
@@ -789,9 +817,80 @@ mod tests {
         assert!(map_status_word(0x5515).contains("locked"));
         assert!(map_status_word(0x6982).contains("locked"));
         assert!(map_status_word(0x6601).contains("switching"));
+        assert!(map_status_word(0x6901).contains("starting a review"));
         assert!(map_status_word(0x6807).contains("not installed"));
         assert!(map_status_word(0xb007).contains("reopen"));
         assert!(map_status_word(0x6d00).contains("running Ledger app"));
+    }
+
+    #[test]
+    fn review_busy_fault_is_retried_until_the_apdu_succeeds() {
+        let mut responses = [REVIEW_BUSY_STATUS, RESPONSE_OK].into_iter();
+        let mut exchanges = 0;
+        let mut waits = 0;
+
+        let response = retry_review_busy(
+            || {
+                exchanges += 1;
+                Ok(responses.next().unwrap())
+            },
+            |status| *status,
+            || {
+                waits += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response, RESPONSE_OK);
+        assert_eq!(exchanges, 2);
+        assert_eq!(waits, 1);
+    }
+
+    #[test]
+    fn persistent_review_busy_fault_stops_at_the_retry_limit() {
+        let mut exchanges = 0;
+        let mut waits = 0;
+
+        let response = retry_review_busy(
+            || {
+                exchanges += 1;
+                Ok(REVIEW_BUSY_STATUS)
+            },
+            |status| *status,
+            || {
+                waits += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response, REVIEW_BUSY_STATUS);
+        assert_eq!(exchanges, REVIEW_BUSY_MAX_ATTEMPTS);
+        assert_eq!(waits, REVIEW_BUSY_MAX_ATTEMPTS - 1);
+    }
+
+    #[test]
+    fn non_review_status_fault_is_not_retried() {
+        let mut exchanges = 0;
+        let mut waits = 0;
+
+        let response = retry_review_busy(
+            || {
+                exchanges += 1;
+                Ok(0x6985)
+            },
+            |status| *status,
+            || {
+                waits += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response, 0x6985);
+        assert_eq!(exchanges, 1);
+        assert_eq!(waits, 0);
     }
 
     #[test]
