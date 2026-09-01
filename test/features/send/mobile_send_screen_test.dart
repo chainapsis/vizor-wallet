@@ -845,6 +845,30 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('a transient address error bounces a deep link to the recipient', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        validateAddress: ({required address}) =>
+            Future<AddressValidationResult>.error(
+              StateError('validation unavailable'),
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 'error' (validation itself failed) disables the amount CTA exactly like
+    // 'invalid' does, so leaving the user on the amount step strands them
+    // behind a dead button. Bounce to the recipient step, where the failure is
+    // visible and editing the address re-runs validation.
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(find.text('Address validation failed'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsNothing);
+  });
+
   testWidgets('route-step mode lets amount and review pop as pages', (
     tester,
   ) async {

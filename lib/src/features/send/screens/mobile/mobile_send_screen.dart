@@ -605,16 +605,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   /// A ZIP-321 payment URI can jump straight to the amount step with the
-  /// address + amount prefilled. If the prefilled address then validates as
-  /// definitively invalid, fall back to the recipient step so the address error
-  /// is shown instead of letting the user continue past it. Only `'invalid'`
-  /// (validation ran and rejected the address) triggers this — a transient
-  /// `'error'` (validation itself failed, e.g. offline) is left alone and is
-  /// re-checked downstream at review/send. Runs once, for the initial prefill.
+  /// address + amount prefilled. If the prefilled address does not come back
+  /// usable, fall back to the recipient step so the address error is shown
+  /// instead of letting the user continue past it.
+  ///
+  /// Both outcomes bounce: `'invalid'` (validation ran and rejected the
+  /// address, shown as "Invalid address") and `'error'` (validation itself
+  /// failed, e.g. offline, shown as "Address validation failed"). The amount
+  /// step gates its CTA on [_hasValidAddress], which excludes both, so leaving
+  /// the user on the amount step after an `'error'` strands them behind a
+  /// disabled "Enter amount to continue" button with no way to re-validate.
+  /// The recipient step re-runs validation whenever the address changes.
+  /// Runs once, for the initial prefill.
   void _maybeFallBackToRecipientStep() {
     if (!_amountJumpPendingAddressCheck) return;
     _amountJumpPendingAddressCheck = false;
-    if (_step == _SendStep.amount && _addressType == 'invalid') {
+    if (_step == _SendStep.amount && !_hasValidAddress) {
       _step = _SendStep.recipient;
     }
   }
