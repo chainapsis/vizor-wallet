@@ -192,6 +192,7 @@ pub(crate) fn map_status_word(status: u16) -> String {
         0x6601 => "Ledger device is busy switching apps; retry shortly".into(),
         0x670a => "Ledger app-open request did not include an app name".into(),
         0x6807 => "The Zcash app is not installed on this Ledger".into(),
+        0x6901 => "Ledger display is busy starting a review; retry shortly".into(),
         0x6a80 => "Ledger rejected the PCZT data or key path".into(),
         0x6e00 => "Ledger device does not support this command class".into(),
         0x6d00 => "The running Ledger app does not support this command".into(),
