@@ -14,6 +14,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
+import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -315,7 +316,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       skipLoadingOnRefresh: false,
       loading: () {
         if (startError != null) {
-          return _StatusContent(
+          return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: startError,
@@ -324,7 +325,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         }
         if (job?.status == VotingSubmissionJobStatus.error &&
             job?.key?.roundId == widget.roundId) {
-          return _StatusContent(
+          return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
@@ -344,7 +345,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         }
         return const VotingPaneLoading();
       },
-      error: (error, _) => _StatusContent(
+      error: (error, _) => VotingStatusContent(
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
@@ -407,6 +408,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
             phase != VotingSessionPhase.keystoneSigning &&
+            phase != VotingSessionPhase.ledgerSigning &&
             !(job?.softwareAccountRequired ?? false)) {
           usesPlatformScreen = true;
           final activeStep = votingSubmissionProgressStepFor(
@@ -428,7 +430,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
-        return _StatusContent(
+        return VotingStatusContent(
           phase: phase,
           horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail: _voteSubmissionDetail(state),
@@ -739,8 +741,8 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
   }
 }
 
-class _StatusContent extends StatelessWidget {
-  const _StatusContent({
+class VotingStatusContent extends StatelessWidget {
+  const VotingStatusContent({
     required this.phase,
     this.horizontalPadding = 0,
     this.voteSubmissionDetail,
@@ -772,6 +774,7 @@ class _StatusContent extends StatelessWidget {
     this.onScanKeystone,
     this.onSkipKeystoneBundles,
     this.onCancelLedger,
+    super.key,
   });
 
   final VotingSessionPhase phase;
@@ -821,6 +824,8 @@ class _StatusContent extends StatelessWidget {
         voteStepComplete &&
         !submissionJobComplete &&
         phase != VotingSessionPhase.error;
+    final awaitingLedgerApproval =
+        isLedgerAccount && phase == VotingSessionPhase.ledgerSigning;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -838,7 +843,9 @@ class _StatusContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Submitting votes',
+                awaitingLedgerApproval
+                    ? 'Approve on your Ledger'
+                    : 'Submitting votes',
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
                   color: context.colors.text.accent,
@@ -846,7 +853,9 @@ class _StatusContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+                awaitingLedgerApproval
+                    ? 'Keep Vizor open and approve each voting bundle on your Ledger. Vizor continues automatically after every approval.'
+                    : "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
@@ -882,7 +891,7 @@ class _StatusContent extends StatelessWidget {
                   submissionJobInFlight &&
                   phase == VotingSessionPhase.ledgerSigning &&
                   ledgerSigningBundleIndex != null) ...[
-                _LedgerVotingSigningPanel(
+                LedgerVotingSigningPanel(
                   displayMemo: ledgerDisplayMemo ?? '',
                   bundleIndex: ledgerSigningBundleIndex!,
                   bundleCount: ledgerSigningBundleCount,
@@ -890,7 +899,7 @@ class _StatusContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
-              if (isHardwareAccount)
+              if (isHardwareAccount && !isLedgerAccount)
                 _StepRow(
                   label: 'Signing with Keystone',
                   active: phase == VotingSessionPhase.keystoneSigning,
@@ -1050,12 +1059,13 @@ class _WalletSyncProgressText extends StatelessWidget {
   }
 }
 
-class _LedgerVotingSigningPanel extends StatelessWidget {
-  const _LedgerVotingSigningPanel({
+class LedgerVotingSigningPanel extends ConsumerWidget {
+  const LedgerVotingSigningPanel({
     required this.displayMemo,
     required this.bundleIndex,
     required this.bundleCount,
     required this.onCancel,
+    super.key,
   });
 
   final String displayMemo;
@@ -1064,9 +1074,29 @@ class _LedgerVotingSigningPanel extends StatelessWidget {
   final VoidCallback? onCancel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
+    final readiness = ref.watch(ledgerAppReadinessStateProvider);
+    final failed = readiness.phase == LedgerAppReadinessPhase.failed;
+    final (statusLabel, statusMessage) = switch (readiness.phase) {
+      LedgerAppReadinessPhase.checkingDevice => (
+        'Checking your Ledger',
+        'Vizor is checking whether the Zcash app is ready.',
+      ),
+      LedgerAppReadinessPhase.confirmOpening => (
+        'Confirm opening Zcash',
+        'Approve the request to open the Zcash app on your Ledger.',
+      ),
+      LedgerAppReadinessPhase.failed => (
+        'Ledger needs attention',
+        readiness.message ?? 'Reconnect your Ledger and try again.',
+      ),
+      LedgerAppReadinessPhase.idle || LedgerAppReadinessPhase.ready => (
+        'Waiting for Ledger approval',
+        'Approve bundle ${bundleIndex + 1} on the device. Vizor will continue automatically.',
+      ),
+    };
     return DecoratedBox(
       key: const ValueKey('ledger_voting_signing_panel'),
       decoration: BoxDecoration(
@@ -1130,6 +1160,61 @@ class _LedgerVotingSigningPanel extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              key: const ValueKey('ledger_voting_waiting_status'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              decoration: BoxDecoration(
+                color: colors.background.neutralSubtleOpacity,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Center(
+                      child: AppIcon(
+                        failed ? AppIcons.warningCircle : AppIcons.loader,
+                        size: failed ? 20 : 18,
+                        color: failed
+                            ? colors.icon.destructive
+                            : colors.icon.regular,
+                        animated: !failed,
+                        semanticLabel: statusLabel,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          statusLabel,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: failed
+                                ? colors.text.destructive
+                                : colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          statusMessage,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: failed
+                                ? colors.text.destructive
+                                : colors.text.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppButton(
               key: const ValueKey('ledger_voting_cancel'),
