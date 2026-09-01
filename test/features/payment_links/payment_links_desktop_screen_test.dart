@@ -1388,6 +1388,45 @@ void main() {
     expect(operations.discardedClaimAddresses, isEmpty);
   });
 
+  testWidgets('keeps the claim database while submission is in flight', (
+    tester,
+  ) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim the Gift Card'));
+    await tester.pump();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+
+    expect(operations.discardedClaimAddresses, isEmpty);
+
+    claimCompleter.complete(
+      const PaymentLinkClaimResult(
+        txids: 'pending-claim-txid',
+        status: PaymentLinkClaimBroadcastStatus.pendingBroadcast,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
   testWidgets('returns a failed claim to an actionable Received card', (
     tester,
   ) async {

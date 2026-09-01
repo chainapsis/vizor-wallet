@@ -131,6 +131,7 @@ class _PaymentLinksDesktopScreenState
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
   PaymentLinkClaimSession? _receivedClaimSession;
+  PaymentLinkClaimSession? _submittingClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
   VizorPaymentLink? _lastDeferredPendingLink;
@@ -191,7 +192,8 @@ class _PaymentLinksDesktopScreenState
     _fundingQuoteDebounce?.cancel();
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
-    if (claimSession != null) {
+    if (claimSession != null &&
+        !identical(claimSession, _submittingClaimSession)) {
       unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
     }
     _amountFocusNode
@@ -1237,6 +1239,7 @@ class _PaymentLinksDesktopScreenState
         _operationInProgress) {
       return;
     }
+    _submittingClaimSession = session;
     final mobile = kAppFormFactor == AppFormFactor.mobile;
     setState(() {
       _operationInProgress = true;
@@ -1292,6 +1295,9 @@ class _PaymentLinksDesktopScreenState
         );
       }
     } finally {
+      if (identical(_submittingClaimSession, session)) {
+        _submittingClaimSession = null;
+      }
       if (mounted) setState(() => _operationInProgress = false);
     }
   }
