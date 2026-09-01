@@ -56,8 +56,17 @@ bool IsDecodablePaymentUriPayload(const std::string& value) {
                                0) != 0;
 }
 
+// Returns true only when the primary acknowledged the payment URI. The
+// primary's window procedure answers TRUE for WM_COPYDATA solely after
+// TryReadPaymentUriCopyData accepted the payload and queued it; a rejected
+// payload, or a build without the payment-URI handler at all, falls through to
+// Flutter and DefWindowProc and answers 0. Treating "the message was
+// processed" as delivery would let this secondary exit successfully while the
+// link was dropped, instead of reporting the failure to the user. The payload
+// is screened with the same rule the primary applies so a URI accepted here is
+// the same set accepted there.
 bool SendPaymentUri(HWND hwnd, const std::string& uri) {
-  if (!IsZcashUri(uri)) {
+  if (!IsZcashUri(uri) || !IsDecodablePaymentUriPayload(uri)) {
     return false;
   }
 
@@ -69,7 +78,8 @@ bool SendPaymentUri(HWND hwnd, const std::string& uri) {
   DWORD_PTR result = 0;
   return ::SendMessageTimeoutW(hwnd, WM_COPYDATA, 0,
                                reinterpret_cast<LPARAM>(&copy_data),
-                               SMTO_ABORTIFHUNG, 3000, &result) != 0;
+                               SMTO_ABORTIFHUNG, 3000, &result) != 0 &&
+         result == static_cast<DWORD_PTR>(TRUE);
 }
 
 bool SendPaymentUris(HWND hwnd, const std::vector<std::string>& uris) {
