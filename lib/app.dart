@@ -1210,6 +1210,17 @@ class _MacOSUpdatePrivacyChoiceHostState
   Widget build(BuildContext context) => widget.child;
 }
 
+/// Builds the parked-payment-URI listener in isolation.
+///
+/// The listener is private because nothing outside [ZcashWalletApp] builds
+/// one; tests need it without the whole app tree so the wallet-reset
+/// transition can be driven directly from provider overrides.
+@visibleForTesting
+Widget buildPaymentUriLinkListenerForTest({
+  required GoRouter router,
+  required Widget child,
+}) => _PaymentUriLinkListener(router: router, child: child);
+
 class _PaymentUriLinkListener extends ConsumerStatefulWidget {
   const _PaymentUriLinkListener({required this.router, required this.child});
 
@@ -1234,6 +1245,17 @@ class _PaymentUriLinkListenerState
   @override
   void initState() {
     super.initState();
+    // Seed the wallet-existence baseline before anything can park a link.
+    // `ref.listen` below only fires on a *change*, and `AccountNotifier.build`
+    // returns the bootstrap snapshot synchronously, so a session that starts
+    // locked emits nothing until the user resets the wallet from
+    // `/lost-password` (desktop) or the forgot-passcode sheet (mobile, always
+    // this case). Without this seed that reset emission looks like the first
+    // value ever seen instead of the true -> false reset edge, and the parked
+    // link drains onto the freshly wiped wallet.
+    _lastKnownHasWallet =
+        ref.read(walletProvider).value?.hasWallet ??
+        ref.read(appBootstrapProvider).hasWallet;
     unawaited(PaymentUriService.initialize());
     _subscription = PaymentUriService.uriStream.listen(_handlePaymentUri);
   }
@@ -1251,7 +1273,10 @@ class _PaymentUriLinkListenerState
       if (wallet != null) {
         final hadWallet = _lastKnownHasWallet;
         _lastKnownHasWallet = wallet.hasWallet;
-        if (hadWallet == true && !wallet.hasWallet) {
+        if (paymentUriShouldDropOnWalletTransition(
+          previousHasWallet: hadWallet,
+          hasWallet: wallet.hasWallet,
+        )) {
           // Wallet reset (uninstall, lost-password reset). Drop the parked
           // link quietly: draining it here would follow the wipe with a
           // "Set up or import a wallet" snackbar and a jump to /welcome.

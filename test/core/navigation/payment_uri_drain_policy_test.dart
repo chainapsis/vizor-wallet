@@ -352,4 +352,49 @@ void main() {
       }
     });
   });
+
+
+  group('wallet transition', () {
+    test('drops only on the true -> false reset edge', () {
+      expect(
+        paymentUriShouldDropOnWalletTransition(
+          previousHasWallet: true,
+          hasWallet: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not drop on any other edge', () {
+      for (final edge in [
+        (previous: true, next: true),
+        (previous: false, next: true),
+        (previous: false, next: false),
+      ]) {
+        expect(
+          paymentUriShouldDropOnWalletTransition(
+            previousHasWallet: edge.previous,
+            hasWallet: edge.next,
+          ),
+          isFalse,
+          reason: '${edge.previous} -> ${edge.next}',
+        );
+      }
+    });
+
+    test('an unseeded baseline is not a reset', () {
+      // The listener seeds the baseline from bootstrap precisely so this
+      // case cannot stand in for a real reset.
+      for (final hasWallet in [true, false]) {
+        expect(
+          paymentUriShouldDropOnWalletTransition(
+            previousHasWallet: null,
+            hasWallet: hasWallet,
+          ),
+          isFalse,
+          reason: 'null -> $hasWallet',
+        );
+      }
+    });
+  });
 }

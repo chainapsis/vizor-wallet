@@ -164,6 +164,23 @@ bool paymentUriBlockedAtLocation(String matchedLocation) =>
     paymentUriBlockedSurfaceAt(matchedLocation) !=
     PaymentUriBlockedSurface.none;
 
+/// Whether a wallet emission is the reset transition — the wallet existed a
+/// moment ago and does not any more (uninstall, lost-password reset).
+///
+/// A parked link must be dropped silently on that edge: draining it would
+/// follow the wipe with a "Set up or import a wallet" snackbar and a jump to
+/// `/welcome`, which reads as an error caused by the reset the user just
+/// asked for.
+///
+/// [previousHasWallet] is null only when no wallet value has been observed
+/// yet. That is not a reset, so it does not drop: the caller seeds the
+/// baseline from the bootstrap snapshot precisely so a session that starts
+/// locked (and therefore never emits before the reset) still sees `true` here.
+bool paymentUriShouldDropOnWalletTransition({
+  required bool? previousHasWallet,
+  required bool hasWallet,
+}) => previousHasWallet == true && !hasWallet;
+
 bool _isInSubtree(String matchedLocation, String root) =>
     matchedLocation == root || matchedLocation.startsWith('$root/');
 
