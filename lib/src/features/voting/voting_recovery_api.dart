@@ -30,16 +30,6 @@ abstract interface class VotingRecoveryApi {
     int? choice,
   });
 
-  Future<void> addSentServers({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required int shareIndex,
-    required List<String> newUrls,
-  });
-
   Future<void> clearRecoveryState({
     required String dbPath,
     required String accountUuid,
@@ -97,27 +87,6 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
       numOptions: numOptions,
       skipped: skipped,
       choice: choice,
-    );
-  }
-
-  @override
-  Future<void> addSentServers({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required int shareIndex,
-    required List<String> newUrls,
-  }) {
-    return rust_voting.addSentServers(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      shareIndex: shareIndex,
-      newUrls: newUrls,
     );
   }
 

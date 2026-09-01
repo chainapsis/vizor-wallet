@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'voting_retry.dart';
@@ -8,39 +7,26 @@ import 'voting_models.dart';
 /// Minimal REST client for vote-sdk's `/shielded-vote/v1` API surface.
 ///
 /// Chain-facing calls use the configured vote server base URL with optional
-/// failover endpoints. Helper-server share calls take an explicit [serverUrl]
-/// because foreground submission and recovery may target different helper
-/// subsets over time.
+/// failover endpoints. Helper-share traffic is owned by `zcash_voting` through
+/// Vizor's Rust route-aware transport, not this client.
 class VotingApiClient {
   VotingApiClient({
     required Uri baseUrl,
     required VotingHttpClient httpClient,
     List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
-    Duration helperTimeout = const Duration(seconds: 5),
     VotingRetryPolicy? readRetryPolicy,
-    VotingRetryPolicy? helperRetryPolicy,
     VotingRetryPolicy? broadcastRetryPolicy,
     Future<void> Function(Duration delay)? delay,
   }) : _baseUrl = baseUrl,
        _httpClient = httpClient,
        _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
-       _helperTimeout = helperTimeout,
        _readRetryPolicy =
            readRetryPolicy ??
            VotingRetryPolicy.transientHttp(
              name: 'voting-api-read',
              delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
-           ),
-       _helperRetryPolicy =
-           helperRetryPolicy ??
-           VotingRetryPolicy.transientHttp(
-             name: 'voting-api-helper',
-             delays: const [
-               Duration(milliseconds: 200),
-               Duration(milliseconds: 600),
-             ],
            ),
        _broadcastRetryPolicy =
            broadcastRetryPolicy ??
@@ -54,9 +40,7 @@ class VotingApiClient {
   final List<Uri> _fallbackBaseUrls;
   final VotingHttpClient _httpClient;
   final Duration _timeout;
-  final Duration _helperTimeout;
   final VotingRetryPolicy _readRetryPolicy;
-  final VotingRetryPolicy _helperRetryPolicy;
   final VotingRetryPolicy _broadcastRetryPolicy;
   final Future<void> Function(Duration delay) _delay;
 
@@ -252,155 +236,6 @@ class VotingApiClient {
     );
   }
 
-  /// Returns ready helpers in response order using progressive timeouts.
-  ///
-  /// All probes start together. The first decision happens after [softTimeout];
-  /// if fewer than [readyTargetCount] helpers are ready, slower responses keep
-  /// racing until enough arrive or [hardTimeout] expires. A helper is ready only
-  /// when its public status endpoint returns `{"status":"ok"}` successfully.
-  /// Completing [cancelSignal] stops the wait and returns the responses already
-  /// collected. Outstanding probe transports are cancelled before returning.
-  Future<List<String>> preflightHelpers(
-    Iterable<Uri> serverUrls, {
-    required int readyTargetCount,
-    required Duration softTimeout,
-    required Duration hardTimeout,
-    Future<void>? cancelSignal,
-  }) async {
-    if (softTimeout.isNegative || hardTimeout <= softTimeout) {
-      throw ArgumentError(
-        'helper preflight requires 0 <= softTimeout < hardTimeout',
-      );
-    }
-
-    final seen = <String>{};
-    final servers = [
-      for (final serverUrl in serverUrls)
-        if (seen.add(serverUrl.toString())) serverUrl,
-    ];
-    if (servers.isEmpty) {
-      return const [];
-    }
-
-    final targetCount = readyTargetCount.clamp(1, servers.length).toInt();
-    final readyServers = <String>[];
-    var completedServerCount = 0;
-    var acceptingResults = true;
-    final cancelProbes = Completer<void>();
-    final targetOrAllCompleted = Completer<void>();
-    for (final serverUrl in servers) {
-      unawaited(
-        _probeHelper(
-          serverUrl,
-          timeout: hardTimeout,
-          cancelSignal: cancelProbes.future,
-        ).then((isReady) {
-          if (!acceptingResults) return;
-          completedServerCount++;
-          if (isReady) readyServers.add(serverUrl.toString());
-          if (!targetOrAllCompleted.isCompleted &&
-              (readyServers.length >= targetCount ||
-                  completedServerCount == servers.length)) {
-            targetOrAllCompleted.complete();
-          }
-        }),
-      );
-    }
-
-    final softDeadline = Completer<void>();
-    final hardDeadline = Completer<void>();
-    final softTimer = Timer(softTimeout, softDeadline.complete);
-    final hardTimer = Timer(hardTimeout, hardDeadline.complete);
-    try {
-      final cancelled = await Future.any([
-        softDeadline.future.then((_) => false),
-        if (cancelSignal != null) cancelSignal.then((_) => true),
-      ]);
-      if (!cancelled &&
-          readyServers.length < targetCount &&
-          completedServerCount < servers.length) {
-        await Future.any([
-          targetOrAllCompleted.future,
-          hardDeadline.future,
-          ?cancelSignal,
-        ]);
-      }
-    } finally {
-      softTimer.cancel();
-      hardTimer.cancel();
-      acceptingResults = false;
-      cancelProbes.complete();
-    }
-
-    return List<String>.unmodifiable(readyServers);
-  }
-
-  /// Posts one encrypted share directly to a helper server.
-  ///
-  /// The share map is expected to be the complete service JSON body produced
-  /// by the voting pipeline. Fast transient failures retain the helper retry
-  /// policy. An ambiguous timeout is never retried against the same helper so
-  /// the caller can promptly move to another candidate. [timeout] bounds each
-  /// transport attempt; [overallTimeout] also bounds retries and their delays.
-  Future<VotingShareSubmissionResult> submitShare({
-    required Uri serverUrl,
-    required Map<String, dynamic> share,
-    required Duration timeout,
-    Duration? overallTimeout,
-  }) async {
-    final decoded = await _postInitialShareJson(
-      _endpoint(['shares'], baseUrl: serverUrl),
-      share,
-      timeout: timeout,
-      overallTimeout: overallTimeout,
-    );
-    return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
-  }
-
-  /// Checks whether a helper has confirmed a share identified by its nullifier.
-  ///
-  /// [isCancelled] is checked before each retry so lifecycle-owned polling can
-  /// stop without starting another request.
-  Future<VotingShareStatus> getShareStatus({
-    required String roundId,
-    required Uri serverUrl,
-    required String shareId,
-    bool Function()? isCancelled,
-  }) async {
-    final decoded = await _getJson(
-      _endpoint([
-        'share-status',
-        normalizeVotingRoundId(roundId),
-        shareId,
-      ], baseUrl: serverUrl),
-      timeout: _helperTimeout,
-      retryPolicy: _helperRetryPolicy,
-      isCancelled: isCancelled,
-    );
-    return VotingShareStatus.fromJson(_objectFromValue(decoded));
-  }
-
-  /// Resends a previously generated share to a specific helper server.
-  ///
-  /// [shareId] is retained in the signature so call sites can keep the recovery
-  /// key nearby, but the current helper endpoint accepts the same body as the
-  /// initial submission. This makes one transport attempt because a timeout is
-  /// ambiguous; the caller decides whether to try another helper or wait.
-  /// [timeout] bounds the transport attempt.
-  Future<VotingShareSubmissionResult> resubmitShare({
-    required Uri serverUrl,
-    required String shareId,
-    required Map<String, dynamic> share,
-    required Duration timeout,
-  }) async {
-    final decoded = await _postJson(
-      _endpoint(['shares'], baseUrl: serverUrl),
-      share,
-      timeout: timeout,
-    );
-    return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
-  }
-
   Uri _endpoint(
     List<String> pathSegments, {
     Map<String, String>? queryParameters,
@@ -449,90 +284,6 @@ class VotingApiClient {
         return response;
       },
     );
-    return jsonDecode(response.bodyText);
-  }
-
-  Future<bool> _probeHelper(
-    Uri serverUrl, {
-    required Duration timeout,
-    required Future<void> cancelSignal,
-  }) async {
-    final uri = _endpoint(['status'], baseUrl: serverUrl);
-    try {
-      final response = await _get(
-        uri,
-        timeout: timeout,
-        cancelSignal: cancelSignal,
-      );
-      if (response.statusCode < 200 || response.statusCode >= 300) return false;
-      final status = _objectFromValue(jsonDecode(response.bodyText))['status'];
-      return status?.toString().trim().toLowerCase() == 'ok';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<Object?> _postInitialShareJson(
-    Uri uri,
-    Map<String, dynamic> body, {
-    required Duration timeout,
-    Duration? overallTimeout,
-  }) async {
-    final requestTimeout = timeout;
-    if (requestTimeout <= Duration.zero) {
-      throw ArgumentError.value(requestTimeout, 'timeout', 'must be positive');
-    }
-    if (overallTimeout != null && overallTimeout <= Duration.zero) {
-      throw ArgumentError.value(
-        overallTimeout,
-        'overallTimeout',
-        'must be positive',
-      );
-    }
-    final stopwatch = Stopwatch()..start();
-    var budgetExpired = false;
-    final retryPolicy = VotingRetryPolicy(
-      name: '${_helperRetryPolicy.name}-initial',
-      delays: _helperRetryPolicy.delays,
-      shouldRetry: (error) =>
-          error is! TimeoutException && _helperRetryPolicy.shouldRetry(error),
-    );
-    final request = _runRequestWithRetry(
-      retryPolicy: retryPolicy,
-      isCancelled: () => budgetExpired,
-      operation: () async {
-        var attemptTimeout = requestTimeout;
-        if (overallTimeout != null) {
-          final remaining = overallTimeout - stopwatch.elapsed;
-          if (remaining <= Duration.zero) {
-            throw TimeoutException(
-              'Initial helper delivery attempt exceeded its overall timeout',
-              overallTimeout,
-            );
-          }
-          if (remaining < attemptTimeout) attemptTimeout = remaining;
-        }
-        final response = await _post(
-          uri,
-          body,
-          timeout: attemptTimeout,
-        ).timeout(attemptTimeout);
-        _throwIfNotSuccess(uri, response);
-        return response;
-      },
-    );
-    final response = overallTimeout == null
-        ? await request
-        : await request.timeout(
-            overallTimeout,
-            onTimeout: () {
-              budgetExpired = true;
-              throw TimeoutException(
-                'Initial helper delivery attempt exceeded its overall timeout',
-                overallTimeout,
-              );
-            },
-          );
     return jsonDecode(response.bodyText);
   }
 

@@ -5,13 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_flow_models.dart';
 
-typedef VotingShareTrackingStopper = Future<void> Function();
+typedef VotingShareTrackingDrain = Future<void> Function();
 
 class VotingShareTrackingRegistry {
-  final Map<VotingSessionKey, _VotingShareTrackingRegistration> _sessions = {};
+  final Map<VotingSessionKey, _VotingShareTrackingRegistration> _registrations =
+      {};
   final Set<Completer<void>> _discoveries = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
-  final Set<String> _quiescedAccounts = {};
+  final Map<String, int> _accountQuiescenceDepths = {};
   int _globalQuiescenceDepth = 0;
 
   /// Starts discovery before its first asynchronous operation.
@@ -19,7 +20,7 @@ class VotingShareTrackingRegistry {
   /// Destructive wallet operations block new discovery and await the returned
   /// lease, so sidecar reads cannot outlive the state they are inspecting.
   VoidCallback? beginDiscovery() {
-    if (_globalQuiescenceDepth > 0 || _quiescedAccounts.isNotEmpty) {
+    if (_globalQuiescenceDepth > 0 || _accountQuiescenceDepths.isNotEmpty) {
       return null;
     }
     final completion = Completer<void>();
@@ -46,10 +47,10 @@ class VotingShareTrackingRegistry {
   bool register({
     required VotingSessionKey key,
     required Object owner,
-    required VotingShareTrackingStopper stopAndDrain,
+    required VotingShareTrackingDrain stopAndDrain,
   }) {
     if (isQuiesced(key.accountUuid)) return false;
-    _sessions[key] = _VotingShareTrackingRegistration(
+    _registrations[key] = _VotingShareTrackingRegistration(
       owner: owner,
       stopAndDrain: stopAndDrain,
     );
@@ -57,12 +58,14 @@ class VotingShareTrackingRegistry {
   }
 
   void unregister({required VotingSessionKey key, required Object owner}) {
-    if (identical(_sessions[key]?.owner, owner)) _sessions.remove(key);
+    if (identical(_registrations[key]?.owner, owner)) {
+      _registrations.remove(key);
+    }
   }
 
   bool isQuiesced(String accountUuid) {
     return _globalQuiescenceDepth > 0 ||
-        _quiescedAccounts.contains(accountUuid);
+        (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
   }
 
   /// Blocks matching discovery until paired with [resume].
@@ -73,10 +76,14 @@ class VotingShareTrackingRegistry {
     if (accountUuid == null) {
       _globalQuiescenceDepth++;
     } else {
-      _quiescedAccounts.add(accountUuid);
+      _accountQuiescenceDepths.update(
+        accountUuid,
+        (depth) => depth + 1,
+        ifAbsent: () => 1,
+      );
     }
     final sessions = [
-      for (final entry in _sessions.entries)
+      for (final entry in _registrations.entries)
         if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
     ];
     final discoveries = [
@@ -98,12 +105,18 @@ class VotingShareTrackingRegistry {
     if (accountUuid == null) {
       if (_globalQuiescenceDepth > 0) _globalQuiescenceDepth--;
     } else {
-      _quiescedAccounts.remove(accountUuid);
+      final depth = _accountQuiescenceDepths[accountUuid] ?? 0;
+      if (depth <= 1) {
+        _accountQuiescenceDepths.remove(accountUuid);
+      } else {
+        _accountQuiescenceDepths[accountUuid] = depth - 1;
+      }
     }
   }
 
   @visibleForTesting
-  Set<VotingSessionKey> get registeredKeys => Set.unmodifiable(_sessions.keys);
+  Set<VotingSessionKey> get registeredKeys =>
+      Set.unmodifiable(_registrations.keys);
 }
 
 class _VotingShareTrackingRegistration {
@@ -113,7 +126,7 @@ class _VotingShareTrackingRegistration {
   });
 
   final Object owner;
-  final VotingShareTrackingStopper stopAndDrain;
+  final VotingShareTrackingDrain stopAndDrain;
 }
 
 final votingShareTrackingRegistryProvider = Provider((ref) {
