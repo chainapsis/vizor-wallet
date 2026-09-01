@@ -15,6 +15,7 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
+import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -104,6 +105,11 @@ import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/payment_uri_service.dart';
+
+/// The payment-URI blocked-surface predicate lives with the rest of the drain
+/// policy; re-exported here because it is part of `app.dart`'s public surface.
+export 'src/core/navigation/payment_uri_drain_policy.dart'
+    show paymentUriBlockedAtLocation;
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -1319,10 +1325,15 @@ class _PaymentUriLinkListenerState
     // too would clobber it. Defer and let the unlock screen claim it.
     if (widget.router.state.matchedLocation == '/unlock') return;
 
-    if (paymentUriBlockedAtLocation(widget.router.state.matchedLocation)) {
+    final blockedSurface = paymentUriBlockedSurfaceAt(
+      widget.router.state.matchedLocation,
+    );
+    if (blockedSurface != PaymentUriBlockedSurface.none) {
       ref.read(paymentUriPrefillProvider.notifier).clear();
       _showPaymentUriMessage(
-        'Finish or cancel your current send before opening another payment link.',
+        blockedSurface == PaymentUriBlockedSurface.send
+            ? kPaymentUriSendInProgressMessage
+            : kPaymentUriBusyMessage,
       );
       return;
     }
@@ -1342,10 +1353,6 @@ class _PaymentUriLinkListenerState
       );
     });
   }
-}
-
-bool paymentUriBlockedAtLocation(String matchedLocation) {
-  return matchedLocation == '/send' || matchedLocation.startsWith('/send/');
 }
 
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
