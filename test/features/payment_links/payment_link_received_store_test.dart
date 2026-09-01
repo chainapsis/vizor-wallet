@@ -55,6 +55,26 @@ void main() {
       expect(storage.value, isNot(contains(link.mnemonic)));
     });
 
+    test('counts only in-flight claims for the destination account', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      expect(await store.countReceivingForAccount('receiver-account'), 1);
+      expect(await store.countReceivingForAccount('other-account'), 0);
+
+      await store.markReceived(address: link.address);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+    });
+
     test('returns an expired claim to an actionable persisted state', () async {
       final storage = _FakePaymentLinkReceivedStorage();
       final link = _link();

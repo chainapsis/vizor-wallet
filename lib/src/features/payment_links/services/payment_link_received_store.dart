@@ -17,7 +17,30 @@ final paymentLinkReceivedStoreProvider = Provider<PaymentLinkReceivedStore>((
   );
 });
 
+final paymentLinkReceivingCountProvider = FutureProvider.family<int, String>((
+  ref,
+  destinationAccountUuid,
+) {
+  return ref
+      .watch(paymentLinkReceivedStoreProvider)
+      .countReceivingForAccount(destinationAccountUuid);
+});
+
 enum PaymentLinkReceivedStatus { readyToClaim, receiving, received }
+
+class PaymentLinkInFlightClaimsException implements Exception {
+  const PaymentLinkInFlightClaimsException({
+    required this.destinationAccountUuid,
+    required this.count,
+  });
+
+  final String destinationAccountUuid;
+  final int count;
+
+  @override
+  String toString() =>
+      'Wait for incoming Gift Cards to finish before deleting this account.';
+}
 
 class PaymentLinkReceivedRecord {
   const PaymentLinkReceivedRecord({
@@ -149,6 +172,18 @@ class PaymentLinkReceivedStore {
 
   Future<List<PaymentLinkReceivedRecord>> load() {
     return _runExclusive(_loadUnlocked);
+  }
+
+  Future<int> countReceivingForAccount(String destinationAccountUuid) async {
+    if (destinationAccountUuid.isEmpty) return 0;
+    final records = await load();
+    return records
+        .where(
+          (record) =>
+              record.status == PaymentLinkReceivedStatus.receiving &&
+              record.destinationAccountUuid == destinationAccountUuid,
+        )
+        .length;
   }
 
   Future<PaymentLinkReceivedRecord> saveReady(

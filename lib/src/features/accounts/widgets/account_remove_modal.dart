@@ -22,6 +22,9 @@ class AccountRemoveModal extends StatefulWidget {
     required this.pendingSwapCount,
     required this.checkingPendingSwaps,
     required this.pendingSwapCheckFailed,
+    this.receivingGiftCardCount = 0,
+    this.checkingReceivingGiftCards = false,
+    this.receivingGiftCardCheckFailed = false,
     this.unsharedGiftCardCount = 0,
     this.checkingUnsharedGiftCards = false,
     this.unsharedGiftCardCheckFailed = false,
@@ -37,6 +40,9 @@ class AccountRemoveModal extends StatefulWidget {
   final int pendingSwapCount;
   final bool checkingPendingSwaps;
   final bool pendingSwapCheckFailed;
+  final int receivingGiftCardCount;
+  final bool checkingReceivingGiftCards;
+  final bool receivingGiftCardCheckFailed;
   final int unsharedGiftCardCount;
   final bool checkingUnsharedGiftCards;
   final bool unsharedGiftCardCheckFailed;
@@ -79,6 +85,20 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
       return 'This account has ${widget.pendingSwapCount} active $plural. '
           'Complete or remove them from swap activity before removing this account.';
+    }
+    if (widget.checkingReceivingGiftCards) {
+      return 'Checking this account for incoming Gift Cards before removal.';
+    }
+    if (widget.receivingGiftCardCheckFailed) {
+      return "Couldn't check this account for incoming Gift Cards. Try again before removing it.";
+    }
+    if (widget.receivingGiftCardCount > 0) {
+      if (widget.receivingGiftCardCount == 1) {
+        return 'This account is receiving a Gift Card. '
+            'Wait for it to finish before removing this account.';
+      }
+      return 'This account is receiving ${widget.receivingGiftCardCount} Gift Cards. '
+          'Wait for them to finish before removing this account.';
     }
     if (widget.checkingUnsharedGiftCards) {
       return 'Checking this account for unshared Gift Cards before removal.';

@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -1002,6 +1003,42 @@ void main() {
     expect(accountNotifier.removedUuid, isNull);
   });
 
+  testWidgets('remove account is blocked while it receives a Gift Card', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receivingGiftCardCounts: const {'account-2': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.text(
+        'This account is receiving a Gift Card. Wait for it to finish before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+  });
+
   testWidgets('remove account requires the current password before deleting', (
     tester,
   ) async {
@@ -1342,6 +1379,7 @@ Widget _accountsHarness({
   AppSecurityNotifier Function()? securityNotifier,
   ReceiveAddressService Function(Ref ref)? receiveAddressService,
   Map<String, int> pendingSwapCounts = const {},
+  Map<String, int> receivingGiftCardCounts = const {},
   Map<String, int> unsharedGiftCardCounts = const {},
 }) {
   final router = GoRouter(
@@ -1392,6 +1430,9 @@ Widget _accountsHarness({
         accountProvider.overrideWith(accountNotifier),
       swapPendingIntentCountProvider.overrideWith((ref, accountUuid) async {
         return pendingSwapCounts[accountUuid] ?? 0;
+      }),
+      paymentLinkReceivingCountProvider.overrideWith((ref, accountUuid) async {
+        return receivingGiftCardCounts[accountUuid] ?? 0;
       }),
       paymentLinkUnsharedFundedCountProvider.overrideWith((
         ref,
