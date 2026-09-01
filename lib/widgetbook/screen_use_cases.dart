@@ -4718,6 +4718,74 @@ class _PreviewAccountNotifier extends AccountNotifier {
   }
 
   @override
+  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
+    final previous = state.value ?? initialState;
+    final target = previous.accounts
+        .where((account) => account.uuid == accountUuid && account.isLedger)
+        .firstOrNull;
+    final fingerprint = target?.ledgerWalletFingerprint;
+    if (fingerprint == null) return;
+    state = AsyncData(
+      previous.copyWith(
+        accounts: [
+          for (final account in previous.accounts)
+            if (account.isLedger &&
+                account.ledgerWalletFingerprint == fingerprint)
+              account.copyWith(ledgerWalletName: newName)
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateLedgerConnectionPreference(
+    String uuid,
+    LedgerConnectionPreference preference,
+  ) async {
+    final previous = state.value ?? initialState;
+    state = AsyncData(
+      previous.copyWith(
+        accounts: [
+          for (final account in previous.accounts)
+            if (account.uuid == uuid)
+              account.copyWith(ledgerConnectionPreference: preference)
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) async {
+    final previous = state.value ?? initialState;
+    state = AsyncData(
+      previous.copyWith(
+        accounts: [
+          for (final account in previous.accounts)
+            if (account.uuid == uuid)
+              account.copyWith(
+                ledgerLastTransport: transport,
+                ledgerDeviceId: deviceId,
+                ledgerDeviceName: deviceName,
+                ledgerDeviceModel: deviceModel,
+              )
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
+  @override
   Future<void> updateProfilePicture(
     String uuid,
     String profilePictureId,

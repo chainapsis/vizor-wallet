@@ -17,6 +17,7 @@ import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
+import 'ledger_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'pay_use_cases.dart';
@@ -71,6 +72,7 @@ class WidgetbookApp extends StatelessWidget {
         ),
       ],
       directories: [
+        buildLedgerWidgetbookFolder(),
         WidgetbookFolder(
           name: 'Screens',
           children: [

@@ -3810,7 +3810,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: _statusHarness(),
+          child: _statusHarness(withPlatformProgressBuilder: true),
         ),
       );
       await _pumpUntilFound(tester, find.text('Bundle 2 of 2'), attempts: 100);
@@ -3819,6 +3819,11 @@ void main() {
         find.byKey(const ValueKey('ledger_voting_signing_panel')),
         findsOneWidget,
       );
+      expect(find.text('Approve on your Ledger'), findsOneWidget);
+      expect(find.text('Waiting for Ledger approval'), findsOneWidget);
+      expect(find.text('Signing with Keystone'), findsNothing);
+      expect(find.text('Signing with Ledger'), findsOneWidget);
+      expect(find.text('platform submission progress'), findsNothing);
       expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
       expect(find.textContaining('may not display'), findsOneWidget);
       expect(find.text('Scan signature'), findsNothing);
@@ -4330,16 +4335,26 @@ Widget _mobileProposalApp(GoRouter router) {
 Widget _statusHarness({
   List<int>? keystoneScanResult,
   String? initialLocation,
+  bool withPlatformProgressBuilder = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation ?? '/voting/poll/$_roundId/status',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId/status',
-        builder: (_, state) => VotingStatusScreen(
-          roundId: state.pathParameters['roundId']!,
-          accountUuid: state.uri.queryParameters['account'],
-        ),
+        builder: (_, state) {
+          final roundId = state.pathParameters['roundId']!;
+          final accountUuid = state.uri.queryParameters['account'];
+          if (withPlatformProgressBuilder) {
+            return VotingStatusView(
+              roundId: roundId,
+              accountUuid: accountUuid,
+              submissionProgressBuilder: (_, _) =>
+                  const Text('platform submission progress'),
+            );
+          }
+          return VotingStatusScreen(roundId: roundId, accountUuid: accountUuid);
+        },
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',
