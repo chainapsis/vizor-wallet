@@ -205,36 +205,29 @@ void main() {
     );
   });
 
-  test('claim exposes only the amount promised by the link', () {
+  test('claim requires the full amount promised by the link', () {
     final recipientAmount = BigInt.from(100000000);
 
     expect(
-      paymentLinkClaimableAmountZatoshi(
+      isPaymentLinkClaimable(
         recipientAmountZatoshi: recipientAmount,
         maxSpendableZatoshi: BigInt.from(100000000),
       ),
-      recipientAmount,
+      isTrue,
     );
     expect(
-      paymentLinkClaimableAmountZatoshi(
+      isPaymentLinkClaimable(
         recipientAmountZatoshi: recipientAmount,
         maxSpendableZatoshi: BigInt.from(120000000),
       ),
-      recipientAmount,
+      isTrue,
     );
     expect(
-      paymentLinkClaimableAmountZatoshi(
+      isPaymentLinkClaimable(
         recipientAmountZatoshi: recipientAmount,
         maxSpendableZatoshi: BigInt.from(99999999),
       ),
-      BigInt.zero,
-    );
-  });
-
-  test('rejects unknown claim broadcast status', () {
-    expect(
-      () => paymentLinkClaimBroadcastStatusFromWire('unexpected'),
-      throwsStateError,
+      isFalse,
     );
   });
 

@@ -185,14 +185,10 @@ class PaymentLinkFundingProgress {
 }
 
 @visibleForTesting
-BigInt paymentLinkClaimableAmountZatoshi({
+bool isPaymentLinkClaimable({
   required BigInt recipientAmountZatoshi,
   required BigInt maxSpendableZatoshi,
-}) {
-  return maxSpendableZatoshi >= recipientAmountZatoshi
-      ? recipientAmountZatoshi
-      : BigInt.zero;
-}
+}) => maxSpendableZatoshi >= recipientAmountZatoshi;
 
 /// UI-facing boundary for the persisted Payment Link lifecycle.
 ///
@@ -222,19 +218,13 @@ abstract interface class PaymentLinkOperations {
 
   Future<List<PaymentLinkReceivedRecord>> loadReceivedLinkRecoveries();
 
-  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  );
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims();
 
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link);
 
-  Future<PaymentLinkClaimResult> claimPreparedLink(
-    PaymentLinkClaimSession session,
-  );
+  Future<void> claimPreparedLink(PaymentLinkClaimSession session);
 
   Future<void> discardClaimSession(PaymentLinkClaimSession session);
-
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -246,43 +236,17 @@ class PaymentLinkClaimSession {
     required this.link,
     required this.destinationAddress,
     required this.destinationAccountUuid,
-    required this.directory,
     required this.dbPath,
     required this.accountUuid,
-    required this.totalZatoshi,
-    required this.claimableZatoshi,
-    required this.feeZatoshi,
+    required this.canClaim,
   });
 
   final VizorPaymentLink link;
   final String destinationAddress;
   final String destinationAccountUuid;
-  final Directory directory;
   final String dbPath;
   final String accountUuid;
-  final BigInt totalZatoshi;
-  final BigInt claimableZatoshi;
-  final BigInt feeZatoshi;
-
-  bool get canClaim => claimableZatoshi > BigInt.zero;
-}
-
-enum PaymentLinkClaimBroadcastStatus {
-  broadcasted,
-  pendingBroadcast,
-  partialBroadcast,
-}
-
-@visibleForTesting
-PaymentLinkClaimBroadcastStatus paymentLinkClaimBroadcastStatusFromWire(
-  String status,
-) {
-  return switch (status) {
-    'broadcasted' => PaymentLinkClaimBroadcastStatus.broadcasted,
-    'pending_broadcast' => PaymentLinkClaimBroadcastStatus.pendingBroadcast,
-    'partial_broadcast' => PaymentLinkClaimBroadcastStatus.partialBroadcast,
-    _ => throw StateError('Unknown payment link broadcast status: $status'),
-  };
+  final bool canClaim;
 }
 
 @visibleForTesting
@@ -341,16 +305,6 @@ String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
       )
       .toString();
   return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
-}
-
-class PaymentLinkClaimResult {
-  const PaymentLinkClaimResult({required this.txids, required this.status});
-
-  final String txids;
-  final PaymentLinkClaimBroadcastStatus status;
-
-  bool get isBroadcasted =>
-      status == PaymentLinkClaimBroadcastStatus.broadcasted;
 }
 
 /// A fully broadcast payment-link funding result.
@@ -619,9 +573,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> _,
-  ) async {
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims() async {
     // The screen can optimistically render Receiving before the broadcast
     // result returns. Always reconcile from the persisted copy, which owns
     // the destination account UUID and claim txids needed for history lookup.
@@ -936,13 +888,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
 
       await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
-      final balance = await rust_sync.getBalance(
-        dbPath: tempWallet.dbPath,
-        network: endpoint.networkName,
-        accountUuid: importedAccountUuid,
-      );
-      var claimableZatoshi = BigInt.zero;
-      var feeZatoshi = BigInt.zero;
+      var canClaim = false;
       try {
         final estimate = await rust_sync.estimateSendMax(
           dbPath: tempWallet.dbPath,
@@ -950,11 +896,10 @@ class PaymentLinkService implements PaymentLinkOperations {
           accountUuid: importedAccountUuid,
           toAddress: destinationAddress,
         );
-        claimableZatoshi = paymentLinkClaimableAmountZatoshi(
+        canClaim = isPaymentLinkClaimable(
           recipientAmountZatoshi: link.amountZatoshi,
           maxSpendableZatoshi: estimate.amountZatoshi,
         );
-        feeZatoshi = estimate.feeZatoshi;
       } catch (e) {
         final message = e.toString().toLowerCase();
         if (!message.contains('insufficient balance')) {
@@ -966,12 +911,9 @@ class PaymentLinkService implements PaymentLinkOperations {
         link: link,
         destinationAddress: destinationAddress,
         destinationAccountUuid: destinationAccountUuid,
-        directory: tempWallet.directory,
         dbPath: tempWallet.dbPath,
         accountUuid: importedAccountUuid,
-        totalZatoshi: balance.total,
-        claimableZatoshi: claimableZatoshi,
-        feeZatoshi: feeZatoshi,
+        canClaim: canClaim,
       );
     } catch (_) {
       if (deleteOnError) {
@@ -982,9 +924,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<PaymentLinkClaimResult> claimPreparedLink(
-    PaymentLinkClaimSession session,
-  ) async {
+  Future<void> claimPreparedLink(PaymentLinkClaimSession session) async {
     var didBroadcast = false;
     try {
       await _receivedStore.markClaimStarted(
@@ -998,7 +938,6 @@ class PaymentLinkService implements PaymentLinkOperations {
         destinationAccountUuid: session.destinationAccountUuid,
         claimTxids: result.txids,
       );
-      return result;
     } catch (_) {
       if (!didBroadcast) {
         await _receivedStore.markReadyToClaim(address: session.link.address);
@@ -1007,7 +946,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
   }
 
-  Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
+  Future<rust_sync.ExecuteProposalResult> _broadcastPreparedSpend(
     PaymentLinkClaimSession session,
   ) async {
     if (!session.canClaim) {
@@ -1041,18 +980,8 @@ class PaymentLinkService implements PaymentLinkOperations {
       memo: null,
       mnemonic: session.link.mnemonic,
     );
-    final claimResult = PaymentLinkClaimResult(
-      txids: sendResult.txids,
-      status: paymentLinkClaimBroadcastStatusFromWire(sendResult.status),
-    );
     unawaited(_refreshMainWalletAfterSend());
-    return claimResult;
-  }
-
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
-    final session = await prepareClaim(link);
-    return claimPreparedLink(session);
+    return sendResult;
   }
 
   @override
@@ -1064,10 +993,12 @@ class PaymentLinkService implements PaymentLinkOperations {
       try {
         await runningSync;
       } catch (_) {
-        // Cancellation intentionally ends the progress stream incomplete.
+        // Cancellation intentionally ends the isolated scan early.
       }
     }
-    await _deleteTemporaryWalletDb(session.directory);
+    await _deleteTemporaryWalletDb(
+      await _temporaryWalletDirectory(session.link),
+    );
   }
 
   Future<void> _refreshMainWalletAfterSend() async {
@@ -1130,7 +1061,6 @@ class PaymentLinkService implements PaymentLinkOperations {
         needsSaplingParams: proposal.needsSaplingParams,
         mnemonic: mnemonic,
       );
-      paymentLinkClaimBroadcastStatusFromWire(result.status);
       return result;
     } catch (e) {
       try {
@@ -1241,16 +1171,12 @@ class PaymentLinkService implements PaymentLinkOperations {
                 '${endpoint.networkName}.',
               );
             }
-            await for (final _ in rust_sync.startPaymentLinkClaimSync(
+            await rust_sync.runPaymentLinkClaimSync(
               claimId: claimId,
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: network,
-            )) {}
-            // Wait for Rust to close the stream so its per-claim registry is
-            // released before Dart drops the coalesced future. Completion and
-            // cancellation both close quietly; actual failures are delivered
-            // as stream errors and remain eligible for endpoint fallback.
+            );
           },
         );
   }
@@ -1302,8 +1228,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {
-    if (paymentLinkClaimBroadcastStatusFromWire(result.status) ==
-        PaymentLinkClaimBroadcastStatus.broadcasted) {
+    if (result.status == 'broadcasted') {
       return;
     }
     throw PaymentLinkBroadcastPendingException(

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -933,7 +932,7 @@ void main() {
   testWidgets('shows selected artwork and Receiving while claim is pending', (
     tester,
   ) async {
-    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final claimCompleter = Completer<void>();
     final operations = _FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
@@ -984,7 +983,7 @@ void main() {
       PaymentLinkCardArtwork.ruby.assetPath,
     );
 
-    claimCompleter.complete(_broadcastedClaimResult);
+    claimCompleter.complete();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Receiving...'), findsOneWidget);
@@ -1012,7 +1011,7 @@ void main() {
   testWidgets('does not discard an active claim database on screen disposal', (
     tester,
   ) async {
-    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final claimCompleter = Completer<void>();
     final operations = _FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
@@ -1035,7 +1034,7 @@ void main() {
     await tester.pump();
 
     expect(operations.discardedClaimAddresses, isEmpty);
-    claimCompleter.complete(_broadcastedClaimResult);
+    claimCompleter.complete();
     await tester.pump();
   });
 
@@ -1075,8 +1074,8 @@ void main() {
     );
   });
 
-  testWidgets('keeps a pending broadcast in Receiving state', (tester) async {
-    final claimCompleter = Completer<PaymentLinkClaimResult>();
+  testWidgets('keeps a submitted claim in Receiving state', (tester) async {
+    final claimCompleter = Completer<void>();
     final operations = _FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
@@ -1096,12 +1095,7 @@ void main() {
     await tester.tap(find.text('Claim my gift'));
     await tester.pump();
 
-    claimCompleter.complete(
-      const PaymentLinkClaimResult(
-        txids: 'pending-claim-txid',
-        status: PaymentLinkClaimBroadcastStatus.pendingBroadcast,
-      ),
-    );
+    claimCompleter.complete();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Receiving...'), findsOneWidget);
@@ -1116,7 +1110,7 @@ void main() {
   testWidgets('returns a failed claim to an actionable Received card', (
     tester,
   ) async {
-    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final claimCompleter = Completer<void>();
     final operations = _FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
@@ -1389,7 +1383,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }) : records = List.of(records),
        receivedRecords = List.of(receivedRecords);
 
-  final Completer<PaymentLinkClaimResult>? claimCompleter;
+  final Completer<void>? claimCompleter;
   int fundingConfirmationCount;
   final bool claimable;
   final Map<String, Completer<void>> prepareGates;
@@ -1496,9 +1490,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }
 
   @override
-  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  ) async {
+  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims() async {
     inspectReceivedCallCount += 1;
     for (var index = 0; index < receivedRecords.length; index++) {
       final record = receivedRecords[index];
@@ -1540,31 +1532,26 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
       link: link,
       destinationAddress: 'u1receiver',
       destinationAccountUuid: 'account-1',
-      directory: Directory('/tmp/vizor-payment-link-test'),
       dbPath: '/tmp/vizor-payment-link-test/wallet.db',
       accountUuid: 'payment-link-account',
-      totalZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
-      claimableZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
-      feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+      canClaim: claimable,
     );
   }
 
   @override
-  Future<PaymentLinkClaimResult> claimPreparedLink(
-    PaymentLinkClaimSession session,
-  ) async {
+  Future<void> claimPreparedLink(PaymentLinkClaimSession session) async {
     try {
-      final result = await claimLink(session.link);
+      claimedLinks.add(session.link);
+      await claimCompleter?.future;
       _replaceReceivedRecord(
         session.link.address,
         (record) => record.copyWith(
           status: PaymentLinkReceivedStatus.receiving,
           destinationAccountUuid: session.destinationAccountUuid,
-          claimTxids: result.txids,
+          claimTxids: 'claim-txid',
           updatedAt: DateTime.utc(2026, 8, 6, 2),
         ),
       );
-      return result;
     } catch (_) {
       _replaceReceivedRecord(
         session.link.address,
@@ -1582,12 +1569,6 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     discardedClaimAddresses.add(session.link.address);
-  }
-
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
-    claimedLinks.add(link);
-    return claimCompleter?.future ?? _broadcastedClaimResult;
   }
 
   void _replaceReceivedRecord(
@@ -1615,11 +1596,6 @@ class _SwitchablePaymentLinkAccountNotifier extends AccountNotifier {
     );
   }
 }
-
-const _broadcastedClaimResult = PaymentLinkClaimResult(
-  txids: 'claim-txid',
-  status: PaymentLinkClaimBroadcastStatus.broadcasted,
-);
 
 class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
   _FakePaymentLinkClipboard({this.text});

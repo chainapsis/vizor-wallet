@@ -2257,7 +2257,6 @@ pub async fn run_payment_link_claim_sync(
     lightwalletd_url: &str,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
-    progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
@@ -2278,7 +2277,6 @@ pub async fn run_payment_link_claim_sync(
             lightwalletd_url,
             network,
             cancel.clone(),
-            &progress_fn,
         )
         .await
         {
@@ -2301,7 +2299,6 @@ async fn run_payment_link_claim_sync_once(
     lightwalletd_url: &str,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
-    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
     let should_exit = || cancel.load(Ordering::Relaxed);
     let mut client = open_lwd_channel(lightwalletd_url).await?;
@@ -2338,10 +2335,6 @@ async fn run_payment_link_claim_sync_once(
 
     download_subtree_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
-    let initial_ranges = db
-        .suggest_scan_ranges()
-        .map_err(|error| SyncError::db(format!("payment-link suggest_scan_ranges: {error}")))?;
-    let initial_total = pending_scan_blocks(&initial_ranges).max(1);
     let mut rewind_attempts = 0u32;
 
     loop {
@@ -2416,19 +2409,6 @@ async fn run_payment_link_claim_sync_once(
                         &should_exit,
                     )
                     .await;
-                    progress_fn(SyncProgressEvent {
-                        scanned_height: current_tip_height,
-                        chain_tip_height: current_tip_height,
-                        percentage: 1.0,
-                        display_target_percentage: 1.0,
-                        display_target_blocks: 0,
-                        is_syncing: false,
-                        is_complete: true,
-                        has_new_tx: true,
-                        phase_completed_units: 0,
-                        phase_total_units: 0,
-                        phase: String::new(),
-                    });
                     return Ok(());
                 }
             }
@@ -2445,21 +2425,6 @@ async fn run_payment_link_claim_sync_once(
             ));
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
-        let remaining = pending_scan_blocks(&ranges);
-        let percentage = (1.0 - remaining as f64 / initial_total as f64).clamp(0.0, 1.0);
-        progress_fn(SyncProgressEvent {
-            scanned_height: u32::from(start) as u64,
-            chain_tip_height: current_tip_height,
-            percentage,
-            display_target_percentage: percentage,
-            display_target_blocks: batch_blocks,
-            is_syncing: true,
-            is_complete: false,
-            has_new_tx: false,
-            phase_completed_units: 0,
-            phase_total_units: 0,
-            phase: "download".into(),
-        });
 
         let (block_source, from_state) =
             download_scan_batch(&mut client, start, end - 1, network).await?;
@@ -2477,21 +2442,7 @@ async fn run_payment_link_claim_sync_once(
             batch_blocks as usize,
         );
         match scan_result {
-            Ok(_) => {
-                progress_fn(SyncProgressEvent {
-                    scanned_height: u32::from(end).saturating_sub(1) as u64,
-                    chain_tip_height: current_tip_height,
-                    percentage,
-                    display_target_percentage: percentage,
-                    display_target_blocks: batch_blocks,
-                    is_syncing: true,
-                    is_complete: false,
-                    has_new_tx: true,
-                    phase_completed_units: 0,
-                    phase_total_units: 0,
-                    phase: "scan".into(),
-                });
-            }
+            Ok(_) => {}
             Err(error) => {
                 let sync_error = match error {
                     ChainError::Scan(scan_error) if scan_error.is_continuity_error() => {

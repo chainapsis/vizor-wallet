@@ -337,7 +337,7 @@ class _PaymentLinksDesktopScreenState
     try {
       final updated = await ref
           .read(paymentLinkOperationsProvider)
-          .inspectReceivedLinkClaims(receivedCards);
+          .inspectReceivedLinkClaims();
       if (!mounted) return;
       final sorted = List<PaymentLinkReceivedRecord>.of(updated)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
