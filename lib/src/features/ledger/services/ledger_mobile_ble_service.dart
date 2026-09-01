@@ -97,10 +97,19 @@ final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
 });
 
 class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
+  MethodChannelLedgerMobileBleService({
+    Future<void> Function(Duration duration)? reviewBusyDelay,
+  }) : _reviewBusyDelay =
+           reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
+
   static const _methods = MethodChannel('com.zcash.wallet/ledger_mobile');
   static const _events = EventChannel(
     'com.zcash.wallet/ledger_mobile/discovery',
   );
+  static const _reviewBusyStatus = 0x6901;
+  static const _reviewBusyMaxAttempts = 3;
+  static const _reviewBusyRetryDelay = Duration(milliseconds: 200);
+  final Future<void> Function(Duration duration) _reviewBusyDelay;
   String? _connectedDeviceId;
 
   @override
@@ -179,16 +188,21 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
     rust_ledger.LedgerUfvkApduPlan plan,
   ) async {
     try {
-      final result = await _methods.invokeListMethod<Object>('exchangeUfvk', {
-        'first': _encodeCommand(plan.first),
-        'continuation': _encodeCommand(plan.continuation),
-      });
-      return (result ?? const <Object>[])
-          .map(
-            (chunk) =>
-                Uint8List.fromList(List<int>.from(chunk as List<Object?>)),
-          )
-          .toList(growable: false);
+      for (var attempt = 0; attempt < _reviewBusyMaxAttempts; attempt++) {
+        final responses = await _invokeApduResponses('exchangeUfvk', {
+          'first': _encodeCommand(plan.first),
+          'continuation': _encodeCommand(plan.continuation),
+        });
+        // The UFVK review starts on the first command. A 0x6901 reply means
+        // the SDK rejected that command before the Zcash app received it.
+        if (responses.length != 1 ||
+            !_hasStatus(responses.single, _reviewBusyStatus) ||
+            attempt + 1 == _reviewBusyMaxAttempts) {
+          return responses;
+        }
+        await _reviewBusyDelay(_reviewBusyRetryDelay);
+      }
+      throw StateError('the bounded Ledger review retry loop always returns');
     } on PlatformException catch (error) {
       throw _mapPlatformError(error);
     }
@@ -199,15 +213,47 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
     List<rust_ledger.LedgerApduCommand> commands,
   ) async {
     try {
-      final result = await _methods.invokeListMethod<Object>('exchangeApdus', {
-        'commands': commands.map(_encodeCommand).toList(growable: false),
-      });
-      return (result ?? const <Object>[])
-          .map(
-            (response) =>
-                Uint8List.fromList(List<int>.from(response as List<Object?>)),
-          )
-          .toList(growable: false);
+      if (commands.isEmpty) {
+        return await _invokeApduResponses('exchangeApdus', const {
+          'commands': <Object>[],
+        });
+      }
+
+      final completed = <Uint8List>[];
+      var pending = commands;
+      var reviewBusyAttempts = 0;
+      while (pending.isNotEmpty) {
+        final responses = await _invokeApduResponses('exchangeApdus', {
+          'commands': pending.map(_encodeCommand).toList(growable: false),
+        });
+        if (responses.isEmpty) return completed;
+
+        var retryIndex = -1;
+        for (var index = 0; index < responses.length; index++) {
+          final response = responses[index];
+          if (_hasStatus(response, _reviewBusyStatus)) {
+            reviewBusyAttempts++;
+            if (reviewBusyAttempts == _reviewBusyMaxAttempts ||
+                index >= pending.length) {
+              completed.add(response);
+              return completed;
+            }
+            retryIndex = index;
+            break;
+          }
+
+          completed.add(response);
+          reviewBusyAttempts = 0;
+          if (!_hasStatus(response, 0x9000)) return completed;
+        }
+
+        if (retryIndex < 0) return completed;
+        // Responses are ordered one-for-one with commands. Keep successful
+        // predecessors and retry only the APDU the SDK did not deliver.
+        pending = pending.sublist(retryIndex);
+        await _reviewBusyDelay(_reviewBusyRetryDelay);
+      }
+      return completed;
     } on PlatformException catch (error) {
       throw _mapPlatformError(error);
     }
@@ -240,6 +286,25 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
     } on PlatformException catch (error) {
       throw _mapPlatformError(error);
     }
+  }
+
+  Future<List<Uint8List>> _invokeApduResponses(
+    String method,
+    Map<String, Object> arguments,
+  ) async {
+    final result = await _methods.invokeListMethod<Object>(method, arguments);
+    return (result ?? const <Object>[])
+        .map(
+          (response) =>
+              Uint8List.fromList(List<int>.from(response as List<Object?>)),
+        )
+        .toList(growable: false);
+  }
+
+  static bool _hasStatus(List<int> response, int status) {
+    return response.length >= 2 &&
+        response[response.length - 2] == status >> 8 &&
+        response.last == status & 0xff;
   }
 
   static Map<String, Object> _encodeCommand(
