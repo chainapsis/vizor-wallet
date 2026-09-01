@@ -236,9 +236,10 @@ class RustPaymentLinkHardwareSigningService
     await _discardProposal(draft);
     try {
       await _recoveryStore.clearPrepared(address: draft.link.address);
+      await _recoveryStore.removeUnsubmittedDraft(address: draft.link.address);
     } catch (error) {
       log(
-        'PaymentLinkHardwareSigning: prepared funding cleanup failed '
+        'PaymentLinkHardwareSigning: canceled funding cleanup failed '
         'address=${draft.link.address} error=$error',
       );
     }

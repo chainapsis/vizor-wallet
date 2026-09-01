@@ -171,28 +171,23 @@ void main() {
       expect(await store.countUnsharedFundedForAccount('source-account'), 1);
     });
 
-    test(
-      'a definitely discarded hardware draft no longer blocks deletion',
-      () async {
-        final storage = _FakePaymentLinkRecoveryStorage();
-        final store = PaymentLinkRecoveryStore(storage);
-        final link = _link();
-        await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-        await store.markPrepared(
-          address: link.address,
-          fundingTxid: 'prepared-hardware-txid',
-          expiryHeight: 3_456_829,
-        );
+    test('removes a definitely canceled hardware draft', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markPrepared(
+        address: link.address,
+        fundingTxid: 'prepared-hardware-txid',
+        expiryHeight: 3_456_829,
+      );
 
-        await store.clearPrepared(address: link.address);
+      await store.clearPrepared(address: link.address);
+      await store.removeUnsubmittedDraft(address: link.address);
 
-        final record = (await store.load()).single;
-        expect(record.state, PaymentLinkRecoveryState.draft);
-        expect(record.fundingTxids, isNull);
-        expect(record.preparedExpiryHeight, isNull);
-        expect(await store.countUnsharedFundedForAccount('source-account'), 0);
-      },
-    );
+      expect(await store.load(), isEmpty);
+      expect(await store.countUnsharedFundedForAccount('source-account'), 0);
+    });
 
     test(
       'keeps the prepared txid when post-broadcast metadata retries fail',
