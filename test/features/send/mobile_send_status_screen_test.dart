@@ -53,6 +53,14 @@ Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   );
 }
 
+/// The "safe to leave this receipt" flag the payment-URI drain reads.
+bool _sendStatusTerminal(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+    listen: false,
+  ).read(sendStatusTerminalProvider);
+}
+
 bool _statusRouteCanPop(WidgetTester tester) {
   final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
   return popScope.canPop;
@@ -74,6 +82,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_send_status_sending')), findsOne);
+    expect(_sendStatusTerminal(tester), isFalse);
     expect(find.text('Sending...'), findsOneWidget);
     expect(
       find.text('Submitting your transaction to the network...'),
@@ -148,6 +157,7 @@ void main() {
     );
     expect(find.text('Done'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(nativeHaptics, ['sendSuccess']);
     expect(platformHaptics, isEmpty);
 
@@ -194,6 +204,8 @@ void main() {
     );
     expect(find.text('Done'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    // A pending broadcast still renders as in progress, so it is not terminal.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('pending broadcast falls back to the generic retry copy', (
@@ -278,6 +290,7 @@ void main() {
     );
     expect(find.text('Return home'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(nativeHaptics, ['sendFailure']);
     expect(platformHaptics, isEmpty);
 

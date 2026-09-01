@@ -70,7 +70,8 @@ import 'src/features/send/services/send_flow.dart'
     show
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
-        sendStatusRoutePayloadProvider;
+        sendStatusRoutePayloadProvider,
+        sendStatusTerminalProvider;
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
@@ -1320,11 +1321,7 @@ class _PaymentUriLinkListenerState
       hasWallet: walletAsync.value?.hasWallet ?? bootstrap.hasWallet,
       isUnlocked: security.isUnlocked,
       matchedLocation: widget.router.state.matchedLocation,
-      // The send-status phase lives in the status screen's own widget state and
-      // is not observable from here, so a status screen is always treated as
-      // in-flight. `decidePaymentUriDrain` already implements the terminal case
-      // for when that signal exists.
-      sendStatusIsTerminal: false,
+      sendStatusIsTerminal: ref.read(sendStatusTerminalProvider),
     );
 
     switch (decision.action) {

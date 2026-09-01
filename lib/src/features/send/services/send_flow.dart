@@ -102,6 +102,59 @@ final sendStatusRoutePayloadProvider =
       SendStatusRoutePayloadNotifier.new,
     );
 
+/// Whether the send shown on `/send/status` has reached a terminal phase —
+/// succeeded or failed — so nothing is lost by leaving that screen.
+///
+/// The status screens keep owning their own presentation phase; this publishes
+/// only the "safe to leave" bit, which surfaces outside the send flow need. The
+/// payment-URI drain uses it to deliver a `zcash:` link that arrives on a
+/// finished receipt instead of dropping it as an interrupted send.
+///
+/// A pending-broadcast outcome is deliberately NOT terminal: both status
+/// screens still render it as in progress.
+class SendStatusTerminalNotifier extends Notifier<bool> {
+  var _disposed = false;
+  var _revision = 0;
+
+  @override
+  bool build() {
+    ref.onDispose(() => _disposed = true);
+    return false;
+  }
+
+  /// The send finished (succeeded or failed).
+  void markTerminal() {
+    if (_disposed) return;
+    _revision++;
+    state = true;
+  }
+
+  /// A broadcast is starting: nothing is safe to leave yet.
+  void reset() {
+    if (_disposed) return;
+    _revision++;
+    state = false;
+  }
+
+  /// Releases the flag once the current lifecycle call has returned. The status
+  /// screens call this from `dispose`, where Riverpod forbids a synchronous
+  /// provider write; the revision guard stops a departing screen from clearing
+  /// a newer one's flag. A microtask rather than a timer, so it cannot outlive
+  /// a widget test's tree.
+  void resetAfterNavigation() {
+    final retainedRevision = _revision;
+    scheduleMicrotask(() {
+      if (_disposed || _revision != retainedRevision) return;
+      reset();
+    });
+  }
+}
+
+final sendStatusTerminalProvider =
+    NotifierProvider<SendStatusTerminalNotifier, bool>(
+      SendStatusTerminalNotifier.new,
+    );
+
 class SendStatusRoutePayloadObserver extends NavigatorObserver {
   SendStatusRoutePayloadObserver({required this.onLeaveStatus});
 

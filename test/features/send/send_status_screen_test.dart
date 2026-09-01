@@ -66,6 +66,8 @@ void main() {
     expect(find.text('Send in progress...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
     expect(find.text('Tx ID'), findsNothing);
+    // An in-flight send must stay blocked for arriving payment URIs.
+    expect(_sendStatusTerminal(tester), isFalse);
 
     await _flushBroadcast(tester);
 
@@ -81,6 +83,7 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
     expect(rustApi.macosExecuteCalls, Platform.isMacOS ? 1 : 0);
     expect(rustApi.mnemonicExecuteCalls, Platform.isMacOS ? 0 : 1);
+    expect(_sendStatusTerminal(tester), isTrue);
   });
 
   testWidgets('tx id row opens the explorer with the display-order txid', (
@@ -143,6 +146,8 @@ void main() {
     expect(find.text(truncatedTxid(_txid)), findsOneWidget);
     expect(find.textContaining("didn't reach the network"), findsOneWidget);
     expect(rustApi.discardCalls, isEmpty);
+    // A pending broadcast still renders as in progress, so it is not terminal.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('failed broadcast shows the failed layout with the reason', (
@@ -169,6 +174,7 @@ void main() {
           .where((icon) => icon.name == AppIcons.uturnUp),
       hasLength(1),
     );
+    expect(_sendStatusTerminal(tester), isTrue);
   });
 
   testWidgets('blocked pop routes home instead of popping', (tester) async {
@@ -180,10 +186,14 @@ void main() {
     await _flushBroadcast(tester);
     await tester.pumpAndSettle();
 
+    expect(_sendStatusTerminal(tester), isTrue);
+
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     expect(find.text('home-route'), findsOneWidget);
+    // Leaving the receipt releases the flag again.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('Keystone broadcast extracts the PCZT pair and succeeds', (
@@ -623,6 +633,16 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 /// params status) resolve — they cannot complete inside the FakeAsync test
 /// zone on their own. Bounded pumps afterwards because the in-progress
 /// loader animation repeats forever (pumpAndSettle would hang).
+/// The "safe to leave this receipt" flag the payment-URI drain reads. Taken
+/// from the MaterialApp element so it stays readable after the status screen
+/// itself is gone.
+bool _sendStatusTerminal(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+    listen: false,
+  ).read(sendStatusTerminalProvider);
+}
+
 Future<void> _flushBroadcast(WidgetTester tester) async {
   // Several rounds because the chain interleaves real-IO awaits with
   // fake-zone microtasks that only run during pump.
