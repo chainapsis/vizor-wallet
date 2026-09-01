@@ -22,6 +22,7 @@ import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
+import 'src/core/widgets/app_toast.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_native_host.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
@@ -63,6 +64,7 @@ import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/payment_links/screens/payment_links_desktop_screen.dart';
+import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -1240,11 +1242,13 @@ class _IncomingDeepLinkHost extends ConsumerStatefulWidget {
 class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
   StreamSubscription<String>? _subscription;
   ProviderSubscription<VizorPaymentLink?>? _intakeSubscription;
+  VizorPaymentLink? _lastDeferredLink;
   bool _navigationScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
     _intakeSubscription = ref.listenManual(
       paymentLinkIntakeProvider.select((state) => state.pendingLink),
       (_, link) {
@@ -1254,6 +1258,18 @@ class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
     final service = ref.read(incomingUriServiceProvider);
     _subscription = service.uriStream.listen(_handleIncomingUri);
     unawaited(service.initialize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _IncomingDeepLinkHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.router == widget.router) return;
+    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
+  }
+
+  void _handleRouteChanged() {
+    _openPendingPaymentLink();
   }
 
   void _handleIncomingUri(String rawUri) {
@@ -1274,17 +1290,33 @@ class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
 
   @override
   void dispose() {
+    widget.router.routerDelegate.removeListener(_handleRouteChanged);
     unawaited(_subscription?.cancel());
     _intakeSubscription?.close();
     super.dispose();
   }
 
   void _openPendingPaymentLink() {
+    final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (_navigationScheduled ||
         ref.read(appSecurityProvider).requiresUnlock ||
-        ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+        pendingLink == null) {
       return;
     }
+    final location = widget.router.state.matchedLocation;
+    // Unlock owns post-authentication navigation. The Payment Links screen
+    // owns intake while it is already visible, including its local wizard.
+    if (location == '/' ||
+        location == '/unlock' ||
+        location == '/payment-links') {
+      return;
+    }
+    final deferredMessage = paymentLinkEntryDeferredMessageAtLocation(location);
+    if (deferredMessage != null) {
+      _showDeferredPaymentLinkMessage(pendingLink, deferredMessage);
+      return;
+    }
+    _lastDeferredLink = null;
     _navigationScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationScheduled = false;
@@ -1293,12 +1325,29 @@ class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
           ref.read(paymentLinkIntakeProvider).pendingLink == null) {
         return;
       }
+      final currentLocation = widget.router.state.matchedLocation;
+      if (currentLocation == '/' ||
+          currentLocation == '/unlock' ||
+          currentLocation == '/payment-links' ||
+          paymentLinkEntryBlockedAtLocation(currentLocation)) {
+        _openPendingPaymentLink();
+        return;
+      }
       widget.router.go('/payment-links');
     });
   }
 
+  void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
+    if (identical(_lastDeferredLink, link)) return;
+    _lastDeferredLink = link;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppToast(context, message, iconName: AppIcons.warning);
+    });
+  }
+
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => AppToastHost(child: widget.child);
 }
 
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {

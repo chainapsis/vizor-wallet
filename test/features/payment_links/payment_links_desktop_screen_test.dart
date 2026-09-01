@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -1075,6 +1076,43 @@ void main() {
     ]);
     expect(find.text('Gift claim submitted'), findsOneWidget);
     expect(find.text('Receiving...'), findsOneWidget);
+  });
+
+  testWidgets('defers an incoming Gift Card while another card is being made', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsOneWidget,
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsOneWidget,
+    );
+    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(operations.allowLongSyncCalls, isEmpty);
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
+
+    await tester.tap(find.text('Home').last);
+    await tester.pumpAndSettle();
+
+    expect(operations.allowLongSyncCalls, [isFalse]);
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
   testWidgets('retries an incoming link without requiring the clipboard', (

@@ -21,6 +21,7 @@ import '../models/vizor_payment_link.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
+import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
@@ -132,6 +133,7 @@ class _PaymentLinksDesktopScreenState
   PaymentLinkClaimSession? _receivedClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
+  VizorPaymentLink? _lastDeferredPendingLink;
   VizorPaymentLink? _longSyncLink;
   VizorPaymentLink? _retryLink;
   PaymentLinkFundingResult? _pendingFundingMetadata;
@@ -265,9 +267,28 @@ class _PaymentLinksDesktopScreenState
 
   Future<void> _consumePendingPaymentLink() async {
     if (!_initialCardsLoaded || _operationInProgress) return;
+    final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
+    if (pendingLink == null) return;
+    if (_page != _PaymentLinksLocalPage.home &&
+        _page != _PaymentLinksLocalPage.redeem) {
+      if (!identical(_lastDeferredPendingLink, pendingLink)) {
+        _lastDeferredPendingLink = pendingLink;
+        _showDeferredPendingLinkMessage();
+      }
+      return;
+    }
+    _lastDeferredPendingLink = null;
     final link = ref.read(paymentLinkIntakeProvider.notifier).takePending();
     if (link == null || !mounted) return;
     await _checkPaymentLink(link);
+  }
+
+  void _showDeferredPendingLinkMessage() {
+    showAppToast(
+      context,
+      kPaymentLinkDeferredByActiveFlowMessage,
+      iconName: AppIcons.warning,
+    );
   }
 
   Future<void> _initializeCardsAndPendingLink(
