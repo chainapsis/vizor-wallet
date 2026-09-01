@@ -1,8 +1,11 @@
 import 'dart:convert';
 
-/// Upper bound on a `zcash:` payment URI we are willing to parse. Matches
-/// `kMaxZcashUriBytes` in `windows/runner/utils.h` so the native handoff and
-/// the Dart parser refuse the same inputs.
+/// Upper bound on a `zcash:` payment URI we are willing to parse, in UTF-8
+/// bytes. Matches `kMaxZcashUriBytes` in `windows/runner/utils.h`, which
+/// measures the bytes it receives, so the native handoff and the Dart parser
+/// refuse the same inputs — measuring UTF-16 code units here would let a URI
+/// the native side rejects through, since one CJK character is one code unit
+/// but three bytes.
 const kMaxPaymentUriLength = 16384;
 
 /// Longest attacker-controlled fragment we echo back into a user-facing parse
@@ -21,7 +24,10 @@ class Zip321PaymentRequest {
   Zip321Payment get primaryPayment => payments.first;
 
   static Zip321PaymentRequest parse(String input) {
-    if (input.length > kMaxPaymentUriLength) {
+    // Code units are never more than bytes, so the cheap check settles the
+    // common case before the string is encoded.
+    if (input.length > kMaxPaymentUriLength ||
+        utf8.encode(input).length > kMaxPaymentUriLength) {
       throw const Zip321ParseException('Payment link is too long.');
     }
     final trimmed = input.trim();

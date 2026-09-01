@@ -58,6 +58,28 @@ void main() {
     );
   });
 
+  test('measures the length bound in UTF-8 bytes, not code units', () {
+    // 6,000 CJK characters are 6,000 UTF-16 code units but 18,000 UTF-8 bytes,
+    // so a code-unit bound would accept a URI the Windows byte bound rejects.
+    final message = '\u6f22' * 6000;
+    final oversized =
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?message='
+        '$message';
+
+    expect(oversized.length, lessThan(kMaxPaymentUriLength));
+    expect(utf8.encode(oversized).length, greaterThan(kMaxPaymentUriLength));
+    expect(
+      () => Zip321PaymentRequest.parse(oversized),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'Payment link is too long.',
+        ),
+      ),
+    );
+  });
+
   test('truncates an over-long echoed parameter name', () {
     final longName = 'req-${'a' * 60}';
 
