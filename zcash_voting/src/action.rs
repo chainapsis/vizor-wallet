@@ -31,6 +31,7 @@ use crate::types::{
     validate_notes, validate_round_params, GovernancePczt, Network as VotingNetwork, NoteInfo,
     VotingError, VotingRoundParams,
 };
+use crate::van_blinding::VanBlinding;
 
 const DELEGATION_ACTION_FIXED_FIELD_COUNT: usize = 5;
 const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
@@ -283,6 +284,8 @@ fn validate_consensus_branch_id(
 /// - `seed_fingerprint`: 32-byte ZIP-32 seed fingerprint (Keystone needs this to
 ///   identify which seed to derive the spending key from)
 /// - `account_index`: ZIP-32 account index (typically 0)
+/// - `van_blinding`: deterministic local-hotkey blinding, or `None` for the
+///   legacy public-target path that samples it here.
 pub(crate) fn build_governance_pczt(
     notes: &[NoteInfo],
     params: &VotingRoundParams,
@@ -295,6 +298,7 @@ pub(crate) fn build_governance_pczt(
     account_index: u32,
     round_name: &str,
     padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
+    van_blinding: Option<&VanBlinding>,
 ) -> Result<GovernancePczt, VotingError> {
     validate_notes(notes)?;
     validate_round_params(params)?;
@@ -428,8 +432,9 @@ pub(crate) fn build_governance_pczt(
             message: "total note weight overflows u64".to_string(),
         })?;
 
-    // Sample van_comm_rand
-    let van_comm_rand_fp = pallas::Base::random(&mut crypto_rng);
+    let van_comm_rand_fp = van_blinding
+        .map(VanBlinding::field)
+        .unwrap_or_else(|| pallas::Base::random(&mut crypto_rng));
     let van_comm_rand: [u8; 32] = van_comm_rand_fp.to_repr();
 
     // Compute VAN
@@ -828,6 +833,7 @@ mod tests {
             MOCK_ACCOUNT,
             "Test Round",
             &sample_padded_note_secrets(notes.len()).unwrap(),
+            None,
         )
         .unwrap()
     }
@@ -1044,6 +1050,7 @@ mod tests {
             MOCK_ACCOUNT,
             "Test Round",
             &sample_padded_note_secrets(1).unwrap(),
+            None,
         )
         .unwrap_err();
 
@@ -1186,6 +1193,7 @@ mod tests {
             MOCK_ACCOUNT,
             "Test Round",
             &sample_padded_note_secrets(1).unwrap(),
+            None,
         )
         .unwrap_err();
 

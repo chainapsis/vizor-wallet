@@ -10,7 +10,10 @@ pub(crate) use crate::backend::{
 };
 pub use crate::phases::DelegationPhase;
 
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    hash::{Hash, Hasher},
+};
 
 pub use crate::lwd::branch_id_for_height;
 use crate::note_bundling::BundlePolicy;
@@ -29,6 +32,7 @@ use crate::{
         DelegationProgressReporter, Network, NoteInfo, RoundBoundVotingHotkeyTarget, VotingError,
         VotingHotkey, VotingHotkeyTarget,
     },
+    van_blinding::{VanBlinding, VanBlindingKey},
 };
 use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_client_sqlite::{AccountUuid, WalletDb};
@@ -38,7 +42,7 @@ use zcash_protocol::consensus::{NetworkConstants, Parameters};
 ///
 /// Keys created from a [`RoundBoundVotingHotkeyTarget`] retain that target so
 /// database operations can enforce its validated round.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct DelegationKeys {
     /// Orchard full viewing key bytes for the delegating account.
     pub(crate) fvk_bytes: Vec<u8>,
@@ -58,6 +62,40 @@ pub struct DelegationKeys {
     pub(crate) coin_type: u32,
     /// Human-readable round name embedded in PCZT metadata.
     pub(crate) round_name: String,
+    /// Present only when the local voting hotkey secret is available.
+    van_blinding_key: Option<VanBlindingKey>,
+}
+
+// Preserve the public identity semantics from before deterministic blinding.
+// The derived secret is operational material, not another key identifier.
+impl PartialEq for DelegationKeys {
+    fn eq(&self, other: &Self) -> bool {
+        self.fvk_bytes == other.fvk_bytes
+            && self.hotkey_raw_address == other.hotkey_raw_address
+            && self.round_bound_target == other.round_bound_target
+            && self.seed_fingerprint == other.seed_fingerprint
+            && self.account_index == other.account_index
+            && self.address_index == other.address_index
+            && self.network == other.network
+            && self.coin_type == other.coin_type
+            && self.round_name == other.round_name
+    }
+}
+
+impl Eq for DelegationKeys {}
+
+impl Hash for DelegationKeys {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.fvk_bytes.hash(state);
+        self.hotkey_raw_address.hash(state);
+        self.round_bound_target.hash(state);
+        self.seed_fingerprint.hash(state);
+        self.account_index.hash(state);
+        self.address_index.hash(state);
+        self.network.hash(state);
+        self.coin_type.hash(state);
+        self.round_name.hash(state);
+    }
 }
 
 impl std::fmt::Debug for DelegationKeys {
@@ -71,6 +109,10 @@ impl std::fmt::Debug for DelegationKeys {
             .field("network", &self.network)
             .field("coin_type", &self.coin_type)
             .field("round_name", &"<redacted>")
+            .field(
+                "deterministic_van_blinding",
+                &self.van_blinding_key.is_some(),
+            )
             .finish()
     }
 }
@@ -82,6 +124,7 @@ impl DelegationKeys {
         fvk_bytes: Vec<u8>,
         target: VotingHotkeyTarget,
         round_bound_target: Option<RoundBoundVotingHotkeyTarget>,
+        van_blinding_key: Option<VanBlindingKey>,
         seed_fingerprint: [u8; 32],
         account_index: u32,
         round_name: String,
@@ -96,14 +139,17 @@ impl DelegationKeys {
             network: target.network(),
             coin_type: target.network().network_type().coin_type(),
             round_name,
+            van_blinding_key,
         }
     }
 
     /// Builds delegation keys from a crate-derived voting hotkey.
     ///
     /// The hotkey supplies the raw Orchard output address and address index used
-    /// by the governance PCZT. Account fingerprint and account index still refer
-    /// to the wallet account that owns the delegated notes.
+    /// by the governance PCZT. Its stored secret also derives a domain-separated
+    /// deterministic VAN blinding for each exact round and bundle. Account
+    /// fingerprint and account index still refer to the wallet account that owns
+    /// the delegated notes.
     #[allow(clippy::too_many_arguments)]
     pub fn with_voting_hotkey(
         fvk_bytes: Vec<u8>,
@@ -116,6 +162,7 @@ impl DelegationKeys {
             fvk_bytes,
             hotkey.delegation_target(),
             None,
+            Some(VanBlindingKey::from_hotkey(hotkey)),
             seed_fingerprint,
             account_index,
             round_name,
@@ -128,7 +175,9 @@ impl DelegationKeys {
     /// The target supplies only public recipient data. Account fingerprint and
     /// account index still refer to the wallet account that owns the delegated
     /// notes. The returned keys retain the validated target context so
-    /// database delegation operations reject a different stored round.
+    /// database delegation operations reject a different stored round. Because
+    /// this path has no hotkey secret, its VAN blinding remains randomly sampled
+    /// and must be retained through the existing custody recovery material.
     pub fn with_round_bound_voting_target(
         fvk_bytes: Vec<u8>,
         target: &RoundBoundVotingHotkeyTarget,
@@ -141,6 +190,7 @@ impl DelegationKeys {
             fvk_bytes,
             public_target,
             Some(target.clone()),
+            None,
             seed_fingerprint,
             account_index,
             round_name,
@@ -158,6 +208,18 @@ impl DelegationKeys {
             target.validate_round(round_params)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn van_blinding_for_bundle(
+        &self,
+        round: &crate::VotingRoundParams,
+        bundle_index: u32,
+        notes: &[NoteInfo],
+    ) -> Result<Option<VanBlinding>, VotingError> {
+        self.van_blinding_key
+            .as_ref()
+            .map(|key| key.derive(self.network, round, bundle_index, notes))
+            .transpose()
     }
 }
 
@@ -297,6 +359,8 @@ pub struct PrepareDelegationBundleParams<'a> {
     pub account_uuid: &'a str,
     pub voting_hotkey: &'a VotingHotkey,
     pub bundle_index: u32,
+    /// Use [`crate::recoverable_bundle_policy_v1`] when the bundle must be
+    /// reconstructed after losing the voting database.
     pub bundle_policy: BundlePolicy,
 }
 
@@ -1687,6 +1751,7 @@ mod tests {
                 network: Network::Testnet,
                 coin_type: Network::Testnet.network_type().coin_type(),
                 round_name: "Demo Round".to_string(),
+                van_blinding_key: None,
             },
             branch_id_provider: LightwalletdBranchIdProvider::resolved(TESTNET_NU6_BRANCH_ID),
             anchor_tree_state_bytes: vec![0xAA],
@@ -2104,6 +2169,8 @@ mod tests {
         assert_eq!(external.coin_type, local.coin_type);
         assert!(local.round_bound_target.is_none());
         assert_eq!(external.round_bound_target.as_ref(), Some(&bound));
+        assert!(local.van_blinding_key.is_some());
+        assert!(external.van_blinding_key.is_none());
         assert_eq!(
             bound.target().raw_orchard_address(),
             &local.hotkey_raw_address

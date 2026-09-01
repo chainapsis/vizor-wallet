@@ -258,7 +258,8 @@ impl VotingHotkey {
     /// Returns the opaque hotkey secret that should be stored for later reuse.
     ///
     /// Wallet integrations should treat these bytes as an opaque app-owned
-    /// voting hotkey secret, not as wallet seed material.
+    /// voting hotkey secret, not as wallet seed material. Restoring the same
+    /// bytes also reconstructs deterministic local-delegation VAN blindings.
     pub fn stored_secret(&self) -> &[u8] {
         self.stored_secret.as_slice()
     }

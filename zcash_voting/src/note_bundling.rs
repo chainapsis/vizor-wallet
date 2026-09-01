@@ -18,17 +18,28 @@ pub const MINIMUM_VOTING_NOTE_COUNT: usize = BUNDLE_NOTE_SLOTS;
 /// Minimum quantized voting weight in zatoshi required before a wallet can vote.
 pub const MINIMUM_VOTING_WEIGHT_ZATOSHI: u64 = BALLOT_DIVISOR;
 
+// Version 1 recovery values are also the source for the initial wallet
+// defaults below. Keep them immutable. Future defaults must point to a new
+// versioned constant set instead of changing these values.
+const RECOVERABLE_V1_MAX_REAL_NOTES_PER_BUNDLE: usize = 5;
+const RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI: u64 = 25_000 * 100_000_000;
+const RECOVERABLE_V1_MAX_PRIVACY_BUNDLES: usize = 2;
+const RECOVERABLE_V1_PRIVACY_DROP_BPS: u32 = 100;
+const RECOVERABLE_V1_MAX_PRIVACY_DROP_ZATOSHI: u64 = 100_000_000_000;
+
+const _: () = assert!(RECOVERABLE_V1_MAX_REAL_NOTES_PER_BUNDLE == BUNDLE_NOTE_SLOTS);
+
 /// Bundle count the privacy trim aims for when the drop budget allows it.
 ///
 /// Bundle count is `ceil(note_count / BUNDLE_NOTE_SLOTS)`, so a holder whose
 /// value sits in a few large notes plus a long dust tail emits many delegation
 /// submissions that carry almost no voting weight. Trimming that tail shrinks
 /// the observable submission count for exactly those holders.
-pub const DEFAULT_MAX_PRIVACY_BUNDLES: usize = 2;
+pub const DEFAULT_MAX_PRIVACY_BUNDLES: usize = RECOVERABLE_V1_MAX_PRIVACY_BUNDLES;
 
 /// Default share of selected note value the privacy trim may discard, in basis
 /// points. 100 bps is 1%.
-pub const DEFAULT_PRIVACY_DROP_BPS: u32 = 100;
+pub const DEFAULT_PRIVACY_DROP_BPS: u32 = RECOVERABLE_V1_PRIVACY_DROP_BPS;
 
 /// Maximum share of selected note value the privacy trim may discard, in basis
 /// points. 500 bps is 5%.
@@ -38,10 +49,18 @@ pub const MAX_PRIVACY_DROP_BPS: u32 = 500;
 ///
 /// One ZEC is 100,000,000 zatoshi, so this caps the default budget at 1,000 ZEC
 /// even when 1% of the selected balance would be larger.
-pub const DEFAULT_MAX_PRIVACY_DROP_ZATOSHI: u64 = 100_000_000_000;
+pub const DEFAULT_MAX_PRIVACY_DROP_ZATOSHI: u64 = RECOVERABLE_V1_MAX_PRIVACY_DROP_ZATOSHI;
 
 /// Basis-point denominator. Kept explicit so the trim stays integer-only.
 const BPS_DENOMINATOR: u128 = 10_000;
+
+/// Selects the exact canonical bundle-planning algorithm.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BundlePlannerVersion {
+    #[default]
+    V1,
+}
 
 /// Controls how many real wallet notes are placed into each voting bundle.
 ///
@@ -50,17 +69,19 @@ const BPS_DENOMINATOR: u128 = 10_000;
 /// selected wallet notes can appear in one real bundle.
 ///
 /// Serialized with every round so the plan re-derives identically after an SDK
-/// upgrade that changes the defaults.
+/// upgrade that changes the defaults. The planner version is part of the policy
+/// so later planner algorithms cannot reinterpret an older round.
 ///
 /// # Persisted schema
 ///
 /// Round storage does not serialize this type directly. It uses a strict,
-/// versioned persistence DTO so a newly added policy field cannot silently
-/// change an older round. Any extension here must add the corresponding field
-/// to a new persisted schema version and define its conversion explicitly.
+/// versioned persistence DTO. The envelope version selects the planner version,
+/// and a newly added numeric policy field requires a new persisted schema with
+/// an explicit conversion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "UncheckedBundlePolicy")]
 pub struct BundlePolicy {
+    planner_version: BundlePlannerVersion,
     max_real_notes_per_bundle: usize,
     bundle_addition_threshold_zatoshi: Option<u64>,
     /// Missing from policies serialized before privacy trimming shipped.
@@ -76,6 +97,8 @@ pub struct BundlePolicy {
 /// bypass the capacity and privacy-budget validation enforced by its builders.
 #[derive(Deserialize)]
 struct UncheckedBundlePolicy {
+    #[serde(default)]
+    planner_version: BundlePlannerVersion,
     max_real_notes_per_bundle: usize,
     bundle_addition_threshold_zatoshi: Option<u64>,
     #[serde(default)]
@@ -86,7 +109,8 @@ impl TryFrom<UncheckedBundlePolicy> for BundlePolicy {
     type Error = VotingError;
 
     fn try_from(value: UncheckedBundlePolicy) -> Result<Self, Self::Error> {
-        let mut policy = Self::new(value.max_real_notes_per_bundle)?;
+        let mut policy =
+            Self::new_with_planner_version(value.max_real_notes_per_bundle, value.planner_version)?;
         if let Some(threshold) = value.bundle_addition_threshold_zatoshi {
             policy = policy.with_bundle_addition_threshold(threshold);
         }
@@ -124,17 +148,16 @@ impl Default for PrivacyTrimPolicy {
 }
 
 impl BundlePolicy {
-    /// Builds a bundle policy with an explicit real-note capacity.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VotingError::InvalidInput`] when `max_real_notes_per_bundle` is
-    /// outside `1..=BUNDLE_NOTE_SLOTS`.
-    pub fn new(max_real_notes_per_bundle: usize) -> Result<Self, VotingError> {
+    pub(crate) fn new_with_planner_version(
+        max_real_notes_per_bundle: usize,
+        planner_version: BundlePlannerVersion,
+    ) -> Result<Self, VotingError> {
         if (1..=BUNDLE_NOTE_SLOTS).contains(&max_real_notes_per_bundle) {
             Ok(Self {
+                planner_version,
                 max_real_notes_per_bundle,
-                ..Self::default()
+                bundle_addition_threshold_zatoshi: None,
+                privacy_trim: Some(PrivacyTrimPolicy::default()),
             })
         } else {
             Err(VotingError::InvalidInput {
@@ -143,6 +166,16 @@ impl BundlePolicy {
                 ),
             })
         }
+    }
+
+    /// Builds a bundle policy with an explicit real-note capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] when `max_real_notes_per_bundle` is
+    /// outside `1..=BUNDLE_NOTE_SLOTS`.
+    pub fn new(max_real_notes_per_bundle: usize) -> Result<Self, VotingError> {
+        Self::new_with_planner_version(max_real_notes_per_bundle, BundlePlannerVersion::V1)
     }
 
     /// Builds a policy from an optional caller override.
@@ -168,6 +201,10 @@ impl BundlePolicy {
     /// Returns the real-note capacity used by the bundler.
     pub fn max_real_notes_per_bundle(self) -> usize {
         self.max_real_notes_per_bundle
+    }
+
+    pub(crate) fn planner_version(self) -> BundlePlannerVersion {
+        self.planner_version
     }
 
     /// Returns a copy of this policy with an additive bundle value threshold.
@@ -262,7 +299,7 @@ impl BundlePolicy {
     /// The budget is `total_value * privacy_drop_bps / 10_000`, further clamped
     /// by [`BundlePolicy::max_privacy_drop_zatoshi`] when one is set. Integer
     /// math throughout, so the returned budget never exceeds the intended share.
-    fn privacy_drop_budget(self, total_value: u128) -> u128 {
+    fn privacy_drop_budget_v1(self, total_value: u128) -> u128 {
         let Some(privacy_trim) = self.privacy_trim else {
             return 0;
         };
@@ -277,10 +314,31 @@ impl BundlePolicy {
 impl Default for BundlePolicy {
     fn default() -> Self {
         Self {
-            max_real_notes_per_bundle: BUNDLE_NOTE_SLOTS,
+            planner_version: BundlePlannerVersion::V1,
+            max_real_notes_per_bundle: RECOVERABLE_V1_MAX_REAL_NOTES_PER_BUNDLE,
             bundle_addition_threshold_zatoshi: None,
             privacy_trim: Some(PrivacyTrimPolicy::default()),
         }
+    }
+}
+
+/// Exact bundle policy for reconstructing version 1 deterministic VANs.
+///
+/// Wallets that need delegation recovery after voting database loss should use
+/// this policy both when first preparing the round and when rebuilding it. It
+/// selects the frozen v1 planner as well as the v1 numeric settings, including
+/// the 25,000 ZEC boundary that keeps the canonical ZIP-318 note shape in one
+/// bundle.
+pub fn recoverable_bundle_policy_v1() -> BundlePolicy {
+    BundlePolicy {
+        planner_version: BundlePlannerVersion::V1,
+        max_real_notes_per_bundle: RECOVERABLE_V1_MAX_REAL_NOTES_PER_BUNDLE,
+        bundle_addition_threshold_zatoshi: Some(RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI),
+        privacy_trim: Some(PrivacyTrimPolicy {
+            max_bundles: RECOVERABLE_V1_MAX_PRIVACY_BUNDLES,
+            drop_bps: RECOVERABLE_V1_PRIVACY_DROP_BPS,
+            max_drop_zatoshi: Some(RECOVERABLE_V1_MAX_PRIVACY_DROP_ZATOSHI),
+        }),
     }
 }
 
@@ -455,9 +513,21 @@ pub(crate) fn canonical_note_bundle_plan_for_notes(
     notes: &[NoteInfo],
     policy: BundlePolicy,
 ) -> Result<ChunkResult, VotingError> {
+    match policy.planner_version() {
+        BundlePlannerVersion::V1 => canonical_note_bundle_plan_v1_for_notes(notes, policy),
+    }
+}
+
+// This is the recovery contract for already-created v1 VANs. Add and dispatch
+// a new planner version instead of changing its validation, deduplication, or
+// packing behavior.
+fn canonical_note_bundle_plan_v1_for_notes(
+    notes: &[NoteInfo],
+    policy: BundlePolicy,
+) -> Result<ChunkResult, VotingError> {
     validate_notes_for_round(notes)?;
-    let distinct_notes = distinct_notes_by_nullifier(notes);
-    Ok(chunk_notes_with_policy(&distinct_notes, policy))
+    let distinct_notes = distinct_notes_by_nullifier_v1(notes);
+    Ok(chunk_notes_v1_with_policy(&distinct_notes, policy))
 }
 
 /// Notes whose PIR proofs [`crate::precompute::precompute_pir_proofs`] will fetch.
@@ -480,7 +550,7 @@ pub(crate) fn notes_for_pir_proof_cache(
         .collect())
 }
 
-fn distinct_notes_by_nullifier(notes: &[NoteInfo]) -> Vec<NoteInfo> {
+fn distinct_notes_by_nullifier_v1(notes: &[NoteInfo]) -> Vec<NoteInfo> {
     let mut seen = HashSet::new();
     notes
         .iter()
@@ -517,6 +587,12 @@ pub fn chunk_notes(notes: &[NoteInfo]) -> ChunkResult {
 /// notes across bundles can recover slightly more weight. It is chosen so that
 /// the low-value tail is contiguous and droppable.
 pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> ChunkResult {
+    match policy.planner_version() {
+        BundlePlannerVersion::V1 => chunk_notes_v1_with_policy(notes, policy),
+    }
+}
+
+fn chunk_notes_v1_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> ChunkResult {
     if notes.is_empty() {
         return ChunkResult {
             bundles: vec![],
@@ -545,7 +621,7 @@ pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> Chun
     for note in sorted {
         let needs_new_bundle = match bundle_notes.last() {
             Some(bundle) if bundle.len() >= max_real_notes => true,
-            Some(bundle) if !bundle.is_empty() => bundle_addition_would_exceed_threshold(
+            Some(bundle) if !bundle.is_empty() => bundle_addition_would_exceed_threshold_v1(
                 *bundle_totals.last().expect("bundle total exists"),
                 note.value,
                 bundle_addition_threshold,
@@ -601,7 +677,7 @@ pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> Chun
     let mut privacy_dropped_value: u128 = 0;
 
     if let Some(max_privacy_bundles) = policy.max_privacy_bundles() {
-        let budget = policy.privacy_drop_budget(total_value);
+        let budget = policy.privacy_drop_budget_v1(total_value);
         // Keep at least one eligible bundle even if a zero target is configured.
         let max_privacy_bundles = max_privacy_bundles.max(1);
         while surviving.len() > max_privacy_bundles {
@@ -628,7 +704,7 @@ pub fn chunk_notes_with_policy(notes: &[NoteInfo], policy: BundlePolicy) -> Chun
     }
 }
 
-fn bundle_addition_would_exceed_threshold(
+fn bundle_addition_would_exceed_threshold_v1(
     current_total: u64,
     note_value: u64,
     threshold: Option<u64>,
@@ -659,6 +735,68 @@ mod tests {
             scope: 0,
             ufvk_str: String::new(),
         }
+    }
+
+    #[test]
+    fn recoverable_bundle_policy_v1_is_frozen() {
+        let policy = recoverable_bundle_policy_v1();
+
+        assert_eq!(policy.planner_version(), BundlePlannerVersion::V1);
+        assert_eq!(policy.max_real_notes_per_bundle(), 5);
+        assert_eq!(
+            policy.bundle_addition_threshold(),
+            Some(RECOVERABLE_V1_BUNDLE_ADDITION_THRESHOLD_ZATOSHI)
+        );
+        assert_eq!(policy.max_privacy_bundles(), Some(2));
+        assert_eq!(policy.privacy_drop_bps(), 100);
+        assert_eq!(policy.max_privacy_drop_zatoshi(), Some(100_000_000_000));
+
+        let large_note_value = 990 * BALLOT_DIVISOR;
+        let tail_note_value = 20 * BALLOT_DIVISOR;
+        let mut notes = (0..10)
+            .map(|position| make_note(large_note_value, position))
+            .chain((10..15).map(|position| make_note(tail_note_value, position)))
+            .collect::<Vec<_>>();
+        let duplicate = notes[0].clone();
+        notes.reverse();
+        notes.push(duplicate);
+        let plan = canonical_note_bundle_plan_for_notes(&notes, policy).unwrap();
+
+        let bundle_positions = plan
+            .bundles
+            .iter()
+            .map(|bundle| bundle.iter().map(|note| note.position).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            bundle_positions,
+            vec![vec![0, 1, 2, 3, 4], vec![5, 6, 7, 8, 9]]
+        );
+        assert_eq!(plan.eligible_weight, 9_900 * BALLOT_DIVISOR);
+        assert_eq!(plan.privacy_trim.dropped_bundles, 1);
+        assert_eq!(plan.privacy_trim.dropped_notes, 5);
+        assert_eq!(plan.privacy_trim.dropped_value, 100 * BALLOT_DIVISOR);
+    }
+
+    #[test]
+    fn recoverable_bundle_policy_v1_keeps_zip_318_note_shape_together() {
+        const ZATOSHI_PER_ZEC: u64 = 100_000_000;
+
+        let notes = vec![
+            make_note(10_000 * ZATOSHI_PER_ZEC, 0),
+            make_note(10_000 * ZATOSHI_PER_ZEC, 1),
+            make_note(5_000 * ZATOSHI_PER_ZEC, 2),
+            make_note(ZATOSHI_PER_ZEC, 3),
+        ];
+
+        let plan =
+            canonical_note_bundle_plan_for_notes(&notes, recoverable_bundle_policy_v1()).unwrap();
+        let bundle_positions = plan
+            .bundles
+            .iter()
+            .map(|bundle| bundle.iter().map(|note| note.position).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(bundle_positions, vec![vec![0, 1, 2], vec![3]]);
     }
 
     #[test]
@@ -1286,6 +1424,7 @@ mod tests {
 
         let policy: BundlePolicy = serde_json::from_value(legacy).unwrap();
 
+        assert_eq!(policy.planner_version(), BundlePlannerVersion::V1);
         assert_eq!(policy.max_real_notes_per_bundle(), 3);
         assert_eq!(policy.bundle_addition_threshold(), Some(42));
         assert_eq!(policy.max_privacy_bundles(), None);
@@ -1302,6 +1441,7 @@ mod tests {
 
         let json = serde_json::to_value(policy).unwrap();
 
+        assert_eq!(json["planner_version"], "v1");
         assert_eq!(json["privacy_trim"]["max_bundles"], 3);
         assert_eq!(json["privacy_trim"]["drop_bps"], 75);
         assert_eq!(json["privacy_trim"]["max_drop_zatoshi"], 99);
@@ -1598,6 +1738,7 @@ mod tests {
             .map(|i| make_note(BALLOT_DIVISOR, i as u64))
             .collect();
         let policy = BundlePolicy {
+            planner_version: BundlePlannerVersion::V1,
             max_real_notes_per_bundle: BUNDLE_NOTE_SLOTS,
             bundle_addition_threshold_zatoshi: None,
             privacy_trim: Some(PrivacyTrimPolicy {

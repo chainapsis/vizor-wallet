@@ -5,7 +5,7 @@ use pasta_curves::pallas;
 use rusqlite::{named_params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
-use crate::note_bundling::BundlePolicy;
+use crate::note_bundling::{BundlePlannerVersion, BundlePolicy};
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
 use crate::types::{Network, NoteInfo, VotingError, VotingRoundParams, WitnessData};
 
@@ -44,6 +44,8 @@ where
 ///
 /// All fields are required intentionally. Adding a runtime policy field requires
 /// a new persistence DTO and schema version rather than a serde default here.
+/// The version 1 envelope also selects [`BundlePlannerVersion::V1`]; a future
+/// planning algorithm must use a new envelope version.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct PersistedBundlePolicyV1 {
@@ -59,19 +61,24 @@ struct PersistedBundlePolicyV1 {
 
 impl From<BundlePolicy> for PersistedBundlePolicyV1 {
     fn from(policy: BundlePolicy) -> Self {
-        Self {
-            max_real_notes_per_bundle: policy.max_real_notes_per_bundle(),
-            bundle_addition_threshold_zatoshi: policy.bundle_addition_threshold(),
-            max_privacy_bundles: policy.max_privacy_bundles(),
-            privacy_drop_bps: policy.privacy_drop_bps(),
-            max_privacy_drop_zatoshi: policy.max_privacy_drop_zatoshi(),
+        match policy.planner_version() {
+            BundlePlannerVersion::V1 => Self {
+                max_real_notes_per_bundle: policy.max_real_notes_per_bundle(),
+                bundle_addition_threshold_zatoshi: policy.bundle_addition_threshold(),
+                max_privacy_bundles: policy.max_privacy_bundles(),
+                privacy_drop_bps: policy.privacy_drop_bps(),
+                max_privacy_drop_zatoshi: policy.max_privacy_drop_zatoshi(),
+            },
         }
     }
 }
 
 impl PersistedBundlePolicyV1 {
     fn into_policy(self) -> Result<BundlePolicy, VotingError> {
-        let mut policy = BundlePolicy::new(self.max_real_notes_per_bundle)?;
+        let mut policy = BundlePolicy::new_with_planner_version(
+            self.max_real_notes_per_bundle,
+            BundlePlannerVersion::V1,
+        )?;
         if let Some(threshold) = self.bundle_addition_threshold_zatoshi {
             policy = policy.with_bundle_addition_threshold(threshold);
         }

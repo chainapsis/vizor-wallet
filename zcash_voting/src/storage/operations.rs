@@ -690,6 +690,7 @@ impl VotingDb {
             (params, stored_network)
         };
         let padded_note_secrets = self.ensure_padded_secrets(round_id, bundle_index, notes)?;
+        let van_blinding = keys.van_blinding_for_bundle(&params, bundle_index, notes)?;
         let result = crate::action::build_governance_pczt(
             notes,
             &params,
@@ -702,6 +703,7 @@ impl VotingDb {
             keys.account_index,
             &keys.round_name,
             &padded_note_secrets,
+            van_blinding.as_ref(),
         )?;
         // Compute total note value from input notes
         let total_note_value: u64 = notes
@@ -6412,6 +6414,127 @@ mod tests {
         db.clear_round(ROUND_ID).unwrap();
         assert!(db.list_rounds().unwrap().is_empty());
         assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 0);
+    }
+
+    #[test]
+    fn restored_hotkey_reconstructs_van_after_voting_database_loss() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+
+        fn note(position: u8, value: u64) -> NoteInfo {
+            let mut note = identity_note_with_position(position);
+            note.value = value;
+            note
+        }
+
+        fn build_from_fresh_database(
+            hotkey: &VotingHotkey,
+            notes: &[NoteInfo],
+        ) -> (
+            crate::round::BundleLayout,
+            Vec<(u32, Vec<NoteInfo>, GovernancePczt)>,
+        ) {
+            let db = test_db();
+            db.init_round(Network::Regtest, &test_params_nu6_3(), None)
+                .unwrap();
+            let layout = db
+                .ensure_bundles_with_policy(ROUND_ID, notes, crate::recoverable_bundle_policy_v1())
+                .unwrap();
+
+            let spending_key = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+            let full_viewing_key = FullViewingKey::from(&spending_key);
+            let keys =
+                test_delegation_keys(full_viewing_key.to_bytes().to_vec(), hotkey, [0x42; 32], 0);
+            let bundles = crate::round::note_bundles_for_round(notes, &db, ROUND_ID).unwrap();
+            assert_eq!(bundles.len(), layout.bundle_count as usize);
+
+            let rebuilt = bundles
+                .into_iter()
+                .enumerate()
+                .map(|(bundle_index, expected_notes)| {
+                    let bundle_index = u32::try_from(bundle_index).unwrap();
+                    let public_notes = crate::round::bundle_notes_for_index_for_round(
+                        notes,
+                        &layout,
+                        bundle_index,
+                        &db,
+                        ROUND_ID,
+                    )
+                    .unwrap();
+                    assert_eq!(public_notes, expected_notes);
+                    let pczt = db
+                        .build_governance_pczt(
+                            ROUND_ID,
+                            bundle_index,
+                            &public_notes,
+                            &keys,
+                            nu6_3_branch_id(),
+                        )
+                        .unwrap();
+                    (bundle_index, public_notes, pczt)
+                })
+                .collect();
+
+            (layout, rebuilt)
+        }
+
+        const ZEC: u64 = 100_000_000;
+        let notes = vec![
+            note(12, 10_000 * ZEC),
+            note(2, 10_000 * ZEC),
+            note(9, 5_000 * ZEC),
+            note(21, 4_000 * ZEC),
+            note(5, 4_000 * ZEC),
+            note(18, 4_000 * ZEC),
+            note(7, 4_000 * ZEC),
+            note(14, 4_000 * ZEC),
+            note(30, 10 * ZEC),
+            note(24, 10 * ZEC),
+            note(28, 10 * ZEC),
+            note(26, 10 * ZEC),
+            note(32, 10 * ZEC),
+        ];
+        let mut reordered_notes = notes.clone();
+        reordered_notes.reverse();
+
+        let original = VotingHotkey::from_stored_secret(&[0x43; 64], Network::Regtest).unwrap();
+        let restored =
+            VotingHotkey::from_stored_secret(original.stored_secret(), Network::Regtest).unwrap();
+        let (first_layout, first_bundles) = build_from_fresh_database(&original, &notes);
+        let (second_layout, second_bundles) =
+            build_from_fresh_database(&restored, &reordered_notes);
+
+        assert_eq!(first_layout, second_layout);
+        assert_eq!(first_layout.bundle_count, 2);
+        assert_eq!(first_layout.privacy_trim_dropped_bundles, 1);
+        assert_eq!(first_layout.privacy_trim_dropped_notes, 5);
+        assert_eq!(first_layout.privacy_trim_dropped_value_zatoshi, 50 * ZEC);
+
+        let positions = first_bundles
+            .iter()
+            .map(|(_, notes, _)| notes.iter().map(|note| note.position).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(positions, vec![vec![2, 9, 12], vec![5, 7, 14, 18, 21]]);
+        assert_eq!(
+            first_bundles[0]
+                .1
+                .iter()
+                .map(|note| note.value)
+                .sum::<u64>(),
+            25_000 * ZEC
+        );
+
+        for ((first_index, first_notes, first), (second_index, second_notes, second)) in
+            first_bundles.iter().zip(&second_bundles)
+        {
+            assert_eq!(first_index, second_index);
+            assert_eq!(first_notes, second_notes);
+            assert_eq!(first.van_comm_rand, second.van_comm_rand);
+            assert_eq!(first.van, second.van);
+            assert_ne!(
+                first.pczt_sighash, second.pczt_sighash,
+                "non-recovery PCZT randomness should remain fresh"
+            );
+        }
     }
 
     /// Share delegation lifecycle: record → query → confirm → resubmit → re-record preserves confirmed.

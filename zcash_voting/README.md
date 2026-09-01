@@ -17,6 +17,10 @@ precompute → delegate → vote → share lifecycle:
    count. Wallets that need fewer real notes per bundle can call the
    `*_with_policy` variants with `BundlePolicy::new(...)`; proof construction
    still pads each bundle to the same fixed circuit slot count.
+   Use `recoverable_bundle_policy_v1()` when the wallet must reconstruct the
+   same bundle identities after losing its voting database. The frozen policy
+   includes the 25,000 ZEC addition threshold used for the canonical ZIP-318
+   note shape.
 3. Build the governance PCZT with `setup_delegation`.
 4. Precompute delegation inputs with `note_witnesses` and `delegation_pir`.
 5. After `delegate::setup`, load `delegation_signing_request` and sign it in
@@ -365,7 +369,15 @@ store `VotingHotkey::stored_secret()` in platform secure storage, and
 reconstruct a typed hotkey with `VotingHotkey::from_stored_secret` when needed.
 Software and hardware wallets should follow the same random hotkey model. The
 hotkey is not deterministic across fresh installs unless the stored hotkey
-secret is restored.
+secret is restored. For local delegation, the crate derives each bundle's VAN
+blinding from that restored secret and the exact network, round parameters,
+bundle index, note positions, commitments, and values. Rebuilding from the same
+secret and `recoverable_bundle_policy_v1()` therefore reconstructs the same VAN
+without a separate recovery table. The policy owns the complete versioned
+bundle shape, including the 25,000 ZEC addition threshold; callers do not need
+to layer that recovery input on separately. Public-target custody delegation
+has no hotkey secret and retains its existing persisted-randomness recovery
+contract.
 
 Delegation signing follows the same boundary. After `setup_delegation`, call
 `delegation_signing_request` to load the account index, network, seed

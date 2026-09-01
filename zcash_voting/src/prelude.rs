@@ -46,9 +46,10 @@ pub use crate::hotkey::{
 };
 pub use crate::note_bundling::{
     minimum_voting_eligibility_and_plan_for_notes, minimum_voting_eligibility_for_notes,
-    validate_minimum_voting_eligibility_for_notes, voting_power, voting_power_for_round,
-    voting_power_with_policy, BundlePolicy, ChunkResult, MinimumVotingEligibility, PrivacyTrim,
-    MINIMUM_VOTING_NOTE_COUNT, MINIMUM_VOTING_WEIGHT_ZATOSHI,
+    recoverable_bundle_policy_v1, validate_minimum_voting_eligibility_for_notes, voting_power,
+    voting_power_for_round, voting_power_with_policy, BundlePolicy, ChunkResult,
+    MinimumVotingEligibility, PrivacyTrim, MINIMUM_VOTING_NOTE_COUNT,
+    MINIMUM_VOTING_WEIGHT_ZATOSHI,
 };
 pub use crate::phases::{SharePhase, VotePhase, WorkflowPhase};
 pub use crate::pir::{

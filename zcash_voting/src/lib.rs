@@ -47,6 +47,7 @@ pub mod transport;
 pub mod tree_sync;
 pub mod tx1;
 pub mod types;
+mod van_blinding;
 pub mod vote;
 pub mod vote_commitment;
 pub mod wire;
@@ -78,9 +79,10 @@ pub use delegation_capability::{
 pub use governance::{BALLOT_DIVISOR, BUNDLE_NOTE_SLOTS};
 pub use note_bundling::{
     minimum_voting_eligibility_and_plan_for_notes, minimum_voting_eligibility_for_notes,
-    validate_minimum_voting_eligibility_for_notes, voting_power, voting_power_for_round,
-    voting_power_with_policy, BundlePolicy, ChunkResult, MinimumVotingEligibility, PrivacyTrim,
-    MINIMUM_VOTING_NOTE_COUNT, MINIMUM_VOTING_WEIGHT_ZATOSHI,
+    recoverable_bundle_policy_v1, validate_minimum_voting_eligibility_for_notes, voting_power,
+    voting_power_for_round, voting_power_with_policy, BundlePolicy, ChunkResult,
+    MinimumVotingEligibility, PrivacyTrim, MINIMUM_VOTING_NOTE_COUNT,
+    MINIMUM_VOTING_WEIGHT_ZATOSHI,
 };
 pub use round::validate_bundle_index;
 pub use selection::{

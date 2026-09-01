@@ -49,6 +49,10 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   without exposing encrypted helper payloads to the host.
 
 ### Changed
+- Local voting-hotkey delegation now derives each bundle's VAN blinding from
+  the stored hotkey secret and exact round and bundle identity. Restoring that
+  secret and using `recoverable_bundle_policy_v1()` reconstructs the same VAN
+  after voting database loss without new authority-root or recovery tables.
 - Helper-share planning, persistence, submission, and recovery are now
   authoritative SDK responsibilities. Hosts provide authenticated helper
   configuration, round timing, transport, and cancellation.

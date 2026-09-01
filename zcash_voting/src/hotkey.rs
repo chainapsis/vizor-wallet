@@ -24,7 +24,9 @@ pub const VOTING_HOTKEY_ADDRESS_INDEX: u32 = 0;
 /// and store [`VotingHotkey::stored_secret`] in platform secure storage. This
 /// keeps wallet root seed and mnemonic material out of the voting hotkey API.
 /// The resulting hotkey is not deterministic across fresh app installs unless
-/// the stored hotkey secret is restored.
+/// the stored hotkey secret is restored. Local delegation also derives its VAN
+/// blinding from this secret, so restoring it recovers both the hotkey identity
+/// and deterministic per-bundle governance commitments.
 ///
 /// # Errors
 ///
