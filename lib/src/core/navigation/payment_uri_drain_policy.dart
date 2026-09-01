@@ -266,7 +266,7 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | wallet still loading                         | wait                      |
 /// | `/welcome`, no wallet                        | drop + no-wallet msg      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
-/// | other in-progress surface                    | drop + busy msg           |
+/// | other in-progress surface, or a busy overlay | drop + busy msg           |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
 /// | locked, anywhere else                        | `/unlock` (stay parked)   |
@@ -279,7 +279,10 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// current route's query parameters; they are what distinguishes a swap
 /// activity detail being browsed from the same one signing a ZEC deposit. [sendStatusIsTerminal] is true
 /// when the app is on `/send/status` and that send has already succeeded or
-/// failed, which makes the status screen safe to leave.
+/// failed, which makes the status screen safe to leave. [hasBusySurface] is
+/// true when an in-progress surface that owns no route of its own is mounted
+/// — see `paymentUriBusySurfaceProvider`; it blocks exactly like
+/// [PaymentUriBlockedSurface.other].
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
   required Duration? parkedFor,
@@ -291,6 +294,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   required String matchedLocation,
   Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
+  bool hasBusySurface = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
 
@@ -337,7 +341,13 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // this after the no-wallet row would yank its removing/done stage to
   // /welcome. The send surfaces stay below: `/send*` is unreachable without a
   // wallet, and the terminal `/send/status` exception needs the delivery path.
-  if (blockedSurface == PaymentUriBlockedSurface.other) {
+  //
+  // `hasBusySurface` joins this row rather than getting one of its own: an
+  // overlay with no route of its own (the desktop Keystone shield signing
+  // overlay on `/home`) is the same kind of in-flight work, and it outranks
+  // the `/send*` rows below on purpose — while it is up, what is in flight is
+  // the shield signing, not a send.
+  if (blockedSurface == PaymentUriBlockedSurface.other || hasBusySurface) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
       message: kPaymentUriBusyMessage,

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -53,11 +54,28 @@ class _KeystoneShieldSigningOverlayState
   SaplingParamsStatus? _saplingParams;
   bool _needsSaplingParams = false;
 
+  /// Captured in [initState] so [dispose] can give the hold back without
+  /// reading from `ref` after the element is gone.
+  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+
+  /// Whether this overlay actually took a hold. Guards the release so an
+  /// overlay disposed before its post-frame callback ran cannot decrement a
+  /// hold it never took.
+  bool _holdsPaymentUriBusySurface = false;
+
   @override
   void initState() {
     super.initState();
+    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // An inbound `zcash:` link must not `go('/send')` out from under a
+      // prepared PCZT and a device approval the user already gave. This
+      // overlay lives on `/home`, so the location-based rules in
+      // `payment_uri_drain_policy.dart` cannot see it; the hold is what makes
+      // the drain treat it as busy, for every phase until dispose.
+      _paymentUriBusySurface.acquire();
+      _holdsPaymentUriBusySurface = true;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_preparePczt());
     });
@@ -65,6 +83,10 @@ class _KeystoneShieldSigningOverlayState
 
   @override
   void dispose() {
+    if (_holdsPaymentUriBusySurface) {
+      _holdsPaymentUriBusySurface = false;
+      _paymentUriBusySurface.releaseAfterNavigation();
+    }
     final promptCompleter = _saplingParamsPromptCompleter;
     _saplingParamsPromptCompleter = null;
     if (promptCompleter != null && !promptCompleter.isCompleted) {

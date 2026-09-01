@@ -15,6 +15,7 @@ PaymentUriDrainDecision decide({
   String matchedLocation = '/home',
   Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
+  bool hasBusySurface = false,
 }) => decidePaymentUriDrain(
   hasParkedPrefill: hasParkedPrefill,
   parkedFor: parkedFor,
@@ -26,6 +27,7 @@ PaymentUriDrainDecision decide({
   matchedLocation: matchedLocation,
   queryParameters: queryParameters,
   sendStatusIsTerminal: sendStatusIsTerminal,
+  hasBusySurface: hasBusySurface,
 );
 
 void main() {
@@ -433,6 +435,82 @@ void main() {
           reason: 'null -> $hasWallet',
         );
       }
+    });
+  });
+
+  group('busy surface with no route of its own', () {
+    test('a held busy surface drops the link with the busy message', () {
+      final decision = decide(hasBusySurface: true);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriBusyMessage);
+    });
+
+    test('no hold on the same location delivers', () {
+      expect(
+        decide(hasBusySurface: false).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('outranks the send rows, including a terminal send status', () {
+      for (final location in const [
+        '/send',
+        '/send/review',
+        '/send/status',
+        '/send/keystone/scan',
+      ]) {
+        final decision = decide(
+          hasBusySurface: true,
+          matchedLocation: location,
+          sendStatusIsTerminal: true,
+        );
+        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+        expect(decision.message, kPaymentUriBusyMessage);
+        expect(decision.clearSendStatusPayload, isFalse);
+      }
+    });
+
+    test('outranks the no-wallet and locked navigation rows', () {
+      for (final decision in [
+        decide(hasBusySurface: true, hasWallet: false),
+        decide(hasBusySurface: true, isUnlocked: false),
+      ]) {
+        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+        expect(decision.message, kPaymentUriBusyMessage);
+      }
+    });
+
+    test('does not outrank the stale, failure, or onboarding rows', () {
+      expect(
+        decide(
+          hasBusySurface: true,
+          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
+        ).action,
+        PaymentUriDrainAction.dropSilently,
+      );
+      expect(
+        decide(hasBusySurface: true, hasBlockingFailure: true).message,
+        kPaymentUriUnavailableMessage,
+      );
+      expect(
+        decide(hasBusySurface: true, walletIsLoading: true).action,
+        PaymentUriDrainAction.wait,
+      );
+      expect(
+        decide(hasBusySurface: true, matchedLocation: '/import').message,
+        kPaymentUriOnboardingMessage,
+      );
+    });
+
+    test('nothing parked still waits', () {
+      expect(
+        decide(
+          hasBusySurface: true,
+          hasParkedPrefill: false,
+          parkedFor: null,
+        ).action,
+        PaymentUriDrainAction.wait,
+      );
     });
   });
 }

@@ -15,6 +15,7 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
+import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
@@ -1350,6 +1351,9 @@ class _PaymentUriLinkListenerState
       // a blocked surface when it carries `?sign=<zecDeposit>`.
       queryParameters: widget.router.state.uri.queryParameters,
       sendStatusIsTerminal: ref.read(sendStatusTerminalProvider),
+      // In-progress surfaces that own no route of their own — today the
+      // desktop Keystone shield signing overlay, which sits on `/home`.
+      hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
     );
 
     switch (decision.action) {
