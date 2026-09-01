@@ -9634,6 +9634,48 @@ void main() {
     },
   );
 
+  test('background PIR cache warmup drains and stays blocked during account '
+      'mutation', () async {
+    final rust = FakeVotingRustApi()
+      ..warmPirProofCacheGate = Completer()
+      ..warmPirProofCacheError = StateError('expected warmup failure');
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+    );
+    addTearDown(container.dispose);
+
+    final coordinator = container.read(votingPirWarmupProvider);
+    final warmup = coordinator.maybeWarmActiveRounds();
+    await rust.warmPirProofCacheStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    addTearDown(() => registry.resume(accountUuid: 'account-1'));
+    var drained = false;
+    final drain = registry
+        .quiesceAndDrain(accountUuid: 'account-1')
+        .then<void>((_) {
+          drained = true;
+        });
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    rust.warmPirProofCacheGate!.complete();
+    await Future.wait([warmup, drain]);
+    expect(drained, isTrue);
+    expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+    // The failed pass is retryable, but no retry may start while the
+    // destructive account boundary still owns quiescence.
+    await coordinator.maybeWarmActiveRounds();
+    expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+    registry.resume(accountUuid: 'account-1');
+    rust.warmPirProofCacheError = null;
+    await coordinator.maybeWarmActiveRounds();
+    expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+  });
+
   test(
     'background PIR cache warmup skips a second pass within the min interval',
     () async {

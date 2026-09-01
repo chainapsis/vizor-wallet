@@ -9,6 +9,7 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import 'voting_config_provider.dart';
 import 'voting_round_visibility_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 
 /// Upper bound for waiting on wallet scan readiness before giving up on one
@@ -91,12 +92,23 @@ class VotingPirWarmupCoordinator {
     final inFlight = _passInFlight;
     if (inFlight != null) return inFlight;
 
-    final pass = _startPass();
+    final releaseBackgroundWork = _ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork();
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: PIR cache warmup skipped '
+        'reason=wallet-mutation-in-progress',
+      );
+      return Future.value();
+    }
+
+    final pass = _startPass(releaseBackgroundWork);
     _passInFlight = pass;
     return pass;
   }
 
-  Future<void> _startPass() async {
+  Future<void> _startPass(VoidCallback releaseBackgroundWork) async {
     try {
       final accountUuid = await _ref
           .read(votingActiveAccountUuidProvider)
@@ -122,6 +134,7 @@ class VotingPirWarmupCoordinator {
       debugPrint('[zcash] Voting: PIR cache warmup pass failed: $error');
     } finally {
       _passInFlight = null;
+      releaseBackgroundWork();
     }
   }
 
