@@ -2862,6 +2862,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     var confirmed = false;
     await _enqueue(
       () async {
+        if (_automaticShareTrackingStopped ||
+            ref.read(appSecurityProvider).requiresUnlock) {
+          return;
+        }
         final current = await future;
         if (_isDisposed || !ref.mounted) return;
         final context = await _loadContext(_roundId);
@@ -2885,6 +2889,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           }
         }
         if (immediateShare == null || immediateShare.confirmed) return;
+        if (_finalConfirmationCheckCancelled(context)) return;
 
         final configuredHelperUrls = _configuredHelperTransportUrls(context);
 

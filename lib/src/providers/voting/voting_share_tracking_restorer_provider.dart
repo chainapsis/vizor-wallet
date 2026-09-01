@@ -44,6 +44,7 @@ class VotingShareTrackingRestorer {
   Future<void> _pauseInFlight = Future.value();
   Timer? _retryTimer;
   bool _isPaused = false;
+  int _pauseGeneration = 0;
 
   Future<void> restore() {
     final inFlight = _restoreInFlight;
@@ -58,6 +59,7 @@ class VotingShareTrackingRestorer {
 
   Future<void> pause() {
     _cancelRetry();
+    _pauseGeneration++;
     if (_isPaused) return _pauseInFlight;
     _isPaused = true;
     final pause = _ref
@@ -69,11 +71,13 @@ class VotingShareTrackingRestorer {
   }
 
   Future<void> resume() async {
+    final pauseGeneration = _pauseGeneration;
     if (_isPaused) {
       try {
         await _pauseInFlight;
       } finally {
-        if (_isPaused) {
+        // A newer pause owns the desired state even when it reused this drain.
+        if (_isPaused && pauseGeneration == _pauseGeneration) {
           _isPaused = false;
           _ref.read(votingShareTrackingRegistryProvider).resume();
         }

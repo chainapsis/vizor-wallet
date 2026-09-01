@@ -4214,6 +4214,54 @@ void main() {
   });
 
   test(
+    'focused confirmation stays idle while tracking is stopped or locked',
+    () async {
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 9)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final security = _MutableVotingSecurityNotifier(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+      );
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        securityNotifier: security,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(
+          pendingShare,
+          designateImmediateShare: true,
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await notifier.stopAndDrainShareTracking();
+      expect(await notifier.refreshImmediateShareConfirmation(), isFalse);
+
+      notifier.resumeShareTracking();
+      (container.read(appSecurityProvider.notifier)
+              as _MutableVotingSecurityNotifier)
+          .setUnlocked(false);
+      expect(await notifier.refreshImmediateShareConfirmation(), isFalse);
+
+      expect(rust.focusedShareConfirmationCalls, isEmpty);
+      expect(rust.shareTrackingPassHandles, isEmpty);
+      expect(rust.helperDeliveryContexts, isEmpty);
+    },
+  );
+
+  test(
     'full and focused tracking serialize through destructive drain',
     () async {
       final fullTrackingGate = Completer<void>();
@@ -8351,6 +8399,49 @@ void main() {
     expect(registry.isQuiesced('account-1'), isTrue);
 
     await Future.wait([restorer.resume(), restorer.resume()]);
+    expect(registry.isQuiesced('account-1'), isFalse);
+  });
+
+  test('stale resume cannot release a newer pause request', () async {
+    final container = _sessionContainer(
+      pendingShareRoundLoader:
+          ({required dbPath, required accountUuids}) async => const [],
+    );
+    addTearDown(container.dispose);
+
+    final restorer = container.read(votingShareTrackingRestorerProvider);
+    await restorer.restore();
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    final drainStarted = Completer<void>();
+    final releaseDrain = Completer<void>();
+    final owner = Object();
+    expect(
+      registry.register(
+        key: const VotingSessionKey(
+          accountUuid: 'account-1',
+          roundId: kRoundId,
+        ),
+        owner: owner,
+        stopAndDrain: () async {
+          drainStarted.complete();
+          await releaseDrain.future;
+        },
+      ),
+      isTrue,
+    );
+
+    final firstPause = restorer.pause();
+    await drainStarted.future;
+    final staleResume = restorer.resume();
+    await Future<void>.delayed(Duration.zero);
+    final newerPause = restorer.pause();
+    releaseDrain.complete();
+    await Future.wait([firstPause, newerPause, staleResume]);
+
+    expect(registry.isQuiesced('account-1'), isTrue);
+    expect(registry.beginDiscovery(), isNull);
+
+    await restorer.resume();
     expect(registry.isQuiesced('account-1'), isFalse);
   });
 
